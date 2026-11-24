@@ -285,13 +285,25 @@ internal sealed partial class LoweringContext
             block = new LBlock([.. zero, .. block.Statements]);
         }
 
+        LStatement? safecallCopyOut = null;
+        LLocal? safecallHResult = null;
+        if (Routine is { IsSafecall: true } && body is not null)
+        {
+            (block, safecallCopyOut, safecallHResult) = SafecallBody(block);     // LANG-688 (C-301)
+        }
+
         var (copies, releases) = OpenArrayCopies();
         var lowered = ManagedRewriter.AddLifetimes(this, new LoweredBody(Routine, [.. _locals], copies.IsEmpty ? block : new LBlock([.. copies, .. block.Statements])))
-            with { Source = body?.Syntax };
+            with { Source = body?.Syntax, SafecallHResult = safecallHResult };
         releases = [.. releases, .. _managedBodyGlobals.Select(v => ManagedRewriter.Clear(this, new LGlobalRef(v)))];
         if (!releases.IsEmpty)
         {
             lowered = lowered with { Cleanup = new LBlock([.. lowered.Cleanup?.Statements ?? [], .. releases]) };
+        }
+
+        if (safecallCopyOut is not null)
+        {
+            lowered = lowered with { Cleanup = new LBlock([safecallCopyOut, .. lowered.Cleanup?.Statements ?? []]) };
         }
 
         if (resultCopy is not null)
@@ -761,6 +773,8 @@ internal sealed partial class LoweringContext
                     : new LField(Lower(field.Record), field.Field);                     // CMP-307
             case BoundClassReferenceExpression reference:
                 return new LClassRef(reference.Class, reference.Type);                  // CMP-367 TFoo.Create
+            case BoundInterfaceGuidExpression guid:
+                return new LDeref(new LGuidRef(guid.Interface, Types.Pointer), guid.Type);  // LANG-680: the constant of CMP-373 as a TGUID
             case BoundMethodPointerExpression methodPointer:
                 return MethodPointer(methodPointer);
             case BoundTypeTestExpression { Interface: not null, IsAs: true } test:
@@ -1186,6 +1200,12 @@ internal sealed partial class LoweringContext
 
     private LExpression Call(RoutineSymbol routine, ImmutableArray<BoundExpression> arguments, BoundExpression? target = null, BoundReceiver? receiver = null)
     {
+        if (routine is { IsSafecall: true, ReturnType: not null })
+        {
+            var (statements, value) = SafecallCall(routine, arguments, target, receiver);
+            return new LSequence(statements, value!);                            // CMP-1203 (C-301)
+        }
+
         var writeBacks = new List<LStatement>();
         var call = new LCall(Callee(routine, target, receiver), Arguments(routine, arguments, writeBacks));
         if (!Lowerer.IsAggregate(call.Type) && !call.Type.IsManaged && writeBacks.Count == 0)
@@ -1198,6 +1218,81 @@ internal sealed partial class LoweringContext
         return new LSequence(new LBlock([new LAssign(result, call), .. writeBacks]), result);
     }
 
+    /// <summary>RTL helper of ABI-201: <c>procedure _SafecallError(HR: HResult)</c>, noreturn.</summary>
+    private RuntimeHelper SafecallError => new("_SafecallError", [Types.Integer], ReturnType: null, IsNoReturn: true);
+
+    /// <summary>RTL helper of ABI-202: <c>function _SafecallException(Instance: Pointer): HResult</c>, called inside a handler.</summary>
+    private RuntimeHelper SafecallException => new("_SafecallException", [Types.Pointer], Types.Integer, IsNoReturn: false);
+
+    /// <summary>
+    /// LANG-687 / CMP-1203, 1204 (C-301): a call of a <c>safecall</c> routine. A function's result goes to a compiler temporary that
+    /// is empty at the call (a managed one is finalised before every call: the callee may be foreign code that overwrites without
+    /// releasing) and whose address is the last argument; the binary call returns the <c>HResult</c>, and a negative one raises
+    /// through <c>System._SafecallError</c>. <c>Value</c> is the temporary (null for a procedure), valid after <c>Statements</c>.
+    /// </summary>
+    private (LStatement Statements, LExpression? Value) SafecallCall(RoutineSymbol routine, ImmutableArray<BoundExpression> arguments, BoundExpression? target,
+        BoundReceiver? receiver)
+    {
+        var writeBacks = new List<LStatement>();
+        var callee = Callee(routine, target, receiver);
+        var lowered = Arguments(routine, arguments, writeBacks);
+        var result = routine.ReturnType is { } type ? new LLocalRef(NewTemp(type)) : null;
+        var hr = new LLocalRef(NewTemp(Types.Integer));
+        var statements = new List<LStatement>();
+        if (result is not null)
+        {
+            statements.Add(result.Type.IsManaged ? ManagedRewriter.Clear(this, result) : new LZero(new LAddrOf(result, Types.Pointer), result.Type));
+        }
+
+        var call = new LCall(callee with { HResultType = Types.Integer, SafecallResult = result is null ? null : new LAddrOf(result, Types.Pointer) }, lowered);
+        statements.Add(new LAssign(hr, call));
+        statements.Add(new LIf(Compare(LCompareOperator.Less, hr, Constant(BigInteger.Zero, Types.Integer)), CallNoReturn(SafecallError, hr), @else: null));
+        statements.AddRange(writeBacks);
+        return (new LBlock([.. statements]), result);
+    }
+
+    /// <summary>
+    /// LANG-688 / CMP-1205 (C-301): the body of a <c>safecall</c> routine — <c>HResult := 0</c>, then the body inside a catch-all
+    /// handler that sets <c>HResult := System._SafecallException(Self or nil)</c>, so no exception leaves the routine. The second
+    /// value is the copy-out the cleanup scope starts with (so <c>Exit</c> passes it too): after success the bits of <c>Result</c>
+    /// move into <c>Ret^</c> (uninitialised memory; a managed <c>Result</c> is then empty, so its finalisation does nothing); after
+    /// a failure a managed or pointer-like <c>Ret^</c> becomes nil/empty and any other is left untouched.
+    /// </summary>
+    private (LBlock Body, LStatement? CopyOut, LLocal HResult) SafecallBody(LBlock block)
+    {
+        var routine = Routine!;
+        var hr = NewTemp(Types.Integer);
+        var hrRef = new LLocalRef(hr);
+        LExpression instance = routine is MethodSymbol { SelfParameter: { } self, IsClassMethod: false, ContainingSymbol: ClassTypeSymbol }
+            ? new LParamRef(self)
+            : new LConst(new ConstantValue(null, Types.Pointer), Types.Pointer);
+        var handler = new LAssign(hrRef, new LCall(new LHelperCallee(SafecallException), [instance]));
+        var body = new LBlock(
+        [
+            new LAssign(hrRef, Constant(BigInteger.Zero, Types.Integer)),
+            new LTryExcept(block, NewTemp(Types.Pointer), handler),
+        ]);
+        if (routine.ResultVariable is not { } resultVariable)
+        {
+            return (body, null, hr);
+        }
+
+        var type = resultVariable.Type;
+        routine.SafecallResultParameter ??= new ParameterSymbol("$ret", Types.Pointer, ParameterMode.Value, routine.Parameters.Length, routine, []);
+        var result = new LLocalRef(_variables[resultVariable]);
+        var ret = new LDeref(new LParamRef(routine.SafecallResultParameter), type);
+        var moved = new List<LStatement> { new LMemMove(result, ret, Constant(type.Size, Types.Int64)) };
+        if (type.IsManaged)
+        {
+            moved.Add(new LZero(new LAddrOf(result, Types.Pointer), type));
+        }
+
+        var pointerLike = type.IsManaged || type is PointerTypeSymbol or ClassTypeSymbol or ClassRefTypeSymbol or ProceduralTypeSymbol;
+        var copyOut = new LIf(Compare(LCompareOperator.GreaterOrEqual, hrRef, Constant(BigInteger.Zero, Types.Integer)), new LBlock([.. moved]),
+            pointerLike ? new LZero(new LParamRef(routine.SafecallResultParameter), type) : null);
+        return (body, copyOut, hr);
+    }
+
     /// <summary>
     /// CMP-325 rule 4: <c>target := F(args)</c> for a managed result. The target's address is the hidden <c>Result</c> only when
     /// <see cref="ReceivesResultDirectly"/>; otherwise a temporary receives it and is assigned with <c>_UStrAsg</c>.
@@ -1205,6 +1300,13 @@ internal sealed partial class LoweringContext
     public LStatement CallInto(LExpression target, RoutineSymbol routine, ImmutableArray<BoundExpression> arguments, BoundExpression? procedural = null,
         BoundReceiver? receiver = null)
     {
+        if (routine.IsSafecall)
+        {
+            // CMP-1204 (C-301): the temporary is assigned after the check, so a failed call never changes the destination
+            var (statements, value) = SafecallCall(routine, arguments, procedural, receiver);
+            return new LBlock([statements, ManagedRewriter.Assign(this, target, value!)]);
+        }
+
         var writeBacks = new List<LStatement>();
         var call = new LCall(Callee(routine, procedural, receiver), Arguments(routine, arguments, writeBacks));
         if (ReceivesResultDirectly(target, call))
@@ -1240,6 +1342,11 @@ internal sealed partial class LoweringContext
     /// <summary>A call statement; a discarded aggregate or managed result still needs storage (ABI-081).</summary>
     private LStatement CallStatement(RoutineSymbol routine, ImmutableArray<BoundExpression> arguments, BoundExpression? target, BoundReceiver? receiver = null)
     {
+        if (routine.IsSafecall)
+        {
+            return SafecallCall(routine, arguments, target, receiver).Statements;   // CMP-1203 (C-301): a discarded result is still received
+        }
+
         if (routine.ReturnType is { } type && (Lowerer.IsAggregate(type) || type.IsManaged))
         {
             return ((LSequence)Call(routine, arguments, target, receiver)).First;

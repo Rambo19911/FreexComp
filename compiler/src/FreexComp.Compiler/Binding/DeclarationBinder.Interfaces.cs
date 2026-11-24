@@ -258,9 +258,9 @@ internal sealed partial class DeclarationBinder
             return null;
         }
 
-        if (folded is string text && text.Length == 38 && System.Guid.TryParseExact(text, "B", out var guid))
+        if (folded is string text && GuidValues.Parse(text) is { } bytes)
         {
-            return [.. guid.ToByteArray()];                                     // D1, D2, D3 little-endian, then D4: the TGUID layout
+            return bytes;                                                       // D1, D2, D3 little-endian, then D4: the TGUID layout
         }
 
         _diagnostics.Report(value, "E2650");
@@ -343,7 +343,7 @@ internal sealed partial class DeclarationBinder
     internal static MethodSymbol? FindImplementation(ClassTypeSymbol type, string name, MethodSymbol method) =>
         type.SelfAndAncestors().SelectMany(c => c.Methods)
             .FirstOrDefault(m => m.MethodKind == MethodKind.Ordinary && IdentifierComparer.Instance.Equals(m.Name, name) && SameParameterTypes(m, method)
-                && ReferenceEquals(m.ReturnType, method.ReturnType));
+                && ReferenceEquals(m.ReturnType, method.ReturnType) && m.IsSafecall == method.IsSafecall);      // LANG-689 (C-301)
 
     /// <summary>
     /// LANG-661 <c>procedure IFoo.Bar = MyBar;</c>: maps method <c>Bar</c> of a listed interface <c>IFoo</c> (or of one of its ancestors)

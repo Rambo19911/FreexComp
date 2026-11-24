@@ -22,6 +22,9 @@ namespace FreexComp.Compiler.Lowering;
 /// </param>
 internal sealed record LoweredBody(RoutineSymbol? Routine, ImmutableArray<LLocal> Locals, LBlock Body, LoweredFrame? Frame = null, LBlock? Cleanup = null)
 {
+    /// <summary>CMP-1205 (C-301): the local holding the <c>HResult</c> a <c>safecall</c> routine's function returns; null otherwise.</summary>
+    public LLocal? SafecallHResult { get; init; }
+
     /// <summary>
     /// The syntax of the source block the body was lowered from (a routine's <c>begin … end</c>, the program block, a unit section, a
     /// <c>try … finally … end</c> for a <c>$fin</c> routine); null for a body without source (CMP-421, DBG-114: no debug info).
@@ -126,7 +129,13 @@ internal abstract record LCallee
 /// <paramref name="IsVirtual"/> the code address is read from the VMT slot of <c>Self</c>'s class (<c>Self</c> itself is the VMT for class methods).</remarks>
 internal sealed record LRoutineCallee(RoutineSymbol Routine, LExpression? Target = null, LExpression? Self = null, int? Flag = null, bool IsVirtual = false) : LCallee
 {
-    public override TypeSymbol? ReturnType => Routine.ReturnType;
+    /// <summary>CMP-1203 (C-301): set for a call of a <c>safecall</c> routine — the type of the <c>HResult</c> the binary call returns.</summary>
+    public TypeSymbol? HResultType { get; init; }
+
+    /// <summary>CMP-1203: the address of the result temporary of a <c>safecall</c> function, passed last (LANG-686).</summary>
+    public LExpression? SafecallResult { get; init; }
+
+    public override TypeSymbol? ReturnType => HResultType ?? Routine.ReturnType;
 
     public override bool IsNoReturn => Routine.IsNoReturn;
 }

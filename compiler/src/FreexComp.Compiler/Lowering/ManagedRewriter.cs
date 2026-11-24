@@ -367,5 +367,6 @@ internal static class ManagedRewriter
 
     /// <summary>The procedural value and the <c>Self</c> a call evaluates before its arguments.</summary>
     private static bool References(LCallee callee, LLocal local) =>
-        callee is LRoutineCallee routine && (routine.Target is { } t && References(t, local) || routine.Self is { } s && References(s, local));
+        callee is LRoutineCallee routine && (routine.Target is { } t && References(t, local) || routine.Self is { } s && References(s, local)
+            || routine.SafecallResult is { } r && References(r, local));
 }

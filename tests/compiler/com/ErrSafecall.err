@@ -1,0 +1,12 @@
+ErrSafecall.pas(14,25): error E2656: 'safecall' is not allowed on a constructor
+ErrSafecall.pas(15,35): error E2656: 'safecall' is not allowed on a destructor
+ErrSafecall.pas(20,14): error E2621: Declaration of 'Compute' differs from the virtual method it overrides
+ErrSafecall.pas(23,36): error E2651: Missing implementation of interface method 'IValue.Value'
+ErrSafecall.pas(29,49): error E2656: 'safecall' is not allowed on an operator
+ErrSafecall.pas(34,54): error E2656: 'safecall' is not allowed on a varargs routine
+ErrSafecall.pas(65,11): error E2101: Declaration of 'Later' differs from its previous declaration
+ErrSafecall.pas(74,20): error E2656: 'safecall' is not allowed on a nested routine
+ErrSafecall.pas(85,8): error E2010: Incompatible types: 'procedure(Integer)' and 'TSafeProc'
+ErrSafecall.pas(86,8): error E2010: Incompatible types: 'procedure(Integer)' and 'TPlainProc'
+ErrSafecall.pas(87,8): error E2010: Incompatible types: 'TPlainProc' and 'TSafeProc'
+ErrSafecall.pas(88,8): error E2010: Incompatible types: 'TSafeProc' and 'TPlainProc'

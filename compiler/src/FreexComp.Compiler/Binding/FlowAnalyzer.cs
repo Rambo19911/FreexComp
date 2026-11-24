@@ -832,7 +832,7 @@ internal sealed class FlowAnalyzer
             case BoundDereferenceExpression dereference:
                 return Eval(dereference.Pointer, state);
 
-            case BoundClassReferenceExpression:
+            case BoundClassReferenceExpression or BoundInterfaceGuidExpression:
                 return state;
 
             case BoundTypeTestExpression test:

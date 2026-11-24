@@ -1,0 +1,17 @@
+safecall
+  ping
+  42
+  title 7
+  none
+  child
+stdcall twin
+  ping
+  0
+  0 42
+  0 title 7
+  0 child
+raising method
+  8000FFFF []
+  ESafecallException [kept]
+loop title 3 1
+done

@@ -79,6 +79,7 @@ internal sealed partial class DeclarationBinder
         var properties = new List<(PropertyDeclarationSyntax Syntax, Visibility Visibility)>();
         var classVariables = ImmutableArray.CreateBuilder<VariableSymbol>();
         var nested = ImmutableArray.CreateBuilder<Symbol>();
+        var nestedAliases = ImmutableArray.CreateBuilder<(string Name, TypeSymbol Target)>();
         foreach (var (member, visibility) in Members(syntax.Members, Visibility.Public))
         {
             switch (member)
@@ -109,7 +110,7 @@ internal sealed partial class DeclarationBinder
                     properties.Add((property, visibility));
                     break;
                 case ConstSectionSyntax or TypeSectionSyntax:
-                    nested.AddRange(inner.BindNestedSection(member));
+                    nested.AddRange(inner.BindNestedSection(member, nestedAliases));
                     break;
                 default:
                     Unsupported(member, "helper " + FeatureName(member.Kind));
@@ -120,6 +121,7 @@ internal sealed partial class DeclarationBinder
         helper.ClassVariables = classVariables.ToImmutable();
         helper.Methods = methods.ToImmutable();
         helper.NestedMembers = nested.ToImmutable();
+        helper.NestedAliases = nestedAliases.ToImmutable();
         helper.Properties = inner.BindProperties(helper, properties, names);
     }
 

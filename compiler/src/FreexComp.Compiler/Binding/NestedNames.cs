@@ -22,7 +22,7 @@ internal static class NestedNames
             case MemberAccessExpressionSyntax { Name.Identifier: { IsMissing: false } member } access
                 when TypeNamedBy(scope, access.Expression) is { } outer:
                 var text = member.Value as string ?? member.Text;
-                return TypeMembers.NestedMembers(outer).FirstOrDefault(m => IdentifierComparer.Instance.Equals(m.Name, text)) as TypeSymbol;
+                return TypeMembers.NestedType(outer, text);
             default:
                 return null;
         }

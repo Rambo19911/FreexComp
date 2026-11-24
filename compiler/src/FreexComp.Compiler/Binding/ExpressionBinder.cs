@@ -79,6 +79,7 @@ internal sealed partial class ExpressionBinder
     /// (LANG-251); anything else binds as without context.
     /// </summary>
     public BoundExpression BindExpression(ExpressionSyntax syntax, TypeSymbol? expected) =>
+        InterfaceAsGuid(syntax, expected) is { } guid ? guid :                    // LANG-680 (C-299)
         Unparenthesized(syntax) is SetConstructorSyntax constructor
             ? expected switch
             {
@@ -95,6 +96,35 @@ internal sealed partial class ExpressionBinder
                     : expected is InterfaceTypeSymbol { IsMethodReference: true } reference
                         ? BindReferenceValue(syntax, reference)
                         : BindExpression(syntax);
+
+    /// <summary>
+    /// LANG-680 (C-299): <paramref name="syntax"/> where a <c>TGUID</c> (<paramref name="expected"/>) is required — the identifier of an
+    /// interface type denotes its GUID (E2655 when it has none). Null when <paramref name="expected"/> is not <c>TGUID</c> or the
+    /// expression names no interface type; the caller then binds as usual.
+    /// </summary>
+    private BoundExpression? InterfaceAsGuid(ExpressionSyntax syntax, TypeSymbol? expected)
+    {
+        if (!GuidValues.IsGuidType(expected) || InterfaceNamedBy(syntax) is not { } intf)
+        {
+            return null;
+        }
+
+        if (intf.Guid is null)
+        {
+            _diagnostics.Report(syntax, "E2655", intf.Name);
+            return Error(syntax);
+        }
+
+        return new BoundInterfaceGuidExpression(syntax, intf, expected!);
+    }
+
+    /// <summary>The (ordinary) interface type an expression names — <c>IFoo</c>, <c>U.IFoo</c>; null otherwise, nothing reported.</summary>
+    private InterfaceTypeSymbol? InterfaceNamedBy(ExpressionSyntax syntax)
+    {
+        var inner = Unparenthesized(syntax);
+        return inner is IdentifierNameSyntax or MemberAccessExpressionSyntax
+            && NestedNames.TypeNamedBy(_scope, inner) is InterfaceTypeSymbol { IsMethodReference: false } intf ? intf : null;
+    }
 
     /// <summary>
     /// LANG-481 (C-103): <paramref name="syntax"/> where a method pointer of <paramref name="type"/> is expected — <c>Obj.Method</c>,
@@ -1055,6 +1085,8 @@ internal sealed partial class ExpressionBinder
         {
             switch (Unparenthesized(invocation.Expression))
             {
+                case MemberAccessExpressionSyntax member when NestedNames.TypeNamedBy(_scope, member) is { } nestedTarget:
+                    return BindTypecastInvocation(invocation, nestedTarget, variableContext);       // C-311: TOuter.TInner(x) (LANG-770)
                 case MemberAccessExpressionSyntax member when !(_scope.Unqualified(member.Expression) is IdentifierNameSyntax { Identifier: { IsMissing: false } q } qualifier
                                                                 && _scope.For(qualifier).Lookup(q.Value as string ?? q.Text) is EnumTypeSymbol):
                 {
@@ -1114,6 +1146,13 @@ internal sealed partial class ExpressionBinder
             return Unsupported(invocation, "routine call");
         }
 
+        return BindTypecastInvocation(invocation, target, variableContext);
+    }
+
+    /// <summary>A typecast <c>T(x)</c> once the callee is known to name the type <paramref name="target"/> (LANG-290).</summary>
+    private BoundExpression BindTypecastInvocation(InvocationExpressionSyntax invocation, TypeSymbol target, bool variableContext)
+    {
+        var arguments = invocation.ArgumentList.Arguments;
         if (arguments.Count != 1)
         {
             return Unsupported(invocation, "typecast");
@@ -1764,6 +1803,7 @@ internal sealed partial class ExpressionBinder
             (InterfaceTypeSymbol, IntegerTypeSymbol { Bits: 64 } or PointerTypeSymbol) => true,      // types.md row 244 (C-098): the reference, uncounted
             (ClassRefTypeSymbol, ClassRefTypeSymbol or PointerTypeSymbol or IntegerTypeSymbol { Bits: 64 }) => true,  // LANG-290 (C-086)
             (PointerTypeSymbol, ClassRefTypeSymbol) => true,
+            (PointerTypeSymbol { PointedType: null }, InterfaceTypeSymbol { IsMethodReference: false }) => true,   // LANG-682 (C-299): a borrowed reference
             (_, ClassRefTypeSymbol) when source.IsOrdinal => true,
             (_, ClassTypeSymbol) when source.IsOrdinal => true,                 // LANG-290 row 2 (C-261): also a non-variable operand
             (IntegerTypeSymbol or RealTypeSymbol, RealTypeSymbol) => true,
@@ -1771,7 +1811,7 @@ internal sealed partial class ExpressionBinder
         };
         if (!isValueCast)
         {
-            if (IsAddressable(operand))
+            if (IsAddressable(operand) && target is not InterfaceTypeSymbol)        // LANG-682: IFoo(x) of anything but a Pointer is E2040
             {
                 return VariableTypecast(node, target, operand);
             }
@@ -1923,6 +1963,10 @@ internal sealed partial class ExpressionBinder
                     ?? ProceduralContext(candidates, i, argument.Expression);
             // an untyped parameter (C-202) also takes p^ of an untyped pointer (a byte variable, as for Move)
             var untyped = byReference && candidates[0].Parameters[i].IsUntyped && Unparenthesized(argument.Expression) is DereferenceExpressionSyntax;
+            // LANG-680 (C-299): an interface type identifier is its GUID for a value or const TGUID parameter of any candidate
+            expected ??= InterfaceNamedBy(argument.Expression) is null ? null
+                : candidates.Where(c => i < c.Parameters.Length && !c.Parameters[i].IsByReference && GuidValues.IsGuidType(c.Parameters[i].Type))
+                    .Select(c => c.Parameters[i].Type).FirstOrDefault();
             var bound = untyped ? BindDereference((DereferenceExpressionSyntax)Unparenthesized(argument.Expression), untyped: true)
                 : byReference ? BindVariable(argument.Expression) : BindExpression(argument.Expression, expected);
             hasErrors |= bound.HasErrors;
@@ -2211,6 +2255,18 @@ internal sealed partial class ExpressionBinder
         else if (Unparenthesized(binary.Left) is SetConstructorSyntax && Unparenthesized(binary.Right) is not SetConstructorSyntax)
         {
             right = BindExpression(binary.Right);
+            left = BindExpression(binary.Left, right.Type);
+        }
+        else if (op.Kind is SyntaxKind.EqualsToken or SyntaxKind.LessThanGreaterThanToken && InterfaceNamedBy(binary.Right) is not null
+            && InterfaceNamedBy(binary.Left) is null)
+        {
+            left = Called(BindOperand(binary.Left));                            // LANG-680 (C-299): G = IFoo
+            right = BindExpression(binary.Right, left.Type);
+        }
+        else if (op.Kind is SyntaxKind.EqualsToken or SyntaxKind.LessThanGreaterThanToken && InterfaceNamedBy(binary.Left) is not null
+            && InterfaceNamedBy(binary.Right) is null)
+        {
+            right = Called(BindOperand(binary.Right));                          // IFoo = G
             left = BindExpression(binary.Left, right.Type);
         }
         else if (op.Kind is SyntaxKind.EqualsToken or SyntaxKind.LessThanGreaterThanToken)

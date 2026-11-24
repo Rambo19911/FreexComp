@@ -160,16 +160,14 @@ internal sealed class ConstantFolder
     internal EnumMemberSymbol? LookupEnumMember(MemberAccessExpressionSyntax access, out bool isEnumAccess)
     {
         // the enumeration type may itself be unit-qualified: U.TEnum.Element
-        var qualifierName = _scope.Unqualified(access.Expression) as IdentifierNameSyntax;
-        isEnumAccess = qualifierName is { Identifier: { IsMissing: false } qualifier } && access.Name is IdentifierNameSyntax
-            && _scope.For(qualifierName).Lookup(qualifier.Value as string ?? qualifier.Text) is EnumTypeSymbol;
-        if (!isEnumAccess)
+        // ... or nested in a class or record, or a nested alias: TOuter.TEnum.Element (LANG-770, C-311)
+        var type = access.Name is IdentifierNameSyntax ? NestedNames.TypeNamedBy(_scope, access.Expression) as EnumTypeSymbol : null;
+        isEnumAccess = type is not null;
+        if (type is null)
         {
             return null;
         }
 
-        var qualifierToken = qualifierName!.Identifier;
-        var type = (EnumTypeSymbol)_scope.For(qualifierName).Lookup(qualifierToken.Value as string ?? qualifierToken.Text)!;
         var name = access.Name.Identifier;
         if (name.IsMissing)
         {

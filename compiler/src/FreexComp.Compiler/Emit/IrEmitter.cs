@@ -626,6 +626,13 @@ internal static class IrEmitter
             {
                 var target = listed.Implementations[k];
                 var name = Mangler.Thunk(type, listed.Interface, listed.Interface.AllMethods[k]);
+                if (HasInterfaceAggregateResult(listed.Interface.AllMethods[k]))
+                {
+                    EmitAggregateResultThunk(module, name, listed.Interface.AllMethods[k], target, listed.Offset);  // CMP-1200
+                    thunks.Add(new IrGlobal(name));
+                    continue;
+                }
+
                 var returnType = ReturnType(target);
                 var parameters = ParameterTypes(target).Select((t, i) => new IrParameter(t, i == 0 ? "iref" : "p" + i)).ToImmutableArray();
                 // CMP-1011: a musttail call needs the thunk and the method to share one convention
@@ -658,6 +665,47 @@ internal static class IrEmitter
         }
     }
 
+    /// <summary>
+    /// CMP-1200 (LANG-684, ABI-206): the method-table entry of an interface method with a non-managed record, static-array,
+    /// <c>ShortString</c> or method-pointer result — <c>ptr (ptr iref, ptr result, …)</c>. It calls the implementing method, which keeps
+    /// its ordinary signature (ABI-081: an <c>iN</c> value for sizes 1, 2, 4 and 8, which the thunk stores; else the hidden result
+    /// pointer, passed on), and returns the result pointer.
+    /// </summary>
+    private static void EmitAggregateResultThunk(ModuleState module, LinkName name, MethodSymbol slot, MethodSymbol target, long offset)
+    {
+        var w = module.Writer;
+        var parameters = ParameterTypes(slot).Select((t, i) => new IrParameter(t, i == 0 ? "iref" : i == 1 ? "result" : "p" + (i - 1))).ToImmutableArray();
+        var callConv = module.CallConv(target);
+        var values = w.BeginFunction(new IrFunctionDefinition(name, IrLinkage.Internal, IrType.Ptr, parameters, RoutineGroup) { CallConv = module.CallConv(slot) });
+        w.AppendBlock(new IrBlock("entry"));
+        var self = w.GetElementPtr("self", IrType.I8, values[0], [IrIntConstant.I64(-offset)]);
+        IrValue callee;
+        if (target.IsDispatched)
+        {
+            var vmt = w.Load("vmt", IrType.Ptr, self, module.PtrAlign);
+            var entry = w.GetElementPtr("slot", IrType.I8, vmt, [IrIntConstant.I64(module.VmtSlotOffset(target.VmtSlot))]);
+            callee = w.Load("fn", IrType.Ptr, entry, module.PtrAlign);
+        }
+        else
+        {
+            callee = module.Routine(target);
+        }
+
+        if (HasHiddenResult(target))
+        {
+            w.Call(null, IrType.Void, callee, [self, values[1], .. values.Skip(2)], callConv: callConv);
+        }
+        else
+        {
+            var value = w.Call("v", ReturnType(target), callee, [self, .. values.Skip(2)], callConv: callConv);
+            w.Store(value!, values[1], 1);
+        }
+
+        w.Ret(values[1]);
+        w.EndFunction();
+        module.DeclarePending();
+    }
+
     /// <summary>ABI-096: <c>TGUID</c> as <c>[16 x i8]</c>.</summary>
     internal static readonly ArrayIrType GuidType = new(16, IrType.I8);
 
@@ -681,7 +729,8 @@ internal static class IrEmitter
         [.. (routine.IsNested ? [IrType.Ptr] : Array.Empty<IrType>()),
          .. routine.ImplicitParameters.Select(ParameterType),
          .. (HasHiddenResult(routine) ? [IrType.Ptr] : Array.Empty<IrType>()),
-         .. WithHighCompanions(routine.Parameters).Select(ParameterType)];
+         .. WithHighCompanions(routine.Parameters).Select(ParameterType),
+         .. (routine is { IsSafecall: true, ReturnType: not null } ? [IrType.Ptr] : Array.Empty<IrType>())];        // CMP-1202: ptr Ret, last
 
     /// <summary>ABI-080/082: the declared parameters as the IR passes them — each open array followed by its <c>i64</c> High (C-106).</summary>
     internal static IEnumerable<ParameterSymbol> WithHighCompanions(IEnumerable<ParameterSymbol> parameters) =>
@@ -692,7 +741,9 @@ internal static class IrEmitter
 
     /// <summary>ABI-081: the value, an <c>iN</c> for an aggregate of size 1, 2, 4 or 8, <c>void</c> with a hidden result.</summary>
     internal static IrType ReturnType(RoutineSymbol routine) =>
-        routine.ReturnType is { } type && !HasHiddenResult(routine) ? ScalarStorage(type) : IrType.Void;
+        routine.IsSafecall ? IrType.I32                                         // CMP-1202: the HResult
+        : HasInterfaceAggregateResult(routine) ? IrType.Ptr                     // ABI-206: the entry returns the result pointer
+        : routine.ReturnType is { } type && !HasHiddenResult(routine) ? ScalarStorage(type) : IrType.Void;
 
     /// <summary>ABI-080/081: an aggregate (record, static array, big set) of size 1, 2, 4 or 8 travels as an integer of its size.</summary>
     internal static bool IsPassedAsInteger(TypeSymbol type) => Lowerer.IsAggregate(type) && type.Size is 1 or 2 or 4 or 8;
@@ -711,7 +762,19 @@ internal static class IrEmitter
     /// <c>ptr Result</c> parameter.
     /// </summary>
     internal static bool HasHiddenResult(RoutineSymbol routine) =>
-        routine.ReturnType is { } type && (type.IsManaged || Lowerer.IsAggregate(type) && !IsPassedAsInteger(type));
+        !routine.IsSafecall                                                     // LANG-686: the result is the last argument, whatever its type
+        && (routine.ReturnType is { } type && (type.IsManaged || Lowerer.IsAggregate(type) && !IsPassedAsInteger(type))
+            || HasInterfaceAggregateResult(routine));
+
+    /// <summary>
+    /// LANG-684 / ABI-206 (C-300): a method of an interface (the method-table entry and every call through an interface reference)
+    /// returns a non-managed record, static array, <c>ShortString</c> or method pointer through a hidden <c>ptr Result</c> after the
+    /// reference, whatever its size, and returns that pointer — the platform's member-function rule. Sets, managed and scalar
+    /// results keep ABI-081; the interfaces of anonymous-method references (ABI-097) are exempt.
+    /// </summary>
+    internal static bool HasInterfaceAggregateResult(RoutineSymbol routine) =>
+        routine is MethodSymbol { IsSafecall: false, ContainingInterface.IsMethodReference: false, ReturnType: { IsManaged: false } type }
+        && type is RecordTypeSymbol or ArrayTypeSymbol or StringTypeSymbol { Variant: StringVariant.Short } or MethodPointerTypeSymbol;
 
     /// <summary>
     /// The variable lives at an address the routine receives (a by-address parameter, the hidden <c>Result</c>): a frame
@@ -1601,7 +1664,9 @@ internal sealed class FunctionEmitter
         _body = body;
         _routine = body.Routine;
         _implicitCount = _routine?.ImplicitParameters.Length ?? 0;
-        _parameters = _routine is null ? [] : [.. _routine.ImplicitParameters, .. IrEmitter.WithHighCompanions(_routine.Parameters)];
+        _parameters = _routine is null ? []
+            : [.. _routine.ImplicitParameters, .. IrEmitter.WithHighCompanions(_routine.Parameters),
+               .. (_routine is { IsSafecall: true, ReturnType: not null } ? [_routine.SafecallResultParameter!] : Array.Empty<ParameterSymbol>())];   // CMP-1202
         _name = name ?? Mangler.Routine(_routine ?? throw new ArgumentException("A body without routine needs a name.", nameof(name)));
         _linkage = linkage;
         _returnTarget = body.Cleanup is null ? Exit : CleanupBlock;
@@ -1745,7 +1810,11 @@ internal sealed class FunctionEmitter
         }
 
         Start(Exit);
-        if (_routine?.ResultVariable is { } result && hiddenResult is null)
+        if (_body.SafecallHResult is { } hr)
+        {
+            _w.Ret(_w.Load(NewTemp(), IrType.I32, _locals[hr], TypeLayout.Of(hr.Type).Alignment));     // CMP-1205: the HResult
+        }
+        else if (_routine?.ResultVariable is { } result && hiddenResult is null)
         {
             // ABI-081: a small aggregate is returned as the integer holding its bytes
             var local = _body.Locals.Single(l => ReferenceEquals(l.Variable, result));
@@ -2847,6 +2916,11 @@ internal sealed class FunctionEmitter
 
             var value = Value(arguments[i]);
             values.Add(IrEmitter.IsPassedByAddress(parameter) ? value : ToStorage(value, parameter.Type));
+        }
+
+        if (callee.SafecallResult is { } safecallResult)
+        {
+            values.Add(Value(safecallResult));                                  // CMP-1203: ptr Ret, last
         }
 
         // CMP-1011: the convention of the routine, or of the procedural type's signature for a call through a value

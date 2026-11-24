@@ -138,6 +138,15 @@ public class RoutineSymbol : Symbol
     /// </summary>
     public CallConvDirective CallingConvention { get; internal set; }
 
+    /// <summary>
+    /// LANG-685…689 (C-301): <c>safecall</c> is a convention of its own and part of the signature — binary form
+    /// <c>function F(P…; out Ret: R): HResult</c> (LANG-686). The other convention directives are interchangeable (LANG-462).
+    /// </summary>
+    internal bool IsSafecall => CallingConvention == CallConvDirective.SafeCall;
+
+    /// <summary>CMP-1202 (C-301): the trailing <c>ptr Ret</c> parameter of a <c>safecall</c> function's body; made by the lowering.</summary>
+    internal ParameterSymbol? SafecallResultParameter { get; set; }
+
     /// <summary>Import name of an external routine or the <c>public name</c> (LANG-463, 470).</summary>
     internal string? ExplicitLinkName { get; set; }
 

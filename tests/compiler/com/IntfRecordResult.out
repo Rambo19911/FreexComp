@@ -1,0 +1,24 @@
+small 3 4
+size 30 40
+bounds 1 2 31 42
+scaled 60 80
+field of result 40 42
+triple 7 8 9
+name shape
+count 5
+raw small 3 4 TRUE
+raw size 30 40 TRUE
+raw bounds 1 2 31 42 TRUE
+raw scaled 90 120 TRUE
+small 3 4
+size 300 400
+bounds 1 2 31 42
+scaled 60 80
+field of result 400 42
+triple 7 8 9
+name shape
+count 5
+raw small 3 4 TRUE
+raw size 300 400 TRUE
+raw bounds 1 2 31 42 TRUE
+raw scaled 90 120 TRUE

@@ -649,7 +649,19 @@ internal sealed partial class ExpressionBinder
 
             if (candidates.IsEmpty)
             {
-                _diagnostics.Report(syntax.Name, className.GetMembers(name).Any() ? "E2607" : "E2005", className.Name, name);
+                if (TypeMembers.NestedType(className, name) is { } nestedType)
+                {
+                    _diagnostics.Report(syntax, "E2009", nestedType.Name);              // a nested type is not a value (C-311)
+                }
+                else if (className.GetMembers(name).Any())
+                {
+                    _diagnostics.Report(syntax.Name, "E2607");
+                }
+                else
+                {
+                    _diagnostics.Report(syntax.Name, "E2005", className.Name, name);
+                }
+
                 return Error(syntax);
             }
 
@@ -742,7 +754,15 @@ internal sealed partial class ExpressionBinder
             var candidates = MemberCandidates(target, name);
             if (candidates.IsEmpty)
             {
-                _diagnostics.Report(syntax.Name, target.GetMembers(name).Any() ? "E2607" : "E2005", target.Name, name);
+                if (target.GetMembers(name).Any())
+                {
+                    _diagnostics.Report(syntax.Name, "E2607");
+                }
+                else
+                {
+                    _diagnostics.Report(syntax.Name, "E2005", target.Name, name);
+                }
+
                 return Error(syntax, receiver);
             }
 

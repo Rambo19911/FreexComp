@@ -42,6 +42,7 @@ internal sealed partial class DeclarationBinder
         var properties = new List<(PropertyDeclarationSyntax Syntax, Visibility Visibility)>();
         var classVarSections = new List<(ClassVarSectionSyntax Syntax, Visibility Visibility)>();
         var nested = ImmutableArray.CreateBuilder<Symbol>();
+        var nestedAliases = ImmutableArray.CreateBuilder<(string Name, TypeSymbol Target)>();
         var failed = false;
         foreach (var (member, visibility) in Members(syntax.Members, Visibility.Public))
         {
@@ -70,7 +71,7 @@ internal sealed partial class DeclarationBinder
                     properties.Add((property, visibility));
                     break;
                 case ConstSectionSyntax or TypeSectionSyntax:
-                    nested.AddRange(inner.BindNestedSection(member));                   // LANG-770
+                    nested.AddRange(inner.BindNestedSection(member, nestedAliases));    // LANG-770
                     break;
                 default:
                     Unsupported(member, "record " + FeatureName(member.Kind));
@@ -112,6 +113,7 @@ internal sealed partial class DeclarationBinder
             names[field.Name] = field;
         }
         record.NestedMembers = nested.ToImmutable();
+        record.NestedAliases = nestedAliases.ToImmutable();
 
         var classVariables = ImmutableArray.CreateBuilder<VariableSymbol>();
         foreach (var (section, visibility) in classVarSections)
@@ -189,7 +191,7 @@ internal sealed partial class DeclarationBinder
     }
 
     /// <summary>A nested <c>const</c> or <c>type</c> section of a class or record (LANG-770): its symbols, in this member scope.</summary>
-    private ImmutableArray<Symbol> BindNestedSection(SyntaxNode section)
+    private ImmutableArray<Symbol> BindNestedSection(SyntaxNode section, ImmutableArray<(string Name, TypeSymbol Target)>.Builder aliases)
     {
         var declared = ImmutableArray.CreateBuilder<Symbol>();
         switch (section)
@@ -202,6 +204,25 @@ internal sealed partial class DeclarationBinder
                 break;
             case TypeSectionSyntax typeSection:
                 BindTypeSection(typeSection, declared);
+                foreach (var declaration in typeSection.Declarations)
+                {
+                    // C-311: `TA = TOther;` names an existing type — a nested alias, not a nested member called TOther
+                    if (declaration is not { Identifier.IsMissing: false, TypeKeyword: null, TypeParameterList: null, Type: NamedTypeSyntax or StringTypeSyntax { Length: null } }
+                        || _scope.LookupLocal(NameOf(declaration.Identifier)) is not TypeSymbol target || target.TypeKind == TypeKind.Error
+                        || aliases.Any(a => IdentifierComparer.Instance.Equals(a.Name, NameOf(declaration.Identifier))))
+                    {
+                        continue;
+                    }
+
+                    var index = declared.LastIndexOf(target);
+                    if (index >= 0)
+                    {
+                        declared.RemoveAt(index);
+                    }
+
+                    aliases.Add((NameOf(declaration.Identifier), target));
+                }
+
                 break;
         }
 
@@ -353,7 +374,7 @@ internal sealed partial class DeclarationBinder
     private DeclarationBinder NestedNamesBinder(TypeSymbol type)
     {
         var types = TypeMembers.EnclosingTypes(type).Reverse().Concat(TypeMembers.SelfAndAncestors(type).Reverse()).ToList();
-        if (types.All(t => TypeMembers.NestedMembers(t).IsEmpty))
+        if (types.All(t => TypeMembers.NestedMembers(t).IsEmpty && TypeMembers.NestedAliases(t).IsEmpty))
         {
             return this;
         }
@@ -365,6 +386,11 @@ internal sealed partial class DeclarationBinder
             foreach (var member in TypeMembers.NestedMembers(owner))
             {
                 scope.TryDeclare(member, out _);
+            }
+
+            foreach (var (name, target) in TypeMembers.NestedAliases(owner))
+            {
+                scope.TryDeclare(name, target, out _);                              // C-311
             }
         }
 
@@ -417,7 +443,7 @@ internal sealed partial class DeclarationBinder
                     return null;
                 }
 
-                if (TypeMembers.NestedMembers(outer).FirstOrDefault(m => IdentifierComparer.Instance.Equals(m.Name, NameOf(right))) is TypeSymbol inner)
+                if (TypeMembers.NestedType(outer, NameOf(right)) is { } inner)
                 {
                     return inner;
                 }

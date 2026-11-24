@@ -96,6 +96,9 @@ public sealed class ClassTypeSymbol : TypeSymbol
     /// <summary>Nested constants, types and enumeration elements of the class's <c>const</c>/<c>type</c> sections (LANG-770, C-122).</summary>
     public ImmutableArray<Symbol> NestedMembers { get; internal set; } = [];
 
+    /// <summary>Nested type aliases (<c>type TA = TOther;</c>, LANG-770, C-311): the alias name and the type it names.</summary>
+    internal ImmutableArray<(string Name, TypeSymbol Target)> NestedAliases { get; set; } = [];
+
     public override ImmutableArray<Symbol> Members => [.. Fields, .. ClassVariables, .. Methods, .. Properties, .. NestedMembers];
 
     public override TypeSymbol? BaseType => Parent;

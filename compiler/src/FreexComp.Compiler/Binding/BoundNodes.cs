@@ -34,6 +34,7 @@ internal enum BoundKind
     PropertyAccessExpression,
     TypeTestExpression,
     MethodPointerExpression,
+    InterfaceGuidExpression,
 
     // statements
     Block,
@@ -979,6 +980,23 @@ internal sealed class BoundClassReferenceExpression : BoundExpression
     public override BoundKind Kind => BoundKind.ClassReferenceExpression;
 
     public ClassTypeSymbol Class { get; }
+}
+
+/// <summary>
+/// LANG-680 (C-299): an interface type identifier where a <c>TGUID</c> is required — the GUID constant of <see cref="Interface"/>
+/// (CMP-373 <c>@"U.I.$guid"</c>), a read-only value of type <c>TGUID</c>.
+/// </summary>
+internal sealed class BoundInterfaceGuidExpression : BoundExpression
+{
+    public BoundInterfaceGuidExpression(SyntaxNode syntax, InterfaceTypeSymbol intf, TypeSymbol guidType)
+        : base(syntax, guidType, constantValue: null)
+    {
+        Interface = intf;
+    }
+
+    public override BoundKind Kind => BoundKind.InterfaceGuidExpression;
+
+    public InterfaceTypeSymbol Interface { get; }
 }
 
 /// <summary>

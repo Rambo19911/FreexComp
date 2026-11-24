@@ -605,6 +605,9 @@ public sealed class SemanticModel
             case BoundClassReferenceExpression classReference:
                 Reference(classReference.Syntax, classReference.Class);
                 break;
+            case BoundInterfaceGuidExpression guid:
+                Reference(guid.Syntax, guid.Interface);                              // LANG-680 (C-299)
+                break;
             case BoundMethodPointerExpression pointer:
                 Reference(pointer.Syntax, pointer.Method);
                 Walk(pointer.Self);

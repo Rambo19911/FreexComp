@@ -450,3 +450,5 @@ library L; procedure P; begin end; exports P index 2, P name 'q' index 2; end.
 library L; procedure P(S: string); begin end; exports P; end.
 === W1003 1,12
 library L; {$APPTYPE GUI} end.
+=== E2656 1,36
+type T = class constructor Create; safecall; end; constructor T.Create; begin end; begin end.

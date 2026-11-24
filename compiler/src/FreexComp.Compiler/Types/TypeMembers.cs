@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using FreexComp.Compiler.Symbols;
+using FreexComp.Compiler.Syntax;
 
 namespace FreexComp.Compiler.Types;
 
@@ -47,6 +48,26 @@ internal static class TypeMembers
         HelperTypeSymbol h => h.NestedMembers,
         _ => [],
     };
+
+    public static ImmutableArray<(string Name, TypeSymbol Target)> NestedAliases(TypeSymbol type) => type switch
+    {
+        ClassTypeSymbol c => c.NestedAliases,
+        RecordTypeSymbol r => r.NestedAliases,
+        HelperTypeSymbol h => h.NestedAliases,
+        _ => [],
+    };
+
+    /// <summary>The nested type <paramref name="name"/> of <paramref name="type"/>: declared there, or a nested alias (C-311).</summary>
+    public static TypeSymbol? NestedType(TypeSymbol type, string name)
+    {
+        if (NestedMembers(type).FirstOrDefault(m => IdentifierComparer.Instance.Equals(m.Name, name)) is { } member)
+        {
+            return member as TypeSymbol;
+        }
+
+        var alias = NestedAliases(type).FirstOrDefault(a => IdentifierComparer.Instance.Equals(a.Name, name));
+        return alias.Target;
+    }
 
     /// <summary>The class or record a nested type is declared in, innermost first (LANG-770).</summary>
     public static IEnumerable<TypeSymbol> EnclosingTypes(Symbol symbol)

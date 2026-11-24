@@ -1,0 +1,25 @@
+create
+  addref -> 1
+to pointer
+TRUE
+borrowed call
+  hello 1
+cast back, no store
+TRUE
+cast back, store
+  addref -> 2
+  hello 2
+same reference TRUE
+clear B
+  release -> 1
+nil pointer
+TRUE
+adopt an owned pointer
+  addref -> 2
+  addref -> 3
+  release -> 2
+leave
+  release -> 1
+  release -> 0
+  destroyed
+done

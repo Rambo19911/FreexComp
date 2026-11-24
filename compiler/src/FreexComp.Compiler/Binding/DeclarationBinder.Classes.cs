@@ -101,6 +101,7 @@ internal sealed partial class DeclarationBinder
         var properties = new List<(PropertyDeclarationSyntax Syntax, Visibility Visibility)>();
         var classVariables = ImmutableArray.CreateBuilder<VariableSymbol>();
         var nested = ImmutableArray.CreateBuilder<Symbol>();
+        var nestedAliases = ImmutableArray.CreateBuilder<(string Name, TypeSymbol Target)>();
         var genericMethods = ImmutableArray.CreateBuilder<GenericMethodSymbol>();
         var end = type.Parent?.InstanceSize ?? 8;                              // offset 0: the VMT pointer (ABI §7.1)
         foreach (var (member, visibility) in Members(syntax.Members, type.IsTypeInfo ? Visibility.Published : Visibility.Public))
@@ -151,7 +152,7 @@ internal sealed partial class DeclarationBinder
                     resolutions.Add(resolution);                                // LANG-661, bound with the listed interfaces
                     break;
                 case ConstSectionSyntax or TypeSectionSyntax:
-                    nested.AddRange(BindNestedSection(member));                 // LANG-770 (C-122)
+                    nested.AddRange(BindNestedSection(member, nestedAliases));  // LANG-770 (C-122)
                     break;
                 default:
                     Unsupported(member, "class " + FeatureName(member.Kind));
@@ -162,6 +163,7 @@ internal sealed partial class DeclarationBinder
         type.Fields = fields.ToImmutable();
         type.ClassVariables = classVariables.ToImmutable();
         type.NestedMembers = nested.ToImmutable();
+        type.NestedAliases = nestedAliases.ToImmutable();
         type.Methods = methods.ToImmutable();
         type.GenericMethods = genericMethods.ToImmutable();
         type.VirtualSlots = AssignSlots(type);
@@ -415,6 +417,14 @@ internal sealed partial class DeclarationBinder
     private void BindMethodDirectives(MethodSymbol method, SyntaxList<DirectiveSyntax> directives, bool isClass)
     {
         method.CallingConvention = CallConvOf(directives.Select(d => d.Keyword));                          // CMP-1011
+        if (method.IsSafecall && (method.MethodKind is MethodKind.Constructor or MethodKind.Destructor || method.IsRecordConstructor || method.OperatorName is not null))
+        {
+            // LANG-685 (C-301)
+            _diagnostics.Report(directives.First(d => d.Keyword.ContextualKind == SyntaxKind.SafeCallKeyword).Keyword, "E2656",
+                method.OperatorName is not null ? "an operator" : method.MethodKind == MethodKind.Destructor ? "a destructor" : "a constructor");
+            method.CallingConvention = CallConvDirective.Default;
+        }
+
         foreach (var directive in directives)
         {
             switch (directive.Keyword.ContextualKind)
@@ -529,7 +539,7 @@ internal sealed partial class DeclarationBinder
 
     /// <summary>LANG-622: identical parameter modes and types and the same result type (kind included).</summary>
     private static bool SameSignature(MethodSymbol a, MethodSymbol b) =>
-        a.MethodKind == b.MethodKind && SameParameterTypes(a, b)
+        a.MethodKind == b.MethodKind && SameParameterTypes(a, b) && a.IsSafecall == b.IsSafecall        // LANG-689 (C-301)
         && (a.MethodKind == MethodKind.Constructor || ReferenceEquals(a.ReturnType, b.ReturnType));
 
     // ------------------------------------------------------------------ method implementations (LANG-620, C-081)
@@ -596,6 +606,11 @@ internal sealed partial class DeclarationBinder
             {
                 _diagnostics.Report(identifier, "E2101", name);
             }
+        }
+
+        if (method is not null && DisagreesOnSafecall(method, declaration))
+        {
+            _diagnostics.Report(identifier, "E2101", name);                         // LANG-689 (C-301)
         }
 
         if (method is null)

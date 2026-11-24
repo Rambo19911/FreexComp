@@ -194,6 +194,8 @@ public static class DiagnosticCatalog
         new("E2652", null, DiagnosticSeverity.Error, "Interface type required"),
         new("E2653", null, DiagnosticSeverity.Error, "Class '%s' does not implement interface '%s'"),
         new("E2654", null, DiagnosticSeverity.Error, "Fields are not allowed in interfaces"),
+        new("E2655", null, DiagnosticSeverity.Error, "Interface '%s' has no GUID"),
+        new("E2656", null, DiagnosticSeverity.Error, "'safecall' is not allowed on %s"),
         new("E2700", null, DiagnosticSeverity.Error, "Generic global procedures and functions are not supported; use a generic method"),
         new("E2701", null, DiagnosticSeverity.Error, "Conflicting constraints on type parameter '%s'"),
         new("E2702", null, DiagnosticSeverity.Error, "Type parameter '%s' cannot be used as an ancestor"),

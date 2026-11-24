@@ -32,7 +32,7 @@ E2218  elsewhere ExportThunkTests  reported when the library module is emitted: 
 E2604  reserved  lead decision 2026-11-14 (C-096): no case needs it; unrelated classes are E2641, invalid inherited is E2626
 W1011  Phase8  lead note 2026-11-14 (C-067): reserved for Phase 8, no rule defines it yet
 W1012  retired  lead note 2026-11-14 (C-067): LANG-280 rule 2 makes an out-of-range subrange constant E2012
-W1030  Phase8  LANG-462 accepts 'safecall' silently (C-160 ExternalDecl snapshot); no rule reports W1030 yet
+W1030  retired  F06-001 (C-301): 'safecall' is implemented (com-interfaces.md LANG-685); never reported
 W1050  elsewhere UnitBindingTests  a hint directive is reported outside its own unit (LANG-472, C-127)
 W1051  elsewhere UnitBindingTests  a hint directive is reported outside its own unit (LANG-472, C-127)
 W1052  elsewhere UnitBindingTests  a hint directive is reported outside its own unit (LANG-472, C-127)
@@ -42,3 +42,4 @@ W4003  reserved  lead decision 2026-11-15 (C-246): CMP-629 variant 3 only; C-167
 H1002  elsewhere EmitTests  the driver compares the program heading with the file name
 H2004  Phase3  language service only
 H2005  Phase8  off by default; no milestone implements it yet
+E2655  elsewhere GuidBindingTests  needs System.TGUID, which the stub System of the case snippets lacks (LANG-680, C-299)

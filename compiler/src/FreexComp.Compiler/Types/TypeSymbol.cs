@@ -376,6 +376,9 @@ public sealed class RecordTypeSymbol : TypeSymbol
     /// <summary>Nested constants, types and enumeration elements of the record's <c>const</c>/<c>type</c> sections (LANG-770).</summary>
     public ImmutableArray<Symbol> NestedMembers { get; internal set; } = [];
 
+    /// <summary>Nested type aliases (<c>type TA = TOther;</c>, LANG-770, C-311): the alias name and the type it names.</summary>
+    internal ImmutableArray<(string Name, TypeSymbol Target)> NestedAliases { get; set; } = [];
+
     public override ImmutableArray<Symbol> Members => [.. Fields, .. ClassVariables, .. Methods, .. Properties, .. NestedMembers];
 
     /// <summary><c>type TRec = record</c> (CMP-731; the size is the quick info's constant value).</summary>
@@ -721,10 +724,11 @@ internal static class Signatures
 {
     /// <summary>
     /// Same kind (procedure/function), parameter count, identical parameter types and modes, identical result type; names,
-    /// defaults and calling conventions do not matter.
+    /// defaults and the interchangeable calling conventions do not matter; <c>safecall</c> does (LANG-689).
     /// </summary>
     public static bool Compatible(RoutineSymbol a, RoutineSymbol b) =>
-        (a.ReturnType is null) == (b.ReturnType is null)
+        a.IsSafecall == b.IsSafecall                                            // LANG-689 (C-301)
+        && (a.ReturnType is null) == (b.ReturnType is null)
         && (a.ReturnType is null || Pointers.SameType(a.ReturnType, b.ReturnType!))
         && a.Parameters.Length == b.Parameters.Length
         && a.Parameters.Zip(b.Parameters).All(p => p.First.Mode == p.Second.Mode && Pointers.SameType(p.First.Type, p.Second.Type));

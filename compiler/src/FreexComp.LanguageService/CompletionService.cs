@@ -439,7 +439,7 @@ public static class CompletionService
                 return "0";
             }
 
-            var enclosingType = _enclosing is MethodSymbol method ? method.ContainingType : _enclosing as TypeSymbol;
+            var enclosingType = _enclosing is MethodSymbol method ? method.Owner : _enclosing as TypeSymbol;      // a class, record or interface
             if (enclosingType is not null && symbol.ContainingSymbol is TypeSymbol owner && (ReferenceEquals(owner, enclosingType) || enclosingType.InheritsFrom(owner)))
             {
                 return "1";

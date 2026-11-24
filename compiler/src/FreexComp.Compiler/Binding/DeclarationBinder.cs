@@ -1024,6 +1024,8 @@ internal sealed partial class DeclarationBinder
                 return BindArrayConstant(parenthesized, [parenthesized.Expression], type);
             case AddressOfExpressionSyntax addressOf:
                 return BindAddressConstant(addressOf, type);
+            case ExpressionSyntax expression when type is RecordTypeSymbol guidType && GuidValues.IsGuidType(type):
+                return BindGuidConstant(expression, guidType);                      // LANG-680, 681 (C-299)
             case ExpressionSyntax expression:
             {
                 // converted to the declared type (LANG-280), so the value carries that type
@@ -1041,6 +1043,49 @@ internal sealed partial class DeclarationBinder
             default:
                 return NotConstant(node);
         }
+    }
+
+    /// <summary>
+    /// The value of a typed <c>TGUID</c> constant or initialised variable written as an expression: an interface type identifier
+    /// (its GUID, LANG-680; E2655 without one) or a constant string in the format of LANG-660 (LANG-681; E2650 when malformed).
+    /// </summary>
+    private ConstantValue? BindGuidConstant(ExpressionSyntax expression, RecordTypeSymbol guidType)
+    {
+        ImmutableArray<byte>? bytes;
+        if (NestedNames.TypeNamedBy(_scope, expression) is InterfaceTypeSymbol { IsMethodReference: false } intf)
+        {
+            bytes = intf.Guid;
+            if (bytes is null)
+            {
+                _diagnostics.Report(expression, "E2655", intf.Name);
+                return null;
+            }
+        }
+        else if (_folder.Fold(expression) is not { } value)
+        {
+            return null;
+        }
+        else if (value.Value is string text)
+        {
+            bytes = GuidValues.Parse(text);
+            if (bytes is null)
+            {
+                _diagnostics.Report(expression, "E2650");
+                return null;
+            }
+        }
+        else
+        {
+            return _conversions.ConvertConstant(value, guidType, expression, _diagnostics);     // E2010
+        }
+
+        if (GuidValues.Constant(guidType, bytes.Value) is { } constant)
+        {
+            return constant;
+        }
+
+        _diagnostics.Report(expression, "E2010", "GUID", guidType.Name);
+        return null;
     }
 
     /// <summary>
@@ -1176,6 +1221,11 @@ internal sealed partial class DeclarationBinder
         var existing = (_sharedScope?.LookupRoutinesLocal(name) ?? []).AddRange(_scope.LookupRoutinesLocal(name));
         if (declaration.Block != null && FindDeclarationToDefine(heading, identifier, existing) is { } target)
         {
+            if (DisagreesOnSafecall(target, declaration))
+            {
+                _diagnostics.Report(identifier, "E2101", name);                 // LANG-689 (C-301)
+            }
+
             target.Definition = declaration;
             target.DefinitionScope = _scope;
             target.DefinitionScopeVisibleCount = _scope.Count;
@@ -1203,6 +1253,14 @@ internal sealed partial class DeclarationBinder
             ExplicitLinkName = directives.LinkName ?? (directives.IsExternal ? name : null),
             CallingConvention = CallConvOf(declaration.Directives.Select(d => d.Keyword)),
         };
+        if (routine.IsSafecall && (routine.IsNested || declaration.Directives.Any(d => d.Keyword.ContextualKind == SyntaxKind.VarArgsKeyword)))
+        {
+            // LANG-685 (C-301)
+            _diagnostics.Report(declaration.Directives.First(d => d.Keyword.ContextualKind == SyntaxKind.SafeCallKeyword).Keyword, "E2656",
+                routine.IsNested ? "a nested routine" : "a varargs routine");
+            routine.CallingConvention = CallConvDirective.Default;
+        }
+
         BindSignature(routine, heading, identifier, report: true);
         if (declaration.Block != null)
         {
@@ -1639,6 +1697,15 @@ internal sealed partial class DeclarationBinder
 
         return match;
     }
+
+    /// <summary>
+    /// LANG-689 (C-301): the heading of a definition writes a calling convention that disagrees with its declaration on
+    /// <c>safecall</c>. A definition without a convention directive takes the declaration's.
+    /// </summary>
+    private static bool DisagreesOnSafecall(RoutineSymbol declared, RoutineDeclarationSyntax definition) =>
+        !ReferenceEquals(declared.Declaration, definition)
+        && definition.Directives.Select(d => d.Keyword).Where(k => CallConvOf([k]) != CallConvDirective.Default).ToList() is { Count: > 0 } written
+        && (CallConvOf(written) == CallConvDirective.SafeCall) != declared.IsSafecall;
 
     /// <summary>LANG-440: both have defaults and the same parameters before their first defaulted one (a call could match both).</summary>
     private static bool SameRequiredParameters(RoutineSymbol a, RoutineSymbol b)

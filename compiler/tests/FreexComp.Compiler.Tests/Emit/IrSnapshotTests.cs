@@ -459,7 +459,10 @@ public sealed class IrSnapshotTests
         end.
         """;
 
-    /// <summary>LANG-462, 463, 470; CMP-430, 431, 433: imports, <c>external;</c>, <c>public name</c>, ignored calling conventions.</summary>
+    /// <summary>
+    /// LANG-462, 463, 470; CMP-430, 431, 433: imports, <c>external;</c>, <c>public name</c>, the interchangeable calling conventions
+    /// (<c>safecall</c> is a convention of its own since C-301: <see cref="SafecallSource"/>).
+    /// </summary>
     internal const string ExternalDeclSource = """
         unit M;
         interface
@@ -483,7 +486,7 @@ public sealed class IrSnapshotTests
         begin
           Result := Helper(x) + Renamed(x) + Impl(x);
         end;
-        function Run: Integer; safecall;
+        function Run: Integer; stdcall;
         begin
           Sleep(10);
           Result := Exported(Counter);
@@ -1598,6 +1601,109 @@ public sealed class IrSnapshotTests
     [Trait("Req", "ABI-095")]
     public void Thunk() => Snapshot.Verify("Thunk", Emit(ThunkSource));
 
+    /// <summary>
+    /// C-300 (CMP-1200, 1201; LANG-684, ABI-206): method-table entries of interface methods with an 8-byte and a 16-byte record
+    /// result take the hidden result pointer after the reference and return it; the 8-byte one stores the implementing method's
+    /// <c>i64</c>, the 16-byte one passes the pointer on. Interface call sites pass the destination and use <c>ptr (ptr, ptr, …)</c>.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1200")]
+    [Trait("Req", "CMP-1201")]
+    public void InterfaceAggregateResultThunk() => Snapshot.Verify("InterfaceAggregateResultThunk", Emit(InterfaceAggregateResultSource));
+
+    /// <summary>
+    /// C-301 (CMP-1202…1205; LANG-686…688): <c>safecall</c> routines are <c>i32 ([Self,] params [, ptr Ret])</c>; a call passes the
+    /// address of an emptied result temporary last, compares the <c>HResult</c> with 0 and calls <c>System._SafecallError</c> for a
+    /// negative one (an <c>invoke</c> inside a protected region); a body runs inside a catch-all handler that returns
+    /// <c>System._SafecallException(Self or nil)</c>, and moves <c>Result</c> into <c>Ret^</c> on the way out.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1202")]
+    [Trait("Req", "CMP-1203")]
+    [Trait("Req", "CMP-1204")]
+    [Trait("Req", "CMP-1205")]
+    public void SafecallCallAndBody() => Snapshot.Verify("SafecallCallAndBody", Emit(SafecallSource));
+
+    internal const string SafecallSource = """
+        unit M;
+        interface
+        type
+          IBar = interface
+            procedure Ping; safecall;
+            function GetValue: Integer; safecall;
+            function GetName(N: Integer): string; safecall;
+          end;
+          TFoo = class(IBar)
+            procedure Ping; safecall;
+            function GetValue: Integer; safecall;
+            function GetName(N: Integer): string; safecall;
+          end;
+        function Twice(N: Integer): Integer; safecall;
+        function Run(const Obj: IBar): Integer;
+        implementation
+        procedure TFoo.Ping; begin end;
+        function TFoo.GetValue: Integer; begin Result := 5 end;
+        function TFoo.GetName(N: Integer): string;
+        begin
+          if N = 0 then Exit('');
+          Result := 'n';
+        end;
+        function Twice(N: Integer): Integer; begin Result := N * 2 end;
+        function Run(const Obj: IBar): Integer;
+        var V: Integer; S: string;
+        begin
+          Obj.Ping;
+          V := Obj.GetValue;
+          S := Obj.GetName(V);
+          try
+            V := V + Obj.GetValue;
+          except
+            V := 0;
+          end;
+          Result := Twice(V);
+        end;
+        end.
+        """;
+
+    internal const string InterfaceAggregateResultSource = """
+        unit M;
+        interface
+        type
+          TSize8 = record W, H: Integer; end;
+          TRect16 = record L, T, R, B: Integer; end;
+          IBar = interface
+            function GetSize: TSize8;
+            function GetRect: TRect16;
+            function Scaled(Factor: Integer): TSize8;
+            function Count: Integer;
+          end;
+          TFoo = class(IBar)
+            function GetSize: TSize8;
+            function GetRect: TRect16; virtual;
+            function Scaled(Factor: Integer): TSize8;
+            function Count: Integer;
+          end;
+        function Run(const B: IBar; F: TFoo): Integer;
+        implementation
+        function TFoo.GetSize: TSize8; begin Result.W := 1; Result.H := 2 end;
+        function TFoo.GetRect: TRect16; begin Result.L := 1; Result.B := 4 end;
+        function TFoo.Scaled(Factor: Integer): TSize8; begin Result.W := Factor; Result.H := Factor end;
+        function TFoo.Count: Integer; begin Result := 3 end;
+        function Run(const B: IBar; F: TFoo): Integer;
+        var S: TSize8; R: TRect16;
+        begin
+          S := B.GetSize;
+          R := B.GetRect;
+          S := B.Scaled(2);
+          B.GetSize;
+          S := F.GetSize;
+          Result := S.W + R.B + B.Count;
+        end;
+        end.
+        """;
+
     [Fact]
     [Trait("Req", "CMP-372")]
     public void Thunk_SubtractsTheFieldOffsetAndTailCalls()
@@ -1846,6 +1952,8 @@ public sealed class IrSnapshotTests
         ["RttiStoredDefault"] = RttiStoredDefaultSource,
         ["RttiClass"] = RttiClassSource,
         ["Thunk"] = ThunkSource,
+        ["InterfaceAggregateResultThunk"] = InterfaceAggregateResultSource,
+        ["SafecallCallAndBody"] = SafecallSource,
         ["ThreadVar"] = ThreadVarSource,
         ["TryExcept"] = TryExceptSource,
         ["TryFinally"] = TryFinallySource,
