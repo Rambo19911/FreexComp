@@ -1,4 +1,6 @@
+using FreexComp.Debugger.Dap;
 using FreexComp.Debugger.Expressions;
+using FreexComp.Debugger.Session;
 using FreexComp.Debugger.Tests.TestSupport;
 using FreexComp.Debugger.Values.TypeInfo;
 
@@ -188,5 +190,80 @@ public sealed class EvaluatorTests
         Assert.Equal("Fin", Evaluator.FindVariable(frame, "Fin")?.Name);
         Assert.Equal("Total", Evaluator.FindVariable(frame, "Total")?.Name);
         Assert.Null(Evaluator.FindVariable(frame, "Tmp"));
+    }
+
+    private static DapStackFrame StackFrame(int id, string name, int line) =>
+        new() { Id = id, Name = name, Line = line, Column = 1, Source = line > 0 ? new DapSource { Name = "InlineScope.pas", Path = File } : null };
+
+    /// <summary>
+    /// The frame of the routine of a finally part is looked for on the page of the stack first, then among the frames
+    /// after it, asked for a group at a time until it is found or the stack ends. While an exception unwinds the
+    /// stack, frames of the run-time's unwinding (without source) lie in between.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "DBG-134")]
+    public async Task OutlinedFinallyPart_OwnerBeyondPage_FetchesMoreFrames()
+    {
+        var pdi = Pdi();
+        var run = pdi.Units[0].Routines.Single(r => r.DisplayName == "Run");
+        var part = StackFrame(1, "Run::Run.$fin1", 21);
+        var unwinding = StackFrame(2, "RtlUnwindEx", 0);
+        var owner = StackFrame(3, "Run", 18);
+        var program = StackFrame(4, "InlineScope", 30);
+        var requests = new List<int>();
+
+        Func<int, Task<IReadOnlyList<DapStackFrame>>> Rest(params DapStackFrame[][] groups) => past =>
+        {
+            requests.Add(past);
+            var skipped = 0;
+            foreach (var group in groups)
+            {
+                if (skipped == past)
+                    return Task.FromResult<IReadOnlyList<DapStackFrame>>(group);
+                skipped += group.Length;
+            }
+
+            return Task.FromResult<IReadOnlyList<DapStackFrame>>([]);
+        };
+
+        Task<IReadOnlyList<DapStackFrame>> Never(int past) => throw new InvalidOperationException("No frames were to be asked for.");
+
+        // On the page: nothing is asked for; the nearest frame of the routine holds the variables.
+        Assert.Equal((run, 3), await FrameRoutines.VariablesOfAsync(pdi, [part, unwinding, owner, program], 0, Never));
+        Assert.Equal((run, 3), await FrameRoutines.VariablesOfAsync(pdi, [part, owner, StackFrame(9, "Run", 18)], 0, Never));
+        // The part called by the part of a nested try statement: both see the routine's variables, in its frame.
+        Assert.Equal((run, 3), await FrameRoutines.VariablesOfAsync(pdi, [StackFrame(7, "Run::Run.$fin1::Run.$fin1.$fin2", 22), part, owner], 0, Never));
+
+        // Beyond the page: the first group after it, then the next one, each starting where the last ended.
+        Assert.Equal((run, 3), await FrameRoutines.VariablesOfAsync(pdi, [part], 0, Rest([unwinding, owner], [program])));
+        Assert.Equal([0], requests);
+        requests.Clear();
+        Assert.Equal((run, 3), await FrameRoutines.VariablesOfAsync(pdi, [part, unwinding], 0, Rest([unwinding, unwinding], [unwinding], [owner, program])));
+        Assert.Equal([0, 2, 3], requests);
+
+        // No frame of the routine down to the end of the stack, or the page ends the stack: the part keeps its own
+        // routine, without variables, and its own frame.
+        requests.Clear();
+        var (routine, frameId) = await FrameRoutines.VariablesOfAsync(pdi, [part], 0, Rest([unwinding], [program]));
+        Assert.Equal(("Run.$fin1", 1), (routine?.DisplayName, frameId));
+        Assert.Equal([0, 1, 2], requests);
+        (routine, frameId) = await FrameRoutines.VariablesOfAsync(pdi, [part, program], 0, null);
+        Assert.Equal(("Run.$fin1", 1), (routine?.DisplayName, frameId));
+
+        // The search has an end on a stack that has none.
+        requests.Clear();
+        (routine, frameId) = await FrameRoutines.VariablesOfAsync(pdi, [part], 0, past =>
+        {
+            requests.Add(past);
+            return Task.FromResult<IReadOnlyList<DapStackFrame>>([.. Enumerable.Repeat(unwinding, FrameRoutines.FetchCount)]);
+        });
+        Assert.Equal(("Run.$fin1", 1), (routine?.DisplayName, frameId));
+        Assert.Equal(FrameRoutines.FetchLimit / FrameRoutines.FetchCount, requests.Count);
+
+        // Every other frame is its own: the routine itself, a frame without source, a frame without type information.
+        Assert.Equal((run, 3), await FrameRoutines.VariablesOfAsync(pdi, [part, unwinding, owner], 2, Never));
+        Assert.Equal((null, 2), await FrameRoutines.VariablesOfAsync(pdi, [part, unwinding, owner], 1, Never));
+        Assert.Equal((null, 1), await FrameRoutines.VariablesOfAsync(null, [part, owner], 0, Never));
     }
 }

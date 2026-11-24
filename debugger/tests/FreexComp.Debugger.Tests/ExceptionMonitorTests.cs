@@ -24,9 +24,10 @@ public sealed class ExceptionMonitorTests
 
     /// <summary>
     /// Type information of a program with <c>EFirst</c> and <c>ESecond</c> (both descend from <c>Exception</c>, whose
-    /// message field is <c>FMessage</c>); <paramref name="describeHook"/> decides whether the raise routine is listed.
+    /// message field is <c>FMessage</c>); <paramref name="describeHook"/> decides whether the raise routine is listed,
+    /// <paramref name="hookHasFinallyPart"/> whether it has a finally part on lines 2990 … 2993 (a subprogram of its own).
     /// </summary>
-    private static string Pdi(bool describeHook = true) => $$"""
+    private static string Pdi(bool describeHook = true, bool hookHasFinallyPart = false) => $$"""
         { "formatVersion": 1, "program": "Raises", "container": "codeview", "abi": {{PdiFixture.Abi}},
           "types": [
             { "id": 1, "name": "TObject", "unit": "System", "kind": "class", "size": 8, "ancestor": null, "instanceSize": 8, "fields": [] },
@@ -48,6 +49,9 @@ public sealed class ExceptionMonitorTests
                 { "displayName": "_Raise", "linkageName": "System._Raise", "file": "C:\\rtl\\System.pas",
                   "line": 2982, "bodyLine": 2986, "endLine": 2997, "self": null,
                   "vars": [ { "name": "Obj", "kind": "param", "type": 6 }, { "name": "Addr", "kind": "param", "type": 6 } ] }
+                """ : "")}}{{(hookHasFinallyPart ? """
+                , { "displayName": "_Raise.$fin1", "linkageName": "System._Raise.$fin1", "parent": "System._Raise", "file": "C:\\rtl\\System.pas",
+                  "line": 2990, "bodyLine": 2990, "endLine": 2993, "self": null, "vars": [] }
                 """ : "")}} ] } ] }
         """;
 
@@ -141,9 +145,9 @@ public sealed class ExceptionMonitorTests
     {
         private readonly string _pdiPath;
 
-        public Bed(string scenario, bool describeHook, Func<DebugSessionOptions, DebugSessionOptions>? configure)
+        public Bed(string scenario, bool describeHook, Func<DebugSessionOptions, DebugSessionOptions>? configure, bool hookHasFinallyPart)
         {
-            _pdiPath = PdiFixture.WriteTemp("Raises.pdi", Pdi(describeHook));
+            _pdiPath = PdiFixture.WriteTemp("Raises.pdi", Pdi(describeHook, hookHasFinallyPart));
             Harness = SessionHarness.Create(scenario, configure: configure);
         }
 
@@ -171,8 +175,9 @@ public sealed class ExceptionMonitorTests
         }
     }
 
-    private static Bed Create(string scenario, bool describeHook = true, Func<DebugSessionOptions, DebugSessionOptions>? configure = null) =>
-        new(scenario, describeHook, configure);
+    private static Bed Create(string scenario, bool describeHook = true, Func<DebugSessionOptions, DebugSessionOptions>? configure = null,
+        bool hookHasFinallyPart = false) =>
+        new(scenario, describeHook, configure, hookHasFinallyPart);
 
     private static async Task EndAsync(Bed bed)
     {
@@ -602,6 +607,38 @@ public sealed class ExceptionMonitorTests
         await bed.Session.ContinueAsync(Ct).WaitAsync(Safety, Ct);
         Assert.Equal("terminated Exited -531611309 null", await bed.Harness.WaitForEventAsync("terminated"));
         bed.Harness.AssertScenarioComplete();
+    }
+
+    [Fact]
+    [Trait("Req", "DBG-134")]
+    [Trait("Req", "DBG-246")]
+    public async Task ExceptionInFinallyPart_LocationNamesThePart()
+    {
+        // The raise routine with a finally part: the lines of the part belong to the part's subprogram and to the
+        // routine itself where it calls the part. The adapter's frame names tell them apart: the frame in the part is
+        // not the raise routine's frame, the one below it (on the line of "finally", named without the unit) is - the
+        // object is read there, and the stop is where the routine was called.
+        var stack = Stack(
+            Frame(98, "KernelBase.dll`RaiseException", null, 0, "0x7FFBE9FD569A"),
+            Frame(99, "_Raise::_Raise.$fin1", SystemUnit, 2991),
+            Frame(100, "_Raise", SystemUnit, 2990),
+            GoFrame12,
+            MainFrame);
+        await using var bed = Create(
+            Scenario(StoppedFirst(OsStop("Exception 0xe0504153 encountered at address 0x7ffbe9fd569a")), Threads, stack, AddressOfObj(ObjSlot1), stack),
+            hookHasFinallyPart: true);
+
+        await bed.LaunchAsync(new ExceptionSettings { BreakOnLanguageExceptions = false });
+
+        Assert.Equal(
+            $"stopped Exception epoch=1 thread=1 loc={Raises}:12:3 hits=[] desc=Exception EFirst: first",
+            await bed.Harness.WaitForEventAsync("stopped"));
+        Assert.Equal(new ExceptionInfo(ExceptionKind.Language, "EFirst", "first", 0, First), bed.Session.CurrentStop!.Exception);
+
+        // The call stack names the part and the routine.
+        var frames = (await bed.Session.GetStackTraceAsync(1, ct: Ct).WaitAsync(Safety, Ct)).Frames;
+        Assert.Equal(["KernelBase.dll`RaiseException", "_Raise.$fin1", "_Raise", "Go", "Raises"], frames.Select(f => f.Name));
+        await EndAsync(bed);
     }
 
     [Fact]

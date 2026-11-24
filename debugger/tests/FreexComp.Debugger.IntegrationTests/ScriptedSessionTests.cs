@@ -726,6 +726,77 @@ public sealed class ScriptedSessionTests(IntegrationFixture fixture)
         });
     }
 
+    /// <summary>
+    /// A finally part that runs while an exception unwinds the stack (FinallyUnwind.pas): the part's subprogram is
+    /// then called from the routine's clean-up code, itself called by the run-time's unwinding. A stop inside the
+    /// part still sees the routine's variables, the one declared in the part included - also when the stack is asked
+    /// for one frame at a time, so that no frame of the routine is on the page.
+    /// </summary>
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [Trait("Phase", "8")]
+    [Trait("Req", "DBG-134")]
+    public async Task Phase8_FinallyDuringUnwind_SeesRoutineVariables(int maxFrames)
+    {
+        const int RaiseLine = 8, PartLine = 21;
+        var program = fixture.Build("FinallyUnwind");
+        var p = program.SourcePath;
+        var recorder = new SessionRecorder(nameof(Phase8_FinallyDuringUnwind_SeesRoutineVariables) + "-" + maxFrames);
+        await recorder.RunAsync(fixture, program, async session =>
+        {
+            await session.LaunchAsync(
+                new LaunchRequest
+                {
+                    Program = program.ExePath,
+                    Breakpoints = [new SourceBreakpoints(p, [new BreakpointSpec { Id = 1, Line = PartLine }])],
+                },
+                Ct);
+            var stop = await recorder.WaitForStopAsync();
+            AssertStop(session, stop, StopReason.Exception, p, RaiseLine);
+            Assert.Equal("Exception", stop.Exception?.ClassName);
+            Assert.Equal("fail 4", stop.Exception?.Message);
+
+            await session.ContinueAsync(Ct);
+            stop = await recorder.WaitForStopAsync();
+            AssertStop(session, stop, StopReason.Breakpoint, p, PartLine, [1]);
+
+            // Without a frame: the top frame of the stop.
+            Assert.Equal("40", (await session.EvaluateAsync("Fin", null, EvaluateContext.Hover, Ct)).Value.Value);
+            Assert.Equal("47", (await session.EvaluateAsync("Fin + Total + N", null, EvaluateContext.Watch, Ct)).Value.Value);
+
+            var frames = (await session.GetStackTraceAsync(stop.ThreadId, maxFrames: maxFrames, ct: Ct)).Frames;
+            Assert.Equal("Run.$fin1", frames[0].Name);
+            if (maxFrames == 0)
+            {
+                // The part is called by the routine's clean-up code (a frame of the routine, on the line of
+                // "finally"); below it the frames of the unwinding, the raise, and the routine where it called Fail.
+                var user = frames.Where(f => f.IsUserCode).Select(Frame).ToList();
+                Assert.Equal(["Run.$fin1:21", "Run:19", "Fail:8", "Run:18", "FinallyUnwind:28"], user);
+                Assert.True(frames.Count > user.Count, string.Join(", ", frames.Select(Frame)));
+                // The routine's variables are the same in both of its frames.
+                foreach (var frame in frames.Where(f => f.Name == "Run"))
+                    Assert.Equal("7", (await session.EvaluateAsync("Total + N", frame.Id, EvaluateContext.Watch, Ct)).Value.Value);
+            }
+            else
+            {
+                Assert.Single(frames);
+            }
+
+            var scopes = await session.GetScopesAsync(frames[0].Id, Ct);
+            Assert.Equal(["N = 3 : Integer"], (await session.GetChildrenAsync(scopes[0].Handle, ct: Ct)).Select(Row));
+            Assert.Equal(["Total = 4 : Integer", "Fin = 40 : Integer"], (await session.GetChildrenAsync(scopes[1].Handle, ct: Ct)).Select(Row));
+            Assert.Equal("40", (await session.EvaluateAsync("Fin", frames[0].Id, EvaluateContext.Watch, Ct)).Value.Value);
+
+            await session.ContinueAsync(Ct);
+            var terminated = await recorder.WaitForTerminatedAsync();
+            Assert.Equal(TerminationCause.Exited, terminated.Cause);
+            Assert.Equal(0, terminated.ExitCode);
+            Assert.Equal("40\nfail 4\n", recorder.StdoutSoFar);
+            Assert.Equal(2, recorder.Events.Count(e => e.StartsWith("Stopped(", StringComparison.Ordinal)));
+        });
+    }
+
     private static bool PathIsUnder(string path, string root) =>
         Path.GetFullPath(path).StartsWith(Path.TrimEndingDirectorySeparator(Path.GetFullPath(root)) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
 }

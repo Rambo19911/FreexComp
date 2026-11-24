@@ -50,30 +50,23 @@ internal sealed partial class DebugSession
         new(frame.VariablesAdapterId, frame.Routine, frame.Location?.Line ?? 0);
 
     /// <summary>
-    /// The entry of frame <paramref name="index"/> of a stack as the adapter returned it. The code of a finally part
-    /// is a subprogram of its own that the routine calls: a frame in it sees the variables of the routine (those
-    /// declared in the part are listed there, by line), which are in the nearest frame of that routine further down.
-    /// When that frame is not among <paramref name="stack"/>, the frame is left with its own (empty) routine.
+    /// The entry of frame <paramref name="index"/> of a page of the stack of <paramref name="threadId"/> that starts
+    /// at frame <paramref name="pageStart"/> and was asked for with <paramref name="levels"/> frames
+    /// (<see cref="FrameRoutines.VariablesOfAsync"/>; a page shorter than asked for ends the stack).
     /// </summary>
-    private FrameEntry EntryOf(IReadOnlyList<DapStackFrame> stack, int index)
+    private async Task<FrameEntry> EntryOfAsync(int threadId, IReadOnlyList<DapStackFrame> page, int index, int pageStart, int levels, CancellationToken ct)
     {
-        var location = LocationOf(stack[index]);
-        var routine = RoutineOf(stack[index], location);
-        if (routine is not null && _typeInfo!.VariableOwner(routine) is var owner && !ReferenceEquals(owner, routine))
-        {
-            for (var below = index + 1; below < stack.Count; below++)
-            {
-                if (ReferenceEquals(RoutineOf(stack[below], LocationOf(stack[below])), owner))
-                    return new FrameEntry(stack[index].Id, location, owner, stack[below].Id);
-            }
-        }
-
-        return new FrameEntry(stack[index].Id, location, routine, stack[index].Id);
+        var (routine, variablesFrameId) = await FrameRoutines.VariablesOfAsync(
+            _typeInfo,
+            page,
+            index,
+            page.Count < levels
+                ? null
+                : async past => DapJson.Deserialize<StackTraceResponseBody>(await RequestAsync(
+                    "stackTrace", new StackTraceArguments(threadId, pageStart + page.Count + past, FrameRoutines.FetchCount), ct).ConfigureAwait(false)).StackFrames)
+            .ConfigureAwait(false);
+        return new FrameEntry(page[index].Id, FrameRoutines.LocationOf(page[index]), routine, variablesFrameId);
     }
-
-    /// <summary>DBG-134, with the adapter's name of the frame deciding on the lines of an outlined finally part.</summary>
-    private PdiRoutine? RoutineOf(DapStackFrame frame, SourceLocation? location) =>
-        location is null ? null : _typeInfo?.FindRoutine(location.Path, location.Line, frame.Name);
 
     /// <summary>The frame of an inspection call: one of our frame ids of this stop, or (null) the top frame of the stopping thread.</summary>
     private FrameContext ContextOf(int? frameId) =>

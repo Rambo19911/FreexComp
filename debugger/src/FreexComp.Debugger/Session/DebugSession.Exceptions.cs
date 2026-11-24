@@ -79,13 +79,15 @@ internal sealed partial class DebugSession
         _hookArmed && body.HitBreakpointIds is { } hit && hit.Any(_raiseHookBreakpointIds.Contains);
 
     /// <summary>The frame is in the raise routine: by the adapter's name for it, or by its place in the type information.</summary>
-    private bool IsHookFrame(DapStackFrame raw, StackFrameInfo frame) =>
-        _hookSymbols.Contains(raw.Name, StringComparer.OrdinalIgnoreCase) || HookRoutineAt(frame.Location) is not null;
+    private bool IsHookFrame(DapStackFrame raw) =>
+        _hookSymbols.Contains(raw.Name, StringComparer.OrdinalIgnoreCase) || HookRoutineOf(raw) is not null;
 
-    /// <summary>The raise routine the location is in, from the type information; null when it is in none.</summary>
-    private PdiRoutine? HookRoutineAt(SourceLocation? location) =>
-        location is not null && _typeInfo?.FindRoutine(location.Path, location.Line) is { } routine
-        && _hookSymbols.Contains(routine.LinkageName, StringComparer.Ordinal)
+    /// <summary>
+    /// The raise routine the frame runs, from the type information (DBG-134: on the lines of an outlined finally part
+    /// the adapter's name of the frame decides between the part and its routine); null when it runs another routine.
+    /// </summary>
+    private PdiRoutine? HookRoutineOf(DapStackFrame raw) =>
+        FrameRoutines.RoutineOf(_typeInfo, raw) is { } routine && _hookSymbols.Contains(routine.LinkageName, StringComparer.Ordinal)
             ? routine
             : null;
 
@@ -95,10 +97,11 @@ internal sealed partial class DebugSession
     /// <paramref name="registers"/> (the frame is frame 0, stopped at the routine's start): the first argument
     /// register. Neither works: empty class name and message.
     /// </summary>
-    private async Task<RaisedException> ReadExceptionAsync(int adapterFrameId, SourceLocation? location, bool registers)
+    private async Task<RaisedException> ReadExceptionAsync(DapStackFrame frame, bool registers)
     {
+        var adapterFrameId = frame.Id;
         // The routine of the frame; for a frame the adapter gives no source for, any module's (they are alike).
-        var hook = HookRoutineAt(location)
+        var hook = HookRoutineOf(frame)
             ?? _typeInfo?.Units.SelectMany(unit => unit.Routines).FirstOrDefault(routine => _hookSymbols.Contains(routine.LinkageName, StringComparer.Ordinal));
         ulong? instance = null;
         if (_typeInfo is { } pdi
