@@ -225,8 +225,10 @@ More topics:
 - [ ] Full feature set (in progress)
     - [x] Build configurations with inheritance
     - [x] DLL projects
-    - [ ] COM and Automation
-    - [ ] Inline variables with block scope
+    - [x] COM-compatible interfaces and calling conventions
+    - [ ] COM servers and Automation
+    - [x] Inline variables with block scope
+    - [x] Runtime library source included, Step Into library code
     - [ ] Windows x86 target
 - [ ] First public release with installer
 
