@@ -116,7 +116,7 @@ public static class GoldenProgramRunner
         }
     }
 
-    private static void TryDelete(string directory)
+    internal static void TryDelete(string directory)
     {
         try
         {
@@ -128,14 +128,15 @@ public static class GoldenProgramRunner
         }
     }
 
-    private static string Normalize(string text) => text.Replace("\r\n", "\n", StringComparison.Ordinal);
+    internal static string Normalize(string text) => text.Replace("\r\n", "\n", StringComparison.Ordinal);
 
-    private static string Visible(string text) => text.Replace("\t", "\\t", StringComparison.Ordinal).Replace(" \n", "·\n", StringComparison.Ordinal).Replace("\n", "\\n\n", StringComparison.Ordinal);
+    internal static string Visible(string text) => text.Replace("\t", "\\t", StringComparison.Ordinal).Replace(" \n", "·\n", StringComparison.Ordinal).Replace("\n", "\\n\n", StringComparison.Ordinal);
 
-    private readonly record struct ProcessResult(int ExitCode, string StdOut, string StdErr, string? Stopped);
+    internal readonly record struct ProcessResult(int ExitCode, string StdOut, string StdErr, string? Stopped);
 
     /// <summary>Runs a process to its end, or stops its whole tree at <paramref name="limit"/> or on the test's cancellation.</summary>
-    private static async Task<ProcessResult> RunProcessAsync(string file, IReadOnlyList<string> arguments, string workingDirectory, TimeSpan limit, CancellationToken ct)
+    internal static async Task<ProcessResult> RunProcessAsync(string file, IReadOnlyList<string> arguments, string workingDirectory, TimeSpan limit, CancellationToken ct,
+        IReadOnlyDictionary<string, string>? environment = null)
     {
         var psi = new ProcessStartInfo(file)
         {
@@ -151,6 +152,11 @@ public static class GoldenProgramRunner
         foreach (var argument in arguments)
         {
             psi.ArgumentList.Add(argument);
+        }
+
+        foreach (var (name, value) in environment ?? new Dictionary<string, string>())
+        {
+            psi.Environment[name] = value;
         }
 
         using var stop = CancellationTokenSource.CreateLinkedTokenSource(ct);

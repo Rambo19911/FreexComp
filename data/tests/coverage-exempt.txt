@@ -25,19 +25,5 @@ DAT-337 | design-time | A-067 columns collection editor (ide)
 DAT-338 | design-time | A-067 uses clause and field declaration (ide)
 DAT-339 | design-time | A-067 grid and navigator design renderers (ide)
 
-# CRUD sample
-DAT-360 | crud-sample | A-068 command line
-DAT-361 | crud-sample | A-068 opening and closing in the form events
-DAT-362 | crud-sample | A-068 library beside the executable
-DAT-365 | crud-sample | A-068 OnNewRecord handler
-DAT-366 | crud-sample | A-068 BeforePost handler
-DAT-367 | crud-sample | A-068 status label
-DAT-368 | crud-sample | A-069 automated-test switches
-DAT-370 | crud-sample | A-069 script scheduling
-DAT-371 | crud-sample | A-069 simulated input
-DAT-372 | crud-sample | A-069 step results
-DAT-373 | crud-sample | A-069 database dump
-DAT-374 | crud-sample | A-069 result file
-
 # testing rules
 DAT-403 | informative | constrains where test programs keep their files; the runner gives each a fresh directory (DAT-401)

@@ -3581,7 +3581,14 @@ begin
   if HadRow then
     Index := ViewIndexOfRowId(RowId);
   if Index >= 0 then
-    FCursor := Index
+  begin
+    FCursor := Index;
+    { the row stays; a flag it carried does not survive rows appearing before or after it }
+    if Index > 0 then
+      FBof := False;
+    if Index < N - 1 then
+      FEof := False;
+  end
   else
   begin
     if N = 0 then

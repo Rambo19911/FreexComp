@@ -170,6 +170,11 @@ ok the view is empty
 ok fields read null
 ok the empty filter shows all rows
 ok from an empty view: first row
+ok the first row of a narrower view
+ok kept, no longer the first row: Bof is cleared
+ok at the end of a narrower view
+ok kept, no longer the last row: Eof is cleared
+ok kept and still the first row: Bof stays
 == view rebuild: browse mode first
 ok a modified record is posted first
 ok the posted value is filtered

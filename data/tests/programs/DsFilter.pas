@@ -379,6 +379,22 @@ begin
   DS.Filter := '';
   CheckEq(DS.ViewRowIds, '1,2,3,4,5', 'the empty filter shows all rows');
   CheckEq(IntToStr(DS.RecNo) + ' ' + Flags(DS), '1 Bof', 'from an empty view: first row');
+  { a row that stays the current row but is no longer the first or the last row of the view loses the flag }
+  DS.Filter := 'id >= 3';
+  CheckEq(IntToStr(DS.RecNo) + ' ' + Flags(DS), '1 Bof', 'the first row of a narrower view');
+  DS.Filtered := False;
+  CheckEq(IntToStr(DS.RecNo) + ' ' + Flags(DS), '3 -', 'kept, no longer the first row: Bof is cleared');
+  DS.Filter := 'id <= 3';
+  DS.Filtered := True;
+  DS.Next;
+  CheckEq(IntToStr(DS.RecNo) + ' ' + Flags(DS), '3 Eof', 'at the end of a narrower view');
+  DS.Filtered := False;
+  CheckEq(IntToStr(DS.RecNo) + ' ' + Flags(DS), '3 -', 'kept, no longer the last row: Eof is cleared');
+  DS.First;
+  DS.Filter := 'id <= 3';
+  DS.Filtered := True;
+  CheckEq(IntToStr(DS.RecNo) + ' ' + Flags(DS), '1 Bof', 'kept and still the first row: Bof stays');
+  DS.Filter := '';
 
   Section('view rebuild: browse mode first');
   DS.RecNo := 2;

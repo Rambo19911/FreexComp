@@ -1,0 +1,18 @@
+{
+  "formatVersion": 1,
+  "name": "Crud",
+  "language": "pascal",
+  "appType": "gui",
+  "mainSource": "Crud.pas",
+  "files": [
+    { "path": "MainForm.pas", "form": "MainForm.form" },
+    { "path": "AutoTest.pas" }
+  ],
+  "searchPaths": ["../../src", "../../../ui-framework/src"],
+  "platforms": ["win64"],
+  "configurations": {
+    "Debug": { "optimization": 0, "debugInfo": true, "defines": ["DEBUG"], "outputDir": "bin/Debug" },
+    "Release": { "optimization": 2, "debugInfo": false, "defines": ["RELEASE"], "outputDir": "bin/Release" }
+  },
+  "activeConfiguration": "Debug"
+}

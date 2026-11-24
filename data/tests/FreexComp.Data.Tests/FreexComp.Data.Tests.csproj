@@ -7,5 +7,9 @@
     <ProjectReference Include="..\..\..\compiler\src\opc\opc.csproj" />
     <!-- MetadataMatchesSource parses the data units with the compiler API -->
     <ProjectReference Include="..\..\..\compiler\src\FreexComp.Compiler\FreexComp.Compiler.csproj" />
+    <!-- pbuild.exe is copied next to the test assembly; CrudSampleTests builds the sample project with it (crud-sample.md §4) -->
+    <ProjectReference Include="..\..\..\compiler\src\pbuild\pbuild.csproj" />
+    <!-- Crud_Form_RoundTrips parses and writes the sample form with the form library of the designer -->
+    <ProjectReference Include="..\..\..\ide\src\FreexComp.Designer\FreexComp.Designer.csproj" />
   </ItemGroup>
 </Project>

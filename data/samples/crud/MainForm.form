@@ -1,0 +1,135 @@
+object MainForm: TMainForm
+  Left = 200
+  Top = 120
+  Caption = 'Contacts'
+  ClientWidth = 640
+  ClientHeight = 420
+  PixelsPerInch = 96
+  OnCreate = FormCreate
+  OnDestroy = FormDestroy
+  object Connection: TSQLiteConnection
+    DesignLeft = 16
+    DesignTop = 368
+  end
+  object ContactsTable: TSQLiteTable
+    Connection = Connection
+    TableName = 'contacts'
+    IndexFieldNames = 'id'
+    DesignLeft = 56
+    DesignTop = 368
+    AfterDelete = ContactsTableChanged
+    AfterPost = ContactsTableChanged
+    AfterScroll = ContactsTableAfterScroll
+    BeforePost = ContactsTableBeforePost
+    OnNewRecord = ContactsTableNewRecord
+  end
+  object ContactsSource: TDataSource
+    DataSet = ContactsTable
+    DesignLeft = 96
+    DesignTop = 368
+  end
+  object Navigator: TDBNavigator
+    Left = 8
+    Top = 8
+    Width = 240
+    Height = 25
+    DataSource = ContactsSource
+  end
+  object Grid: TDBGrid
+    Left = 8
+    Top = 40
+    Width = 624
+    Height = 200
+    DataSource = ContactsSource
+    TabOrder = 0
+  end
+  object IdCaption: TLabel
+    Left = 8
+    Top = 252
+    Width = 64
+    Height = 17
+    Caption = 'Id'
+  end
+  object IdText: TDBText
+    Left = 80
+    Top = 252
+    Width = 100
+    Height = 17
+    DataSource = ContactsSource
+    DataField = 'id'
+  end
+  object NameCaption: TLabel
+    Left = 8
+    Top = 279
+    Width = 64
+    Height = 17
+    Caption = '&Name'
+    FocusControl = NameEdit
+  end
+  object NameEdit: TDBEdit
+    Left = 80
+    Top = 276
+    Width = 240
+    Height = 23
+    DataSource = ContactsSource
+    DataField = 'name'
+    TabOrder = 1
+  end
+  object EmailCaption: TLabel
+    Left = 8
+    Top = 308
+    Width = 64
+    Height = 17
+    Caption = '&E-mail'
+  end
+  object EmailEdit: TDBEdit
+    Left = 80
+    Top = 305
+    Width = 240
+    Height = 23
+    DataSource = ContactsSource
+    DataField = 'email'
+    TabOrder = 2
+  end
+  object AgeCaption: TLabel
+    Left = 8
+    Top = 337
+    Width = 64
+    Height = 17
+    Caption = '&Age'
+  end
+  object AgeEdit: TDBEdit
+    Left = 80
+    Top = 334
+    Width = 60
+    Height = 23
+    DataSource = ContactsSource
+    DataField = 'age'
+    TabOrder = 3
+  end
+  object ActiveCheck: TDBCheckBox
+    Left = 80
+    Top = 364
+    Width = 97
+    Height = 17
+    DataSource = ContactsSource
+    DataField = 'active'
+    Caption = 'A&ctive'
+    TabOrder = 4
+  end
+  object NotesMemo: TDBMemo
+    Left = 336
+    Top = 276
+    Width = 296
+    Height = 105
+    DataSource = ContactsSource
+    DataField = 'notes'
+    TabOrder = 5
+  end
+  object StatusLabel: TLabel
+    Left = 8
+    Top = 396
+    Width = 624
+    Height = 17
+  end
+end

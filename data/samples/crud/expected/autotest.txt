@@ -1,0 +1,19 @@
+PASS S01 initial state
+PASS S02 insert enters dsInsert
+PASS S03 post first record
+PASS S04 post second record
+PASS S05 post third record
+PASS S06 refresh orders by id
+PASS S07 auto-edit and auto-post on scroll
+PASS S08 application validation
+PASS S09 database constraint
+PASS S10 delete
+PASS S11 cancel insert
+PASS S12 autoincrement not reused
+PASS S13 transaction rollback
+PASS S14 locate and filter
+PASS S15 grid follows dataset
+RESULT PASS
+DUMP 1|Ada Lovelace|ada@example.org|37|1|First
+DUMP 2|Bob Stone|NULL|41|0|NULL
+DUMP 4|Eve Moss|NULL|NULL|1|NULL

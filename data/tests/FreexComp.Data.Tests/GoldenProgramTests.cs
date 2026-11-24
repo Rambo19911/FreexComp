@@ -7,6 +7,7 @@ namespace FreexComp.Data.Tests;
 [Trait("Kind", "Golden")]
 [Trait("Category", "Toolchain")]
 [Trait("Category", "Integration")]
+[Collection(ProgramRuns.Name)]
 public sealed class GoldenProgramTests
 {
     public static IEnumerable<TheoryDataRow<string>> Programs() => DataCorpus.Rows();
