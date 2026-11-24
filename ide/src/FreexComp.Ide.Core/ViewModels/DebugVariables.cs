@@ -150,6 +150,8 @@ public abstract class VariableTreeViewModel : DebugGridViewModel
             return;
         }
 
+        // UI-TW-013: the empty state follows the debug state at once; the rows follow when the session has answered.
+        UpdateEmptyState();
         Pending = Debug.Track(LoadAsync(context, sameContext: false));
     }
 

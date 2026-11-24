@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
 using Avalonia.LogicalTree;
@@ -148,6 +149,49 @@ public sealed class DebugShellTests
         Assert.Equal(noSession, EmptyState(h, "CallStack"));
         Assert.Equal(noSession, EmptyState(h, "Threads"));
         Assert.Null(EmptyState(h, "Breakpoints"));
+    }
+
+    /// <summary>
+    /// I-224: the empty states of UI-TW-013 follow the debug state itself, not the answers the views wait for. The
+    /// adapter holds the views' call stack request here (it answers the session's and then waits for the gate), so
+    /// Locals has nothing to show yet — and still must not say "Available while the program is paused" about a paused
+    /// program.
+    /// </summary>
+    [AvaloniaFact(Timeout = TestDeadline.DebugTestTimeout)]
+    [Trait("Req", "UI-TW-013")]
+    public async Task PausedViewsLeaveTheEmptyStateBeforeTheirDataArrives()
+    {
+        await using var h = await DebugScenario.StartAsync();
+        var unit = DebugScenario.UnitPath(h);
+        var gateName = "FreexComp.Tests.I224." + Guid.NewGuid().ToString("N");
+        using var gate = new EventWaitHandle(false, EventResetMode.ManualReset, gateName);
+        h.DebugSessions.UseScenario($$"""
+            { "steps": [ { "on": "configurationDone", "respond": {}, "thenEvents": [ {{DebugScenarios.StoppedEvent()}} ] },
+                         {{DebugScenarios.Threads}},
+                         { "on": "stackTrace", "thenWaitForEvent": "{{gateName}}", "respond": { "totalFrames": 1, "stackFrames": [
+                             { "id": 100, "name": "Run", "line": 6, "column": 1, "source": { "name": "Unit1.pas", "path": {{JsonSerializer.Serialize(unit)}} } } ] } },
+                         {{DebugScenarios.Stack(unit, 6)}}, {{DebugScenarios.NoScopes}} ] }
+            """);
+
+        await h.ExecuteAsync("run.start");
+        await DebugScenario.WaitForStateAsync(h, IdeState.Paused);
+        await h.WaitForAsync(() => h.DebugSessions.SentRequests("stackTrace").Count >= 2, "the views' call stack request");
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(h.Services.Debug!.HasViewWork); // held by the adapter: the views have no data yet
+        Assert.Null(EmptyState(h, "CallStack"));
+        Assert.Null(EmptyState(h, "Locals"));
+        Assert.Null(EmptyState(h, "Threads"));
+
+        // The answers arrive: the rows follow, the empty states stay away.
+        gate.Set();
+        await DebugScenario.SettleAsync(h);
+        Assert.Null(EmptyState(h, "CallStack"));
+        Assert.Equal("Run", DebugScenario.Cell(h, "CallStack", "0", "Routine"));
+        Assert.Null(EmptyState(h, "Locals"));
+
+        await h.ExecuteAsync("run.stop");
+        Assert.Equal(IdeState.Idle, h.Services.State.Current.State);
+        Assert.Equal(Strings.Msg_Debug_NoSession + " / " + Strings.Msg_Debug_NoSession_Secondary, EmptyState(h, "Locals"));
     }
 
     /// <summary>menus.md §7 conditions and UI-TB-004 / UI-TB-005 / UI-TB-010 for the Debug toolbar, per IDE state.</summary>
