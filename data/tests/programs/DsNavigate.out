@@ -1,0 +1,109 @@
+== table: 0 rows
+ok RecordCount
+ok IsEmpty
+Open: recno=0 Bof+Eof (no events)
+Next: recno=0 Bof+Eof (scroll)
+Prior: recno=0 Bof+Eof (scroll)
+Last: recno=0 Bof+Eof (scroll)
+Prior: recno=0 Bof+Eof (scroll)
+Last: recno=0 Bof+Eof (scroll)
+Next: recno=0 Bof+Eof (scroll)
+First: recno=0 Bof+Eof (scroll)
+Next: recno=0 Bof+Eof (scroll)
+First: recno=0 Bof+Eof (scroll)
+Prior: recno=0 Bof+Eof (scroll)
+== table: 1 rows
+ok RecordCount
+ok IsEmpty
+Open: recno=1 Bof (no events)
+Next: recno=1 Bof+Eof (scroll)
+Next: recno=1 Bof+Eof (scroll)
+Prior: recno=1 Bof+Eof (scroll)
+Prior: recno=1 Bof+Eof (scroll)
+Last: recno=1 Eof (scroll)
+Prior: recno=1 Bof+Eof (scroll)
+Last: recno=1 Eof (scroll)
+Next: recno=1 Eof (scroll)
+First: recno=1 Bof (scroll)
+Next: recno=1 Bof+Eof (scroll)
+First: recno=1 Bof (scroll)
+Prior: recno=1 Bof (scroll)
+== table: 3 rows
+ok RecordCount
+ok IsEmpty
+Open: recno=1 Bof (no events)
+Next: recno=2 - (scroll)
+Next: recno=3 - (scroll)
+Next: recno=3 Eof (scroll)
+Next: recno=3 Eof (scroll)
+Prior: recno=2 - (scroll)
+Prior: recno=1 - (scroll)
+Prior: recno=1 Bof (scroll)
+Prior: recno=1 Bof (scroll)
+Last: recno=3 Eof (scroll)
+Prior: recno=2 - (scroll)
+Last: recno=3 Eof (scroll)
+Next: recno=3 Eof (scroll)
+First: recno=1 Bof (scroll)
+Next: recno=2 - (scroll)
+First: recno=1 Bof (scroll)
+Prior: recno=1 Bof (scroll)
+== canonical loops
+0 rows forward: 
+0 rows backward: 
+1 rows forward: 1 
+1 rows backward: 1 
+3 rows forward: 1 2 3 
+3 rows backward: 3 2 1 
+== MoveBy: 5 rows
+MoveBy(0) = 0: recno=1 Bof (no events)
+MoveBy(2) = 2: recno=3 - (scroll)
+MoveBy(10) = 2: recno=5 Eof (scroll)
+MoveBy(0) = 0: recno=5 Eof (no events)
+MoveBy(-1) = -1: recno=4 - (scroll)
+MoveBy(-10) = -3: recno=1 Bof (scroll)
+MoveBy(4) = 4: recno=5 - (scroll)
+MoveBy(1) = 0: recno=5 Eof (scroll)
+MoveBy(-4) = -4: recno=1 - (scroll)
+MoveBy(-1) = 0: recno=1 Bof (scroll)
+MoveBy(1) = 1: recno=2 - (scroll)
+== MoveBy: 1 row
+MoveBy(1) = 0: recno=1 Bof+Eof (scroll)
+MoveBy(-1) = 0: recno=1 Bof+Eof (scroll)
+MoveBy(-3) = 0: recno=1 Bof (scroll)
+MoveBy(0) = 0: recno=1 Bof (no events)
+== MoveBy: 0 rows
+MoveBy(3) = 0: recno=0 Bof+Eof (scroll)
+MoveBy(-3) = 0: recno=0 Bof+Eof (scroll)
+MoveBy(0) = 0: recno=0 Bof+Eof (no events)
+== RecNo
+ok RecNo after Open
+RecNo := 3: recno=3 - (scroll)
+ok the cursor index is RecNo - 1
+RecNo := 1: recno=1 - (scroll)
+RecNo := 1 again: recno=1 - (scroll)
+RecNo := 3 at Eof: recno=3 - (scroll)
+ok RecNo := 0
+ok RecNo := RecordCount + 1
+after the errors: recno=3 - (no events)
+ok RecNo of an empty dataset
+ok RecNo := 1 on an empty dataset
+== scroll handlers that raise
+ok BeforeScroll raises
+ok nothing happens after the handler
+ok the cursor did not move
+ok BeforeScroll raises in Last
+ok the flags are unchanged
+ok AfterScroll raises
+ok the move is complete
+ok the cursor moved
+== closed dataset
+ok First
+ok Last
+ok Next
+ok Prior
+ok MoveBy
+ok RecNo
+ok RecNo :=
+ok no events on a closed dataset
+failed checks: 0

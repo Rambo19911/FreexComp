@@ -1,0 +1,140 @@
+== errors
+ok DatabaseError raises EDatabaseError
+ok DatabaseErrorFmt formats the message
+ok EDatabaseError descends from Exception
+SDatClosed=Cannot perform this operation on a closed dataset
+SDatEmpty=Cannot perform this operation on an empty dataset
+SDatReadOnly=Cannot modify a read-only dataset
+SDatNotEditing=Dataset not in edit or insert mode
+SDatFieldNotFound=Field '%s' not found
+SDatDuplicateField=Duplicate field name '%s'
+SDatFieldReadOnly=Field '%s' cannot be modified
+SDatFieldRequired=Field '%s' must have a value
+SDatFieldTooLong=Value too long for field '%s' (maximum %d characters)
+SDatFieldRange=Value of field '%s' is out of range
+SDatFieldAccess=Cannot access field '%s' as type %s
+SDatFieldConvert='%s' is not a valid %s value for field '%s'
+SDatFieldType=Field '%s' has an unsupported type
+SDatTypeMismatch=Type mismatch for field '%s'
+SDatParamNotFound=Parameter '%s' not found
+SDatRecNoRange=Record number out of range
+SDatBadBookmark=Bookmark is not valid
+SDatLocateCount=Locate: number of values does not match number of fields
+SDatFilter=Filter error at position %d: %s
+SDatCalcOp=Operation not allowed while calculating fields
+SDatNotSupported=Not supported
+SDatActiveChange=Cannot perform this operation on an open dataset
+== enumerations
+ok dsInactive is first
+ok dsInsert is last
+ok ftUnknown is first
+ok ftLargeint is last
+ok fkCalculated
+ok deFocusControl is last
+ok daRetry is last
+ok TLocateOptions is a set
+ok TFilterOptions is a set
+== row model: values
+ok NullValue
+ok IntValue keeps 64 bits
+ok FloatValue
+ok StringValue
+ok BytesValue
+ftUnknown -> vkNull
+ftString -> vkString
+ftSmallint -> vkInt
+ftInteger -> vkInt
+ftWord -> vkInt
+ftBoolean -> vkInt
+ftFloat -> vkFloat
+ftCurrency -> vkFloat
+ftDate -> vkFloat
+ftTime -> vkFloat
+ftDateTime -> vkFloat
+ftAutoInc -> vkInt
+ftBlob -> vkBytes
+ftMemo -> vkString
+ftLargeint -> vkInt
+== row model: rows and lists
+ok a new row has one value per data field
+ok a new row is all null
+ok the row list owns its rows, a view does not
+ok Add returns the index
+ok Count after Add and Insert
+ok Insert keeps the order
+ok IndexOf
+ok Remove returns the old index
+ok the view lost one row
+ok the row list is unaffected by the view
+ok a row removed from a view still exists
+ok Delete
+ok a deleted row is not found
+ok Clear
+== state machine: open and close
+ok a new dataset is inactive
+ok Active is False
+ok Close on an inactive dataset does nothing
+ok Open sequence
+ok an open dataset is in dsBrowse
+ok Active is True
+ok RecordCount
+ok IsEmpty is False
+ok after Open: Bof
+ok after Open the cursor is on the first row
+ok Open on an active dataset does nothing
+ok Close sequence
+ok a closed dataset is inactive
+ok dynamic fields are gone after Close
+ok rows are released by Close
+ok Active := True is Open
+ok Active := True on an active dataset does nothing
+ok Active := False is Close
+== state machine: row ids and view
+ok row ids count from 1 in load order
+ok without a filter the view has the same rows
+ok the row id counter restarts at Open
+== state machine: closed dataset
+ok RecordCount on a closed dataset
+ok IsEmpty on a closed dataset
+ok CheckBrowseMode on a closed dataset
+ok Bof and Eof can be read on a closed dataset
+ok FindField on a closed dataset without persistent fields
+ok FieldDefs can be read on a closed dataset
+== state machine: empty dataset
+ok RecordCount of an empty dataset
+ok IsEmpty
+ok empty: Bof and Eof
+ok empty: no cursor row
+== state machine: failures during open
+ok DriverOpen fails
+ok nothing after the failing DriverOpen, no DriverClose
+ok the dataset stays inactive
+ok DriverInitFieldDefs fails
+ok resources are released
+ok DriverLoadRows fails
+ok resources are released after a failing load
+ok the dataset stays inactive after a failing load
+ok dynamic fields created so far are destroyed
+ok rows loaded so far are released
+== state machine: handlers that raise
+ok BeforeOpen raises
+ok nothing happens after the handler
+ok the open was cancelled
+ok AfterOpen raises
+ok the open itself is complete
+ok the dataset is open
+ok BeforeClose raises
+ok nothing happens after the handler
+ok the close was cancelled
+ok AfterClose raises
+ok the close itself is complete
+== state machine: Active while loading
+ok Active := True while loading is only remembered
+ok still inactive while loading
+ok Loaded opens the dataset
+ok active after Loaded
+== state machine: destruction
+ok destroying an active dataset closes it first
+ok no events when the owner is being destroyed
+ok destroying an inactive dataset fires nothing
+failed checks: 0

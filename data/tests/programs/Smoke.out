@@ -1,0 +1,16 @@
+== helpers
+ok check true
+ok equal strings
+ok equal integers
+ok equal booleans
+ok method raises
+ok procedure raises
+== failure texts
+FAIL check false
+FAIL different strings: got 'abc' expected 'abd'
+FAIL different integers: got '1' expected '2'
+FAIL different booleans: got 'False' expected 'True'
+FAIL nothing raised: no exception, expected EConvertError
+FAIL wrong class: got EConvertError 'bad value here' expected EAbort containing 'bad value'
+FAIL wrong message: got EConvertError 'bad value here' expected EConvertError containing 'other text'
+failed checks: 7

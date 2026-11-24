@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>FreexComp.Data.Tests</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- opc.exe is copied next to the test assembly; the golden runner starts it as a process (DAT-400) -->
+    <ProjectReference Include="..\..\..\compiler\src\opc\opc.csproj" />
+  </ItemGroup>
+</Project>

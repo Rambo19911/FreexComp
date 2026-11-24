@@ -1,0 +1,136 @@
+== defs
+ok a new list is empty
+ok Add: Size 0 and Required False by default
+ok Add with Size and Required
+ok Count
+ok Items is the default property
+ok Items in order of Add
+ok IndexOf ignores case
+ok IndexOf compares code unit by code unit
+ok IndexOf does not fold sharp s
+ok IndexOf upper-cases beyond ASCII
+ok IndexOf of a missing name
+ok Find ignores case
+ok Find of a missing name is nil
+ok duplicate definition
+ok a rejected definition is not added
+ok a free-standing list has no dataset
+ok Update without a dataset does nothing
+ok Clear
+== fields: defaults
+ok DisplayLabel defaults to FieldName
+ok DisplayLabel when set
+ok an empty DisplayLabel falls back to FieldName
+ok Visible, ReadOnly, Required, Size, FieldKind defaults
+ok a free-standing field has no dataset, index or number
+string size 0: TStringField ftString width=20 align=left readonly=False
+string size 1: TStringField ftString width=1 align=left readonly=False
+string size 50: TStringField ftString width=50 align=left readonly=False
+string size 51: TStringField ftString width=50 align=left readonly=False
+string width set: TStringField ftString width=7 align=left readonly=False
+string alignment set: TStringField ftString width=7 align=centre readonly=False
+integer: TIntegerField ftInteger width=10 align=right readonly=False
+autoinc: TAutoIncField ftAutoInc width=10 align=right readonly=True
+largeint: TLargeintField ftLargeint width=15 align=right readonly=False
+float: TFloatField ftFloat width=10 align=right readonly=False
+boolean: TBooleanField ftBoolean width=5 align=centre readonly=False
+date: TDateField ftDate width=10 align=left readonly=False
+time: TTimeField ftTime width=8 align=left readonly=False
+datetime: TDateTimeField ftDateTime width=18 align=left readonly=False
+memo: TMemoField ftMemo width=10 align=left readonly=False
+blob: TBlobField ftBlob width=10 align=left readonly=False
+ok TBlobField
+ok TAutoIncField is an integer field
+ok TMemoField is a blob field
+ok TDateField is a date-time field
+== fields: list
+ok a new dataset has no fields
+ok FieldCount
+ok Fields.Count
+ok Fields.DataSet
+ok creation order
+ok Index is the position
+ok Fields.IndexOf
+ok FieldByName ignores case
+ok Fields.FieldByName
+ok FindField ignores case
+ok Fields.FindField
+ok FindField of a missing name is nil
+ok FieldByName of a missing name
+ok Fields[i] out of range
+ok GetFieldNames
+== fields: name rules
+ok attaching a duplicate name
+ok the rejected field is not attached
+ok attached after renaming
+ok renaming to a duplicate name
+ok the name is unchanged after the error
+ok changing only the case of the own name is allowed
+== fields: order
+ok Index := 0 moves the field to the front
+ok reordering notifies a layout change
+ok assigning the same index does nothing
+ok Index := 3 moves it to the end
+== fields: detaching
+ok DataSet := nil detaches
+ok a destroyed field leaves the list
+== dynamic fields
+ok no definitions before the driver was asked
+ok FieldDefs.Update asks the driver on a closed dataset
+ok Update creates no fields
+ok one field per definition
+0 id: TAutoIncField ftAutoInc size=0 required=False no=1 readonly=True name='' owned=True
+1 name: TStringField ftString size=50 required=True no=2 readonly=False name='' owned=True
+2 small: TIntegerField ftSmallint size=0 required=False no=3 readonly=False name='' owned=True
+3 int: TIntegerField ftInteger size=0 required=False no=4 readonly=False name='' owned=True
+4 word: TIntegerField ftWord size=0 required=False no=5 readonly=False name='' owned=True
+5 big: TLargeintField ftLargeint size=0 required=False no=6 readonly=False name='' owned=True
+6 amount: TFloatField ftFloat size=0 required=False no=7 readonly=False name='' owned=True
+7 price: TFloatField ftCurrency size=0 required=False no=8 readonly=False name='' owned=True
+8 flag: TBooleanField ftBoolean size=0 required=False no=9 readonly=False name='' owned=True
+9 born: TDateField ftDate size=0 required=False no=10 readonly=False name='' owned=True
+10 at: TTimeField ftTime size=0 required=False no=11 readonly=False name='' owned=True
+11 stamp: TDateTimeField ftDateTime size=0 required=False no=12 readonly=False name='' owned=True
+12 note: TMemoField ftMemo size=0 required=False no=13 readonly=False name='' owned=True
+13 data: TBlobField ftBlob size=0 required=False no=14 readonly=False name='' owned=True
+ok FieldByName on dynamic fields
+ok FieldDefs.Add on an open dataset
+ok FieldDefs.Clear on an open dataset
+ok FieldDefs.Update on an open dataset changes nothing
+ok attaching a field to an open dataset
+ok detaching a field from an open dataset
+ok renaming a field of an open dataset
+ok changing the kind of a field of an open dataset
+ok dynamic fields are destroyed at Close
+ok and no longer owned by the dataset
+ok and created again at the next Open
+== dynamic fields: unsupported type
+ok ftUnknown in a definition
+ok the dataset stays inactive
+ok no fields remain
+== persistent fields
+ok only the persistent fields exist
+0 NAME: TStringField ftString size=0 required=False no=2 readonly=False name='' owned=True
+1 twice: TIntegerField ftInteger size=0 required=False no=-1 readonly=False name='' owned=True
+2 id: TIntegerField ftInteger size=0 required=False no=1 readonly=False name='' owned=True
+ok a column without a persistent field is not accessible
+ok FieldNo is the position in FieldDefs
+ok an integer field binds to an auto-increment column
+ok a calculated field has FieldNo -1
+ok persistent fields are kept across Close
+ok in creation order
+ok a closed dataset leaves its fields unbound
+ok and across the next Open
+== persistent fields: mismatch
+ok no definition with that name
+ok the dataset stays inactive
+ok the persistent fields are kept after the failed open
+ok string field on a float column
+ok string field on a memo column
+ok string field on an integer column
+ok a memo field binds to a memo column
+ok all persistent fields destroyed
+ok without persistent fields the dataset creates dynamic ones again
+== persistent fields: compatible integer types
+ok integer field classes bind to every integer type, a float field to a currency column
+failed checks: 0
