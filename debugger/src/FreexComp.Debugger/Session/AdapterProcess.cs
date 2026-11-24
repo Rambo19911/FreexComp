@@ -71,6 +71,10 @@ internal sealed class AdapterProcess : IAsyncDisposable
             info.ArgumentList.Add(argument);
         // Only meaningful for the CodeView/PDB debug container; harmless otherwise (DBG-005).
         info.Environment["LLDB_USE_NATIVE_PDB_READER"] = "1";
+        // The adapter debugs the program itself instead of through its separate debug server: under load that server
+        // crashes now and then right after a resume (access violation while it handles the next debug event), and the
+        // session then ends with exit code -1 or never hears of the program's end (G-076).
+        info.Environment["LLDB_USE_LLDB_SERVER"] = "0";
         // The adapter needs a Python runtime library; only the bundled one may satisfy it, never one that happens to
         // be installed on the machine: its directory goes first on the adapter's own search path.
         if (BundledPythonDirectory(adapterPath) is { } python)

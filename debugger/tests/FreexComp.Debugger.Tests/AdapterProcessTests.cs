@@ -77,6 +77,25 @@ public sealed class AdapterProcessTests
             lines);
     }
 
+    // G-076: the adapter's separate debug server crashes now and then right after a resume (the session then hangs
+    // or ends with exit code -1); the adapter is told to debug the program itself, without that server.
+    [Fact]
+    [Trait("Req", "DBG-005")]
+    public async Task Start_DebugsWithoutSeparateDebugServer()
+    {
+        var lines = new ConcurrentQueue<string>();
+        await using var adapter = AdapterProcess.Start(
+            FakeAdapterRunner.ExePath, ["--print-env", "LLDB_USE_LLDB_SERVER"], lines.Enqueue);
+        ProcessLeakFixture.Registry.Track(adapter.ProcessId, nameof(AdapterProcessTests));
+
+        await adapter.WaitForExitAsync(Ct).WaitAsync(Safety, Ct);
+        await adapter.StderrCompleted.WaitAsync(Safety, Ct);
+
+        Assert.Equal(
+            ["ENV LLDB_USE_LLDB_SERVER=0", "CWD " + Path.GetDirectoryName(FakeAdapterRunner.ExePath)],
+            lines);
+    }
+
     [Fact]
     [Trait("Req", "DBG-006")]
     public async Task Stderr_KeepsLast20Lines()
