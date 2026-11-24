@@ -40,6 +40,10 @@ internal static class PcuReader
         }
     }
 
+    /// <summary>CMP-1055: the file was written for a library file (<c>"kind": "library"</c>): it is not a unit (LANG-542).</summary>
+    public static bool IsLibrary(JsonObject? pcu) =>
+        pcu?["kind"] is JsonValue kind && kind.TryGetValue<string>(out var text) && text == "library";
+
     /// <summary>CMP-150 rules 2 and 3: the compiler fingerprint and (when given) the options fingerprint equal the current ones.</summary>
     public static bool HasFingerprints(JsonObject pcu, string compilerFingerprint, string? optionsFingerprint = null) =>
         Text(pcu, "compilerFingerprint") == compilerFingerprint

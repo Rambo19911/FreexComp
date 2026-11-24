@@ -280,4 +280,8 @@ public enum SyntaxKind
     Attribute,
     AnonymousMethodExpression,
     Fragment,
+    Library,
+    ExportsClause,
+    ExportItem,
+    ExportSpecifier,
 }

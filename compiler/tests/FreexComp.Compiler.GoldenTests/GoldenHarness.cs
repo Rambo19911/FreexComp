@@ -13,6 +13,12 @@ public sealed record GoldenCase(string Id, string SourcePath)
 {
     public string Name => Path.GetFileNameWithoutExtension(SourcePath);
 
+    /// <summary>
+    /// dll-output.md §10.2: the main file is a library file (its first token after comments is <c>library</c>, LANG-540). Such a
+    /// case builds a DLL and has no run step.
+    /// </summary>
+    public bool IsLibrary => GoldenCorpus.IsLibrarySource(System.IO.File.ReadAllText(SourcePath));
+
     /// <summary>The sibling expectation file with <paramref name="extension"/> (e.g. ".out"), or null when absent.</summary>
     public string? File(string extension) => Path.ChangeExtension(SourcePath, extension) is var path && System.IO.File.Exists(path) ? path : null;
 }
@@ -76,6 +82,39 @@ public static class GoldenCorpus
         }
 
         return new GoldenHeader(options.ToImmutable(), skip);
+    }
+
+    /// <summary>True when the first token of <paramref name="text"/> — after white space and <c>//</c>, <c>{ }</c>, <c>(* *)</c> comments — is <c>library</c>.</summary>
+    public static bool IsLibrarySource(string text)
+    {
+        var i = text.StartsWith('\uFEFF') ? 1 : 0;
+        while (i < text.Length)
+        {
+            if (char.IsWhiteSpace(text[i]))
+            {
+                i++;
+            }
+            else if (string.CompareOrdinal(text, i, "//", 0, 2) == 0)
+            {
+                i = text.IndexOf('\n', i) is var end && end < 0 ? text.Length : end + 1;
+            }
+            else if (text[i] == '{')
+            {
+                i = text.IndexOf('}', i) is var end && end < 0 ? text.Length : end + 1;
+            }
+            else if (string.CompareOrdinal(text, i, "(*", 0, 2) == 0)
+            {
+                i = text.IndexOf("*)", i + 2, StringComparison.Ordinal) is var end && end < 0 ? text.Length : end + 2;
+            }
+            else
+            {
+                break;
+            }
+        }
+
+        const string keyword = "library";
+        return string.Compare(text, i, keyword, 0, keyword.Length, StringComparison.OrdinalIgnoreCase) == 0
+               && (i + keyword.Length == text.Length || !(char.IsAsciiLetterOrDigit(text[i + keyword.Length]) || text[i + keyword.Length] == '_'));
     }
 
     public static GoldenHeader ReadHeader(GoldenCase @case) => ReadHeader(System.IO.File.ReadAllText(@case.SourcePath));
@@ -160,6 +199,18 @@ public static class GoldenRunner
     {
         var (output, error, diag) = (@case.File(".out"), @case.File(".err"), @case.File(".diag"));
         var name = @case.Name;
+        if (@case.IsLibrary)
+        {
+            // dll-output.md §10.2: a library is not run - diagnostics only
+            return (output, error, diag) switch
+            {
+                (not null, _, _) => $"{@case.Id}: {name}.out exists, but a library file is not run",
+                (null, null, null) => $"{@case.Id}: neither {name}.err nor {name}.diag exists",
+                (null, not null, not null) => $"{@case.Id}: both {name}.err and {name}.diag exist",
+                _ => null,
+            };
+        }
+
         return (output, error) switch
         {
             (null, null) => $"{@case.Id}: neither {name}.out nor {name}.err exists",
@@ -221,7 +272,8 @@ public static class GoldenRunner
 
     private static async Task<string?> RunInAsync(GoldenCase @case, bool o2, GoldenSetup setup, string temp, (TimeSpan Cpu, TimeSpan Wall) programLimits, CancellationToken ct)
     {
-        var exe = Path.Combine(temp, @case.Name + ".exe");
+        var isLibrary = @case.IsLibrary;
+        var exe = Path.Combine(temp, @case.Name + (isLibrary ? ".dll" : ".exe"));
         List<string> args =
         [
             @case.SourcePath, "-o", exe, "--obj-dir", Path.Combine(temp, "obj"), "--rtl", setup.RtlDirectory,
@@ -255,6 +307,11 @@ public static class GoldenRunner
         if (@case.File(".diag") is { } diag && Compare("diagnostics (stdout of opc)", ReadText(diag), diagnostics) is { } diagFailure)
         {
             return diagFailure;
+        }
+
+        if (isLibrary)
+        {
+            return null;                                                            // dll-output.md §10.2: no run step
         }
 
         var input = @case.File(".in") is { } inPath ? System.IO.File.ReadAllBytes(inPath) : [];

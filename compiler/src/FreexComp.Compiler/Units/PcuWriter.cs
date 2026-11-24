@@ -77,7 +77,7 @@ internal sealed class PcuWriter(PcuContext context)
         {
             ["formatVersion"] = FormatVersion,
             ["unit"] = unit.Name,
-            ["kind"] = unit.IsProgram ? "program" : "unit",
+            ["kind"] = unit.IsLibrary ? "library" : unit.IsProgram ? "program" : "unit",
             ["compilerFingerprint"] = context.CompilerFingerprint,
             ["optionsFingerprint"] = context.OptionsFingerprint,
             ["sources"] = new JsonArray([.. sources.Select(s => (JsonNode?)s.Node)]),
@@ -98,8 +98,19 @@ internal sealed class PcuWriter(PcuContext context)
         if (unit.IsProgram)
         {
             root["unitOrder"] = Strings(context.InitOrder.Select(u => u.Name));          // CMP-163
-            root["appType"] = context.AppType == AppType.Gui ? "gui" : "console";
+            root["appType"] = unit.IsLibrary ? "library" : context.AppType == AppType.Gui ? "gui" : "console";
             root["unitTable"] = UnitTable();
+        }
+
+        if (unit.IsLibrary)
+        {
+            // CMP-1055: the exports in ordinal order (information for tools; nothing imports a library's .pcu)
+            root["exports"] = new JsonArray([.. unit.Symbol!.Exports.Select(e => (JsonNode?)new JsonObject
+            {
+                ["name"] = e.Name,
+                ["index"] = e.Ordinal,
+                ["symbol"] = Emit.Mangler.RoutineText(e.RoutineSymbol),
+            })]);
         }
 
         return root;

@@ -50,6 +50,11 @@ internal sealed class Parser
             return ParseUnit();
         }
 
+        if (CurrentKind == SyntaxKind.LibraryKeyword)
+        {
+            return ParseLibrary();
+        }
+
         return ParseProgram();
     }
 
@@ -142,7 +147,7 @@ internal sealed class Parser
         ProgramParameterListSyntax? parameters = null;
         SyntaxToken? semicolon = null;
 
-        if (CurrentKind is SyntaxKind.ProgramKeyword or SyntaxKind.LibraryKeyword || IsPackageHeading())
+        if (CurrentKind == SyntaxKind.ProgramKeyword || IsPackageHeading())
         {
             if (CurrentKind != SyntaxKind.ProgramKeyword)
             {
@@ -168,6 +173,74 @@ internal sealed class Parser
         var block = ParseBlock();
         var dot = Expect(SyntaxKind.DotToken);
         return new ProgramSyntax(keyword, name, parameters, semicolon, uses, block, dot, ParseEndOfFile());
+    }
+
+    /// <summary>
+    /// LANG-540, 541: <c>library qualIdent ; [ usesClause ] { declSection | exportsClause } ( compoundStmt | end ) .</c> The
+    /// <c>end</c>-only form gives a compound statement whose <c>begin</c> is a missing token (no diagnostic).
+    /// </summary>
+    private LibrarySyntax ParseLibrary()
+    {
+        var keyword = Take();
+        var name = ParseQualifiedName();
+        var semicolon = Expect(SyntaxKind.SemicolonToken);
+        var uses = CurrentKind == SyntaxKind.UsesKeyword ? ParseUsesClause() : null;
+        var declarations = ParseDeclarations(SectionKind.Library);
+        var body = CurrentKind == SyntaxKind.EndKeyword
+            ? new CompoundStatementSyntax(Missing(SyntaxKind.BeginKeyword), default, Take())
+            : ParseCompoundStatement();
+        var dot = Expect(SyntaxKind.DotToken);
+        return new LibrarySyntax(keyword, name, semicolon, uses, new BlockSyntax(declarations, body), dot, ParseEndOfFile());
+    }
+
+    /// <summary>
+    /// LANG-544, 546: <c>exports exportItem { , exportItem } ;</c>. Outside the declaration part of a library file the clause is
+    /// E2211 at the keyword and still parsed.
+    /// </summary>
+    private ExportsClauseSyntax ParseExportsClause(SectionKind section)
+    {
+        if (section != SectionKind.Library)
+        {
+            ReportAt(Current, "E2211");
+        }
+
+        var keyword = Take();
+        var items = ParseSeparated(ParseExportItem, SyntaxKind.CommaToken);
+        return new ExportsClauseSyntax(keyword, items, Expect(SyntaxKind.SemicolonToken));
+    }
+
+    /// <summary><c>qualIdent { index constExpr | name constExpr }</c>; a repeated specifier is skipped with E1100 (LANG-546).</summary>
+    private ExportItemSyntax ParseExportItem()
+    {
+        var name = ParseQualifiedName();
+        ExportSpecifierSyntax? first = null, second = null;
+        while (IsContextual(Current, SyntaxKind.IndexKeyword) || IsContextual(Current, SyntaxKind.NameKeyword))
+        {
+            var kind = SyntaxFacts.GetKeywordKind(Current.Text);
+            if (first?.Keyword.ContextualKind == kind || second?.Keyword.ContextualKind == kind)
+            {
+                do
+                {
+                    SkipToken();
+                }
+                while (CurrentKind is not (SyntaxKind.CommaToken or SyntaxKind.SemicolonToken or SyntaxKind.EndOfFileToken or SyntaxKind.BeginKeyword
+                           or SyntaxKind.EndKeyword)
+                       && !IsContextual(Current, SyntaxKind.IndexKeyword) && !IsContextual(Current, SyntaxKind.NameKeyword));
+                continue;
+            }
+
+            var specifier = new ExportSpecifierSyntax(Take().WithContextualKind(kind), ParseExpression());
+            if (first is null)
+            {
+                first = specifier;
+            }
+            else
+            {
+                second = specifier;
+            }
+        }
+
+        return new ExportItemSyntax(name, first, second);
     }
 
     private bool IsPackageHeading() =>
@@ -271,7 +344,7 @@ internal sealed class Parser
 
     // ------------------------------------------------------------------ grammar.md §2: declarations and blocks
 
-    private enum SectionKind { Block, Interface, Implementation }
+    private enum SectionKind { Block, Interface, Implementation, Library }
 
     private BlockSyntax ParseBlock()
     {
@@ -325,6 +398,9 @@ internal sealed class Parser
                 case var _ when StartsRoutine():
                     declarations.Add(ParseRoutineDeclaration(hasBody: section != SectionKind.Interface));
                     break;
+                case SyntaxKind.ExportsKeyword:
+                    declarations.Add(ParseExportsClause(section));
+                    break;
                 case SyntaxKind.OpenBracketToken:
                     var attributes = ParseAttributeLists();
                     if (StartsRoutine())
@@ -343,7 +419,7 @@ internal sealed class Parser
                         SkipToken();
                     }
                     while ((!EndsDeclarations(CurrentKind, section) || IsStrayEnd(section)) && !StartsSection(CurrentKind) && !StartsRoutine()
-                           && CurrentKind != SyntaxKind.OpenBracketToken);
+                           && CurrentKind is not (SyntaxKind.OpenBracketToken or SyntaxKind.ExportsKeyword));
 
                     break;
             }
@@ -359,7 +435,7 @@ internal sealed class Parser
     /// skipping the rest of the file after the missing <c>.</c>.
     /// </summary>
     private bool IsStrayEnd(SectionKind section) =>
-        section != SectionKind.Block && CurrentKind == SyntaxKind.EndKeyword
+        section is SectionKind.Interface or SectionKind.Implementation && CurrentKind == SyntaxKind.EndKeyword
         && Peek(1).Kind == SyntaxKind.SemicolonToken && Peek(2).Kind != SyntaxKind.EndOfFileToken;
 
     private static bool StartsSection(SyntaxKind kind) => kind is SyntaxKind.LabelKeyword or SyntaxKind.ConstKeyword
@@ -1684,7 +1760,7 @@ internal sealed class Parser
     {
         SyntaxKind.EndOfFileToken or SyntaxKind.BeginKeyword => true,
         SyntaxKind.ImplementationKeyword or SyntaxKind.InitializationKeyword or SyntaxKind.FinalizationKeyword
-            or SyntaxKind.EndKeyword => section != SectionKind.Block || kind == SyntaxKind.EndKeyword,
+            or SyntaxKind.EndKeyword => section is SectionKind.Interface or SectionKind.Implementation || kind == SyntaxKind.EndKeyword,
         _ => false,
     };
 

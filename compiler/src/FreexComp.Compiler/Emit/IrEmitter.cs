@@ -173,7 +173,19 @@ internal static class IrEmitter
                 module.DeclarePending();
             }
 
-            EmitStart(module, units.Length);
+            if (unit.Unit.IsLibrary)
+            {
+                // CMP-1050: a library module has no _start; its entry routine, then the export thunks (last, in ordinal order)
+                EmitLibraryEntry(module, units.Length);
+                foreach (var export in unit.Unit.Exports)
+                {
+                    EmitExportThunk(module, export);
+                }
+            }
+            else
+            {
+                EmitStart(module, units.Length);
+            }
         }
         else
         {
@@ -416,6 +428,94 @@ internal static class IrEmitter
         w.Call("t1", IrType.Ptr, beginCatch, []);
         w.Call(null, IrType.Void, unhandled, [], NoReturnGroup);
         w.Unreachable();
+        w.EndFunction();
+        module.DeclarePending();
+    }
+
+    /// <summary>
+    /// CMP-1051: the entry routine of a library module (<see cref="Targets.TargetInfo.LibraryEntrySymbol"/>), called by the
+    /// operating system with the module handle, the notification code and the reserved pointer. Every decision is the run-time
+    /// library's (<c>_DllEntry</c>, ABI-190): a non-zero answer means "first process attach", then <c>$main</c> runs (unit
+    /// initializations, library block) and <c>_DllInitDone</c> follows; an exception escaping it is caught with the one filter,
+    /// made current (<c>_BeginCatch</c>) and turned into the result 0, "load failed", after <c>_DllInitFailed</c>.
+    /// </summary>
+    private static void EmitLibraryEntry(ModuleState module, int unitCount)
+    {
+        var w = module.Writer;
+        var dllEntry = module.Function(new IrFunctionDeclaration(Mangler.RuntimeHelper("_DllEntry"), IrType.I32,
+            [IrType.Ptr, IrType.I32, IrType.Ptr, IrType.Ptr, module.NativeInt]));
+        var initDone = module.Function(new IrFunctionDeclaration(Mangler.RuntimeHelper("_DllInitDone"), IrType.Void, []));
+        var initFailed = module.Function(new IrFunctionDeclaration(Mangler.RuntimeHelper("_DllInitFailed"), IrType.Void, []));
+        var filter = module.Function(new IrFunctionDeclaration(Mangler.RuntimeHelper("_SehFilter"), IrType.I32, [IrType.Ptr, IrType.Ptr]));
+        var beginCatch = module.Function(new IrFunctionDeclaration(Mangler.RuntimeHelper("_BeginCatch"), IrType.Ptr, []));
+        IrBlock attach = new("attach"), attached = new("attached"), ok = new("ok"), dispatch = new("catch.dispatch"), @catch = new("catch"),
+            failed = new("failed");
+        var parameters = w.BeginFunction(new IrFunctionDefinition(new LinkName(module.Target.LibraryEntrySymbol, AlwaysQuote: false), IrLinkage.External,
+            IrType.I32, [new IrParameter(IrType.Ptr, "hinst"), new IrParameter(IrType.I32, "reason"), new IrParameter(IrType.Ptr, "reserved")], RoutineGroup));
+        w.AppendBlock(new IrBlock("entry"));
+        var init = w.Call("init", IrType.I32, dllEntry, [parameters[0], parameters[1], parameters[2], new IrGlobal(UnitsName), module.Native(unitCount)])!;
+        w.CondBr(w.ICmp("run", IrIntPredicate.Ne, init, IrIntConstant.I32(0)), attach, ok);
+        w.AppendBlock(attach);
+        w.Invoke(null, IrType.Void, new IrGlobal(MainName), [], attached, dispatch);
+        w.AppendBlock(attached);
+        w.Call(null, IrType.Void, initDone, []);
+        w.Br(ok);
+        w.AppendBlock(ok);
+        w.Ret(IrIntConstant.I32(1));
+        w.AppendBlock(dispatch);
+        var catchSwitch = w.CatchSwitch("cs", @catch, unwind: null);
+        w.AppendBlock(@catch);
+        w.CatchRet(w.CatchPad("cp", catchSwitch, [filter]), failed);
+        w.AppendBlock(failed);
+        w.Call("t1", IrType.Ptr, beginCatch, []);
+        w.Call(null, IrType.Void, initFailed, []);
+        w.Ret(IrIntConstant.I32(0));
+        w.EndFunction();
+        module.DeclarePending();
+    }
+
+    /// <summary>
+    /// CMP-1053, 1054: one function with external linkage whose link name is the export name and whose IR signature is the
+    /// routine's: a call of the routine and a return. A routine with a hidden result pointer (ABI-081) gets a thunk that returns
+    /// that pointer, as the platform convention requires of a callee. No thunk when the routine's own <c>public name</c> is the
+    /// export name: its symbol is the export. Thunks carry no debug-info subprogram.
+    /// </summary>
+    private static void EmitExportThunk(ModuleState module, ExportInfo export)
+    {
+        var routine = export.RoutineSymbol;
+        if (routine.ExplicitLinkName == export.Name)
+        {
+            module.Routine(routine);                                    // a used unit's routine: declared, so the reference is visible
+            module.DeclarePending();
+            return;
+        }
+
+        var w = module.Writer;
+        var hidden = HasHiddenResult(routine);
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        string Unique(string name)
+        {
+            var candidate = name;
+            for (var n = 1; !names.Add(candidate); n++)
+            {
+                candidate = name + "." + n;
+            }
+
+            return candidate;
+        }
+
+        // ABI-082 for a plain routine: [hidden Result], the declared parameters (an open array with its High companion)
+        ImmutableArray<IrParameter> parameters =
+            [.. (hidden ? [new IrParameter(IrType.Ptr, Unique("Result"))] : Array.Empty<IrParameter>()),
+             .. WithHighCompanions(routine.Parameters).Select(p => new IrParameter(ParameterType(p), Unique(p.Name)))];
+        var callConv = module.CallConv(routine);                        // CMP-1011
+        var returnType = ReturnType(routine);
+        var callee = module.Routine(routine);
+        var values = w.BeginFunction(new IrFunctionDefinition(new LinkName(export.Name, AlwaysQuote: false), IrLinkage.External,
+            hidden ? IrType.Ptr : returnType, parameters, RoutineGroup) { CallConv = callConv });
+        w.AppendBlock(new IrBlock("entry"));
+        var result = w.Call(returnType == IrType.Void ? null : Unique("r"), returnType, callee, [.. values], callConv: callConv);
+        w.Ret(hidden ? values[0] : result);
         w.EndFunction();
         module.DeclarePending();
     }
@@ -1724,6 +1824,8 @@ internal sealed class FunctionEmitter
                     return anonymous.Keyword;
                 case Syntax.ProgramSyntax program:
                     return program.ProgramKeyword ?? BodyTokens(source).Begin;
+                case Syntax.LibrarySyntax library:
+                    return library.LibraryKeyword;
             }
         }
 

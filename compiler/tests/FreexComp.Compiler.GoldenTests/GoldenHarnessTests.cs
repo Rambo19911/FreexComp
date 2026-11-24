@@ -125,6 +125,53 @@ public sealed class GoldenHarnessTests : IDisposable
         Assert.Contains("D.diag needs D.out", failure);
     }
 
+    /// <summary>dll-output.md §10.2: a case whose main file is a library file is not run — it expects <c>.err</c> or <c>.diag</c> alone.</summary>
+    [Theory]
+    [Trait("Phase", "8")]
+    [Trait("Req", "LANG-540")]
+    [InlineData("library L;\nend.", true)]
+    [InlineData("﻿// covers: LANG-540\n// opc: --emit obj\n\n{ a comment }\n(* another *)\n  LIBRARY L;\nend.", true)]
+    [InlineData("library", true)]
+    [InlineData("// library L;\nprogram P;\nbegin end.", false)]
+    [InlineData("{ library }\nunit U;\ninterface\nimplementation\nend.", false)]
+    [InlineData("libraryX;\nbegin end.", false)]
+    [InlineData("begin end.", false)]
+    [InlineData("", false)]
+    public void IsLibrarySource_FirstTokenAfterComments(string text, bool expected)
+    {
+        Assert.Equal(expected, GoldenCorpus.IsLibrarySource(text));
+    }
+
+    [Theory]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-902")]
+    [InlineData(".err", null, null)]
+    [InlineData(".diag", null, null)]
+    [InlineData(null, null, "neither L.err nor L.diag exists")]
+    [InlineData(".err", ".diag", "both L.err and L.diag exist")]
+    [InlineData(".diag", ".out", "L.out exists, but a library file is not run")]
+    public void CheckExpectations_LibraryCase_ErrOrDiagAlone(string? first, string? second, string? expected)
+    {
+        Put("dll/L.pas", "// covers: LANG-540\nlibrary L;\nend.");
+        foreach (var extension in new[] { first, second }.OfType<string>())
+        {
+            Put("dll/L" + extension, "");
+        }
+
+        var @case = Assert.Single(GoldenCorpus.Discover(_root));
+        var failure = GoldenRunner.CheckExpectations(@case);
+
+        Assert.True(@case.IsLibrary);
+        if (expected is null)
+        {
+            Assert.Null(failure);
+        }
+        else
+        {
+            Assert.Contains(expected, failure);
+        }
+    }
+
     [Fact]
     [Trait("Req", "CMP-900")]
     [Trait("Req", "CMP-901")]

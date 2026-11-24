@@ -257,9 +257,8 @@ public sealed partial class ParserTests
 
     [Theory]
     [Trait("Req", "LANG-151")]
-    [InlineData("library L; begin end.", "library")]
     [InlineData("package L; begin end.", "package")]
-    public void CompilationUnit_LibraryAndPackage_AreNotSupported(string text, string word)
+    public void CompilationUnit_Package_IsNotSupported(string text, string word)   // 'library': ParserTests.Library (LANG-540)
     {
         Assert.Equal([$"E2900(1,1): Feature not supported: {word}"], Diagnostics(text));
         Assert.Equal($"(Program {word} (IdentifierName L) ; {EmptyBlock} . <eof>)", Dump(text, false));

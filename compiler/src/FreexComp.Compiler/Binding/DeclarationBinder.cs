@@ -99,6 +99,20 @@ internal sealed partial class DeclarationBinder
                 return new DeclarationBindingResult(symbol, null, scope, diagnostics.ToImmutable());
             }
 
+            case LibrarySyntax library:
+            {
+                // LANG-541: a library file follows the rules of a program file; its exports clauses are bound last (LANG-545)
+                var symbol = library.Name is { IsMissing: false } name
+                    ? new UnitSymbol(NameOf(name), isProgram: true, [DiagnosticBag.LocationOf(name)], isLibrary: true)
+                    : new UnitSymbol(Path.GetFileNameWithoutExtension(tree.Text.Path), isProgram: true, [], isLibrary: true);
+                var scope = new Scope(ScopeKind.Unit, interfaceUses, symbol);
+                var binder = new DeclarationBinder(types, scope, symbol, diagnostics);
+                symbol.ImplementationMembers = binder.BindDeclarations(library.Block.Declarations);
+                binder.FinishExports(symbol);
+                ReportUnimplementedMethods(symbol, diagnostics);
+                return new DeclarationBindingResult(symbol, null, scope, diagnostics.ToImmutable());
+            }
+
             default:
             {
                 var symbol = new UnitSymbol(Path.GetFileNameWithoutExtension(tree.Text.Path), isProgram: false, []);
@@ -154,6 +168,9 @@ internal sealed partial class DeclarationBinder
                     break;
                 case RoutineDeclarationSyntax routine:
                     BindRoutine(routine, declared);
+                    break;
+                case ExportsClauseSyntax exports:
+                    BindExportsClause(exports);                             // LANG-544, 545 (C-286)
                     break;
             }
         }

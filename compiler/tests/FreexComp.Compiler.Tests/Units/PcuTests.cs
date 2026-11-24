@@ -197,6 +197,55 @@ public sealed class PcuTests
         Assert.True(withSections["hasFinal"]!.GetValue<bool>());
     }
 
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1055")]
+    [Trait("Req", "LANG-542")]
+    public void LibraryKindAndExportsRecorded()
+    {
+        const string library = """
+            library P;
+            uses U;
+            type TVec3 = record X, Y, Z: Integer; end;
+            function MakeVec(X: Integer): TVec3; cdecl; begin Result.X := X; end;
+            function Version: Integer; public name 'lib_version'; begin Result := 1; end;
+            exports
+              MakeVec name 'make_vec' index 7,
+              U.Add,
+              Version name 'lib_version',
+              U.Add name 'add2';
+            end.
+            """;
+        var fs = Files(program: library);
+        var pcu = Pcu("P", fs);
+
+        Assert.Equal("library", (string)pcu["kind"]!);
+        Assert.Equal("library", (string)pcu["appType"]!);
+        Assert.Equal("""["System","V","U"]""", pcu["unitOrder"]!.ToJsonString());
+        // ordinal order; "symbol" is the link name of the routine itself (the thunk's name is "name")
+        Assert.Equal(
+            """[{"name":"Add","index":1,"symbol":"U.Add"},{"name":"lib_version","index":2,"symbol":"lib_version"},{"name":"add2","index":3,"symbol":"U.Add"},{"name":"make_vec","index":7,"symbol":"P.MakeVec"}]""",
+            pcu["exports"]!.ToJsonString());
+        Assert.Equal("exports", ((JsonObject)pcu).Select(p => p.Key).Last());
+        Assert.Null(Pcu("U", fs)["exports"]);
+        Assert.Null(Pcu("P")["exports"]);                                           // a program records none
+
+        // LANG-542: the reader treats the kind as "not a unit" - a library's .pcu on the search path cannot be used
+        Assert.True(PcuReader.IsLibrary(pcu));
+        Assert.False(PcuReader.IsLibrary(Pcu("U", fs)));
+        Assert.False(PcuReader.IsLibrary(Pcu("P")));
+        var user = new InMemoryFileSystem()
+            .Add(Path.Combine(Dir, "Host.pas"), "program Host;\nuses P;\nbegin\nend.\n")
+            .Add(Path.Combine(Dir, "U.pas"), UnitU)
+            .Add(Path.Combine(Dir, "V.pas"), UnitV)
+            .Add(@"C:\lib\P.pcu", Pcus(fs)["P"])
+            .Add(@"C:\lib\P.obj", "")
+            .AddSystem();
+        var options = Options() with { MainFile = Path.Combine(Dir, "Host.pas"), SearchPaths = [@"C:\lib"] };
+        var diagnostics = Compilation.Create(options, [], user).GetDiagnostics(null, TestContext.Current.CancellationToken);
+        Assert.Equal(["E2217: 'P' is a library, not a unit"], diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error).Select(d => d.Code + ": " + d.Message));
+    }
+
     // ------------------------------------------------------------------ interface symbols and types
 
     /// <summary>One symbol entry without <c>id</c>/<c>decl</c>, its type ids replaced by the described types (named types by name).</summary>

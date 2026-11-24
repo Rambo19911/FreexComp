@@ -1,0 +1,5 @@
+ErrExportBadName.pas(18,10): error E2213: Invalid export name ''
+ErrExportBadName.pas(19,10): error E2213: Invalid export name 'P@8'
+ErrExportBadName.pas(20,10): error E2213: Invalid export name 'lib.P'
+ErrExportBadName.pas(21,10): error E2213: Invalid export name '_start'
+ErrExportBadName.pas(22,3): error E2213: Invalid export name 'memcpy'

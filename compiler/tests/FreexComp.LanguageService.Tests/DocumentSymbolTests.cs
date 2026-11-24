@@ -124,6 +124,19 @@ public sealed class DocumentSymbolTests
             Outline(text));
     }
 
+    /// <summary>C-285 (LANG-541): a library file is outlined like a program — uses node and declarations under the library node.</summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "LANG-541")]
+    public void LibraryOutline()
+    {
+        const string text = "library My.Lib;\nuses U1;\nvar I: Integer;\nprocedure Q; begin end;\nexports Q name 'q';\nbegin\nend.";
+
+        Assert.Equal(
+            "Unit My.Lib\n  Unit uses : U1\n    Unit U1\n  Variable I : Integer\n  Routine Q : procedure Q",
+            Outline(text));
+    }
+
     [Fact]
     public void FileWithSyntaxErrors_DoesNotThrow()
     {

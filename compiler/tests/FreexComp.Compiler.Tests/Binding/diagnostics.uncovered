@@ -26,6 +26,8 @@ E2205  elsewhere UnitGraphTests  needs unit files (location and path: LANG-513, 
 E2206  elsewhere UnitBindingTests  needs a second program file
 E2208  elsewhere UnitBindingTests  needs unit files (two written names of one unit; aliases: C-164)
 E2209  elsewhere AliasTableTests  reported while the alias table file is read (C-164)
+E2211  elsewhere ParserTests  reported by the parser where the clause stands (LANG-544, C-285); a case snippet must parse without errors
+E2217  elsewhere UnitBindingTests  needs a library file named by a uses entry (LANG-542, C-285)
 E2604  reserved  lead decision 2026-11-14 (C-096): no case needs it; unrelated classes are E2641, invalid inherited is E2626
 W1011  Phase8  lead note 2026-11-14 (C-067): reserved for Phase 8, no rule defines it yet
 W1012  retired  lead note 2026-11-14 (C-067): LANG-280 rule 2 makes an out-of-range subrange constant E2012

@@ -21,6 +21,9 @@ internal sealed class PreprocessorContext
     /// <summary>C-127: the main file starts with <c>unit</c> (set once its first token is read): <c>{$APPTYPE}</c> there is W1003.</summary>
     public bool IsUnitFile { get; set; }
 
+    /// <summary>LANG-543: the main file starts with <c>library</c>: <c>{$APPTYPE}</c> there is W1003 and has no effect.</summary>
+    public bool IsLibraryFile { get; set; }
+
     public PreprocessorContext(ParseOptions? options)
     {
         Options = options;
@@ -512,6 +515,12 @@ internal sealed class DirectiveProcessor
     /// <summary><c>{$APPTYPE CONSOLE|GUI}</c> defines / undefines CONSOLE. W1003 outside the program file needs the parser.</summary>
     private void AppType(DirectiveTriviaInfo directive)
     {
+        if (_context.IsLibraryFile)
+        {
+            Report("W1003", directive.Span);                                    // LANG-543: no effect in a library file
+            return;
+        }
+
         if (_context.IsUnitFile)
         {
             Report("W1003", directive.Span);                                    // C-127: only the program file sets the application type

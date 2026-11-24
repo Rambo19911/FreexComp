@@ -243,7 +243,7 @@ public sealed class Compilation
         for (var node = token.Parent; node is not null; node = node.Parent)
         {
             if (node is RoutineDeclarationSyntax { Block: not null } or InitializationSectionSyntax or FinalizationSectionSyntax
-                || node is CompoundStatementSyntax { Parent: BlockSyntax { Parent: ProgramSyntax } })
+                || node is CompoundStatementSyntax { Parent: BlockSyntax { Parent: ProgramSyntax or LibrarySyntax } })
             {
                 found = Contains(node) ? node : found;
             }
@@ -275,9 +275,9 @@ public sealed class Compilation
     /// <summary>True when the current text of <paramref name="path"/> keeps the earlier unit's interface part character for character.</summary>
     private bool SameInterface(LoadedUnit old, string path)
     {
-        if (old.Tree?.Root is ProgramSyntax)
+        if (old.Tree?.Root is ProgramSyntax or LibrarySyntax)
         {
-            return true;                                                    // no unit uses a program
+            return true;                                                    // no unit uses a program or a library
         }
 
         if (old.Tree?.Root is not UnitSyntax { ImplementationSection.ImplementationKeyword: { IsMissing: false } keyword }
@@ -428,6 +428,16 @@ public sealed class Compilation
     /// </summary>
     public SyntaxTree GetSyntaxTree(string path) =>
         TryGetSyntaxTree(path, out var tree) ? tree : SyntaxTree.Parse(SourceText.From(PathUtil.Normalize(path), ""));
+
+    /// <summary>
+    /// CMP-1056 (LANG-542): the module the main source makes — a library file a DLL, a program file (or a file without
+    /// heading) an executable.
+    /// </summary>
+    public ModuleKind MainModuleKind =>
+        TryGetSyntaxTree(Options.MainFile, out var tree) && tree.Root is LibrarySyntax ? ModuleKind.Library : ModuleKind.Program;
+
+    /// <summary>CMP-1056: the exports of a library main file in ordinal order (LANG-545…549); empty for a program.</summary>
+    public ImmutableArray<ExportInfo> Exports => _analysis.Value.Front?.Binder.Main?.Symbol?.Exports ?? [];
 
     /// <summary>False when the file cannot be read.</summary>
     public bool TryGetSyntaxTree(string path, out SyntaxTree tree)
@@ -589,7 +599,9 @@ public sealed class Compilation
             jobs.Add(ClangInvoker.Job(toolchain.Clang, unit.Name, ll, Path.ChangeExtension(ll, ".obj"), Options.Optimization, Options.DebugInfo, Options.Target));
         }
 
-        var link = options.Stage == EmitStage.Exe && main.Unit.IsProgram;
+        // until the DLL link of C-288 (CMP-1060…1066) a library stops after its objects and .pcu files: the link is refused
+        var libraryLink = options.Stage == EmitStage.Exe && main.Unit.IsLibrary;
+        var link = options.Stage == EmitStage.Exe && main.Unit.IsProgram && !libraryLink;
         var imports = LinkInputs.Imports(linkUnits.Select(u => u.Symbol!));
         var libraries = ImmutableArray.CreateBuilder<string>();
         var definitions = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -663,6 +675,11 @@ public sealed class Compilation
 
         ct.ThrowIfCancellationRequested();
         diagnostics.AddRange(notFound);
+        if (libraryLink && !diagnostics.Any(d => d.Severity == DiagnosticSeverity.Error))
+        {
+            diagnostics.Add(Diagnostic.Create("E2900", location, "linking a library (DLL output)"));
+        }
+
         if (!link || diagnostics.Any(d => d.Severity == DiagnosticSeverity.Error))
         {
             return Finish(true, null, compiled);                                    // CMP-1140: no link after a failed job

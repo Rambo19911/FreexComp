@@ -274,6 +274,9 @@ internal static class Binder
             case ProgramSyntax program when Wanted(program.Block.Body):
                 bodies.Add(BindUnitBody(program.Block.Body, program.Block.Body.Statements));
                 break;
+            case LibrarySyntax library when Wanted(library.Block.Body):
+                bodies.Add(BindUnitBody(library.Block.Body, library.Block.Body.Statements));     // the library block (LANG-541)
+                break;
             case UnitSyntax unit:
                 if (unit.InitializationSection is { } initialization && Wanted(initialization))
                 {

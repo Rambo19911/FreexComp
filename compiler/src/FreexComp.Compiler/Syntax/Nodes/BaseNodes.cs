@@ -2,7 +2,7 @@ namespace FreexComp.Compiler.Syntax;
 
 // Abstract categories of api.md §4.1. Constructors are internal: only the parser creates nodes.
 
-/// <summary><c>ProgramSyntax</c>, <c>UnitSyntax</c> or <c>IncludeFileSyntax</c>: the root of a tree.</summary>
+/// <summary><c>ProgramSyntax</c>, <c>LibrarySyntax</c>, <c>UnitSyntax</c> or <c>IncludeFileSyntax</c>: the root of a tree.</summary>
 public abstract class CompilationUnitSyntax : SyntaxNode
 {
     internal CompilationUnitSyntax(SyntaxKind kind)

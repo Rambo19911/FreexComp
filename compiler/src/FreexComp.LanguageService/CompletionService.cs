@@ -335,7 +335,7 @@ public static class CompletionService
 
         // a ';' ending a declaration (not inside a statement)
         return previous.Parent.FirstAncestorOrSelf<StatementSyntax>() is null
-               && previous.Parent is ProgramSyntax or UnitSyntax or UsesClauseSyntax or VarDeclarationSyntax or ConstDeclarationSyntax or TypeDeclarationSyntax
+               && previous.Parent is ProgramSyntax or LibrarySyntax or ExportsClauseSyntax or UnitSyntax or UsesClauseSyntax or VarDeclarationSyntax or ConstDeclarationSyntax or TypeDeclarationSyntax
                    or FieldDeclarationSyntax or PropertyDeclarationSyntax or MethodDeclarationSyntax or RoutineDeclarationSyntax or DirectiveSyntax;
     }
 

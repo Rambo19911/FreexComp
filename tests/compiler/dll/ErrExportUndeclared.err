@@ -1,0 +1,3 @@
+ErrExportUndeclared.pas(13,3): error E2003: Undeclared identifier 'Missing'
+ErrExportUndeclared.pas(14,3): error E2003: Undeclared identifier 'Later'
+ErrExportUndeclared.pas(15,3): error E2003: Undeclared identifier 'NoSuchUnit'

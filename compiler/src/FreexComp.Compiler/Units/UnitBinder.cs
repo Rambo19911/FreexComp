@@ -64,13 +64,18 @@ internal sealed class LoadedUnit(string path)
 
     public UnitSymbol? Symbol => Interface?.Unit;
 
-    public bool IsProgram => Tree?.Root is ProgramSyntax;
+    /// <summary>A main file — a program or a library file (LANG-541) — not a unit.</summary>
+    public bool IsProgram => Tree?.Root is ProgramSyntax || IsLibrary;
+
+    /// <summary>LANG-542: a library file, or the <c>.pcu</c> of one (CMP-1055: kind <c>library</c>) — not a unit.</summary>
+    public bool IsLibrary => Tree?.Root is LibrarySyntax || PcuReader.IsLibrary(Pcu);
 
     /// <summary>The name in the heading (the canonical name, LANG-505), else the file's base name.</summary>
     public string Name => Tree?.Root switch
     {
         UnitSyntax unit when !unit.Name.IsMissing => UnitBinder.NameOf(unit.Name),
         ProgramSyntax { Name: { IsMissing: false } name } => UnitBinder.NameOf(name),
+        LibrarySyntax { Name: { IsMissing: false } name } => UnitBinder.NameOf(name),
         _ => global::System.IO.Path.GetFileNameWithoutExtension(Path),
     };
 }
@@ -301,6 +306,7 @@ internal sealed class UnitBinder : IUsesScopes
         {
             UnitSyntax u => u.InterfaceSection.UsesClause,
             ProgramSyntax p => p.UsesClause,
+            LibrarySyntax l => l.UsesClause,
             _ => null,
         };
         unit.InterfaceUsesScope = BindUses(unit, clause, isSystem ? Types.Scope : Root, unit.InterfaceUses);
@@ -474,7 +480,7 @@ internal sealed class UnitBinder : IUsesScopes
 
             if (used.IsProgram)
             {
-                unit.Bag.Report(entry.Name, "E2206", written);
+                unit.Bag.Report(entry.Name, used.IsLibrary ? "E2217" : "E2206", written);     // LANG-542
                 continue;
             }
 

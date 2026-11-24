@@ -436,3 +436,17 @@ type [Foo] TA = class end; begin end.
 type TA = class [Weak] F: Pointer; end; begin end.
 === W1003 1,9
 unit U; {$APPTYPE GUI} interface implementation end.
+=== E2212 1,36
+library L; var V: Integer; exports V; end.
+=== E2213 1,51
+library L; procedure P; begin end; exports P name 'a.b'; end.
+=== E2214 1,47
+library L; procedure P; begin end; exports P, P; end.
+=== E2215 1,52
+library L; procedure P; begin end; exports P index 0; end.
+=== E2216 1,55
+library L; procedure P; begin end; exports P index 2, P name 'q' index 2; end.
+=== W1082 1,55
+library L; procedure P(S: string); begin end; exports P; end.
+=== W1003 1,12
+library L; {$APPTYPE GUI} end.

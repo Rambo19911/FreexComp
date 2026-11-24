@@ -34,6 +34,7 @@ public static class SyntaxEdits
             UnitSyntax unit when interfaceSectionOnly => unit.InterfaceSection.Declarations,
             UnitSyntax unit => unit.InterfaceSection.Declarations.Concat(unit.ImplementationSection.Declarations),
             ProgramSyntax program => program.Block.Declarations,
+            LibrarySyntax library => library.Block.Declarations,
             _ => [],
         };
         return declarations.OfType<TypeSectionSyntax>()
@@ -371,6 +372,7 @@ public static class SyntaxEdits
     {
         UnitSyntax unit => interfaceSection ? unit.InterfaceSection.UsesClause : unit.ImplementationSection.UsesClause,
         ProgramSyntax program => program.UsesClause,
+        LibrarySyntax library => library.UsesClause,
         _ => null,
     };
 
@@ -653,6 +655,10 @@ public static class SyntaxEdits
             case ProgramSyntax program:
                 clause = program.UsesClause;
                 anchor = program.SemicolonToken;
+                break;
+            case LibrarySyntax library:
+                clause = library.UsesClause;
+                anchor = library.SemicolonToken;
                 break;
             default:
                 return default;

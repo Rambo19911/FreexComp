@@ -1,0 +1,2 @@
+ErrUsesLibrary.pas(4,6): error E2217: 'SomeLib' is a library, not a unit
+ErrUsesLibrary.pas(4,15): error E2217: 'Other' is a library, not a unit

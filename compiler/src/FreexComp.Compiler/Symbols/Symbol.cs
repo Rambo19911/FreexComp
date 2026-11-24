@@ -92,17 +92,25 @@ public abstract class Symbol
 /// <summary>A program or unit (api.md §5); members are filled by the declaration binder.</summary>
 public sealed class UnitSymbol : Symbol
 {
-    internal UnitSymbol(string name, bool isProgram, ImmutableArray<Location> locations)
+    internal UnitSymbol(string name, bool isProgram, ImmutableArray<Location> locations, bool isLibrary = false)
         : base(SymbolKind.Unit, name, containingSymbol: null, locations)
     {
         IsProgram = isProgram;
+        IsLibrary = isLibrary;
     }
 
     public ImmutableArray<Symbol> InterfaceMembers { get; internal set; } = [];
 
     public ImmutableArray<Symbol> ImplementationMembers { get; internal set; } = [];
 
+    /// <summary>The main file of a compilation, not a unit: a program file or a library file (LANG-541).</summary>
     public bool IsProgram { get; }
+
+    /// <summary>LANG-540: the main file is a library file (then <see cref="IsProgram"/> is true as well: it follows the rules of a program file).</summary>
+    internal bool IsLibrary { get; }
+
+    /// <summary>LANG-545…549: the exports of a library file in ordinal order (set by the export binder); empty otherwise.</summary>
+    internal ImmutableArray<ExportInfo> Exports { get; set; } = [];
 
     /// <summary>
     /// End of the last field of the unit's threadvar record so far (ABI-180; filled while the var sections are bound, or
@@ -131,7 +139,7 @@ public sealed class UnitSymbol : Symbol
     /// </summary>
     internal List<TypeAlias> TypeAliases { get; } = [];
 
-    public override string ToDisplayString() => (IsProgram ? "program " : "unit ") + Name;
+    public override string ToDisplayString() => (IsLibrary ? "library " : IsProgram ? "program " : "unit ") + Name;
 }
 
 /// <summary>

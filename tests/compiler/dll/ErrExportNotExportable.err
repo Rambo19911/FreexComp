@@ -1,0 +1,10 @@
+ErrExportNotExportable.pas(48,3): error E2212: 'Counter' cannot be exported: not a procedure or function
+ErrExportNotExportable.pas(49,3): error E2212: 'Limit' cannot be exported: not a procedure or function
+ErrExportNotExportable.pas(50,3): error E2212: 'TVec3' cannot be exported: not a procedure or function
+ErrExportNotExportable.pas(51,3): error E2212: 'System' cannot be exported: not a procedure or function
+ErrExportNotExportable.pas(52,3): error E2212: 'TVec3.Zero' cannot be exported: it is a method
+ErrExportNotExportable.pas(53,3): error E2212: 'Outer.Inner' cannot be exported: it is a nested routine
+ErrExportNotExportable.pas(54,3): error E2212: 'Show' cannot be exported: it is overloaded
+ErrExportNotExportable.pas(55,3): error E2212: 'SizeOf' cannot be exported: it is a compiler intrinsic
+ErrExportNotExportable.pas(56,3): error E2212: 'Tick' cannot be exported: it is imported (declared external)
+ErrExportNotExportable.pas(57,3): error E2212: 'MakeVec' cannot be exported: the result type needs an export thunk; export it under another name

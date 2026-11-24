@@ -1,0 +1,4 @@
+WarnExportUnsafeType.pas(35,3): warning W1082: Exported routine 'Greeting' passes 'string' across the library boundary; caller and library do not share a memory manager
+WarnExportUnsafeType.pas(36,3): warning W1082: Exported routine 'Greeting' passes 'string' across the library boundary; caller and library do not share a memory manager
+WarnExportUnsafeType.pas(37,3): warning W1082: Exported routine 'Fill' passes 'TNamed' across the library boundary; caller and library do not share a memory manager
+WarnExportUnsafeType.pas(38,3): warning W1082: Exported routine 'Count' passes 'array of Integer' across the library boundary; caller and library do not share a memory manager

@@ -1,0 +1,6 @@
+ErrExportBadIndex.pas(16,20): error E2215: Export index must be a constant in the range 1..65535
+ErrExportBadIndex.pas(17,20): error E2215: Export index must be a constant in the range 1..65535
+ErrExportBadIndex.pas(18,20): error E2215: Export index must be a constant in the range 1..65535
+ErrExportBadIndex.pas(19,20): error E2215: Export index must be a constant in the range 1..65535
+ErrExportBadIndex.pas(20,20): error E2215: Export index must be a constant in the range 1..65535
+ErrExportBadIndex.pas(21,20): error E2215: Export index must be a constant in the range 1..65535

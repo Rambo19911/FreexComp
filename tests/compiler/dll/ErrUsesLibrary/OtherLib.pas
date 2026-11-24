@@ -1,0 +1,3 @@
+library Other;
+begin
+end.

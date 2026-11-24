@@ -303,9 +303,11 @@ public sealed class UnitBindingTests
     [InlineData("uses A, A;", "P.pas(2,9): E2203 Unit 'A' is already used")]
     [InlineData("uses Prog2;", "P.pas(2,6): E2206 'Prog2' is a program, not a unit")]
     [InlineData("uses A, A2 in 'A.pas';", "P.pas(2,9): E2208 Unit 'A2' is already used as 'A'")]
+    [InlineData("uses Lib2;", "P.pas(2,6): E2217 'Lib2' is a library, not a unit")]                     // LANG-542 (C-285)
     public void UsesEntryErrors(string uses, string expected)
     {
-        var diagnostics = Check($"program P;\n{uses}\nbegin end.", ("A.pas", UnitA), ("Prog2.pas", "program Prog2; begin end."));
+        var diagnostics = Check($"program P;\n{uses}\nbegin end.", ("A.pas", UnitA), ("Prog2.pas", "program Prog2; begin end."),
+            ("Lib2.pas", "library Lib2; end."));
         Assert.Contains(expected, diagnostics);
     }
 

@@ -2930,6 +2930,18 @@ public sealed class IrSnapshotTests
     [Trait("Req", "CMP-422")]
     public void DebugInfo() => Snapshot.Verify("DebugInfo", DebugInfoTests.EmitWithDebugInfo(AddSource));
 
+    /// <summary>
+    /// CMP-1050, 1051, 1053 (C-287): the module of a library file — <c>$units</c>, <c>$main</c>, the entry routine <c>_dllstart</c>
+    /// and the export thunks in ordinal order; no <c>_start</c> (dll-output.md §3).
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1050")]
+    [Trait("Req", "CMP-1051")]
+    [Trait("Req", "CMP-1053")]
+    public void LibraryModule() =>
+        Snapshot.Verify("LibraryModule", ExportThunkTests.EmitLibraryIr("mathlib", ExportThunkTests.MathLibSource, ("MathUnit", ExportThunkTests.MathUnitSource)));
+
     internal static string Emit(string source)
     {
         var tree = SyntaxTree.Parse(SourceText.From(@"C:\p\M.pas", source));

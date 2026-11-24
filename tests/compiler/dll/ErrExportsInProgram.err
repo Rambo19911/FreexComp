@@ -1,0 +1,2 @@
+ErrExportsInProgram.pas(7,3): error E2211: 'exports' is only allowed in a library file
+ErrExportsInProgram.pas(12,1): error E2211: 'exports' is only allowed in a library file

@@ -1,0 +1,2 @@
+ExpUnit.pas(7,1): error E2211: 'exports' is only allowed in a library file
+ExpUnit.pas(16,1): error E2211: 'exports' is only allowed in a library file

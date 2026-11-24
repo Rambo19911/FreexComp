@@ -58,6 +58,18 @@ public static partial class NavigationService
                 return [new DocumentSymbol(name, "", CompletionItemKind.Unit, program.Span, selection, children.ToImmutable())];
             }
 
+            case LibrarySyntax library:
+            {
+                var children = ImmutableArray.CreateBuilder<DocumentSymbol>();
+                if (library.UsesClause is { } uses)
+                {
+                    children.Add(Uses(uses));
+                }
+
+                AddDeclarations(children, library.Block.Declarations);
+                return [new DocumentSymbol(library.Name.ToString(), "", CompletionItemKind.Unit, library.Span, library.Name.Span, children.ToImmutable())];
+            }
+
             default:
                 return [];
         }

@@ -137,7 +137,7 @@ public static class CodeActionService
 
         var root = tree.Root;
         var inInterface = root is UnitSyntax unit && token.Span.Start < unit.ImplementationSection.ImplementationKeyword.Span.Start;
-        var change = SyntaxEdits.AddUsesEntry(root, units[0], inInterface || root is ProgramSyntax,
+        var change = SyntaxEdits.AddUsesEntry(root, units[0], inInterface || root is ProgramSyntax or LibrarySyntax,
             new EditOptions(LineEnding: SyntaxEdits.DetectLineEnding(tree.Text.Text)));
         return change.IsEmpty ? null : Action("add-uses", $"Add '{units[0]}' to the uses clause", model, change);
     }

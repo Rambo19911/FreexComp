@@ -57,7 +57,7 @@ internal static class DocCommentText
     {
         var node = tree.FindToken(position).Parent?.AncestorsAndSelf().FirstOrDefault(n => n is RoutineDeclarationSyntax
             or MethodDeclarationSyntax or TypeDeclarationSyntax or VarDeclarationSyntax or ConstDeclarationSyntax or FieldDeclarationSyntax
-            or PropertyDeclarationSyntax or EnumMemberSyntax or UnitSyntax or ProgramSyntax);
+            or PropertyDeclarationSyntax or EnumMemberSyntax or UnitSyntax or ProgramSyntax or LibrarySyntax);
         return node is null ? null : Text(node.FirstToken().LeadingTrivia);
     }
 

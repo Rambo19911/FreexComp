@@ -93,6 +93,7 @@ internal sealed class DirectiveConditionEvaluator : IConditionEvaluator
         {
             UnitSyntax u => (u.InterfaceSection.UsesClause, u.ImplementationSection is { ImplementationKeyword.IsMissing: false } section ? section : null),
             ProgramSyntax p => (p.UsesClause, null),
+            LibrarySyntax l => (l.UsesClause, null),
             _ => (null, null),
         };
         var interfaceUses = _uses?.Chain(interfaceClause, root) ?? root;

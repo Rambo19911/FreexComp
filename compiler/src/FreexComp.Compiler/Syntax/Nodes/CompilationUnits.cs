@@ -20,7 +20,7 @@ public sealed class ProgramSyntax : CompilationUnitSyntax
         EndOfFileToken = Add(endOfFileToken);
     }
 
-    /// <summary><c>program</c>; also <c>library</c> / <c>package</c>, which are reported as E2900 (LANG-151).</summary>
+    /// <summary><c>program</c>; also <c>package</c>, which is reported as E2900 (LANG-151).</summary>
     public SyntaxToken? ProgramKeyword { get; }
 
     public IdentifierNameSyntax? Name { get; }
@@ -60,6 +60,108 @@ public sealed class ProgramParameterListSyntax : SyntaxNode
     public SyntaxToken CloseParenToken { get; }
 
     public override TResult Accept<TResult>(SyntaxVisitor<TResult> visitor) => visitor.VisitProgramParameterList(this);
+}
+
+/// <summary>
+/// <c>library qualIdent ; [ usesClause ] { declSection | exportsClause } ( compoundStmt | end ) .</c> (LANG-540, 541; CMP-1056).
+/// </summary>
+public sealed class LibrarySyntax : CompilationUnitSyntax
+{
+    internal LibrarySyntax(SyntaxToken libraryKeyword, NameSyntax name, SyntaxToken semicolonToken, UsesClauseSyntax? usesClause,
+                           BlockSyntax block, SyntaxToken dotToken, SyntaxToken endOfFileToken)
+        : base(SyntaxKind.Library)
+    {
+        LibraryKeyword = Add(libraryKeyword);
+        Name = Add(name);
+        SemicolonToken = Add(semicolonToken);
+        UsesClause = AddOptional(usesClause);
+        Block = Add(block);
+        DotToken = Add(dotToken);
+        EndOfFileToken = Add(endOfFileToken);
+    }
+
+    public SyntaxToken LibraryKeyword { get; }
+
+    /// <summary>The (possibly dotted) library name; informative, it need not match the file name (LANG-540).</summary>
+    public NameSyntax Name { get; }
+
+    public SyntaxToken SemicolonToken { get; }
+
+    public UsesClauseSyntax? UsesClause { get; }
+
+    /// <summary>
+    /// The declarations (with the <see cref="ExportsClauseSyntax"/> nodes among them, in source order) and the library block. The
+    /// <c>end</c>-only form has a compound statement whose <c>begin</c> is a missing token and that has no statements (LANG-541).
+    /// </summary>
+    public BlockSyntax Block { get; }
+
+    public SyntaxToken DotToken { get; }
+
+    public SyntaxToken EndOfFileToken { get; }
+
+    public override TResult Accept<TResult>(SyntaxVisitor<TResult> visitor) => visitor.VisitLibrary(this);
+}
+
+/// <summary><c>exports exportItem { , exportItem } ;</c> (LANG-544).</summary>
+public sealed class ExportsClauseSyntax : SyntaxNode
+{
+    internal ExportsClauseSyntax(SyntaxToken exportsKeyword, SeparatedSyntaxList<ExportItemSyntax> items, SyntaxToken semicolonToken)
+        : base(SyntaxKind.ExportsClause)
+    {
+        ExportsKeyword = Add(exportsKeyword);
+        Items = Add(items);
+        SemicolonToken = Add(semicolonToken);
+    }
+
+    public SyntaxToken ExportsKeyword { get; }
+
+    public SeparatedSyntaxList<ExportItemSyntax> Items { get; }
+
+    public SyntaxToken SemicolonToken { get; }
+
+    public override TResult Accept<TResult>(SyntaxVisitor<TResult> visitor) => visitor.VisitExportsClause(this);
+}
+
+/// <summary><c>qualIdent { index constExpr | name constExpr }</c>: each specifier at most once, in either order (LANG-546).</summary>
+public sealed class ExportItemSyntax : SyntaxNode
+{
+    internal ExportItemSyntax(NameSyntax name, ExportSpecifierSyntax? first, ExportSpecifierSyntax? second)
+        : base(SyntaxKind.ExportItem)
+    {
+        Name = Add(name);
+        var (one, two) = (AddOptional(first), AddOptional(second));
+        IndexSpecifier = one?.Keyword.ContextualKind == SyntaxKind.IndexKeyword ? one : two?.Keyword.ContextualKind == SyntaxKind.IndexKeyword ? two : null;
+        NameSpecifier = one?.Keyword.ContextualKind == SyntaxKind.NameKeyword ? one : two?.Keyword.ContextualKind == SyntaxKind.NameKeyword ? two : null;
+    }
+
+    /// <summary>The exported routine: <c>Proc</c> or <c>UnitName.Proc</c> (LANG-545).</summary>
+    public NameSyntax Name { get; }
+
+    /// <summary><c>index N</c>.</summary>
+    public ExportSpecifierSyntax? IndexSpecifier { get; }
+
+    /// <summary><c>name S</c>.</summary>
+    public ExportSpecifierSyntax? NameSpecifier { get; }
+
+    public override TResult Accept<TResult>(SyntaxVisitor<TResult> visitor) => visitor.VisitExportItem(this);
+}
+
+/// <summary><c>index constExpr</c> or <c>name constExpr</c> of an export item.</summary>
+public sealed class ExportSpecifierSyntax : SyntaxNode
+{
+    internal ExportSpecifierSyntax(SyntaxToken keyword, ExpressionSyntax value)
+        : base(SyntaxKind.ExportSpecifier)
+    {
+        Keyword = Add(keyword);
+        Value = Add(value);
+    }
+
+    /// <summary>The contextual keyword <c>index</c> or <c>name</c>.</summary>
+    public SyntaxToken Keyword { get; }
+
+    public ExpressionSyntax Value { get; }
+
+    public override TResult Accept<TResult>(SyntaxVisitor<TResult> visitor) => visitor.VisitExportSpecifier(this);
 }
 
 /// <summary><c>unit qualIdent [ hintDirectives ] ; interfaceSection implementationSection unitEnd .</c></summary>

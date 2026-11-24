@@ -17,6 +17,14 @@ public abstract class SyntaxVisitor<TResult>
 
     public virtual TResult VisitProgram(ProgramSyntax node) => DefaultVisit(node);
 
+    public virtual TResult VisitLibrary(LibrarySyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitExportsClause(ExportsClauseSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitExportItem(ExportItemSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitExportSpecifier(ExportSpecifierSyntax node) => DefaultVisit(node);
+
     public virtual TResult VisitProgramParameterList(ProgramParameterListSyntax node) => DefaultVisit(node);
 
     public virtual TResult VisitUnit(UnitSyntax node) => DefaultVisit(node);

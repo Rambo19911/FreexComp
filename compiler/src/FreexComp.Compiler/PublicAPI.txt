@@ -82,6 +82,7 @@ sealed class FreexComp.Compiler.Compilation
   public FreexComp.Compiler.CompilationOptions Options { get; }
   public FreexComp.Compiler.EmitResult Emit(FreexComp.Compiler.EmitOptions options, System.Threading.CancellationToken ct)
   public FreexComp.Compiler.IFileSystem FileSystem { get; }
+  public FreexComp.Compiler.ModuleKind MainModuleKind { get; }
   public FreexComp.Compiler.Symbols.UnitSymbol GetUnitSymbol(System.String unitName)
   public FreexComp.Compiler.Syntax.SyntaxTree GetSyntaxTree(System.String path)
   public FreexComp.Compiler.Types.BuiltInTypes BuiltIns { get; }
@@ -89,6 +90,7 @@ sealed class FreexComp.Compiler.Compilation
   public System.Boolean TryGetSyntaxTree(System.String path, out FreexComp.Compiler.Syntax.SyntaxTree tree)
   public System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Diagnostic> GetDiagnostics(System.String path = null, System.Threading.CancellationToken ct = default)
   public System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Diagnostic> GetSyntaxDiagnostics(System.String path)
+  public System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.ExportInfo> Exports { get; }
   public System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.UnitInfo> Units { get; }
   public System.Threading.Tasks.Task<FreexComp.Compiler.EmitResult> EmitAsync(FreexComp.Compiler.EmitOptions options, System.Threading.CancellationToken ct)
   public static FreexComp.Compiler.Compilation Create(FreexComp.Compiler.CompilationOptions options, System.Collections.Generic.IEnumerable<FreexComp.Compiler.SourceText> openFiles, FreexComp.Compiler.IFileSystem fs)
@@ -203,6 +205,19 @@ enum FreexComp.Compiler.EmitStage
   Exe = 3
   Ll = 1
   Obj = 2
+sealed record FreexComp.Compiler.ExportInfo : System.IEquatable<FreexComp.Compiler.ExportInfo>
+  public FreexComp.Compiler.ExportInfo <Clone>$()
+  public FreexComp.Compiler.Symbols.RoutineSymbol RoutineSymbol { get; init; }
+  public System.Boolean Equals(FreexComp.Compiler.ExportInfo other)
+  public System.Int32 Ordinal { get; init; }
+  public System.String Name { get; init; }
+  public System.Void Deconstruct(out System.String Name, out System.Int32 Ordinal, out FreexComp.Compiler.Symbols.RoutineSymbol RoutineSymbol)
+  public ctor(System.String Name, System.Int32 Ordinal, FreexComp.Compiler.Symbols.RoutineSymbol RoutineSymbol)
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public static System.Boolean op_Equality(FreexComp.Compiler.ExportInfo left, FreexComp.Compiler.ExportInfo right)
+  public static System.Boolean op_Inequality(FreexComp.Compiler.ExportInfo left, FreexComp.Compiler.ExportInfo right)
 sealed record FreexComp.Compiler.Forms.FormEvent : System.IEquatable<FreexComp.Compiler.Forms.FormEvent>
   public FreexComp.Compiler.Forms.FormEvent <Clone>$()
   public System.Boolean Equals(FreexComp.Compiler.Forms.FormEvent other)
@@ -275,6 +290,9 @@ sealed class FreexComp.Compiler.InMemoryFileSystem : FreexComp.Compiler.IFileSys
   public System.Void Delete(System.String path)
   public System.Void WriteAllBytes(System.String path, System.Byte[] data)
   public ctor()
+enum FreexComp.Compiler.ModuleKind
+  Library = 1
+  Program = 0
 enum FreexComp.Compiler.OptimizationLevel
   O0 = 0
   O1 = 1
@@ -678,6 +696,20 @@ sealed class FreexComp.Compiler.Syntax.ExceptionHandlerSyntax : FreexComp.Compil
   public System.Nullable<FreexComp.Compiler.Syntax.SyntaxToken> ColonToken { get; }
   public System.Nullable<FreexComp.Compiler.Syntax.SyntaxToken> Identifier { get; }
   public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.ExportItemSyntax : FreexComp.Compiler.Syntax.SyntaxNode
+  public FreexComp.Compiler.Syntax.ExportSpecifierSyntax IndexSpecifier { get; }
+  public FreexComp.Compiler.Syntax.ExportSpecifierSyntax NameSpecifier { get; }
+  public FreexComp.Compiler.Syntax.NameSyntax Name { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.ExportSpecifierSyntax : FreexComp.Compiler.Syntax.SyntaxNode
+  public FreexComp.Compiler.Syntax.ExpressionSyntax Value { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken Keyword { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.ExportsClauseSyntax : FreexComp.Compiler.Syntax.SyntaxNode
+  public FreexComp.Compiler.Syntax.SeparatedSyntaxList<FreexComp.Compiler.Syntax.ExportItemSyntax> Items { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken ExportsKeyword { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken SemicolonToken { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
 sealed class FreexComp.Compiler.Syntax.ExpressionStatementSyntax : FreexComp.Compiler.Syntax.StatementSyntax
   public FreexComp.Compiler.Syntax.ExpressionSyntax Expression { get; }
   public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
@@ -837,6 +869,15 @@ sealed class FreexComp.Compiler.Syntax.LabeledStatementSyntax : FreexComp.Compil
 static class FreexComp.Compiler.Syntax.Lexer
   public static System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Diagnostic> GetDiagnostics(FreexComp.Compiler.SourceText text, FreexComp.Compiler.Syntax.ParseOptions options = null)
   public static System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Syntax.SyntaxToken> Tokenize(FreexComp.Compiler.SourceText text, FreexComp.Compiler.Syntax.ParseOptions options = null)
+sealed class FreexComp.Compiler.Syntax.LibrarySyntax : FreexComp.Compiler.Syntax.CompilationUnitSyntax
+  public FreexComp.Compiler.Syntax.BlockSyntax Block { get; }
+  public FreexComp.Compiler.Syntax.NameSyntax Name { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken DotToken { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken EndOfFileToken { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken LibraryKeyword { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken SemicolonToken { get; }
+  public FreexComp.Compiler.Syntax.UsesClauseSyntax UsesClause { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
 sealed class FreexComp.Compiler.Syntax.LiteralExpressionSyntax : FreexComp.Compiler.Syntax.ExpressionSyntax
   public FreexComp.Compiler.Syntax.SyntaxToken Token { get; }
   public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
@@ -1150,7 +1191,10 @@ enum FreexComp.Compiler.Syntax.SyntaxKind
   ExceptKeyword = 45
   ExceptionHandler = 239
   ExperimentalKeyword = 105
+  ExportItem = 264
   ExportKeyword = 106
+  ExportSpecifier = 265
+  ExportsClause = 263
   ExportsKeyword = 46
   ExpressionStatement = 223
   ExternalKeyword = 107
@@ -1211,6 +1255,7 @@ enum FreexComp.Compiler.Syntax.SyntaxKind
   LessThanEqualsToken = 14
   LessThanGreaterThanToken = 11
   LessThanToken = 12
+  Library = 262
   LibraryKeyword = 62
   LineCommentTrivia = 153
   LiteralExpression = 187
@@ -1453,6 +1498,9 @@ abstract class FreexComp.Compiler.Syntax.SyntaxVisitor<TResult>
   public virtual TResult VisitEnumMember(FreexComp.Compiler.Syntax.EnumMemberSyntax node)
   public virtual TResult VisitEnumType(FreexComp.Compiler.Syntax.EnumTypeSyntax node)
   public virtual TResult VisitExceptionHandler(FreexComp.Compiler.Syntax.ExceptionHandlerSyntax node)
+  public virtual TResult VisitExportItem(FreexComp.Compiler.Syntax.ExportItemSyntax node)
+  public virtual TResult VisitExportSpecifier(FreexComp.Compiler.Syntax.ExportSpecifierSyntax node)
+  public virtual TResult VisitExportsClause(FreexComp.Compiler.Syntax.ExportsClauseSyntax node)
   public virtual TResult VisitExpressionStatement(FreexComp.Compiler.Syntax.ExpressionStatementSyntax node)
   public virtual TResult VisitFieldDeclaration(FreexComp.Compiler.Syntax.FieldDeclarationSyntax node)
   public virtual TResult VisitFileType(FreexComp.Compiler.Syntax.FileTypeSyntax node)
@@ -1481,6 +1529,7 @@ abstract class FreexComp.Compiler.Syntax.SyntaxVisitor<TResult>
   public virtual TResult VisitKeywordConstraint(FreexComp.Compiler.Syntax.KeywordConstraintSyntax node)
   public virtual TResult VisitLabelSection(FreexComp.Compiler.Syntax.LabelSectionSyntax node)
   public virtual TResult VisitLabeledStatement(FreexComp.Compiler.Syntax.LabeledStatementSyntax node)
+  public virtual TResult VisitLibrary(FreexComp.Compiler.Syntax.LibrarySyntax node)
   public virtual TResult VisitLiteralExpression(FreexComp.Compiler.Syntax.LiteralExpressionSyntax node)
   public virtual TResult VisitMemberAccessExpression(FreexComp.Compiler.Syntax.MemberAccessExpressionSyntax node)
   public virtual TResult VisitMethodDeclaration(FreexComp.Compiler.Syntax.MethodDeclarationSyntax node)

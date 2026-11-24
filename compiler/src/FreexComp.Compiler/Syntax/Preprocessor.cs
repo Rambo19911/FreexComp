@@ -62,6 +62,7 @@ internal sealed class Preprocessor
             {
                 _started = true;
                 _context.IsUnitFile = token.Kind == SyntaxKind.UnitKeyword;     // C-127 (W1003); directives before the heading are not checked
+                _context.IsLibraryFile = token.Kind == SyntaxKind.LibraryKeyword;   // LANG-543
             }
 
             if (token.Kind == SyntaxKind.EndOfFileToken && _lexers.Count > 1)

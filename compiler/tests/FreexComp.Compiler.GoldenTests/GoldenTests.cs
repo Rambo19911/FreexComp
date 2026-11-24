@@ -8,8 +8,10 @@ namespace FreexComp.Compiler.GoldenTests;
 /// </summary>
 public static class GoldenTheory
 {
-    /// <summary>The milestone directories that have a test class below (CMP-900: <c>m2.1</c> … <c>m2.6</c>).</summary>
-    public static readonly IReadOnlyList<string> Milestones = ["m2.1", "m2.2", "m2.3", "m2.4", "m2.5", "m2.6"];
+    /// <summary>
+    /// The milestone directories that have a test class below (CMP-900: <c>m2.1</c> … <c>m2.6</c>; <c>dll</c>: dll-output.md §10.2).
+    /// </summary>
+    public static readonly IReadOnlyList<string> Milestones = ["dll", "m2.1", "m2.2", "m2.3", "m2.4", "m2.5", "m2.6"];
 
     public static IEnumerable<TheoryDataRow<string, string>> CasesOf(string milestone) =>
         GoldenCorpus.Rows(GoldenCorpus.Discover(GoldenSetup.CorpusDirectory).Where(c => c.Id.StartsWith(milestone + "/", StringComparison.Ordinal)));
@@ -22,6 +24,22 @@ public static class GoldenTheory
 
         Assert.True(failure is null, failure);
     }
+}
+
+/// <summary>
+/// Card F01-003 — library files and <c>exports</c> (dll-output.md §10.2; CMP-911 collection). A case whose main file is a library
+/// file has no run step: it expects diagnostics (<c>.err</c>, or <c>.diag</c> with exit code 0).
+/// </summary>
+[Trait("Phase", "8")]
+[Trait("Kind", "Golden")]
+[Trait("Category", "Toolchain")]
+public sealed class GoldenDllTests
+{
+    public static IEnumerable<TheoryDataRow<string, string>> Cases() => GoldenTheory.CasesOf("dll");
+
+    [Theory]
+    [MemberData(nameof(Cases))]
+    public Task Golden(string id, string optimization) => GoldenTheory.RunAsync(id, optimization);
 }
 
 /// <summary>Milestone M2.1 — core (CMP-911 collection).</summary>
