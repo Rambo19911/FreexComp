@@ -1,0 +1,173 @@
+== detect: update table and key
+ok all columns of a table with a primary key
+ok some columns, with the key
+ok columns under other names
+ok with expression columns
+ok without the key column
+ok only expressions
+ok an aggregate
+ok a join
+ok one column of a key of two
+ok both columns of the key
+ok a table without a primary key
+ok with an explicit rowid column
+ok oid under another name
+ok _rowid_
+ok a text key that is not selected
+ok the rowid instead of the missing key
+ok a WITHOUT ROWID table
+ok a view over one table resolves to that table
+== detect: UpdateTable and KeyFields
+ok a join with UpdateTable
+ok in any case
+ok the other table lacks its key
+ok a view as UpdateTable
+ok an unknown UpdateTable
+ok KeyFields names the key
+ok two key fields
+ok a key field that does not exist
+ok a key field that is an expression
+ok KeyFields instead of the primary key
+== detect: read-only switches
+ok a closed query cannot be modified
+ok ReadOnly
+ok Edit on a read-only query
+ok Insert on a read-only query
+ok ReadOnly may change while open
+ok UpdateTable cannot change while open
+ok KeyFields cannot change while open
+ok Edit without a key
+ok Delete without a key
+ok a read-only connection
+ok the database file is deleted
+== detect: field updatability
+ok the key is an auto-increment field
+ok read-only for the user
+ok a table column takes a write
+ok an expression column does not
+ok nor the auto-increment key
+ok a stored column next to a generated one
+ok a generated column is not updatable
+ok a column of the update table of a join
+ok a column of the other table
+ok an explicit rowid is a largeint field
+ok and not updatable
+ok next to an updatable column
+== insert
+ok Post of an insert succeeds
+ok one row in the dataset
+ok the auto-increment key is read back
+ok a column default is read back
+ok a value set by a trigger is read back
+ok an unassigned column without default is null
+ok the row is in the table
+ok and committed: datasets do not start transactions
+ok the next key
+ok an assigned value wins over the default
+ok and is stored
+ok an Insert before the current row gets its key too
+ok three rows
+ok a Post without any assigned field inserts the default values
+ok and they are read back
+ok a field assigned null stays null
+ok the assigned null is stored instead of the default, the unassigned column takes its default
+ok an insert through a query with an expression column
+ok the expression field of the new row is null
+ok until Refresh
+ok WITHOUT ROWID: the row is read back by its key
+ok and stored
+ok the rowid of the new row is read back
+ok for every row
+ok so the new row can be edited at once
+ok a generated column is read back
+ok an insert with a key of two columns
+== update
+ok a Post without an assigned field runs no statement
+ok a Post with an assigned field updates one row
+ok the value is stored
+ok only the assigned columns are written: a change made elsewhere to another column stays
+ok the dataset is not re-read after an update
+ok a cleared field is written as NULL
+ok on the second row
+ok Post of a row that was deleted elsewhere
+ok the dataset stays in dsEdit
+ok Cancel restores the row
+ok on the row whose key is NULL
+ok a NULL key matches its row
+ok a key that is not unique
+ok the dataset stays in dsEdit
+ok the statement has run already: both rows are changed (use a transaction)
+ok a key column is updated through its old value
+ok the next update uses the new key
+ok an update with a key of two columns
+ok an update of a WITHOUT ROWID table
+== delete
+ok three rows
+ok Delete removes the row from the dataset
+ok and from the table
+ok Delete of a row that was deleted elsewhere
+ok the row stays in the dataset
+ok until Refresh
+ok on the row whose key is NULL
+ok a NULL key matches its row
+ok a delete with a key of two columns
+ok deletes through the rowid
+ok the dataset is empty
+== errors: without a handler
+ok a required field is checked before any statement
+ok a CHECK violation
+ok the dataset stays in dsInsert
+ok nothing was inserted
+ok after the repair the Post succeeds
+ok and the row is stored
+ok a NOT NULL violation
+ok a UNIQUE violation
+ok the dataset stays in dsEdit
+== errors: OnPostError
+ok daFail: the error is raised
+ok after one call of the handler
+ok which sees the ESQLiteError with its codes
+ok in dsEdit
+ok and the dataset stays there
+ok daAbort: a silent exception
+ok after one call of the handler
+ok the dataset stays in dsEdit
+ok daRetry: the handler repairs the field, the step runs again
+ok and the Post succeeds
+ok with the repaired value
+ok a CHECK violation in an insert
+ok reaches the handler
+ok in dsInsert
+ok a primary key violation
+ok with its extended code
+ok a foreign key violation
+ok with its extended code
+== errors: OnDeleteError
+ok Delete of a referenced row
+ok after one call of the handler
+ok which sees the error
+ok the row stays in the dataset
+ok and in the table
+ok daAbort: a silent exception
+ok without the reference the Delete succeeds
+ok and the row is gone
+== errors: transactions
+ok two rows
+ok a Post inside a transaction does not commit
+ok Rollback does not refresh the open dataset
+ok which keeps its values
+ok Refresh shows the rolled-back state
+ok with the old values
+== detect without the column origin functions
+ok without UpdateTable every query is read-only
+ok with UpdateTable the columns are matched by name
+ok the key is still needed
+ok a column named rowid is the key
+ok a view is refused
+ok the key is an auto-increment field
+ok a column under another name is not matched
+ok an insert reads the key back
+ok and the default
+ok an update finds the row
+ok and so does a delete
+failed checks: 0

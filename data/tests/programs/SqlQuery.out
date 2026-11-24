@@ -1,0 +1,155 @@
+== params: SQL and Params wiring
+ok ParamCheck is True by default
+ok ReadOnly is False by default
+ok no parameters without SQL
+ok assigning SQL builds the parameters, one per name
+ok changing SQL rebuilds them in the order of first occurrence
+ok a parameter that occurs again keeps its value
+ok every change of the lines is parsed; literals and comments are skipped
+ok ParamByName is case-insensitive
+ok ParamByName of a missing name
+ok with ParamCheck False the parameters are left alone
+ok SQL without parameters clears them
+ok the query opens
+ok and is prepared
+ok changing SQL closes an active dataset
+ok and unprepares
+ok the new statement runs at the next Open
+== prepare
+ok Prepare without a connection
+ok Open without a connection
+ok ExecSQL without a connection
+ok not prepared at first
+ok the connection is closed
+ok Prepare opens a closed connection
+ok Prepared after Prepare
+ok Prepare does not open the dataset
+ok Prepare again is a no-op
+ok Unprepare finalizes
+ok Unprepare again is a no-op
+ok Prepared := True prepares
+ok Prepared := False unprepares
+ok empty SQL
+ok comment-only SQL
+ok Open with empty SQL
+ok the dataset stays closed
+ok two statements
+ok nothing stays prepared
+ok a terminating semicolon and white space are allowed
+ok a positional parameter
+ok a numbered parameter
+ok nothing stays prepared after it
+ok a syntax error
+ok its primary code
+ok its SQL is the statement text
+ok the error is an ESQLiteError
+ok Open of an unknown table
+ok Open prepares implicitly
+ok closing the dataset keeps the statement prepared
+ok the prepared statement is used again
+ok closing the connection closes the dataset
+ok and unprepares
+ok Open opens the connection again
+ok and runs the statement
+== binding
+ok an unbound parameter is NULL
+ok AsInteger
+ok a negative integer
+ok AsLargeInt
+ok AsFloat
+ok an integral float stays REAL
+ok AsBoolean True
+ok AsBoolean False
+ok AsString
+ok an empty string is empty TEXT, not NULL
+ok non-ASCII text
+ok comes back unchanged
+ok AsBytes
+ok empty bytes are an empty BLOB, not NULL
+ok AsDateTime
+ok AsDateTime with milliseconds
+ok a year below 1000 has four digits
+ok a cleared parameter is NULL
+ok an embedded #0 does not cut a text value
+ok and the text comes back unchanged
+ok only the :name form is parsed
+ok the @name and $name forms are bound by name too
+ok names differing in case are one parameter
+ok and every spelling is bound
+ok a statement parameter without a TParam
+ok the dataset stays closed
+ok the same in ExecSQL
+ok first execution
+ok changing a parameter does not touch the open dataset
+ok Refresh binds the current values
+ok and so does the next Open
+ok an unbound parameter replaces the earlier binding by NULL
+== exec
+ok RowsAffected is -1 before any ExecSQL
+ok a CREATE TABLE changes no rows
+ok ExecSQL prepares implicitly
+ok and does not open the dataset
+ok an INSERT of one row
+ok the prepared statement ran once per ExecSQL with the values of that call
+ok an UPDATE of three rows
+ok a CREATE TABLE after it does not repeat the count
+ok a DELETE that matches nothing
+ok ExecSQL of a SELECT ignores the rows
+ok and the dataset stays closed
+ok a DELETE of one row
+ok the same DELETE again finds nothing
+ok a constraint error in ExecSQL
+ok the statement is usable after the error
+ok and the connection too
+ok ExecSQL on an active dataset
+ok the dataset stays open
+== result sets
+ok Open of a statement without columns
+ok the dataset stays closed
+ok and the statement did not run
+ok duplicate column names get suffixes in column order
+ok and keep their values
+ok a suffixed name that exists is a duplicate itself
+ok empty column names become Column<N>
+ok the columns of a join
+ok with their values
+ok all rows are fetched at Open
+ok in statement order
+ok a later change of the table does not reach the open dataset
+ok Refresh runs the statement again
+ok and so does closing and opening
+ok Unprepare leaves an open dataset open
+ok Refresh prepares the statement again
+ok no statement stays active after Open: the table can be dropped, the rows stay
+ok two thousand rows are all in memory
+ok up to the last one
+== errors while loading
+ok an SQLite error at the second row
+ok the dataset does not become active
+ok and has no fields
+ok the statement was reset: it runs after the data is repaired
+ok a convert error at the second row
+ok the dataset does not become active
+ok the statement was reset: the table can be dropped
+ok an SQLite error in Refresh propagates
+ok the dataset stays open
+ok and the statement was reset
+== field definitions of a closed query
+ok FieldDefs.Update leaves the dataset closed
+ok and builds the definitions
+ok with their names
+ok and sizes
+ok no statement stays active after it
+ok FieldDefs.Update reports the errors of the statement
+== connection
+ok changing Connection on an active dataset
+ok the connection is unchanged
+ok the query is registered with its connection
+ok changing Connection unprepares
+ok the query left the old connection
+ok and is registered with the new one
+ok the new connection is opened by Open
+ok destroying the connection closes the dataset
+ok and clears Connection
+ok a destroyed query leaves its connection
+failed checks: 0

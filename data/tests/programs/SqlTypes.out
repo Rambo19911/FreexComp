@@ -1,0 +1,241 @@
+== mapping: declared types
+ok INTEGER
+ok INT
+ok MEDIUMINT
+ok SMALLINT
+ok TINYINT
+ok INT2
+ok INT4
+ok BIGINT
+ok INT8
+ok UNSIGNED BIG INT
+ok LARGEINT
+ok BOOLEAN
+ok BOOL
+ok BIT
+ok CHAR without a length
+ok CHAR(3)
+ok VARCHAR(40)
+ok NCHAR(5)
+ok NVARCHAR(12)
+ok VARYING CHARACTER(7)
+ok NATIVE CHARACTER(8)
+ok CHARACTER(9)
+ok VARCHAR without a length
+ok TEXT
+ok CLOB
+ok MEMO
+ok LONGTEXT
+ok BLOB
+ok BINARY
+ok VARBINARY(16)
+ok IMAGE
+ok REAL
+ok DOUBLE
+ok DOUBLE PRECISION
+ok FLOAT
+ok NUMERIC
+ok DECIMAL(10,2)
+ok MONEY
+ok CURRENCY
+ok DATE
+ok TIME
+ok DATETIME
+ok TIMESTAMP
+== mapping: normalisation
+ok lower case
+ok mixed case and spaces around the length
+ok white space is collapsed
+ok also a line break
+ok two numbers in the suffix
+ok a quoted type name
+== mapping: affinity rules for other names
+ok contains INT
+ok INT wins over FLOA
+ok contains CHAR
+ok contains CLOB
+ok contains TEXT
+ok contains BLOB
+ok contains REAL
+ok contains DOUB
+ok anything else
+ok another unknown name
+== mapping: the auto-increment key
+ok INTEGER PRIMARY KEY is the auto-increment key
+ok in any spelling, with AUTOINCREMENT
+ok declared as a table constraint
+ok under another column name
+ok INT PRIMARY KEY is not the row id
+ok a key of two columns is not
+ok the key of a WITHOUT ROWID table is not
+ok BIGINT PRIMARY KEY is not
+ok an explicit rowid column is a largeint
+== mapping: expression columns
+ok typed by the storage class of the first row
+ok no rows: strings
+ok aggregates and expressions over an empty table
+ok aggregates with rows
+ok expressions over table columns
+ok columns declared without a type follow the first row
+ok a CAST is an expression
+== mapping: Required
+ok NOT NULL columns without a default
+ok never an expression column
+ok a NOT NULL key that is not auto-increment
+ok none in a ReadOnly query
+ok none without a key: the query is read-only
+ok none in a join
+== read: integer fields
+ok NULL is null
+ok INTEGER storage
+ok the lowest 32-bit value
+ok the highest 32-bit value
+ok above the 32-bit range
+ok below the 32-bit range
+ok an integral FLOAT out of range
+ok a FLOAT with a fraction
+ok TEXT that is not a number
+ok BLOB storage
+ok TEXT the column kept as text is parsed as an integer
+ok the auto-increment key
+ok an auto-increment key above the 32-bit range
+== read: largeint fields
+ok the highest 64-bit value
+ok the lowest 64-bit value
+ok an integral FLOAT out of range
+ok a FLOAT with a fraction
+ok TEXT that is not a number
+ok NULL is null
+== read: boolean fields
+ok INTEGER 1
+ok INTEGER 0
+ok any other INTEGER
+ok a FLOAT that is not zero
+ok TEXT true
+ok TEXT FALSE
+ok TEXT T
+ok TEXT f
+ok TEXT Yes
+ok TEXT no
+ok another TEXT
+ok BLOB storage
+ok NULL is null
+== read: float fields
+ok FLOAT storage
+ok INTEGER storage
+ok a negative value
+ok TEXT is parsed
+ok TEXT with an exponent
+ok TEXT without a leading digit
+ok TEXT that is not a number
+ok a decimal comma is not accepted
+ok BLOB storage
+ok NULL is null
+== read: string and memo fields
+ok TEXT storage
+ok an empty text is not null
+ok the declared length does not cut a stored value
+ok a memo
+ok a number is stored as text by the column
+ok NULL is null
+ok a string column typed by its first row takes the numbers of later rows as text
+== read: blob fields
+ok BLOB storage
+ok a zero-length blob is empty, not null
+ok TEXT gives its bytes
+ok a number gives the bytes of its text
+ok NULL is null
+== read: date-time fields
+ok YYYY-MM-DD
+ok YYYY-MM-DD HH:MM
+ok YYYY-MM-DD HH:MM:SS
+ok YYYY-MM-DD HH:MM:SS.SSS
+ok T instead of the space
+ok T with seconds
+ok T with milliseconds
+ok a trailing Z is ignored
+ok a time-zone offset is ignored
+ok also a negative one
+ok spaces around are ignored
+ok a time alone has date part 0
+ok the last millisecond of a leap day
+ok a date before day 0
+ok INTEGER: Unix seconds
+ok Unix seconds with a time of day
+ok negative Unix seconds
+ok FLOAT: Julian day number
+ok a Julian day with a time of day
+ok the Julian day of day 0
+ok a TIMESTAMP column
+ok NULL is null
+== read: date fields
+ok YYYY-MM-DD
+ok the time of a date-time text is dropped
+ok a time alone: date part 0
+ok Unix seconds
+ok a Julian day number
+ok NULL is null
+== read: time fields
+ok HH:MM
+ok HH:MM:SS
+ok HH:MM:SS.SSS
+ok a shorter fraction
+ok a longer fraction is cut to milliseconds
+ok a trailing Z is ignored
+ok a date alone: time part 0
+ok the date of a date-time text is dropped
+ok Unix seconds
+ok a Julian day number
+ok NULL is null
+== read: date-time convert errors
+ok a word
+ok month 13
+ok a day that does not exist
+ok minute 61
+ok hour 24
+ok hours alone
+ok no zero padding
+ok text after the time
+ok a zone after a date alone
+ok a point without digits
+ok an empty text
+ok BLOB storage
+ok a Julian day number out of range
+== write
+ok the query is updatable
+ok the row is inserted
+ok an integer field is INTEGER
+ok a largeint field is INTEGER
+ok a boolean field is INTEGER 1
+ok a float field is REAL
+ok a string field is TEXT
+ok a memo field is TEXT
+ok a blob field is BLOB
+ok a date field is TEXT YYYY-MM-DD
+ok a time field is TEXT HH:MM:SS
+ok a date-time field is TEXT YYYY-MM-DD HH:MM:SS
+ok a second row
+ok an unassigned field is NULL
+ok False is INTEGER 0
+ok a negative float
+ok an empty string is empty TEXT, not NULL
+ok an empty memo too
+ok an empty blob is an empty BLOB, not NULL
+ok a year below 1000 has four digits
+ok milliseconds are appended when not zero
+ok also in a date-time
+ok an update binds the same way
+ok a cleared field is NULL
+ok a date-time with milliseconds
+ok the date reads back
+ok the time reads back
+ok the date-time reads back
+ok the blob reads back
+ok the boolean reads back
+ok the memo reads back
+ok milliseconds read back
+ok in a time too
+ok the empty blob reads back as empty
+ok the empty memo reads back as empty
+ok the cleared string reads back as null
+failed checks: 0
