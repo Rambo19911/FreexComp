@@ -1,0 +1,176 @@
+[example / Debug]
+MainFile = C:\p\Hello\Hello.pas
+SearchPaths = C:\p\Hello\lib | C:\p\Hello
+LibraryPaths = 
+Defines = DEBUG
+ObjectDirectory = C:\p\Hello\obj\Debug
+RtlDirectory = 
+ToolchainDirectory = 
+Optimization = O0
+DebugInfo = True
+DebugFormat = CodeView
+AppType = Console
+Checks = False False True
+MaxParallelism = 0
+UsePcuCache = True
+Rtti = broad
+Manifest = default
+ManifestSettings = AsInvoker Default
+Target = win64
+UnitScopeNames = 
+Output = C:\p\Hello\bin\Debug\Hello.exe
+
+[example / Release]
+MainFile = C:\p\Hello\Hello.pas
+SearchPaths = C:\p\Hello\lib | C:\p\Hello
+LibraryPaths = 
+Defines = RELEASE
+ObjectDirectory = C:\p\Hello\obj\Release
+RtlDirectory = 
+ToolchainDirectory = 
+Optimization = O2
+DebugInfo = False
+DebugFormat = CodeView
+AppType = Console
+Checks = False False True
+MaxParallelism = 0
+UsePcuCache = True
+Rtti = broad
+Manifest = default
+ManifestSettings = AsInvoker Default
+Target = win64
+UnitScopeNames = 
+Output = C:\p\Hello\bin\Release\Hello.exe
+
+[gui / Debug]
+MainFile = C:\p\Hello\src\App.pas
+SearchPaths = C:\p\shared | C:\abs\lib | C:\p\Hello\units | C:\p\Hello\src | C:\p\Hello\forms
+LibraryPaths = 
+Defines = APP | debug | DEBUG | APP
+ObjectDirectory = C:\p\Hello\obj\Debug
+RtlDirectory = 
+ToolchainDirectory = 
+Optimization = O0
+DebugInfo = True
+DebugFormat = CodeView
+AppType = Gui
+Checks = False False True
+MaxParallelism = 0
+UsePcuCache = True
+Rtti = published
+Manifest = C:\p\Hello\res\app.manifest
+ManifestSettings = AsInvoker Default
+Target = win64
+UnitScopeNames = Winapi | System
+Output = C:\p\Hello\bin\Debug\App.exe
+
+[gui / Fast]
+MainFile = C:\p\Hello\src\App.pas
+SearchPaths = C:\p\shared | C:\abs\lib | C:\p\Hello\units | C:\p\Hello\src | C:\p\Hello\forms
+LibraryPaths = 
+Defines = APP | debug
+ObjectDirectory = C:\p\Hello\obj\Fast
+RtlDirectory = 
+ToolchainDirectory = 
+Optimization = O1
+DebugInfo = False
+DebugFormat = CodeView
+AppType = Gui
+Checks = False False True
+MaxParallelism = 0
+UsePcuCache = True
+Rtti = broad
+Manifest = C:\p\Hello\res\app.manifest
+ManifestSettings = AsInvoker Default
+Target = win64
+UnitScopeNames = Winapi | System
+Output = C:\out\fast\App.exe
+
+[gui / Bare]
+MainFile = C:\p\Hello\src\App.pas
+SearchPaths = C:\p\shared | C:\abs\lib | C:\p\Hello\units | C:\p\Hello\src | C:\p\Hello\forms
+LibraryPaths = 
+Defines = APP | debug
+ObjectDirectory = C:\p\Hello\obj\Bare
+RtlDirectory = 
+ToolchainDirectory = 
+Optimization = O0
+DebugInfo = False
+DebugFormat = CodeView
+AppType = Gui
+Checks = False False True
+MaxParallelism = 0
+UsePcuCache = True
+Rtti = published
+Manifest = C:\p\Hello\res\app.manifest
+ManifestSettings = AsInvoker Default
+Target = win64
+UnitScopeNames = Winapi | System
+Output = C:\p\Hello\bin\Bare\App.exe
+
+[library / Release]
+MainFile = C:\p\Hello\Lib.pas
+SearchPaths = C:\p\Hello
+LibraryPaths = C:\p\Hello\imports | D:\sdk\lib
+Defines = RELEASE
+ObjectDirectory = C:\p\Hello\obj\Release
+RtlDirectory = 
+ToolchainDirectory = 
+Optimization = O2
+DebugInfo = False
+DebugFormat = CodeView
+AppType = Library
+Checks = False False True
+MaxParallelism = 0
+UsePcuCache = True
+Rtti = broad
+Manifest = none
+ManifestSettings = AsInvoker Default
+Target = win64
+UnitScopeNames = 
+Output = C:\p\Hello\bin\Release\Lib.dll
+
+[minimal / Debug]
+MainFile = C:\p\Hello\A.pas
+SearchPaths = C:\p\Hello
+LibraryPaths = 
+Defines = DEBUG
+ObjectDirectory = C:\p\Hello\obj\Debug
+RtlDirectory = 
+ToolchainDirectory = 
+Optimization = O0
+DebugInfo = True
+DebugFormat = CodeView
+AppType = Console
+Checks = False False True
+MaxParallelism = 0
+UsePcuCache = True
+Rtti = broad
+Manifest = 
+ManifestSettings = AsInvoker Default
+Target = win64
+UnitScopeNames = 
+Output = C:\p\Hello\bin\Debug\A.exe
+
+[minimal / Release]
+MainFile = C:\p\Hello\A.pas
+SearchPaths = C:\p\Hello
+LibraryPaths = 
+Defines = RELEASE
+ObjectDirectory = C:\p\Hello\obj\Release
+RtlDirectory = 
+ToolchainDirectory = 
+Optimization = O2
+DebugInfo = False
+DebugFormat = CodeView
+AppType = Console
+Checks = False False True
+MaxParallelism = 0
+UsePcuCache = True
+Rtti = broad
+Manifest = 
+ManifestSettings = AsInvoker Default
+Target = win64
+UnitScopeNames = 
+Output = C:\p\Hello\bin\Release\A.exe
+

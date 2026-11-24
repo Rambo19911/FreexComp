@@ -5,7 +5,7 @@ namespace FreexComp.Build.Tests;
 /// <summary>CMP-812: <see cref="ProjectOptions.ToCompilationOptions"/>.</summary>
 [Trait("Phase", "1")]
 [Trait("Req", "CMP-812")]
-public sealed class OptionsMappingTests
+public sealed partial class OptionsMappingTests
 {
     private const string ProjectPath = @"C:\p\Hello\Hello.pproj";
 

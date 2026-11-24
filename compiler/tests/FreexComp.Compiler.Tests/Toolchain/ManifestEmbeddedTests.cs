@@ -1,9 +1,8 @@
-using System.Buffers.Binary;
 using System.Text;
-using System.Xml.Linq;
 using FreexComp.Compiler.Tests.Emit;
 using FreexComp.Compiler.Text;
 using FreexComp.Compiler.Toolchain;
+using FreexComp.Tests.Shared;
 
 namespace FreexComp.Compiler.Tests.Toolchain;
 
@@ -12,6 +11,7 @@ namespace FreexComp.Compiler.Tests.Toolchain;
 /// resource 1 read back by walking the PE resource directory. <c>lld-link /manifestinput</c> runs its built-in manifest merger,
 /// which re-serialises the XML (it drops <c>standalone</c> and puts its own <c>trustInfo</c> first), so the resource is compared
 /// with <c>app.manifest</c> as XML: the same elements, attributes and text, in any sibling order.
+/// C-295 (app-manifest.md CMP-1100…1106): console programs get a generated manifest too; execution level; long-path awareness.
 /// </summary>
 [Trait("Phase", "4")]
 [Trait("Kind", "Native")]
@@ -40,19 +40,131 @@ public sealed class ManifestEmbeddedTests : IDisposable
         Build(AppType.Gui, "");
 
         var manifest = Path.Combine(Obj, "app.manifest");
-        Assert.Equal(new UTF8Encoding(false).GetBytes(ApplicationManifest.DefaultText), File.ReadAllBytes(manifest));
+        Assert.Equal(new UTF8Encoding(false).GetBytes(ApplicationManifest.Generate(AppType.Gui)), File.ReadAllBytes(manifest));
         AssertSameXml(File.ReadAllText(manifest), ManifestResource(Exe));
         Assert.Contains("/manifestinput:" + manifest, File.ReadAllLines(Path.Combine(Obj, "link.rsp")));
     }
 
+    /// <summary>
+    /// CMP-1100 (replaces <c>ConsoleProgram_HasNoManifest</c>, whose rule — CMP-628 "console: none" — is replaced): a console
+    /// program embeds the generated console manifest as resource 1.
+    /// </summary>
     [Fact]
-    [Trait("Req", "CMP-628")]
-    public void ConsoleProgram_HasNoManifest()
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1100")]
+    public void ConsoleProgram_EmbedsGeneratedManifest()
     {
         Build(AppType.Console, "");
 
+        var manifest = Path.Combine(Obj, "app.manifest");
+        Assert.Equal(File.ReadAllBytes(ApplicationManifestTests.GoldenPath("app.console.manifest")), File.ReadAllBytes(manifest));
+        AssertSameXml(File.ReadAllText(ApplicationManifestTests.GoldenPath("app.console.manifest")), ManifestResource(Exe));
+        Assert.Contains("/manifestinput:" + manifest, File.ReadAllLines(Path.Combine(Obj, "link.rsp")));
+    }
+
+    /// <summary>Card acceptance 1: the resource of a GUI program, read back from the exe, is the golden text as XML.</summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1102")]
+    public void GuiProgram_EmbeddedManifestXmlEqualsGolden()
+    {
+        Build(AppType.Gui, "");
+
+        AssertSameXml(File.ReadAllText(ApplicationManifestTests.GoldenPath("app.gui.manifest")), ManifestResource(Exe));
+    }
+
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1100")]
+    public void ManifestNone_ConsoleProgramHasNoManifest()
+    {
+        Build(AppType.Console, "none");
+
         Assert.Null(ManifestResource(Exe));
         Assert.False(File.Exists(Path.Combine(Obj, "app.manifest")));
+        Assert.DoesNotContain(File.ReadAllLines(Path.Combine(Obj, "link.rsp")), l => l.StartsWith("/manifest", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1100")]
+    public void LibraryStillHasNoManifestByDefault()
+    {
+        PhysicalFileSystem.Instance.WriteAllBytes(Path.Combine(_dir, "L.pas"), Encoding.UTF8.GetBytes(
+            "library L;\nfunction Add(A, B: Integer): Integer; stdcall;\nbegin\n  Result := A + B;\nend;\nexports Add;\nbegin\nend.\n"));
+        var dll = Path.Combine(_dir, "L.dll");
+
+        Build(AppType.Library, "", main: "L.pas", output: dll);
+
+        Assert.Null(ManifestResource(dll, 1));
+        Assert.Null(ManifestResource(dll, 2));
+        Assert.False(File.Exists(Path.Combine(Obj, "app.manifest")));
+        Assert.DoesNotContain(File.ReadAllLines(Path.Combine(Obj, "link.rsp")), l => l.StartsWith("/manifest", StringComparison.Ordinal));
+    }
+
+    /// <summary>CMP-1106: the execution level is no part of a unit's options fingerprint — a change runs only the linker.</summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1106")]
+    [Trait("Req", "CMP-155")]
+    public void ExecutionLevelChange_RelinksWithoutRecompilingUnits()
+    {
+        static bool IsLink(string command) => command.Contains("lld-link", StringComparison.OrdinalIgnoreCase);
+        var first = Build(AppType.Console, "");
+        Assert.Contains(first, c => !IsLink(c));                             // the first build compiles
+        Assert.Contains("level=\"asInvoker\"", ManifestResource(Exe), StringComparison.Ordinal);
+
+        Assert.Empty(Build(AppType.Console, ""));                            // unchanged: nothing runs
+
+        var second = Build(AppType.Console, "", level: ManifestExecutionLevel.HighestAvailable);
+        Assert.NotEmpty(second);
+        Assert.All(second, c => Assert.True(IsLink(c), c));
+        Assert.Contains("level=\"highestAvailable\"", ManifestResource(Exe), StringComparison.Ordinal);
+
+        var third = Build(AppType.Console, "", level: ManifestExecutionLevel.HighestAvailable, dpi: ManifestDpiAwareness.System);
+        Assert.NotEmpty(third);
+        Assert.All(third, c => Assert.True(IsLink(c), c));
+        Assert.Contains(">System<", ManifestResource(Exe), StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// CMP-1103: <c>longPathAware</c> reaches the loader. The program creates nested directories with <c>CreateDirectoryW</c>
+    /// (no <c>\\?\</c> prefix) until the path has at least 300 characters; that succeeds exactly when the system-wide long-path
+    /// policy is on and the image declares the awareness.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1103")]
+    public async Task LongPath_BehaviourMatchesSystemPolicy()
+    {
+        Assert.True(OperatingSystem.IsWindows());
+        var policyOn = OperatingSystem.IsWindows()
+            && Microsoft.Win32.Registry.GetValue(@"HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\FileSystem", "LongPathsEnabled", 0) is 1;
+        PhysicalFileSystem.Instance.WriteAllBytes(Path.Combine(_dir, "LongPath.pas"), Encoding.UTF8.GetBytes(LongPathSource));
+
+        async Task<string> RunAsync(string manifest, string folder)
+        {
+            var exe = Path.Combine(_dir, folder, "LongPath.exe");
+            var root = Path.Combine(_dir, folder, "tree");
+            Directory.CreateDirectory(root);
+            Build(AppType.Console, manifest, main: "LongPath.pas", output: exe, objectDirectory: Path.Combine(_dir, folder, "obj"));
+            var lines = new List<string>();
+            try
+            {
+                var code = await NativeRun.RunAsync(exe, [root], _dir, lines.Add, lines.Add);
+                Assert.Equal(0, code);
+                var deepest = Directory.EnumerateDirectories(root, "*", SearchOption.AllDirectories).Select(d => d.Length).DefaultIfEmpty(0).Max();
+                Assert.Equal(lines.Single() == "created", deepest >= 300);
+                return lines.Single();
+            }
+            finally
+            {
+                Directory.Delete(root, recursive: true);                     // the test removes what the program created
+            }
+        }
+
+        Assert.Equal(policyOn ? "created" : "refused", await RunAsync("", "aware"));
+        Assert.Equal("refused", await RunAsync("none", "plain"));
     }
 
     [Fact]
@@ -97,6 +209,30 @@ public sealed class ManifestEmbeddedTests : IDisposable
         }
     }
 
+    private const string LongPathSource = """
+        program LongPath;
+
+        function CreateDirectoryW(Name: PWideChar; Security: Pointer): LongBool; stdcall; external 'kernel32.dll' name 'CreateDirectoryW';
+
+        var
+          Path: string;
+          Ok: Boolean;
+        begin
+          Path := ParamStr(1);
+          Ok := True;
+          while Ok and (Length(Path) < 300) do
+          begin
+            Path := Path + '\d123456789012345678901234567890123456789';
+            Ok := CreateDirectoryW(PWideChar(Path), nil);
+          end;
+          if Ok then
+            Writeln('created')
+          else
+            Writeln('refused');
+        end.
+
+        """;
+
     private static string UserManifest(string version) => $"""
         <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
         <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
@@ -112,21 +248,24 @@ public sealed class ManifestEmbeddedTests : IDisposable
 
         """;
 
-    private List<string> Build(AppType appType, string manifest)
+    private List<string> Build(AppType appType, string manifest, ManifestExecutionLevel level = ManifestExecutionLevel.AsInvoker,
+        ManifestDpiAwareness dpi = ManifestDpiAwareness.Default, string main = "P.pas", string? output = null, string? objectDirectory = null)
     {
         var commands = new List<string>();
         var options = new CompilationOptions
         {
-            MainFile = Path.Combine(_dir, "P.pas"),
+            MainFile = Path.Combine(_dir, main),
             RtlDirectory = TestRtl.Directory,
             ToolchainDirectory = Path.GetDirectoryName(Clang.Path)!,
-            ObjectDirectory = Obj,
+            ObjectDirectory = objectDirectory ?? Obj,
             AppType = appType,
             Manifest = manifest,
+            ManifestExecutionLevel = level,
+            ManifestDpiAwareness = dpi,
         };
 
         var result = Compilation.Create(options, [], PhysicalFileSystem.Instance)
-            .Emit(new EmitOptions { OutputPath = Exe, CommandLineSink = commands.Add }, TestContext.Current.CancellationToken);
+            .Emit(new EmitOptions { OutputPath = output ?? Exe, CommandLineSink = commands.Add }, TestContext.Current.CancellationToken);
 
         Assert.True(result.Success, string.Join("\n", result.Diagnostics.Select(d => d.ToText())));
         Assert.DoesNotContain(result.Diagnostics, d => d.Code == "W4003");
@@ -136,78 +275,8 @@ public sealed class ManifestEmbeddedTests : IDisposable
     private static void AssertSameXml(string expected, string? actual)
     {
         Assert.NotNull(actual);
-        Assert.Equal(Canonical(XDocument.Parse(expected).Root!), Canonical(XDocument.Parse(actual).Root!));
+        Assert.Equal(PeManifest.Canonical(expected), PeManifest.Canonical(actual));
     }
 
-    /// <summary>Element name, sorted attributes, trimmed text and the sorted canonical forms of its children.</summary>
-    private static string Canonical(XElement e) =>
-        "<" + e.Name + string.Concat(e.Attributes().Select(a => $" {a.Name}=\"{a.Value}\"").Order(StringComparer.Ordinal)) + ">"
-        + string.Concat(e.Nodes().OfType<XText>().Select(t => t.Value.Trim()))
-        + string.Concat(e.Elements().Select(Canonical).Order(StringComparer.Ordinal))
-        + "</" + e.Name + ">";
-
-    /// <summary>The UTF-8 text of resource type 24 (<c>RT_MANIFEST</c>) name 1, first language; null when the exe has none.</summary>
-    private static string? ManifestResource(string exe)
-    {
-        var pe = File.ReadAllBytes(exe);
-        var header = BinaryPrimitives.ReadInt32LittleEndian(pe.AsSpan(0x3C));
-        Assert.Equal(0x00004550u, BinaryPrimitives.ReadUInt32LittleEndian(pe.AsSpan(header)));
-        var sections = BinaryPrimitives.ReadUInt16LittleEndian(pe.AsSpan(header + 6));
-        var optionalSize = BinaryPrimitives.ReadUInt16LittleEndian(pe.AsSpan(header + 20));
-        var optional = header + 24;
-        Assert.Equal(0x20B, BinaryPrimitives.ReadUInt16LittleEndian(pe.AsSpan(optional)));        // PE32+
-        var resourceRva = BinaryPrimitives.ReadUInt32LittleEndian(pe.AsSpan(optional + 112 + (2 * 8)));
-        if (resourceRva == 0)
-        {
-            return null;
-        }
-
-        var table = optional + optionalSize;
-        int Offset(uint rva)
-        {
-            for (var i = 0; i < sections; i++)
-            {
-                var s = table + (i * 40);
-                var size = BinaryPrimitives.ReadUInt32LittleEndian(pe.AsSpan(s + 8));
-                var address = BinaryPrimitives.ReadUInt32LittleEndian(pe.AsSpan(s + 12));
-                var raw = BinaryPrimitives.ReadUInt32LittleEndian(pe.AsSpan(s + 20));
-                if (rva >= address && rva < address + size)
-                {
-                    return (int)(rva - address + raw);
-                }
-            }
-
-            throw new InvalidOperationException($"RVA 0x{rva:X} is in no section");
-        }
-
-        var root = Offset(resourceRva);
-        uint? Child(uint directory, uint? id)
-        {
-            var at = root + (int)directory;
-            var named = BinaryPrimitives.ReadUInt16LittleEndian(pe.AsSpan(at + 12));
-            var ids = BinaryPrimitives.ReadUInt16LittleEndian(pe.AsSpan(at + 14));
-            for (var i = 0; i < named + ids; i++)
-            {
-                var entry = at + 16 + (i * 8);
-                var name = BinaryPrimitives.ReadUInt32LittleEndian(pe.AsSpan(entry));
-                if (id is null || name == id)
-                {
-                    return BinaryPrimitives.ReadUInt32LittleEndian(pe.AsSpan(entry + 4));
-                }
-            }
-
-            return null;
-        }
-
-        if (Child(0, 24) is not { } type || Child(type & 0x7FFFFFFF, 1) is not { } named1 || Child(named1 & 0x7FFFFFFF, null) is not { } language)
-        {
-            return null;
-        }
-
-        Assert.Equal(0u, language & 0x80000000);                                                     // a data entry, not a directory
-        var data = root + (int)language;
-        var dataRva = BinaryPrimitives.ReadUInt32LittleEndian(pe.AsSpan(data));
-        var dataSize = BinaryPrimitives.ReadInt32LittleEndian(pe.AsSpan(data + 4));
-        return Encoding.UTF8.GetString(pe, Offset(dataRva), dataSize).TrimStart('﻿');
-    }
+    private static string? ManifestResource(string image, uint id = 1) => PeManifest.Read(image, id);
 }

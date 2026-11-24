@@ -52,8 +52,11 @@ public static class OpcCommand
           --app-type console|gui|library    PE subsystem / module kind (default console; `library` is implied by a
                                 library main file)
           --manifest default|none|<file>   application manifest embedded as RT_MANIFEST 1:
-                                `default` = Common Controls 6 + per-monitor-v2 DPI awareness; default value is `default`
-                                for --app-type gui and `none` for console
+                                `default` = generated (supported OS, long-path awareness, execution level; for gui also
+                                Common Controls 6 and DPI awareness); default value is `default` for --app-type console
+                                and gui, `none` for library
+          --execution-level asInvoker|highestAvailable|requireAdministrator   requested execution level of the generated manifest (default asInvoker)
+          --dpi-awareness perMonitorV2|system|unaware   DPI awareness of the generated manifest (default: perMonitorV2 for gui, not declared for console)
           --rtti broad|published    default RTTI scope (default broad)
           --unit-scope <name>   unit scope name tried as prefix for unresolved unit names (repeatable, searched in
                                 order). Scoped unit names such as `System.SysUtils` resolve through
@@ -181,6 +184,9 @@ public static class OpcCommand
         string Full(string path) => PathUtil.Normalize(Path.IsPathFullyQualified(path) ? path : Path.Combine(cwd, path));
 
         string? main = null, output = null, objDir = null, rtl = null, toolchain = null, manifest = null, unknownTarget = null;
+        var executionLevel = ManifestExecutionLevel.AsInvoker;
+        var dpiAwareness = ManifestDpiAwareness.Default;
+        bool explicitLevel = false, explicitDpi = false;
         var target = TargetRegistry.Default;
         var searchPaths = ImmutableArray.CreateBuilder<string>();
         var libraryPaths = ImmutableArray.CreateBuilder<string>();
@@ -248,6 +254,32 @@ public static class OpcCommand
 
                     break;
                 case "--manifest": if (Value() is { } m) { manifest = m is "default" or "none" ? m : Full(m); } break;
+                case "--execution-level":                                    // CMP-1108
+                    if (Choice("asInvoker", "highestAvailable", "requireAdministrator") is { } level)
+                    {
+                        executionLevel = level switch
+                        {
+                            "highestAvailable" => ManifestExecutionLevel.HighestAvailable,
+                            "requireAdministrator" => ManifestExecutionLevel.RequireAdministrator,
+                            _ => ManifestExecutionLevel.AsInvoker,
+                        };
+                        explicitLevel = true;
+                    }
+
+                    break;
+                case "--dpi-awareness":                                      // CMP-1108
+                    if (Choice("perMonitorV2", "system", "unaware") is { } dpi)
+                    {
+                        dpiAwareness = dpi switch
+                        {
+                            "system" => ManifestDpiAwareness.System,
+                            "unaware" => ManifestDpiAwareness.Unaware,
+                            _ => ManifestDpiAwareness.PerMonitorV2,
+                        };
+                        explicitDpi = true;
+                    }
+
+                    break;
                 case "--rtti": if (Choice("broad", "published") is { } r) { rtti = r; } break;
                 case "--unit-scope": if (Value() is { } scope) { scopes.Add(scope); } break;
                 case "--emit":
@@ -301,6 +333,20 @@ public static class OpcCommand
             }
         }
 
+        if (manifest is not null and not "default")
+        {
+            // CMP-1108: with `none` or a user file the settings would be silently lost
+            if (explicitLevel)
+            {
+                invalid.Add("--execution-level");
+            }
+
+            if (explicitDpi)
+            {
+                invalid.Add("--dpi-awareness");
+            }
+        }
+
         var location = Location.ForFile(main ?? cwd);
         foreach (var bad in invalid)
         {
@@ -341,7 +387,9 @@ public static class OpcCommand
             DebugInfo = debug,
             AppType = appType,
             Rtti = rtti,
-            Manifest = manifest ?? (appType == AppType.Gui ? "default" : "none"),
+            Manifest = manifest ?? (appType == AppType.Library ? "none" : "default"),   // CMP-1100
+            ManifestExecutionLevel = executionLevel,
+            ManifestDpiAwareness = dpiAwareness,
             UnitScopeNames = scopes.ToImmutable(),
             MaxParallelism = jobs,
         };

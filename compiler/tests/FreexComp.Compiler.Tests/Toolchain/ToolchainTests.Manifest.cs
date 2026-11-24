@@ -13,6 +13,7 @@ public sealed partial class ToolchainTests
     [Trait("Req", "CMP-628")]
     public void Manifest_DefaultText_IsTheCmp628Block()
     {
+        // CMP-1102 (C-295): the default GUI text is the CMP-628 block plus the longPathAware line
         var lines = File.ReadAllLines(Path.Combine(RepoPaths.RequireDocs(), "spec", "compiler", "toolchain.md"), Encoding.UTF8);
         var start = Array.FindIndex(lines, l => l.Contains("**CMP-628**", StringComparison.Ordinal));
         var open = Array.FindIndex(lines, start, l => l.Trim() == "```xml");
@@ -20,7 +21,10 @@ public sealed partial class ToolchainTests
 
         var block = string.Concat(lines[(open + 1)..close].Select(l => l + "\n"));
 
-        Assert.Equal(ApplicationManifest.DefaultText, block);
+        var generated = ApplicationManifest.Generate(AppType.Gui).Split('\n');
+        var longPath = Assert.Single(generated, l => l.Contains("longPathAware", StringComparison.Ordinal));
+        Assert.Equal("      <longPathAware xmlns=\"http://schemas.microsoft.com/SMI/2016/WindowsSettings\">true</longPathAware>", longPath);
+        Assert.Equal(block, string.Join('\n', generated.Where(l => l != longPath)));
     }
 
     [Fact]
@@ -30,11 +34,11 @@ public sealed partial class ToolchainTests
     {
         var fs = new InMemoryFileSystem();
 
-        var path = ApplicationManifest.Prepare("", AppType.Gui, Obj, fs);
+        var path = ApplicationManifest.Prepare(ManifestOptions("", AppType.Gui), Obj, fs);
 
         Assert.Equal(Obj + @"\app.manifest", path);
-        Assert.Equal(new UTF8Encoding(false).GetBytes(ApplicationManifest.DefaultText), fs.ReadAllBytes(path!));
-        Assert.DoesNotContain('\r', ApplicationManifest.DefaultText);
+        Assert.Equal(new UTF8Encoding(false).GetBytes(ApplicationManifest.Generate(AppType.Gui)), fs.ReadAllBytes(path!));
+        Assert.DoesNotContain('\r', ApplicationManifest.Generate(AppType.Gui));
         var args = LinkInvoker.BuildArguments(HelloRequest() with { AppType = AppType.Gui, ManifestPath = path });
         var at = args.IndexOf("/nxcompat");
         Assert.Equal(ManifestLines, args.Skip(at + 1).Take(2));
@@ -47,12 +51,56 @@ public sealed partial class ToolchainTests
     {
         var fs = new InMemoryFileSystem();
 
-        Assert.Equal(Obj + @"\app.manifest", ApplicationManifest.Prepare("default", AppType.Console, Obj, fs));
-        Assert.Equal(ApplicationManifest.DefaultText, fs.ReadAllText(Obj + @"\app.manifest"));
+        Assert.Equal(Obj + @"\app.manifest", ApplicationManifest.Prepare(ManifestOptions("default", AppType.Console), Obj, fs));
+        Assert.Equal(ApplicationManifest.Generate(AppType.Console), fs.ReadAllText(Obj + @"\app.manifest"));
     }
 
+    /// <summary>CMP-1100 (C-295; replaces the console half of CMP-628): no manifest option → a generated manifest for a console program too.</summary>
+    [Fact]
+    [Trait("Req", "CMP-1100")]
+    public void Manifest_ConsoleDefault_WritesTheGeneratedConsoleText()
+    {
+        var fs = new InMemoryFileSystem();
+
+        Assert.Equal(Obj + @"\app.manifest", ApplicationManifest.Prepare(ManifestOptions("", AppType.Console), Obj, fs));
+        Assert.Equal(ApplicationManifest.Generate(AppType.Console), fs.ReadAllText(Obj + @"\app.manifest"));
+    }
+
+    /// <summary>
+    /// CMP-1104 (C-295): the linker's manifest merger adds its own <c>requestedExecutionLevel</c> (<c>asInvoker</c>) and rejects an
+    /// input naming another level, so a generated manifest with another level tells the linker that level; a user file never does.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1104")]
+    public void Manifest_ExecutionLevel_IsPassedToTheLinkerForTheGeneratedManifestOnly()
+    {
+        var fs = new InMemoryFileSystem();
+        var options = ManifestOptions("", AppType.Console) with { ManifestExecutionLevel = ManifestExecutionLevel.RequireAdministrator };
+
+        var path = ApplicationManifest.Prepare(options, Obj, fs, out var generated);
+
+        Assert.True(generated);
+        Assert.Contains("level=\"requireAdministrator\"", fs.ReadAllText(path!), StringComparison.Ordinal);
+        var args = LinkInvoker.BuildArguments(HelloRequest() with { ManifestPath = path, ManifestUacLevel = "requireAdministrator" });
+        var at = args.IndexOf("/manifest:embed");
+        Assert.Equal(["/manifest:embed", @"/manifestinput:C:\p\obj\Debug\app.manifest", "/manifestuac:level='requireAdministrator'"], args.Skip(at).Take(3));
+        Assert.DoesNotContain(LinkInvoker.BuildArguments(HelloRequest() with { ManifestPath = path }), a => a.StartsWith("/manifestuac", StringComparison.Ordinal));
+
+        ApplicationManifest.Prepare(options with { Manifest = @"C:\m\x.manifest" }, Obj, fs, out generated);
+        Assert.False(generated);
+        ApplicationManifest.Prepare(options with { Manifest = "none" }, Obj, fs, out generated);
+        Assert.False(generated);
+        Assert.Equal("asInvoker", ApplicationManifest.LevelWord(ManifestExecutionLevel.AsInvoker));
+        Assert.Equal("highestAvailable", ApplicationManifest.LevelWord(ManifestExecutionLevel.HighestAvailable));
+    }
+
+    private static CompilationOptions ManifestOptions(string manifest, AppType appType) =>
+        new() { MainFile = @"C:\p\Hello.pas", Manifest = manifest, AppType = appType };
+
     [Theory]
-    [InlineData("", AppType.Console)]
+    [InlineData("", AppType.Library)]
+    [InlineData("default", AppType.Library)]
     [InlineData("none", AppType.Console)]
     [InlineData("none", AppType.Gui)]
     [Trait("Req", "CMP-628")]
@@ -60,7 +108,7 @@ public sealed partial class ToolchainTests
     {
         var fs = new InMemoryFileSystem();
 
-        var path = ApplicationManifest.Prepare(manifest, appType, Obj, fs);
+        var path = ApplicationManifest.Prepare(ManifestOptions(manifest, appType), Obj, fs);
 
         Assert.Null(path);
         Assert.False(fs.FileExists(Obj + @"\app.manifest"));
@@ -75,7 +123,7 @@ public sealed partial class ToolchainTests
     {
         var fs = new InMemoryFileSystem();
 
-        var path = ApplicationManifest.Prepare(@"C:\m\x.manifest", AppType.Gui, Obj, fs);
+        var path = ApplicationManifest.Prepare(ManifestOptions(@"C:\m\x.manifest", AppType.Gui), Obj, fs);
 
         Assert.Equal(@"C:\m\x.manifest", path);
         Assert.False(fs.FileExists(Obj + @"\app.manifest"));

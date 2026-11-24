@@ -37,8 +37,17 @@ public sealed record Project
     /// <summary>Optional key ("broad" | "published"); null = absent.</summary>
     public string? Rtti { get; init; }
 
-    /// <summary>Optional key ("default" | "none" | path); null = absent (default per appType).</summary>
+    /// <summary>
+    /// Optional key in its string form ("default" | "none" | path); null = absent (default per appType) or the object form
+    /// (<see cref="ManifestSettings"/>).
+    /// </summary>
     public string? Manifest { get; init; }
+
+    /// <summary>
+    /// The object form of the key <c>manifest</c> (CMP-1110…1112); non-null exactly when the file has that form, and then
+    /// <see cref="Manifest"/> is null. A model with both set is rejected by <see cref="ProjectSerializer.Save(Project)"/>.
+    /// </summary>
+    public ManifestSettings? ManifestSettings { get; init; }
 
     public ImmutableArray<string> Defines { get; init; } = [];
 
@@ -106,8 +115,39 @@ public sealed record ProjectFile(string Path, string? Form, string? Kind)
         };
 }
 
-/// <param name="Rtti">Optional per-configuration RTTI scope; null = absent.</param>
-public sealed record ProjectConfiguration(int Optimization, bool DebugInfo, ImmutableArray<string> Defines, string OutputDir, string? Rtti = null);
+/// <summary>
+/// The <c>.pproj</c> <c>manifest</c> object (CMP-1110): each member null = key absent. <paramref name="ExecutionLevel"/> is
+/// "asInvoker" | "highestAvailable" | "requireAdministrator", <paramref name="DpiAwareness"/> "perMonitorV2" | "system" |
+/// "unaware", <paramref name="CustomFile"/> a manifest file (relative to the project or absolute, '/'), which excludes the other two.
+/// </summary>
+public sealed record ManifestSettings(string? ExecutionLevel, string? DpiAwareness, string? CustomFile);
+
+/// <summary>
+/// One entry of <c>configurations</c>. The members hold the configuration's <b>own</b> values (configurations.md CMP-1156); the
+/// values it is built with — merged with its ancestors and the project level — come from <see cref="ConfigurationResolver.Resolve"/>.
+/// </summary>
+/// <param name="Optimization">Own value; 0 and unused when <see cref="InheritsOptimization"/>.</param>
+/// <param name="DebugInfo">Own value; false and unused when <see cref="InheritsDebugInfo"/>.</param>
+/// <param name="Defines">Own entries, including a leading reset marker <c>"!"</c>.</param>
+/// <param name="OutputDir">Own value, or <c>bin/&lt;name&gt;</c>; never inherited.</param>
+/// <param name="Rtti">Optional per-configuration RTTI scope; null = not set here.</param>
+public sealed record ProjectConfiguration(int Optimization, bool DebugInfo, ImmutableArray<string> Defines, string OutputDir, string? Rtti = null)
+{
+    /// <summary>The key <c>inherits</c>: the parent configuration (exact name); null = root configuration.</summary>
+    public string? Inherits { get; init; }
+
+    /// <summary>Derived configurations only: no own <c>optimization</c>. False and ignored for a root configuration.</summary>
+    public bool InheritsOptimization { get; init; }
+
+    /// <summary>Derived configurations only: no own <c>debugInfo</c>. False and ignored for a root configuration.</summary>
+    public bool InheritsDebugInfo { get; init; }
+
+    /// <summary>
+    /// The key <c>searchPaths</c> of the configuration (CMP-1152): own unit search directories, including a leading reset marker
+    /// <c>"!"</c>; used when this configuration or one derived from it is built.
+    /// </summary>
+    public ImmutableArray<string> SearchPaths { get; init; } = [];
+}
 
 public sealed record RunSettings(string Arguments, string WorkingDir)
 {

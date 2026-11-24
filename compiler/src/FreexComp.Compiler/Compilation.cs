@@ -731,6 +731,14 @@ public sealed class Compilation
             return Finish(true, null, compiled);                                    // CMP-1140: no link after a failed job
         }
 
+        // CMP-628 (C-167), CMP-1100…1106: execution level and DPI awareness reach only this file, never a unit's fingerprint
+        var manifestPath = ApplicationManifest.Prepare(Options, objectDirectory, FileSystem, out var generatedManifest);
+        if (manifestPath is not null && !FileSystem.FileExists(manifestPath))
+        {
+            diagnostics.Add(Diagnostic.Create("E0002", Location.ForFile(manifestPath), manifestPath));   // CMP-1114: nothing is linked
+            return Finish(false, null, compiled);
+        }
+
         var request = new LinkRequest(output, objectDirectory,
             [.. linkUnits.Select(u => u.IsPrecompiled ? u.ObjectPath : Path.Combine(objectDirectory, u.Name + ".obj"))])
         {
@@ -738,7 +746,10 @@ public sealed class Compilation
             AppType = Options.AppType,
             DebugInfo = Options.DebugInfo,
             DebugFormat = Options.DebugFormat,
-            ManifestPath = ApplicationManifest.Prepare(Options.Manifest, Options.AppType, objectDirectory, FileSystem),   // CMP-628 (C-167)
+            ManifestPath = manifestPath,
+            ManifestUacLevel = generatedManifest && Options.ManifestExecutionLevel != ManifestExecutionLevel.AsInvoker
+                ? ApplicationManifest.LevelWord(Options.ManifestExecutionLevel)
+                : null,
             ExtraObjects = [.. linkUnits.SelectMany(u => u.LinkInputs.Objects).Distinct(PathUtil.Comparer)],
             ImportLibraries = libraries.ToImmutable(),
             ImportDefinitions = definitions.ToImmutableDictionary(StringComparer.Ordinal),

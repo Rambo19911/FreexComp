@@ -85,6 +85,8 @@ public sealed class TargetToolchainTests
             "/largeaddressaware",
             "/dynamicbase",
             "/nxcompat",
+            "/manifest:embed",                                              // CMP-1100 (C-295): a console program embeds the generated manifest
+            $@"/manifestinput:{ObjDir}\app.manifest",
             $@"{ObjDir}\P.obj",
             $@"{ObjDir}\System.obj",
             $@"{ObjDir}\A.obj",
@@ -132,7 +134,9 @@ public sealed class TargetToolchainTests
         Assert.Equal("/entry:_fakestart", lines[2]);
         Assert.Equal("/machine:fake", lines[4]);
         var nxcompat = Array.IndexOf(lines, "/nxcompat");
-        Assert.Equal(["/safeseh:no", "/fake:line", $@"{ObjDir}\P.obj"], lines[(nxcompat + 1)..(nxcompat + 4)]);
+        Assert.Equal(
+            ["/safeseh:no", "/fake:line", "/manifest:embed", $@"/manifestinput:{ObjDir}\app.manifest", $@"{ObjDir}\P.obj"],   // manifest lines: CMP-1100 (C-295)
+            lines[(nxcompat + 1)..(nxcompat + 6)]);
         Assert.DoesNotContain("/machine:x64", lines);
         Assert.DoesNotContain("/entry:_start", lines);
         // the entry routine the linker is told about is the one the program module defines

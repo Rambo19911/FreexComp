@@ -35,7 +35,21 @@ public static class ProjectSerializer
         Parse(path, text, ReadProject);
 
     /// <summary>Canonical text (CMP-811): UTF-8 without BOM when encoded, LF, 2-space indent, final newline.</summary>
-    public static string Save(Project project) => Write(w => WriteProject(w, project));
+    /// <exception cref="ArgumentException">
+    /// The model holds both forms of the key <c>manifest</c> (CMP-1112), or its <c>Inherits</c> links name a missing configuration
+    /// or form a cycle (CMP-1157).
+    /// </exception>
+    public static string Save(Project project)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+        if (project.Manifest is not null && project.ManifestSettings is not null)
+        {
+            throw new ArgumentException("A project holds either 'Manifest' or 'ManifestSettings', not both", nameof(project));
+        }
+
+        ProjectConfigurations.RequireValidLinks(project);
+        return Write(w => WriteProject(w, project));
+    }
 
     public static string Save(ProjectGroup group) => Write(w => WriteObject(w, group.Source,
     [
@@ -95,10 +109,14 @@ public static class ProjectSerializer
         }
         catch (ProjectFileException e)
         {
-            var span = new TextSpan(Math.Min(e.Offset, text.Length), 0);
-            var position = source.Lines.GetLinePosition(span.Start);
-            var location = new Location(source.Path, span, new LinePositionSpan(position, position));
-            return new(default, [Diagnostic.Create(e.Code, location, e.Arguments)]);
+            Diagnostic At(ProjectFileException error)
+            {
+                var span = new TextSpan(Math.Min(error.Offset, text.Length), 0);
+                var position = source.Lines.GetLinePosition(span.Start);
+                return Diagnostic.Create(error.Code, new Location(source.Path, span, new LinePositionSpan(position, position)), error.Arguments);
+            }
+
+            return new(default, [At(e), .. e.Additional.Select(At)]);
         }
     }
 
@@ -144,8 +162,18 @@ public static class ProjectSerializer
         var configurations = DefaultConfigurations();
         if (root.Optional("configurations") is { } configurationsNode)
         {
-            configurations = configurationsNode.Properties()
-                .ToImmutableDictionary(p => p.Key, p => ReadConfiguration(p.Key, p.Value), StringComparer.Ordinal);
+            var entries = configurationsNode.Properties().ToList();
+            configurations = entries.ToImmutableDictionary(p => p.Key, p => ReadConfiguration(p.Key, p.Value), StringComparer.Ordinal);
+            CheckInheritance(entries, configurations);
+        }
+
+        // CMP-1154: the reset marker belongs to a configuration's list only
+        foreach (var key in new[] { "defines", "searchPaths" })
+        {
+            if (root.Optional(key) is { } list)
+            {
+                ReadList(list, path: false, resetAllowed: false);
+            }
         }
 
         var run = new RunSettings("", "");
@@ -169,6 +197,24 @@ public static class ProjectSerializer
                 eventsNode.Optional("postBuild")?.Strings() ?? []);
         }
 
+        // CMP-1110: the string forms, or an object with the settings of the generated manifest
+        string? manifest = null;
+        ManifestSettings? manifestSettings = null;
+        if (root.Optional("manifest") is { } manifestNode)
+        {
+            switch (manifestNode.Element.ValueKind)
+            {
+                case JsonValueKind.String:
+                    manifest = ManifestValue(manifestNode.String());
+                    break;
+                case JsonValueKind.Object:
+                    manifestSettings = ReadManifestSettings(manifestNode);
+                    break;
+                default:
+                    throw ProjectFileException.Invalid(manifestNode.Offset, "'manifest' must be a string or an object");
+            }
+        }
+
         return new Project
         {
             FormatVersion = root.Required("formatVersion").Int(),
@@ -181,7 +227,8 @@ public static class ProjectSerializer
             LibraryPaths = root.Optional("libraryPaths")?.Strings(path: true) ?? [],
             UnitScopeNames = root.Optional("unitScopeNames")?.Strings() ?? [],
             Rtti = root.Optional("rtti")?.Rtti(),
-            Manifest = root.Optional("manifest")?.String() is { } manifest ? ManifestValue(manifest) : null,
+            Manifest = manifest,
+            ManifestSettings = manifestSettings,
             Defines = root.Optional("defines")?.Strings() ?? [],
             Platforms = root.Optional("platforms") is { } platforms ? ReadPlatforms(platforms) : [TargetRegistry.Default.Id],
             Jobs = root.Optional("jobs") is { } jobs ? ReadJobs(jobs) : 0,
@@ -193,6 +240,47 @@ public static class ProjectSerializer
             FilePath = path,
             Source = root.Element,
         };
+    }
+
+    internal static readonly ImmutableArray<string> ExecutionLevels = ["asInvoker", "highestAvailable", "requireAdministrator"];
+
+    internal static readonly ImmutableArray<string> DpiAwarenessModes = ["perMonitorV2", "system", "unaware"];
+
+    /// <summary>CMP-1111: the keys of the <c>manifest</c> object, each validated at its token.</summary>
+    private static ManifestSettings ReadManifestSettings(Node node)
+    {
+        string? Word(string key, ImmutableArray<string> allowed)
+        {
+            if (node.Optional(key) is not { } child)
+            {
+                return null;
+            }
+
+            var value = child.String();
+            return allowed.Contains(value, StringComparer.Ordinal)
+                ? value
+                : throw ProjectFileException.Invalid(child.Offset,
+                    $"'{child.Display}' must be \"{allowed[0]}\", \"{allowed[1]}\" or \"{allowed[2]}\"");
+        }
+
+        var level = Word("executionLevel", ExecutionLevels);
+        var dpi = Word("dpiAwareness", DpiAwarenessModes);
+        string? customFile = null;
+        if (node.Optional("customFile") is { } file)
+        {
+            customFile = Slashes(file.String());
+            if (customFile.Length == 0)
+            {
+                throw ProjectFileException.Invalid(file.Offset, $"'{file.Display}' must not be empty");
+            }
+
+            if (level is not null || dpi is not null)
+            {
+                throw ProjectFileException.Invalid(file.Offset, $"'{file.Display}' cannot be combined with 'executionLevel' or 'dpiAwareness'");
+            }
+        }
+
+        return new ManifestSettings(level, dpi, customFile);
     }
 
     /// <summary>CMP-1133: an integer from 0 to 256 (0 = automatic).</summary>
@@ -220,8 +308,18 @@ public static class ProjectSerializer
     private static ProjectConfiguration ReadConfiguration(string name, Node node)
     {
         node.RequireObject();
+        string? inherits = null;
+        if (node.Optional("inherits") is { } parent)
+        {
+            // CMP-1150, CMP-1154: the exact name of another configuration
+            inherits = parent.Element.ValueKind == JsonValueKind.String && parent.Element.GetString() is { Length: > 0 } parentName
+                ? parentName
+                : throw ProjectFileException.Invalid(parent.Offset, "'inherits' must be the name of another configuration");
+        }
+
         var optimization = 0;
-        if (node.Optional("optimization") is { } o)
+        var optimizationNode = node.Optional("optimization");
+        if (optimizationNode is { } o)
         {
             optimization = o.Int();
             if (optimization is < 0 or > 2)
@@ -230,12 +328,96 @@ public static class ProjectSerializer
             }
         }
 
+        var debugInfo = node.Optional("debugInfo");
         return new ProjectConfiguration(
             optimization,
-            node.Optional("debugInfo")?.Bool() ?? false,
-            node.Optional("defines")?.Strings() ?? [],
+            debugInfo?.Bool() ?? false,
+            node.Optional("defines") is { } defines ? ReadList(defines, path: false, resetAllowed: true) : [],
             Slashes(node.Optional("outputDir")?.String() ?? "bin/" + name),
-            node.Optional("rtti")?.Rtti());
+            node.Optional("rtti")?.Rtti())
+        {
+            Inherits = inherits,
+            InheritsOptimization = inherits is not null && optimizationNode is null,      // CMP-1151: absent = the parent's value
+            InheritsDebugInfo = inherits is not null && debugInfo is null,
+            SearchPaths = node.Optional("searchPaths") is { } searchPaths ? ReadList(searchPaths, path: true, resetAllowed: true) : [],
+        };
+    }
+
+    /// <summary>
+    /// A list of defines or search paths; the reset marker <c>"!"</c> (CMP-1153) is allowed only as the first entry of a
+    /// configuration's list, else E9002 at its token.
+    /// </summary>
+    private static ImmutableArray<string> ReadList(Node node, bool path, bool resetAllowed)
+    {
+        var index = 0;
+        var values = ImmutableArray.CreateBuilder<string>();
+        foreach (var item in node.Items())
+        {
+            var value = item.String();
+            if (value == ConfigurationResolver.ResetMarker && (index > 0 || !resetAllowed))
+            {
+                throw ProjectFileException.Invalid(item.Offset, "'!' is allowed only as the first entry of a configuration's list");
+            }
+
+            values.Add(path ? Slashes(value) : value);
+            index++;
+        }
+
+        return values.ToImmutable();
+    }
+
+    /// <summary>
+    /// CMP-1154: every <c>inherits</c> names a key of <c>configurations</c> (else E9011) and no chain returns to its start (else
+    /// E9015, once per cycle, at the <c>inherits</c> token of the member that comes first in the file, the chain written from it).
+    /// </summary>
+    private static void CheckInheritance(
+        List<KeyValuePair<string, Node>> entries, ImmutableDictionary<string, ProjectConfiguration> configurations)
+    {
+        var errors = new List<ProjectFileException>();
+        int InheritsOffset(string name) => entries.First(e => e.Key == name).Value.Optional("inherits")!.Value.Offset;
+
+        foreach (var (name, _) in entries)
+        {
+            if (configurations[name].Inherits is { } parent && !configurations.ContainsKey(parent))
+            {
+                errors.Add(new ProjectFileException("E9011", InheritsOffset(name), name, parent));
+            }
+        }
+
+        var reported = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var (name, _) in entries)
+        {
+            if (reported.Contains(name))
+            {
+                continue;
+            }
+
+            var chain = new List<string> { name };
+            for (var parent = configurations[name].Inherits;
+                 parent is not null && configurations.TryGetValue(parent, out var next);
+                 parent = next.Inherits)
+            {
+                if (parent == name)
+                {
+                    reported.UnionWith(chain);
+                    errors.Add(new ProjectFileException("E9015", InheritsOffset(name), string.Join(" -> ", chain.Append(name))));
+                    break;
+                }
+
+                if (chain.Contains(parent, StringComparer.Ordinal))
+                {
+                    break;                                              // leads into a cycle it is not a member of
+                }
+
+                chain.Add(parent);
+            }
+        }
+
+        if (errors.Count > 0)
+        {
+            errors.Sort((a, b) => a.Offset.CompareTo(b.Offset));
+            throw new ProjectFileException(errors[0].Code, errors[0].Offset, errors[0].Arguments) { Additional = errors.GetRange(1, errors.Count - 1) };
+        }
     }
 
     /// <summary>CMP-1019 rule 1: every entry of <c>platforms</c> is the id of a built-in target, else E9002 at its token.</summary>
@@ -296,7 +478,16 @@ public static class ProjectSerializer
             ("libraryPaths", Has(source, "libraryPaths") || !p.LibraryPaths.IsEmpty ? w => WriteStrings(w, p.LibraryPaths, path: true) : null),
             ("unitScopeNames", Has(source, "unitScopeNames") || !p.UnitScopeNames.IsEmpty ? w => WriteStrings(w, p.UnitScopeNames) : null),
             ("rtti", p.Rtti is { } rtti ? w => w.WriteStringValue(rtti) : null),
-            ("manifest", p.Manifest is { } manifest ? w => w.WriteStringValue(ManifestValue(manifest)) : null),
+            ("manifest", p.Manifest is { } manifest
+                ? w => w.WriteStringValue(ManifestValue(manifest))
+                : p.ManifestSettings is { } settings
+                    ? w => WriteObject(w, Child(source, "manifest"),                           // CMP-1110: this key order
+                    [
+                        ("executionLevel", settings.ExecutionLevel is { } level ? w => w.WriteStringValue(level) : null),
+                        ("dpiAwareness", settings.DpiAwareness is { } dpi ? w => w.WriteStringValue(dpi) : null),
+                        ("customFile", settings.CustomFile is { } file ? w => w.WriteStringValue(Slashes(file)) : null),
+                    ])
+                    : null),
             ("defines", w => WriteStrings(w, p.Defines)),
             ("platforms", w => WriteStrings(w, p.Platforms)),
             ("jobs", Has(source, "jobs") || p.Jobs != 0 ? w => w.WriteNumberValue(p.Jobs) : null),
@@ -355,12 +546,19 @@ public static class ProjectSerializer
         {
             var c = p.Configurations[name];
             var entry = Child(source, name);
+            var derived = c.Inherits is not null;
+
+            // CMP-1155: a root configuration is written as before; a derived one only with what it holds itself
             return (name, (Action<Utf8JsonWriter>?)(w => WriteObject(w, entry,
             [
-                ("optimization", w => w.WriteNumberValue(c.Optimization)),
-                ("debugInfo", w => w.WriteBooleanValue(c.DebugInfo)),
-                ("defines", w => WriteStrings(w, c.Defines)),
-                ("outputDir", w => w.WriteStringValue(Slashes(c.OutputDir))),
+                ("inherits", derived ? w => w.WriteStringValue(c.Inherits) : null),
+                ("optimization", !derived || !c.InheritsOptimization ? w => w.WriteNumberValue(c.Optimization) : null),
+                ("debugInfo", !derived || !c.InheritsDebugInfo ? w => w.WriteBooleanValue(c.DebugInfo) : null),
+                ("defines", !derived || !c.Defines.IsDefaultOrEmpty || Has(entry, "defines") ? w => WriteStrings(w, c.Defines) : null),
+                ("searchPaths", !c.SearchPaths.IsDefaultOrEmpty || Has(entry, "searchPaths") ? w => WriteStrings(w, c.SearchPaths, path: true) : null),
+                ("outputDir", !derived || Slashes(c.OutputDir) != "bin/" + name || Has(entry, "outputDir")
+                    ? w => w.WriteStringValue(Slashes(c.OutputDir))
+                    : null),
                 ("rtti", c.Rtti is { } rtti ? w => w.WriteStringValue(rtti) : null),
             ])));
         }).ToList();
@@ -432,7 +630,7 @@ public static class ProjectSerializer
     private static void WriteStrings(Utf8JsonWriter w, ImmutableArray<string> values, bool path = false)
     {
         w.WriteStartArray();
-        foreach (var value in values)
+        foreach (var value in values.IsDefault ? [] : values)
         {
             w.WriteStringValue(path ? Slashes(value) : value);
         }

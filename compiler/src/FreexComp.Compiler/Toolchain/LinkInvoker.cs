@@ -21,6 +21,13 @@ internal sealed record LinkRequest(string OutputPath, string ObjectDirectory, Im
     /// <summary>Manifest to embed (CMP-628/629 variant 1); null → none.</summary>
     public string? ManifestPath { get; init; }
 
+    /// <summary>
+    /// CMP-1104: the execution level of a generated manifest when it is not <c>asInvoker</c>; null → the linker's default. The
+    /// linker's manifest merger adds its own <c>requestedExecutionLevel</c> and rejects an input that names another level, so the
+    /// linker is told the same level.
+    /// </summary>
+    public string? ManifestUacLevel { get; init; }
+
     /// <summary><c>{$MAXSTACKSIZE}</c>.</summary>
     public long MaxStackSize { get; init; } = 1048576;
 
@@ -125,6 +132,10 @@ internal sealed class LinkInvoker(ToolRunner runner, string lldLinkPath, IFileSy
         {
             args.Add(manifestOption);
             args.Add("/manifestinput:" + request.ManifestPath);
+            if (request.ManifestUacLevel is { } level)
+            {
+                args.Add("/manifestuac:level='" + level + "'");
+            }
         }
 
         args.AddRange(request.UnitObjects);

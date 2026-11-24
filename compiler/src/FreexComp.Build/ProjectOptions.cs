@@ -4,7 +4,10 @@ using FreexComp.Compiler.Text;
 
 namespace FreexComp.Build;
 
-/// <summary>Maps a project configuration to compiler options (CMP-812).</summary>
+/// <summary>
+/// Maps a project configuration to compiler options (CMP-812). Every per-configuration value is the effective one of
+/// <see cref="ConfigurationResolver.Resolve"/> (configurations.md CMP-1161).
+/// </summary>
 public static class ProjectOptions
 {
     /// <exception cref="ArgumentException">
@@ -33,7 +36,7 @@ public static class ProjectOptions
             }
         }
 
-        foreach (var path in project.SearchPaths)
+        foreach (var path in config.SearchPaths)                                                // project level, then the chain
         {
             AddPath(Resolve(dir, path));
         }
@@ -44,12 +47,21 @@ public static class ProjectOptions
             AddPath(full.LastIndexOf('\\') is var i && i == 2 ? full[..3] : full[..i]);
         }
 
+        // CMP-1113: the object form of `manifest`; a library ignores the two settings (its custom file is embedded as a path)
+        var settings = project.ManifestSettings;
+        if (settings is not null && project.Manifest is not null)
+        {
+            throw new ArgumentException("A project holds either 'Manifest' or 'ManifestSettings', not both", nameof(project));
+        }
+
+        var generated = settings is not null && project.AppType != "library" ? settings : null;
+
         return new CompilationOptions
         {
             MainFile = Resolve(dir, project.MainSource),
             SearchPaths = [.. searchPaths],
             LibraryPaths = [.. project.LibraryPaths.Select(path => Resolve(dir, path))],          // CMP-1082
-            Defines = [.. project.Defines, .. config.Defines],
+            Defines = config.Defines,                                                           // CMP-1160: project level, then the chain
             Optimization = config.Optimization switch
             {
                 0 => OptimizationLevel.O0,
@@ -68,12 +80,29 @@ public static class ProjectOptions
             ObjectDirectory = PathUtil.Normalize(TargetRegistry.ObjectDirectory(dir, target, configuration)),
             Target = target,
             UnitScopeNames = project.UnitScopeNames,
-            Rtti = config.Rtti ?? project.Rtti ?? "broad",                                      // C-240: configuration wins over project
-            Manifest = project.Manifest switch                                                  // C-240: absent → "" = default per appType
+            Rtti = config.Rtti,                                                                 // C-240, CMP-1160: chain, then project, then broad
+            Manifest = settings is not null
+                ? (settings.CustomFile is { } customFile ? Resolve(dir, customFile) : "default")
+                : project.Manifest switch                                                       // C-240: absent → "" = default per appType
+                {
+                    null => "",
+                    "default" or "none" => project.Manifest,
+                    var path => Resolve(dir, path),
+                },
+            ManifestExecutionLevel = generated?.ExecutionLevel switch
             {
-                null => "",
-                "default" or "none" => project.Manifest,
-                var path => Resolve(dir, path),
+                null or "asInvoker" => ManifestExecutionLevel.AsInvoker,
+                "highestAvailable" => ManifestExecutionLevel.HighestAvailable,
+                "requireAdministrator" => ManifestExecutionLevel.RequireAdministrator,
+                var level => throw new ArgumentException($"Invalid manifest execution level '{level}'", nameof(project)),
+            },
+            ManifestDpiAwareness = generated?.DpiAwareness switch
+            {
+                null => ManifestDpiAwareness.Default,
+                "perMonitorV2" => ManifestDpiAwareness.PerMonitorV2,
+                "system" => ManifestDpiAwareness.System,
+                "unaware" => ManifestDpiAwareness.Unaware,
+                var dpi => throw new ArgumentException($"Invalid manifest DPI awareness '{dpi}'", nameof(project)),
             },
         };
     }
@@ -96,10 +125,11 @@ public static class ProjectOptions
     public static string? GetHostApplicationPath(Project project) =>
         project.Run.HostApplication.Length == 0 ? null : Resolve(RequireDirectory(project), project.Run.HostApplication);
 
-    private static ProjectConfiguration GetConfiguration(Project project, string configuration) =>
-        project.Configurations.TryGetValue(configuration, out var config)
-            ? config
-            : throw new ArgumentException($"Unknown configuration '{configuration}'", nameof(configuration));
+    private static EffectiveConfiguration GetConfiguration(Project project, string configuration)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+        return ConfigurationResolver.Resolve(project, configuration);
+    }
 
     private static string RequireDirectory(Project project) =>
         project.Directory.Length > 0 ? project.Directory : throw new ArgumentException("The project has no file path", nameof(project));

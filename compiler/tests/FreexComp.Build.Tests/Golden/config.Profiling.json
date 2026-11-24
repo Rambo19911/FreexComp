@@ -1,0 +1,19 @@
+{
+  "name": "Profiling",
+  "chain": [
+    "Release",
+    "Release-Demo",
+    "Profiling"
+  ],
+  "optimization": 2,
+  "debugInfo": true,
+  "defines": [
+    "PROFILE"
+  ],
+  "searchPaths": [
+    "lib",
+    "rel"
+  ],
+  "outputDir": "bin/Profiling",
+  "rtti": "broad"
+}

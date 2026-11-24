@@ -5,7 +5,7 @@ namespace FreexComp.Build.Tests;
 
 /// <summary>docs/interfaces/project-format.md §1–§2; build-engine.md CMP-809…811.</summary>
 [Trait("Phase", "1")]
-public sealed class ProjectSerializerTests
+public sealed partial class ProjectSerializerTests
 {
     private const string ProjectPath = @"C:\p\Hello\Hello.pproj";
 
@@ -795,7 +795,9 @@ public sealed class ProjectSerializerTests
         public bool Equals(ProjectConfiguration? x, ProjectConfiguration? y) =>
             x is not null && y is not null
             && x.Optimization == y.Optimization && x.DebugInfo == y.DebugInfo && x.OutputDir == y.OutputDir
-            && x.Rtti == y.Rtti && x.Defines.SequenceEqual(y.Defines);
+            && x.Rtti == y.Rtti && x.Defines.SequenceEqual(y.Defines)
+            && x.Inherits == y.Inherits && x.InheritsOptimization == y.InheritsOptimization && x.InheritsDebugInfo == y.InheritsDebugInfo
+            && x.SearchPaths.SequenceEqual(y.SearchPaths);
 
         public int GetHashCode(ProjectConfiguration obj) => obj.Optimization;
     }

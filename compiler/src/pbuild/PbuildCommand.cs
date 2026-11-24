@@ -31,9 +31,10 @@ public sealed record PbuildEnvironment(string CurrentDirectory, TextWriter Out, 
 public static class PbuildCommand
 {
     public const string HelpText = """
-        pbuild <project.pproj | group.pgroup> [--config Debug|Release] [--target build|rebuild|clean|run] [--platform <id>]
+        pbuild <project.pproj | group.pgroup> [--config <name>] [--target build|rebuild|clean|run] [--platform <id>]
                [--diagnostics text|json] [--rtl <dir>] [--toolchain <dir>] [--jobs <N>] [--verbose]
-          --config <name>       configuration (default: the project's active configuration; matched case-insensitively)
+          --config <name>       any configuration of the project, matched case-insensitively (default: the project's
+                                activeConfiguration)
           --target <target>     build (default), rebuild, clean or run (build, then run the program)
           --platform <id>       target id (default: the first entry of the project's platforms)
           --diagnostics text|json   output form (default text)
@@ -41,7 +42,7 @@ public static class PbuildCommand
           --toolchain <dir>     LLVM bin dir (default: third_party/llvm/bin, else PATH)
           --jobs <N> | -j <N>   maximum number of parallel compile jobs (0 = automatic: the project's "jobs", else one
                                 per processor; default 0)
-          --verbose             echo external commands
+          --verbose             echo external commands; names the parents of a derived configuration
           --version | --help
         """;
 

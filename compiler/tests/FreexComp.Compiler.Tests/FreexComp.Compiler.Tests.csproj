@@ -6,6 +6,7 @@
   <ItemGroup>
     <Compile Include="..\Shared\PublicApiListing.cs" Link="Shared\PublicApiListing.cs" />
     <Compile Include="..\Shared\NativeRun.cs" Link="Shared\NativeRun.cs" />
+    <Compile Include="..\Shared\PeManifest.cs" Link="Shared\PeManifest.cs" />
     <ProjectReference Include="..\..\src\FreexComp.Compiler\FreexComp.Compiler.csproj" />
     <!-- DeterminismTests run opc.exe in separate processes (own hash seeds) -->
     <ProjectReference Include="..\..\src\opc\opc.csproj" />

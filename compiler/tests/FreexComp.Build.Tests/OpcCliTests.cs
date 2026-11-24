@@ -159,7 +159,9 @@ public sealed partial class OpcCliTests
         Assert.Equal("", o.RtlDirectory);
         Assert.Equal("", o.ToolchainDirectory);
         Assert.Equal("broad", o.Rtti);
-        Assert.Equal("none", o.Manifest);
+        Assert.Equal("default", o.Manifest);                                 // CMP-1100 (C-295): console programs get a manifest
+        Assert.Equal(ManifestExecutionLevel.AsInvoker, o.ManifestExecutionLevel);
+        Assert.Equal(ManifestDpiAwareness.Default, o.ManifestDpiAwareness);
         Assert.Empty(o.UnitScopeNames);
         Assert.Equal(EmitStage.Exe, a.Emit!.Stage);
         Assert.Equal(@"C:\work\P.exe", a.Emit.OutputPath);
@@ -210,9 +212,72 @@ public sealed partial class OpcCliTests
     [Theory]
     [Trait("Req", "CMP-850")]
     [InlineData("gui", "default")]
-    [InlineData("console", "none")]
+    [InlineData("console", "default")]                                      // CMP-1100 (C-295): was `none` under CMP-628
+    [InlineData("library", "none")]
     public void Manifest_DefaultsByAppType(string appType, string manifest) =>
         Assert.Equal(manifest, Parse("P.pas", "--app-type", appType).Compilation!.Manifest);
+
+    // ------------------------------------------------------------------ manifest settings (app-manifest.md CMP-1108, C-295)
+
+    [Theory]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1108")]
+    [InlineData("asInvoker", ManifestExecutionLevel.AsInvoker, "perMonitorV2", ManifestDpiAwareness.PerMonitorV2)]
+    [InlineData("highestAvailable", ManifestExecutionLevel.HighestAvailable, "system", ManifestDpiAwareness.System)]
+    [InlineData("requireAdministrator", ManifestExecutionLevel.RequireAdministrator, "unaware", ManifestDpiAwareness.Unaware)]
+    public void ExecutionLevelAndDpiOptions_FlowIntoOptions(string level, ManifestExecutionLevel expectedLevel, string dpi, ManifestDpiAwareness expectedDpi)
+    {
+        var a = Parse("P.pas", "--execution-level", level, "--dpi-awareness", dpi);
+
+        Assert.Empty(a.Errors);
+        Assert.Equal(expectedLevel, a.Compilation!.ManifestExecutionLevel);
+        Assert.Equal(expectedDpi, a.Compilation.ManifestDpiAwareness);
+        Assert.Equal("default", a.Compilation.Manifest);
+
+        // with an explicit `--manifest default`, and each option alone
+        var gui = Parse("P.pas", "--app-type", "gui", "--manifest", "default", "--execution-level", level).Compilation!;
+        Assert.Equal(expectedLevel, gui.ManifestExecutionLevel);
+        Assert.Equal(ManifestDpiAwareness.Default, gui.ManifestDpiAwareness);
+        Assert.Equal(ManifestExecutionLevel.AsInvoker, Parse("P.pas", "--dpi-awareness", dpi).Compilation!.ManifestExecutionLevel);
+
+        Assert.Contains("  --execution-level asInvoker|highestAvailable|requireAdministrator", OpcCommand.HelpText, StringComparison.Ordinal);
+        Assert.Contains("  --dpi-awareness perMonitorV2|system|unaware", OpcCommand.HelpText, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1108")]
+    [InlineData("none", "--execution-level", "requireAdministrator")]
+    [InlineData("my.manifest", "--execution-level", "asInvoker")]
+    [InlineData("none", "--dpi-awareness", "system")]
+    [InlineData("my.manifest", "--dpi-awareness", "perMonitorV2")]
+    public void ManifestSettingsWithFileOrNone_E0005(string manifest, string option, string value)
+    {
+        // either order on the command line
+        foreach (var args in new[] { new[] { "P.pas", "--manifest", manifest, option, value }, ["P.pas", option, value, "--manifest", manifest] })
+        {
+            var (code, output, _) = Run(Fs(), args);
+
+            Assert.Equal(1, code);
+            Assert.Equal([$@"C:\work\P.pas(0,0): error E0005: Invalid command-line option '{option}'"], output);
+        }
+    }
+
+    [Theory]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1108")]
+    [InlineData(new[] { "P.pas", "--execution-level", "admin" }, "error E0005: Invalid command-line option '--execution-level admin'")]
+    [InlineData(new[] { "P.pas", "--execution-level", "asinvoker" }, "error E0005: Invalid command-line option '--execution-level asinvoker'")]
+    [InlineData(new[] { "P.pas", "--dpi-awareness", "perMonitor" }, "error E0005: Invalid command-line option '--dpi-awareness perMonitor'")]
+    [InlineData(new[] { "P.pas", "--execution-level" }, "error E0006: Missing argument for option '--execution-level'")]
+    [InlineData(new[] { "P.pas", "--dpi-awareness" }, "error E0006: Missing argument for option '--dpi-awareness'")]
+    public void UnknownExecutionLevel_E0005(string[] args, string expectedSuffix)
+    {
+        var (code, output, _) = Run(Fs(), args);
+
+        Assert.Equal(1, code);
+        Assert.Equal([@"C:\work\P.pas(0,0): " + expectedSuffix], output);
+    }
 
     [Fact]
     [Trait("Req", "CMP-850")]

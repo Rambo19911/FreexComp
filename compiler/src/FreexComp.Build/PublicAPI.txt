@@ -152,6 +152,27 @@ enum FreexComp.Build.BuildTarget
   Clean = 2
   Rebuild = 1
   Run = 3
+static class FreexComp.Build.ConfigurationResolver
+  public static FreexComp.Build.EffectiveConfiguration Resolve(FreexComp.Build.Project project, System.String configuration)
+  public static System.String ToJson(FreexComp.Build.EffectiveConfiguration effective)
+sealed record FreexComp.Build.EffectiveConfiguration : System.IEquatable<FreexComp.Build.EffectiveConfiguration>
+  public FreexComp.Build.EffectiveConfiguration <Clone>$()
+  public System.Boolean DebugInfo { get; init; }
+  public System.Boolean Equals(FreexComp.Build.EffectiveConfiguration other)
+  public System.Collections.Immutable.ImmutableArray<System.String> Chain { get; init; }
+  public System.Collections.Immutable.ImmutableArray<System.String> Defines { get; init; }
+  public System.Collections.Immutable.ImmutableArray<System.String> SearchPaths { get; init; }
+  public System.Int32 Optimization { get; init; }
+  public System.String Name { get; init; }
+  public System.String OutputDir { get; init; }
+  public System.String Rtti { get; init; }
+  public System.Void Deconstruct(out System.String Name, out System.Collections.Immutable.ImmutableArray<System.String> Chain, out System.Int32 Optimization, out System.Boolean DebugInfo, out System.Collections.Immutable.ImmutableArray<System.String> Defines, out System.Collections.Immutable.ImmutableArray<System.String> SearchPaths, out System.String OutputDir, out System.String Rtti)
+  public ctor(System.String Name, System.Collections.Immutable.ImmutableArray<System.String> Chain, System.Int32 Optimization, System.Boolean DebugInfo, System.Collections.Immutable.ImmutableArray<System.String> Defines, System.Collections.Immutable.ImmutableArray<System.String> SearchPaths, System.String OutputDir, System.String Rtti)
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public static System.Boolean op_Equality(FreexComp.Build.EffectiveConfiguration left, FreexComp.Build.EffectiveConfiguration right)
+  public static System.Boolean op_Inequality(FreexComp.Build.EffectiveConfiguration left, FreexComp.Build.EffectiveConfiguration right)
 interface FreexComp.Build.IBuildEngine
   public System.Threading.Tasks.Task<FreexComp.Build.BuildResult> RunAsync(FreexComp.Build.BuildRequest request, System.IProgress<FreexComp.Build.BuildEvent> progress, System.Threading.CancellationToken ct)
 sealed record FreexComp.Build.LoadResult<T> : System.IEquatable<FreexComp.Build.LoadResult<T>>
@@ -166,12 +187,26 @@ sealed record FreexComp.Build.LoadResult<T> : System.IEquatable<FreexComp.Build.
   public override System.String ToString()
   public static System.Boolean op_Equality(FreexComp.Build.LoadResult<T> left, FreexComp.Build.LoadResult<T> right)
   public static System.Boolean op_Inequality(FreexComp.Build.LoadResult<T> left, FreexComp.Build.LoadResult<T> right)
+sealed record FreexComp.Build.ManifestSettings : System.IEquatable<FreexComp.Build.ManifestSettings>
+  public FreexComp.Build.ManifestSettings <Clone>$()
+  public System.Boolean Equals(FreexComp.Build.ManifestSettings other)
+  public System.String CustomFile { get; init; }
+  public System.String DpiAwareness { get; init; }
+  public System.String ExecutionLevel { get; init; }
+  public System.Void Deconstruct(out System.String ExecutionLevel, out System.String DpiAwareness, out System.String CustomFile)
+  public ctor(System.String ExecutionLevel, System.String DpiAwareness, System.String CustomFile)
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public static System.Boolean op_Equality(FreexComp.Build.ManifestSettings left, FreexComp.Build.ManifestSettings right)
+  public static System.Boolean op_Inequality(FreexComp.Build.ManifestSettings left, FreexComp.Build.ManifestSettings right)
 enum FreexComp.Build.OutputSource
   Info = 3
   ProgramStdErr = 2
   ProgramStdOut = 1
   Tool = 0
 sealed record FreexComp.Build.Project : System.IEquatable<FreexComp.Build.Project>
+  public FreexComp.Build.ManifestSettings ManifestSettings { get; init; }
   public FreexComp.Build.Project <Clone>$()
   public FreexComp.Build.ProjectEvents Events { get; init; }
   public FreexComp.Build.RunSettings Run { get; init; }
@@ -222,8 +257,12 @@ sealed record FreexComp.Build.ProjectConfiguration : System.IEquatable<FreexComp
   public FreexComp.Build.ProjectConfiguration <Clone>$()
   public System.Boolean DebugInfo { get; init; }
   public System.Boolean Equals(FreexComp.Build.ProjectConfiguration other)
+  public System.Boolean InheritsDebugInfo { get; init; }
+  public System.Boolean InheritsOptimization { get; init; }
   public System.Collections.Immutable.ImmutableArray<System.String> Defines { get; init; }
+  public System.Collections.Immutable.ImmutableArray<System.String> SearchPaths { get; init; }
   public System.Int32 Optimization { get; init; }
+  public System.String Inherits { get; init; }
   public System.String OutputDir { get; init; }
   public System.String Rtti { get; init; }
   public System.Void Deconstruct(out System.Int32 Optimization, out System.Boolean DebugInfo, out System.Collections.Immutable.ImmutableArray<System.String> Defines, out System.String OutputDir, out System.String Rtti)
@@ -233,6 +272,11 @@ sealed record FreexComp.Build.ProjectConfiguration : System.IEquatable<FreexComp
   public override System.String ToString()
   public static System.Boolean op_Equality(FreexComp.Build.ProjectConfiguration left, FreexComp.Build.ProjectConfiguration right)
   public static System.Boolean op_Inequality(FreexComp.Build.ProjectConfiguration left, FreexComp.Build.ProjectConfiguration right)
+static class FreexComp.Build.ProjectConfigurations
+  public static FreexComp.Build.Project Detach(FreexComp.Build.Project project, System.String name)
+  public static FreexComp.Build.Project Rename(FreexComp.Build.Project project, System.String oldName, System.String newName)
+  public static System.Collections.Immutable.ImmutableArray<System.String> ChildrenOf(FreexComp.Build.Project project, System.String name)
+  public static System.Collections.Immutable.ImmutableArray<System.String> DescendantsOf(FreexComp.Build.Project project, System.String name)
 sealed record FreexComp.Build.ProjectEvents : System.IEquatable<FreexComp.Build.ProjectEvents>
   public FreexComp.Build.ProjectEvents <Clone>$()
   public System.Boolean Equals(FreexComp.Build.ProjectEvents other)

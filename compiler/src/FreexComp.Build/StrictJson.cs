@@ -12,6 +12,9 @@ internal sealed class ProjectFileException(string code, int offset, params objec
 
     public object[] Arguments { get; } = args;
 
+    /// <summary>Further errors of the same load, reported after this one (CMP-1154: one per broken link or cycle).</summary>
+    public IReadOnlyList<ProjectFileException> Additional { get; init; } = [];
+
     public static ProjectFileException Invalid(int offset, string detail) => new("E9002", offset, detail);
 }
 

@@ -99,6 +99,8 @@ sealed record FreexComp.Compiler.CompilationOptions : System.IEquatable<FreexCom
   public FreexComp.Compiler.AppType AppType { get; init; }
   public FreexComp.Compiler.CompilationOptions <Clone>$()
   public FreexComp.Compiler.DebugFormat DebugFormat { get; init; }
+  public FreexComp.Compiler.ManifestDpiAwareness ManifestDpiAwareness { get; init; }
+  public FreexComp.Compiler.ManifestExecutionLevel ManifestExecutionLevel { get; init; }
   public FreexComp.Compiler.OptimizationLevel Optimization { get; init; }
   public FreexComp.Compiler.Targets.TargetInfo Target { get; init; }
   public System.Boolean Assertions { get; init; }
@@ -292,6 +294,15 @@ sealed class FreexComp.Compiler.InMemoryFileSystem : FreexComp.Compiler.IFileSys
   public System.Void Delete(System.String path)
   public System.Void WriteAllBytes(System.String path, System.Byte[] data)
   public ctor()
+enum FreexComp.Compiler.ManifestDpiAwareness
+  Default = 0
+  PerMonitorV2 = 1
+  System = 2
+  Unaware = 3
+enum FreexComp.Compiler.ManifestExecutionLevel
+  AsInvoker = 0
+  HighestAvailable = 1
+  RequireAdministrator = 2
 enum FreexComp.Compiler.ModuleKind
   Library = 1
   Program = 0

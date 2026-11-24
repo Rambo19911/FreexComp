@@ -5,7 +5,7 @@ namespace FreexComp.Build.Tests;
 
 /// <summary>C-147: the <c>pbuild</c> command line (compiler-cli.md §4, build-engine.md CMP-840…842), run in-process.</summary>
 [Trait("Phase", "3")]
-public sealed class PbuildCliTests
+public sealed partial class PbuildCliTests
 {
     private const string Summary = @"\(\d+ errors, \d+ warnings, \d+ hints, \d+\.\d\d s\)$";
 

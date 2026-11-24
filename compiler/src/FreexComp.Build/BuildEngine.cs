@@ -230,6 +230,12 @@ public sealed class BuildEngine : IBuildEngine
         var configuration = project?.ConfigurationNames.FirstOrDefault(n => string.Equals(n, requested, StringComparison.OrdinalIgnoreCase));
         var platform = request.Platform ?? (project is { Platforms.IsEmpty: false } ? project.Platforms[0] : TargetRegistry.Default.Id);
         sink.Report(new BuildEvent.Started(DateTime.UtcNow, path, configuration ?? requested, platform, target));
+        if (request.Verbose && skippedBecause is null && project is not null && configuration is not null && !HasErrors(load.Diagnostics)
+            && ConfigurationResolver.Resolve(project, configuration).Chain is { Length: > 1 } chain)
+        {
+            // CMP-1163: the parents of a derived configuration, nearest first
+            sink.Info($"Configuration {configuration} inherits {string.Join(" <- ", Enumerable.Reverse(chain).Skip(1))}");
+        }
 
         var diagnostics = skippedBecause is null ? new List<Diagnostic>(load.Diagnostics) : [];
         var upToDate = false;
