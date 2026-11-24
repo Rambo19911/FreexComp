@@ -1,0 +1,7 @@
+ErrInheritedProperty.pas(31,18): error E2610: Cannot access strict private member 'Hidden' of 'TBase'
+ErrInheritedProperty.pas(32,3): error E2633: Cannot assign to a read-only property
+ErrInheritedProperty.pas(33,8): error E2632: Cannot read a write-only property
+ErrInheritedProperty.pas(34,8): error E2626: Cannot call abstract method 'GetShape' with 'inherited'
+ErrInheritedProperty.pas(35,3): error E2626: Cannot call abstract method 'SetShape' with 'inherited'
+ErrInheritedProperty.pas(36,18): error E2003: Undeclared identifier 'Missing'
+ErrInheritedProperty.pas(37,13): error E2003: Undeclared identifier 'Absent'

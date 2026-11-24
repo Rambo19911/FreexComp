@@ -61,10 +61,50 @@ internal sealed partial class ExpressionBinder
             return new BoundAssignmentStatement(assignment, FieldPath(target.Syntax, property, property.WritePath, target.Self, marked: false), converted);
         }
 
+        if (target.IsInherited && setter.IsAbstract)
+        {
+            _diagnostics.Report(assignment.Target, "E2626", setter.Name);              // LANG-624
+            return new BoundErrorStatement(assignment);
+        }
+
         return new BoundCallStatement(assignment, setter, [.. AccessorArguments(target.Syntax, property, target.Indexes), converted])
         {
-            Receiver = AccessorReceiver(setter, target.Self),
+            Receiver = AccessorReceiver(setter, target.Self, target.IsInherited),
         };
+    }
+
+    /// <summary>
+    /// LANG-624 (C-270) <c>inherited Prop</c>: the property <c>Prop</c> of the nearest ancestor declaring that name, on <c>Self</c>
+    /// (or of the class for a class property) with its accessor methods called statically; null when the ancestors' nearest
+    /// member of that name is no property (the caller binds a method call).
+    /// </summary>
+    private BoundExpression? InheritedProperty(InheritedExpressionSyntax inherited)
+    {
+        if (inherited.Name is not { Identifier: var token } name
+            || CurrentMethod is not { Owner: ClassTypeSymbol { Parent: { } parent } owner } current
+            || parent.GetMembers(token.Value as string ?? token.Text).FirstOrDefault() is not PropertySymbol property)
+        {
+            return null;
+        }
+
+        if (!CheckAccess(name, property, property.Owner, owner))
+        {
+            return Error(inherited);
+        }
+
+        BoundExpression? self = null;
+        if (!property.IsClassProperty)
+        {
+            if (!HasInstanceSelf(current))
+            {
+                _diagnostics.Report(name, "E2608", property.Name);
+                return Error(inherited);
+            }
+
+            self = SelfOf(current, inherited);
+        }
+
+        return PropertyAccess(inherited, property, self, inherited: true);
     }
 
     /// <summary>A property named inside a method (LANG-621): of <c>Self</c>, or of the class for a class property.</summary>
@@ -96,7 +136,7 @@ internal sealed partial class ExpressionBinder
     /// an array property takes the indexes of the enclosing element access (E2110 when there is none or too few); the whole
     /// assignment target becomes a <see cref="BoundPropertyAccessExpression"/>, anything else a read (E2632 without <c>read</c>).
     /// </summary>
-    private BoundExpression PropertyAccess(ExpressionSyntax syntax, PropertySymbol property, BoundExpression? self)
+    private BoundExpression PropertyAccess(ExpressionSyntax syntax, PropertySymbol property, BoundExpression? self, bool inherited = false)
     {
         SyntaxNode at = syntax;
         var indexes = ImmutableArray<BoundExpression>.Empty;
@@ -121,15 +161,15 @@ internal sealed partial class ExpressionBinder
             indexes = bound;
             if (element.Indexes.Count == property.Parameters.Length && ReferenceEquals(_assignmentTarget, element))
             {
-                return new BoundPropertyAccessExpression(element, property, self, indexes);
+                return new BoundPropertyAccessExpression(element, property, self, indexes) { IsInherited = inherited };
             }
         }
         else if (ReferenceEquals(_assignmentTarget, syntax))
         {
-            return new BoundPropertyAccessExpression(syntax, property, self, indexes);
+            return new BoundPropertyAccessExpression(syntax, property, self, indexes) { IsInherited = inherited };
         }
 
-        return PropertyRead(at, property, self, indexes);
+        return PropertyRead(at, property, self, indexes, inherited);
     }
 
     /// <summary>
@@ -174,7 +214,8 @@ internal sealed partial class ExpressionBinder
     }
 
     /// <summary>LANG-641 read: the field path, or a getter call with the index arguments and the <c>index</c> value.</summary>
-    private BoundExpression PropertyRead(SyntaxNode syntax, PropertySymbol property, BoundExpression? self, ImmutableArray<BoundExpression> indexes)
+    private BoundExpression PropertyRead(SyntaxNode syntax, PropertySymbol property, BoundExpression? self, ImmutableArray<BoundExpression> indexes,
+        bool inherited = false)
     {
         if (!property.IsReadable)
         {
@@ -187,7 +228,13 @@ internal sealed partial class ExpressionBinder
             return FieldPath(syntax, property, property.ReadPath, self, marked: true);
         }
 
-        return new BoundCallExpression(syntax, getter, AccessorArguments(syntax, property, indexes)) { Receiver = AccessorReceiver(getter, self) };
+        if (inherited && getter.IsAbstract)
+        {
+            _diagnostics.Report(syntax, "E2626", getter.Name);                         // LANG-624
+            return Error(syntax);
+        }
+
+        return new BoundCallExpression(syntax, getter, AccessorArguments(syntax, property, indexes)) { Receiver = AccessorReceiver(getter, self, inherited) };
     }
 
     /// <summary>The field accessor path on <paramref name="self"/>; a read is marked with the property (not a variable, LANG-645).</summary>
@@ -210,9 +257,12 @@ internal sealed partial class ExpressionBinder
     private ImmutableArray<BoundExpression> AccessorArguments(SyntaxNode syntax, PropertySymbol property, ImmutableArray<BoundExpression> indexes) =>
         property.Index is { } index ? [.. indexes, new BoundLiteral(syntax, new ConstantValue(new BigInteger(index), _types.Integer))] : indexes;
 
-    /// <summary>The receiver of an accessor method call on <paramref name="self"/> (virtual accessors dispatch, LANG-622).</summary>
-    private BoundReceiver? AccessorReceiver(MethodSymbol accessor, BoundExpression? self) =>
-        accessor.SelfParameter is null || self is null ? null : Dispatched(accessor, self, inherited: false);
+    /// <summary>
+    /// The receiver of an accessor method call on <paramref name="self"/>: virtual accessors dispatch (LANG-622) except through
+    /// <c>inherited Prop</c> (LANG-624).
+    /// </summary>
+    private BoundReceiver? AccessorReceiver(MethodSymbol accessor, BoundExpression? self, bool inherited = false) =>
+        accessor.SelfParameter is null || self is null ? null : Dispatched(accessor, self, inherited);
 
     /// <summary>LANG-645: a property read (field accessor) is no variable for <c>var</c> arguments, <c>@</c>, <c>Inc</c>.</summary>
     internal static bool IsPropertyRead(BoundExpression expression)

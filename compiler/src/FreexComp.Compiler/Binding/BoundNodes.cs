@@ -440,6 +440,9 @@ internal sealed class BoundPropertyAccessExpression : BoundExpression
     public BoundExpression? Self { get; }
 
     public ImmutableArray<BoundExpression> Indexes { get; }
+
+    /// <summary>Named through <c>inherited</c> (LANG-624, C-270): the setter is called statically.</summary>
+    public bool IsInherited { get; init; }
 }
 
 /// <summary>

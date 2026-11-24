@@ -1,0 +1,2 @@
+ErrCharArrayToPChar.pas(19,8): error E2010: Incompatible types: 'array[0..7] of Char' and 'PChar'
+ErrCharArrayToPChar.pas(20,8): error E2010: Incompatible types: 'array[0..7] of Char' and 'PChar'

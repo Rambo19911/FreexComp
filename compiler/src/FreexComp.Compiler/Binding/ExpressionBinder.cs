@@ -525,7 +525,8 @@ internal sealed partial class ExpressionBinder
             }
 
             case InheritedExpressionSyntax inherited:
-                return MethodCallExpression(inherited, BindInherited(inherited, inherited, argumentList: null, bare: false));    // LANG-624
+                return InheritedProperty(inherited)                                                                 // C-270
+                    ?? MethodCallExpression(inherited, BindInherited(inherited, inherited, argumentList: null, bare: false));    // LANG-624
             case PredefinedTypeExpressionSyntax predefined:
                 _diagnostics.Report(predefined, "E2009", predefined.Keyword.Text);
                 return Error(syntax);
