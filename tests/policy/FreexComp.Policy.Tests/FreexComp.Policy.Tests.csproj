@@ -3,6 +3,10 @@
     <RootNamespace>FreexComp.Policy.Tests</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <!-- The reader of the manifest resource of a built program, shared with the compiler tests (platform check suite). -->
+    <Compile Include="..\..\..\compiler\tests\Shared\PeManifest.cs" Link="Shared\PeManifest.cs" />
+  </ItemGroup>
+  <ItemGroup>
     <!-- Repository-wide policy checks (licence files, notices). The shared helpers come from the IDE test support library. -->
     <ProjectReference Include="..\..\..\ide\tests\FreexComp.Ide.TestSupport\FreexComp.Ide.TestSupport.csproj" />
   </ItemGroup>

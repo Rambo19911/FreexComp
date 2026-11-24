@@ -5,7 +5,7 @@ A free, fully local RAD IDE for Windows: visual form designer, Object Pascal com
 **Status:** early development – nothing usable yet.
 
 ## Requirements (development)
-- Windows 10/11 x64
+- Windows 10 (version 1809 or later) or Windows 11, x64
 - .NET SDK 10.0
 - git
 

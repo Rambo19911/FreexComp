@@ -1,0 +1,15 @@
+{
+  "formatVersion": 1,
+  "name": "PlatAdmin",
+  "language": "pascal",
+  "appType": "console",
+  "mainSource": "PlatAdmin.pas",
+  "files": [
+    {
+      "path": "PlatAdmin.pas"
+    }
+  ],
+  "manifest": {
+    "executionLevel": "requireAdministrator"
+  }
+}

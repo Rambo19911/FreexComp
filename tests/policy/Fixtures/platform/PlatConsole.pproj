@@ -1,0 +1,12 @@
+{
+  "formatVersion": 1,
+  "name": "PlatConsole",
+  "language": "pascal",
+  "appType": "console",
+  "mainSource": "PlatConsole.pas",
+  "files": [
+    {
+      "path": "PlatConsole.pas"
+    }
+  ]
+}

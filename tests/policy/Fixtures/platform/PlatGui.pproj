@@ -1,0 +1,12 @@
+{
+  "formatVersion": 1,
+  "name": "PlatGui",
+  "language": "pascal",
+  "appType": "gui",
+  "mainSource": "PlatGui.pas",
+  "files": [
+    {
+      "path": "PlatGui.pas"
+    }
+  ]
+}
