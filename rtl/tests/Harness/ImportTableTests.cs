@@ -152,11 +152,14 @@ public sealed class ImportTableTests
             UseShellExecute = false,
         };
         using var process = Process.Start(info)!;
-        var stdout = process.StandardOutput.ReadToEndAsync(TestContext.Current.CancellationToken);
-        var stderr = process.StandardError.ReadToEndAsync(TestContext.Current.CancellationToken);
+        var name = Path.GetFileName(file);
+        var stdout = ChildPipe.ReadToEnd(process.StandardOutput.BaseStream, name + " stdout");   // a thread per pipe
+        var stderr = ChildPipe.ReadToEnd(process.StandardError.BaseStream, name + " stderr");
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
         cts.CancelAfter(TimeSpan.FromSeconds(120));
         await process.WaitForExitAsync(cts.Token);
-        return (process.ExitCode, await stdout + await stderr);
+        var output = process.StandardOutput.CurrentEncoding.GetString(await stdout.WaitAsync(TestContext.Current.CancellationToken));
+        var errors = process.StandardError.CurrentEncoding.GetString(await stderr.WaitAsync(TestContext.Current.CancellationToken));
+        return (process.ExitCode, output + errors);
     }
 }

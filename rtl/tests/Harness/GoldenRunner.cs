@@ -415,7 +415,7 @@ public static class GoldenRunner
     }
 
     /// <summary>The outcome of one process; <see cref="Stopped"/> is the report when a limit or the test's token stopped it.</summary>
-    private readonly record struct ProcessResult(int ExitCode, string StdOut, string StdErr, string? Stopped);
+    internal readonly record struct ProcessResult(int ExitCode, string StdOut, string StdErr, string? Stopped);
 
     /// <summary>
     /// Runs a process with <paramref name="stdin"/> as its whole input under <paramref name="limits"/> and the test's
@@ -423,7 +423,7 @@ public static class GoldenRunner
     /// elapsed wall time, the CPU time and the process state, captured before the kill. The process tree is killed in
     /// <c>finally</c>.
     /// </summary>
-    private static async Task<ProcessResult> RunProcessAsync(string file, string arguments, string workingDirectory, byte[] stdin, RunLimits limits, CancellationToken ct)
+    internal static async Task<ProcessResult> RunProcessAsync(string file, string arguments, string workingDirectory, byte[] stdin, RunLimits limits, CancellationToken ct)
     {
         var psi = new ProcessStartInfo(file, arguments)
         {
@@ -477,10 +477,10 @@ public static class GoldenRunner
             using (ct.Register(() => Stop("test cancelled")))
             {
                 timer.Change(Decide(TimeSpan.Zero, watch.Elapsed, limits).NextCheck, System.Threading.Timeout.InfiniteTimeSpan);
-                var stdout = new MemoryStream();
-                var stderr = new MemoryStream();
-                var copyOut = process.StandardOutput.BaseStream.CopyToAsync(stdout, stop.Token);
-                var copyErr = process.StandardError.BaseStream.CopyToAsync(stderr, stop.Token);
+                // a thread per pipe (ChildPipe); a stop ends the wait here and the kill in finally ends the threads
+                var name = Path.GetFileName(file);
+                var readOut = ChildPipe.ReadToEnd(process.StandardOutput.BaseStream, name + " stdout");
+                var readErr = ChildPipe.ReadToEnd(process.StandardError.BaseStream, name + " stderr");
                 try
                 {
                     await process.StandardInput.BaseStream.WriteAsync(stdin, stop.Token).ConfigureAwait(false);
@@ -491,9 +491,10 @@ public static class GoldenRunner
                     // the program exited without reading its input
                 }
 
-                await Task.WhenAll(copyOut, copyErr).ConfigureAwait(false);
+                var stdout = await readOut.WaitAsync(stop.Token).ConfigureAwait(false);
+                var stderr = await readErr.WaitAsync(stop.Token).ConfigureAwait(false);
                 await process.WaitForExitAsync(stop.Token).ConfigureAwait(false);
-                return new(process.ExitCode, Encoding.UTF8.GetString(stdout.ToArray()), Encoding.UTF8.GetString(stderr.ToArray()), null);
+                return new(process.ExitCode, Encoding.UTF8.GetString(stdout), Encoding.UTF8.GetString(stderr), null);
             }
         }
         catch (OperationCanceledException) when (report is not null)
