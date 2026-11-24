@@ -24,6 +24,7 @@
     "url": "https://www.sqlite.org/2026/sqlite-dll-win-x64-3540100.zip",
     "sha256": "f436f53ad8f965af43f3817b42c99c0689e6787f6b7ace208fe38dab7ffc4971",
     "installDir": "third_party/sqlite",
+    "dllSha256": "4b59d3cded9dc1608544160f3b4b10ac974c6ac0d6ffc23064e5f4c8dbd05aea",
     "note": "Official x64 DLL (public domain). SHA3-256 published on sqlite.org matched on 2026-11-13. Built with column metadata; no encryption API (own page encryption is a backlog card).",
     "requiredFiles": ["sqlite3.dll", "sqlite3.def"]
   },

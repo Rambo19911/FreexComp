@@ -82,6 +82,8 @@ if (-not (Test-Path (Join-Path $sqlDir 'sqlite3.dll')) -and -not $CheckOnly) {
     Expand-Archive -Path $zip -DestinationPath $sqlDir -Force
 }
 foreach ($f in $cfg.sqlite.requiredFiles) { Say (Test-Path (Join-Path $sqlDir $f)) "SQLite file $f" }
+$sqlDll = Join-Path $sqlDir 'sqlite3.dll'
+if (Test-Path $sqlDll) { Say ((Get-FileHash $sqlDll -Algorithm SHA256).Hash.ToLower() -eq $cfg.sqlite.dllSha256.ToLower()) "SQLite DLL hash matches the pin" }
 
 # --- lldb must start using ONLY the bundled Python -------------------------------------------------------
 if ((Test-Path (Join-Path $llvmBin 'lldb.exe')) -and (Test-Path (Join-Path $pyDir 'python3.dll'))) {
