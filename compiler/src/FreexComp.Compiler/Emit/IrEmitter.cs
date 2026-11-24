@@ -1453,6 +1453,41 @@ internal sealed class ModuleState(IIrWriter writer)
         return new IrGlobal(Mangler.Guid(intf));
     }
 
+    private readonly Dictionary<string, IrGlobal> _dispDescriptors = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// CMP-1209 (rtl-abi.md ABI-205): the private constant <c>@"U.$disp.n"</c> of a dispatch call — the packed record
+    /// <c>&lt;{ i32 DispId, i16 Flags, i16 ResultType, i16 ArgCount, [ArgCount x i16] ArgTypes }&gt;</c>, alignment 4 (no array member
+    /// without arguments); <c>n</c> counts from 1 in first-use order and identical descriptors share one constant.
+    /// </summary>
+    public IrGlobal DispDescriptor(Lowering.LDispDescriptor descriptor)
+    {
+        var key = string.Join(",", new[] { descriptor.DispId, descriptor.Flags, descriptor.ResultCode }.Concat(descriptor.ArgumentCodes));
+        if (_dispDescriptors.TryGetValue(key, out var existing))
+        {
+            return existing;
+        }
+
+        var count = descriptor.ArgumentCodes.Length;
+        var codes = new ArrayIrType(count, IrType.I16);
+        ImmutableArray<IrType> fieldTypes = count == 0 ? [IrType.I32, IrType.I16, IrType.I16, IrType.I16] : [IrType.I32, IrType.I16, IrType.I16, IrType.I16, codes];
+        ImmutableArray<IrConstant> fields =
+        [
+            new IrIntConstant(IrType.I32, descriptor.DispId),
+            new IrIntConstant(IrType.I16, descriptor.Flags),
+            new IrIntConstant(IrType.I16, descriptor.ResultCode),
+            new IrIntConstant(IrType.I16, count),
+        ];
+        if (count > 0)
+        {
+            fields = fields.Add(new IrArrayConstant(codes, [.. descriptor.ArgumentCodes.Select(c => (IrConstant)new IrIntConstant(IrType.I16, c))]));
+        }
+
+        var name = Mangler.DispDescriptor(UnitName, _dispDescriptors.Count + 1);
+        AggregateConstants.Add((name, new IrStructConstant(new StructIrType(fieldTypes, IsPacked: true), fields), 4));
+        return _dispDescriptors[key] = new IrGlobal(name);
+    }
+
     private readonly Dictionary<string, IrGlobal> _aggregateReferences = new(StringComparer.Ordinal);
 
     /// <summary>Constant aggregates used as operands (<c>@.set.N</c>, CMP-336), first-use order, one per distinct value.</summary>
@@ -2982,6 +3017,8 @@ internal sealed class FunctionEmitter
                 return _module.Vmt(reference.Class);                                // CMP-367: ptr @"U.TFoo.$vmt"
             case LGuidRef guid:
                 return _module.Guid(guid.Interface);                                // CMP-373: ptr @"U.IBar.$guid"
+            case LDispDescriptor descriptor:
+                return _module.DispDescriptor(descriptor);                          // CMP-1209: ptr @"U.$disp.n"
             case LFormTable table:
                 return new IrGlobal(Mangler.FormTable(table.Unit));                    // CMP-415 (C-114)
             case LTlsDescriptor descriptor:

@@ -324,7 +324,7 @@ internal sealed partial class DeclarationBinder
                 break;
             }
 
-            case ClassTypeSyntax or InterfaceTypeSyntax or HelperTypeSyntax:
+            case ClassTypeSyntax or InterfaceTypeSyntax or HelperTypeSyntax or DispInterfaceTypeSyntax:
                 instance = binder.Unsupported(declaration.Type, "generic " + FeatureName(declaration.Type.Kind));
                 break;
             default:

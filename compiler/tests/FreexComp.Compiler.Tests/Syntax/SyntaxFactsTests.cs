@@ -30,7 +30,7 @@ public sealed class SyntaxFactsTests
     {
         Assert.Equal(Sorted(LexerTests.Words(LexerTests.ReservedWordsText)), SyntaxFacts.ReservedWords);
         Assert.Equal(Sorted(LexerTests.Words(LexerTests.ContextualKeywordsText)), SyntaxFacts.ContextualKeywords);
-        Assert.Equal(62, SyntaxFacts.ReservedWords.Length);
+        Assert.Equal(63, SyntaxFacts.ReservedWords.Length);
         Assert.Empty(SyntaxFacts.ReservedWords.Intersect(SyntaxFacts.ContextualKeywords));
     }
 
@@ -135,7 +135,7 @@ public sealed class SyntaxFactsTests
     [Fact]
     public void KindPredicates_ClassifyEveryKind()
     {
-        Assert.Equal(62, Enum.GetValues<SyntaxKind>().Count(SyntaxFacts.IsKeyword));
+        Assert.Equal(63, Enum.GetValues<SyntaxKind>().Count(SyntaxFacts.IsKeyword));
         Assert.Equal(SyntaxFacts.ContextualKeywords.Length, Enum.GetValues<SyntaxKind>().Count(SyntaxFacts.IsContextualKeyword));
         Assert.Equal(
             [SyntaxKind.DotToken, SyntaxKind.CommaToken, SyntaxKind.SemicolonToken, SyntaxKind.ColonToken,

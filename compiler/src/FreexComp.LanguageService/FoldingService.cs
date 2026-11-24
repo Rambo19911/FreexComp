@@ -42,7 +42,8 @@ public static class FoldingService
                 case TypeSectionSyntax or ConstSectionSyntax or VarSectionSyntax:
                     Add(node.Span, FoldingKind.Declarations);
                     break;
-                case ClassTypeSyntax { EndKeyword: { IsMissing: false } } or InterfaceTypeSyntax { EndKeyword: { IsMissing: false } } or RecordTypeSyntax or HelperTypeSyntax:
+                case ClassTypeSyntax { EndKeyword: { IsMissing: false } } or InterfaceTypeSyntax { EndKeyword: { IsMissing: false } }
+                    or DispInterfaceTypeSyntax { EndKeyword: { IsMissing: false } } or RecordTypeSyntax or HelperTypeSyntax:
                     Add(node.Span, FoldingKind.Type);
                     break;
                 case RoutineDeclarationSyntax { Block: not null }:

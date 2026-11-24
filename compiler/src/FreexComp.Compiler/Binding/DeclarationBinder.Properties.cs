@@ -13,8 +13,9 @@ internal sealed partial class DeclarationBinder
     /// The properties of a class body, bound after its fields and methods so that accessors may be declared anywhere in the
     /// class. A property without type redeclares the nearest inherited one (LANG-613, 646; E2637 when there is none).
     /// </summary>
+    /// <param name="implements">The <c>implements</c> specifiers of a class's properties (LANG-690, bound with its interfaces); null where they are E2900.</param>
     private ImmutableArray<PropertySymbol> BindProperties(TypeSymbol type, List<(PropertyDeclarationSyntax Syntax, Visibility Visibility)> properties,
-        Dictionary<string, Symbol> names)
+        Dictionary<string, Symbol> names, List<(PropertySymbol Property, PropertySpecifierSyntax Specifier)>? implements = null)
     {
         var bound = ImmutableArray.CreateBuilder<PropertySymbol>();
         foreach (var (syntax, visibility) in properties)
@@ -35,7 +36,7 @@ internal sealed partial class DeclarationBinder
                 continue;
             }
 
-            if (BindProperty(type, property, syntax))
+            if (BindProperty(type, property, syntax, implements))
             {
                 if (property.IsDefault && bound.Any(p => p.IsDefault))
                 {
@@ -51,7 +52,8 @@ internal sealed partial class DeclarationBinder
     }
 
     /// <summary>Type, index parameters and specifiers of one property; false after an error that leaves no usable property.</summary>
-    private bool BindProperty(TypeSymbol type, PropertySymbol property, PropertyDeclarationSyntax syntax)
+    private bool BindProperty(TypeSymbol type, PropertySymbol property, PropertyDeclarationSyntax syntax,
+        List<(PropertySymbol Property, PropertySpecifierSyntax Specifier)>? implements)
     {
         if (syntax.Type is null)
         {
@@ -111,6 +113,7 @@ internal sealed partial class DeclarationBinder
         }
 
         var ok = true;
+        var pendingImplements = new List<PropertySpecifierSyntax>();
         var index = syntax.Specifiers.FirstOrDefault(s => s.Keyword.ContextualKind == SyntaxKind.IndexKeyword);
         if (index?.Value is { } indexValue)
         {
@@ -140,8 +143,11 @@ internal sealed partial class DeclarationBinder
                 case SyntaxKind.NoDefaultKeyword:
                     property.DefaultValue = null;
                     break;
+                case SyntaxKind.ImplementsKeyword when implements is not null:
+                    pendingImplements.Add(specifier);                                                      // LANG-690 (C-302)
+                    break;
                 case SyntaxKind.ImplementsKeyword:
-                    Unsupported(specifier.Keyword, "implements");                                          // LANG-661, M2.5
+                    Unsupported(specifier.Keyword, "implements");                                          // LANG-692: classes only
                     ok = false;
                     break;
             }
@@ -152,6 +158,11 @@ internal sealed partial class DeclarationBinder
         {
             _diagnostics.Report(syntax.Identifier, "E2631", property.Name);                                // LANG-641
             return false;
+        }
+
+        if (ok)
+        {
+            implements?.AddRange(pendingImplements.Select(s => (property, s)));
         }
 
         return ok;

@@ -12,7 +12,7 @@ namespace FreexComp.Compiler.Tests.Units;
 /// comment, whitespace and implementation-section edits, changed by interface edits and by a used unit's interface edit.
 /// </summary>
 [Trait("Phase", "2")]
-public sealed class PcuTests
+public sealed partial class PcuTests
 {
     private const string Dir = @"C:\p";
 

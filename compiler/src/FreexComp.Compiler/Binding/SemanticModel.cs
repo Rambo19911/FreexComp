@@ -192,7 +192,8 @@ public sealed class SemanticModel
             symbols = scope.VisibleSymbols();
         }
 
-        return [.. symbols.Where(s => name is null || IdentifierComparer.Instance.Equals(s.Name, name)).Distinct()];
+        // CMP-1207: the synthesised delegating methods of `implements` are not names a program can use
+        return [.. symbols.Where(s => s is not MethodSymbol { DelegateProperty: not null } && (name is null || IdentifierComparer.Instance.Equals(s.Name, name))).Distinct()];
     }
 
     /// <summary>The routine, type or unit containing <paramref name="position"/> (innermost).</summary>
@@ -489,6 +490,11 @@ public sealed class SemanticModel
             if (symbol is VariableSymbol { TypedConstant: { } constant })
             {
                 symbol = constant;
+            }
+            else if (symbol is MethodSymbol { DispatchFlags: > 1, ContainingInterface: { } dispatch }
+                     && PropertyNamed(dispatch, NameOf(token)) is { } dispatchProperty)
+            {
+                symbol = dispatchProperty;                                      // CMP-1211: the hidden get / put member of a dispatch property
             }
             else if (symbol is FieldSymbol or MethodSymbol && !IdentifierComparer.Instance.Equals(symbol.Name, NameOf(token))
                      && (receiver ?? symbol.ContainingSymbol as TypeSymbol) is { } type

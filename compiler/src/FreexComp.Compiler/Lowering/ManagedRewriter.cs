@@ -347,7 +347,7 @@ internal static class ManagedRewriter
         LArrayLength l => References(l.Array, local),
         LArrayElement e => References(e.Array, local) || References(e.Index, local) || (e.Length is { } n && References(n, local)),
         LOpenArray o => References(o.Data, local) || (o.High is { } h && References(h, local)),
-        LTypeInfo or LGuidRef => false,
+        LTypeInfo or LGuidRef or LDispDescriptor => false,
         LStringIndex i => References(i.String, local) || References(i.Index, local),
         LAtomic a => References(a.Target, local) || References(a.Value, local) || (a.Comparand is { } c && References(c, local)),
         LBlock b => b.Statements.Any(s => References(s, local)),

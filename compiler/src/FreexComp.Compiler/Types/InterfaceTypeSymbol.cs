@@ -26,6 +26,20 @@ public sealed class InterfaceTypeSymbol : TypeSymbol
     /// <summary>True until the full declaration has been bound (<c>IFoo = interface;</c>).</summary>
     public bool IsForward { get; internal set; } = true;
 
+    /// <summary>
+    /// A dispatch interface (<c>dispinterface</c>, com-interfaces.md LANG-693): its members are called through
+    /// <c>IDispatch.Invoke</c> by number; it has no method table of its own (<see cref="Methods"/> have no slot).
+    /// </summary>
+    public bool IsDispatchInterface { get; internal set; }
+
+    /// <summary>
+    /// LANG-696: a reference to an <c>IDispatch</c> — a dispatch interface, <c>System.IDispatch</c> or a descendant of it; such a
+    /// value converts to every dispatch-interface type.
+    /// </summary>
+    internal bool IsDispatchReference => SelfAndAncestors().Any(i => i.IsDispatchInterface
+        || string.Equals(i.Name, "IDispatch", StringComparison.OrdinalIgnoreCase)
+            && i.ContainingSymbol is UnitSymbol { IsProgram: false } unit && string.Equals(unit.Name, "System", StringComparison.OrdinalIgnoreCase));
+
     /// <summary>The GUID in <c>TGUID</c> memory order (ABI-096), 16 bytes; null when the declaration has none.</summary>
     public ImmutableArray<byte>? Guid { get; internal set; }
 
@@ -74,7 +88,8 @@ public sealed class InterfaceTypeSymbol : TypeSymbol
     }
 
     /// <summary><c>type IFoo = interface(IBar)</c> (CMP-731).</summary>
-    public override string ToDisplayString() => Parent is null ? $"type {Name} = interface" : $"type {Name} = interface({Parent.Name})";
+    public override string ToDisplayString() => IsDispatchInterface ? $"type {Name} = dispinterface"
+        : Parent is null ? $"type {Name} = interface" : $"type {Name} = interface({Parent.Name})";
 }
 
 /// <summary>

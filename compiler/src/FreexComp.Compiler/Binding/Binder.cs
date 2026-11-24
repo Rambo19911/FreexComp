@@ -243,7 +243,7 @@ internal static class Binder
             .OfType<RoutineSymbol>()
             .Concat(DeclarationBinder.MethodsOf(declarations.Unit))
             .Where(r => r.Definition != null && Wanted(r.Definition))
-            .OrderBy(r => r.Definition!.Span.Start));
+            .OrderBy(r => r is MethodSymbol { DelegateProperty: not null } ? int.MaxValue : r.Definition!.Span.Start));   // CMP-1207: delegating methods last
         void Drain()
         {
             while (pending.Count > 0)
@@ -379,7 +379,13 @@ internal static class Binder
             diagnostics.Report(definition.Heading.Name, "W1062", destructor.ContainingType.Name + "." + destructor.Name);
         }
 
-        return new BoundRoutineBody(routine, scope, body, [.. locals.OfType<RoutineSymbol>()], [.. binder.CapturedVariables], diagnostics.ToImmutable())
+        var reported = diagnostics.ToImmutable();
+        if (routine is MethodSymbol { DelegateProperty: { Locations: [var at, ..] } })
+        {
+            reported = [.. reported.Select(d => d with { Location = at })];          // CMP-1207: no source of its own; at the property
+        }
+
+        return new BoundRoutineBody(routine, scope, body, [.. locals.OfType<RoutineSymbol>()], [.. binder.CapturedVariables], reported)
         {
             AddressTaken = [.. binder.AddressTakenVariables],
             AnonymousBodies = [.. binder.Expressions.AnonymousBodies],

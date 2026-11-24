@@ -1667,6 +1667,64 @@ public sealed class IrSnapshotTests
         end.
         """;
 
+    /// <summary>
+    /// C-304 (CMP-1208…1210; ABI-205): every access to a member of a dispatch interface is one call of <c>System._DispCall(Dest,
+    /// Disp, Desc, Args)</c> — a constant packed call descriptor <c>@"M.$disp.n"</c> per distinct call shape (identical ones are
+    /// shared), a stack array of 8-byte slots (signed integers sign-extended, other values in the low bytes of a zeroed slot,
+    /// references as they are, <c>var</c>/<c>out</c> as addresses), a result temporary, and <c>Integer</c> temporaries where an
+    /// enumeration smaller than 32 bits is a result or a by-reference argument.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1208")]
+    [Trait("Req", "CMP-1209")]
+    [Trait("Req", "CMP-1210")]
+    [Trait("Req", "ABI-205")]
+    public void DispCallDescriptor() => Snapshot.Verify("DispCallDescriptor", Emit(DispCallSource));
+
+    internal const string DispCallSource = """
+        unit M;
+        interface
+        type
+          TColor = (Red, Green);
+          IOther = dispinterface
+            procedure Ping; dispid 1;
+          end;
+          IDisp = dispinterface
+            function Describe(Id: Integer; var Name: string): string; dispid 5;
+            procedure Proc; dispid 1;
+            procedure Mixed(A: SmallInt; B: Byte; C: Single; D: Double; E: Boolean; F: TColor; const S: string; const I: IOther;
+              G: Currency; H: Int64); dispid 2;
+            procedure ByRef(var C: TColor; out S: string; var B: Boolean); dispid 3;
+            function Color: TColor; dispid 4;
+            property Count: Integer readonly dispid 6;
+            property Item[const Key: string]: Integer dispid 0; default;
+            property Link: IOther dispid 7;
+          end;
+        procedure Run(const D: IDisp);
+        implementation
+        procedure Run(const D: IDisp);
+        var
+          S, Name: string;
+          C: TColor;
+          B: Boolean;
+          N: Integer;
+          O: IOther;
+        begin
+          S := D.Describe(42, Name);
+          D.Describe(42, Name);
+          D.Proc;
+          D.Mixed(-1, 2, 1.5, 2.5, True, Green, S, O, 3.25, N);
+          D.ByRef(C, S, B);
+          C := D.Color;
+          N := D.Count;
+          D['k'] := D.Item['k'] + 1;
+          O := D.Link;
+          D.Link := O;
+        end;
+        end.
+        """;
+
     internal const string InterfaceAggregateResultSource = """
         unit M;
         interface
@@ -1954,6 +2012,7 @@ public sealed class IrSnapshotTests
         ["Thunk"] = ThunkSource,
         ["InterfaceAggregateResultThunk"] = InterfaceAggregateResultSource,
         ["SafecallCallAndBody"] = SafecallSource,
+        ["DispCallDescriptor"] = DispCallSource,
         ["ThreadVar"] = ThreadVarSource,
         ["TryExcept"] = TryExceptSource,
         ["TryFinally"] = TryFinallySource,

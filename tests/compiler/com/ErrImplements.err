@@ -1,0 +1,9 @@
+ErrImplements.pas(28,29): error E2651: Missing implementation of interface method 'IFoo.B'
+ErrImplements.pas(36,51): error E2662: Interface 'IBar' is not listed in the declaration of class 'TChecks'
+ErrImplements.pas(37,56): error E2652: Interface type required
+ErrImplements.pas(38,47): error E2664: Interface 'IFoo' is already implemented by property 'Foo'
+ErrImplements.pas(39,49): error E2663: Property 'NoRead' cannot implement interface 'IFoo': it has no read specifier
+ErrImplements.pas(40,62): error E2663: Property 'Items' cannot implement interface 'IFoo': it is an array property
+ErrImplements.pas(41,58): error E2663: Property 'Shared' cannot implement interface 'IFoo': it is a class property
+ErrImplements.pas(42,49): error E2663: Property 'Number' cannot implement interface 'IFoo': its type is neither a class nor an interface
+ErrImplements.pas(43,47): error E2663: Property 'Other' cannot implement interface 'IFoo': its type does not descend from the interface

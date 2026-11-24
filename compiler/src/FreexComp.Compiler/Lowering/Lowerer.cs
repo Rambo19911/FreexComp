@@ -294,7 +294,7 @@ internal sealed partial class LoweringContext
 
         var (copies, releases) = OpenArrayCopies();
         var lowered = ManagedRewriter.AddLifetimes(this, new LoweredBody(Routine, [.. _locals], copies.IsEmpty ? block : new LBlock([.. copies, .. block.Statements])))
-            with { Source = body?.Syntax, SafecallHResult = safecallHResult };
+            with { Source = Routine is MethodSymbol { DelegateProperty: not null } ? null : body?.Syntax, SafecallHResult = safecallHResult };   // DBG-114
         releases = [.. releases, .. _managedBodyGlobals.Select(v => ManagedRewriter.Clear(this, new LGlobalRef(v)))];
         if (!releases.IsEmpty)
         {
@@ -1200,6 +1200,12 @@ internal sealed partial class LoweringContext
 
     private LExpression Call(RoutineSymbol routine, ImmutableArray<BoundExpression> arguments, BoundExpression? target = null, BoundReceiver? receiver = null)
     {
+        if (routine is MethodSymbol { DispatchFlags: not 0 } member)
+        {
+            var (dispatch, dispatched) = DispatchCall(member, arguments, receiver!);
+            return new LSequence(dispatch, dispatched!);                         // CMP-1208 (C-304)
+        }
+
         if (routine is { IsSafecall: true, ReturnType: not null })
         {
             var (statements, value) = SafecallCall(routine, arguments, target, receiver);
@@ -1216,6 +1222,113 @@ internal sealed partial class LoweringContext
         // a managed result goes to a managed temporary (CMP-325 rule 4/5), zeroed in the entry block and finalised at exit
         var result = new LLocalRef(NewTemp(call.Type));
         return new LSequence(new LBlock([new LAssign(result, call), .. writeBacks]), result);
+    }
+
+    /// <summary>RTL helper of ABI-203: <c>procedure _DispCall(Dest, Disp, Desc, Args: Pointer)</c>.</summary>
+    private RuntimeHelper DispCall => new("_DispCall", [Types.Pointer, Types.Pointer, Types.Pointer, Types.Pointer], ReturnType: null, IsNoReturn: false);
+
+    /// <summary>
+    /// CMP-1208…1210 (C-304; LANG-697): an access to a member of a dispatch interface — one call of
+    /// <c>System._DispCall(Dest, Disp, Desc, Args)</c>. <c>Disp</c> is the reference (evaluated first), <c>Desc</c> the constant call
+    /// descriptor (ABI-205), <c>Args</c> a stack array of one 8-byte slot per argument in declaration order (nil without
+    /// arguments), <c>Dest</c> the address of a temporary of the result type (nil without a result). Slots: a signed integer
+    /// sign-extended, every other value in the low bytes of a zeroed slot (so unsigned integers, enumerations and Booleans are
+    /// zero-extended and a <c>Single</c> keeps its 32 bits), references as they are; a <c>var</c>/<c>out</c> argument is the
+    /// address of the variable — a managed <c>out</c> variable is emptied first (LANG-420: there is no Pascal callee to do it).
+    /// An enumeration travels as a 32-bit integer (LANG-695): where its storage is smaller, a result or by-reference argument
+    /// goes through an <c>Integer</c> temporary, copied back after the call returned. <c>Value</c> is the result (null: none).
+    /// </summary>
+    private (LStatement Statements, LExpression? Value) DispatchCall(MethodSymbol member, ImmutableArray<BoundExpression> arguments, BoundReceiver receiver)
+    {
+        var nil = new LConst(new ConstantValue(null, Types.Pointer), Types.Pointer);
+        var statements = new List<LStatement>();
+        var after = new List<LStatement>();
+        var disp = new LLocalRef(NewTemp(Types.Pointer));
+        statements.Add(new LAssign(disp, Convert(Lower(receiver.Self!), Types.Pointer)));
+
+        bool Widened(TypeSymbol type) => type is EnumTypeSymbol && type.Size != Types.Integer.Size;
+        LExpression args = nil;
+        var codes = ImmutableArray.CreateBuilder<int>();
+        if (!arguments.IsEmpty)
+        {
+            var n = arguments.Length;
+            var index = new IntegerTypeSymbol($"0..{n - 1}", (IntegerTypeSymbol)Types.Integer, BigInteger.Zero, n - 1, containingSymbol: null, []);
+            var slots = new LLocalRef(NewTemp(new ArrayTypeSymbol($"array[0..{n - 1}] of UInt64", index, Types.UInt64, containingSymbol: null, [])));
+            args = new LAddrOf(slots, Types.Pointer);
+            for (var k = 0; k < n; k++)
+            {
+                var parameter = member.Parameters[k];
+                var type = parameter.Type;
+                var code = AutomationTypes.CodeOf(type) ?? throw new InvalidOperationException($"'{type.Name}' is not an Automation type.");
+                var value = Lower(arguments[k]);
+                LExpression Slot(TypeSymbol slotType) => new LDeref(new LAddrOf(new LIndex(slots, Constant(k, Types.Int64), Types.UInt64), Types.Pointer), slotType);
+                if (parameter.IsByReference)
+                {
+                    codes.Add(code | AutomationTypes.ByRefFlag);
+                    var address = new LLocalRef(NewTemp(Types.Pointer));
+                    statements.Add(new LAssign(address, new LAddrOf(value, Types.Pointer)));
+                    var variable = new LDeref(address, type);
+                    if (parameter.Mode == ParameterMode.Out && type.IsManaged)
+                    {
+                        statements.Add(ManagedRewriter.Clear(this, variable));
+                    }
+
+                    if (Widened(type))
+                    {
+                        var wide = new LLocalRef(NewTemp(Types.Integer));
+                        statements.Add(new LAssign(wide, Convert(variable, Types.Integer)));
+                        statements.Add(new LAssign(Slot(Types.Pointer), new LAddrOf(wide, Types.Pointer)));
+                        after.Add(new LAssign(variable, Convert(wide, type)));
+                    }
+                    else
+                    {
+                        statements.Add(new LAssign(Slot(Types.Pointer), address));
+                    }
+
+                    continue;
+                }
+
+                codes.Add(code);
+                if (type is IntegerTypeSymbol { IsSigned: true })
+                {
+                    statements.Add(new LAssign(Slot(Types.Int64), Convert(value, Types.Int64)));
+                }
+                else if (type.IsManaged)
+                {
+                    statements.Add(new LAssign(Slot(Types.Pointer), value));       // the reference itself, not counted
+                }
+                else if (type.Size == 8)
+                {
+                    statements.Add(new LAssign(Slot(type), value));
+                }
+                else
+                {
+                    statements.Add(new LAssign(Slot(Types.UInt64), Constant(BigInteger.Zero, Types.UInt64)));
+                    statements.Add(new LAssign(Slot(type), value));
+                }
+            }
+        }
+
+        LExpression dest = nil;
+        LExpression? result = null;
+        var resultCode = 0;
+        if (member.ReturnType is { } returnType)
+        {
+            resultCode = AutomationTypes.CodeOf(returnType) ?? throw new InvalidOperationException($"'{returnType.Name}' is not an Automation type.");
+            var storage = new LLocalRef(NewTemp(Widened(returnType) ? Types.Integer : returnType));
+            if (!storage.Type.IsManaged)
+            {
+                statements.Add(new LZero(new LAddrOf(storage, Types.Pointer), storage.Type));
+            }
+
+            dest = new LAddrOf(storage, Types.Pointer);
+            result = Widened(returnType) ? Convert(storage, returnType) : storage;
+        }
+
+        var descriptor = new LDispDescriptor(member.DispId ?? 0, member.DispatchFlags, resultCode, codes.ToImmutable(), Types.Pointer);
+        statements.Add(new LCallStatement(new LHelperCallee(DispCall), [dest, disp, descriptor, args]));
+        statements.AddRange(after);
+        return (new LBlock([.. statements]), result);
     }
 
     /// <summary>RTL helper of ABI-201: <c>procedure _SafecallError(HR: HResult)</c>, noreturn.</summary>
@@ -1300,6 +1413,13 @@ internal sealed partial class LoweringContext
     public LStatement CallInto(LExpression target, RoutineSymbol routine, ImmutableArray<BoundExpression> arguments, BoundExpression? procedural = null,
         BoundReceiver? receiver = null)
     {
+        if (routine is MethodSymbol { DispatchFlags: not 0 } member)
+        {
+            // CMP-1208 (C-304): the helper stores into a temporary, so a failed call never changes the destination
+            var (dispatch, dispatched) = DispatchCall(member, arguments, receiver!);
+            return new LBlock([dispatch, ManagedRewriter.Assign(this, target, dispatched!)]);
+        }
+
         if (routine.IsSafecall)
         {
             // CMP-1204 (C-301): the temporary is assigned after the check, so a failed call never changes the destination
@@ -1342,6 +1462,11 @@ internal sealed partial class LoweringContext
     /// <summary>A call statement; a discarded aggregate or managed result still needs storage (ABI-081).</summary>
     private LStatement CallStatement(RoutineSymbol routine, ImmutableArray<BoundExpression> arguments, BoundExpression? target, BoundReceiver? receiver = null)
     {
+        if (routine is MethodSymbol { DispatchFlags: not 0 } member)
+        {
+            return DispatchCall(member, arguments, receiver!).Statements;         // CMP-1208 (C-304): a discarded result still has a temporary
+        }
+
         if (routine.IsSafecall)
         {
             return SafecallCall(routine, arguments, target, receiver).Statements;   // CMP-1203 (C-301): a discarded result is still received

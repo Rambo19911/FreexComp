@@ -167,9 +167,10 @@ internal sealed partial class DeclarationBinder
         type.Methods = methods.ToImmutable();
         type.GenericMethods = genericMethods.ToImmutable();
         type.VirtualSlots = AssignSlots(type);
-        end = BindImplementedInterfaces(type, listed, resolutions, end);       // ABI §7.1: the hidden IMT pointers follow the fields
+        var implements = new List<(PropertySymbol Property, PropertySpecifierSyntax Specifier)>();
+        type.Properties = BindProperties(type, properties, names, implements);  // before the interfaces: `implements` (LANG-690)
+        end = BindImplementedInterfaces(type, listed, resolutions, implements, end);       // ABI §7.1: the hidden IMT pointers follow the fields
         type.InstanceSize = (end + 7) / 8 * 8;                                   // ABI-070
-        type.Properties = BindProperties(type, properties, names);
     }
 
     private void Unsupported(SyntaxToken token, string feature) => _diagnostics.Report(token, "E2900", feature);
@@ -222,6 +223,9 @@ internal sealed partial class DeclarationBinder
             {
                 case InterfaceTypeSymbol { IsForward: true } forward:
                     _diagnostics.Report(heritage.Types[i], "E2007", forward.Name);
+                    break;
+                case InterfaceTypeSymbol { IsDispatchInterface: true } dispatch:
+                    _diagnostics.Report(heritage.Types[i], "E2661", dispatch.Name);          // LANG-696 (C-303)
                     break;
                 case InterfaceTypeSymbol intf:
                     listed.Add((intf, heritage.Types[i]));

@@ -129,6 +129,7 @@ public static class IndentationService
         RecordTypeSyntax record => (record.RecordKeyword, record.EndKeyword),
         ClassTypeSyntax { EndKeyword: { } end } @class => (@class.ClassKeyword, end),
         InterfaceTypeSyntax { EndKeyword: { } end } @interface => (@interface.InterfaceKeyword, end),
+        DispInterfaceTypeSyntax { EndKeyword: { } end } dispatch => (dispatch.DispInterfaceKeyword, end),
         CaseStatementSyntax @case => (@case.OfKeyword, @case.EndKeyword),
         TryFinallyStatementSyntax @try => (@try.TryKeyword, @try.EndKeyword),
         TryExceptStatementSyntax @try => (@try.TryKeyword, @try.EndKeyword),

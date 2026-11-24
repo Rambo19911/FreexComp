@@ -44,6 +44,7 @@ internal sealed class Conversions
             (PointerTypeSymbol { Name: "nil" }, ClassRefTypeSymbol) => Pointer,                                    // LANG-266 (C-086)
             (PointerTypeSymbol { Name: "nil" }, InterfaceTypeSymbol) => Pointer,                                   // LANG-266 (C-098)
             (InterfaceTypeSymbol s, InterfaceTypeSymbol d) when s.InheritsFrom(d) => Pointer,                      // LANG-665: same pointer
+            (InterfaceTypeSymbol { IsDispatchReference: true }, InterfaceTypeSymbol { IsDispatchInterface: true }) => Pointer,   // LANG-696: same pointer
             (InterfaceTypeSymbol { IsAnonymousMethod: true } s, InterfaceTypeSymbol { IsMethodReference: true } d)
                 when Signatures.Compatible(s.Invoke, d.Invoke) => Pointer,                                         // LANG-723: same IMT layout
             (ClassTypeSymbol s, InterfaceTypeSymbol d) when s.FindInterface(d) is not null => Pointer,             // LANG-665: + hidden field offset

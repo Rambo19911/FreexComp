@@ -161,6 +161,11 @@ public static partial class NavigationService
                 detail = "interface" + (@interface.Heritage is { } parents ? Collapse(parents.ToString()) : "");
                 AddMembers(children, @interface.Members);
                 break;
+            case DispInterfaceTypeSyntax dispatch:
+                kind = CompletionItemKind.Interface;
+                detail = "dispinterface";
+                AddMembers(children, dispatch.Members);
+                break;
             case RecordTypeSyntax record:
                 kind = CompletionItemKind.Type;
                 detail = "record";

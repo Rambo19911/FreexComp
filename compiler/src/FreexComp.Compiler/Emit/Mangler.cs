@@ -50,6 +50,10 @@ internal static class Mangler
         : variable.ContainingSymbol is RoutineSymbol routine ? new(RoutineText(routine) + "." + variable.Name, AlwaysQuote: true)
         : new(variable.QualifiedName, AlwaysQuote: true);
 
+    /// <summary>CMP-1209: call descriptor number <paramref name="number"/> (from 1) of a module: <c>U.$disp.n</c>.</summary>
+    public static LinkName DispDescriptor(string unitName, int number) =>
+        new(unitName + ".$disp." + number.ToString(System.Globalization.CultureInfo.InvariantCulture), AlwaysQuote: true);
+
     public static LinkName UnitInit(UnitSymbol unit) => new(unit.Name + ".$init", AlwaysQuote: true);
 
     public static LinkName UnitFinal(UnitSymbol unit) => new(unit.Name + ".$final", AlwaysQuote: true);

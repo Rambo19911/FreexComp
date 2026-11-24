@@ -10,9 +10,9 @@ public sealed partial class LexerTests
 {
     internal const string Path = @"C:\p\test.pas";
 
-    /// <summary>The 62 reserved words of LANG-115, verbatim.</summary>
+    /// <summary>The 63 reserved words of LANG-115, verbatim (<c>dispinterface</c>: com-interfaces.md LANG-693, C-303).</summary>
     internal const string ReservedWordsText = """
-        and array as begin case class const constructor destructor div do downto else end except
+        and array as begin case class const constructor destructor dispinterface div do downto else end except
         exports file finalization finally for function goto if implementation in inherited
         initialization inline interface is label library mod nil not object of or packed procedure
         program property raise record repeat resourcestring set shl shr string then threadvar to try

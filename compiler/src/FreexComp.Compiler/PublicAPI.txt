@@ -396,6 +396,7 @@ sealed class FreexComp.Compiler.Symbols.MethodSymbol : FreexComp.Compiler.Symbol
   public System.Boolean IsReintroduce { get; }
   public System.Boolean IsVirtual { get; }
   public System.Int32 VmtSlot { get; }
+  public System.Nullable<System.Int32> DispId { get; }
   public System.Nullable<System.Int32> MessageId { get; }
   public System.String OperatorName { get; }
   public override System.String ToDisplayString()
@@ -424,12 +425,15 @@ sealed class FreexComp.Compiler.Symbols.PropertySymbol : FreexComp.Compiler.Symb
   public System.Boolean IsArrayProperty { get; }
   public System.Boolean IsClassProperty { get; }
   public System.Boolean IsDefault { get; }
+  public System.Boolean IsReadOnly { get; }
   public System.Boolean IsReadable { get; }
   public System.Boolean IsWritable { get; }
+  public System.Boolean IsWriteOnly { get; }
   public System.Boolean StoredConstant { get; }
   public System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Symbols.ParameterSymbol> Parameters { get; }
   public System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Symbols.Symbol> ReadPath { get; }
   public System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Symbols.Symbol> WritePath { get; }
+  public System.Nullable<System.Int32> DispId { get; }
   public System.Nullable<System.Int32> Index { get; }
   public System.Nullable<System.Int64> DefaultValue { get; }
   public override System.String ToDisplayString()
@@ -648,7 +652,7 @@ sealed record FreexComp.Compiler.Syntax.DirectiveState : System.IEquatable<Freex
   public static FreexComp.Compiler.Syntax.DirectiveState Default { get; }
   public static System.Boolean op_Equality(FreexComp.Compiler.Syntax.DirectiveState left, FreexComp.Compiler.Syntax.DirectiveState right)
   public static System.Boolean op_Inequality(FreexComp.Compiler.Syntax.DirectiveState left, FreexComp.Compiler.Syntax.DirectiveState right)
-sealed class FreexComp.Compiler.Syntax.DirectiveSyntax : FreexComp.Compiler.Syntax.SyntaxNode
+class FreexComp.Compiler.Syntax.DirectiveSyntax : FreexComp.Compiler.Syntax.SyntaxNode
   public FreexComp.Compiler.Syntax.ExpressionSyntax NameValue { get; }
   public FreexComp.Compiler.Syntax.ExpressionSyntax Value { get; }
   public FreexComp.Compiler.Syntax.SyntaxToken Keyword { get; }
@@ -670,6 +674,15 @@ sealed record FreexComp.Compiler.Syntax.DirectiveTriviaInfo : System.IEquatable<
   public override System.String ToString()
   public static System.Boolean op_Equality(FreexComp.Compiler.Syntax.DirectiveTriviaInfo left, FreexComp.Compiler.Syntax.DirectiveTriviaInfo right)
   public static System.Boolean op_Inequality(FreexComp.Compiler.Syntax.DirectiveTriviaInfo left, FreexComp.Compiler.Syntax.DirectiveTriviaInfo right)
+sealed class FreexComp.Compiler.Syntax.DispIdDirectiveSyntax : FreexComp.Compiler.Syntax.DirectiveSyntax
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.DispInterfaceTypeSyntax : FreexComp.Compiler.Syntax.TypeSyntax
+  public FreexComp.Compiler.Syntax.GuidSyntax Guid { get; }
+  public FreexComp.Compiler.Syntax.HeritageSyntax Heritage { get; }
+  public FreexComp.Compiler.Syntax.SyntaxList<FreexComp.Compiler.Syntax.SyntaxNode> Members { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken DispInterfaceKeyword { get; }
+  public System.Nullable<FreexComp.Compiler.Syntax.SyntaxToken> EndKeyword { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
 sealed record FreexComp.Compiler.Syntax.EditOptions : System.IEquatable<FreexComp.Compiler.Syntax.EditOptions>
   public FreexComp.Compiler.Syntax.EditOptions <Clone>$()
   public System.Boolean Equals(FreexComp.Compiler.Syntax.EditOptions other)
@@ -1183,7 +1196,10 @@ enum FreexComp.Compiler.Syntax.SyntaxKind
   Directive = 209
   DirectiveTrivia = 156
   DisabledTextTrivia = 158
+  DispIdDirective = 268
   DispIdKeyword = 103
+  DispInterfaceKeyword = 266
+  DispInterfaceType = 267
   DivKeyword = 40
   DoKeyword = 41
   DocCommentTrivia = 155
@@ -1506,6 +1522,8 @@ abstract class FreexComp.Compiler.Syntax.SyntaxVisitor<TResult>
   public virtual TResult VisitConstSection(FreexComp.Compiler.Syntax.ConstSectionSyntax node)
   public virtual TResult VisitDereferenceExpression(FreexComp.Compiler.Syntax.DereferenceExpressionSyntax node)
   public virtual TResult VisitDirective(FreexComp.Compiler.Syntax.DirectiveSyntax node)
+  public virtual TResult VisitDispIdDirective(FreexComp.Compiler.Syntax.DispIdDirectiveSyntax node)
+  public virtual TResult VisitDispInterfaceType(FreexComp.Compiler.Syntax.DispInterfaceTypeSyntax node)
   public virtual TResult VisitElementAccessExpression(FreexComp.Compiler.Syntax.ElementAccessExpressionSyntax node)
   public virtual TResult VisitEmptyStatement(FreexComp.Compiler.Syntax.EmptyStatementSyntax node)
   public virtual TResult VisitEnumMember(FreexComp.Compiler.Syntax.EnumMemberSyntax node)
@@ -2012,6 +2030,7 @@ sealed class FreexComp.Compiler.Types.InterfaceTypeSymbol : FreexComp.Compiler.T
   public FreexComp.Compiler.Symbols.PropertySymbol DefaultProperty { get; }
   public FreexComp.Compiler.Types.InterfaceTypeSymbol Parent { get; }
   public System.Boolean IsAnonymousMethod { get; }
+  public System.Boolean IsDispatchInterface { get; }
   public System.Boolean IsForward { get; }
   public System.Boolean IsMethodReference { get; }
   public System.Collections.Generic.IEnumerable<FreexComp.Compiler.Types.InterfaceTypeSymbol> SelfAndAncestors()

@@ -664,8 +664,13 @@ internal static class PcuReader
             {
                 types.IInterface = type;                                        // the root interface (ABI-094)
             }
+            else if (string.Equals(_unit.Name, "System", StringComparison.OrdinalIgnoreCase) && string.Equals(name, "IDispatch", StringComparison.OrdinalIgnoreCase))
+            {
+                types.IDispatch = type;                                         // RTL-1001 (C-303)
+            }
 
             type.IsMethodReference = entry["methodReference"]?.GetValue<bool>() == true;      // LANG-720 (C-120)
+            type.IsDispatchInterface = entry["dispatch"]?.GetValue<bool>() == true;           // CMP-1211 (C-303)
             type.Parent = entry["parent"] is null ? null
                 : Type(entry, "parent") as InterfaceTypeSymbol ?? throw new PcuFormatException($"the parent of '{name}' is not an interface");
             if (entry["guid"] is JsonValue guid)
@@ -682,6 +687,8 @@ internal static class PcuReader
                 method.IsOverload = Array(m, "flags").Any(f => f!.GetValue<string>() == "overload");
                 method.CallingConvention = CallConv(Array(m, "flags").Select(f => f!.GetValue<string>()));
                 method.VmtSlot = m["slot"]!.GetValue<int>();
+                method.DispId = m["dispid"] is JsonValue dispId ? dispId.GetValue<int>() : null;
+                method.DispatchFlags = type.IsDispatchInterface ? 1 : 0;                  // LANG-697: a method call
                 method.SelfParameter = new ParameterSymbol("Self", type, ParameterMode.Value, -1, method, []);
                 return method;
             })];
@@ -697,8 +704,16 @@ internal static class PcuReader
                     IsDefault = p["isDefault"]!.GetValue<bool>(),
                     ReadMethod = Slot(p["read"]),
                     WriteMethod = Slot(p["write"]),
+                    DispId = p["dispid"] is JsonValue dispId ? dispId.GetValue<int>() : null,                  // CMP-1211 (C-303)
+                    IsReadOnly = p["access"] is JsonValue readOnly && readOnly.GetValue<string>() == "readonly",
+                    IsWriteOnly = p["access"] is JsonValue writeOnly && writeOnly.GetValue<string>() == "writeonly",
                 };
                 property.Parameters = [.. Array(p, "params").Select((q, i) => new ParameterSymbol(Text(q, "name"), Type(q!, "type"), ParameterMode.Value, i, property, []))];
+                if (type.IsDispatchInterface)
+                {
+                    Binding.DeclarationBinder.AddDispatchAccessors(type, property);     // the hidden get and put members (LANG-697)
+                }
+
                 return property;
             })];
             return type;

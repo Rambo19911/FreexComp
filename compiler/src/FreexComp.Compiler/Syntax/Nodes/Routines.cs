@@ -141,11 +141,11 @@ public sealed class RoutineHeadingSyntax : SyntaxNode
 /// A routine or method directive with its <c>;</c>: <c>overload</c>, <c>inline</c>, a calling convention, a hint,
 /// <c>external [ lib [ name n ] [ delayed ] ]</c>, <c>public name n</c>, <c>message id</c>, <c>virtual</c>, ….
 /// </summary>
-public sealed class DirectiveSyntax : SyntaxNode
+public class DirectiveSyntax : SyntaxNode
 {
     internal DirectiveSyntax(SyntaxToken keyword, ExpressionSyntax? value, SyntaxToken? nameKeyword, ExpressionSyntax? nameValue,
-                             SyntaxToken? delayedKeyword, SyntaxToken? semicolonToken)
-        : base(SyntaxKind.Directive)
+                             SyntaxToken? delayedKeyword, SyntaxToken? semicolonToken, SyntaxKind kind = SyntaxKind.Directive)
+        : base(kind)
     {
         Keyword = Add(keyword);
         Value = AddOptional(value);
@@ -172,4 +172,18 @@ public sealed class DirectiveSyntax : SyntaxNode
     public SyntaxToken? SemicolonToken { get; }
 
     public override TResult Accept<TResult>(SyntaxVisitor<TResult> visitor) => visitor.VisitDirective(this);
+}
+
+/// <summary>
+/// <c>dispid constExpr ;</c> on a method of a dispatch interface or of an interface (com-interfaces.md LANG-694):
+/// <see cref="DirectiveSyntax.Value"/> is the number.
+/// </summary>
+public sealed class DispIdDirectiveSyntax : DirectiveSyntax
+{
+    internal DispIdDirectiveSyntax(SyntaxToken keyword, ExpressionSyntax value, SyntaxToken? semicolonToken)
+        : base(keyword, value, null, null, null, semicolonToken, SyntaxKind.DispIdDirective)
+    {
+    }
+
+    public override TResult Accept<TResult>(SyntaxVisitor<TResult> visitor) => visitor.VisitDispIdDirective(this);
 }

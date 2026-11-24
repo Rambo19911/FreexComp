@@ -203,6 +203,9 @@ public sealed class BuiltInTypes
 
     public TypeSymbol? IInterface { get; internal set; }
 
+    /// <summary><c>System.IDispatch</c> (RTL-1001) once bound or loaded: what a dispatch-interface value is a reference to (LANG-693).</summary>
+    internal TypeSymbol? IDispatch { get; set; }
+
     /// <summary><c>System.TInterfacedObject</c>: the ancestor of the closure classes of anonymous methods (ABI-097, CMP-380).</summary>
     public TypeSymbol? TInterfacedObject { get; internal set; }
 

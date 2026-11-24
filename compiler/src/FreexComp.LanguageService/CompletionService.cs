@@ -307,8 +307,8 @@ public static class CompletionService
     }
 
     private static bool InClassBody(SyntaxNode? node) =>
-        node?.AncestorsAndSelf().FirstOrDefault(n => n is ClassTypeSyntax or RecordTypeSyntax or InterfaceTypeSyntax or RoutineDeclarationSyntax or BlockSyntax)
-            is ClassTypeSyntax or RecordTypeSyntax or InterfaceTypeSyntax;
+        node?.AncestorsAndSelf().FirstOrDefault(n => n is ClassTypeSyntax or RecordTypeSyntax or InterfaceTypeSyntax or DispInterfaceTypeSyntax or RoutineDeclarationSyntax or BlockSyntax)
+            is ClassTypeSyntax or RecordTypeSyntax or InterfaceTypeSyntax or DispInterfaceTypeSyntax;
 
     private static bool IsTypePosition(SyntaxToken previous) => previous.Kind switch
     {

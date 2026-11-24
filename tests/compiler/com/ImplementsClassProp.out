@@ -1,0 +1,21 @@
+base delegate
+  name outer(shape)
+  area 0
+  a shape of side 3
+  sum 10
+square delegate
+  name outer(square)
+  area 18
+  a square of side 3
+  sum 10
+descendant, inherited delegation
+  name outer(square)
+  area 32
+  a square of side 4
+  sum 10
+descendant with its own methods
+  name own
+  area -2
+  a square of side 5
+  sum 10
+done

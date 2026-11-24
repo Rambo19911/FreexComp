@@ -64,6 +64,15 @@ public sealed class PropertySymbol : Symbol
     /// <summary>LANG-644 <c>default C</c>: the ordinal value or set bits; null without it or with <c>nodefault</c> (C-217).</summary>
     public long? DefaultValue { get; internal set; }
 
+    /// <summary>The number of <c>dispid N</c> (com-interfaces.md LANG-694); null without it.</summary>
+    public int? DispId { get; internal set; }
+
+    /// <summary><c>readonly</c> on a property of a dispatch interface (LANG-693).</summary>
+    public bool IsReadOnly { get; internal set; }
+
+    /// <summary><c>writeonly</c> on a property of a dispatch interface (LANG-693).</summary>
+    public bool IsWriteOnly { get; internal set; }
+
     public bool IsReadable => ReadMethod is not null || !ReadPath.IsEmpty;
 
     public bool IsWritable => WriteMethod is not null || !WritePath.IsEmpty;
@@ -72,5 +81,7 @@ public sealed class PropertySymbol : Symbol
     public override string ToDisplayString() =>
         (IsClassProperty ? "class " : "") + "property " + Owner.Name + "." + Name
         + (Parameters.IsEmpty ? "" : "[" + string.Join("; ", Parameters.Select(ParameterSymbol.Declaration)) + "]")
-        + ": " + Type.Name + (IsReadable ? " read" : "") + (IsWritable ? " write" : "");
+        + ": " + Type.Name
+        + (ContainingInterface is { IsDispatchInterface: true } ? (IsReadOnly ? " readonly" : IsWriteOnly ? " writeonly" : "") : (IsReadable ? " read" : "") + (IsWritable ? " write" : ""))
+        + (DispId is { } dispId ? " dispid " + dispId.ToString(System.Globalization.CultureInfo.InvariantCulture) : "");            // CMP-1211
 }

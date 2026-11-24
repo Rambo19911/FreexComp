@@ -60,6 +60,40 @@ public sealed class HeritageSyntax : SyntaxNode
 }
 
 /// <summary>
+/// <c>dispinterface [ "[" constExpr "]" ] { dispMember } end</c> (com-interfaces.md LANG-693); without anything after the keyword
+/// it is a forward declaration. Members are parsed like interface members — methods with a <see cref="DispIdDirectiveSyntax"/>,
+/// properties with the specifiers <c>readonly</c>, <c>writeonly</c>, <c>dispid n</c> — and a heritage list is parsed so that the
+/// binder can reject it (E2660).
+/// </summary>
+public sealed class DispInterfaceTypeSyntax : TypeSyntax
+{
+    internal DispInterfaceTypeSyntax(SyntaxToken dispInterfaceKeyword, HeritageSyntax? heritage, GuidSyntax? guid, SyntaxList<SyntaxNode> members,
+                                     SyntaxToken? endKeyword)
+        : base(SyntaxKind.DispInterfaceType)
+    {
+        DispInterfaceKeyword = Add(dispInterfaceKeyword);
+        Heritage = AddOptional(heritage);
+        Guid = AddOptional(guid);
+        Members = Add(members);
+        EndKeyword = Add(endKeyword);
+    }
+
+    public SyntaxToken DispInterfaceKeyword { get; }
+
+    /// <summary>Not part of the grammar: an ancestor clause, kept for the binder's E2660.</summary>
+    public HeritageSyntax? Heritage { get; }
+
+    public GuidSyntax? Guid { get; }
+
+    public SyntaxList<SyntaxNode> Members { get; }
+
+    /// <summary>Null for a forward declaration.</summary>
+    public SyntaxToken? EndKeyword { get; }
+
+    public override TResult Accept<TResult>(SyntaxVisitor<TResult> visitor) => visitor.VisitDispInterfaceType(this);
+}
+
+/// <summary>
 /// <c>interface [ ( typeId ) ] [ "[" constExpr "]" ] { methodDecl | propertyDecl } end</c>; without anything after the
 /// keyword it is a forward declaration. Members are parsed like class members; the binder rejects the others.
 /// </summary>

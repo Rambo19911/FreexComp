@@ -253,6 +253,12 @@ internal sealed partial class ExpressionBinder
     private BoundExpression BindInterfaceMethodPointer(ExpressionSyntax syntax, ImmutableArray<RoutineSymbol> candidates, BoundExpression receiver,
         MethodPointerTypeSymbol type)
     {
+        if (candidates.Any(c => c is MethodSymbol { DispatchFlags: not 0 }))
+        {
+            _diagnostics.Report(syntax, "E2660", "@");                              // LANG-697: no procedural value of a dispatch member
+            return Error(syntax, receiver);
+        }
+
         if (candidates.Cast<MethodSymbol>().FirstOrDefault(m => Signatures.Compatible(m, type.Signature)) is { } method)
         {
             return new BoundMethodPointerExpression(syntax, method, receiver, isVirtual: true, type);
@@ -731,6 +737,21 @@ internal sealed partial class ExpressionBinder
             && _scope.For(intrinsicName).Lookup(intrinsicToken.Value as string ?? intrinsicToken.Text) is IntrinsicSymbol intrinsic)
         {
             _diagnostics.Report(intrinsicName, "E2910", intrinsic.Name);     // intrinsics.md §0 (C-067): intrinsics have no address
+            return Error(syntax);
+        }
+
+        if (Unparenthesized(operandSyntax) is MemberAccessExpressionSyntax { Name: IdentifierNameSyntax { Identifier: { IsMissing: false } memberToken } } memberAccess
+            && Unparenthesized(memberAccess.Expression) is IdentifierNameSyntax { Identifier: { IsMissing: false } receiverToken } receiverName
+            && _scope.For(receiverName).Lookup(receiverToken.Value as string ?? receiverToken.Text) switch
+            {
+                VariableSymbol v => v.Type,
+                ParameterSymbol p => p.Type,
+                FieldSymbol f => f.Type,
+                _ => null,
+            } is InterfaceTypeSymbol { IsDispatchInterface: true } dispatch
+            && dispatch.Methods.Any(m => IdentifierComparer.Instance.Equals(m.Name, memberToken.Value as string ?? memberToken.Text)))
+        {
+            _diagnostics.Report(syntax, "E2660", "@");                      // com-interfaces.md LANG-697: a dispatch member has no address
             return Error(syntax);
         }
 

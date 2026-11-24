@@ -452,3 +452,19 @@ library L; procedure P(S: string); begin end; exports P; end.
 library L; {$APPTYPE GUI} end.
 === E2656 1,36
 type T = class constructor Create; safecall; end; constructor T.Create; begin end; begin end.
+=== E2662 1,136
+type IFoo = interface procedure A; end; IBar = interface procedure B; end; T = class(IFoo) F: IFoo; property P: IFoo read F implements IBar; procedure A; end; procedure T.A; begin end; begin end.
+=== E2663 1,107
+type IFoo = interface procedure A; end; T = class(IFoo) F: Integer; property P: Integer read F implements IFoo; procedure A; end; procedure T.A; begin end; begin end.
+=== E2664 1,142
+type IFoo = interface procedure A; end; T = class(IFoo) F: IFoo; property P: IFoo read F implements IFoo; property Q: IFoo read F implements IFoo; end; begin end.
+=== E2657 1,37
+type IFoo = dispinterface procedure P; end; begin end.
+=== E2658 1,42
+type IFoo = dispinterface procedure P(C: Char); dispid 1; end; begin end.
+=== E2659 1,70
+type IFoo = dispinterface procedure P; dispid 1; procedure Q; dispid 1; end; begin end.
+=== E2660 1,50
+type IFoo = dispinterface procedure P; dispid 1; overload; end; begin end.
+=== E2661 1,65
+type IFoo = dispinterface procedure P; dispid 1; end; T = class(IFoo) end; begin end.

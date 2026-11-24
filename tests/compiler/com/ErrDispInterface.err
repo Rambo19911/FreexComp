@@ -1,0 +1,17 @@
+ErrDispInterface.pas(10,23): error E2660: 'an ancestor' is not allowed in a dispatch interface
+ErrDispInterface.pas(12,15): error E2657: Member 'NoNumber' of a dispatch interface needs a 'dispid'
+ErrDispInterface.pas(14,30): error E2659: Duplicate dispid 1 in 'IBad'
+ErrDispInterface.pas(15,49): error E2660: 'overload' is not allowed in a dispatch interface
+ErrDispInterface.pas(16,37): error E2660: 'stdcall' is not allowed in a dispatch interface
+ErrDispInterface.pas(18,29): error E2660: 'read' is not allowed in a dispatch interface
+ErrDispInterface.pas(19,24): error E2658: Type 'Char' is not an Automation type
+ErrDispInterface.pas(20,23): error E2658: Type 'TGUID' is not an Automation type
+ErrDispInterface.pas(21,20): error E2658: Type 'AnsiString' is not an Automation type
+ErrDispInterface.pas(22,29): error E2658: Type 'array of Integer' is not an Automation type
+ErrDispInterface.pas(23,40): error E2660: 'a default value' is not allowed in a dispatch interface
+ErrDispInterface.pas(37,38): error E2661: A class cannot implement dispatch interface 'IGood'
+ErrDispInterface.pas(50,8): error E2632: Cannot read a write-only property
+ErrDispInterface.pas(51,3): error E2633: Cannot assign to a read-only property
+ErrDispInterface.pas(52,24): error E2640: Interface 'INoGuid' has no GUID; 'is'/'as' requires one
+ErrDispInterface.pas(53,12): error E2660: '@' is not allowed in a dispatch interface
+ErrDispInterface.pas(54,3): error E2110: Not enough actual parameters for 'Run'

@@ -556,6 +556,11 @@ internal sealed class Parser
             return true;
         }
 
+        if (_inInterfaceBody && inMember && IsContextual(Current, SyntaxKind.DispIdKeyword) && !Current.Text.StartsWith('&'))
+        {
+            return true;                                                        // LANG-694: only on members of (dispatch) interfaces
+        }
+
         if (CurrentKind != SyntaxKind.IdentifierToken || Current.Text.StartsWith('&')
             || !DirectiveKinds.Contains(SyntaxFacts.GetKeywordKind(Current.Text))
             || Peek(1).Kind is SyntaxKind.ColonToken or SyntaxKind.CommaToken or SyntaxKind.EqualsToken)
@@ -616,6 +621,10 @@ internal sealed class Parser
             case SyntaxKind.MessageKeyword:
                 value = ParseExpression();
                 break;
+            case SyntaxKind.DispIdKeyword:
+                var number = ParseExpression();
+                return new DispIdDirectiveSyntax(keyword, number,
+                    CurrentKind != SyntaxKind.SemicolonToken && IsDirectiveStart(inMember) ? null : Expect(SyntaxKind.SemicolonToken));
             case SyntaxKind.DeprecatedKeyword when CurrentKind == SyntaxKind.StringLiteralToken:
                 value = new LiteralExpressionSyntax(Take());
                 break;
@@ -886,6 +895,8 @@ internal sealed class Parser
                 return ParseClassType();
             case SyntaxKind.InterfaceKeyword:
                 return ParseInterfaceType();
+            case SyntaxKind.DispInterfaceKeyword:
+                return ParseDispInterfaceType();
             case SyntaxKind.IdentifierToken or SyntaxKind.IntegerLiteralToken or SyntaxKind.RealLiteralToken
                 or SyntaxKind.StringLiteralToken or SyntaxKind.PlusToken or SyntaxKind.MinusToken or SyntaxKind.NotKeyword
                 or SyntaxKind.NilKeyword:
@@ -1083,8 +1094,50 @@ internal sealed class Parser
             guid = new GuidSyntax(open, value, Expect(SyntaxKind.CloseBracketToken));
         }
 
-        var members = ParseMemberList(isRecord: false);
+        var members = ParseInterfaceMembers();
         return new InterfaceTypeSyntax(interfaceKeyword, heritage, guid, members, Expect(SyntaxKind.EndKeyword));
+    }
+
+    /// <summary>
+    /// <c>dispinterface [ "[" constExpr "]" ] { dispMember } end</c> (com-interfaces.md LANG-693); a <c>;</c> after the keyword
+    /// means a forward declaration. An ancestor list is parsed for the binder's E2660.
+    /// </summary>
+    private DispInterfaceTypeSyntax ParseDispInterfaceType()
+    {
+        var keyword = Take();
+        var heritage = CurrentKind == SyntaxKind.OpenParenToken ? ParseHeritage() : null;
+        if (CurrentKind == SyntaxKind.SemicolonToken)
+        {
+            return new DispInterfaceTypeSyntax(keyword, heritage, null, default, null);
+        }
+
+        GuidSyntax? guid = null;
+        if (CurrentKind == SyntaxKind.OpenBracketToken)
+        {
+            var open = Take();
+            var value = ParseExpression();
+            guid = new GuidSyntax(open, value, Expect(SyntaxKind.CloseBracketToken));
+        }
+
+        var members = ParseInterfaceMembers();
+        return new DispInterfaceTypeSyntax(keyword, heritage, guid, members, Expect(SyntaxKind.EndKeyword));
+    }
+
+    /// <summary>True inside the body of an interface or dispatch interface: <c>dispid</c>, <c>readonly</c>, <c>writeonly</c> are member words there (LANG-694).</summary>
+    private bool _inInterfaceBody;
+
+    private SyntaxList<SyntaxNode> ParseInterfaceMembers()
+    {
+        var outer = _inInterfaceBody;
+        _inInterfaceBody = true;
+        try
+        {
+            return ParseMemberList(isRecord: false);
+        }
+        finally
+        {
+            _inInterfaceBody = outer;
+        }
     }
 
     /// <summary><c>class helper</c> / <c>record helper</c> followed by <c>for</c> or a heritage list.</summary>
@@ -1328,8 +1381,9 @@ internal sealed class Parser
 
     private bool IsPropertySpecifier() =>
         CurrentKind == SyntaxKind.IdentifierToken && !Current.Text.StartsWith('&')
-        && SyntaxFacts.GetKeywordKind(Current.Text) is SyntaxKind.IndexKeyword or SyntaxKind.ReadKeyword or SyntaxKind.WriteKeyword
-            or SyntaxKind.StoredKeyword or SyntaxKind.DefaultKeyword or SyntaxKind.NoDefaultKeyword or SyntaxKind.ImplementsKeyword;
+        && (SyntaxFacts.GetKeywordKind(Current.Text) is SyntaxKind.IndexKeyword or SyntaxKind.ReadKeyword or SyntaxKind.WriteKeyword
+            or SyntaxKind.StoredKeyword or SyntaxKind.DefaultKeyword or SyntaxKind.NoDefaultKeyword or SyntaxKind.ImplementsKeyword
+            || _inInterfaceBody && SyntaxFacts.GetKeywordKind(Current.Text) is SyntaxKind.ReadOnlyKeyword or SyntaxKind.WriteOnlyKeyword or SyntaxKind.DispIdKeyword);
 
     /// <summary>
     /// <c>index constExpr</c> | <c>read path</c> | <c>write path</c> | <c>stored ( path | constExpr )</c> |
@@ -1340,7 +1394,7 @@ internal sealed class Parser
         var keyword = TakeContextual();
         var values = keyword.ContextualKind switch
         {
-            SyntaxKind.NoDefaultKeyword => default,
+            SyntaxKind.NoDefaultKeyword or SyntaxKind.ReadOnlyKeyword or SyntaxKind.WriteOnlyKeyword => default,
             SyntaxKind.ReadKeyword or SyntaxKind.WriteKeyword => new SeparatedSyntaxList<ExpressionSyntax>([ParseQualifiedName()]),
             SyntaxKind.ImplementsKeyword => ParseSeparated<ExpressionSyntax>(ParseTypeName, SyntaxKind.CommaToken),
             _ => new SeparatedSyntaxList<ExpressionSyntax>([ParseExpression()]),

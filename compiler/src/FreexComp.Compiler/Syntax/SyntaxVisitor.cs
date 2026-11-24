@@ -191,6 +191,10 @@ public abstract class SyntaxVisitor<TResult>
 
     public virtual TResult VisitInterfaceType(InterfaceTypeSyntax node) => DefaultVisit(node);
 
+    public virtual TResult VisitDispInterfaceType(DispInterfaceTypeSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitDispIdDirective(DispIdDirectiveSyntax node) => VisitDirective(node);
+
     public virtual TResult VisitGuid(GuidSyntax node) => DefaultVisit(node);
 
     public virtual TResult VisitHelperType(HelperTypeSyntax node) => DefaultVisit(node);

@@ -268,6 +268,14 @@ internal sealed partial class DeclarationBinder
                 continue;
             }
 
+            if (declaration.Type is DispInterfaceTypeSyntax dispSyntax && declaration.TypeParameterList is null && declaration.TypeKeyword is null)
+            {
+                // com-interfaces.md LANG-693 (C-303)
+                BindInterfaceDeclaration(identifier, dispSyntax.DispInterfaceKeyword, dispSyntax.EndKeyword is null && dispSyntax.Heritage is null,
+                    isDispatch: true, type => BindDispInterfaceBody(type, dispSyntax), declared, forwardInterfaces);
+                continue;
+            }
+
             if (forwardClasses.FindIndex(f => f.Type.IsForward && IdentifierComparer.Instance.Equals(f.Type.Name, NameOf(identifier))) is var forward and >= 0)
             {
                 // a forward class completed by another kind of type (C-096): E2001 once, instead of E2004 + E2015

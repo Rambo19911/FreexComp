@@ -284,4 +284,9 @@ public enum SyntaxKind
     ExportsClause,
     ExportItem,
     ExportSpecifier,
+
+    // com-interfaces.md §6 (C-303)
+    DispInterfaceKeyword,
+    DispInterfaceType,
+    DispIdDirective,
 }

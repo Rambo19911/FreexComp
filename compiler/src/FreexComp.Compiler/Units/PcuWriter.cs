@@ -831,25 +831,56 @@ internal sealed class PcuWriter(PcuContext context)
                         entry["methodReference"] = true;                        // LANG-720 (C-120)
                     }
 
-                    entry["methods"] = new JsonArray([.. intf.Methods.Select(m => (JsonNode?)new JsonObject
+                    if (intf.IsDispatchInterface)
                     {
-                        ["name"] = m.Name,
-                        ["params"] = Parameters(m),
-                        ["result"] = m.ReturnType is { } result ? TypeId(result) : null,
-                        ["flags"] = Strings([.. m.IsOverload ? new[] { "overload" } : Array.Empty<string>(),
-                            .. m.CallingConvention != CallConvDirective.Default ? new[] { CallConvFlag + m.CallingConvention } : Array.Empty<string>()]),
-                        ["slot"] = m.VmtSlot,
+                        entry["dispatch"] = true;                               // com-interfaces.md CMP-1211 (C-303)
+                    }
+
+                    // CMP-1211: `dispid` of a member, `readonly` / `writeonly` of a dispatch property — only where given (other
+                    // files keep their exact form)
+                    entry["methods"] = new JsonArray([.. intf.Methods.Select(m =>
+                    {
+                        var method = new JsonObject
+                        {
+                            ["name"] = m.Name,
+                            ["params"] = Parameters(m),
+                            ["result"] = m.ReturnType is { } result ? TypeId(result) : null,
+                            ["flags"] = Strings([.. m.IsOverload ? new[] { "overload" } : Array.Empty<string>(),
+                                .. m.CallingConvention != CallConvDirective.Default ? new[] { CallConvFlag + m.CallingConvention } : Array.Empty<string>()]),
+                            ["slot"] = m.VmtSlot,
+                        };
+                        if (m.DispId is { } dispId)
+                        {
+                            method["dispid"] = dispId;
+                        }
+
+                        return (JsonNode?)method;
                     })]);
-                    // C-205: accessors are interface methods, named by their IMT slot's method name (they have no link name)
-                    entry["properties"] = new JsonArray([.. intf.Properties.Select(p => (JsonNode?)new JsonObject
+                    // C-205: accessors are interface methods, named by their IMT slot's method name (they have no link name); a
+                    // dispatch property has none (the reader makes its hidden get and put members again)
+                    entry["properties"] = new JsonArray([.. intf.Properties.Select(p =>
                     {
-                        ["name"] = p.Name,
-                        ["type"] = TypeId(p.Type),
-                        ["read"] = p.ReadMethod?.VmtSlot,
-                        ["write"] = p.WriteMethod?.VmtSlot,
-                        ["index"] = p.Index,
-                        ["params"] = new JsonArray([.. p.Parameters.Select(q => (JsonNode?)new JsonObject { ["name"] = q.Name, ["type"] = TypeId(q.Type) })]),
-                        ["isDefault"] = p.IsDefault,
+                        var property = new JsonObject
+                        {
+                            ["name"] = p.Name,
+                            ["type"] = TypeId(p.Type),
+                            ["read"] = intf.IsDispatchInterface ? null : p.ReadMethod?.VmtSlot,
+                            ["write"] = intf.IsDispatchInterface ? null : p.WriteMethod?.VmtSlot,
+                            ["index"] = p.Index,
+                            ["params"] = new JsonArray([.. p.Parameters.Select(q => (JsonNode?)new JsonObject { ["name"] = q.Name, ["type"] = TypeId(q.Type) })]),
+                            ["isDefault"] = p.IsDefault,
+                        };
+                        if (p.DispId is { } dispId)
+                        {
+                            property["dispid"] = dispId;
+                        }
+
+                        if (p.IsReadOnly || p.IsWriteOnly)
+                        {
+                            property["access"] = p.IsReadOnly ? "readonly" : "writeonly";
+                        }
+
+                        return (JsonNode?)property;
                     })]);
                     return;
                 case GenericTypeSymbol generic:

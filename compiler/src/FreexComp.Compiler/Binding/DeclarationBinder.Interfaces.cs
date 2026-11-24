@@ -13,20 +13,29 @@ internal sealed partial class DeclarationBinder
     /// section (E2015 otherwise). Only at unit/program level (E2602). <c>System.IInterface</c> becomes the default ancestor.
     /// </summary>
     private void BindInterfaceDeclaration(SyntaxToken identifier, InterfaceTypeSyntax syntax, ImmutableArray<Symbol>.Builder declared,
-        List<(InterfaceTypeSymbol Type, SyntaxToken Identifier)> forwardInterfaces)
+        List<(InterfaceTypeSymbol Type, SyntaxToken Identifier)> forwardInterfaces) =>
+        BindInterfaceDeclaration(identifier, syntax.InterfaceKeyword, syntax.EndKeyword is null && syntax.Heritage is null, isDispatch: false,
+            type => BindInterfaceBody(type, syntax), declared, forwardInterfaces);
+
+    /// <summary>
+    /// The declaration of an interface or (<paramref name="isDispatch"/>, com-interfaces.md LANG-693) a dispatch interface; a
+    /// forward declaration is completed by a declaration of the same kind.
+    /// </summary>
+    private void BindInterfaceDeclaration(SyntaxToken identifier, SyntaxToken keyword, bool isForward, bool isDispatch, Action<InterfaceTypeSymbol> bindBody,
+        ImmutableArray<Symbol>.Builder declared, List<(InterfaceTypeSymbol Type, SyntaxToken Identifier)> forwardInterfaces)
     {
         var name = NameOf(identifier);
         if (!IsGlobalLevel)
         {
-            _diagnostics.Report(syntax.InterfaceKeyword, "E2602");
+            _diagnostics.Report(keyword, "E2602");
             _scope.TryDeclare(name, _types.Error, out _);
             return;
         }
 
-        var isForward = syntax.EndKeyword is null && syntax.Heritage is null;
         var previous = _sharedScope?.LookupLocal(name) ?? _scope.LookupLocal(name);
         InterfaceTypeSymbol type;
-        if (previous is InterfaceTypeSymbol { IsForward: true } pending && !isForward && forwardInterfaces.Any(f => ReferenceEquals(f.Type, pending)))
+        if (previous is InterfaceTypeSymbol { IsForward: true } pending && !isForward && pending.IsDispatchInterface == isDispatch
+            && forwardInterfaces.Any(f => ReferenceEquals(f.Type, pending)))
         {
             type = pending;
             type.AddLocation(DiagnosticBag.LocationOf(identifier));
@@ -38,13 +47,18 @@ internal sealed partial class DeclarationBinder
         }
         else
         {
-            type = new InterfaceTypeSymbol(_types.Target, name, _container, [DiagnosticBag.LocationOf(identifier)]);
+            type = new InterfaceTypeSymbol(_types.Target, name, _container, [DiagnosticBag.LocationOf(identifier)]) { IsDispatchInterface = isDispatch };
             _scope.TryDeclare(name, type, out _);
             declared.Add(type);
-            if (_container is UnitSymbol { IsProgram: false } unit && IdentifierComparer.Instance.Equals(unit.Name, "System")
+            if (!isDispatch && _container is UnitSymbol { IsProgram: false } unit && IdentifierComparer.Instance.Equals(unit.Name, "System")
                 && IdentifierComparer.Instance.Equals(name, "IInterface"))
             {
                 _types.IInterface = type;                                       // the root interface (ABI-094)
+            }
+            else if (!isDispatch && _container is UnitSymbol { IsProgram: false } system && IdentifierComparer.Instance.Equals(system.Name, "System")
+                && IdentifierComparer.Instance.Equals(name, "IDispatch"))
+            {
+                _types.IDispatch = type;                                        // RTL-1001: what dispatch-interface values refer to
             }
 
             if (isForward)
@@ -54,7 +68,7 @@ internal sealed partial class DeclarationBinder
             }
         }
 
-        BindInterfaceBody(type, syntax);
+        bindBody(type);
     }
 
     /// <summary>Parent (default <c>IInterface</c>), GUID (E2650), and the method headings; fields are E2654 (LANG-660).</summary>
@@ -182,6 +196,13 @@ internal sealed partial class DeclarationBinder
                         Unsupported(specifier.Keyword, "implements");
                         ok = false;
                         break;
+                    case SyntaxKind.DispIdKeyword when specifier.Value is { } dispId:
+                        property.DispId = BindDispId(dispId);                   // LANG-694: information only
+                        break;
+                    case SyntaxKind.ReadOnlyKeyword or SyntaxKind.WriteOnlyKeyword:
+                        Unsupported(specifier.Keyword, specifier.Keyword.Text.ToLowerInvariant() + " outside a dispatch interface");
+                        ok = false;
+                        break;
                 }
             }
 
@@ -240,6 +261,9 @@ internal sealed partial class DeclarationBinder
             case InterfaceTypeSymbol parent when ReferenceEquals(parent, type) || parent.IsForward:
                 _diagnostics.Report(first, "E2007", parent.Name);
                 return root;
+            case InterfaceTypeSymbol { IsDispatchInterface: true }:
+                _diagnostics.Report(first, "E2652");                            // LANG-693: a dispatch interface is no ancestor
+                return root;
             case InterfaceTypeSymbol parent:
                 return parent;
             case ErrorTypeSymbol:
@@ -289,6 +313,11 @@ internal sealed partial class DeclarationBinder
         };
         BindSignature(method, heading, identifier, report: true);
         method.SelfParameter = new ParameterSymbol("Self", type, ParameterMode.Value, -1, method, []);     // ABI-092: the interface reference
+        if (syntax.Directives.OfType<DispIdDirectiveSyntax>().FirstOrDefault() is { Value: { } dispId })
+        {
+            method.DispId = BindDispId(dispId);                                 // LANG-694: range-checked, otherwise without effect
+        }
+
         return method;
     }
 
@@ -301,11 +330,13 @@ internal sealed partial class DeclarationBinder
     /// Returns the end of the instance.
     /// </summary>
     private long BindImplementedInterfaces(ClassTypeSymbol type, IReadOnlyList<(InterfaceTypeSymbol Interface, TypeSyntax Syntax)> listed,
-        IReadOnlyList<MethodResolutionSyntax> resolutions, long end)
+        IReadOnlyList<MethodResolutionSyntax> resolutions, List<(PropertySymbol Property, PropertySpecifierSyntax Specifier)> implements, long end)
     {
         var offset = (end + 7) / 8 * 8;
         var interfaces = ImmutableArray.CreateBuilder<ImplementedInterface>();
         var mapped = BindResolutions(type, listed, resolutions);
+        var delegations = BindDelegations(type, listed, implements);            // LANG-690…692 (C-302)
+        var synthesised = new List<MethodSymbol>();
         foreach (var (intf, syntax) in listed)
         {
             if (interfaces.Any(i => ReferenceEquals(i.Interface, intf)))
@@ -317,7 +348,10 @@ internal sealed partial class DeclarationBinder
             var implementations = ImmutableArray.CreateBuilder<MethodSymbol>();
             foreach (var method in intf.AllMethods)
             {
-                var implementation = mapped.TryGetValue((intf, method), out var target) ? target : FindImplementation(type, method.Name, method);
+                // LANG-661/690/692: a resolution clause, else the class's own delegation, else the nearest method or inherited delegation
+                var implementation = mapped.TryGetValue((intf, method), out var target) ? target
+                    : DelegationFor(delegations, method) is { } delegation ? DelegatingMethod(type, delegation, method, synthesised)
+                    : FindImplementationOrDelegation(type, method);
                 if (implementation is null)
                 {
                     _diagnostics.Report(syntax, "E2651", method.ContainingSymbol!.Name, method.Name);
@@ -336,6 +370,7 @@ internal sealed partial class DeclarationBinder
         }
 
         type.Interfaces = interfaces.ToImmutable();
+        type.Methods = type.Methods.AddRange(synthesised);                      // CMP-1207: ordinary private methods of the class
         return offset;
     }
 
@@ -344,6 +379,28 @@ internal sealed partial class DeclarationBinder
         type.SelfAndAncestors().SelectMany(c => c.Methods)
             .FirstOrDefault(m => m.MethodKind == MethodKind.Ordinary && IdentifierComparer.Instance.Equals(m.Name, name) && SameParameterTypes(m, method)
                 && ReferenceEquals(m.ReturnType, method.ReturnType) && m.IsSafecall == method.IsSafecall);      // LANG-689 (C-301)
+
+    /// <summary>
+    /// As <see cref="FindImplementation"/> for the method's own name, where a class of the chain that delegates the method
+    /// (<c>implements</c>, LANG-692: inherited delegation) supplies its synthesised method.
+    /// </summary>
+    internal static MethodSymbol? FindImplementationOrDelegation(ClassTypeSymbol type, MethodSymbol method)
+    {
+        var delegating = method.ContainingInterface is null ? null : DelegatingName(method);
+        foreach (var owner in type.SelfAndAncestors())
+        {
+            var inherited = delegating is null ? null : owner.Methods.FirstOrDefault(m => string.Equals(m.Name, delegating, StringComparison.OrdinalIgnoreCase)
+                && SameParameterTypes(m, method) && ReferenceEquals(m.ReturnType, method.ReturnType));
+            var found = inherited ?? owner.Methods.FirstOrDefault(m => m.MethodKind == MethodKind.Ordinary && IdentifierComparer.Instance.Equals(m.Name, method.Name)
+                && SameParameterTypes(m, method) && ReferenceEquals(m.ReturnType, method.ReturnType) && m.IsSafecall == method.IsSafecall);
+            if (found is not null)
+            {
+                return found;
+            }
+        }
+
+        return null;
+    }
 
     /// <summary>
     /// LANG-661 <c>procedure IFoo.Bar = MyBar;</c>: maps method <c>Bar</c> of a listed interface <c>IFoo</c> (or of one of its ancestors)

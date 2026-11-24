@@ -1,0 +1,31 @@
+take ILog
+  outer addref -> 1
+log 1: first
+log 2: second
+count 2
+as IStore
+  outer addref -> 2
+getter calls 0
+one two
+4 3
+getter calls 5
+identity
+  outer addref -> 3
+TRUE
+TRUE
+supports
+  outer addref -> 4
+TRUE
+TRUE
+log 3: third
+release all but one
+  outer release -> 3
+  outer release -> 2
+  outer release -> 1
+last reference
+  outer release -> 0
+outer destroyed
+log destroyed
+store destroyed
+leave
+done

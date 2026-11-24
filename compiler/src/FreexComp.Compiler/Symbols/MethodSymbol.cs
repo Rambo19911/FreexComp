@@ -56,6 +56,24 @@ public sealed class MethodSymbol : RoutineSymbol
     /// <summary>The routine (or anonymous method) whose body contains this anonymous method; null for a unit-level body.</summary>
     public RoutineSymbol? AnonymousParent { get; internal set; }
 
+    /// <summary>
+    /// The number of <c>dispid N</c> (com-interfaces.md LANG-694): required on a member of a dispatch interface, information only
+    /// on a method of an ordinary interface; null without it.
+    /// </summary>
+    public int? DispId { get; internal set; }
+
+    /// <summary>
+    /// LANG-697: the <c>Invoke</c> flags of a member of a dispatch interface — 1 a method, 2 a property get, 4 a property put,
+    /// 8 a property put by reference (the last three: the hidden accessors of a dispatch property); 0 for every other method.
+    /// A call of such a method is a dispatch call (CMP-1208).
+    /// </summary>
+    internal int DispatchFlags { get; set; }
+
+    /// <summary>
+    /// CMP-1207 (C-302): the <c>implements</c> property a synthesised <c>$dlg.…</c> method delegates to; null for other methods.
+    /// </summary>
+    internal PropertySymbol? DelegateProperty { get; set; }
+
     /// <summary>The generic method this method is an instance of (LANG-701, C-117); null otherwise.</summary>
     public GenericMethodSymbol? GenericMethodDefinition { get; internal set; }
 
@@ -110,7 +128,8 @@ public sealed class MethodSymbol : RoutineSymbol
         };
         var parameters = Parameters.IsEmpty ? "" : "(" + string.Join("; ", Parameters.Select(ParameterSymbol.Declaration)) + ")";
         var result = ReturnType is not null && MethodKind is not MethodKind.Constructor && !IsRecordConstructor ? ": " + ReturnType.Name : "";
-        var directives = (IsOverride ? "; override" : IsVirtual ? "; virtual" : "") + (IsAbstract ? "; abstract" : "") + (IsFinal ? "; final" : "");
+        var directives = (IsOverride ? "; override" : IsVirtual ? "; virtual" : "") + (IsAbstract ? "; abstract" : "") + (IsFinal ? "; final" : "")
+            + (DispId is { } dispId ? "; dispid " + dispId.ToString(System.Globalization.CultureInfo.InvariantCulture) : "");     // CMP-1211
         return $"{keyword} {ContainingSymbol!.Name}.{Name}{parameters}{result}{directives}";
     }
 }

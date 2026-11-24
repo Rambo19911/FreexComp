@@ -642,6 +642,22 @@ internal sealed class LClassRef(ClassTypeSymbol type, TypeSymbol pointerType) : 
     public ClassTypeSymbol Class { get; } = type;
 }
 
+/// <summary>
+/// CMP-1209 (C-304): the address of the constant call descriptor of one dispatch call (rtl-abi.md ABI-205) — the member's number,
+/// the <c>Invoke</c> flags, the result's type code (0: none) and the type code of every argument in declaration order; type
+/// <c>Pointer</c>. Identical descriptors of a module share one constant.
+/// </summary>
+internal sealed class LDispDescriptor(int dispId, int flags, int resultCode, ImmutableArray<int> argumentCodes, TypeSymbol pointerType) : LExpression(pointerType)
+{
+    public int DispId { get; } = dispId;
+
+    public int Flags { get; } = flags;
+
+    public int ResultCode { get; } = resultCode;
+
+    public ImmutableArray<int> ArgumentCodes { get; } = argumentCodes;
+}
+
 /// <summary>The GUID constant of <see cref="Interface"/> (CMP-373 <c>@"U.I.$guid"</c>, <c>TGUID</c> memory order); type <c>Pointer</c>.</summary>
 internal sealed class LGuidRef(InterfaceTypeSymbol intf, TypeSymbol pointerType) : LExpression(pointerType)
 {
