@@ -19,6 +19,25 @@ type
     procedure HandleAfterClose(DataSet: TDataSet);
     procedure HandleBeforeScroll(DataSet: TDataSet);
     procedure HandleAfterScroll(DataSet: TDataSet);
+    procedure HandleBeforeInsert(DataSet: TDataSet);
+    procedure HandleAfterInsert(DataSet: TDataSet);
+    procedure HandleBeforeEdit(DataSet: TDataSet);
+    procedure HandleAfterEdit(DataSet: TDataSet);
+    procedure HandleBeforePost(DataSet: TDataSet);
+    procedure HandleAfterPost(DataSet: TDataSet);
+    procedure HandleBeforeCancel(DataSet: TDataSet);
+    procedure HandleAfterCancel(DataSet: TDataSet);
+    procedure HandleBeforeDelete(DataSet: TDataSet);
+    procedure HandleAfterDelete(DataSet: TDataSet);
+    procedure HandleBeforeRefresh(DataSet: TDataSet);
+    procedure HandleAfterRefresh(DataSet: TDataSet);
+    procedure HandleNewRecord(DataSet: TDataSet);
+    procedure HandlePostError(DataSet: TDataSet; E: EDatabaseError; var Action: TDataAction);
+    procedure HandleDeleteError(DataSet: TDataSet; E: EDatabaseError; var Action: TDataAction);
+    procedure HandleEditError(DataSet: TDataSet; E: EDatabaseError; var Action: TDataAction);
+    procedure NoteError(const EventName: string; E: EDatabaseError; var Action: TDataAction);
+    procedure ApplyStep(const StepName: string);
+    function AssignedText(Buffer: TDataRow): string;
     procedure Note(const EventName: string);
   protected
     procedure DataEvent(Event: TDataEvent; Info: TObject); override;
@@ -27,6 +46,8 @@ type
     procedure DriverLoadRows; override;
     procedure DriverClose; override;
     function DriverCanModify: Boolean; override;
+    function DriverFieldUpdatable(Field: TField): Boolean; override;
+    procedure DriverEdit(Row: TDataRow); override;
     procedure ApplyInsert(Buffer: TDataRow); override;
     procedure ApplyUpdate(OldRow, Buffer: TDataRow); override;
     procedure ApplyDelete(Row: TDataRow); override;
@@ -35,6 +56,21 @@ type
     FailIn: string;
     { the event handler named here ('BeforeOpen', ...) raises Exception after logging }
     RaiseIn: string;
+    { the event handler named here calls Abort after logging }
+    AbortIn: string;
+    { the next FailApply calls of DriverEdit / ApplyInsert / ApplyUpdate / ApplyDelete raise
+      EDatabaseError('apply failed') (after logging) }
+    FailApply: Integer;
+    { what the error handlers of HookErrors answer }
+    ErrorAction: TDataAction;
+    { the driver reports the dataset as not modifiable }
+    DriverReadOnly: Boolean;
+    { the column the driver reports as not updatable }
+    FixedField: string;
+    { when > 0: ApplyInsert stores it in the first column of the buffer and increments it }
+    InsertId: Int64;
+    { what the last apply call received, e.g. 'update old=[1|one] new=[1|uno] assigned=2' }
+    LastApply: string;
     constructor Create(AOwner: TComponent); override;
     destructor Destroy; override;
     { the definitions the driver reports at open }
@@ -45,6 +81,8 @@ type
     procedure ClearRows;
     { assigns a logging handler to every dataset event }
     procedure HookEvents;
+    { assigns a logging handler to OnPostError, OnDeleteError and OnEditError; they answer ErrorAction }
+    procedure HookErrors;
     { stand-ins for component streaming }
     procedure SimulateLoading;
     procedure SimulateLoaded;
@@ -53,16 +91,27 @@ type
     function StoredRowIds: string;
     function ViewRowIds: string;
     function CursorIndex: Integer;
+    { the stored rows / the rows of the view as '[1|one] [2|two]' }
+    function StoredText: string;
+    function ViewText: string;
+    { kind and text of the value the field reads now, e.g. 'vkInt 7' }
+    function Probe(Field: TField): string;
   end;
 
 { The shared log as 'a,b,c'; the log is emptied. }
 function TakeLog: string;
 procedure ClearLog;
+procedure AddLog(const Text: string);
 
 function StateName(State: TDataSetState): string;
 function FieldTypeName(DataType: TFieldType): string;
 function ValueKindName(Kind: TDBValueKind): string;
 function DataEventName(Event: TDataEvent): string;
+function DataActionName(Action: TDataAction): string;
+{ 'NULL', an integer, a float, the string itself or 'bytes(n)' }
+function ValueText(const V: TDBValue): string;
+{ '[v1|v2|...]' }
+function RowText(Row: TDataRow): string;
 function BoolStr(Value: Boolean): string;
 { 'Bof' / 'Eof' / 'Bof+Eof' / '-' }
 function Flags(DataSet: TDataSet): string;
@@ -89,6 +138,62 @@ end;
 procedure ClearLog;
 begin
   Log.Clear;
+end;
+
+procedure AddLog(const Text: string);
+begin
+  Log.Add(Text);
+end;
+
+function DataActionName(Action: TDataAction): string;
+begin
+  case Action of
+    daFail: Result := 'daFail';
+    daAbort: Result := 'daAbort';
+    daRetry: Result := 'daRetry';
+  else
+    Result := '?';
+  end;
+end;
+
+function ValueText(const V: TDBValue): string;
+begin
+  case V.Kind of
+    vkNull: Result := 'NULL';
+    vkInt: Result := IntToStr(V.IntVal);
+    vkFloat: Result := FloatToStr(V.FloatVal);
+    vkString: Result := V.StrVal;
+    vkBytes: Result := 'bytes(' + IntToStr(Length(V.BytesVal)) + ')';
+  else
+    Result := '?';
+  end;
+end;
+
+function RowText(Row: TDataRow): string;
+var
+  I: Integer;
+begin
+  Result := '[';
+  for I := 0 to High(Row.Values) do
+  begin
+    if I > 0 then
+      Result := Result + '|';
+    Result := Result + ValueText(Row.Values[I]);
+  end;
+  Result := Result + ']';
+end;
+
+function RowsText(List: TDataRowList): string;
+var
+  I: Integer;
+begin
+  Result := '';
+  for I := 0 to List.Count - 1 do
+  begin
+    if I > 0 then
+      Result := Result + ' ';
+    Result := Result + RowText(List[I]);
+  end;
 end;
 
 function StateName(State: TDataSetState): string;
@@ -223,6 +328,94 @@ begin
   Log.Add(EventName);
   if RaiseIn = EventName then
     raise Exception.Create('stop in ' + EventName);
+  if AbortIn = EventName then
+    Abort;
+end;
+
+procedure TTestDataSet.NoteError(const EventName: string; E: EDatabaseError; var Action: TDataAction);
+begin
+  Log.Add(EventName + '(' + E.Message + ',' + DataActionName(Action) + ')');
+  Action := ErrorAction;
+end;
+
+procedure TTestDataSet.HandleBeforeInsert(DataSet: TDataSet);
+begin
+  Note('BeforeInsert');
+end;
+
+procedure TTestDataSet.HandleAfterInsert(DataSet: TDataSet);
+begin
+  Note('AfterInsert');
+end;
+
+procedure TTestDataSet.HandleBeforeEdit(DataSet: TDataSet);
+begin
+  Note('BeforeEdit');
+end;
+
+procedure TTestDataSet.HandleAfterEdit(DataSet: TDataSet);
+begin
+  Note('AfterEdit');
+end;
+
+procedure TTestDataSet.HandleBeforePost(DataSet: TDataSet);
+begin
+  Note('BeforePost');
+end;
+
+procedure TTestDataSet.HandleAfterPost(DataSet: TDataSet);
+begin
+  Note('AfterPost');
+end;
+
+procedure TTestDataSet.HandleBeforeCancel(DataSet: TDataSet);
+begin
+  Note('BeforeCancel');
+end;
+
+procedure TTestDataSet.HandleAfterCancel(DataSet: TDataSet);
+begin
+  Note('AfterCancel');
+end;
+
+procedure TTestDataSet.HandleBeforeDelete(DataSet: TDataSet);
+begin
+  Note('BeforeDelete');
+end;
+
+procedure TTestDataSet.HandleAfterDelete(DataSet: TDataSet);
+begin
+  Note('AfterDelete');
+end;
+
+procedure TTestDataSet.HandleBeforeRefresh(DataSet: TDataSet);
+begin
+  Note('BeforeRefresh');
+end;
+
+procedure TTestDataSet.HandleAfterRefresh(DataSet: TDataSet);
+begin
+  Note('AfterRefresh');
+end;
+
+procedure TTestDataSet.HandleNewRecord(DataSet: TDataSet);
+begin
+  Note('OnNewRecord');
+end;
+
+procedure TTestDataSet.HandlePostError(DataSet: TDataSet; E: EDatabaseError; var Action: TDataAction);
+begin
+  NoteError('OnPostError', E, Action);
+end;
+
+procedure TTestDataSet.HandleDeleteError(DataSet: TDataSet; E: EDatabaseError; var Action: TDataAction);
+begin
+  NoteError('OnDeleteError', E, Action);
+end;
+
+procedure TTestDataSet.HandleEditError(DataSet: TDataSet; E: EDatabaseError; var Action: TDataAction);
+begin
+  NoteError('OnEditError', E, Action);
 end;
 
 procedure TTestDataSet.HandleBeforeOpen(DataSet: TDataSet);
@@ -263,6 +456,26 @@ begin
   AfterClose := HandleAfterClose;
   BeforeScroll := HandleBeforeScroll;
   AfterScroll := HandleAfterScroll;
+  BeforeInsert := HandleBeforeInsert;
+  AfterInsert := HandleAfterInsert;
+  BeforeEdit := HandleBeforeEdit;
+  AfterEdit := HandleAfterEdit;
+  BeforePost := HandleBeforePost;
+  AfterPost := HandleAfterPost;
+  BeforeCancel := HandleBeforeCancel;
+  AfterCancel := HandleAfterCancel;
+  BeforeDelete := HandleBeforeDelete;
+  AfterDelete := HandleAfterDelete;
+  BeforeRefresh := HandleBeforeRefresh;
+  AfterRefresh := HandleAfterRefresh;
+  OnNewRecord := HandleNewRecord;
+end;
+
+procedure TTestDataSet.HookErrors;
+begin
+  OnPostError := HandlePostError;
+  OnDeleteError := HandleDeleteError;
+  OnEditError := HandleEditError;
 end;
 
 procedure TTestDataSet.SimulateLoading;
@@ -277,7 +490,10 @@ end;
 
 procedure TTestDataSet.DataEvent(Event: TDataEvent; Info: TObject);
 begin
-  Log.Add('[' + DataEventName(Event) + ' ' + StateName(State) + ']');
+  if Info is TField then
+    Log.Add('[' + DataEventName(Event) + ' ' + StateName(State) + ' ' + TField(Info).FieldName + ']')
+  else
+    Log.Add('[' + DataEventName(Event) + ' ' + StateName(State) + ']');
   inherited DataEvent(Event, Info);
 end;
 
@@ -324,22 +540,64 @@ end;
 
 function TTestDataSet.DriverCanModify: Boolean;
 begin
-  Result := True;
+  Result := not DriverReadOnly;
+end;
+
+function TTestDataSet.DriverFieldUpdatable(Field: TField): Boolean;
+begin
+  Result := (FixedField = '') or not SameText(Field.FieldName, FixedField);
+end;
+
+procedure TTestDataSet.ApplyStep(const StepName: string);
+begin
+  Log.Add(StepName);
+  if FailApply > 0 then
+  begin
+    FailApply := FailApply - 1;
+    DatabaseError('apply failed');
+  end;
+end;
+
+function TTestDataSet.AssignedText(Buffer: TDataRow): string;
+var
+  I: Integer;
+begin
+  Result := '';
+  for I := 1 to Length(Buffer.Values) do
+    if IsAssigned(Buffer, I) then
+    begin
+      if Result <> '' then
+        Result := Result + ',';
+      Result := Result + IntToStr(I);
+    end;
+end;
+
+procedure TTestDataSet.DriverEdit(Row: TDataRow);
+begin
+  ApplyStep('DriverEdit');
 end;
 
 procedure TTestDataSet.ApplyInsert(Buffer: TDataRow);
 begin
-  Log.Add('ApplyInsert');
+  ApplyStep('ApplyInsert');
+  if InsertId > 0 then
+  begin
+    Buffer.Values[0] := IntValue(InsertId);
+    InsertId := InsertId + 1;
+  end;
+  LastApply := 'insert new=' + RowText(Buffer) + ' assigned=' + AssignedText(Buffer);
 end;
 
 procedure TTestDataSet.ApplyUpdate(OldRow, Buffer: TDataRow);
 begin
-  Log.Add('ApplyUpdate');
+  ApplyStep('ApplyUpdate');
+  LastApply := 'update old=' + RowText(OldRow) + ' new=' + RowText(Buffer) + ' assigned=' + AssignedText(Buffer);
 end;
 
 procedure TTestDataSet.ApplyDelete(Row: TDataRow);
 begin
-  Log.Add('ApplyDelete');
+  ApplyStep('ApplyDelete');
+  LastApply := 'delete row=' + RowText(Row);
 end;
 
 function TTestDataSet.StoredCount: Integer;
@@ -373,6 +631,26 @@ end;
 function TTestDataSet.CursorIndex: Integer;
 begin
   Result := Cursor;
+end;
+
+function TTestDataSet.StoredText: string;
+begin
+  Result := RowsText(Rows);
+end;
+
+function TTestDataSet.ViewText: string;
+begin
+  Result := RowsText(View);
+end;
+
+function TTestDataSet.Probe(Field: TField): string;
+var
+  V: TDBValue;
+begin
+  V := GetFieldValue(Field);
+  Result := ValueKindName(V.Kind);
+  if V.Kind <> vkNull then
+    Result := Result + ' ' + ValueText(V);
 end;
 
 initialization

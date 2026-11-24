@@ -410,4 +410,314 @@ ok IsNull on a closed dataset
 ok a persistent field reads its column
 ok only the persistent field exists
 ok reading a field without a dataset
+== write: every setter on every field class
+s (TStringField)
+  AsString := 'text' -> vkString text
+  AsInteger := 42 -> vkString 42
+  AsLargeInt := 9000000000 -> vkString 9000000000
+  AsFloat := 2.5 -> vkString 2.5
+  AsBoolean := True -> vkString True
+  AsDateTime := 45000.75 -> vkString 2023-03-15 18:00:00
+  AsBytes := bytes 41 42 -> vkString AB
+m (TMemoField)
+  AsString := 'text' -> vkString text
+  AsInteger := 42 -> vkString 42
+  AsLargeInt := 9000000000 -> vkString 9000000000
+  AsFloat := 2.5 -> vkString 2.5
+  AsBoolean := True -> vkString True
+  AsDateTime := 45000.75 -> vkString 2023-03-15 18:00:00
+  AsBytes := bytes 41 42 -> vkString AB
+i (TIntegerField)
+  AsString := '12' -> vkInt 12
+  AsInteger := 42 -> vkInt 42
+  AsLargeInt := 9000000000 -> E: Value of field 'i' is out of range
+  AsFloat := 2.5 -> E: Value of field 'i' is out of range
+  AsBoolean := True -> vkInt 1
+  AsDateTime := 45000.75 -> E: Cannot access field 'i' as type DateTime
+  AsBytes := bytes 41 42 -> E: Cannot access field 'i' as type Bytes
+a (TAutoIncField)
+  AsString := '12' -> vkInt 12
+  AsInteger := 42 -> vkInt 42
+  AsLargeInt := 9000000000 -> E: Value of field 'a' is out of range
+  AsFloat := 2.5 -> E: Value of field 'a' is out of range
+  AsBoolean := True -> vkInt 1
+  AsDateTime := 45000.75 -> E: Cannot access field 'a' as type DateTime
+  AsBytes := bytes 41 42 -> E: Cannot access field 'a' as type Bytes
+l (TLargeintField)
+  AsString := '9000000000' -> vkInt 9000000000
+  AsInteger := 42 -> vkInt 42
+  AsLargeInt := 9000000000 -> vkInt 9000000000
+  AsFloat := 2.5 -> E: Value of field 'l' is out of range
+  AsBoolean := True -> vkInt 1
+  AsDateTime := 45000.75 -> E: Cannot access field 'l' as type DateTime
+  AsBytes := bytes 41 42 -> E: Cannot access field 'l' as type Bytes
+f (TFloatField)
+  AsString := '1.5' -> vkFloat 1.5
+  AsInteger := 42 -> E: Cannot access field 'f' as type Integer
+  AsLargeInt := 9000000000 -> E: Cannot access field 'f' as type LargeInt
+  AsFloat := 2.5 -> vkFloat 2.5
+  AsBoolean := True -> E: Cannot access field 'f' as type Boolean
+  AsDateTime := 45000.75 -> vkFloat 45000.75
+  AsBytes := bytes 41 42 -> E: Cannot access field 'f' as type Bytes
+c (TFloatField)
+  AsString := '1.5' -> vkFloat 1.5
+  AsInteger := 42 -> E: Cannot access field 'c' as type Integer
+  AsLargeInt := 9000000000 -> E: Cannot access field 'c' as type LargeInt
+  AsFloat := 2.5 -> vkFloat 2.5
+  AsBoolean := True -> E: Cannot access field 'c' as type Boolean
+  AsDateTime := 45000.75 -> vkFloat 45000.75
+  AsBytes := bytes 41 42 -> E: Cannot access field 'c' as type Bytes
+b (TBooleanField)
+  AsString := 'true' -> vkInt 1
+  AsInteger := 42 -> vkInt 1
+  AsLargeInt := 9000000000 -> vkInt 1
+  AsFloat := 2.5 -> E: Cannot access field 'b' as type Float
+  AsBoolean := True -> vkInt 1
+  AsDateTime := 45000.75 -> E: Cannot access field 'b' as type DateTime
+  AsBytes := bytes 41 42 -> E: Cannot access field 'b' as type Bytes
+dt (TDateTimeField)
+  AsString := '2023-03-15 18:00:00' -> vkFloat 45000.75
+  AsInteger := 42 -> E: Cannot access field 'dt' as type Integer
+  AsLargeInt := 9000000000 -> E: Cannot access field 'dt' as type LargeInt
+  AsFloat := 2.5 -> vkFloat 2.5
+  AsBoolean := True -> E: Cannot access field 'dt' as type Boolean
+  AsDateTime := 45000.75 -> vkFloat 45000.75
+  AsBytes := bytes 41 42 -> E: Cannot access field 'dt' as type Bytes
+d (TDateField)
+  AsString := '2023-03-15' -> vkFloat 45000
+  AsInteger := 42 -> E: Cannot access field 'd' as type Integer
+  AsLargeInt := 9000000000 -> E: Cannot access field 'd' as type LargeInt
+  AsFloat := 2.5 -> vkFloat 2
+  AsBoolean := True -> E: Cannot access field 'd' as type Boolean
+  AsDateTime := 45000.75 -> vkFloat 45000
+  AsBytes := bytes 41 42 -> E: Cannot access field 'd' as type Bytes
+t (TTimeField)
+  AsString := '06:00:00' -> vkFloat 0.25
+  AsInteger := 42 -> E: Cannot access field 't' as type Integer
+  AsLargeInt := 9000000000 -> E: Cannot access field 't' as type LargeInt
+  AsFloat := 2.5 -> vkFloat 0.5
+  AsBoolean := True -> E: Cannot access field 't' as type Boolean
+  AsDateTime := 45000.75 -> vkFloat 0.75
+  AsBytes := bytes 41 42 -> E: Cannot access field 't' as type Bytes
+bl (TBlobField)
+  AsString := 'x' -> E: Cannot access field 'bl' as type String
+  AsInteger := 42 -> E: Cannot access field 'bl' as type Integer
+  AsLargeInt := 9000000000 -> E: Cannot access field 'bl' as type LargeInt
+  AsFloat := 2.5 -> E: Cannot access field 'bl' as type Float
+  AsBoolean := True -> E: Cannot access field 'bl' as type Boolean
+  AsDateTime := 45000.75 -> E: Cannot access field 'bl' as type DateTime
+  AsBytes := bytes 41 42 -> vkBytes bytes(2)
+== write: conversions
+ok integer: text that is no number
+ok integer: text out of range
+ok integer: negative text
+ok integer: an integral float
+ok integer: a float out of range
+ok integer: the lowest value as LargeInt
+ok integer: one above the highest value
+ok a failed write leaves the value
+ok largeint: text that is no number
+ok largeint: an integral float
+ok largeint: a fraction
+ok largeint: a float out of range
+ok float: text that is no number
+ok float: exponent text
+ok boolean: FALSE
+ok boolean: 1
+ok boolean: other text
+ok boolean: 0
+ok boolean: any other number is True
+ok datetime: text that is no date
+ok datetime: a float
+ok date: text that is no date
+ok date: a float loses its time part
+ok date: a negative value is truncated towards zero
+ok time: text that is no time
+ok time: a float loses its date part
+ok time: the time of day of a negative value
+ok string: a float is stored as text
+ok string: the empty string is a value
+ok not null
+== write: size
+ok a value of exactly Size characters
+ok one character more
+ok a converted value that is too long
+ok the value is unchanged
+ok no limit when Size is 0
+ok no limit for a memo
+== write: state
+ok a setter in dsBrowse
+ok Clear in dsBrowse
+ok Text := in dsBrowse
+ok Text := '' in dsBrowse
+ok the value is unchanged
+== write: read-only fields
+ok CanModify of a plain field
+ok CanModify of a read-only field
+ok an auto-increment field is read-only by default
+ok so it cannot be modified
+ok CanModify of a column the driver cannot update
+ok writing a read-only field
+ok clearing a read-only field
+ok Text := on a read-only field
+ok writing the auto-increment field
+ok the read-only check comes before the conversion
+ok writing a column the driver cannot update
+ok nothing was modified
+ok the state check comes first
+ok OnNewRecord may assign a read-only field
+ok and another one
+ok after the event the field is read-only again
+ok no field of a read-only dataset can be modified
+== write: closed dataset
+ok a setter on a closed dataset
+ok Clear on a closed dataset
+ok CanModify on a closed dataset
+ok a setter without a dataset
+ok CanModify without a dataset
+== write: assignment sequence
+ok OnValidate, OnChange, notification
+ok Modified
+ok an equal value runs the whole sequence
+ok a conversion error
+ok happens before OnValidate
+ok and leaves the value
+ok Clear runs the sequence
+ok and sets null
+ok Text := runs the sequence
+ok only the written field is flagged
+== write: OnValidate rejects
+ok the exception of OnValidate propagates
+ok neither OnChange nor a notification
+ok the previous value is restored
+ok Modified is restored
+ok and so is the flag
+ok a rejected second write restores the first one
+ok still Modified
+ok still flagged
+== text: defaults
+s: Text='42' DisplayText='42'
+m: Text='memo text' DisplayText='memo text'
+i: Text='7' DisplayText='7'
+a: Text='1' DisplayText='1'
+l: Text='9000000000' DisplayText='9000000000'
+f: Text='2.5' DisplayText='2.5'
+c: Text='-0.125' DisplayText='-0.125'
+b: Text='True' DisplayText='True'
+dt: Text='2023-03-15 18:00:00' DisplayText='2023-03-15 18:00:00'
+d: Text='2023-03-15' DisplayText='2023-03-15'
+t: Text='06:00:00' DisplayText='06:00:00'
+bl: Text='(Blob)' DisplayText='(Blob)'
+== text: null row
+s: Text='' DisplayText=''
+m: Text='' DisplayText=''
+i: Text='' DisplayText=''
+a: Text='' DisplayText=''
+l: Text='' DisplayText=''
+f: Text='' DisplayText=''
+c: Text='' DisplayText=''
+b: Text='' DisplayText=''
+dt: Text='' DisplayText=''
+d: Text='' DisplayText=''
+t: Text='' DisplayText=''
+bl: Text='' DisplayText=''
+== text: third row
+s: Text='' DisplayText=''
+m: Text='' DisplayText=''
+i: Text='0' DisplayText='0'
+a: Text='-3' DisplayText='-3'
+l: Text='-1234567' DisplayText='-1234567'
+f: Text='3.14159265' DisplayText='3.14159265'
+c: Text='1234.5' DisplayText='1234.5'
+b: Text='False' DisplayText='False'
+dt: Text='1899-12-30' DisplayText='1899-12-30'
+d: Text='1900-01-01' DisplayText='1900-01-01'
+t: Text='00:00:00' DisplayText='00:00:00'
+bl: Text='(Blob)' DisplayText='(Blob)'
+== text: DisplayFormat, Precision, DisplayValues
+s: Text='' DisplayText=''
+m: Text='' DisplayText=''
+i: Text='0' DisplayText='000'
+a: Text='-3' DisplayText='-3.0'
+l: Text='-1234567' DisplayText='-1,234,567'
+f: Text='3.14159265' DisplayText='3.14'
+c: Text='1234.5' DisplayText='1,234.5'
+b: Text='No' DisplayText='No'
+dt: Text='1899-12-30 00:00' DisplayText='1899-12-30 00:00'
+d: Text='01.01.1900' DisplayText='01.01.1900'
+t: Text='00.00' DisplayText='00.00'
+bl: Text='(Blob)' DisplayText='(Blob)'
+s: Text='42' DisplayText='42'
+m: Text='memo text' DisplayText='memo text'
+i: Text='7' DisplayText='007'
+a: Text='1' DisplayText='1.0'
+l: Text='9000000000' DisplayText='9,000,000,000'
+f: Text='2.5' DisplayText='2.5'
+c: Text='-0.125' DisplayText='-0.1'
+b: Text='Yes' DisplayText='Yes'
+dt: Text='2023-03-15 18:00' DisplayText='2023-03-15 18:00'
+d: Text='15.03.2023' DisplayText='15.03.2023'
+t: Text='06.00' DisplayText='06.00'
+bl: Text='(Blob)' DisplayText='(Blob)'
+ok the default Precision
+ok DisplayFormat wins over Precision
+ok DisplayValues with one part: True
+ok DisplayValues with one part: False
+ok a null value has no text with a DisplayFormat either
+ok nor with DisplayValues
+== text: OnGetText
+ok DisplayText asks the handler
+ok Text asks the handler
+ok AsString does not
+ok the handler is asked for a null value too
+== text: Text := on every field class
+s: Text := 'text' -> vkString text
+s: Text := '' -> vkString 
+s: Text := '?' -> vkString ?
+m: Text := 'memo' -> vkString memo
+m: Text := '' -> vkString 
+m: Text := '?' -> vkString ?
+i: Text := '12' -> vkInt 12
+i: Text := '' -> vkNull
+i: Text := '?' -> E: '?' is not a valid integer value for field 'i'
+a: Text := '13' -> vkInt 13
+a: Text := '' -> vkNull
+a: Text := '?' -> E: '?' is not a valid integer value for field 'a'
+l: Text := '9000000001' -> vkInt 9000000001
+l: Text := '' -> vkNull
+l: Text := '?' -> E: '?' is not a valid integer value for field 'l'
+f: Text := '1.5' -> vkFloat 1.5
+f: Text := '' -> vkNull
+f: Text := '?' -> E: '?' is not a valid floating-point value for field 'f'
+c: Text := '-2.25' -> vkFloat -2.25
+c: Text := '' -> vkNull
+c: Text := '?' -> E: '?' is not a valid floating-point value for field 'c'
+b: Text := 'false' -> vkInt 0
+b: Text := '' -> vkNull
+b: Text := '?' -> E: '?' is not a valid boolean value for field 'b'
+dt: Text := '2024-02-29 12:30:00' -> vkFloat 45351.5208333333
+dt: Text := '' -> vkNull
+dt: Text := '?' -> E: '?' is not a valid date-time value for field 'dt'
+d: Text := '2024-02-29' -> vkFloat 45351
+d: Text := '' -> vkNull
+d: Text := '?' -> E: '?' is not a valid date-time value for field 'd'
+t: Text := '12:30:00' -> vkFloat 0.520833333333333
+t: Text := '' -> vkNull
+t: Text := '?' -> E: '?' is not a valid date-time value for field 't'
+bl: Text := 'x' -> E: Cannot access field 'bl' as type String
+bl: Text := '' -> vkNull
+bl: Text := '?' -> E: Cannot access field 'bl' as type String
+== text: Text := on a boolean field with DisplayValues
+ok the first part, any case
+ok the second part, any case
+ok True
+ok 0
+ok other text
+ok AsString does not know DisplayValues
+== text: OnSetText
+ok the handler is called and assigns the field
+ok with the value it chose
+ok a handler that assigns nothing
+ok leaves the value
+ok also for the empty text
 failed checks: 0

@@ -1,0 +1,307 @@
+== open and close: event order
+ok Open
+ok Close
+ok Edit on a closed dataset
+ok Insert on a closed dataset
+ok Append on a closed dataset
+ok Post on a closed dataset
+ok Cancel on a closed dataset
+ok Delete on a closed dataset
+ok Refresh on a closed dataset
+ok UpdateRecord on a closed dataset
+ok Modified of a closed dataset
+ok CanModify of a closed dataset
+ok no events on a closed dataset
+== edit: Edit
+ok CanModify
+ok before Edit
+ok Edit: event order
+ok after Edit
+ok the edit buffer is a copy of the current row
+ok Edit in dsEdit is a no-op
+== edit: buffer and Post
+ok a field write notifies
+ok the field reads the buffer
+ok Modified after a write
+ok the stored row is unchanged before Post
+ok Post: event order
+ok after Post
+ok Post stores the buffer
+ok in the row list too
+ok the row keeps its id
+ok the driver gets the old row, the buffer and the flags
+ok Post in dsBrowse is a no-op
+ok Cancel in dsBrowse is a no-op
+== edit: Cancel
+ok Edit copies the row under the cursor
+ok Modified
+ok Cancel: event order
+ok after Cancel
+ok the row is unchanged
+ok nothing stored
+== edit: assigned flags
+ok the flags are cleared when the buffer is created
+ok an unmodified edit is posted when asked
+ok writing the same value sets Modified
+ok and its flag
+== edit: Close discards the edit
+ok no cancel events
+ok closed
+ok reopened with the driver rows
+ok not Modified after reopening
+== edit: empty dataset
+ok Edit on an empty dataset behaves as Insert
+ok state
+== edit: read-only dataset
+ok CanModify
+ok Edit
+ok no events
+ok state unchanged
+== insert: Insert
+ok Insert: event order
+ok RecNo is 0, the new row is not counted
+ok the new row is all null
+ok Insert in an untouched insert cancels it first
+ok Modified
+ok nothing stored before Post
+ok Post: event order
+ok inserted before the row that was current
+ok in the row list too
+ok a new row id
+ok the new row is current
+ok the driver gets the buffer and the flags
+== insert: Append
+ok Append: event order
+ok state
+ok appended after the last row
+ok row ids
+ok the new row is current
+ok only the written field is flagged
+== insert: Cancel
+ok Cancel of an insert: event order
+ok the cursor is back on the row that was current
+ok that row
+ok nothing stored
+ok the same after a cancelled Append
+ok Bof and Eof are False while inserting
+ok the flags are back too
+ok a cancelled insert uses no row id; Insert on the first row goes before it
+ok the new first row is current
+== insert: empty dataset
+ok Insert
+ok cancelled
+ok no current row
+ok posted
+ok Append on an empty dataset, twice
+ok state
+== insert: OnNewRecord
+ok event order with assignments
+ok the default is in the buffer
+ok defaults do not set Modified
+ok but their flags are kept for the driver
+== insert: the driver may fill the buffer
+ok the stored row has the value set by ApplyInsert
+ok and the field reads it
+== insert: read-only dataset
+ok Insert
+ok Append
+ok no events
+== delete: Delete
+ok Delete: event order
+ok the driver gets the row
+ok the row is gone
+ok from the row list too
+ok the following row is current
+ok after deleting the last row the new last row is current
+ok Bof after First
+ok empty after deleting the only row
+ok no current row
+ok Delete on an empty dataset
+ok no events
+ok at the first row
+ok Delete clears Bof
+ok at the last row
+ok Delete clears Eof
+== delete: in dsInsert and dsEdit
+ok Delete in dsInsert behaves as Cancel
+ok nothing is deleted
+ok state
+ok Delete in dsEdit cancels the edit, then deletes
+ok the row is gone
+== delete: read-only dataset
+ok Delete
+ok no events
+ok nothing deleted
+== browse-mode: required fields
+ok Post without the first required field
+ok the check comes before BeforePost
+ok still inserting
+ok Post without the second required field
+ok Post with all required values; the auto-increment field is exempt
+ok stored
+ok Post of an edit with a cleared required field
+ok still editing
+ok an empty string is a value
+== browse-mode: CheckBrowseMode
+ok nothing in dsBrowse
+ok an unmodified edit is cancelled
+ok a modified edit is posted
+ok stored
+ok an unmodified insert is cancelled
+ok a modified insert is posted
+ok stored
+== browse-mode: navigation posts or cancels
+ok Next in a modified edit
+ok moved
+ok posted
+ok Prior in an unmodified edit
+ok Last in a modified edit
+ok First in a modified edit
+ok MoveBy(0)
+ok MoveBy(0) posts and does not scroll
+ok RecNo := in a modified edit
+ok all posted
+ok RecNo out of range in an edit
+ok the edit is posted before the range check
+ok Next in an untouched insert
+ok moved from the row that was current
+ok Next in a modified insert
+ok posted
+ok moved from the new row
+ok Append in a modified insert
+ok the first insert was posted
+ok the cancelled Append returns to it
+== browse-mode: a failing Post stops the navigation
+ok Next
+ok no scroll events
+ok still editing the same row
+ok Insert
+ok neither scroll nor insert events
+ok Refresh
+ok still editing
+== browse-mode: UpdateRecord
+ok UpdateRecord in dsBrowse
+ok UpdateRecord in dsEdit
+== protocol: a Before handler cancels the operation
+ok BeforeEdit raises
+ok nothing after the handler
+ok state unchanged
+ok BeforeInsert raises
+ok nothing after the handler
+ok BeforeScroll raises in Append
+ok nothing after the handler
+ok state unchanged
+ok BeforePost raises
+ok nothing after the handler
+ok still editing
+ok the buffer is kept
+ok BeforePost raises during Next
+ok no scroll
+ok BeforeCancel raises
+ok nothing after the handler
+ok still editing
+ok BeforeDelete raises
+ok nothing after the handler
+ok BeforeScroll raises in Delete
+ok nothing after the handler
+ok nothing deleted
+ok BeforeRefresh raises
+ok nothing reloaded
+ok the same rows
+== protocol: Abort in a Before handler
+ok Abort in BeforeDelete
+ok nothing after the handler
+ok nothing deleted
+ok Abort in BeforeInsert
+ok state unchanged
+ok Abort in BeforePost
+ok still editing
+== protocol: an After handler does not undo the operation
+ok AfterEdit raises
+ok the whole sequence ran
+ok editing
+ok AfterPost raises
+ok the whole sequence ran
+ok posted
+ok browsing
+ok AfterCancel raises
+ok the whole sequence ran
+ok browsing
+ok AfterInsert raises
+ok AfterScroll does not fire
+ok inserting
+ok AfterCancel raises for an insert
+ok AfterScroll does not fire
+ok cancelled
+ok AfterDelete raises
+ok AfterScroll does not fire
+ok deleted
+ok AfterRefresh raises
+ok refreshed
+== protocol: OnNewRecord raises
+ok Insert
+ok the insert is undone; AfterInsert and AfterScroll do not fire
+ok back on the row that was current
+ok that row
+ok Append
+ok the flags are back
+== protocol: driver error without a handler
+ok Post
+ok nothing after the apply step
+ok the edit is kept
+ok with its buffer
+ok nothing stored
+ok a second Post succeeds
+ok Post of an insert
+ok nothing after the apply step
+ok the insert is kept
+ok Delete
+ok nothing after the apply step
+ok nothing deleted
+ok Edit
+ok nothing after the driver step
+ok not editing
+== protocol: daFail
+ok Post
+ok the handler is called once
+ok the edit is kept
+ok Delete
+ok the handler is called once
+ok Edit
+ok the handler is called once
+== protocol: daAbort
+ok Post
+ok event order
+ok the edit is kept
+ok Delete
+ok nothing deleted
+ok Edit
+ok not editing
+== protocol: daRetry
+ok Post repeats only the apply step
+ok posted
+ok Post of an insert
+ok one new row
+ok Delete
+ok deleted
+ok Edit
+== refresh: Refresh
+ok Refresh: event order (no open or close events, definitions not rebuilt)
+ok the record number is kept
+ok the rows are new rows
+ok in the row list too
+ok Bof is cleared
+ok a row added to the store appears
+ok state
+ok the cursor goes to the last row when the old number is gone
+ok that row
+ok event order when the store became empty
+ok empty
+ok no current row
+ok from empty to the first row
+== refresh: pending edit
+ok a modified edit is posted first
+ok the driver got it
+ok the rows are those the driver loads
+ok an untouched insert is cancelled first
+failed checks: 0

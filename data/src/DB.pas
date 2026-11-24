@@ -71,10 +71,12 @@ type
     BytesVal: TBytes;
   end;
 
-  { One row: Values is indexed by data-field number - 1; RowId is unique within an open dataset. }
+  { One row: Values is indexed by data-field number - 1; RowId is unique within an open dataset.
+    Flags are the "assigned in this edit" marks, one per value; only an edit buffer has them. }
   TDataRow = class
   public
     Values: array of TDBValue;
+    Flags: array of Boolean;
     RowId: Int64;
     constructor Create(ValueCount: Integer);
   end;
@@ -152,7 +154,27 @@ type
     FReadOnly: Boolean;
     FRequired: Boolean;
     FSize: Integer;
+    FOnChange: TFieldNotifyEvent;
+    FOnValidate: TFieldNotifyEvent;
+    FOnGetText: TFieldGetTextEvent;
+    FOnSetText: TFieldSetTextEvent;
     function GetData: TDBValue;
+    function GetCanModify: Boolean;
+    function GetText: string;
+    function GetDisplayText: string;
+    function GetShownText(Display: Boolean): string;
+    procedure SetAsString(const Value: string);
+    procedure SetAsInteger(Value: Integer);
+    procedure SetAsLargeInt(Value: Int64);
+    procedure SetAsFloat(Value: Double);
+    procedure SetAsBoolean(Value: Boolean);
+    procedure SetAsDateTime(Value: TDateTime);
+    procedure SetAsBytes(const Value: TBytes);
+    procedure SetText(const Value: string);
+    { steps 1 and 2 of an assignment: the dataset is open and editing, the field may be written }
+    procedure CheckWrite;
+    { steps 4 to 6 of an assignment: store, OnValidate (restore on failure), OnChange, notification }
+    procedure StoreValue(const Value: TDBValue);
     function GetAsString: string;
     function GetAsInteger: Integer;
     function GetAsLargeInt: Int64;
@@ -190,17 +212,39 @@ type
     function TextAsDateTime(const S: string): TDateTime;
     { integer conversion shared by the integer field classes }
     function IntAsInteger(Value: Int64): Integer;
+    { Conversions of a written value into the canonical kind of the field type (the mirror of the
+      ValueAs... functions). The base class refuses every type; TypeName is 'Integer' or 'LargeInt'. }
+    function StringToValue(const S: string): TDBValue; virtual;
+    function IntToValue(Value: Int64; const TypeName: string): TDBValue; virtual;
+    function FloatToValue(Value: Double): TDBValue; virtual;
+    function BooleanToValue(Value: Boolean): TDBValue; virtual;
+    function DateTimeToValue(Value: TDateTime): TDBValue; virtual;
+    function BytesToValue(const Value: TBytes): TDBValue; virtual;
+    { the value of a non-empty text assigned through Text }
+    function TextToValue(const S: string): TDBValue; virtual;
+    { whether Text := '' sets null (every field class except string and memo) }
+    function EmptyTextIsNull: Boolean; virtual;
+    { the text of a non-null value for DisplayText (Display) or Text }
+    function DefaultText(const V: TDBValue; Display: Boolean): string; virtual;
   public
     constructor Create(AOwner: TComponent); override;
     destructor Destroy; override;
     function IsNull: Boolean;
-    property AsString: string read GetAsString;
-    property AsInteger: Integer read GetAsInteger;
-    property AsLargeInt: Int64 read GetAsLargeInt;
-    property AsFloat: Double read GetAsFloat;
-    property AsBoolean: Boolean read GetAsBoolean;
-    property AsDateTime: TDateTime read GetAsDateTime;
-    property AsBytes: TBytes read GetAsBytes;
+    { Sets null; like every write it needs a dataset in dsEdit or dsInsert. }
+    procedure Clear;
+    { Asks the controls showing this field to take the focus. }
+    procedure FocusControl;
+    property AsString: string read GetAsString write SetAsString;
+    property AsInteger: Integer read GetAsInteger write SetAsInteger;
+    property AsLargeInt: Int64 read GetAsLargeInt write SetAsLargeInt;
+    property AsFloat: Double read GetAsFloat write SetAsFloat;
+    property AsBoolean: Boolean read GetAsBoolean write SetAsBoolean;
+    property AsDateTime: TDateTime read GetAsDateTime write SetAsDateTime;
+    property AsBytes: TBytes read GetAsBytes write SetAsBytes;
+    { the edit text and the display text; both ask OnGetText when assigned }
+    property Text: string read GetText write SetText;
+    property DisplayText: string read GetDisplayText;
+    property CanModify: Boolean read GetCanModify;
     property DataSet: TDataSet read FDataSet write SetDataSet;
     property DataType: TFieldType read FDataType;
     property FieldNo: Integer read FFieldNo;
@@ -215,12 +259,26 @@ type
     property ReadOnly: Boolean read FReadOnly write FReadOnly default False;
     property Required: Boolean read FRequired write FRequired default False;
     property Size: Integer read FSize write FSize default 0;
+    property OnChange: TFieldNotifyEvent read FOnChange write FOnChange;
+    property OnValidate: TFieldNotifyEvent read FOnValidate write FOnValidate;
+    property OnGetText: TFieldGetTextEvent read FOnGetText write FOnGetText;
+    property OnSetText: TFieldSetTextEvent read FOnSetText write FOnSetText;
   end;
 
   TFieldClass = class of TField;
 
   TStringField = class(TField)
+  private
+    { a string value, after the size check }
+    function Sized(const S: string): TDBValue;
   protected
+    function StringToValue(const S: string): TDBValue; override;
+    function IntToValue(Value: Int64; const TypeName: string): TDBValue; override;
+    function FloatToValue(Value: Double): TDBValue; override;
+    function BooleanToValue(Value: Boolean): TDBValue; override;
+    function DateTimeToValue(Value: TDateTime): TDBValue; override;
+    function BytesToValue(const Value: TBytes): TDBValue; override;
+    function EmptyTextIsNull: Boolean; override;
     function ValueAsString(const V: TDBValue): string; override;
     function ValueAsInteger(const V: TDBValue): Integer; override;
     function ValueAsLargeInt(const V: TDBValue): Int64; override;
@@ -233,12 +291,23 @@ type
   end;
 
   TNumericField = class(TField)
+  private
+    FDisplayFormat: string;
+  protected
+    function DefaultText(const V: TDBValue; Display: Boolean): string; override;
   public
     constructor Create(AOwner: TComponent); override;
+  published
+    { the number picture of DisplayText: placeholders 0 and #, a decimal point, ',' for digit grouping }
+    property DisplayFormat: string read FDisplayFormat write FDisplayFormat;
   end;
 
   TIntegerField = class(TNumericField)
   protected
+    function StringToValue(const S: string): TDBValue; override;
+    function IntToValue(Value: Int64; const TypeName: string): TDBValue; override;
+    function FloatToValue(Value: Double): TDBValue; override;
+    function BooleanToValue(Value: Boolean): TDBValue; override;
     function ValueAsString(const V: TDBValue): string; override;
     function ValueAsInteger(const V: TDBValue): Integer; override;
     function ValueAsLargeInt(const V: TDBValue): Int64; override;
@@ -257,6 +326,10 @@ type
 
   TLargeintField = class(TNumericField)
   protected
+    function StringToValue(const S: string): TDBValue; override;
+    function IntToValue(Value: Int64; const TypeName: string): TDBValue; override;
+    function FloatToValue(Value: Double): TDBValue; override;
+    function BooleanToValue(Value: Boolean): TDBValue; override;
     function ValueAsString(const V: TDBValue): string; override;
     function ValueAsInteger(const V: TDBValue): Integer; override;
     function ValueAsLargeInt(const V: TDBValue): Int64; override;
@@ -267,35 +340,70 @@ type
   end;
 
   TFloatField = class(TNumericField)
+  private
+    FPrecision: Integer;
   protected
     function ValueAsString(const V: TDBValue): string; override;
     function ValueAsFloat(const V: TDBValue): Double; override;
     function ValueAsDateTime(const V: TDBValue): TDateTime; override;
+    function StringToValue(const S: string): TDBValue; override;
+    function FloatToValue(Value: Double): TDBValue; override;
+    function DateTimeToValue(Value: TDateTime): TDBValue; override;
+    function DefaultText(const V: TDBValue; Display: Boolean): string; override;
   public
     constructor Create(AOwner: TComponent); override;
+  published
+    { significant digits of DisplayText when DisplayFormat is empty }
+    property Precision: Integer read FPrecision write FPrecision default 15;
   end;
 
   TBooleanField = class(TField)
+  private
+    FDisplayValues: string;
+    { part 0 (True) or 1 (False) of DisplayValues }
+    function DisplayPart(Index: Integer): string;
   protected
+    function StringToValue(const S: string): TDBValue; override;
+    function IntToValue(Value: Int64; const TypeName: string): TDBValue; override;
+    function BooleanToValue(Value: Boolean): TDBValue; override;
+    function TextToValue(const S: string): TDBValue; override;
+    function DefaultText(const V: TDBValue; Display: Boolean): string; override;
     function ValueAsString(const V: TDBValue): string; override;
     function ValueAsInteger(const V: TDBValue): Integer; override;
     function ValueAsLargeInt(const V: TDBValue): Int64; override;
     function ValueAsBoolean(const V: TDBValue): Boolean; override;
   public
     constructor Create(AOwner: TComponent); override;
+  published
+    { 'TrueText;FalseText' for Text and DisplayText; empty: True / False }
+    property DisplayValues: string read FDisplayValues write FDisplayValues;
   end;
 
   TDateTimeField = class(TField)
+  private
+    FDisplayFormat: string;
   protected
     function ValueAsString(const V: TDBValue): string; override;
     function ValueAsFloat(const V: TDBValue): Double; override;
     function ValueAsDateTime(const V: TDBValue): TDateTime; override;
+    { the part of a written value the field keeps: all of it, the date or the time of day }
+    function Normalize(Value: Double): Double; virtual;
+    function ParseText(const S: string; out Value: TDateTime): Boolean; virtual;
+    function StringToValue(const S: string): TDBValue; override;
+    function FloatToValue(Value: Double): TDBValue; override;
+    function DateTimeToValue(Value: TDateTime): TDBValue; override;
+    function DefaultText(const V: TDBValue; Display: Boolean): string; override;
   public
     constructor Create(AOwner: TComponent); override;
+  published
+    { the date/time picture of Text and DisplayText }
+    property DisplayFormat: string read FDisplayFormat write FDisplayFormat;
   end;
 
   TDateField = class(TDateTimeField)
   protected
+    function Normalize(Value: Double): Double; override;
+    function ParseText(const S: string; out Value: TDateTime): Boolean; override;
     function ValueAsString(const V: TDBValue): string; override;
     function ValueAsDateTime(const V: TDBValue): TDateTime; override;
   public
@@ -304,6 +412,8 @@ type
 
   TTimeField = class(TDateTimeField)
   protected
+    function Normalize(Value: Double): Double; override;
+    function ParseText(const S: string; out Value: TDateTime): Boolean; override;
     function ValueAsString(const V: TDBValue): string; override;
     function ValueAsDateTime(const V: TDBValue): TDateTime; override;
   public
@@ -313,6 +423,8 @@ type
   TBlobField = class(TField)
   protected
     function ValueAsBytes(const V: TDBValue): TBytes; override;
+    function BytesToValue(const Value: TBytes): TDBValue; override;
+    function DefaultText(const V: TDBValue; Display: Boolean): string; override;
   public
     constructor Create(AOwner: TComponent); override;
   end;
@@ -326,6 +438,14 @@ type
     function ValueAsBoolean(const V: TDBValue): Boolean; override;
     function ValueAsDateTime(const V: TDBValue): TDateTime; override;
     function ValueAsBytes(const V: TDBValue): TBytes; override;
+    function StringToValue(const S: string): TDBValue; override;
+    function IntToValue(Value: Int64; const TypeName: string): TDBValue; override;
+    function FloatToValue(Value: Double): TDBValue; override;
+    function BooleanToValue(Value: Boolean): TDBValue; override;
+    function DateTimeToValue(Value: TDateTime): TDBValue; override;
+    function BytesToValue(const Value: TBytes): TDBValue; override;
+    function EmptyTextIsNull: Boolean; override;
+    function DefaultText(const V: TDBValue; Display: Boolean): string; override;
   public
     constructor Create(AOwner: TComponent); override;
   end;
@@ -362,6 +482,26 @@ type
     FCursor: Integer;
     FBof: Boolean;
     FEof: Boolean;
+    FModified: Boolean;
+    FInNewRecord: Boolean;
+    FSavedBof: Boolean;
+    FSavedEof: Boolean;
+    FBeforeInsert: TDataSetNotifyEvent;
+    FAfterInsert: TDataSetNotifyEvent;
+    FBeforeEdit: TDataSetNotifyEvent;
+    FAfterEdit: TDataSetNotifyEvent;
+    FBeforePost: TDataSetNotifyEvent;
+    FAfterPost: TDataSetNotifyEvent;
+    FBeforeCancel: TDataSetNotifyEvent;
+    FAfterCancel: TDataSetNotifyEvent;
+    FBeforeDelete: TDataSetNotifyEvent;
+    FAfterDelete: TDataSetNotifyEvent;
+    FBeforeRefresh: TDataSetNotifyEvent;
+    FAfterRefresh: TDataSetNotifyEvent;
+    FOnNewRecord: TDataSetNotifyEvent;
+    FOnPostError: TDataSetErrorEvent;
+    FOnDeleteError: TDataSetErrorEvent;
+    FOnEditError: TDataSetErrorEvent;
     FBeforeOpen: TDataSetNotifyEvent;
     FAfterOpen: TDataSetNotifyEvent;
     FBeforeClose: TDataSetNotifyEvent;
@@ -369,6 +509,7 @@ type
     FBeforeScroll: TDataSetNotifyEvent;
     FAfterScroll: TDataSetNotifyEvent;
     function GetActive: Boolean;
+    function GetCanModify: Boolean;
     function GetFieldCount: Integer;
     function GetRecNo: Integer;
     function GetRecordCount: Integer;
@@ -378,6 +519,11 @@ type
     procedure EndScroll;
     procedure CloseSilently;
     procedure UnbindFields;
+    procedure DoInsert(AtEnd: Boolean);
+    procedure CheckRequiredFields;
+    { A driver error in an apply step: asks the handler. True = repeat the step; False = the caller
+      re-raises E; raises EAbort when the handler answers daAbort. }
+    function RetryAfterError(E: EDatabaseError; Handler: TDataSetErrorEvent): Boolean;
   protected
     procedure Loaded; override;
     { Notifies the attached data sources. Info is the field of deFieldChange, else nil. }
@@ -397,6 +543,29 @@ type
     function GetViewCount: Integer; virtual; abstract;
     { The value a field reads: that of the current row; null when there is no current row. }
     function GetFieldValue(Field: TField): TDBValue; virtual; abstract;
+    { ---- editing; the state machine and the events are in the public methods ---- }
+    function InternalCanModify: Boolean; virtual; abstract;
+    function FieldUpdatable(Field: TField): Boolean; virtual; abstract;
+    { Stores a value and its assigned flag in the edit buffer. }
+    procedure SetFieldValue(Field: TField; const Value: TDBValue; IsAssigned: Boolean); virtual; abstract;
+    function GetFieldAssigned(Field: TField): Boolean; virtual; abstract;
+    { Creates the edit buffer as a copy of the current row; may raise EDatabaseError (driver). }
+    procedure InternalEdit; virtual; abstract;
+    { Creates an all-null edit buffer and remembers the insert position: before the current row, or
+      after the last row. }
+    procedure InternalInsert(AtEnd: Boolean); virtual; abstract;
+    { The driver apply step for the edit buffer; raises EDatabaseError and changes nothing on failure. }
+    procedure InternalApply; virtual; abstract;
+    { Stores the edit buffer and releases it; returns the view index of the posted row. }
+    function InternalPost: Integer; virtual; abstract;
+    { Releases the edit buffer. }
+    procedure InternalCancel; virtual; abstract;
+    { The driver apply step for deleting the current row. }
+    procedure InternalApplyDelete; virtual; abstract;
+    { Removes the current row from the row list and the view. }
+    procedure InternalDelete; virtual; abstract;
+    { Loads the rows again and rebuilds the view. }
+    procedure InternalRefresh; virtual; abstract;
     property Cursor: Integer read FCursor;
   public
     constructor Create(AOwner: TComponent); override;
@@ -404,7 +573,18 @@ type
     procedure BeforeDestruction; override;
     procedure Open;
     procedure Close;
+    { Loads the rows again; the record number is kept when it still exists. }
+    procedure Refresh;
+    { In dsEdit / dsInsert: posts a modified record, cancels an unmodified one. }
     procedure CheckBrowseMode;
+    procedure Edit;
+    procedure Insert;
+    procedure Append;
+    procedure Post;
+    procedure Cancel;
+    procedure Delete;
+    { Asks the data links to write pending control text into their fields. }
+    procedure UpdateRecord;
     procedure First;
     procedure Last;
     procedure Next;
@@ -421,6 +601,10 @@ type
     property Eof: Boolean read FEof;
     property RecordCount: Integer read GetRecordCount;
     property RecNo: Integer read GetRecNo write SetRecNo;
+    { True after a field write in the current edit; False on a closed dataset. }
+    property Modified: Boolean read FModified;
+    { False on a closed dataset. }
+    property CanModify: Boolean read GetCanModify;
     property Fields: TFields read FFields;
     property FieldDefs: TFieldDefs read FFieldDefs;
     property FieldCount: Integer read GetFieldCount;
@@ -430,6 +614,22 @@ type
     property AfterClose: TDataSetNotifyEvent read FAfterClose write FAfterClose;
     property BeforeScroll: TDataSetNotifyEvent read FBeforeScroll write FBeforeScroll;
     property AfterScroll: TDataSetNotifyEvent read FAfterScroll write FAfterScroll;
+    property BeforeInsert: TDataSetNotifyEvent read FBeforeInsert write FBeforeInsert;
+    property AfterInsert: TDataSetNotifyEvent read FAfterInsert write FAfterInsert;
+    property BeforeEdit: TDataSetNotifyEvent read FBeforeEdit write FBeforeEdit;
+    property AfterEdit: TDataSetNotifyEvent read FAfterEdit write FAfterEdit;
+    property BeforePost: TDataSetNotifyEvent read FBeforePost write FBeforePost;
+    property AfterPost: TDataSetNotifyEvent read FAfterPost write FAfterPost;
+    property BeforeCancel: TDataSetNotifyEvent read FBeforeCancel write FBeforeCancel;
+    property AfterCancel: TDataSetNotifyEvent read FAfterCancel write FAfterCancel;
+    property BeforeDelete: TDataSetNotifyEvent read FBeforeDelete write FBeforeDelete;
+    property AfterDelete: TDataSetNotifyEvent read FAfterDelete write FAfterDelete;
+    property BeforeRefresh: TDataSetNotifyEvent read FBeforeRefresh write FBeforeRefresh;
+    property AfterRefresh: TDataSetNotifyEvent read FAfterRefresh write FAfterRefresh;
+    property OnNewRecord: TDataSetNotifyEvent read FOnNewRecord write FOnNewRecord;
+    property OnPostError: TDataSetErrorEvent read FOnPostError write FOnPostError;
+    property OnDeleteError: TDataSetErrorEvent read FOnDeleteError write FOnDeleteError;
+    property OnEditError: TDataSetErrorEvent read FOnEditError write FOnEditError;
   end;
 
   { The fully buffered dataset: all rows in memory; drivers implement only the Driver*/Apply* methods
@@ -440,8 +640,23 @@ type
     FView: TDataRowList;
     FNextRowId: Int64;
     FDriverOpened: Boolean;
+    FBuffer: TDataRow;
+    FInsertIndex: Integer;
     procedure BuildView;
+    function NewBuffer: TDataRow;
   protected
+    function InternalCanModify: Boolean; override;
+    function FieldUpdatable(Field: TField): Boolean; override;
+    procedure SetFieldValue(Field: TField; const Value: TDBValue; IsAssigned: Boolean); override;
+    function GetFieldAssigned(Field: TField): Boolean; override;
+    procedure InternalEdit; override;
+    procedure InternalInsert(AtEnd: Boolean); override;
+    procedure InternalApply; override;
+    function InternalPost: Integer; override;
+    procedure InternalCancel; override;
+    procedure InternalApplyDelete; override;
+    procedure InternalDelete; override;
+    procedure InternalRefresh; override;
     procedure InternalOpen; override;
     procedure InternalClose; override;
     procedure InternalInitFieldDefs; override;
@@ -455,11 +670,15 @@ type
     { editing }
     function DriverCanModify: Boolean; virtual; abstract;
     function DriverFieldUpdatable(Field: TField): Boolean; virtual;
+    { Called by Edit before the edit buffer is created; may raise EDatabaseError (OnEditError). Default: nothing. }
+    procedure DriverEdit(Row: TDataRow); virtual;
     procedure ApplyInsert(Buffer: TDataRow); virtual; abstract;
     procedure ApplyUpdate(OldRow, Buffer: TDataRow); virtual; abstract;
     procedure ApplyDelete(Row: TDataRow); virtual; abstract;
     { Appends an all-null row and returns it for filling; for DriverLoadRows. }
     function AddLoadedRow: TDataRow;
+    { Whether the field with this number was written in the current edit; for the apply methods. }
+    function IsAssigned(Buffer: TDataRow; FieldNo: Integer): Boolean;
     property Rows: TDataRowList read FRows;
     property View: TDataRowList read FView;
   public
@@ -571,6 +790,105 @@ begin
   else
     Result := nil;
   end;
+end;
+
+{ The number picture of TNumericField.DisplayFormat: '0' = a digit, always shown; '#' = a digit, shown when
+  significant; '.' = the decimal point; ',' = group the integer digits in threes. The text before the first
+  and after the last of these characters is copied. Separators come from FormatSettings. }
+function FormatNumber(const Picture: string; Value: Double): string;
+var
+  I, First, Last, IntZeros, Decimals, MinDecimals, PointPos: Integer;
+  Grouping, AfterPoint, Negative: Boolean;
+  C: Char;
+  Digits, IntPart, DecPart, Grouped: string;
+begin
+  First := 0;
+  Last := 0;
+  for I := 1 to Length(Picture) do
+  begin
+    C := Picture[I];
+    if (C = '0') or (C = '#') or (C = '.') then
+    begin
+      if First = 0 then
+        First := I;
+      Last := I;
+    end;
+  end;
+  if First = 0 then
+  begin
+    Result := FloatToStr(Value);
+    Exit;
+  end;
+  IntZeros := 0;
+  Decimals := 0;
+  MinDecimals := 0;
+  Grouping := False;
+  AfterPoint := False;
+  for I := First to Last do
+  begin
+    C := Picture[I];
+    if C = '.' then
+      AfterPoint := True
+    else if C = ',' then
+      Grouping := True
+    else if (C = '0') or (C = '#') then
+      if AfterPoint then
+      begin
+        Decimals := Decimals + 1;
+        if C = '0' then
+          MinDecimals := Decimals;
+      end
+      else if C = '0' then
+        IntZeros := IntZeros + 1;
+  end;
+  Digits := FloatToStrF(Abs(Value), ffFixed, 17, Decimals);
+  if Pos('E', Digits) > 0 then
+  begin
+    Result := FloatToStr(Value);
+    Exit;
+  end;
+  PointPos := Pos(FormatSettings.DecimalSeparator, Digits);
+  if PointPos > 0 then
+  begin
+    IntPart := Copy(Digits, 1, PointPos - 1);
+    DecPart := Copy(Digits, PointPos + 1, Length(Digits) - PointPos);
+  end
+  else
+  begin
+    IntPart := Digits;
+    DecPart := '';
+  end;
+  while (Length(DecPart) > MinDecimals) and (DecPart[Length(DecPart)] = '0') do
+    DecPart := Copy(DecPart, 1, Length(DecPart) - 1);
+  while (IntPart <> '') and (IntPart[1] = '0') do
+    IntPart := Copy(IntPart, 2, Length(IntPart) - 1);
+  Negative := False;
+  if Value < 0 then
+    for I := 1 to Length(IntPart) + Length(DecPart) do
+      if I <= Length(IntPart) then
+        Negative := Negative or (IntPart[I] <> '0')
+      else
+        Negative := Negative or (DecPart[I - Length(IntPart)] <> '0');
+  while Length(IntPart) < IntZeros do
+    IntPart := '0' + IntPart;
+  if Grouping then
+  begin
+    Grouped := '';
+    for I := 1 to Length(IntPart) do
+    begin
+      if (I > 1) and ((Length(IntPart) - I + 1) mod 3 = 0) then
+        Grouped := Grouped + FormatSettings.ThousandSeparator;
+      Grouped := Grouped + IntPart[I];
+    end;
+    IntPart := Grouped;
+  end;
+  Result := Copy(Picture, 1, First - 1);
+  if Negative then
+    Result := '-' + Result;
+  Result := Result + IntPart;
+  if DecPart <> '' then
+    Result := Result + FormatSettings.DecimalSeparator + DecPart;
+  Result := Result + Copy(Picture, Last + 1, Length(Picture) - Last);
 end;
 
 { Persistent fields match definitions by type class: the integer types are mutually compatible, the
@@ -966,6 +1284,195 @@ begin
     Result := ValueAsBytes(V);
 end;
 
+{ TField: write access (assignment sequence) }
+
+function TField.GetCanModify: Boolean;
+begin
+  Result := (FDataSet <> nil) and FDataSet.GetCanModify and not FReadOnly and (FFieldKind = fkData) and
+    FDataSet.FieldUpdatable(Self);
+end;
+
+procedure TField.CheckWrite;
+begin
+  if (FDataSet = nil) or (FDataSet.FState = dsInactive) then
+    DatabaseError(SDatClosed);
+  if FFieldKind = fkCalculated then
+    DatabaseErrorFmt(SDatFieldReadOnly, [FFieldName]);
+  if not (FDataSet.FState in [dsEdit, dsInsert]) then
+    DatabaseError(SDatNotEditing);
+  if not FDataSet.FInNewRecord and (FReadOnly or not FDataSet.FieldUpdatable(Self)) then
+    DatabaseErrorFmt(SDatFieldReadOnly, [FFieldName]);
+end;
+
+procedure TField.StoreValue(const Value: TDBValue);
+var
+  OldValue: TDBValue;
+  OldAssigned, OldModified: Boolean;
+begin
+  OldValue := FDataSet.GetFieldValue(Self);
+  OldAssigned := FDataSet.GetFieldAssigned(Self);
+  OldModified := FDataSet.FModified;
+  FDataSet.SetFieldValue(Self, Value, True);
+  FDataSet.FModified := True;
+  if Assigned(FOnValidate) then
+    try
+      FOnValidate(Self);
+    except
+      FDataSet.SetFieldValue(Self, OldValue, OldAssigned);
+      FDataSet.FModified := OldModified;
+      raise;
+    end;
+  if Assigned(FOnChange) then
+    FOnChange(Self);
+  FDataSet.DataEvent(deFieldChange, Self);
+end;
+
+procedure TField.Clear;
+begin
+  CheckWrite;
+  StoreValue(NullValue);
+end;
+
+procedure TField.FocusControl;
+begin
+  if FDataSet <> nil then
+    FDataSet.DataEvent(deFocusControl, Self);
+end;
+
+procedure TField.SetAsString(const Value: string);
+begin
+  CheckWrite;
+  StoreValue(StringToValue(Value));
+end;
+
+procedure TField.SetAsInteger(Value: Integer);
+begin
+  CheckWrite;
+  StoreValue(IntToValue(Value, 'Integer'));
+end;
+
+procedure TField.SetAsLargeInt(Value: Int64);
+begin
+  CheckWrite;
+  StoreValue(IntToValue(Value, 'LargeInt'));
+end;
+
+procedure TField.SetAsFloat(Value: Double);
+begin
+  CheckWrite;
+  StoreValue(FloatToValue(Value));
+end;
+
+procedure TField.SetAsBoolean(Value: Boolean);
+begin
+  CheckWrite;
+  StoreValue(BooleanToValue(Value));
+end;
+
+procedure TField.SetAsDateTime(Value: TDateTime);
+begin
+  CheckWrite;
+  StoreValue(DateTimeToValue(Value));
+end;
+
+procedure TField.SetAsBytes(const Value: TBytes);
+begin
+  CheckWrite;
+  StoreValue(BytesToValue(Value));
+end;
+
+function TField.StringToValue(const S: string): TDBValue;
+begin
+  Result := NullValue;
+  AccessError('String');
+end;
+
+function TField.IntToValue(Value: Int64; const TypeName: string): TDBValue;
+begin
+  Result := NullValue;
+  AccessError(TypeName);
+end;
+
+function TField.FloatToValue(Value: Double): TDBValue;
+begin
+  Result := NullValue;
+  AccessError('Float');
+end;
+
+function TField.BooleanToValue(Value: Boolean): TDBValue;
+begin
+  Result := NullValue;
+  AccessError('Boolean');
+end;
+
+function TField.DateTimeToValue(Value: TDateTime): TDBValue;
+begin
+  Result := NullValue;
+  AccessError('DateTime');
+end;
+
+function TField.BytesToValue(const Value: TBytes): TDBValue;
+begin
+  Result := NullValue;
+  AccessError('Bytes');
+end;
+
+{ TField: Text and DisplayText }
+
+function TField.TextToValue(const S: string): TDBValue;
+begin
+  Result := StringToValue(S);
+end;
+
+function TField.EmptyTextIsNull: Boolean;
+begin
+  Result := True;
+end;
+
+function TField.DefaultText(const V: TDBValue; Display: Boolean): string;
+begin
+  Result := ValueAsString(V);
+end;
+
+function TField.GetShownText(Display: Boolean): string;
+var
+  V: TDBValue;
+begin
+  Result := '';
+  if Assigned(FOnGetText) then
+    FOnGetText(Self, Result, Display)
+  else
+  begin
+    V := GetData;
+    if V.Kind <> vkNull then
+      Result := DefaultText(V, Display);
+  end;
+end;
+
+function TField.GetText: string;
+begin
+  Result := GetShownText(False);
+end;
+
+function TField.GetDisplayText: string;
+begin
+  Result := GetShownText(True);
+end;
+
+procedure TField.SetText(const Value: string);
+begin
+  if Assigned(FOnSetText) then
+    FOnSetText(Self, Value)
+  else
+  begin
+    CheckWrite;
+    if (Value = '') and EmptyTextIsNull then
+      StoreValue(NullValue)
+    else
+      StoreValue(TextToValue(Value));
+  end;
+end;
+
 procedure TField.AccessError(const TypeName: string);
 begin
   DatabaseErrorFmt(SDatFieldAccess, [FFieldName, TypeName]);
@@ -1104,10 +1611,63 @@ begin
   Result := TEncoding.UTF8.GetBytes(V.StrVal);
 end;
 
+function TStringField.Sized(const S: string): TDBValue;
+begin
+  if (FSize > 0) and (Length(S) > FSize) then
+    DatabaseErrorFmt(SDatFieldTooLong, [FFieldName, FSize]);
+  Result := StringValue(S);
+end;
+
+function TStringField.StringToValue(const S: string): TDBValue;
+begin
+  Result := Sized(S);
+end;
+
+function TStringField.IntToValue(Value: Int64; const TypeName: string): TDBValue;
+begin
+  Result := Sized(IntToStr(Value));
+end;
+
+function TStringField.FloatToValue(Value: Double): TDBValue;
+begin
+  Result := Sized(FloatToStr(Value));
+end;
+
+function TStringField.BooleanToValue(Value: Boolean): TDBValue;
+begin
+  if Value then
+    Result := Sized('True')
+  else
+    Result := Sized('False');
+end;
+
+function TStringField.DateTimeToValue(Value: TDateTime): TDBValue;
+begin
+  Result := Sized(DateTimeToStr(Value));
+end;
+
+function TStringField.BytesToValue(const Value: TBytes): TDBValue;
+begin
+  Result := Sized(TEncoding.UTF8.GetString(Value));
+end;
+
+function TStringField.EmptyTextIsNull: Boolean;
+begin
+  Result := False;
+end;
+
 constructor TNumericField.Create(AOwner: TComponent);
 begin
   inherited Create(AOwner);
   FAlignment := taRightJustify;
+end;
+
+function TNumericField.DefaultText(const V: TDBValue; Display: Boolean): string;
+begin
+  if Display and (FDisplayFormat <> '') then
+    Result := FormatNumber(FDisplayFormat, ValueAsFloat(V))
+  else
+    Result := ValueAsString(V);
 end;
 
 constructor TIntegerField.Create(AOwner: TComponent);
@@ -1139,6 +1699,29 @@ end;
 function TIntegerField.ValueAsBoolean(const V: TDBValue): Boolean;
 begin
   Result := V.IntVal <> 0;
+end;
+
+function TIntegerField.StringToValue(const S: string): TDBValue;
+begin
+  Result := IntValue(TextAsInteger(S));
+end;
+
+function TIntegerField.IntToValue(Value: Int64; const TypeName: string): TDBValue;
+begin
+  Result := IntValue(IntAsInteger(Value));
+end;
+
+{ only an integral value in range }
+function TIntegerField.FloatToValue(Value: Double): TDBValue;
+begin
+  if (Value < -2147483648.0) or (Value > 2147483647.0) or (Frac(Value) <> 0) then
+    RangeError;
+  Result := IntValue(Trunc(Value));
+end;
+
+function TIntegerField.BooleanToValue(Value: Boolean): TDBValue;
+begin
+  Result := IntValue(Ord(Value));
 end;
 
 constructor TAutoIncField.Create(AOwner: TComponent);
@@ -1179,10 +1762,59 @@ begin
   Result := V.IntVal <> 0;
 end;
 
+function TLargeintField.StringToValue(const S: string): TDBValue;
+begin
+  Result := IntValue(TextAsLargeInt(S));
+end;
+
+function TLargeintField.IntToValue(Value: Int64; const TypeName: string): TDBValue;
+begin
+  Result := IntValue(Value);
+end;
+
+{ only an integral value in the 64-bit range }
+function TLargeintField.FloatToValue(Value: Double): TDBValue;
+begin
+  if (Value < -9223372036854775808.0) or (Value >= 9223372036854775808.0) or (Frac(Value) <> 0) then
+    RangeError;
+  Result := IntValue(Trunc(Value));
+end;
+
+function TLargeintField.BooleanToValue(Value: Boolean): TDBValue;
+begin
+  Result := IntValue(Ord(Value));
+end;
+
 constructor TFloatField.Create(AOwner: TComponent);
 begin
   inherited Create(AOwner);
   FDataType := ftFloat;
+  FPrecision := 15;
+end;
+
+function TFloatField.StringToValue(const S: string): TDBValue;
+begin
+  Result := FloatValue(TextAsFloat(S));
+end;
+
+function TFloatField.FloatToValue(Value: Double): TDBValue;
+begin
+  Result := FloatValue(Value);
+end;
+
+function TFloatField.DateTimeToValue(Value: TDateTime): TDBValue;
+begin
+  Result := FloatValue(Value);
+end;
+
+function TFloatField.DefaultText(const V: TDBValue; Display: Boolean): string;
+begin
+  if not Display then
+    Result := FloatToStr(V.FloatVal)
+  else if FDisplayFormat <> '' then
+    Result := FormatNumber(FDisplayFormat, V.FloatVal)
+  else
+    Result := FloatToStrF(V.FloatVal, ffGeneral, FPrecision, 0);
 end;
 
 function TFloatField.ValueAsString(const V: TDBValue): string;
@@ -1230,10 +1862,96 @@ begin
   Result := V.IntVal <> 0;
 end;
 
+function TBooleanField.StringToValue(const S: string): TDBValue;
+begin
+  Result := IntValue(Ord(TextAsBoolean(S)));
+end;
+
+function TBooleanField.IntToValue(Value: Int64; const TypeName: string): TDBValue;
+begin
+  Result := IntValue(Ord(Value <> 0));
+end;
+
+function TBooleanField.BooleanToValue(Value: Boolean): TDBValue;
+begin
+  Result := IntValue(Ord(Value));
+end;
+
+function TBooleanField.DisplayPart(Index: Integer): string;
+var
+  P: Integer;
+begin
+  P := Pos(';', FDisplayValues);
+  if P = 0 then
+    P := Length(FDisplayValues) + 1;
+  if Index = 0 then
+    Result := Copy(FDisplayValues, 1, P - 1)
+  else
+    Result := Copy(FDisplayValues, P + 1, Length(FDisplayValues) - P);
+end;
+
+{ the parts of DisplayValues first, then the texts AsString accepts }
+function TBooleanField.TextToValue(const S: string): TDBValue;
+begin
+  if (FDisplayValues <> '') and SameText(S, DisplayPart(0)) then
+    Result := IntValue(1)
+  else if (FDisplayValues <> '') and SameText(S, DisplayPart(1)) then
+    Result := IntValue(0)
+  else
+    Result := StringToValue(S);
+end;
+
+function TBooleanField.DefaultText(const V: TDBValue; Display: Boolean): string;
+begin
+  if FDisplayValues = '' then
+    Result := ValueAsString(V)
+  else if V.IntVal <> 0 then
+    Result := DisplayPart(0)
+  else
+    Result := DisplayPart(1);
+end;
+
 constructor TDateTimeField.Create(AOwner: TComponent);
 begin
   inherited Create(AOwner);
   FDataType := ftDateTime;
+end;
+
+function TDateTimeField.Normalize(Value: Double): Double;
+begin
+  Result := Value;
+end;
+
+function TDateTimeField.ParseText(const S: string; out Value: TDateTime): Boolean;
+begin
+  Result := TryStrToDateTime(S, Value);
+end;
+
+function TDateTimeField.StringToValue(const S: string): TDBValue;
+var
+  D: TDateTime;
+begin
+  if not ParseText(S, D) then
+    ConvertError(S, 'date-time');
+  Result := FloatValue(Normalize(D));
+end;
+
+function TDateTimeField.FloatToValue(Value: Double): TDBValue;
+begin
+  Result := FloatValue(Normalize(Value));
+end;
+
+function TDateTimeField.DateTimeToValue(Value: TDateTime): TDBValue;
+begin
+  Result := FloatValue(Normalize(Value));
+end;
+
+function TDateTimeField.DefaultText(const V: TDBValue; Display: Boolean): string;
+begin
+  if FDisplayFormat <> '' then
+    Result := FormatDateTime(FDisplayFormat, V.FloatVal)
+  else
+    Result := ValueAsString(V);
 end;
 
 function TDateTimeField.ValueAsString(const V: TDBValue): string;
@@ -1268,6 +1986,17 @@ begin
   Result := Trunc(V.FloatVal);
 end;
 
+{ the time part is dropped }
+function TDateField.Normalize(Value: Double): Double;
+begin
+  Result := Trunc(Value);
+end;
+
+function TDateField.ParseText(const S: string; out Value: TDateTime): Boolean;
+begin
+  Result := TryStrToDate(S, Value);
+end;
+
 constructor TTimeField.Create(AOwner: TComponent);
 begin
   inherited Create(AOwner);
@@ -1285,6 +2014,17 @@ begin
   Result := Abs(Frac(V.FloatVal));
 end;
 
+{ only the time of day is kept }
+function TTimeField.Normalize(Value: Double): Double;
+begin
+  Result := Abs(Frac(Value));
+end;
+
+function TTimeField.ParseText(const S: string; out Value: TDateTime): Boolean;
+begin
+  Result := TryStrToTime(S, Value);
+end;
+
 constructor TBlobField.Create(AOwner: TComponent);
 begin
   inherited Create(AOwner);
@@ -1294,6 +2034,16 @@ end;
 function TBlobField.ValueAsBytes(const V: TDBValue): TBytes;
 begin
   Result := V.BytesVal;
+end;
+
+function TBlobField.BytesToValue(const Value: TBytes): TDBValue;
+begin
+  Result := BytesValue(Value);
+end;
+
+function TBlobField.DefaultText(const V: TDBValue; Display: Boolean): string;
+begin
+  Result := '(Blob)';
 end;
 
 constructor TMemoField.Create(AOwner: TComponent);
@@ -1335,6 +2085,49 @@ end;
 function TMemoField.ValueAsBytes(const V: TDBValue): TBytes;
 begin
   Result := TEncoding.UTF8.GetBytes(V.StrVal);
+end;
+
+function TMemoField.StringToValue(const S: string): TDBValue;
+begin
+  Result := StringValue(S);
+end;
+
+function TMemoField.IntToValue(Value: Int64; const TypeName: string): TDBValue;
+begin
+  Result := StringValue(IntToStr(Value));
+end;
+
+function TMemoField.FloatToValue(Value: Double): TDBValue;
+begin
+  Result := StringValue(FloatToStr(Value));
+end;
+
+function TMemoField.BooleanToValue(Value: Boolean): TDBValue;
+begin
+  if Value then
+    Result := StringValue('True')
+  else
+    Result := StringValue('False');
+end;
+
+function TMemoField.DateTimeToValue(Value: TDateTime): TDBValue;
+begin
+  Result := StringValue(DateTimeToStr(Value));
+end;
+
+function TMemoField.BytesToValue(const Value: TBytes): TDBValue;
+begin
+  Result := StringValue(TEncoding.UTF8.GetString(Value));
+end;
+
+function TMemoField.EmptyTextIsNull: Boolean;
+begin
+  Result := False;
+end;
+
+function TMemoField.DefaultText(const V: TDBValue; Display: Boolean): string;
+begin
+  Result := V.StrVal;
 end;
 
 { TFields }
@@ -1613,6 +2406,8 @@ procedure TDataSet.CloseSilently;
 begin
   InternalClose;
   FState := dsInactive;
+  FModified := False;
+  FInNewRecord := False;
   UnbindFields;
   FCursor := -1;
   FBof := True;
@@ -1634,6 +2429,282 @@ end;
 procedure TDataSet.CheckBrowseMode;
 begin
   CheckActive;
+  if FState in [dsEdit, dsInsert] then
+  begin
+    DataEvent(deCheckBrowseMode, nil);
+    if FModified then
+      Post
+    else
+      Cancel;
+  end;
+end;
+
+function TDataSet.GetCanModify: Boolean;
+begin
+  Result := (FState <> dsInactive) and InternalCanModify;
+end;
+
+function TDataSet.RetryAfterError(E: EDatabaseError; Handler: TDataSetErrorEvent): Boolean;
+var
+  Action: TDataAction;
+begin
+  Result := False;
+  if not Assigned(Handler) then
+    Exit;
+  Action := daFail;
+  Handler(Self, E, Action);
+  if Action = daAbort then
+    Abort;
+  Result := Action = daRetry;
+end;
+
+procedure TDataSet.Edit;
+var
+  Done: Boolean;
+begin
+  CheckActive;
+  if FState in [dsEdit, dsInsert] then
+    Exit;
+  if GetViewCount = 0 then
+  begin
+    Insert;
+    Exit;
+  end;
+  if not GetCanModify then
+    DatabaseError(SDatReadOnly);
+  if Assigned(FBeforeEdit) then
+    FBeforeEdit(Self);
+  repeat
+    Done := True;
+    try
+      InternalEdit;
+    except
+      on E: EDatabaseError do
+      begin
+        if not RetryAfterError(E, FOnEditError) then
+          raise;
+        Done := False;
+      end;
+    end;
+  until Done;
+  FModified := False;
+  FState := dsEdit;
+  DataEvent(deUpdateState, nil);
+  if Assigned(FAfterEdit) then
+    FAfterEdit(Self);
+end;
+
+procedure TDataSet.DoInsert(AtEnd: Boolean);
+begin
+  CheckBrowseMode;
+  if not GetCanModify then
+    DatabaseError(SDatReadOnly);
+  if Assigned(FBeforeInsert) then
+    FBeforeInsert(Self);
+  if Assigned(FBeforeScroll) then
+    FBeforeScroll(Self);
+  InternalInsert(AtEnd);
+  FSavedBof := FBof;
+  FSavedEof := FEof;
+  FBof := False;
+  FEof := False;
+  FModified := False;
+  FState := dsInsert;
+  DataEvent(deUpdateState, nil);
+  { assignments made by OnNewRecord may write read-only fields and do not count as modifications }
+  FInNewRecord := True;
+  try
+    try
+      if Assigned(FOnNewRecord) then
+        FOnNewRecord(Self);
+    finally
+      FInNewRecord := False;
+      FModified := False;
+    end;
+  except
+    InternalCancel;
+    FState := dsBrowse;
+    FBof := FSavedBof;
+    FEof := FSavedEof;
+    DataEvent(deUpdateState, nil);
+    raise;
+  end;
+  DataEvent(deDataSetChange, nil);
+  if Assigned(FAfterInsert) then
+    FAfterInsert(Self);
+  if Assigned(FAfterScroll) then
+    FAfterScroll(Self);
+end;
+
+procedure TDataSet.Insert;
+begin
+  DoInsert(False);
+end;
+
+procedure TDataSet.Append;
+begin
+  DoInsert(True);
+end;
+
+procedure TDataSet.UpdateRecord;
+begin
+  CheckActive;
+  if not (FState in [dsEdit, dsInsert]) then
+    DatabaseError(SDatNotEditing);
+  DataEvent(deUpdateRecord, nil);
+end;
+
+{ every required data field has a value; an auto-increment field gets its value from the driver }
+procedure TDataSet.CheckRequiredFields;
+var
+  I: Integer;
+  F: TField;
+begin
+  for I := 0 to FFields.Count - 1 do
+  begin
+    F := FFields[I];
+    if F.FRequired and (F.FFieldKind = fkData) and (F.FDataType <> ftAutoInc) and
+      (GetFieldValue(F).Kind = vkNull) then
+      DatabaseErrorFmt(SDatFieldRequired, [F.FFieldName]);
+  end;
+end;
+
+procedure TDataSet.Post;
+var
+  Done: Boolean;
+begin
+  CheckActive;
+  if FState = dsBrowse then
+    Exit;
+  UpdateRecord;
+  CheckRequiredFields;
+  if Assigned(FBeforePost) then
+    FBeforePost(Self);
+  repeat
+    Done := True;
+    try
+      InternalApply;
+    except
+      on E: EDatabaseError do
+      begin
+        if not RetryAfterError(E, FOnPostError) then
+          raise;
+        Done := False;
+      end;
+    end;
+  until Done;
+  FCursor := InternalPost;
+  FModified := False;
+  FState := dsBrowse;
+  DataEvent(deUpdateState, nil);
+  DataEvent(deDataSetChange, nil);
+  if Assigned(FAfterPost) then
+    FAfterPost(Self);
+end;
+
+procedure TDataSet.Cancel;
+var
+  WasInsert: Boolean;
+begin
+  CheckActive;
+  if FState = dsBrowse then
+    Exit;
+  if Assigned(FBeforeCancel) then
+    FBeforeCancel(Self);
+  WasInsert := FState = dsInsert;
+  InternalCancel;
+  FModified := False;
+  FState := dsBrowse;
+  if WasInsert then
+  begin
+    { back on the row that was current before the insert, with the flags it had }
+    FBof := FSavedBof;
+    FEof := FSavedEof;
+  end;
+  DataEvent(deUpdateState, nil);
+  DataEvent(deDataSetChange, nil);
+  if Assigned(FAfterCancel) then
+    FAfterCancel(Self);
+  if WasInsert and Assigned(FAfterScroll) then
+    FAfterScroll(Self);
+end;
+
+procedure TDataSet.Delete;
+var
+  Done: Boolean;
+  N: Integer;
+begin
+  CheckActive;
+  if FState = dsInsert then
+  begin
+    Cancel;
+    Exit;
+  end;
+  if FState = dsEdit then
+    Cancel;
+  if GetViewCount = 0 then
+    DatabaseError(SDatEmpty);
+  if not GetCanModify then
+    DatabaseError(SDatReadOnly);
+  if Assigned(FBeforeDelete) then
+    FBeforeDelete(Self);
+  if Assigned(FBeforeScroll) then
+    FBeforeScroll(Self);
+  repeat
+    Done := True;
+    try
+      InternalApplyDelete;
+    except
+      on E: EDatabaseError do
+      begin
+        if not RetryAfterError(E, FOnDeleteError) then
+          raise;
+        Done := False;
+      end;
+    end;
+  until Done;
+  InternalDelete;
+  N := GetViewCount;
+  if FCursor >= N then
+    FCursor := N - 1;
+  FBof := N = 0;
+  FEof := N = 0;
+  DataEvent(deDataSetChange, nil);
+  if Assigned(FAfterDelete) then
+    FAfterDelete(Self);
+  if Assigned(FAfterScroll) then
+    FAfterScroll(Self);
+end;
+
+procedure TDataSet.Refresh;
+var
+  OldRecNo, N: Integer;
+begin
+  CheckBrowseMode;
+  if Assigned(FBeforeRefresh) then
+    FBeforeRefresh(Self);
+  OldRecNo := FCursor + 1;
+  try
+    InternalRefresh;
+  finally
+    { also after a failed reload the cursor refers to a row that exists }
+    N := GetViewCount;
+    if OldRecNo > N then
+      FCursor := N - 1
+    else if OldRecNo < 1 then
+      FCursor := 0
+    else
+      FCursor := OldRecNo - 1;
+    if N = 0 then
+      FCursor := -1;
+    FBof := N = 0;
+    FEof := N = 0;
+  end;
+  DataEvent(deDataSetChange, nil);
+  if Assigned(FAfterRefresh) then
+    FAfterRefresh(Self);
+  if Assigned(FAfterScroll) then
+    FAfterScroll(Self);
 end;
 
 { Every navigation step: CheckBrowseMode, BeforeScroll, the move, the scroll notification, AfterScroll -
@@ -1732,7 +2803,10 @@ end;
 function TDataSet.GetRecNo: Integer;
 begin
   CheckActive;
-  Result := FCursor + 1;
+  if FState = dsInsert then
+    Result := 0
+  else
+    Result := FCursor + 1;
 end;
 
 procedure TDataSet.SetRecNo(Value: Integer);
@@ -1776,12 +2850,153 @@ begin
   Result := FView.Count;
 end;
 
+procedure TRowDataSet.DriverEdit(Row: TDataRow);
+begin
+end;
+
+function TRowDataSet.InternalCanModify: Boolean;
+begin
+  Result := DriverCanModify;
+end;
+
+function TRowDataSet.FieldUpdatable(Field: TField): Boolean;
+begin
+  Result := DriverFieldUpdatable(Field);
+end;
+
+{ In dsEdit / dsInsert the edit buffer, else the current row. }
 function TRowDataSet.GetFieldValue(Field: TField): TDBValue;
 begin
-  if (Cursor < 0) or (Field.FieldNo < 1) then
+  if Field.FieldNo < 1 then
+    Result := NullValue
+  else if FBuffer <> nil then
+    Result := FBuffer.Values[Field.FieldNo - 1]
+  else if Cursor < 0 then
     Result := NullValue
   else
     Result := FView[Cursor].Values[Field.FieldNo - 1];
+end;
+
+procedure TRowDataSet.SetFieldValue(Field: TField; const Value: TDBValue; IsAssigned: Boolean);
+begin
+  if (FBuffer = nil) or (Field.FieldNo < 1) then
+    Exit;
+  FBuffer.Values[Field.FieldNo - 1] := Value;
+  FBuffer.Flags[Field.FieldNo - 1] := IsAssigned;
+end;
+
+function TRowDataSet.GetFieldAssigned(Field: TField): Boolean;
+begin
+  Result := (FBuffer <> nil) and IsAssigned(FBuffer, Field.FieldNo);
+end;
+
+function TRowDataSet.IsAssigned(Buffer: TDataRow; FieldNo: Integer): Boolean;
+begin
+  Result := (FieldNo >= 1) and (FieldNo <= Length(Buffer.Flags)) and Buffer.Flags[FieldNo - 1];
+end;
+
+function TRowDataSet.NewBuffer: TDataRow;
+var
+  I: Integer;
+begin
+  Result := TDataRow.Create(FieldDefs.Count);
+  SetLength(Result.Flags, FieldDefs.Count);
+  for I := 0 to High(Result.Flags) do
+    Result.Flags[I] := False;
+end;
+
+procedure TRowDataSet.InternalEdit;
+var
+  Row: TDataRow;
+  I: Integer;
+begin
+  Row := FView[Cursor];
+  DriverEdit(Row);
+  FBuffer := NewBuffer;
+  FBuffer.RowId := Row.RowId;
+  for I := 0 to High(Row.Values) do
+    FBuffer.Values[I] := Row.Values[I];
+end;
+
+procedure TRowDataSet.InternalInsert(AtEnd: Boolean);
+begin
+  if AtEnd or (Cursor < 0) then
+    FInsertIndex := FView.Count
+  else
+    FInsertIndex := Cursor;
+  FBuffer := NewBuffer;
+end;
+
+procedure TRowDataSet.InternalApply;
+begin
+  if State = dsInsert then
+    ApplyInsert(FBuffer)
+  else
+    ApplyUpdate(FView[Cursor], FBuffer);
+end;
+
+function TRowDataSet.InternalPost: Integer;
+var
+  Row: TDataRow;
+  I, StoreIndex: Integer;
+begin
+  if State = dsInsert then
+  begin
+    { the buffer becomes the new row, in the row list just before the view row it was inserted at }
+    Row := FBuffer;
+    FBuffer := nil;
+    SetLength(Row.Flags, 0);
+    Row.RowId := FNextRowId;
+    FNextRowId := FNextRowId + 1;
+    if FInsertIndex < FView.Count then
+      StoreIndex := FRows.IndexOf(FView[FInsertIndex])
+    else
+      StoreIndex := FRows.Count;
+    FRows.Insert(StoreIndex, Row);
+    FView.Insert(FInsertIndex, Row);
+    Result := FInsertIndex;
+  end
+  else
+  begin
+    Row := FView[Cursor];
+    for I := 0 to High(Row.Values) do
+      Row.Values[I] := FBuffer.Values[I];
+    FBuffer.Free;
+    FBuffer := nil;
+    Result := Cursor;
+  end;
+end;
+
+procedure TRowDataSet.InternalCancel;
+begin
+  FBuffer.Free;
+  FBuffer := nil;
+end;
+
+procedure TRowDataSet.InternalApplyDelete;
+begin
+  ApplyDelete(FView[Cursor]);
+end;
+
+procedure TRowDataSet.InternalDelete;
+var
+  Row: TDataRow;
+begin
+  Row := FView[Cursor];
+  FView.Delete(Cursor);
+  FRows.Remove(Row);
+end;
+
+{ Row ids are not reused: the counter keeps running. }
+procedure TRowDataSet.InternalRefresh;
+begin
+  FView.Clear;
+  FRows.Clear;
+  try
+    DriverLoadRows;
+  finally
+    BuildView;
+  end;
 end;
 
 procedure TRowDataSet.InternalInitFieldDefs;
@@ -1802,6 +3017,8 @@ end;
 
 procedure TRowDataSet.InternalClose;
 begin
+  FBuffer.Free;
+  FBuffer := nil;
   FView.Clear;
   FRows.Clear;
   if FDriverOpened then
