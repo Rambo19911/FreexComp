@@ -179,6 +179,9 @@
   <data name="Msg_Project_RenameUnitNote" xml:space="preserve">
     <value>Renamed {0} to {1}; the unit heading was updated</value>
   </data>
+  <data name="Msg_Project_ConfigRenamed" xml:space="preserve">
+    <value>Renamed configuration {0} to {1}; existing output folders were kept</value>
+  </data>
   <data name="Msg_Project_SavedProject" xml:space="preserve">
     <value>Saved project {0}</value>
   </data>
@@ -665,6 +668,18 @@ The form change was undone.</value>
   </data>
   <data name="Msg_ProjectOptions_ConfigDeleteConfirm" xml:space="preserve">
     <value>Delete configuration {0}?</value>
+  </data>
+  <data name="Msg_ProjectOptions_ConfigDeleteInherited" xml:space="preserve">
+    <value>{0} is inherited by {1}. Change or delete that configuration first.</value>
+  </data>
+  <data name="Msg_ProjectOptions_ValueInherited" xml:space="preserve">
+    <value>Inherited from {0}</value>
+  </data>
+  <data name="Msg_ProjectOptions_ValueOwn" xml:space="preserve">
+    <value>Set in this configuration</value>
+  </data>
+  <data name="Msg_ProjectOptions_OutputDirShared" xml:space="preserve">
+    <value>Configuration {0} uses the same output folder.</value>
   </data>
   <data name="Msg_ProjectOptions_SearchPathMissing" xml:space="preserve">
     <value>The folder does not exist yet.</value>
@@ -1508,6 +1523,9 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   </data>
   <data name="Cmd_project_setConfiguration" xml:space="preserve">
     <value>Set Active Configuration</value>
+  </data>
+  <data name="Cmd_project_configurationManager" xml:space="preserve">
+    <value>Configuration Manager…</value>
   </data>
   <data name="Cmd_project_setActive" xml:space="preserve">
     <value>Set as Active Project</value>
@@ -2451,6 +2469,10 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   </data>
   <data name="Menu_project_removeFile" xml:space="preserve">
     <value>&amp;Remove from Project</value>
+  </data>
+  <data name="Menu_project_configurationManager" xml:space="preserve">
+    <value>Configuration &amp;Manager…</value>
+    <comment>menus.md §6, IDE-CFG-010</comment>
   </data>
   <data name="Menu_project_viewSource" xml:space="preserve">
     <value>&amp;View Project Source</value>
@@ -4391,9 +4413,121 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
     <value>_Name:</value>
     <comment>UI-DLG-083</comment>
   </data>
-  <data name="NewConfiguration_CopyFrom" xml:space="preserve">
-    <value>_Copy settings from:</value>
-    <comment>UI-DLG-083</comment>
+  <data name="NewConfiguration_BasedOn" xml:space="preserve">
+    <value>_Based on:</value>
+    <comment>UI-DLG-083, UI-DLG-270: label of the CopyFrom combo</comment>
+  </data>
+  <data name="NewConfiguration_Inherit" xml:space="preserve">
+    <value>_Inherit settings from this configuration</value>
+    <comment>UI-DLG-270: check box, checked by default (IDE-CFG-005)</comment>
+  </data>
+  <data name="ConfigurationManager_Title" xml:space="preserve">
+    <value>Configuration Manager — {0}</value>
+    <comment>UI-DLG-271: 0 = project name</comment>
+  </data>
+  <data name="ConfigurationManager_Configurations" xml:space="preserve">
+    <value>_Configurations:</value>
+    <comment>UI-DLG-271: label of the list</comment>
+  </data>
+  <data name="ConfigurationManager_Column_Name" xml:space="preserve">
+    <value>Name</value>
+    <comment>UI-DLG-272</comment>
+  </data>
+  <data name="ConfigurationManager_Column_Parent" xml:space="preserve">
+    <value>Inherits from</value>
+    <comment>UI-DLG-272</comment>
+  </data>
+  <data name="ConfigurationManager_New" xml:space="preserve">
+    <value>_New…</value>
+    <comment>IDE-CFG-012</comment>
+  </data>
+  <data name="ConfigurationManager_Rename" xml:space="preserve">
+    <value>_Rename…</value>
+    <comment>IDE-CFG-013</comment>
+  </data>
+  <data name="ConfigurationManager_Delete" xml:space="preserve">
+    <value>_Delete</value>
+    <comment>IDE-CFG-014</comment>
+  </data>
+  <data name="ConfigurationManager_SetActive" xml:space="preserve">
+    <value>Set _Active</value>
+    <comment>IDE-CFG-015</comment>
+  </data>
+  <data name="ConfigurationManager_Parent" xml:space="preserve">
+    <value>_Inherits from:</value>
+    <comment>IDE-CFG-016</comment>
+  </data>
+  <data name="ConfigurationManager_ParentNone" xml:space="preserve">
+    <value>(none)</value>
+    <comment>IDE-CFG-016: first item of the parent combo</comment>
+  </data>
+  <data name="ConfigurationManager_ParentHint" xml:space="preserve">
+    <value>Values this configuration sets itself stay; all others come from the parent.</value>
+    <comment>UI-DLG-271: hint under the parent combo</comment>
+  </data>
+  <data name="ConfigurationManager_OwnValues" xml:space="preserve">
+    <value>Own values:</value>
+    <comment>IDE-CFG-017</comment>
+  </data>
+  <data name="ConfigurationManager_OwnNone" xml:space="preserve">
+    <value>none</value>
+    <comment>IDE-CFG-017: a derived configuration without own values</comment>
+  </data>
+  <data name="ConfigurationManager_OwnAll" xml:space="preserve">
+    <value>all (no parent)</value>
+    <comment>IDE-CFG-017: a root configuration</comment>
+  </data>
+  <data name="ConfigKey_Optimization" xml:space="preserve">
+    <value>optimization</value>
+    <comment>IDE-CFG-017</comment>
+  </data>
+  <data name="ConfigKey_DebugInfo" xml:space="preserve">
+    <value>debug information</value>
+    <comment>IDE-CFG-017</comment>
+  </data>
+  <data name="ConfigKey_Defines" xml:space="preserve">
+    <value>defines</value>
+    <comment>IDE-CFG-017</comment>
+  </data>
+  <data name="ConfigKey_SearchPaths" xml:space="preserve">
+    <value>search paths</value>
+    <comment>IDE-CFG-017</comment>
+  </data>
+  <data name="ConfigKey_OutputDir" xml:space="preserve">
+    <value>output folder</value>
+    <comment>IDE-CFG-017</comment>
+  </data>
+  <data name="ConfigKey_Rtti" xml:space="preserve">
+    <value>RTTI</value>
+    <comment>IDE-CFG-017</comment>
+  </data>
+  <data name="RenameConfiguration_Title" xml:space="preserve">
+    <value>Rename Configuration</value>
+    <comment>UI-DLG-275</comment>
+  </data>
+  <data name="RenameConfiguration_Rename" xml:space="preserve">
+    <value>Rename</value>
+    <comment>UI-DLG-275: default button</comment>
+  </data>
+  <data name="ProjectOptions_ConfigNoteDerived" xml:space="preserve">
+    <value>({0}, inherits {1})</value>
+    <comment>IDE-CFG-020: 0 = configuration, 1 = its parent</comment>
+  </data>
+  <data name="ProjectOptions_Revert" xml:space="preserve">
+    <value>Revert to inherited</value>
+    <comment>UI-DLG-277: tooltip and automation name of the Revert buttons</comment>
+  </data>
+  <data name="ProjectOptions_InheritedDefines" xml:space="preserve">
+    <value>Inherited defines:</value>
+    <comment>IDE-CFG-024: read-only field of a derived configuration</comment>
+  </data>
+  <data name="ProjectOptions_DefinesInheritHint" xml:space="preserve">
+    <value>Added to the inherited defines. Start with ! to discard the inherited ones.</value>
+    <comment>IDE-CFG-024: hint under ConfigDefines of a derived configuration</comment>
+  </data>
+  <data name="ProjectOptions_BaseLevel" xml:space="preserve">
+    <value>the project</value>
+    <comment>IDE-CFG-021: argument of Msg.ProjectOptions.ValueInherited for the project-level values</comment>
   </data>
   <data name="NewConfiguration_Create" xml:space="preserve">
     <value>Create</value>

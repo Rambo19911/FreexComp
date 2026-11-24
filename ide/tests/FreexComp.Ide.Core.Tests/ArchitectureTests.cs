@@ -107,6 +107,29 @@ public sealed class ArchitectureTests
         Assert.Contains(awaiting.UserType, AsyncStateMachines(references)); // allowed: runs after completion
     }
 
+    /// <summary>
+    /// IDE-CFG-001: the own values of a configuration (<c>Optimization</c>, <c>DebugInfo</c>, <c>Defines</c>, <c>Rtti</c>,
+    /// <c>SearchPaths</c> of <c>ProjectConfiguration</c>) are read only by the two configuration dialogs; every other
+    /// consumer takes effective values from the resolver.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "IDE-CFG-001")]
+    public void OwnConfigurationValuesReadOnlyByConfigurationDialogs()
+    {
+        string[] getters = ["get_Optimization", "get_DebugInfo", "get_Defines", "get_Rtti", "get_SearchPaths"];
+        string[] allowed = ["FreexComp.Ide.Core.Dialogs.ProjectOptionsViewModel", "FreexComp.Ide.Core.Dialogs.ConfigurationManagerViewModel"];
+        var readers = IlReferences.Read(typeof(Composition.IdeServices).Assembly.Location)
+            .Where(r => r.TargetType == "FreexComp.Build.ProjectConfiguration" && getters.Contains(r.Member))
+            .ToList();
+        Assert.Contains(readers, r => r.UserType.StartsWith(allowed[0], StringComparison.Ordinal)); // the scanner sees the getters at all
+        var others = readers
+            .Where(r => !allowed.Any(a => r.UserType == a || r.UserType.StartsWith(a + "+", StringComparison.Ordinal)))
+            .Select(r => $"{r.UserType} reads ProjectConfiguration.{r.Member![4..]}")
+            .Distinct().Order(StringComparer.Ordinal).ToList();
+        Assert.True(others.Count == 0, string.Join(Environment.NewLine, others));
+    }
+
     /// <summary>The compiler's async state machines (their awaiter GetResult runs after completion, never blocks).</summary>
     private static HashSet<string> AsyncStateMachines(IEnumerable<IlReference> references) =>
         [.. references.Where(r => r is { TargetType: "System.Runtime.CompilerServices.IAsyncStateMachine", Member: null }).Select(r => r.UserType)];

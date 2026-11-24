@@ -20,6 +20,7 @@ public static class Phase8Features
         "file.openInTerminal", // F09-054
         "options:Environment.General.BuildJobs", // F01-010
         "project.addNewFile", // F09-054
+        "project.configurationManager", // F09-004
         "project.moveFile", // F09-054
         "project.newFolder", // F09-054
     ];

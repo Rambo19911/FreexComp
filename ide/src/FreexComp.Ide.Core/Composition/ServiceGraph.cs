@@ -178,6 +178,7 @@ public static class ServiceGraph
         projects.UnitRename = new CodeModel.UnitRenameAnalyzer(codeModel, toolchain); // I-236
         _ = new CodeModel.LiveDiagnosticsService(documents, codeModel, settings, platform.Clock, platform.Dispatcher); // I-111
         var semanticHighlights = new CodeModel.SemanticHighlightService(documents, codeModel, settings, platform.Clock, platform.Dispatcher); // I-112
+        projects.ProjectChanged += (_, _) => semanticHighlights.OnProjectChanged(projects.Definition); // I-247
         new CodeModel.GoToDeclarationService(documents, projects, codeModel, navigation, status, toolchain).RegisterCommands(commands); // I-117
         new CodeModel.CompletionController(documents, projects, codeModel, settings, platform.Clock, status).RegisterCommands(commands); // I-114
         var parameterInfo = new CodeModel.ParameterInfoController(documents, projects, codeModel, settings, platform.Clock); // I-116
@@ -249,7 +250,7 @@ public static class ServiceGraph
             parameterInfo.DebugValue = debug.HoverValueAsync; // UI-ED-130: "= value" in the hover tooltip while paused
         }
 
-        ProjectDialogCommands.Register(commands, projects, platform.Dialogs, platform.FileDialogs, platform.FileSystem, layout); // I-107, I-108
+        ProjectDialogCommands.Register(commands, projects, platform.Dialogs, platform.FileDialogs, platform.FileSystem, layout, status); // I-107, I-108, I-248
         projects.BeforeClose = async () => (debug is null || await debug.ConfirmStopAsync(exiting: false)) && await run.ConfirmStopAsync(exiting: false); // IDE-P3-093
         projects.ProjectChanged += (_, _) =>
         {

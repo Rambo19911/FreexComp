@@ -28,3 +28,4 @@ spec/ide/phase8-build-options.md
 spec/ide/phase8-project-files.md
 spec/ide/library-source.md
 spec/ide/phase8-delivery.md
+spec/ide/phase8-configurations.md

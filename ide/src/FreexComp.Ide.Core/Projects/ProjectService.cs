@@ -115,7 +115,7 @@ public sealed class ProjectService : IProjectService
     /// <summary><c>&lt;project dir&gt;\&lt;outputDir&gt;</c> of the active configuration, or null without a project.</summary>
     public string? OutputFolder()
     {
-        if (_project is null || Project is null || !_project.Configurations.TryGetValue(_project.ActiveConfiguration, out var configuration))
+        if (_project is null || Project is null || ConfigurationEdits.Effective(_project, _project.ActiveConfiguration) is not { } configuration)
             return null;
         return Path.GetFullPath(Path.Combine(Project.Directory, configuration.OutputDir.Replace('/', '\\')));
     }

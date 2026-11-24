@@ -726,10 +726,18 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
 
     private const int FoldTooltipMaxLines = 20;
 
-    /// <summary>The tooltip content: syntax-coloured lines in <c>type.codeSmall</c>, at most 640 wide.</summary>
-    private TextBlock BuildFoldTooltip(FoldRegion region)
+    /// <summary>UI-ED-035: the tooltip of a fold box is wider than the other tooltips (design-tokens.md §8: 480).</summary>
+    internal const double FoldTooltipMaxWidth = 640;
+
+    /// <summary>
+    /// The tooltip of a fold box: syntax-coloured lines in <c>type.codeSmall</c>, at most 640 wide. It is the tooltip itself,
+    /// not only its content, so that its own maximum width replaces the general one.
+    /// </summary>
+    internal ToolTip BuildFoldTooltip(FoldRegion region) => new() { Content = BuildFoldTooltipText(region), MaxWidth = FoldTooltipMaxWidth };
+
+    private TextBlock BuildFoldTooltipText(FoldRegion region)
     {
-        var block = new TextBlock { MaxWidth = 640, TextWrapping = TextWrapping.NoWrap };
+        var block = new TextBlock { TextWrapping = TextWrapping.NoWrap };
         // Resolved now from the editor (the tooltip is rebuilt for every hover): a detached tooltip would not find them.
         if (this.TryFindResource("FxcFontMono", out var mono) && mono is FontFamily family)
             block.FontFamily = family;

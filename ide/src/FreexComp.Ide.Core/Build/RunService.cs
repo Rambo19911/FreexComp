@@ -251,7 +251,7 @@ public sealed class RunService : IRunService
     {
         ArgumentNullException.ThrowIfNull(project);
         var definition = _projects.Definition;
-        if (definition is null || !definition.Configurations.TryGetValue(project.ActiveConfiguration, out var configuration))
+        if (definition is null || ConfigurationEdits.Effective(definition, project.ActiveConfiguration) is not { } configuration)
             return null;
         var dir = Path.GetFullPath(Path.Combine(project.Directory, configuration.OutputDir.Replace('/', '\\')));
         return Path.Combine(dir, project.Name + (project.AppType == "library" ? ".dll" : ".exe")); // IDE-TGT-011

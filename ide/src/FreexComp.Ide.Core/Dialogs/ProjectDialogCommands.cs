@@ -5,11 +5,14 @@ using IdeFileSystem = FreexComp.Ide.Core.Platform.IFileSystem;
 
 namespace FreexComp.Ide.Core.Dialogs;
 
-/// <summary><c>run.parameters</c> (dialogs.md §22) and <c>project.options</c> (§8): the dialogs over the open project.</summary>
+/// <summary>
+/// <c>run.parameters</c> (dialogs.md §22), <c>project.options</c> (§8) and <c>project.configurationManager</c>
+/// (phase8-configurations.md §4): the dialogs over the open project.
+/// </summary>
 public static class ProjectDialogCommands
 {
     public static void Register(ICommandService commands, IProjectService projects, IDialogService dialogs, IFileDialogService pickers,
-        IdeFileSystem fileSystem, Layout.ILayoutService layout)
+        IdeFileSystem fileSystem, Layout.ILayoutService layout, IStatusService status)
     {
         ArgumentNullException.ThrowIfNull(commands);
         ArgumentNullException.ThrowIfNull(projects);
@@ -22,6 +25,10 @@ public static class ProjectDialogCommands
         commands.RegisterHandler("project.options", new Handler(
             () => projects.Definition is not null,
             () => dialogs.ShowAsync(new ProjectOptionsViewModel(projects, dialogs, pickers, fileSystem, layout))));
+        // IDE-CFG-010: with a project; the Idle state is the rule of IdeCommandAvailability.
+        commands.RegisterHandler("project.configurationManager", new Handler(
+            () => projects.Definition is not null,
+            () => dialogs.ShowAsync(new ConfigurationManagerViewModel(projects, dialogs, status, layout))));
     }
 
     private sealed class Handler(Func<bool> canExecute, Func<Task> execute) : ICommandHandler

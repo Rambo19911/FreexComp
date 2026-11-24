@@ -53,6 +53,9 @@ public sealed class ProjectOptionsViewModel : DialogViewModel<bool>
     private static readonly Regex ConfigNamePattern = new("^[A-Za-z0-9_-]{1,32}$", RegexOptions.CultureInvariant);
     private static readonly Regex SymbolPattern = new("^[A-Za-z_][A-Za-z0-9_]*$", RegexOptions.CultureInvariant);
 
+    /// <summary>CMP-1153: as the first entry of a configuration's defines it discards the inherited ones.</summary>
+    private const string ResetMarker = "!";
+
     private readonly IProjectService _projects;
     private readonly IDialogService _dialogs;
     private readonly IFileDialogService _pickers;
@@ -170,10 +173,23 @@ public sealed class ProjectOptionsViewModel : DialogViewModel<bool>
 
     public bool ConfigurationBarEnabled => SelectedPage.PerConfiguration;
 
-    public bool CanDeleteConfiguration => ConfigurationBarEnabled && _configs.Count > 1;
+    /// <summary>UI-DLG-084, IDE-CFG-014: not the last configuration and not one another configuration inherits from.</summary>
+    public bool CanDeleteConfiguration => ConfigurationBarEnabled && DeleteConfigurationToolTip is null;
 
-    /// <summary>UI-DLG-085: "(Debug)" after the label of a [cfg] field.</summary>
-    public string ConfigurationNote => "(" + SelectedConfiguration + ")";
+    /// <summary>Why <c>DeleteConfiguration</c> is disabled (its tooltip); null when the selected configuration can be deleted.</summary>
+    public string? DeleteConfigurationToolTip =>
+        _configs.Count <= 1 ? Strings.Msg_ProjectOptions_ConfigDeleteLast
+        : _configs.FirstOrDefault(c => c.Inherits == SelectedConfiguration) is { } child
+            ? string.Format(CultureInfo.CurrentCulture, Strings.Msg_ProjectOptions_ConfigDeleteInherited, SelectedConfiguration, child.Name)
+            : null;
+
+    /// <summary>UI-DLG-085, IDE-CFG-020: "(Debug)" after the label of a [cfg] field; "(Release-Demo, inherits Release)" for a derived configuration.</summary>
+    public string ConfigurationNote => Selected.Inherits is { } parent
+        ? string.Format(CultureInfo.CurrentCulture, Strings.ProjectOptions_ConfigNoteDerived, SelectedConfiguration, parent)
+        : "(" + SelectedConfiguration + ")";
+
+    /// <summary>The selected configuration inherits from another one: its fields have the states inherited / own (IDE-CFG-021).</summary>
+    public bool IsDerived => Selected.Inherits is not null;
 
     /// <summary>UI-DLG-083: the <c>NewConfiguration</c> sub-dialog; the new configuration is appended and selected.</summary>
     public async Task NewConfigurationAsync()
@@ -182,7 +198,28 @@ public sealed class ProjectOptionsViewModel : DialogViewModel<bool>
         if (await _dialogs.ShowAsync(sub) is not { } created)
             return;
         var source = _configs.First(c => c.Name == created.CopyFrom);
-        _configs.Add(source with { Name = created.Name });
+        if (created.Inherit)
+        {
+            // IDE-CFG-006: derived, no own value, its own output folder.
+            _configs.Add(new ConfigState(created.Name, null, 0, false, "", ConfigurationEdits.DefaultOutputDir(created.Name), source.Name, false, false));
+        }
+        else
+        {
+            // IDE-CFG-007: the edited values of the source; the entry of a loaded source also brings its link, the values
+            // this dialog does not show and its unknown keys.
+            string? original = null;
+            if (source.Original is { } loaded)
+            {
+                _baseline = ConfigurationEdits.AddCopy(_baseline, created.Name, loaded);
+                original = created.Name;
+            }
+
+            var folder = source.OutputDir.Trim().Replace('\\', '/') == ConfigurationEdits.DefaultOutputDir(source.Name)
+                ? ConfigurationEdits.DefaultOutputDir(created.Name)
+                : source.OutputDir;
+            _configs.Add(source with { Name = created.Name, Original = original, OutputDir = folder });
+        }
+
         OnPropertyChanged(nameof(ConfigurationNames));
         OnPropertyChanged(nameof(CanDeleteConfiguration));
         SelectedConfiguration = created.Name;
@@ -192,12 +229,14 @@ public sealed class ProjectOptionsViewModel : DialogViewModel<bool>
     /// <summary>UI-DLG-084: asks <c>Msg.ProjectOptions.ConfigDeleteConfirm</c>; never deletes the last one.</summary>
     public async Task DeleteConfigurationAsync()
     {
-        if (_configs.Count <= 1)
+        if (DeleteConfigurationToolTip is not null)
             return;
         var name = SelectedConfiguration;
         if (await _dialogs.ShowMessageAsync(new MessageRequest("Msg.ProjectOptions.ConfigDeleteConfirm", [name])) != "Delete")
             return;
         var index = _configs.FindIndex(c => c.Name == name);
+        if (_configs[index].Original is { } loaded)
+            _baseline = ConfigurationEdits.Remove(_baseline, loaded); // no entry of it survives for a later configuration of that name
         _configs.RemoveAt(index);
         _selectedConfiguration = _configs[Math.Min(index, _configs.Count - 1)].Name;
         OnPropertyChanged(nameof(ConfigurationNames));
@@ -257,24 +296,50 @@ public sealed class ProjectOptionsViewModel : DialogViewModel<bool>
 
     // ---- Compiler (§8.2, [cfg]) ----
 
+    /// <summary>The effective value (IDE-CFG-021); a change makes it an own value of the selected configuration (IDE-CFG-022).</summary>
     public int Optimization
     {
-        get => Selected.Optimization;
+        get => Selected.OwnOptimization ? Selected.Optimization : Effective.Optimization;
         set
         {
-            if (value is >= 0 and <= 2 && value != Selected.Optimization)
-                Replace(Selected with { Optimization = value });
+            if (value is >= 0 and <= 2 && value != Optimization)
+                Replace(Selected with { Optimization = value, OwnOptimization = true });
         }
     }
 
+    /// <summary>The effective value (IDE-CFG-021); a change makes it an own value of the selected configuration (IDE-CFG-022).</summary>
     public bool DebugInfo
     {
-        get => Selected.DebugInfo;
+        get => Selected.OwnDebugInfo ? Selected.DebugInfo : Effective.DebugInfo;
         set
         {
-            if (value != Selected.DebugInfo)
-                Replace(Selected with { DebugInfo = value });
+            if (value != DebugInfo)
+                Replace(Selected with { DebugInfo = value, OwnDebugInfo = true });
         }
+    }
+
+    /// <summary>State <i>own</i> of <see cref="Optimization"/> in a derived configuration: bold label and <c>Revert</c> (IDE-CFG-021).</summary>
+    public bool OptimizationIsOwn => IsDerived && Selected.OwnOptimization;
+
+    public bool DebugInfoIsOwn => IsDerived && Selected.OwnDebugInfo;
+
+    /// <summary>Automation help text of the field: where the value comes from; null for a root configuration.</summary>
+    public string? OptimizationHelpText => StateText(Selected.OwnOptimization, c => c.OwnOptimization);
+
+    public string? DebugInfoHelpText => StateText(Selected.OwnDebugInfo, c => c.OwnDebugInfo);
+
+    /// <summary>IDE-CFG-023 <c>Optimization.Revert</c>: removes the own value; the parent's effective value shows again.</summary>
+    public void RevertOptimization()
+    {
+        if (OptimizationIsOwn)
+            Replace(Selected with { Optimization = 0, OwnOptimization = false });
+    }
+
+    /// <summary>IDE-CFG-023 <c>DebugInfo.Revert</c>.</summary>
+    public void RevertDebugInfo()
+    {
+        if (DebugInfoIsOwn)
+            Replace(Selected with { DebugInfo = false, OwnDebugInfo = false });
     }
 
     // ---- Search Paths (§8.3) ----
@@ -356,8 +421,33 @@ public sealed class ProjectOptionsViewModel : DialogViewModel<bool>
 
     public string? ConfigDefinesError { get; private set; }
 
-    public string EffectiveDefines =>
-        string.Join("; ", ParseDefines(ProjectDefines).Concat(ParseDefines(ConfigDefines)).Distinct(StringComparer.OrdinalIgnoreCase));
+    /// <summary>IDE-CFG-024: a derived configuration has own entries (bold label and <c>Revert</c>).</summary>
+    public bool ConfigDefinesIsOwn => IsDerived && ParseDefines(ConfigDefines).Count > 0;
+
+    /// <summary>Automation help text of <c>ConfigDefines</c>; inherited defines come from the nearest ancestor that has some, else from the project.</summary>
+    public string? ConfigDefinesHelpText => StateText(ParseDefines(ConfigDefines).Count > 0, c => ParseDefines(c.DefinesText).Count > 0, baseLevel: true);
+
+    /// <summary>IDE-CFG-024 <c>ConfigDefines.Revert</c>: empties the own list.</summary>
+    public void RevertConfigDefines()
+    {
+        if (ConfigDefinesIsOwn)
+            Replace(Selected with { DefinesText = "" });
+    }
+
+    /// <summary>The hint under <c>ConfigDefines</c> for a derived configuration; null for a root configuration.</summary>
+    public string? DefinesHint => IsDerived ? Strings.ProjectOptions_DefinesInheritHint : null;
+
+    /// <summary>
+    /// <c>InheritedDefines</c> (derived configurations only): the project-level and ancestor defines in effect before this
+    /// configuration, joined with <c>; </c>; <c>—</c> when there are none.
+    /// </summary>
+    public string InheritedDefines =>
+        Selected.Inherits is { } parent && ConfigurationResolver.Resolve(Build(), parent).Defines is { IsEmpty: false } defines
+            ? string.Join("; ", defines.Distinct(StringComparer.OrdinalIgnoreCase))
+            : "—";
+
+    /// <summary>The resolved list of the selected configuration (CMP-1160), shown without repeated symbols.</summary>
+    public string EffectiveDefines => string.Join("; ", Effective.Defines.Distinct(StringComparer.OrdinalIgnoreCase));
 
     // ---- Output (§8.5, [cfg]) ----
 
@@ -372,6 +462,22 @@ public sealed class ProjectOptionsViewModel : DialogViewModel<bool>
     }
 
     public string? OutputDirError { get; private set; }
+
+    /// <summary>
+    /// IDE-CFG-026: another configuration of the working copy has the same effective output folder (normalised full paths,
+    /// ignoring case). A warning: it does not disable <c>OK</c>.
+    /// </summary>
+    public string? OutputDirWarning
+    {
+        get
+        {
+            if (OutputDirError is not null || RunFields.Resolve(_baseline.Directory, OutputDir) is not { } folder)
+                return null;
+            var other = _configs.FirstOrDefault(c => c.Name != SelectedConfiguration
+                && RunFields.Resolve(_baseline.Directory, c.OutputDir) is { } theirs && SameFolder(theirs, folder));
+            return other is null ? null : string.Format(CultureInfo.CurrentCulture, Strings.Msg_ProjectOptions_OutputDirShared, other.Name);
+        }
+    }
 
     /// <summary>IDE-TGT-011: <c>&lt;name&gt;.dll</c> for a library, else <c>&lt;name&gt;.exe</c>.</summary>
     public string OutputFileName => ProjectName.Trim() + (AppType == "library" ? ".dll" : ".exe");
@@ -422,12 +528,20 @@ public sealed class ProjectOptionsViewModel : DialogViewModel<bool>
         var configurations = ImmutableDictionary.CreateBuilder<string, ProjectConfiguration>(StringComparer.Ordinal);
         foreach (var c in _configs)
         {
-            var original = _baseline.Configurations.GetValueOrDefault(c.Original ?? c.Name);
             var defines = ImmutableArray.CreateRange(ParseDefines(c.DefinesText));
             var outputDir = c.OutputDir.Trim().Replace('\\', '/');
-            configurations[c.Name] = original is not null
-                ? original with { Optimization = c.Optimization, DebugInfo = c.DebugInfo, Defines = SameOr(original.Defines, defines), OutputDir = outputDir }
-                : new ProjectConfiguration(c.Optimization, c.DebugInfo, defines, outputDir, c.Rtti);
+            var template = c.Original is { } loaded ? _baseline.Configurations[loaded] : new ProjectConfiguration(0, false, [], outputDir);
+            // CMP-1156: a derived configuration holds 0 / false for a value it inherits.
+            configurations[c.Name] = template with
+            {
+                Inherits = c.Inherits,
+                InheritsOptimization = !c.OwnOptimization,
+                InheritsDebugInfo = !c.OwnDebugInfo,
+                Optimization = c.OwnOptimization ? c.Optimization : 0,
+                DebugInfo = c.OwnDebugInfo && c.DebugInfo,
+                Defines = SameOr(template.Defines, defines),
+                OutputDir = outputDir,
+            };
         }
 
         var searchPaths = ImmutableArray.CreateRange(SearchPaths.Select(r => r.Path));
@@ -448,6 +562,9 @@ public sealed class ProjectOptionsViewModel : DialogViewModel<bool>
     }
 
     private ConfigState Selected => _configs.First(c => c.Name == SelectedConfiguration);
+
+    /// <summary>The effective values of the selected configuration in the working copy (IDE-CFG-001).</summary>
+    private EffectiveConfiguration Effective => ConfigurationResolver.Resolve(Build(), SelectedConfiguration);
 
     private async Task CommitAsync(bool close)
     {
@@ -479,7 +596,9 @@ public sealed class ProjectOptionsViewModel : DialogViewModel<bool>
     private void OnConfigurationFieldsChanged()
     {
         foreach (var name in (string[])[nameof(Optimization), nameof(DebugInfo), nameof(ConfigDefines), nameof(EffectiveDefines), nameof(OutputDir),
-                     nameof(OutputFile), nameof(ObjDir), nameof(ConfigurationNote)])
+                     nameof(OutputFile), nameof(ObjDir), nameof(ConfigurationNote), nameof(IsDerived), nameof(OptimizationIsOwn), nameof(DebugInfoIsOwn),
+                     nameof(ConfigDefinesIsOwn), nameof(OptimizationHelpText), nameof(DebugInfoHelpText), nameof(ConfigDefinesHelpText), nameof(DefinesHint),
+                     nameof(InheritedDefines), nameof(OutputDirWarning), nameof(CanDeleteConfiguration), nameof(DeleteConfigurationToolTip)])
             OnPropertyChanged(name);
         Validate();
         Run.Refresh();
@@ -518,16 +637,16 @@ public sealed class ProjectOptionsViewModel : DialogViewModel<bool>
             ? Strings.Msg_Project_LocationInvalid
             : null;
         ProjectDefinesError = DefineError(ProjectDefines);
-        ConfigDefinesError = DefineError(ConfigDefines);
+        ConfigDefinesError = DefineError(ConfigDefines, allowReset: true);
         OutputDirError = OutputDirMessage(OutputDir);
         Pages[0].HasError = ProjectNameError is not null;
         Pages[1].HasError = false;
         Pages[2].HasError = SearchPathsError is not null;
-        Pages[3].HasError = ProjectDefinesError is not null || _configs.Any(c => DefineError(c.DefinesText) is not null);
+        Pages[3].HasError = ProjectDefinesError is not null || _configs.Any(c => DefineError(c.DefinesText, allowReset: true) is not null);
         Pages[4].HasError = _configs.Any(c => OutputDirMessage(c.OutputDir) is not null);
         Pages[5].HasError = !Run.IsValid;
         foreach (var property in (string[])[nameof(ProjectNameError), nameof(SearchPathsError), nameof(ProjectDefinesError), nameof(ConfigDefinesError),
-                     nameof(OutputDirError), nameof(IsValid)])
+                     nameof(OutputDirError), nameof(OutputDirWarning), nameof(IsValid)])
             OnPropertyChanged(property);
         Ok.IsEnabled = IsValid;
         Apply.IsEnabled = _changed && IsValid;
@@ -536,10 +655,37 @@ public sealed class ProjectOptionsViewModel : DialogViewModel<bool>
     private string? OutputDirMessage(string text) =>
         text.Trim().Length == 0 || RunFields.Resolve(_baseline.Directory, text) is null ? Strings.Msg_ProjectOptions_OutputDirInvalid : null;
 
-    private static string? DefineError(string text) =>
-        ParseDefines(text).FirstOrDefault(s => !SymbolPattern.IsMatch(s)) is { } bad
+    /// <summary><c>DefineInvalid</c> for the first entry that is no symbol; a configuration's list may start with the reset marker (IDE-CFG-024).</summary>
+    private static string? DefineError(string text, bool allowReset = false) =>
+        ParseDefines(text).Where((s, i) => !(allowReset && i == 0 && s == ResetMarker)).FirstOrDefault(s => !SymbolPattern.IsMatch(s)) is { } bad
             ? string.Format(CultureInfo.CurrentCulture, Strings.Msg_ProjectOptions_DefineInvalid, bad)
             : null;
+
+    /// <summary>
+    /// IDE-CFG-021: the automation help text of a field of a derived configuration — <c>ValueOwn</c>, or <c>ValueInherited</c>
+    /// with the nearest ancestor for which <paramref name="supplies"/> holds (a root configuration supplies every scalar),
+    /// else the project (<paramref name="baseLevel"/>). Null for a root configuration.
+    /// </summary>
+    private string? StateText(bool own, Func<ConfigState, bool> supplies, bool baseLevel = false)
+    {
+        if (!IsDerived)
+            return null;
+        if (own)
+            return Strings.Msg_ProjectOptions_ValueOwn;
+        var seen = new HashSet<string>(StringComparer.Ordinal) { SelectedConfiguration };
+        for (var ancestor = _configs.FirstOrDefault(c => c.Name == Selected.Inherits);
+             ancestor is not null && seen.Add(ancestor.Name);
+             ancestor = _configs.FirstOrDefault(c => c.Name == ancestor.Inherits))
+        {
+            if (supplies(ancestor) || (!baseLevel && ancestor.Inherits is null))
+                return string.Format(CultureInfo.CurrentCulture, Strings.Msg_ProjectOptions_ValueInherited, ancestor.Name);
+        }
+
+        return string.Format(CultureInfo.CurrentCulture, Strings.Msg_ProjectOptions_ValueInherited, Strings.ProjectOptions_BaseLevel);
+    }
+
+    private static bool SameFolder(string a, string b) =>
+        string.Equals(Path.TrimEndingDirectorySeparator(Path.GetFullPath(a)), Path.TrimEndingDirectorySeparator(Path.GetFullPath(b)), StringComparison.OrdinalIgnoreCase);
 
     /// <summary>§8.4: split on <c>;</c>, trim, drop empties and case-insensitive duplicates, typed order.</summary>
     public static IReadOnlyList<string> ParseDefines(string text) =>
@@ -565,18 +711,27 @@ public sealed class ProjectOptionsViewModel : DialogViewModel<bool>
             : null;
     }
 
-    /// <summary>Edited state of one configuration; <see cref="Original"/> = the name it was loaded under (null for a new one).</summary>
-    private sealed record ConfigState(string Name, string? Original, int Optimization, bool DebugInfo, string DefinesText, string OutputDir, string? Rtti)
+    /// <summary>
+    /// Edited state of one configuration; <see cref="Original"/> = the entry of the baseline it started from (null for a new
+    /// derived one). <see cref="Inherits"/> null = root configuration, whose values are all its own; for a derived one
+    /// <see cref="OwnOptimization"/> / <see cref="OwnDebugInfo"/> tell whether the value is set here (IDE-CFG-021).
+    /// </summary>
+    private sealed record ConfigState(string Name, string? Original, int Optimization, bool DebugInfo, string DefinesText, string OutputDir,
+        string? Inherits, bool OwnOptimization, bool OwnDebugInfo)
     {
         public static ConfigState From(string name, ProjectConfiguration c) =>
-            new(name, name, c.Optimization, c.DebugInfo, string.Join(";", c.Defines), c.OutputDir, c.Rtti);
+            new(name, name, c.Optimization, c.DebugInfo, string.Join(";", c.Defines), c.OutputDir, c.Inherits,
+                c.Inherits is null || !c.InheritsOptimization, c.Inherits is null || !c.InheritsDebugInfo);
     }
 }
 
-/// <summary>The result of the NewConfiguration sub-dialog.</summary>
-public sealed record NewConfigurationResult(string Name, string CopyFrom);
+/// <summary>The result of the NewConfiguration sub-dialog: <see cref="Inherit"/> = derived from <see cref="CopyFrom"/>, else a copy of it.</summary>
+public sealed record NewConfigurationResult(string Name, string CopyFrom, bool Inherit);
 
-/// <summary>The <c>NewConfiguration</c> sub-dialog (UI-DLG-083), 360 × auto: <c>Name</c> and <c>CopyFrom</c>.</summary>
+/// <summary>
+/// The <c>NewConfiguration</c> sub-dialog (UI-DLG-083, UI-DLG-270), 360 × auto: <c>Name</c>, <c>CopyFrom</c> ("Based on") and the
+/// check box <c>Inherit</c>, checked by default (IDE-CFG-005).
+/// </summary>
 public sealed class NewConfigurationViewModel : DialogViewModel<NewConfigurationResult>
 {
     public const string DialogName = "NewConfiguration";
@@ -584,6 +739,7 @@ public sealed class NewConfigurationViewModel : DialogViewModel<NewConfiguration
     private readonly IReadOnlyList<string> _existing;
     private string _configName = "";
     private string _copyFrom;
+    private bool _inherit = true;
     private string? _error;
 
     public NewConfigurationViewModel(IReadOnlyList<string> existing, string copyFrom)
@@ -593,7 +749,7 @@ public sealed class NewConfigurationViewModel : DialogViewModel<NewConfiguration
         Create = new DialogButtonViewModel("Ok", Strings.NewConfiguration_Create, () =>
         {
             if (Error is null)
-                Close(new NewConfigurationResult(ConfigName, CopyFrom));
+                Close(new NewConfigurationResult(ConfigName, CopyFrom, Inherit));
         })
         { IsDefault = true, IsAccent = true, IsEnabled = false };
         Buttons = [Create, new DialogButtonViewModel("Cancel", Strings.Button_Cancel, () => Close(null)) { IsCancel = true }];
@@ -632,6 +788,13 @@ public sealed class NewConfigurationViewModel : DialogViewModel<NewConfiguration
             if (value is not null && _existing.Contains(value))
                 SetProperty(ref _copyFrom, value);
         }
+    }
+
+    /// <summary>Checked: the new configuration inherits from <see cref="CopyFrom"/> and has no own value; unchecked: a copy.</summary>
+    public bool Inherit
+    {
+        get => _inherit;
+        set => SetProperty(ref _inherit, value);
     }
 
     /// <summary>Shown under <c>Name</c> once something was typed (<c>Dialog.NewConfiguration.Error.Name</c>).</summary>

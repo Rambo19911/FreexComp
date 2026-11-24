@@ -7,7 +7,19 @@ using Avalonia.Media.TextFormatting;
 namespace FreexComp.Ide.Views;
 
 /// <summary>
-/// The text of every tooltip whose tip is a string (the content template of <c>ToolTip</c> in <c>App.axaml</c>). It wraps
+/// The content template of every <c>ToolTip</c> (<c>App.axaml</c>): a tip that is a control is shown as it is (the
+/// editor's error and fold tooltips), any other tip as <see cref="ToolTipText"/> (I-246: a template for strings only
+/// replaced a control by its type name).
+/// </summary>
+public sealed class ToolTipTemplate : Avalonia.Controls.Templates.IDataTemplate
+{
+    public bool Match(object? data) => true;
+
+    public Control? Build(object? param) => param as Control ?? new ToolTipText { Source = param?.ToString() };
+}
+
+/// <summary>
+/// The text of every tooltip whose tip is a string (built by <see cref="ToolTipTemplate"/>). It wraps
 /// inside the tooltip's maximum width (design-tokens.md §8) like a text block, except that a line that is a full path
 /// (UI-TW-111, UI-ED-075, UI-TW-016, UI-MENU-009 …) is broken only after a path separator, which stays at the end of its
 /// line — never after the drive's colon or inside a name (I-245). The tip itself stays the unchanged string.

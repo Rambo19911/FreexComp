@@ -251,6 +251,7 @@ public static class MainMenuDefinition
             [
                 DynamicList("project.setConfiguration", 20),
             ]),
+            Command("project.configurationManager"),
             Command("project.openOutputFolder"),
             Separator,
             Command("project.options"),

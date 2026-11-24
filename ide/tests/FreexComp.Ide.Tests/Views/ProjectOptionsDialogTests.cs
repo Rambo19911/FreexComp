@@ -183,6 +183,11 @@ public sealed class ProjectOptionsDialogTests
     [Trait("Req", "UI-DLG-082")]
     [Trait("Req", "UI-DLG-083")]
     [Trait("Req", "UI-DLG-084")]
+    [Trait("Req", "UI-DLG-270")]
+    [Trait("Req", "IDE-CFG-005")]
+    [Trait("Req", "IDE-CFG-006")]
+    [Trait("Req", "IDE-CFG-007")]
+    [Trait("Req", "IDE-CFG-008")]
     public async Task ConfigurationNewAndDelete()
     {
         await using var h = await BuildScenario.StartAsync();
@@ -191,10 +196,12 @@ public sealed class ProjectOptionsDialogTests
         var combo = dlg.Find<ComboBox>("Configuration");
         Assert.Equal(["Debug (active)", "Release"], combo.Items.Cast<string>());
 
-        // New…: the name is validated; the copy starts from the selected configuration.
+        // New…: the name is validated; the source is the selected configuration and Inherit is checked (IDE-CFG-005).
         dlg.Click("NewConfiguration");
         var sub = await h.WaitForDialogAsync("NewConfiguration");
         Assert.Equal("Debug", sub.Find<ComboBox>("CopyFrom").SelectedItem);
+        Assert.True(sub.Find<CheckBox>("Inherit").IsChecked);
+        Assert.Contains(Avalonia.LogicalTree.LogicalExtensions.GetLogicalDescendants(sub.Window).OfType<Label>(), l => l.Content as string == Strings.NewConfiguration_BasedOn);
         sub.Find<TextBox>("Name").Text = "bad name";
         Dispatcher.UIThread.RunJobs();
         Assert.Equal(Strings.Msg_ProjectOptions_ConfigNameInvalid, sub.ErrorText("Name"));
@@ -208,21 +215,52 @@ public sealed class ProjectOptionsDialogTests
         await h.WaitForAsync(() => !sub.Window.IsVisible, "sub-dialog closed");
         await h.WaitForAsync(() => dlg.Find<ComboBox>("Configuration").SelectedItem as string == "Profile", "new configuration selected");
         Assert.Equal(["Debug (active)", "Release", "Profile"], dlg.Find<ComboBox>("Configuration").Items.Cast<string>());
-        Assert.False(dlg.Find<CheckBox>("DebugInfo").IsChecked == false); // copied from Debug
+        Assert.True(dlg.Find<CheckBox>("DebugInfo").IsChecked); // inherited from Debug
         Assert.Equal(0, dlg.Find<ComboBox>("Optimization").SelectedIndex);
+
+        // Inherit unchecked: a copy of the chosen configuration (IDE-CFG-007).
+        dlg.Click("NewConfiguration");
+        sub = await h.WaitForDialogAsync("NewConfiguration");
+        Assert.Equal("Profile", sub.Find<ComboBox>("CopyFrom").SelectedItem);
+        sub.Find<ComboBox>("CopyFrom").SelectedItem = "Release";
+        sub.Find<CheckBox>("Inherit").IsChecked = false;
+        sub.Find<TextBox>("Name").Text = "Fast";
+        Dispatcher.UIThread.RunJobs();
+        sub.Press("Enter");
+        await h.WaitForAsync(() => !sub.Window.IsVisible, "sub-dialog closed");
+        await h.WaitForAsync(() => dlg.Find<ComboBox>("Configuration").SelectedItem as string == "Fast", "copy selected");
+        Assert.False(dlg.Find<CheckBox>("DebugInfo").IsChecked); // copied from Release
+        Assert.Equal(2, dlg.Find<ComboBox>("Optimization").SelectedIndex);
+
+        // Apply writes both: the derived one holds only its link, the copy every value with its own folder.
+        dlg.Click("Apply");
+        await h.WaitForAsync(() => !dlg.Find<Button>("Apply").IsEffectivelyEnabled, "applied");
+        var applied = ReadProject(h).GetProperty("configurations");
+        Assert.Equal(["Debug", "Release", "Fast", "Profile"], applied.EnumerateObject().Select(p => p.Name));
+        Assert.Equal("""{"inherits":"Debug"}""", JsonSerializer.Serialize(applied.GetProperty("Profile")));
+        Assert.Equal("""{"optimization":2,"debugInfo":false,"defines":[],"outputDir":"bin/Fast"}""", JsonSerializer.Serialize(applied.GetProperty("Fast")));
+
+        // Debug is inherited by Profile: it cannot be deleted until Profile is gone (IDE-CFG-014).
+        dlg.Find<ComboBox>("Configuration").SelectedIndex = 0;
+        Dispatcher.UIThread.RunJobs();
+        Assert.False(dlg.Find<Button>("DeleteConfiguration").IsEffectivelyEnabled);
+        h.Messages.Answer("Msg.ProjectOptions.ConfigDeleteConfirm", "Delete");
+        dlg.Find<ComboBox>("Configuration").SelectedIndex = 2;
+        Dispatcher.UIThread.RunJobs();
+        dlg.Click("DeleteConfiguration");
+        await h.WaitForAsync(() => dlg.Find<ComboBox>("Configuration").ItemCount == 3, "Profile deleted");
 
         // Delete asks; deleting the active configuration makes the first remaining one active.
         dlg.Find<ComboBox>("Configuration").SelectedIndex = 0;
         Dispatcher.UIThread.RunJobs();
-        h.Messages.Answer("Msg.ProjectOptions.ConfigDeleteConfirm", "Delete");
         dlg.Click("DeleteConfiguration");
         await h.WaitForAsync(() => dlg.Find<ComboBox>("Configuration").ItemCount == 2, "Debug deleted");
-        Assert.Equal(["Release (active)", "Profile"], dlg.Find<ComboBox>("Configuration").Items.Cast<string>());
-        Assert.Equal(["Debug"], h.Messages.Requests.Where(r => r.MessageId == "Msg.ProjectOptions.ConfigDeleteConfirm").Select(r => r.Args[0]));
+        Assert.Equal(["Release (active)", "Fast"], dlg.Find<ComboBox>("Configuration").Items.Cast<string>());
+        Assert.Equal(["Profile", "Debug"], h.Messages.Requests.Where(r => r.MessageId == "Msg.ProjectOptions.ConfigDeleteConfirm").Select(r => r.Args[0]));
         dlg.Find<ComboBox>("Configuration").SelectedIndex = 1;
         Dispatcher.UIThread.RunJobs();
         dlg.Click("DeleteConfiguration");
-        await h.WaitForAsync(() => dlg.Find<ComboBox>("Configuration").ItemCount == 1, "Profile deleted");
+        await h.WaitForAsync(() => dlg.Find<ComboBox>("Configuration").ItemCount == 1, "Fast deleted");
         // The last one cannot be deleted.
         Assert.False(dlg.Find<Button>("DeleteConfiguration").IsEffectivelyEnabled);
         Assert.Equal(Strings.Msg_ProjectOptions_ConfigDeleteLast, ToolTip.GetTip(dlg.Find<Button>("DeleteConfiguration")));
@@ -234,6 +272,53 @@ public sealed class ProjectOptionsDialogTests
         Assert.Equal(["Release"], json.GetProperty("configurations").EnumerateObject().Select(p => p.Name));
         Assert.Equal("Release", json.GetProperty("activeConfiguration").GetString());
         Assert.Equal("Release", h.Services.Projects.Project!.ActiveConfiguration);
+    }
+
+    /// <summary>IDE-CFG-014 in Project Options: a configuration another one inherits from cannot be deleted; the tooltip names the first heir.</summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Phase", "8")]
+    [Trait("Req", "UI-DLG-084")]
+    [Trait("Req", "IDE-CFG-014")]
+    public async Task DeleteDisabledWhileInherited()
+    {
+        await using var h = await BuildScenario.StartAsync();
+        var project = h.Services.Projects.Definition!;
+        foreach (var heir in (string[])["Release-Demo", "Profiling"])
+            project = Core.Projects.ConfigurationEdits.AddDerived(project, heir, "Release");
+        Assert.True(await h.Services.Projects.ApplyOptionsAsync(project));
+        var (dlg, opening) = await OpenAsync(h);
+        ShowPage(dlg, "Compiler");
+        var delete = dlg.Find<Button>("DeleteConfiguration");
+        Assert.True(delete.IsEffectivelyEnabled); // Debug: nobody inherits from it
+        Assert.Null(ToolTip.GetTip(delete));
+
+        dlg.Find<ComboBox>("Configuration").SelectedIndex = 1;
+        Dispatcher.UIThread.RunJobs();
+        Assert.False(delete.IsEffectivelyEnabled);
+        var reason = string.Format(Strings.Msg_ProjectOptions_ConfigDeleteInherited, "Release", "Release-Demo");
+        Assert.Equal("Release is inherited by Release-Demo. Change or delete that configuration first.", reason);
+        Assert.Equal(reason, ToolTip.GetTip(delete));
+        Assert.Equal(reason, Avalonia.Automation.AutomationProperties.GetHelpText(delete));
+        Assert.Empty(h.Messages.Requests);
+
+        // Both heirs deleted: Release can go too.
+        h.Messages.Answer("Msg.ProjectOptions.ConfigDeleteConfirm", "Delete");
+        foreach (var heir in (string[])["Release-Demo", "Profiling"])
+        {
+            dlg.Find<ComboBox>("Configuration").SelectedItem = heir;
+            Dispatcher.UIThread.RunJobs();
+            var count = dlg.Find<ComboBox>("Configuration").ItemCount;
+            dlg.Click("DeleteConfiguration");
+            await h.WaitForAsync(() => dlg.Find<ComboBox>("Configuration").ItemCount == count - 1, heir + " deleted");
+        }
+
+        dlg.Find<ComboBox>("Configuration").SelectedItem = "Release";
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(delete.IsEffectivelyEnabled);
+        Assert.Null(ToolTip.GetTip(delete));
+        dlg.Click("Cancel");
+        await h.WaitForAsync(() => !dlg.Window.IsVisible, "dialog closed");
+        await opening;
     }
 
     // ---- Library projects (phase8-build-options.md §2, I-228) ----

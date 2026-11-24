@@ -318,8 +318,7 @@ public sealed partial class DebugService : IDebugService
         }
 
         // IDE-P3-086: without debug information breakpoints cannot stop.
-        if (_projects.Definition is { } definition && definition.Configurations.TryGetValue(project.ActiveConfiguration, out var configuration)
-            && !configuration.DebugInfo)
+        if (_projects.Definition is { } definition && ConfigurationEdits.Effective(definition, project.ActiveConfiguration) is { DebugInfo: false })
         {
             var answer = await _dialogs.ShowMessageAsync(new MessageRequest("Msg.Debug.NoDebugInfo", [project.ActiveConfiguration]));
             if (answer == "ProjectOptions")

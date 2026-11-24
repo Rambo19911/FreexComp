@@ -110,7 +110,7 @@ public sealed class FoldingVisualTests
         doc.Folding.SetFolded(Region(6), true);
         h.Window.MouseMove(Box());
         Dispatcher.UIThread.RunJobs();
-        var tip = Assert.IsType<Avalonia.Controls.TextBlock>(Avalonia.Controls.ToolTip.GetTip(textView));
+        var tip = Assert.IsType<Avalonia.Controls.TextBlock>(Assert.IsType<ToolTip>(Avalonia.Controls.ToolTip.GetTip(textView)).Content); // I-246: the tooltip with its own width
         Assert.Equal(Application.Current!.FindResource("FxcTypeCodeSmallSize"), tip.FontSize); // type.codeSmall
 
         // UI-ED-132: the tooltip opens a line below the pointer (never over the hovered word) and does not take focus.

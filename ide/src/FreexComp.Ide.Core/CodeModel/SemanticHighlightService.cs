@@ -24,6 +24,7 @@ public sealed class SemanticHighlightService
     private readonly IClock _clock;
     private readonly IUiDispatcher _dispatcher;
     private readonly Dictionary<TextDocumentViewModel, Highlighter> _highlighters = [];
+    private string? _defines;
 
     public SemanticHighlightService(IDocumentService documents, CodeModelService codeModel, ISettingsService settings, IClock clock, IUiDispatcher dispatcher)
     {
@@ -36,6 +37,20 @@ public sealed class SemanticHighlightService
         documents.DocumentClosed += (_, e) => Detach(e.Document);
         foreach (var document in documents.Documents)
             Attach(document);
+    }
+
+    /// <summary>
+    /// IDE-CFG-002: a project change that alters the effective defines of the active configuration — an edit of the
+    /// configuration, of one of its ancestors or of the project-level list — colours the open documents again.
+    /// </summary>
+    internal void OnProjectChanged(FreexComp.Build.Project? definition)
+    {
+        var defines = definition is null ? null : string.Join(";", Projects.ConfigurationEdits.Effective(definition, definition.ActiveConfiguration)?.Defines ?? []);
+        if (defines == _defines)
+            return;
+        _defines = defines;
+        foreach (var highlighter in _highlighters.Values)
+            highlighter.Schedule();
     }
 
     /// <summary>The analysis of <paramref name="document"/> that is running or last ran (tests await it).</summary>

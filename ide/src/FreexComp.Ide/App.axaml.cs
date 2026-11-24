@@ -15,6 +15,20 @@ public sealed class App : Application
     /// <summary>I-213: this process's claim as the running instance of its user directory (null: not the first one).</summary>
     internal static Platform.Windows.InstanceHandOver? HandOver { get; set; }
 
+    /// <summary>UI-TOK-052: a tooltip opens 600 ms after the pointer came to rest.</summary>
+    public const int ToolTipShowDelay = 600;
+
+    static App()
+    {
+        // The delay is a property of the control the tooltip belongs to (its default cannot be replaced for all
+        // controls): every control that gets a tooltip gets the delay with it, unless it has set its own.
+        ToolTip.TipProperty.Changed.AddClassHandler<Control>((control, _) =>
+        {
+            if (!control.IsSet(ToolTip.ShowDelayProperty))
+                ToolTip.SetShowDelay(control, ToolTipShowDelay);
+        });
+    }
+
     public override void Initialize()
     {
         AvaloniaXamlLoader.Load(this);

@@ -65,7 +65,10 @@ public sealed class ProjectOptionsWindow : DialogWindow
             configuration.IsEnabled = model.ConfigurationBarEnabled;
             newButton.IsEnabled = model.ConfigurationBarEnabled;
             deleteButton.IsEnabled = model.CanDeleteConfiguration;
-            ToolTip.SetTip(deleteButton, model.ConfigurationNames.Count <= 1 ? Strings.Msg_ProjectOptions_ConfigDeleteLast : null);
+            // UI-DLG-084, IDE-CFG-014: a disabled Delete tells why, also to a screen reader.
+            ToolTip.SetTip(deleteButton, model.DeleteConfigurationToolTip);
+            ToolTip.SetShowOnDisabled(deleteButton, true);
+            AutomationProperties.SetHelpText(deleteButton, model.DeleteConfigurationToolTip ?? "");
         }
 
         var barLabel = DialogFieldBuilder.Label(Strings.ProjectOptions_Configuration, configuration);
@@ -202,21 +205,155 @@ public sealed class ProjectOptionsWindow : DialogWindow
             SelectedIndex = model.Optimization,
             HorizontalAlignment = HorizontalAlignment.Stretch,
         };
-        optimization.SelectionChanged += (_, _) => model.Optimization = optimization.SelectedIndex;
         AutomationProperties.SetAutomationId(optimization, f.Id("Optimization"));
         var debugInfo = new CheckBox { Content = Strings.ProjectOptions_DebugInfo, IsChecked = model.DebugInfo };
-        debugInfo.IsCheckedChanged += (_, _) => model.DebugInfo = debugInfo.IsChecked == true;
         AutomationProperties.SetAutomationId(debugInfo, f.Id("DebugInfo"));
+        // The page was built for this configuration; a later one gets its own page (the model outlives both).
+        var configuration = model.SelectedConfiguration;
+        var syncing = false;
+        optimization.SelectionChanged += (_, _) =>
+        {
+            if (!syncing && model.SelectedConfiguration == configuration)
+                model.Optimization = optimization.SelectedIndex;
+        };
+        debugInfo.IsCheckedChanged += (_, _) =>
+        {
+            if (!syncing && model.SelectedConfiguration == configuration)
+                model.DebugInfo = debugInfo.IsChecked == true;
+        };
+
+        // IDE-CFG-021…023: the effective values, the own state in bold, Revert at the right end of the row.
+        var optimizationLabel = WrappingLabel(Strings.ProjectOptions_Optimization, optimization);
+        var optimizationRevert = RevertButton(f, "Optimization", model.RevertOptimization);
+        var debugInfoRevert = RevertButton(f, "DebugInfo", model.RevertDebugInfo);
+        void Sync()
+        {
+            if (model.SelectedConfiguration != configuration)
+                return;
+            syncing = true;
+            optimization.SelectedIndex = model.Optimization;
+            debugInfo.IsChecked = model.DebugInfo;
+            syncing = false;
+            optimizationLabel.FontWeight = Weight(model.OptimizationIsOwn);
+            debugInfo.FontWeight = Weight(model.DebugInfoIsOwn);
+            optimizationRevert.IsVisible = model.OptimizationIsOwn;
+            debugInfoRevert.IsVisible = model.DebugInfoIsOwn;
+            AutomationProperties.SetHelpText(optimization, model.OptimizationHelpText ?? "");
+            AutomationProperties.SetHelpText(debugInfo, model.DebugInfoHelpText ?? "");
+        }
+
+        model.PropertyChanged += (_, _) => Sync();
+        Sync();
+        var debugInfoText = Strings.ProjectOptions_DebugInfo.Replace("_", "", StringComparison.Ordinal);
+        var debugInfoGhost = new CheckBox { Content = debugInfoText, FontWeight = FontWeight.SemiBold, Opacity = 0, IsHitTestVisible = false, Focusable = false, IsTabStop = false };
+        AutomationProperties.SetAccessibilityView(debugInfoGhost, AccessibilityView.Raw);
+        var debugInfoCell = new WrapPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Children = { new Grid { Children = { debugInfoGhost, debugInfo } }, Note(model) },
+        };
         return Page(
-            DialogFieldBuilder.Row(DialogFieldBuilder.Label(Strings.ProjectOptions_Optimization, optimization, model.ConfigurationNote), optimization),
-            new StackPanel { Orientation = Orientation.Horizontal, Children = { debugInfo, Note(model) } });
+            DialogFieldBuilder.Row(StateLabel(optimizationLabel, Strings.ProjectOptions_Optimization, model), WithRevert(optimization, optimizationRevert, model.IsDerived)),
+            WithRevert(debugInfoCell, debugInfoRevert, model.IsDerived));
     }
 
+    /// <summary><c>type.bodyStrong</c> for an own value of a derived configuration, <c>type.body</c> otherwise (UI-DLG-277).</summary>
+    private static FontWeight Weight(bool own) => own ? FontWeight.SemiBold : FontWeight.Normal;
+
+    /// <summary>UI-DLG-085, UI-DLG-278: the configuration note — <c>text.tertiary</c>, regular weight in both states.</summary>
     private static TextBlock Note(ProjectOptionsViewModel model)
     {
-        var note = new TextBlock { Text = model.ConfigurationNote, Margin = new Thickness(4, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+        var note = new TextBlock
+        {
+            Text = model.ConfigurationNote,
+            Margin = new Thickness(4, 0, 0, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+            TextWrapping = TextWrapping.Wrap,
+            FontWeight = FontWeight.Normal,
+        };
         note.Bind(TextBlock.ForegroundProperty, note.GetResourceObservable("FxcTextTertiaryBrush"));
         return note;
+    }
+
+    /// <summary>
+    /// The label of a [cfg] field followed by the configuration note. The label takes the width of its bold form, so
+    /// that nothing moves when the state changes (UI-DLG-277); a note that does not fit beside it goes to its own line
+    /// under the label (UI-DLG-278).
+    /// </summary>
+    private static Control StateLabel(Label label, string text, ProjectOptionsViewModel model)
+    {
+        var ghost = new TextBlock
+        {
+            Text = text.Replace("_", "", StringComparison.Ordinal),
+            FontWeight = FontWeight.SemiBold,
+            TextWrapping = TextWrapping.Wrap,
+            Opacity = 0,
+            IsHitTestVisible = false,
+        };
+        AutomationProperties.SetAccessibilityView(ghost, AccessibilityView.Raw);
+        return new WrapPanel
+        {
+            Orientation = Orientation.Horizontal,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 8, 0),
+            Children = { new Grid { Children = { ghost, label } }, Note(model) },
+        };
+    }
+
+    /// <summary>A label whose mnemonic focuses <paramref name="target"/> and whose text wraps inside the label column.</summary>
+    private static Label WrappingLabel(string text, Control target)
+    {
+        var label = new Label
+        {
+            Content = new Avalonia.Controls.Primitives.AccessText { Text = text, TextWrapping = TextWrapping.Wrap },
+            Target = target,
+            Padding = new Thickness(0),
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        label.Bind(Avalonia.Controls.Primitives.TemplatedControl.ForegroundProperty, label.GetResourceObservable("FxcTextPrimaryBrush"));
+        return label;
+    }
+
+    /// <summary>UI-DLG-277: the 26 × 26 icon button <c>&lt;Field&gt;.Revert</c> ("Revert to inherited").</summary>
+    private static Button RevertButton(DialogFieldBuilder f, string field, Action revert)
+    {
+        var button = new Button
+        {
+            Content = new Icons.IdeIcon { IconName = "undo", Width = 16, Height = 16 },
+            Width = RevertSize,
+            Height = RevertSize,
+            Padding = new Thickness(0),
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            VerticalContentAlignment = VerticalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            IsVisible = false,
+        };
+        AutomationProperties.SetAutomationId(button, f.Id(field + ".Revert"));
+        AutomationProperties.SetName(button, Strings.ProjectOptions_Revert);
+        ToolTip.SetTip(button, Strings.ProjectOptions_Revert);
+        button.Click += (_, _) => revert();
+        return button;
+    }
+
+    /// <summary>UI-DLG-277: side of the Revert button; its slot is this plus <c>space.4</c>.</summary>
+    internal const double RevertSize = 26;
+
+    /// <summary>
+    /// The field with the slot of its Revert button at the right end of the row. The slot is reserved while a derived
+    /// configuration is selected, so that the field keeps its width when the button appears; a root configuration has
+    /// no slot (UI-DLG-277).
+    /// </summary>
+    private static Control WithRevert(Control field, Button revert, bool derived)
+    {
+        if (!derived)
+            return field;
+        var slot = new Panel { Width = RevertSize + 8, Children = { revert } };
+        revert.HorizontalAlignment = HorizontalAlignment.Right;
+        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
+        grid.Children.Add(field);
+        Grid.SetColumn(slot, 1);
+        grid.Children.Add(slot);
+        return grid;
     }
 
     private static Control SearchPathsPage(DialogFieldBuilder f, ProjectOptionsViewModel model)
@@ -342,16 +479,75 @@ public sealed class ProjectOptionsWindow : DialogWindow
 
     private static Control DefinesPage(DialogFieldBuilder f, ProjectOptionsViewModel model)
     {
+        var configuration = model.SelectedConfiguration;
         var project = f.Text("ProjectDefines", () => model.ProjectDefines, v => model.ProjectDefines = v, code: true);
-        var config = f.Text("ConfigDefines", () => model.ConfigDefines, v => model.ConfigDefines = v, code: true);
-        var effective = f.ReadOnly("Effective", model.EffectiveDefines, code: true);
-        model.PropertyChanged += (_, _) => effective.Text = model.EffectiveDefines;
-        return Page(
-            Field(DialogFieldBuilder.Row(DialogFieldBuilder.Label(Strings.ProjectOptions_ProjectDefines, project), project),
+        project.VerticalAlignment = VerticalAlignment.Center; // beside a label of two lines the field keeps its height
+        var config = new TextBox { Text = model.ConfigDefines, VerticalAlignment = VerticalAlignment.Top };
+        config.Classes.Add("code");
+        AutomationProperties.SetAutomationId(config, f.Id("ConfigDefines"));
+        config.TextChanged += (_, _) =>
+        {
+            if (model.SelectedConfiguration == configuration)
+                model.ConfigDefines = config.Text ?? "";
+        };
+        // UI-DLG-279: read-only, selectable, wrapping; never a Revert button.
+        var inherited = ReadOnlyList(f, "InheritedDefines");
+        var effective = ReadOnlyList(f, "Effective");
+        var configLabel = WrappingLabel(Strings.ProjectOptions_ConfigDefines, config);
+        var revert = RevertButton(f, "ConfigDefines", model.RevertConfigDefines);
+        revert.VerticalAlignment = VerticalAlignment.Top;
+        void Sync()
+        {
+            if (model.SelectedConfiguration != configuration)
+                return;
+            effective.Text = model.EffectiveDefines;
+            inherited.Text = model.InheritedDefines;
+            ToolTip.SetTip(inherited, model.InheritedDefines);
+            ToolTip.SetTip(effective, model.EffectiveDefines);
+            if ((config.Text ?? "") != model.ConfigDefines)
+                config.Text = model.ConfigDefines; // Revert emptied the list
+            configLabel.FontWeight = Weight(model.ConfigDefinesIsOwn);
+            revert.IsVisible = model.ConfigDefinesIsOwn;
+            AutomationProperties.SetHelpText(config, model.ConfigDefinesHelpText ?? "");
+        }
+
+        model.PropertyChanged += (_, _) => Sync();
+        Sync();
+        var rows = new List<Control>
+        {
+            // The label is a little wider than the label column: it wraps instead of being cut.
+            Field(DialogFieldBuilder.Row(WrappingLabel(Strings.ProjectOptions_ProjectDefines, project), project),
                 f.Message("ProjectDefines", model, () => model.ProjectDefinesError, () => true, project)),
-            Field(DialogFieldBuilder.Row(DialogFieldBuilder.Label(Strings.ProjectOptions_ConfigDefines, config, model.ConfigurationNote), config),
-                f.Message("ConfigDefines", model, () => model.ConfigDefinesError, () => true, config)),
-            DialogFieldBuilder.Row(DialogFieldBuilder.Label(Strings.ProjectOptions_Effective, null), effective));
+        };
+        if (model.IsDerived)
+            rows.Add(DialogFieldBuilder.Row(DialogFieldBuilder.Label(Strings.ProjectOptions_InheritedDefines, null), inherited));
+        // The message and the hint stand directly under the field, also when the label beside it takes more lines.
+        var message = f.Message("ConfigDefines", model, () => model.ConfigDefinesError, () => true, config);
+        message.Margin = new Thickness(0, 2, 0, 0);
+        var configField = new StackPanel { Children = { WithRevert(config, revert, model.IsDerived), message } };
+        if (model.DefinesHint is { } hintText)
+        {
+            var hint = new TextBlock { Text = hintText, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 2, RevertSize + 8, 0) };
+            hint.Classes.Add("caption");
+            hint.Bind(TextBlock.ForegroundProperty, hint.GetResourceObservable("FxcTextSecondaryBrush"));
+            AutomationProperties.SetAutomationId(hint, f.Id("ConfigDefines.Hint"));
+            configField.Children.Add(hint);
+        }
+
+        rows.Add(DialogFieldBuilder.Row(StateLabel(configLabel, Strings.ProjectOptions_ConfigDefines, model), configField));
+        rows.Add(DialogFieldBuilder.Row(DialogFieldBuilder.Label(Strings.ProjectOptions_Effective, null), effective));
+        return Page([.. rows]);
+    }
+
+    /// <summary>A read-only list of defines: selectable, wrapping, in the small code font (UI-DLG-279).</summary>
+    private static SelectableTextBlock ReadOnlyList(DialogFieldBuilder f, string field)
+    {
+        var block = new SelectableTextBlock { TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center, FontSize = 12, LineHeight = 16 };
+        block.Classes.Add("codeSmall");
+        block.Bind(TextBlock.FontFamilyProperty, block.GetResourceObservable("FxcFontMono"));
+        block.Bind(TextBlock.ForegroundProperty, block.GetResourceObservable("FxcTextPrimaryBrush"));
+        AutomationProperties.SetAutomationId(block, f.Id(field));
+        return block;
     }
 
     private static Control OutputPage(DialogFieldBuilder f, ProjectOptionsViewModel model)
@@ -368,7 +564,9 @@ public sealed class ProjectOptionsWindow : DialogWindow
         return Page(
             Field(DialogFieldBuilder.Row(DialogFieldBuilder.Label(Strings.ProjectOptions_OutputDir, outputDir, model.ConfigurationNote),
                     f.WithBrowse("OutputDir", outputDir, model.BrowseOutputDirAsync)),
-                f.Message("OutputDir", model, () => model.OutputDirError, () => true, outputDir)),
+                // IDE-CFG-026: a folder shared with another configuration only warns (glyph, status.warning).
+                f.Message("OutputDir", model, () => model.OutputDirError ?? (model.OutputDirWarning is { } shared ? "⚠ " + shared : null),
+                    () => model.OutputDirError is not null, outputDir)),
             DialogFieldBuilder.Row(DialogFieldBuilder.Label(Strings.ProjectOptions_OutputFile, null), outputFile),
             DialogFieldBuilder.Row(DialogFieldBuilder.Label(Strings.ProjectOptions_ObjDir, null), objDir));
     }

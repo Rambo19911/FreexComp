@@ -857,7 +857,7 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel, ICommandTarge
             if (projects.Project is not { } project)
                 return null;
             var excluded = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "obj" };
-            foreach (var configuration in projects.Definition?.Configurations.Values ?? [])
+            foreach (var configuration in projects.Definition is { } definition ? definition.ConfigurationNames.Select(n => ConfigurationEdits.Effective(definition, n)!) : [])
             {
                 if (configuration.OutputDir.Split('/', '\\').FirstOrDefault(s => s.Length > 0) is { } first)
                     excluded.Add(first);

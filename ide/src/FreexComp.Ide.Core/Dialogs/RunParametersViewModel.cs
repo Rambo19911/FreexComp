@@ -202,7 +202,7 @@ public sealed class RunParametersViewModel : DialogViewModel<bool>
             return host.Length == 0 ? "" : RunFields.Resolve(project.Directory, host) ?? host;
         }
 
-        var outputDir = project.Configurations.TryGetValue(configuration, out var c) ? c.OutputDir : "";
+        var outputDir = ConfigurationEdits.Effective(project, configuration)?.OutputDir ?? "";
         var dir = RunFields.Resolve(project.Directory, outputDir) ?? project.Directory;
         return Path.Combine(dir, project.Name + ".exe");
     }

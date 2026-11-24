@@ -123,6 +123,23 @@ public sealed class MenuTests
         Assert.Contains(Id, debug.Breakpoints.ContextCommands);
     }
 
+    /// <summary>IDE-CFG-010: "Configuration Manager…" stands directly after the Active Configuration submenu of the Project menu.</summary>
+    [Fact(Timeout = 30000)]
+    [Trait("Phase", "8")]
+    [Trait("Req", "IDE-CFG-010")]
+    public void ProjectMenuHasConfigurationManager()
+    {
+        var project = Assert.IsType<SubmenuNode>(MainMenuDefinition.TopLevel.Single(n => n is SubmenuNode { Key: "Project" }));
+        var index = project.Children.ToList().FindIndex(n => n is SubmenuNode { Key: "Project.Configuration" });
+        Assert.True(index >= 0);
+        Assert.Equal("project.configurationManager", Assert.IsType<CommandMenuNode>(project.Children[index + 1]).CommandId);
+
+        var services = TestComposition.Build();
+        var item = MainMenuModel.Build(services.Commands).Single(m => m.Key == "Project").Children.Single(m => m.CommandId == "project.configurationManager");
+        Assert.Equal("Configuration &Manager…", item.Label);
+        Assert.False(item.IsEnabled); // no project is open
+    }
+
     private static IEnumerable<CommandMenuNode> Commands(IEnumerable<MenuNode> nodes) =>
         nodes.SelectMany(n => n switch
         {
