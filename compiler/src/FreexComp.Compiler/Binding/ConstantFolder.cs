@@ -252,8 +252,8 @@ internal sealed class ConstantFolder
     {
         if (target is PointerTypeSymbol { Name: not "nil" } && operand.Type is IntegerTypeSymbol && operand.Value is BigInteger address)
         {
-            // C-185 (LANG-340): integer → pointer is a constant address (64-bit unsigned); 0 is nil
-            var wrapped = Wrap(address, 64, isSigned: false);
+            // C-185 (LANG-340): integer → pointer is a constant address (pointer-sized, unsigned); 0 is nil
+            var wrapped = Wrap(address, _types.Target.PointerSize * 8, isSigned: false);
             return new ConstantValue(wrapped.IsZero ? null : wrapped, target);
         }
 

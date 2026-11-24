@@ -17,6 +17,18 @@ internal static class Mangler
     public static LinkName Routine(RoutineSymbol routine) =>
         routine.ExplicitLinkName is { } explicitName ? new LinkName(explicitName, AlwaysQuote: false) : new LinkName(RoutineText(routine), AlwaysQuote: true);
 
+    /// <summary>
+    /// CMP-1011: the link name of an <c>external</c> import (or an export) under the decoration the target gives the routine's
+    /// calling convention. <see cref="SymbolDecoration.None"/> is the name itself; the decorated forms belong to the targets that
+    /// use them and are defined with those targets.
+    /// </summary>
+    public static LinkName Decorated(LinkName name, RoutineSymbol routine, TargetInfo target) =>
+        target.CallingConventions[routine.CallingConvention].Decoration switch
+        {
+            SymbolDecoration.None => name,
+            var decoration => throw new NotSupportedException($"Symbol decoration {decoration} is not defined for target '{target.Id}'."),
+        };
+
     /// <summary>The text of <see cref="Routine"/> (also <see cref="RoutineSymbol.LinkName"/>).</summary>
     public static string RoutineText(RoutineSymbol routine)
     {

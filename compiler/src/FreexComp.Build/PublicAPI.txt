@@ -274,6 +274,7 @@ sealed record FreexComp.Build.ProjectGroup : System.IEquatable<FreexComp.Build.P
   public static System.Boolean op_Inequality(FreexComp.Build.ProjectGroup left, FreexComp.Build.ProjectGroup right)
 static class FreexComp.Build.ProjectOptions
   public static FreexComp.Compiler.CompilationOptions ToCompilationOptions(FreexComp.Build.Project project, System.String configuration)
+  public static FreexComp.Compiler.CompilationOptions ToCompilationOptions(FreexComp.Build.Project project, System.String configuration, FreexComp.Compiler.Targets.TargetInfo target)
   public static System.String GetOutputPath(FreexComp.Build.Project project, System.String configuration)
 static class FreexComp.Build.ProjectSerializer
   public const System.Int32 SupportedFormatVersion = 1

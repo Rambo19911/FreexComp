@@ -379,6 +379,43 @@ public sealed class PbuildCliTests
         }
     }
 
+    /// <summary>targets.md CMP-1018 (C-283): <c>--platform &lt;id&gt;</c> sets <c>BuildRequest.Platform</c>; <c>--target</c> keeps its meaning.</summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Kind", "Unit")]
+    [Trait("Req", "CMP-1018")]
+    public void PlatformOption_SetsRequestPlatform()
+    {
+        var w = new BuildWorkspace();
+
+        // the id reaches the engine: Started carries it, and the build runs for the listed platform
+        var (code, output, _) = Run(w, "Hello.pproj", "--platform", "win64", "--diagnostics", "json");
+        Assert.Equal(0, code);
+        Assert.Equal("""{"event":"started","project":"C:\\p\\Hello.pproj","configuration":"Debug","platform":"win64","target":"build"}""", output[0]);
+
+        // a platform the project does not list: the engine's E9012 (not an argument error), exit code 1, nothing built
+        var other = new BuildWorkspace();
+        var (failed, lines, _) = Run(other, "Hello.pproj", "--platform", "win32", "--target", "rebuild");
+        Assert.Equal(1, failed);
+        Assert.Contains(@"C:\p\Hello.pproj(0,0): error E9012: Platform 'win32' is not available for project 'Hello' (available: win64)", lines);
+        Assert.Empty(other.Tools.Calls);
+        var (_, json, _) = Run(other, "Hello.pproj", "--platform", "win32", "--target", "rebuild", "--diagnostics", "json");
+        Assert.Equal("""{"event":"started","project":"C:\\p\\Hello.pproj","configuration":"Debug","platform":"win32","target":"rebuild"}""", json[0]);
+
+        // without the option the request's platform is null: the first entry of the project's platforms
+        var (_, byDefault, _) = Run(new BuildWorkspace(), "Hello.pproj", "--diagnostics", "json");
+        Assert.Contains("""
+            "platform":"win64"
+            """, byDefault[0], StringComparison.Ordinal);
+
+        // a missing value is E0006; the option is in the synopsis and the option table
+        var (missing, missingOut, _) = Run(new BuildWorkspace(), "Hello.pproj", "--platform");
+        Assert.Equal(1, missing);
+        Assert.Contains("error E0006: Missing argument for option '--platform'", missingOut[0], StringComparison.Ordinal);
+        Assert.Contains("[--target build|rebuild|clean|run] [--platform <id>]", PbuildCommand.HelpText, StringComparison.Ordinal);
+        Assert.Contains("  --platform <id>       target id (default: the first entry of the project's platforms)", PbuildCommand.HelpText, StringComparison.Ordinal);
+    }
+
     /// <summary>Reading any file throws a non-I/O exception: an internal error.</summary>
     private sealed class ThrowingFileSystem(IFileSystem inner) : IFileSystem
     {

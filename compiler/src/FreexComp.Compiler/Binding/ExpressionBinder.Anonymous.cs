@@ -207,12 +207,12 @@ internal sealed partial class ExpressionBinder
         RoutineSymbol signature;
         if (ofObject)
         {
-            var method = new MethodPointerTypeSymbol(type.Name + ".$method", type.ContainingSymbol, []);
+            var method = new MethodPointerTypeSymbol(type.Target, type.Name + ".$method", type.ContainingSymbol, []);
             (procedural, signature) = (method, method.Signature);
         }
         else
         {
-            var plain = new ProceduralTypeSymbol(type.Name + ".$routine", type.ContainingSymbol, []);
+            var plain = new ProceduralTypeSymbol(type.Target, type.Name + ".$routine", type.ContainingSymbol, []);
             (procedural, signature) = (plain, plain.Signature);
         }
 
@@ -243,7 +243,7 @@ internal sealed partial class ExpressionBinder
         lock (unit.Closures)
         {
             number = unit.Forwarders.Count + 1;
-            @class = new ClassTypeSymbol("#Forward" + number, unit, [])
+            @class = new ClassTypeSymbol(_types.Target, "#Forward" + number, unit, [])
             {
                 IsForward = false,
                 Parent = root,

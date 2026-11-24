@@ -15,10 +15,15 @@ public enum RttiScope { Broad, Published }
 /// </summary>
 public sealed class ClassTypeSymbol : TypeSymbol
 {
-    internal ClassTypeSymbol(string name, Symbol? containingSymbol, ImmutableArray<Location> locations)
-        : base(TypeKind.Class, name, size: 8, alignment: 8, containingSymbol, locations)
+    internal ClassTypeSymbol(TargetInfo target, string name, Symbol? containingSymbol, ImmutableArray<Location> locations)
+        : base(TypeKind.Class, name, size: target.PointerSize, alignment: target.PointerAlign, containingSymbol, locations)
     {
+        Target = target;
+        InstanceSize = target.PointerSize;
     }
+
+    /// <summary>The compilation's target (reference size, VMT pointer size; CMP-1007).</summary>
+    internal TargetInfo Target { get; }
 
     /// <summary>The parent class; null for the root class (<c>TObject</c>, or any class bound without a <c>System</c>).</summary>
     public ClassTypeSymbol? Parent { get; internal set; }
@@ -46,7 +51,7 @@ public sealed class ClassTypeSymbol : TypeSymbol
     public ImmutableArray<GenericMethodSymbol> GenericMethods { get; internal set; } = [];
 
     /// <summary>ABI-070: end of the last field rounded up to 8; 8 for a class without fields (the VMT pointer).</summary>
-    public long InstanceSize { get; internal set; } = 8;
+    public long InstanceSize { get; internal set; }
 
     /// <summary>
     /// The virtual method table slots (ABI-073/074): the parent's slots with this class's overrides replacing them, then one
@@ -115,7 +120,7 @@ public sealed class ClassTypeSymbol : TypeSymbol
     private ClassRefTypeSymbol? _reference;
 
     /// <summary>The anonymous <c>class of</c> this class: the type of the class name used as a value and of <c>Self</c> in class methods (LANG-652).</summary>
-    public ClassRefTypeSymbol Reference => _reference ??= new ClassRefTypeSymbol("class of " + Name, this, containingSymbol: null, []);
+    public ClassRefTypeSymbol Reference => _reference ??= new ClassRefTypeSymbol(Target, "class of " + Name, this, containingSymbol: null, []);
 }
 
 /// <summary>
@@ -123,8 +128,8 @@ public sealed class ClassTypeSymbol : TypeSymbol
 /// </summary>
 public sealed class ClassRefTypeSymbol : TypeSymbol
 {
-    internal ClassRefTypeSymbol(string name, ClassTypeSymbol @class, Symbol? containingSymbol, ImmutableArray<Location> locations)
-        : base(TypeKind.ClassRef, name, size: 8, alignment: 8, containingSymbol, locations)
+    internal ClassRefTypeSymbol(TargetInfo target, string name, ClassTypeSymbol @class, Symbol? containingSymbol, ImmutableArray<Location> locations)
+        : base(TypeKind.ClassRef, name, size: target.PointerSize, alignment: target.PointerAlign, containingSymbol, locations)
     {
         Class = @class;
     }

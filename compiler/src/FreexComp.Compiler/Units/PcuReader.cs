@@ -66,6 +66,15 @@ internal static class PcuReader
     public static PcuInterface Import(JsonObject pcu, BuiltInTypes types, Scope parent, Func<string, Scope?> unitInterface) =>
         new Importer(pcu, types, unitInterface).Run(parent);
 
+    /// <summary>CMP-1011: the calling-convention directive recorded among a routine's flags (<c>cc:&lt;Directive&gt;</c>), else Default.</summary>
+    private static CallConvDirective CallConv(IEnumerable<string> flags) =>
+        flags.FirstOrDefault(f => f.StartsWith("cc:", StringComparison.Ordinal)) is { } flag && Enum.TryParse<CallConvDirective>(flag[3..], out var directive)
+            ? directive : CallConvDirective.Default;
+
+    /// <summary>CMP-1011: <c>"callConv"</c> of a procedural type entry, else Default.</summary>
+    private static CallConvDirective CallConv(JsonObject entry) =>
+        entry["callConv"] is JsonValue value && Enum.TryParse<CallConvDirective>(value.GetValue<string>(), out var directive) ? directive : CallConvDirective.Default;
+
     private sealed class Importer(JsonObject pcu, BuiltInTypes types, Func<string, Scope?> unitInterface)
     {
         private readonly UnitSymbol _unit = new(Text(pcu, "unit"), isProgram: false, []);
@@ -339,6 +348,7 @@ internal static class PcuReader
             routine.IsInline = flags.Contains("inline");
             routine.IsExternal = flags.Contains("external");
             routine.IsNoReturn = flags.Contains("noreturn");
+            routine.CallingConvention = CallConv(flags);
             routine.LibraryName = entry["dll"] is JsonValue dll ? dll.GetValue<string>() : null;
             routine.ExplicitLinkName = Explicit(Text(entry, "linkName"), Emit.Mangler.RoutineText(routine));
             return routine;
@@ -454,13 +464,17 @@ internal static class PcuReader
                 case "boolean":
                     return _byId[id] = new BooleanTypeSymbol(name, entry["size"]!.GetValue<int>(), entry["cStyle"]!.GetValue<bool>(), _unit, []);
                 case "real":
-                    return _byId[id] = new RealTypeSymbol(name, Text(entry, "realKind") switch
+                {
+                    var realKind = Text(entry, "realKind") switch
                     {
                         "single" => RealKind.Single,
                         "double" => RealKind.Double,
                         "currency" => RealKind.Currency,
                         var other => throw new PcuFormatException($"unknown real kind '{other}'"),
-                    }, _unit, []);                                  // C-262: a distinct real keeps its RTTI name
+                    };
+                    var alignment = (realKind switch { RealKind.Single => types.Single, RealKind.Double => types.Double, _ => types.Currency }).Alignment;
+                    return _byId[id] = new RealTypeSymbol(name, realKind, alignment, _unit, []);
+                }
                 case "string":
                 {
                     var variant = Text(entry, "variant") switch
@@ -472,7 +486,7 @@ internal static class PcuReader
                     };
 
                     // C-262: a distinct long string type belongs to its unit (RTTI name); short strings stay anonymous as in source
-                    return _byId[id] = new StringTypeSymbol(name, variant, entry["codePage"]!.GetValue<int>(), entry["maxLen"]!.GetValue<int>(),
+                    return _byId[id] = new StringTypeSymbol(types.Target, name, variant, entry["codePage"]!.GetValue<int>(), entry["maxLen"]!.GetValue<int>(),
                         variant == StringVariant.Short ? null : _unit, []);
                 }
 
@@ -485,10 +499,10 @@ internal static class PcuReader
                 }
 
                 case "dynArray":
-                    return _byId[id] = new DynamicArrayTypeSymbol(name, Type(entry, "element"), _unit, []);
+                    return _byId[id] = new DynamicArrayTypeSymbol(types.Target, name, Type(entry, "element"), _unit, []);
                 case "pointer":
                 {
-                    var pointer = new PointerTypeSymbol(name, pointedType: null, entry["pointerMath"]!.GetValue<bool>());
+                    var pointer = new PointerTypeSymbol(types.Target, name, pointedType: null, entry["pointerMath"]!.GetValue<bool>());
                     _byId[id] = pointer;                                    // before the target: ^T may point back (LANG-208)
                     pointer.PointedType = entry["target"] is null ? null : Type(entry, "target");
                     return pointer;
@@ -496,7 +510,7 @@ internal static class PcuReader
 
                 case "record":
                 {
-                    var record = new RecordTypeSymbol(name, entry["size"]!.GetValue<long>(), entry["align"]!.GetValue<int>(), entry["packed"]!.GetValue<bool>(),
+                    var record = new RecordTypeSymbol(types.Target, name, entry["size"]!.GetValue<long>(), entry["align"]!.GetValue<int>(), entry["packed"]!.GetValue<bool>(),
                         entry["packing"]!.GetValue<int>(), entry["anonymous"]!.GetValue<bool>(), _unit, [])
                     {
                         HasVariantPart = entry["variant"] is JsonValue variant && variant.GetValue<bool>(),
@@ -524,19 +538,21 @@ internal static class PcuReader
 
                 case "procedural" when entry["ofObject"] is JsonValue ofObject && ofObject.GetValue<bool>():
                 {
-                    var methodPointer = new MethodPointerTypeSymbol(name, _unit, []);                    // C-103
+                    var methodPointer = new MethodPointerTypeSymbol(types.Target, name, _unit, []);                    // C-103
                     _byId[id] = methodPointer;
                     methodPointer.Signature.Parameters = Parameters(entry, methodPointer.Signature);
                     methodPointer.Signature.ReturnType = entry["result"] is null ? null : Type(entry, "result");
+                    methodPointer.Signature.CallingConvention = CallConv(entry);
                     return methodPointer;
                 }
 
                 case "procedural":
                 {
-                    var procedural = new ProceduralTypeSymbol(name, _unit, []);
+                    var procedural = new ProceduralTypeSymbol(types.Target, name, _unit, []);
                     _byId[id] = procedural;
                     procedural.Signature.Parameters = Parameters(entry, procedural.Signature);
                     procedural.Signature.ReturnType = entry["result"] is null ? null : Type(entry, "result");
+                    procedural.Signature.CallingConvention = CallConv(entry);
                     return procedural;
                 }
 
@@ -556,7 +572,7 @@ internal static class PcuReader
                 case "classRef":
                 {
                     var target = Type(entry, "target") as ClassTypeSymbol ?? throw new PcuFormatException($"'{name}' does not refer to a class");
-                    return _byId[id] = name == target.Reference.Name ? target.Reference : new ClassRefTypeSymbol(name, target, _unit, []);
+                    return _byId[id] = name == target.Reference.Name ? target.Reference : new ClassRefTypeSymbol(types.Target, name, target, _unit, []);
                 }
 
                 default:
@@ -570,7 +586,7 @@ internal static class PcuReader
         /// </summary>
         private ClassTypeSymbol Class(int id, JsonObject entry, string name)
         {
-            var type = new ClassTypeSymbol(name, _unit, []) { IsForward = false };
+            var type = new ClassTypeSymbol(types.Target, name, _unit, []) { IsForward = false };
             _byId[id] = type;                                                   // before the members: they may name the class
             if (string.Equals(_unit.Name, "System", StringComparison.OrdinalIgnoreCase) && string.Equals(name, "TObject", StringComparison.OrdinalIgnoreCase))
             {
@@ -638,7 +654,7 @@ internal static class PcuReader
         /// <summary>C-205: an interface of architecture.md §6 — parent, GUID, methods with their IMT slots, properties.</summary>
         private InterfaceTypeSymbol Interface(int id, JsonObject entry, string name)
         {
-            var type = new InterfaceTypeSymbol(name, _unit, []) { IsForward = false };
+            var type = new InterfaceTypeSymbol(types.Target, name, _unit, []) { IsForward = false };
             _byId[id] = type;                                                   // before the members: they may name the interface
             if (string.Equals(_unit.Name, "System", StringComparison.OrdinalIgnoreCase) && string.Equals(name, "IInterface", StringComparison.OrdinalIgnoreCase))
             {
@@ -660,6 +676,7 @@ internal static class PcuReader
                 method.Parameters = Parameters(m!, method);
                 method.ReturnType = m!["result"] is null ? null : Type(m, "result");
                 method.IsOverload = Array(m, "flags").Any(f => f!.GetValue<string>() == "overload");
+                method.CallingConvention = CallConv(Array(m, "flags").Select(f => f!.GetValue<string>()));
                 method.VmtSlot = m["slot"]!.GetValue<int>();
                 method.SelfParameter = new ParameterSymbol("Self", type, ParameterMode.Value, -1, method, []);
                 return method;
@@ -701,6 +718,7 @@ internal static class PcuReader
             method.IsOverload = flags.Contains("overload");
             method.IsInline = flags.Contains("inline");
             method.IsNoReturn = flags.Contains("noreturn");
+            method.CallingConvention = CallConv(flags);
             method.VmtSlot = entry["slot"]!.GetValue<int>();
             method.MessageId = entry["msgId"]?.GetValue<int>();                       // C-113
             var inherited = method.VmtSlot >= 0 && method.VmtSlot < parentSlots.Length;   // the slot of an ancestor's method
@@ -761,6 +779,7 @@ internal static class PcuReader
             method.IsOverload = flags.Contains("overload");
             method.IsInline = flags.Contains("inline");
             method.IsNoReturn = flags.Contains("noreturn");
+            method.CallingConvention = CallConv(flags);
             if (isConstructor)
             {
                 method.ResultVariable = new VariableSymbol("Result", owner, isGlobal: false, method, []);

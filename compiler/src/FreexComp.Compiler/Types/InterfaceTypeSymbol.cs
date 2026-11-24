@@ -11,10 +11,14 @@ namespace FreexComp.Compiler.Types;
 /// </summary>
 public sealed class InterfaceTypeSymbol : TypeSymbol
 {
-    internal InterfaceTypeSymbol(string name, Symbol? containingSymbol, ImmutableArray<Location> locations)
-        : base(TypeKind.Interface, name, size: 8, alignment: 8, containingSymbol, locations)
+    internal InterfaceTypeSymbol(TargetInfo target, string name, Symbol? containingSymbol, ImmutableArray<Location> locations)
+        : base(TypeKind.Interface, name, size: target.PointerSize, alignment: target.PointerAlign, containingSymbol, locations)
     {
+        Target = target;
     }
+
+    /// <summary>The compilation's target (reference size; CMP-1007).</summary>
+    internal TargetInfo Target { get; }
 
     /// <summary>The ancestor interface; null for the root (<c>IInterface</c>, or any interface bound without a <c>System</c>).</summary>
     public InterfaceTypeSymbol? Parent { get; internal set; }

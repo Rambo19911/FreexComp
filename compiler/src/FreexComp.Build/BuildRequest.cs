@@ -19,7 +19,7 @@ public sealed record BuildRequest
     /// <summary>null → the project's activeConfiguration.</summary>
     public string? Configuration { get; init; }
 
-    /// <summary>null → first entry of the project's platforms ("win64").</summary>
+    /// <summary>The target id; null → first entry of the project's platforms.</summary>
     public string? Platform { get; init; }
 
     public BuildTarget Target { get; init; } = BuildTarget.Build;

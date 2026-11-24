@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using FreexComp.Compiler.Targets;
 using System.Text.Json;
 
 namespace FreexComp.Build;
@@ -35,7 +36,7 @@ public sealed record Project
 
     public ImmutableArray<string> Defines { get; init; } = [];
 
-    public ImmutableArray<string> Platforms { get; init; } = ["win64"];
+    public ImmutableArray<string> Platforms { get; init; } = [TargetRegistry.Default.Id];
 
     /// <summary>
     /// Optional key <c>jobs</c> (CMP-1133): the project-wide default number of parallel compile jobs, 0…256; 0 = automatic (also

@@ -16,7 +16,6 @@ namespace FreexComp.Compiler.Emit;
 /// </summary>
 internal static class PdiAbi
 {
-    public const int PointerSize = 8;
     public const string RaiseHookSymbol = "System._Raise";
     public const uint PascalExceptionCode = 0xE0504153;
     public const string ExceptionMessageField = "FMessage";
@@ -25,14 +24,11 @@ internal static class PdiAbi
     public const int AnsiCodePageOffset = -8;
     public const int AnsiCodePageSize = 2;
     public const int UnicodeCharSize = 2;
-    public const int DynArrayLengthOffset = -8;
-    public const int DynArrayLengthSize = 8;
-    public const int VmtParentOffset = 0;
-    public const int VmtClassNameOffset = 16;
 
-    public static JsonObject Block() => new()
+    /// <param name="target">CMP-1009: the pointer size and the offsets of the layouts holding addresses come from the target.</param>
+    public static JsonObject Block(TargetInfo target) => new()
     {
-        ["pointerSize"] = PointerSize,
+        ["pointerSize"] = target.PointerSize,
         ["raiseHookSymbol"] = RaiseHookSymbol,
         ["pascalExceptionCode"] = PascalExceptionCode,
         ["exceptionMessageField"] = ExceptionMessageField,
@@ -44,10 +40,11 @@ internal static class PdiAbi
         {
             ["lengthOffset"] = StringLengthOffset, ["lengthSize"] = StringLengthSize, ["codePageOffset"] = AnsiCodePageOffset, ["codePageSize"] = AnsiCodePageSize,
         },
-        ["dynArray"] = new JsonObject { ["lengthOffset"] = DynArrayLengthOffset, ["lengthSize"] = DynArrayLengthSize },
+        ["dynArray"] = new JsonObject { ["lengthOffset"] = AbiLayout.DynArrayLengthOffset(target), ["lengthSize"] = target.PointerSize },
         ["vmt"] = new JsonObject
         {
-            ["classNameOffset"] = VmtClassNameOffset, ["classNameKind"] = "pointerToUnicodeString", ["parentOffset"] = VmtParentOffset, ["parentKind"] = "pointerToVmt",
+            ["classNameOffset"] = AbiLayout.VmtFieldOffset(target, 2), ["classNameKind"] = "pointerToUnicodeString",
+            ["parentOffset"] = AbiLayout.VmtFieldOffset(target, 0), ["parentKind"] = "pointerToVmt",
         },
         ["set"] = new JsonObject { ["bitOrder"] = "lsb0" },
     };
@@ -59,7 +56,7 @@ internal static class PdiAbi
 /// same points that emit <c>DISubprogram</c>, <c>DILocalVariable</c> and <c>DIGlobalVariable</c> nodes (DBG-145). Type ids are
 /// given in first-use order (deterministic, DBG-106).
 /// </summary>
-internal sealed class PdiFragmentBuilder(string unitName, string unitPath, string container)
+internal sealed class PdiFragmentBuilder(TargetInfo target, string unitName, string unitPath, string container)
 {
     private readonly Dictionary<TypeSymbol, int> _ids = [];
     private readonly Dictionary<TypeAlias, int> _aliasIds = new(ReferenceEqualityComparer.Instance);
@@ -153,11 +150,11 @@ internal sealed class PdiFragmentBuilder(string unitName, string unitPath, strin
 
                 break;
             case PointerTypeSymbol p when Strings.IsCharPointer(p, wide: true):
-                Kind(entry, "string", 8);
+                Kind(entry, "string", p.Size);
                 entry["flavor"] = "pchar";
                 break;
             case PointerTypeSymbol p when Strings.IsCharPointer(p, wide: false):
-                Kind(entry, "string", 8);
+                Kind(entry, "string", p.Size);
                 entry["flavor"] = "pansichar";
                 break;
             case ArrayTypeSymbol array:
@@ -172,11 +169,11 @@ internal sealed class PdiFragmentBuilder(string unitName, string unitPath, strin
 
                 break;
             case DynamicArrayTypeSymbol dynamic:
-                Kind(entry, "dynArray", 8);
+                Kind(entry, "dynArray", dynamic.Size);
                 entry["element"] = TypeId(dynamic.ElementType);
                 break;
             case OpenArrayTypeSymbol open:
-                Kind(entry, "openArray", 8);
+                Kind(entry, "openArray", target.PointerSize);
                 entry["element"] = TypeId(open.ElementType);
                 break;
             case RecordTypeSymbol record:
@@ -187,7 +184,7 @@ internal sealed class PdiFragmentBuilder(string unitName, string unitPath, strin
                 })]);
                 break;
             case ClassTypeSymbol @class:
-                Kind(entry, "class", 8);
+                Kind(entry, "class", @class.Size);
                 entry["ancestor"] = @class.Parent is { } parent ? TypeId(parent) : (int?)null;
                 entry["instanceSize"] = @class.InstanceSize;
                 entry["fields"] = new JsonArray([.. @class.Fields.Select(f => (JsonNode)new JsonObject
@@ -196,26 +193,26 @@ internal sealed class PdiFragmentBuilder(string unitName, string unitPath, strin
                 })]);
                 break;
             case ClassRefTypeSymbol reference:
-                Kind(entry, "classRef", 8);
+                Kind(entry, "classRef", reference.Size);
                 entry["of"] = TypeId(reference.Class);
                 break;
             case PointerTypeSymbol pointer:
-                Kind(entry, "pointer", 8);
+                Kind(entry, "pointer", pointer.Size);
                 entry["to"] = pointer.PointedType is { } pointed ? TypeId(pointed) : (int?)null;
                 break;
             case UntypedTypeSymbol:
-                Kind(entry, "pointer", 8);                                         // an untyped parameter is described as its address (C-128)
+                Kind(entry, "pointer", target.PointerSize);                        // an untyped parameter is described as its address (C-128)
                 entry["to"] = (JsonNode?)null;
                 break;
             case InterfaceTypeSymbol:
-                Kind(entry, "interface", 8);
+                Kind(entry, "interface", type.Size);
                 break;
             case ProceduralTypeSymbol:
-                Kind(entry, "procedural", 8);
+                Kind(entry, "procedural", type.Size);
                 entry["method"] = false;
                 break;
             case MethodPointerTypeSymbol:
-                Kind(entry, "procedural", 16);
+                Kind(entry, "procedural", type.Size);
                 entry["method"] = true;
                 break;
             default:
@@ -268,7 +265,7 @@ internal sealed class PdiFragmentBuilder(string unitName, string unitPath, strin
             ["formatVersion"] = 1,
             ["program"] = unitName,
             ["container"] = container,
-            ["abi"] = PdiAbi.Block(),
+            ["abi"] = PdiAbi.Block(target),
             ["types"] = new JsonArray([.. _types.Select(t => (JsonNode)t.DeepClone())]),
             ["units"] = new JsonArray(new JsonObject
             {
@@ -401,7 +398,7 @@ internal static class PdiSidecar
     }
 
     /// <summary>Merges fragments (JSON text, link order) into the program's sidecar.</summary>
-    public static string Merge(string program, string container, IEnumerable<string> fragments)
+    public static string Merge(TargetInfo target, string program, string container, IEnumerable<string> fragments)
     {
         var types = new List<JsonObject>();
         var byKey = new Dictionary<string, (int Id, int Fragment, int Local)>(StringComparer.Ordinal);
@@ -496,7 +493,7 @@ internal static class PdiSidecar
             ["formatVersion"] = 1,
             ["program"] = program,
             ["container"] = container,
-            ["abi"] = PdiAbi.Block(),
+            ["abi"] = PdiAbi.Block(target),
             ["types"] = new JsonArray([.. types.Select(t => (JsonNode)t)]),
             ["units"] = units,
         });

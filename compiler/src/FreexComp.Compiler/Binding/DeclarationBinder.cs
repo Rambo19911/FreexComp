@@ -352,7 +352,7 @@ internal sealed partial class DeclarationBinder
         switch (source)
         {
             case StringTypeSymbol { Variant: not StringVariant.Short } s:                                        // C-262
-                return new StringTypeSymbol(name, s.Variant, s.CodePage, containingSymbol: _container, locations: locations);
+                return new StringTypeSymbol(_types.Target, name, s.Variant, s.CodePage, containingSymbol: _container, locations: locations);
             case IntegerTypeSymbol integer:
                 return new IntegerTypeSymbol(name, integer.BaseType as IntegerTypeSymbol ?? integer, integer.Min, integer.Max, _container, locations);
             case CharTypeSymbol c:
@@ -362,9 +362,9 @@ internal sealed partial class DeclarationBinder
             case BooleanTypeSymbol boolean:
                 return new BooleanTypeSymbol(name, (int)boolean.Size, boolean.IsCStyle, _container, locations);
             case RealTypeSymbol real:
-                return new RealTypeSymbol(name, real.RealKind, _container, locations);                          // C-262: RTTI name
+                return new RealTypeSymbol(name, real.RealKind, real.Alignment, _container, locations);                          // C-262: RTTI name
             case PointerTypeSymbol { PointedType: var pointed } pointer when !ReferenceEquals(pointer, _types.Nil):
-                return new PointerTypeSymbol(name, pointed, pointer.AllowsPointerMath);
+                return new PointerTypeSymbol(_types.Target, name, pointed, pointer.AllowsPointerMath);
             default:
                 return Unsupported(syntax, "distinct type of " + KindName(source));
         }
@@ -396,13 +396,13 @@ internal sealed partial class DeclarationBinder
             && (_sectionTypeNames!.Contains(NameOf(pointedName.Identifier)) && _scope.LookupLocal(NameOf(pointedName.Identifier)) is null
                 || _scope.Lookup(NameOf(pointedName.Identifier)) is null))
         {
-            var forward = new PointerTypeSymbol(name, pointedType: null, allowsPointerMath: false);
+            var forward = new PointerTypeSymbol(_types.Target, name, pointedType: null, allowsPointerMath: false);
             _forwardPointers.Add((forward, pointedName));
             return forward;
         }
 
         var target = BindType(syntax.PointedType, declared: declared);
-        return target.TypeKind == TypeKind.Error ? _types.Error : new PointerTypeSymbol(name, target, allowsPointerMath: false);
+        return target.TypeKind == TypeKind.Error ? _types.Error : new PointerTypeSymbol(_types.Target, name, target, allowsPointerMath: false);
     }
 
     // ------------------------------------------------------------------ enumerations and subranges (LANG-210…212)
@@ -566,7 +566,7 @@ internal sealed partial class DeclarationBinder
 
 
         ImmutableArray<Text.Location> locations = declaredAt is { } at ? [DiagnosticBag.LocationOf(at)] : [];
-        return new DynamicArrayTypeSymbol(name, element, declaredAt is null ? null : _container, locations);
+        return new DynamicArrayTypeSymbol(_types.Target, name, element, declaredAt is null ? null : _container, locations);
     }
 
     private TypeSymbol BindArray(ArrayTypeSyntax syntax, string name, SyntaxToken? declaredAt, ImmutableArray<Symbol>.Builder? declared)
@@ -703,7 +703,7 @@ internal sealed partial class DeclarationBinder
             return _types.Error;
         }
 
-        var record = new RecordTypeSymbol(name, size, alignment, syntax.PackedKeyword is not null, packing, isAnonymous: declaredAt is null,
+        var record = new RecordTypeSymbol(_types.Target, name, size, alignment, syntax.PackedKeyword is not null, packing, isAnonymous: declaredAt is null,
             _container, declaredAt is { } at ? [DiagnosticBag.LocationOf(at)] : [])
         {
             HasVariantPart = syntax.VariantPart is not null,
@@ -1184,6 +1184,7 @@ internal sealed partial class DeclarationBinder
             IsExperimental = directives.IsExperimental,
             LibraryName = directives.LibraryName,
             ExplicitLinkName = directives.LinkName ?? (directives.IsExternal ? name : null),
+            CallingConvention = CallConvOf(declaration.Directives.Select(d => d.Keyword)),
         };
         BindSignature(routine, heading, identifier, report: true);
         if (declaration.Block != null)
@@ -1248,6 +1249,27 @@ internal sealed partial class DeclarationBinder
     }
 
     /// <summary>LANG-460…473: calling conventions, <c>assembler</c> and hints are accepted; method directives are E1114.</summary>
+    /// <summary>CMP-1011: the calling-convention directive among <paramref name="keywords"/> (the last one written), else <see cref="CallConvDirective.Default"/>.</summary>
+    internal static CallConvDirective CallConvOf(IEnumerable<SyntaxToken> keywords)
+    {
+        var result = CallConvDirective.Default;
+        foreach (var keyword in keywords)
+        {
+            result = keyword.ContextualKind switch
+            {
+                SyntaxKind.RegisterKeyword => CallConvDirective.Register,
+                SyntaxKind.PascalKeyword => CallConvDirective.Pascal,
+                SyntaxKind.CdeclKeyword => CallConvDirective.Cdecl,
+                SyntaxKind.StdCallKeyword => CallConvDirective.StdCall,
+                SyntaxKind.SafeCallKeyword => CallConvDirective.SafeCall,
+                SyntaxKind.WinApiKeyword => CallConvDirective.WinApi,
+                _ => result,
+            };
+        }
+
+        return result;
+    }
+
     private RoutineDirectives BindDirectives(SyntaxList<DirectiveSyntax> directives)
     {
         bool forward = false, overload = false, external = false, inline = false, noReturn = false, deprecated = false, platform = false, experimental = false;
@@ -1383,14 +1405,16 @@ internal sealed partial class DeclarationBinder
         RoutineSymbol signature;
         if (syntax.ObjectKeyword is not null)
         {
-            var method = new MethodPointerTypeSymbol(typeName, _container, locations);         // LANG-481 (C-103)
+            var method = new MethodPointerTypeSymbol(_types.Target, typeName, _container, locations);         // LANG-481 (C-103)
             (type, signature) = (method, method.Signature);
         }
         else
         {
-            var plain = new ProceduralTypeSymbol(typeName, _container, locations);
+            var plain = new ProceduralTypeSymbol(_types.Target, typeName, _container, locations);
             (type, signature) = (plain, plain.Signature);
         }
+
+        signature.CallingConvention = CallConvOf(syntax.CallingConventions.Select(c => c.Keyword));        // CMP-1011
 
         if (syntax.Keyword.Kind == SyntaxKind.FunctionKeyword)
         {
@@ -1413,7 +1437,7 @@ internal sealed partial class DeclarationBinder
     /// </summary>
     internal InterfaceTypeSymbol NewMethodReference(string name, Symbol? container, ImmutableArray<Text.Location> locations)
     {
-        var type = new InterfaceTypeSymbol(name, container, locations) { IsForward = false, IsMethodReference = true };
+        var type = new InterfaceTypeSymbol(_types.Target, name, container, locations) { IsForward = false, IsMethodReference = true };
         type.Parent = _types.IInterface as InterfaceTypeSymbol;
         var invoke = new MethodSymbol("Invoke", type, locations, declaration: null!, MethodKind.Ordinary, Visibility.Public)
         {
@@ -1698,7 +1722,7 @@ internal sealed partial class DeclarationBinder
                 switch (BindType(classRef.ClassType))
                 {
                     case ClassTypeSymbol referenced when declaredAt is { } at:
-                        return new ClassRefTypeSymbol(typeName, referenced, _container, [DiagnosticBag.LocationOf(at)]);
+                        return new ClassRefTypeSymbol(_types.Target, typeName, referenced, _container, [DiagnosticBag.LocationOf(at)]);
                     case ClassTypeSymbol referenced:
                         return referenced.Reference;
                     case ErrorTypeSymbol error:
@@ -1756,7 +1780,7 @@ internal sealed partial class DeclarationBinder
             case null:
                 return _types.Error;
             case { Value: BigInteger n } when n >= 1 && n <= 255:
-                return new StringTypeSymbol(typeName, StringVariant.Short, codePage: 65001, maxLength: (int)n);
+                return new StringTypeSymbol(_types.Target, typeName, StringVariant.Short, codePage: 65001, maxLength: (int)n);
             case { Value: BigInteger } value:
                 _diagnostics.Report(length, "E2012", value.ToDisplayString(), "1..255");
                 return _types.Error;

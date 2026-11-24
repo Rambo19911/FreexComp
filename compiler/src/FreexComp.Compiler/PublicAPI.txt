@@ -97,6 +97,7 @@ sealed record FreexComp.Compiler.CompilationOptions : System.IEquatable<FreexCom
   public FreexComp.Compiler.CompilationOptions <Clone>$()
   public FreexComp.Compiler.DebugFormat DebugFormat { get; init; }
   public FreexComp.Compiler.OptimizationLevel Optimization { get; init; }
+  public FreexComp.Compiler.Targets.TargetInfo Target { get; init; }
   public System.Boolean Assertions { get; init; }
   public System.Boolean DebugInfo { get; init; }
   public System.Boolean Equals(FreexComp.Compiler.CompilationOptions other)
@@ -402,6 +403,7 @@ sealed class FreexComp.Compiler.Symbols.PropertySymbol : FreexComp.Compiler.Symb
   public System.Nullable<System.Int64> DefaultValue { get; }
   public override System.String ToDisplayString()
 class FreexComp.Compiler.Symbols.RoutineSymbol : FreexComp.Compiler.Symbols.Symbol
+  public FreexComp.Compiler.Targets.CallConvDirective CallingConvention { get; }
   public FreexComp.Compiler.Types.TypeSymbol ReturnType { get; }
   public System.Boolean IsExternal { get; }
   public System.Boolean IsInline { get; }
@@ -882,6 +884,7 @@ sealed class FreexComp.Compiler.Syntax.ParenthesizedExpressionSyntax : FreexComp
   public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
 sealed record FreexComp.Compiler.Syntax.ParseOptions : System.IEquatable<FreexComp.Compiler.Syntax.ParseOptions>
   public FreexComp.Compiler.Syntax.ParseOptions <Clone>$()
+  public FreexComp.Compiler.Targets.TargetInfo Target { get; init; }
   public System.Boolean Equals(FreexComp.Compiler.Syntax.ParseOptions other)
   public System.Collections.Immutable.ImmutableArray<System.String> Defines { get; init; }
   public System.Collections.Immutable.ImmutableArray<System.String> SearchPaths { get; init; }
@@ -1672,6 +1675,74 @@ sealed class FreexComp.Compiler.Syntax.WithStatementSyntax : FreexComp.Compiler.
   public FreexComp.Compiler.Syntax.SyntaxToken DoKeyword { get; }
   public FreexComp.Compiler.Syntax.SyntaxToken WithKeyword { get; }
   public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+enum FreexComp.Compiler.Targets.CallConvDirective
+  Cdecl = 3
+  Default = 0
+  Pascal = 2
+  Register = 1
+  SafeCall = 5
+  StdCall = 4
+  WinApi = 6
+sealed record FreexComp.Compiler.Targets.CallConvInfo : System.IEquatable<FreexComp.Compiler.Targets.CallConvInfo>
+  public FreexComp.Compiler.Targets.CallConvInfo <Clone>$()
+  public FreexComp.Compiler.Targets.SymbolDecoration Decoration { get; init; }
+  public System.Boolean Equals(FreexComp.Compiler.Targets.CallConvInfo other)
+  public System.String LlvmKeyword { get; init; }
+  public System.Void Deconstruct(out System.String LlvmKeyword, out FreexComp.Compiler.Targets.SymbolDecoration Decoration)
+  public ctor(System.String LlvmKeyword, FreexComp.Compiler.Targets.SymbolDecoration Decoration)
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public static System.Boolean op_Equality(FreexComp.Compiler.Targets.CallConvInfo left, FreexComp.Compiler.Targets.CallConvInfo right)
+  public static System.Boolean op_Inequality(FreexComp.Compiler.Targets.CallConvInfo left, FreexComp.Compiler.Targets.CallConvInfo right)
+enum FreexComp.Compiler.Targets.ExceptionModel
+  SehTable = 0
+enum FreexComp.Compiler.Targets.SymbolDecoration
+  FastCallBytes = 3
+  LeadingUnderscore = 1
+  None = 0
+  StdCallBytes = 2
+sealed record FreexComp.Compiler.Targets.TargetInfo : System.IEquatable<FreexComp.Compiler.Targets.TargetInfo>
+  public FreexComp.Compiler.Targets.ExceptionModel ExceptionModel { get; init; }
+  public FreexComp.Compiler.Targets.TargetInfo <Clone>$()
+  public System.Boolean Equals(FreexComp.Compiler.Targets.TargetInfo other)
+  public System.Collections.Immutable.ImmutableArray<System.String> ClangArguments { get; init; }
+  public System.Collections.Immutable.ImmutableArray<System.String> LinkerArguments { get; init; }
+  public System.Collections.Immutable.ImmutableArray<System.String> PredefinedSymbols { get; init; }
+  public System.Collections.Immutable.ImmutableArray<System.String> StackProbeAssembly { get; init; }
+  public System.Collections.Immutable.ImmutableDictionary<FreexComp.Compiler.Targets.CallConvDirective, FreexComp.Compiler.Targets.CallConvInfo> CallingConventions { get; init; }
+  public System.Int32 CoffMachine { get; init; }
+  public System.Int32 Float64Align { get; init; }
+  public System.Int32 Int64Align { get; init; }
+  public System.Int32 PointerAlign { get; init; }
+  public System.Int32 PointerSize { get; init; }
+  public System.Int32 StackAlign { get; init; }
+  public System.Int32 StackProbeThreshold { get; init; }
+  public System.String DataLayout { get; init; }
+  public System.String DisplayName { get; init; }
+  public System.String DllToolMachine { get; init; }
+  public System.String EntrySymbol { get; init; }
+  public System.String Fingerprint { get; }
+  public System.String Id { get; init; }
+  public System.String ImportDefSubdirectory { get; init; }
+  public System.String LibraryEntrySymbol { get; init; }
+  public System.String LinkerMachine { get; init; }
+  public System.String PersonalityLibrary { get; init; }
+  public System.String PersonalitySymbol { get; init; }
+  public System.String RtlSubdirectory { get; init; }
+  public System.String StackProbeSymbol { get; init; }
+  public System.String Triple { get; init; }
+  public ctor()
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public static FreexComp.Compiler.Targets.TargetInfo Win64 { get; }
+  public static System.Boolean op_Equality(FreexComp.Compiler.Targets.TargetInfo left, FreexComp.Compiler.Targets.TargetInfo right)
+  public static System.Boolean op_Inequality(FreexComp.Compiler.Targets.TargetInfo left, FreexComp.Compiler.Targets.TargetInfo right)
+static class FreexComp.Compiler.Targets.TargetRegistry
+  public static FreexComp.Compiler.Targets.TargetInfo Default { get; }
+  public static System.Boolean TryGet(System.String id, out FreexComp.Compiler.Targets.TargetInfo target)
+  public static System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Targets.TargetInfo> BuiltIn { get; }
 sealed class FreexComp.Compiler.Text.LineMap
   public FreexComp.Compiler.Text.LinePosition GetLinePosition(System.Int32 offset)
   public FreexComp.Compiler.Text.TextSpan GetLineSpan(System.Int32 line)
@@ -1749,6 +1820,7 @@ sealed class FreexComp.Compiler.Types.BooleanTypeSymbol : FreexComp.Compiler.Typ
   public System.Boolean IsCStyle { get; }
   public override System.Boolean IsOrdinal { get; }
 sealed class FreexComp.Compiler.Types.BuiltInTypes
+  public FreexComp.Compiler.Targets.TargetInfo Target { get; }
   public FreexComp.Compiler.Types.PointerTypeSymbol Nil { get; }
   public FreexComp.Compiler.Types.SetTypeSymbol EmptySet { get; }
   public FreexComp.Compiler.Types.TypeSymbol AnsiChar { get; }

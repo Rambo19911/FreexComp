@@ -22,7 +22,7 @@ internal sealed partial class DeclarationBinder
         }
 
         var packing = syntax.PackedKeyword is not null ? 1 : syntax.RecordKeyword.DirectiveState.Align;
-        var record = new RecordTypeSymbol(name, 0, 1, syntax.PackedKeyword is not null, packing, isAnonymous: false, _container,
+        var record = new RecordTypeSymbol(_types.Target, name, 0, 1, syntax.PackedKeyword is not null, packing, isAnonymous: false, _container,
             [DiagnosticBag.LocationOf(at)]);
         _onTypeCreated?.Invoke(record);                                                // C-116: a generic instance registers itself first
         _onTypeCreated = null;

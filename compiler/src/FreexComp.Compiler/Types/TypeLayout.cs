@@ -11,9 +11,9 @@ internal sealed record TypeLayout(long Size, int Alignment, IrType StorageType)
 {
     public static TypeLayout Of(TypeSymbol type)
     {
-        if (type is OpenArrayTypeSymbol)
+        if (type is OpenArrayTypeSymbol openArray)
         {
-            return new TypeLayout(8, 8, IrType.Ptr);                        // ABI-080: the data pointer (C-106)
+            return Pointer(openArray.Target);                               // ABI-080: the data pointer (C-106)
         }
 
         IrType storage = type switch
@@ -41,6 +41,13 @@ internal sealed record TypeLayout(long Size, int Alignment, IrType StorageType)
         return new TypeLayout(type.Size, type.Alignment, storage);
     }
 
+    /// <summary>A code or data address on <paramref name="target"/>.</summary>
+    public static TypeLayout Pointer(TargetInfo target) => new(target.PointerSize, target.PointerAlign, IrType.Ptr);
+
+    /// <summary><c>NativeInt</c> / <c>NativeUInt</c> on <paramref name="target"/>: <c>i&lt;PointerSize*8&gt;</c> (CMP-1007).</summary>
+    public static TypeLayout NativeInt(TargetInfo target) =>
+        new(target.PointerSize, target.PointerSize == 8 ? target.Int64Align : target.PointerSize, IrType.Int(target.PointerSize * 8));
+
     /// <summary>
     /// The layout of a variable's own storage (alloca, global, frame field): <see cref="Of"/>, except that a type of size 0 (an
     /// empty record) occupies one byte, <c>[1 x i8]</c>, so that distinct variables have distinct addresses (ABI-060).
@@ -58,17 +65,17 @@ internal sealed record TypeLayout(long Size, int Alignment, IrType StorageType)
     /// <c>packed record</c> is always the packed struct (it never needs padding).
     /// </summary>
     private static (StructIrType Body, ImmutableArray<int> FieldIndexes) Record(RecordTypeSymbol record) =>
-        Struct([.. record.Fields.Select(f => Of(f.Type).StorageType)], [.. record.Fields.Select(f => f.Offset)],
+        Struct(record.Target, [.. record.Fields.Select(f => Of(f.Type).StorageType)], [.. record.Fields.Select(f => f.Offset)],
             [.. record.Fields.Select(f => f.Type.Size)], record.Size, record.IsPacked);
 
     /// <summary>
     /// A struct holding fields of the given layouts at their ABI-060 offsets (alignment cap 8; frame records, CMP-345) with
     /// the struct index of each field: the plain struct when LLVM lays it out the same way, else packed with padding.
     /// </summary>
-    public static (StructIrType Body, ImmutableArray<int> FieldIndexes) Struct(IReadOnlyList<TypeLayout> fields)
+    public static (StructIrType Body, ImmutableArray<int> FieldIndexes) Struct(TargetInfo target, IReadOnlyList<TypeLayout> fields)
     {
         var (offsets, size) = StructOffsets(fields);
-        return Struct([.. fields.Select(f => f.StorageType)], offsets, [.. fields.Select(f => f.Size)], size, packed: false);
+        return Struct(target, [.. fields.Select(f => f.StorageType)], offsets, [.. fields.Select(f => f.Size)], size, packed: false);
     }
 
     /// <summary>The ABI-060 byte offset of each field of <see cref="Struct(IReadOnlyList{TypeLayout})"/> (alignment cap 8) and the struct's size.</summary>
@@ -88,11 +95,11 @@ internal sealed record TypeLayout(long Size, int Alignment, IrType StorageType)
         return ([.. offsets], (end + alignment - 1) / alignment * alignment);
     }
 
-    private static (StructIrType Body, ImmutableArray<int> FieldIndexes) Struct(ImmutableArray<IrType> types, ImmutableArray<long> offsets,
+    private static (StructIrType Body, ImmutableArray<int> FieldIndexes) Struct(TargetInfo target, ImmutableArray<IrType> types, ImmutableArray<long> offsets,
         ImmutableArray<long> sizes, long size, bool packed)
     {
         var plain = new StructIrType(types);
-        if (!packed && NaturalOffsets(plain).SequenceEqual(offsets) && LlvmSize(plain) == size)
+        if (!packed && NaturalOffsets(target, plain).SequenceEqual(offsets) && LlvmSize(target, plain) == size)
         {
             return (plain, [.. Enumerable.Range(0, types.Length)]);
         }
@@ -121,33 +128,39 @@ internal sealed record TypeLayout(long Size, int Alignment, IrType StorageType)
     }
 
     /// <summary>Field offsets LLVM gives a non-packed struct (each field at the next multiple of its LLVM ABI alignment).</summary>
-    private static IEnumerable<long> NaturalOffsets(StructIrType type)
+    private static IEnumerable<long> NaturalOffsets(TargetInfo target, StructIrType type)
     {
         long end = 0;
         foreach (var field in type.Fields)
         {
-            var alignment = LlvmAlignment(field);
+            var alignment = LlvmAlignment(target, field);
             var offset = (end + alignment - 1) / alignment * alignment;
             yield return offset;
-            end = offset + LlvmSize(field);
+            end = offset + LlvmSize(target, field);
         }
     }
 
-    /// <summary>LLVM's ABI alignment of a storage type on x86_64-pc-windows-msvc (packed structs: 1).</summary>
-    private static int LlvmAlignment(IrType type) => type switch
+    /// <summary>The back end's ABI alignment of a storage type on <paramref name="target"/> (packed structs: 1).</summary>
+    internal static int LlvmAlignment(TargetInfo target, IrType type) => type switch
     {
-        IntegerIrType i => Math.Min(8, Math.Max(1, i.Bits / 8)),
+        IntegerIrType { Bits: >= 64 } => target.Int64Align,
+        IntegerIrType i => Math.Max(1, i.Bits / 8),
         FloatingIrType { Kind: FloatingKind.Float } => 4,
-        FloatingIrType or PointerIrType => 8,
-        ArrayIrType a => LlvmAlignment(a.Element),
+        FloatingIrType => target.Float64Align,
+        PointerIrType => target.PointerAlign,
+        ArrayIrType a => LlvmAlignment(target, a.Element),
         StructIrType { IsPacked: true } => 1,
-        StructIrType s => s.Fields.Select(LlvmAlignment).DefaultIfEmpty(1).Max(),
-        NamedStructIrType { Body: { } body } => LlvmAlignment(body),
+        StructIrType s => s.Fields.Select(f => LlvmAlignment(target, f)).DefaultIfEmpty(1).Max(),
+        NamedStructIrType { Body: { } body } => LlvmAlignment(target, body),
         _ => throw new InvalidOperationException($"No LLVM alignment for {type}."),
     };
 
-    /// <summary>LLVM's allocation size of a storage type (structs rounded up to their alignment).</summary>
-    private static long LlvmSize(IrType type)
+    /// <summary>The byte offset of each field of the non-packed struct <paramref name="type"/> on <paramref name="target"/> and its size (CMP-1007).</summary>
+    internal static (ImmutableArray<long> Offsets, long Size) NaturalLayout(TargetInfo target, StructIrType type) =>
+        ([.. NaturalOffsets(target, type)], LlvmSize(target, type));
+
+    /// <summary>The back end's allocation size of a storage type (structs rounded up to their alignment).</summary>
+    internal static long LlvmSize(TargetInfo target, IrType type)
     {
         switch (type)
         {
@@ -155,21 +168,23 @@ internal sealed record TypeLayout(long Size, int Alignment, IrType StorageType)
                 return Math.Max(1, i.Bits / 8);
             case FloatingIrType { Kind: FloatingKind.Float }:
                 return 4;
-            case FloatingIrType or PointerIrType:
+            case FloatingIrType:
                 return 8;
+            case PointerIrType:
+                return target.PointerSize;
             case ArrayIrType a:
-                return a.Length * LlvmSize(a.Element);
+                return a.Length * LlvmSize(target, a.Element);
             case StructIrType { IsPacked: true } packed:
-                return packed.Fields.Sum(LlvmSize);
+                return packed.Fields.Sum(f => LlvmSize(target, f));
             case StructIrType s:
             {
-                var end = s.Fields.IsEmpty ? 0 : NaturalOffsets(s).Last() + LlvmSize(s.Fields[^1]);
-                var alignment = LlvmAlignment(s);
+                var end = s.Fields.IsEmpty ? 0 : NaturalOffsets(target, s).Last() + LlvmSize(target, s.Fields[^1]);
+                var alignment = LlvmAlignment(target, s);
                 return (end + alignment - 1) / alignment * alignment;
             }
 
             case NamedStructIrType { Body: { } body }:
-                return LlvmSize(body);
+                return LlvmSize(target, body);
             default:
                 throw new InvalidOperationException($"No LLVM size for {type}.");
         }

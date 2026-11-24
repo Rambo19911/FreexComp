@@ -18,16 +18,19 @@ internal static class ImportLibraryPlan
     /// The DLLs are the union of every unit's <see cref="UnitLinkInputs.Dlls"/>, the DLL of every <c>{$L x.def}</c> (base name +
     /// <c>.dll</c>) and <see cref="LinkInputs.AlwaysLinked"/>, sorted. Each DLL's definition is looked up in the CMP-620 order: a
     /// <c>{$L}</c> <c>.def</c> of any unit (units in link order, then directive order); the directory of each unit declaring the DLL,
-    /// in link order (for kernel32/ntdll then <paramref name="systemDirectory"/>); <c>&lt;rtl&gt;\..\winapi\def</c>. Not found → E4006.
+    /// in link order (for the always-linked DLLs then <paramref name="systemDirectory"/>); <c>&lt;rtl&gt;\..\winapi\def</c> (the target's
+    /// sub-directory first, CMP-1023). Not found → E4006.
     /// </summary>
     /// <param name="units">The linked units in link order (program, System, init order; CMP-625).</param>
     public static (ImmutableArray<PlannedImportLibrary> Libraries, ImmutableArray<Diagnostic> Errors) Create(
-        IFileSystem fs, IReadOnlyList<LinkUnit> units, string systemDirectory, string rtlDirectory, Location location)
+        IFileSystem fs, IReadOnlyList<LinkUnit> units, string systemDirectory, string rtlDirectory, Location location, TargetInfo? target = null)
     {
+        target ??= TargetRegistry.Default;
+        var always = LinkInputs.AlwaysLinked(target);
         var defs = units.SelectMany(u => u.Inputs.Defs).Distinct(PathUtil.Comparer).ToImmutableArray();
         var dlls = units.SelectMany(u => u.Inputs.Dlls)
             .Concat(defs.Select(d => Path.GetFileNameWithoutExtension(d).ToLowerInvariant() + ".dll"))
-            .Concat(LinkInputs.AlwaysLinked)
+            .Concat(always)
             .Distinct(StringComparer.Ordinal)
             .Order(StringComparer.Ordinal);
         var libraries = ImmutableArray.CreateBuilder<PlannedImportLibrary>();
@@ -35,12 +38,12 @@ internal static class ImportLibraryPlan
         foreach (var dll in dlls)
         {
             var declaring = units.Where(u => u.Inputs.Dlls.Contains(dll, StringComparer.Ordinal)).Select(u => u.Directory);
-            if (LinkInputs.AlwaysLinked.Contains(dll, StringComparer.Ordinal))
+            if (always.Contains(dll, StringComparer.Ordinal))
             {
                 declaring = declaring.Append(systemDirectory);
             }
 
-            var (definition, notFound) = DllToolInvoker.FindDefinition(fs, dll, defs, declaring.Distinct(PathUtil.Comparer), rtlDirectory, location);
+            var (definition, notFound) = DllToolInvoker.FindDefinition(fs, dll, defs, declaring.Distinct(PathUtil.Comparer), rtlDirectory, location, target);
             if (definition is null)
             {
                 errors.Add(notFound!);

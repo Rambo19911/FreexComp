@@ -39,10 +39,16 @@ internal sealed class DebugInfoEmitter
     private readonly List<int> _globals = [];
     private int? _byte;
 
-    public DebugInfoEmitter(DebugInfoOptions options, string unitName, string unitPath, SourceText? unitText)
+    private readonly TargetInfo _target;
+
+    /// <summary>Bits of a code or data address (CMP-1009).</summary>
+    private int PointerBits => _target.PointerSize * 8;
+
+    public DebugInfoEmitter(DebugInfoOptions options, TargetInfo target, string unitName, string unitPath, SourceText? unitText)
     {
         _options = options;
-        Sidecar = new PdiFragmentBuilder(unitName, unitPath, PdiSidecar.ContainerName(options.Format));
+        _target = target;
+        Sidecar = new PdiFragmentBuilder(target, unitName, unitPath, PdiSidecar.ContainerName(options.Format));
         Reserve();                                                                  // !0 the compile unit, written last
         Add("!{i32 2, !\"Debug Info Version\", i32 3}");
         Add(options.Format == DebugFormat.Dwarf ? "!{i32 7, !\"Dwarf Version\", i32 5}" : "!{i32 2, !\"CodeView\", i32 1}");
@@ -223,7 +229,7 @@ internal sealed class DebugInfoEmitter
             {
                 var node = Reserve();
                 _types[type] = node;
-                _nodes[node] = $"!DIDerivedType(tag: DW_TAG_pointer_type, baseType: !{N(ClassStructure(@class))}, size: 64)";
+                _nodes[node] = $"!DIDerivedType(tag: DW_TAG_pointer_type, baseType: !{N(ClassStructure(@class))}, size: {PointerBits})";
                 return node;
             }
 
@@ -232,7 +238,7 @@ internal sealed class DebugInfoEmitter
                 var node = Reserve();
                 _types[type] = node;
                 var target = pointer.PointedType is { } pointed ? "!" + N(Type(pointed)) : "null";
-                _nodes[node] = $"!DIDerivedType(tag: DW_TAG_pointer_type, name: {Quote(pointer.Name)}, baseType: {target}, size: 64)";
+                _nodes[node] = $"!DIDerivedType(tag: DW_TAG_pointer_type, name: {Quote(pointer.Name)}, baseType: {target}, size: {PointerBits})";
                 return node;
             }
 
@@ -250,7 +256,7 @@ internal sealed class DebugInfoEmitter
             {
                 var node = Reserve();
                 _types[type] = node;
-                _nodes[node] = $"!DIDerivedType(tag: DW_TAG_pointer_type, name: {Quote(dynamic.Name)}, baseType: !{N(Type(dynamic.ElementType))}, size: 64)";
+                _nodes[node] = $"!DIDerivedType(tag: DW_TAG_pointer_type, name: {Quote(dynamic.Name)}, baseType: !{N(Type(dynamic.ElementType))}, size: {PointerBits})";
                 return node;
             }
 
@@ -264,7 +270,7 @@ internal sealed class DebugInfoEmitter
                 ImmutableArray<string> types = [signature.ReturnType is { } r ? "!" + N(Type(r)) : "null",
                     .. IrEmitter.WithHighCompanions(signature.Parameters).Select(p => "!" + N(ParameterType(new DebugParameterType(p.Type, IrEmitter.IsPassedByAddress(p)))))];
                 var subroutine = Unique($"!DISubroutineType(types: !{N(Tuple(types))})");
-                _nodes[node] = $"!DIDerivedType(tag: DW_TAG_pointer_type, name: {Quote(procedural.Name)}, baseType: !{N(subroutine)}, size: 64)";
+                _nodes[node] = $"!DIDerivedType(tag: DW_TAG_pointer_type, name: {Quote(procedural.Name)}, baseType: !{N(subroutine)}, size: {PointerBits})";
                 return node;
             }
         }
@@ -283,7 +289,7 @@ internal sealed class DebugInfoEmitter
             StringTypeSymbol { Variant: StringVariant.Unicode } => Typedef("string", Pointer(Basic("Char", 2, "DW_ATE_UTF"))),
             StringTypeSymbol s => Typedef(s.Name, Pointer(Basic("AnsiChar", 1, "DW_ATE_unsigned_char"))),
             ClassRefTypeSymbol or InterfaceTypeSymbol or UntypedTypeSymbol => Pointer(null),
-            MethodPointerTypeSymbol m => Add(Structure(m.Name, 16, ["!" + N(Member(null, "Code", Pointer(null), 8, 0)), "!" + N(Member(null, "Data", Pointer(null), 8, 8))])),
+            MethodPointerTypeSymbol m => Add(Structure(m.Name, m.Size, ["!" + N(Member(null, "Code", Pointer(null), _target.PointerSize, 0)), "!" + N(Member(null, "Data", Pointer(null), _target.PointerSize, _target.PointerSize))])),
             _ => Add(Structure(type.Name, Math.Max(0, type.Size), [])),              // Text and other managed/opaque types: raw storage
         };
         return _types[type] = simple;
@@ -306,7 +312,7 @@ internal sealed class DebugInfoEmitter
         }
         else
         {
-            members.Add("!" + N(Member(node, "$vmt", Pointer(null), 8, 0)));
+            members.Add("!" + N(Member(node, "$vmt", Pointer(null), _target.PointerSize, 0)));
         }
 
         members.AddRange(@class.Fields.Select(f => "!" + N(Member(node, f.Name, Type(f.Type), f.Type.Size, f.Offset))));
@@ -335,7 +341,7 @@ internal sealed class DebugInfoEmitter
         Unique($"!DIBasicType(name: {Quote(name)}, size: {Bits(size)}, encoding: {encoding})");
 
     private int Pointer(int? target) =>
-        Unique($"!DIDerivedType(tag: DW_TAG_pointer_type, baseType: {(target is { } t ? "!" + N(t) : "null")}, size: 64)");
+        Unique($"!DIDerivedType(tag: DW_TAG_pointer_type, baseType: {(target is { } t ? "!" + N(t) : "null")}, size: {PointerBits})");
 
     private int Typedef(string name, int target) => Unique($"!DIDerivedType(tag: DW_TAG_typedef, name: {Quote(name)}, baseType: !{N(target)})");
 

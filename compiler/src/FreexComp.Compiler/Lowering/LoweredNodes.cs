@@ -43,6 +43,9 @@ internal sealed record LoweredFrame(ImmutableArray<Symbol> Variables);
 /// </summary>
 internal sealed record LoweredUnit(UnitSymbol Unit, ImmutableArray<LoweredBody> Routines, ImmutableArray<LoweredBody> Bodies)
 {
+    /// <summary>The compilation's target: the emitter reads every machine fact from it (CMP-1000).</summary>
+    public required TargetInfo Target { get; init; }
+
     /// <summary>The static storage of typed constants declared in routines (LANG-344), in routine binding order.</summary>
     public ImmutableArray<VariableSymbol> Statics { get; init; } = [];
 

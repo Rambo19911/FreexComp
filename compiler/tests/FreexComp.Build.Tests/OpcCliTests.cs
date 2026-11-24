@@ -49,7 +49,8 @@ public sealed partial class OpcCliTests
         var (code, output, _) = Run(new InMemoryFileSystem(), "--version");
 
         Assert.Equal(0, code);
-        Assert.Matches(@"^opc 0\.1\.0 \(abi 1, llvm \d+\.\d+\.\d+ pin\)$", Assert.Single(output));
+        Assert.Matches(@"^opc 0\.1\.0 \(abi 1, llvm \d+\.\d+\.\d+ pin\)$", output[0]);
+        Assert.Equal(2, output.Length);                                     // CMP-1017: the second line lists the targets (Version_ListsTargets)
         Assert.Equal("0.1.0", CompilerInfo.Version);
         Assert.Equal(1, AbiInfo.Version);
     }
@@ -136,7 +137,9 @@ public sealed partial class OpcCliTests
 
         var help = Run(new InMemoryFileSystem(), "--help").Out;
         var toolchain = Array.FindIndex(help, l => l.StartsWith("  --toolchain <dir>", StringComparison.Ordinal));
-        Assert.Equal("  --jobs <N> | -j <N>   maximum number of parallel compile jobs (0 = automatic: one per processor; default 0)", help[toolchain + 1]);
+        // CMP-1017 put --target between --toolchain and --jobs (compiler-cli.md §1)
+        Assert.StartsWith("  --target <id>", help[toolchain + 1], StringComparison.Ordinal);
+        Assert.Equal("  --jobs <N> | -j <N>   maximum number of parallel compile jobs (0 = automatic: one per processor; default 0)", help[toolchain + 2]);
     }
 
     // ------------------------------------------------------------------ option mapping (CMP-850)

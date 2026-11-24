@@ -9,7 +9,7 @@ namespace FreexComp.Build.Tests;
 [Trait("Phase", "3")]
 [Trait("Kind", "Unit")]
 [Collection(nameof(BuildEngineTests))]
-public sealed class BuildEngineTests
+public sealed partial class BuildEngineTests
 {
     private static readonly TimeSpan SafetyNet = TimeSpan.FromMinutes(2);
 

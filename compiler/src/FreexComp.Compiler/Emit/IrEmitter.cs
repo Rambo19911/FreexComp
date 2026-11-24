@@ -33,14 +33,6 @@ internal static class IrEmitter
     /// </summary>
     private static readonly HashSet<string> MemoryRoutineNames = new(StringComparer.Ordinal) { "memcpy", "memmove", "memset", "memcmp", "strlen", "wcslen" };
 
-    /// <summary>CMP-611: the x64 stack probe, appended verbatim to unit <c>System</c> (ADR 001; never imported, never in <c>System.pas</c>).</summary>
-    private static readonly ImmutableArray<string> StackProbe =
-    [
-        "\t.text", "\t.globl\t__chkstk", "\t.p2align\t4", "__chkstk:", "\tpushq\t%rcx", "\tpushq\t%rax", "\tcmpq\t$4096, %rax",
-        "\tleaq\t24(%rsp), %rcx", "\tjb\t1f", "2:", "\tsubq\t$4096, %rcx", "\ttestq\t%rcx, (%rcx)", "\tsubq\t$4096, %rax",
-        "\tcmpq\t$4096, %rax", "\tja\t2b", "1:", "\tsubq\t%rax, %rcx", "\ttestq\t%rcx, (%rcx)", "\tpopq\t%rax", "\tpopq\t%rcx", "\tretq",
-    ];
-
     /// <summary>
     /// <c>attributes #3 = { noinline optnone … }</c>: the outlined <c>$fin</c> routines of CMP-392 stay opaque calls. When the
     /// optimiser sees a finally part that always raises, it infers <c>noreturn</c>, deletes the funclet's <c>cleanupret</c> and with
@@ -75,11 +67,21 @@ internal static class IrEmitter
     /// <returns>CMP-425: with <paramref name="debug"/> the unit's sidecar fragment (JSON text), else null.</returns>
     public static string? EmitUnit(LoweredUnit unit, IIrWriter writer, ImmutableArray<UnitTableEntry> unitTable = default, DebugInfoOptions? debug = null)
     {
+        // CMP-1012: the one place where the target's exception model selects the lowering of handlers and cleanups
+        switch (unit.Target.ExceptionModel)
+        {
+            case ExceptionModel.SehTable:
+                break;                                                      // funclet pads and the filter routine (CMP-390…399): the code below
+            default:
+                throw new NotSupportedException($"Exception model {unit.Target.ExceptionModel} of target '{unit.Target.Id}' has no lowering.");
+        }
+
         var path = unit.Unit.Locations.IsEmpty ? unit.Unit.Name + ".pas" : unit.Unit.Locations[0].Path;
         writer.BeginModule(unit.Unit.Name, Path.GetFileName(path));
         if (string.Equals(unit.Unit.Name, "System", StringComparison.OrdinalIgnoreCase))
         {
-            foreach (var line in StackProbe)
+            // CMP-611 / CMP-1013: the target's stack probe, appended verbatim (ADR 001; never imported, never in System.pas)
+            foreach (var line in unit.Target.StackProbeAssembly)
             {
                 writer.AppendModuleAsm(line);
             }
@@ -100,9 +102,10 @@ internal static class IrEmitter
         var classes = Binding.DeclarationBinder.ClassesOf(unit.Unit).Concat(instances.OfType<ClassTypeSymbol>()).Distinct().ToImmutableArray();
         var module = new ModuleState(writer)
         {
+            Target = unit.Target,
             UnitName = unit.Unit.Name,
             OwnClasses = [.. classes],
-            Debug = debug is null ? null : new DebugInfoEmitter(debug, unit.Unit.Name, path, unit.Routines.Concat(unit.Bodies).Select(b => b.Source).OfType<Syntax.SyntaxNode>()
+            Debug = debug is null ? null : new DebugInfoEmitter(debug, unit.Target, unit.Unit.Name, path, unit.Routines.Concat(unit.Bodies).Select(b => b.Source).OfType<Syntax.SyntaxNode>()
                 .Select(s => s.SyntaxTree.Text).FirstOrDefault(t => Text.PathUtil.Comparer.Equals(t.Path, path))),
         };
         foreach (var body in unit.Routines)
@@ -133,10 +136,14 @@ internal static class IrEmitter
         {
             if (body.Frame is { } frame)
             {
-                ImmutableArray<TypeLayout> fields = [new TypeLayout(8, 8, IrType.Ptr), .. frame.Variables.Select(FieldLayout)];
-                var (structType, indexes) = TypeLayout.Struct(fields);
+                ImmutableArray<TypeLayout> fields = [TypeLayout.Pointer(unit.Target), .. frame.Variables.Select(v => FieldLayout(unit.Target, v))];
+                var (structType, indexes) = TypeLayout.Struct(unit.Target, fields);
                 var type = writer.DeclareStruct(Mangler.FrameType(body.Routine!), structType);
-                module.Frames[body.Routine!] = new FrameRecord(type, frame.Variables, indexes) { Offsets = TypeLayout.StructOffsets(fields).Offsets };
+                module.Frames[body.Routine!] = new FrameRecord(type, frame.Variables, indexes)
+                {
+                    Offsets = TypeLayout.StructOffsets(fields).Offsets,
+                    Alignment = fields.Max(f => Math.Min(f.Alignment, 8)),
+                };
             }
         }
 
@@ -193,9 +200,9 @@ internal static class IrEmitter
         module.DeclarePending();
 
         // CMP-415 (C-114): the {$FORM} blobs and their table (the names are UnicodeString literals)
-        var formEntry = new StructIrType([IrType.Ptr, IrType.Ptr, IrType.I64]);
+        var formEntry = new StructIrType([IrType.Ptr, IrType.Ptr, module.NativeInt]);
         var formTable = unit.Forms.IsEmpty ? null : new IrArrayConstant(new ArrayIrType(unit.Forms.Length, formEntry), [.. unit.Forms.Select((f, i) =>
-            (IrConstant)new IrStructConstant(formEntry, [module.StringLiteral(f.Name), new IrGlobal(Mangler.FormBlob(unit.Unit, i)), IrIntConstant.I64(f.Data.Length)]))]);
+            (IrConstant)new IrStructConstant(formEntry, [module.StringLiteral(f.Name), new IrGlobal(Mangler.FormBlob(unit.Unit, i)), module.Native(f.Data.Length)]))]);
 
         // the globals' initialisers too: typed constants may hold string literals (C-203; PChar constants since C-063)
         var initializers = variables.Select(v => v.Initializer is { } value && v.Type.Size > 0
@@ -220,7 +227,7 @@ internal static class IrEmitter
 
         foreach (var (name, block) in module.TypeInfos)
         {
-            writer.DefineGlobal(new IrGlobalDefinition(name, IrLinkage.LinkOnceOdr, IsConstant: true, block, Alignment: 8));     // CMP-405, CMP-365
+            writer.DefineGlobal(new IrGlobalDefinition(name, IrLinkage.LinkOnceOdr, IsConstant: true, block, Alignment: module.BlockAlign));     // CMP-405, CMP-365
         }
 
         for (var i = 0; i < unit.Forms.Length; i++)
@@ -233,13 +240,13 @@ internal static class IrEmitter
 
         if (formTable is not null)
         {
-            writer.DefineGlobal(new IrGlobalDefinition(Mangler.FormTable(unit.Unit), IrLinkage.Internal, IsConstant: true, formTable, Alignment: 8));
+            writer.DefineGlobal(new IrGlobalDefinition(Mangler.FormTable(unit.Unit), IrLinkage.Internal, IsConstant: true, formTable, Alignment: module.PtrAlign));
         }
 
         foreach (var (type, name, block) in module.ClassInfos)
         {
             // codegen.md C-112 decision: defined only by the class's unit, with the VMT's linkage
-            writer.DefineGlobal(new IrGlobalDefinition(name, LinkageOf(type), IsConstant: true, block, Alignment: 8));
+            writer.DefineGlobal(new IrGlobalDefinition(name, LinkageOf(type), IsConstant: true, block, Alignment: module.BlockAlign));
         }
 
         foreach (var intf in module.Guids)
@@ -249,7 +256,7 @@ internal static class IrEmitter
 
         foreach (var (type, constant) in vmts)
         {
-            writer.DefineGlobal(new IrGlobalDefinition(Mangler.Vmt(type), LinkageOf(type), IsConstant: true, constant, Alignment: 8));
+            writer.DefineGlobal(new IrGlobalDefinition(Mangler.Vmt(type), LinkageOf(type), IsConstant: true, constant, Alignment: module.PtrAlign));
         }
 
         foreach (var type in classes)
@@ -289,7 +296,7 @@ internal static class IrEmitter
             var size = (unit.Unit.ThreadVarSize + 15) / 16 * 16;
             writer.DefineGlobal(new IrGlobalDefinition(Mangler.TlsDescriptor(unit.Unit),
                 unit.ThreadVars.Any(interfaceMembers.Contains) ? IrLinkage.External : IrLinkage.Internal, IsConstant: false,
-                new IrStructConstant(TlsDescriptorType, [IrIntConstant.I64(size), IrIntConstant.I64(-1)]), Alignment: 8));
+                new IrStructConstant(module.TlsDescriptorType, [module.Native(size), module.Native(-1)]), Alignment: module.PtrAlign));
         }
 
         module.DeclarePending();                                        // routines whose address a typed constant holds
@@ -301,17 +308,17 @@ internal static class IrEmitter
 
         foreach (var name in module.ExternalVmts)
         {
-            writer.DeclareGlobal(name, IrType.Ptr, 8);                          // another unit's VMT: only its address is used
+            writer.DeclareGlobal(name, IrType.Ptr, module.PtrAlign);            // another unit's VMT: only its address is used
         }
 
         foreach (var name in module.ExternalClassInfos)
         {
-            writer.DeclareGlobal(name, IrType.Ptr, 8);                          // another unit's class RTTI block (C-112)
+            writer.DeclareGlobal(name, IrType.Ptr, module.BlockAlign);          // another unit's class RTTI block (C-112)
         }
 
         foreach (var name in module.ExternalTlsDescriptors)
         {
-            writer.DeclareGlobal(name, TlsDescriptorType, 8);                   // another unit's threadvar descriptor (CMP-414)
+            writer.DeclareGlobal(name, module.TlsDescriptorType, module.PtrAlign);      // another unit's threadvar descriptor (CMP-414)
         }
 
         writer.DefineAttributeGroup(RoutineGroup, [IrAttribute.Enum("uwtable"), IrAttribute.String("frame-pointer", "all")]);
@@ -358,9 +365,7 @@ internal static class IrEmitter
 
     private static readonly LinkName UnitsName = new("$units", AlwaysQuote: true);
     private static readonly LinkName MainName = new("$main", AlwaysQuote: true);
-    private static readonly LinkName StartName = new("_start", AlwaysQuote: false);
-    private static readonly StructIrType UnitEntryType = new([IrType.Ptr, IrType.Ptr]);
-    private static readonly StructIrType TlsDescriptorType = new([IrType.I64, IrType.I64]);
+    private static StructIrType UnitEntryType => AbiLayout.UnitEntry;
 
     private static LoweredBody EmptyBody() => new(null, [], new LBlock([]));
 
@@ -390,15 +395,15 @@ internal static class IrEmitter
     private static void EmitStart(ModuleState module, int unitCount)
     {
         var w = module.Writer;
-        var startup = module.Function(new IrFunctionDeclaration(Mangler.RuntimeHelper("_Startup"), IrType.Void, [IrType.Ptr, IrType.I64]));
+        var startup = module.Function(new IrFunctionDeclaration(Mangler.RuntimeHelper("_Startup"), IrType.Void, [IrType.Ptr, module.NativeInt]));
         var halt0 = module.NoReturnHelper("_Halt0");
         var filter = module.Function(new IrFunctionDeclaration(Mangler.RuntimeHelper("_SehFilter"), IrType.I32, [IrType.Ptr, IrType.Ptr]));
         var beginCatch = module.Function(new IrFunctionDeclaration(Mangler.RuntimeHelper("_BeginCatch"), IrType.Ptr, []));
         var unhandled = module.NoReturnHelper("_UnhandledException");
         IrBlock done = new("done"), dispatch = new("catch.dispatch"), @catch = new("catch"), unhandledBlock = new("unhandled");
-        w.BeginFunction(new IrFunctionDefinition(StartName, IrLinkage.External, IrType.Void, [], RoutineGroup));
+        w.BeginFunction(new IrFunctionDefinition(new LinkName(module.Target.EntrySymbol, AlwaysQuote: false), IrLinkage.External, IrType.Void, [], RoutineGroup));
         w.AppendBlock(new IrBlock("entry"));
-        w.Call(null, IrType.Void, startup, [new IrGlobal(UnitsName), IrIntConstant.I64(unitCount)]);
+        w.Call(null, IrType.Void, startup, [new IrGlobal(UnitsName), module.Native(unitCount)]);
         w.Invoke(null, IrType.Void, new IrGlobal(MainName), [], done, dispatch);
         w.AppendBlock(done);
         w.Call(null, IrType.Void, halt0, [], NoReturnGroup);
@@ -423,7 +428,7 @@ internal static class IrEmitter
              u.HasFinal ? module.Function(new IrFunctionDeclaration(Mangler.UnitFinal(u.Unit), IrType.Void, [])) : new IrNullConstant()])).ToImmutableArray();
         module.DeclarePending();
         module.Writer.DefineGlobal(new IrGlobalDefinition(UnitsName, IrLinkage.Internal, IsConstant: true,
-            new IrArrayConstant(new ArrayIrType(units.Length, UnitEntryType), entries), Alignment: 8));
+            new IrArrayConstant(new ArrayIrType(units.Length, UnitEntryType), entries), Alignment: module.PtrAlign));
     }
 
     /// <summary>
@@ -437,11 +442,11 @@ internal static class IrEmitter
         if (!managed.IsEmpty)
         {
             // ABI §7.2: { i64 Count, [Count x { ptr TypeInfo, i64 Offset }] }
-            var entry = new StructIrType([IrType.Ptr, IrType.I64]);
+            var entry = new StructIrType([IrType.Ptr, module.NativeInt]);
             var entries = new ArrayIrType(managed.Length, entry);
-            var table = new IrStructConstant(new StructIrType([IrType.I64, entries]), [IrIntConstant.I64(managed.Length),
-                new IrArrayConstant(entries, [.. managed.Select(f => (IrConstant)new IrStructConstant(entry, [module.TypeInfo(f.Type), IrIntConstant.I64(f.Offset)]))])]);
-            module.AggregateConstants.Add((Mangler.InitTable(type), table, 8));
+            var table = new IrStructConstant(new StructIrType([module.NativeInt, entries]), [module.Native(managed.Length),
+                new IrArrayConstant(entries, [.. managed.Select(f => (IrConstant)new IrStructConstant(entry, [module.TypeInfo(f.Type), module.Native(f.Offset)]))])]);
+            module.AggregateConstants.Add((Mangler.InitTable(type), table, module.PtrAlign));
             initTable = new IrGlobal(Mangler.InitTable(type));
         }
 
@@ -449,7 +454,7 @@ internal static class IrEmitter
         if (!type.Interfaces.IsEmpty)
         {
             // ABI-095: { i64 Count, [Count x { [16 x i8] Guid, ptr Imt, i64 Offset }] } — each listed interface, then its ancestors
-            var entry = new StructIrType([GuidType, IrType.Ptr, IrType.I64]);
+            var entry = new StructIrType([GuidType, IrType.Ptr, module.NativeInt]);
             var rows = new List<(InterfaceTypeSymbol Interface, ImplementedInterface Listed)>();
             foreach (var listed in type.Interfaces)
             {
@@ -460,10 +465,10 @@ internal static class IrEmitter
             }
 
             var entries = new ArrayIrType(rows.Count, entry);
-            var table = new IrStructConstant(new StructIrType([IrType.I64, entries]), [IrIntConstant.I64(rows.Count),
+            var table = new IrStructConstant(new StructIrType([module.NativeInt, entries]), [module.Native(rows.Count),
                 new IrArrayConstant(entries, [.. rows.Select(r => (IrConstant)new IrStructConstant(entry,
-                    [GuidConstant(r.Interface), new IrGlobal(Mangler.Imt(type, r.Listed.Interface)), IrIntConstant.I64(r.Listed.Offset)]))])]);
-            module.AggregateConstants.Add((Mangler.IntfTable(type), table, 8));
+                    [GuidConstant(r.Interface), new IrGlobal(Mangler.Imt(type, r.Listed.Interface)), module.Native(r.Listed.Offset)]))])]);
+            module.AggregateConstants.Add((Mangler.IntfTable(type), table, module.PtrAlign));
             intfTable = new IrGlobal(Mangler.IntfTable(type));
         }
 
@@ -474,19 +479,19 @@ internal static class IrEmitter
             // ABI §7.2 / CMP-370 (C-113): { i64 Count, [Count x { i64 MsgId, ptr Code }] } sorted by MsgId
             var entry = new StructIrType([IrType.I64, IrType.Ptr]);
             var entries = new ArrayIrType(handlers.Length, entry);
-            var table = new IrStructConstant(new StructIrType([IrType.I64, entries]), [IrIntConstant.I64(handlers.Length),
+            var table = new IrStructConstant(new StructIrType([module.NativeInt, entries]), [module.Native(handlers.Length),
                 new IrArrayConstant(entries, [.. handlers.Select(m => (IrConstant)new IrStructConstant(entry, [IrIntConstant.I64(m.MessageId!.Value), module.Routine(m)]))])]);
-            module.AggregateConstants.Add((Mangler.MsgTable(type), table, 8));
+            module.AggregateConstants.Add((Mangler.MsgTable(type), table, module.BlockAlign));
             msgTable = new IrGlobal(Mangler.MsgTable(type));
         }
 
         var slots = new ArrayIrType(type.VirtualSlots.Length, IrType.Ptr);
         IrConstant Slot(MethodSymbol method) => method.IsAbstract ? module.NoReturnHelper("_AbstractError") : module.Routine(method);
-        var vmtType = new StructIrType([IrType.Ptr, IrType.I64, IrType.Ptr, IrType.Ptr, IrType.Ptr, IrType.Ptr, IrType.Ptr, IrType.Ptr, slots]);
+        var vmtType = new StructIrType([.. module.VmtHeaderType.Fields, slots]);
         return new IrStructConstant(vmtType,
         [
             type.Parent is { } parent ? module.Vmt(parent) : new IrNullConstant(),
-            IrIntConstant.I64(type.InstanceSize),
+            module.Native(type.InstanceSize),
             module.StringLiteral(type.Name),
             module.TypeInfo(type),                                          // CMP-405 (C-112): the class RTTI block
             intfTable,
@@ -514,22 +519,24 @@ internal static class IrEmitter
                 var name = Mangler.Thunk(type, listed.Interface, listed.Interface.AllMethods[k]);
                 var returnType = ReturnType(target);
                 var parameters = ParameterTypes(target).Select((t, i) => new IrParameter(t, i == 0 ? "iref" : "p" + i)).ToImmutableArray();
-                var values = w.BeginFunction(new IrFunctionDefinition(name, IrLinkage.Internal, returnType, parameters, RoutineGroup));
+                // CMP-1011: a musttail call needs the thunk and the method to share one convention
+                var callConv = module.CallConv(target);
+                var values = w.BeginFunction(new IrFunctionDefinition(name, IrLinkage.Internal, returnType, parameters, RoutineGroup) { CallConv = callConv });
                 w.AppendBlock(new IrBlock("entry"));
                 var self = w.GetElementPtr("self", IrType.I8, values[0], [IrIntConstant.I64(-listed.Offset)]);
                 IrValue callee;
                 if (target.IsDispatched)
                 {
-                    var vmt = w.Load("vmt", IrType.Ptr, self, 8);
-                    var slot = w.GetElementPtr("slot", IrType.I8, vmt, [IrIntConstant.I64(64 + 8 * target.VmtSlot)]);
-                    callee = w.Load("fn", IrType.Ptr, slot, 8);
+                    var vmt = w.Load("vmt", IrType.Ptr, self, module.PtrAlign);
+                    var slot = w.GetElementPtr("slot", IrType.I8, vmt, [IrIntConstant.I64(module.VmtSlotOffset(target.VmtSlot))]);
+                    callee = w.Load("fn", IrType.Ptr, slot, module.PtrAlign);
                 }
                 else
                 {
                     callee = module.Routine(target);
                 }
 
-                var result = w.Call(returnType is VoidIrType ? null : "r", returnType, callee, [self, .. values.Skip(1)], mustTail: true);
+                var result = w.Call(returnType is VoidIrType ? null : "r", returnType, callee, [self, .. values.Skip(1)], mustTail: true, callConv: callConv);
                 w.Ret(result);
                 w.EndFunction();
                 module.DeclarePending();
@@ -538,7 +545,7 @@ internal static class IrEmitter
 
             var imt = new ArrayIrType(thunks.Count, IrType.Ptr);
             w.DefineGlobal(new IrGlobalDefinition(Mangler.Imt(type, listed.Interface), linkage, IsConstant: true,
-                thunks.Count == 0 ? new IrZeroConstant(imt) : new IrArrayConstant(imt, thunks.ToImmutable()), Alignment: 8));
+                thunks.Count == 0 ? new IrZeroConstant(imt) : new IrArrayConstant(imt, thunks.ToImmutable()), Alignment: module.PtrAlign));
         }
     }
 
@@ -613,9 +620,9 @@ internal static class IrEmitter
         IsPassedAsInteger(type) ? IrType.Int((int)type.Size * 8) : TypeLayout.Of(type).StorageType;
 
     /// <summary>Layout of a frame field: the variable's storage, or a <c>ptr</c> when it lives at a received address (CMP-345).</summary>
-    internal static TypeLayout FieldLayout(Symbol variable) => variable switch
+    internal static TypeLayout FieldLayout(TargetInfo target, Symbol variable) => variable switch
     {
-        _ when HoldsAddress(variable) => new TypeLayout(8, 8, IrType.Ptr),
+        _ when HoldsAddress(variable) => TypeLayout.Pointer(target),
         ParameterSymbol parameter => TypeLayout.Allocated(parameter.Type),
         VariableSymbol local => TypeLayout.Allocated(local.Type),
         _ => throw new InvalidOperationException($"'{variable.Name}' cannot live in a frame record."),
@@ -725,6 +732,9 @@ internal sealed record FrameRecord(NamedStructIrType Type, ImmutableArray<Symbol
     public ImmutableArray<long> Offsets { get; init; } = [];
 
     public long OffsetOf(Symbol variable) => Offsets[Variables.IndexOf(variable) + 1];
+
+    /// <summary>The alignment of the record's alloca: its strictest field (cap 8, like <see cref="TypeLayout.StructOffsets"/>); field 0 is an address.</summary>
+    public required int Alignment { get; init; }
 }
 
 /// <summary>Module-wide state shared by the function emitters.</summary>
@@ -737,6 +747,35 @@ internal sealed class EmitNotSupportedException(string message, Text.Location lo
 internal sealed class ModuleState(IIrWriter writer)
 {
     public IIrWriter Writer { get; } = writer;
+
+    /// <summary>The compilation's target (CMP-1000): every machine fact of the module comes from it.</summary>
+    public required TargetInfo Target { get; init; }
+
+    /// <summary>Alignment of a stored code or data address.</summary>
+    public int PtrAlign => Target.PointerAlign;
+
+    /// <summary>Alignment of the run-time blocks of rtl-abi.md that also hold <c>Int64</c> fields (RTTI blocks and tables, the message table).</summary>
+    public int BlockAlign => Math.Max(Target.PointerAlign, Target.Int64Align);
+
+    /// <summary><c>NativeInt</c> as the run-time blocks store it: <c>i&lt;PointerSize*8&gt;</c> (CMP-1007).</summary>
+    public IntegerIrType NativeInt => AbiLayout.NativeInt(Target);
+
+    public IrIntConstant Native(long value) => new(NativeInt, value);
+
+    /// <summary>rtl-abi.md §7.2: the fixed part of a VMT — Parent, InstanceSize, ClassName, TypeInfo, IntfTable, MsgTable, InitTable, Reserved.</summary>
+    public StructIrType VmtHeaderType => AbiLayout.VmtHeader(Target);
+
+    /// <summary>The byte offset of virtual slot <paramref name="slot"/> in a VMT: the header's size plus one address per slot (CMP-1007).</summary>
+    public long VmtSlotOffset(int slot) => AbiLayout.VmtSlotOffset(Target, slot);
+
+    /// <summary>The byte offset of slot <paramref name="slot"/> in an IMT (ABI-091): one address per slot.</summary>
+    public long ImtSlotOffset(int slot) => AbiLayout.ImtSlotOffset(Target, slot);
+
+    /// <summary>ABI-180: a unit's threadvar descriptor <c>{ NativeInt Size, NativeInt Offset }</c>.</summary>
+    public StructIrType TlsDescriptorType => AbiLayout.TlsDescriptor(Target);
+
+    /// <summary>The (negative) byte offset of a dynamic array's <c>Length</c> field from element 0 (ABI-041).</summary>
+    public long DynArrayLengthOffset => AbiLayout.DynArrayLengthOffset(Target);
 
     /// <summary>CMP-420…424: the module's debug metadata with <c>-g</c>; null without.</summary>
     public DebugInfoEmitter? Debug { get; init; }
@@ -761,12 +800,21 @@ internal sealed class ModuleState(IIrWriter writer)
         }
 
         UsesNoReturn |= routine.IsNoReturn;
+        if (routine.IsExternal)
+        {
+            name = Mangler.Decorated(name, routine, Target);                // CMP-1011
+        }
+
         return Declare(new IrFunctionDeclaration(name, IrEmitter.ReturnType(routine), IrEmitter.ParameterTypes(routine),
             routine.IsNoReturn ? IrEmitter.NoReturnGroup : null)
         {
             DllImport = routine.LibraryName is not null,
+            CallConv = CallConv(routine),
         });
     }
+
+    /// <summary>CMP-1011: the LLVM keyword of <paramref name="routine"/>'s calling-convention directive on this target ("" = not printed).</summary>
+    public string CallConv(RoutineSymbol routine) => Target.CallingConventions[routine.CallingConvention].LlvmKeyword;
 
     public bool UsesNoReturn { get; private set; }
 
@@ -972,7 +1020,7 @@ internal sealed class ModuleState(IIrWriter writer)
             SetTypeSymbol set => [Kind(5), Pad7, Name(), IrIntConstant.I32(set.Size), Pad(4), set.ElementType is { } element ? TypeInfo(element) : new IrNullConstant()],
             DynamicArrayTypeSymbol array =>
             [
-                Kind(14), Pad7, Name(), IrIntConstant.I64(TypeLayout.Of(array.ElementType).Size), TypeInfo(array.ElementType),
+                Kind(14), Pad7, Name(), Native(TypeLayout.Of(array.ElementType).Size), TypeInfo(array.ElementType),
                 array.ElementType.IsManaged ? TypeInfo(array.ElementType) : new IrNullConstant(),
             ],
             RecordTypeSymbol record => RecordFields(record, Name()),
@@ -980,9 +1028,9 @@ internal sealed class ModuleState(IIrWriter writer)
             [
                 // ABI §10 tkInterface (C-099): Parent, Guid, own method count
                 Kind(15), Pad7, Name(), intf.Parent is { } parent ? TypeInfo(parent) : new IrNullConstant(),
-                IrEmitter.GuidConstant(intf), IrIntConstant.I64(intf.Methods.Length),
+                IrEmitter.GuidConstant(intf), Native(intf.Methods.Length),
             ],
-            ArrayTypeSymbol array => [Kind(13), Pad7, Name(), IrIntConstant.I64(array.Size), IrIntConstant.I64(ElementCount(array)), TypeInfo(Innermost(array))],
+            ArrayTypeSymbol array => [Kind(13), Pad7, Name(), Native(array.Size), Native(ElementCount(array)), TypeInfo(Innermost(array))],
             PointerTypeSymbol pointer => [Kind(17), Pad7, Name(), pointer.PointedType is { } pointed && HasTypeInfo(pointed) ? TypeInfo(pointed) : new IrNullConstant()],
             ClassRefTypeSymbol reference => [Kind(18), Pad7, Name(), TypeInfo(reference.Class)],
             MethodPointerTypeSymbol method => Routine(7, method.Signature),
@@ -1002,7 +1050,7 @@ internal sealed class ModuleState(IIrWriter writer)
     {
         var text = name.Text.EndsWith(".$rtti", StringComparison.Ordinal) ? name.Text[..^".$rtti".Length] : name.Text;
         var namesName = new LinkName(text + ".$names", AlwaysQuote: true);
-        AggregateConstants.Add((namesName, new IrArrayConstant(new ArrayIrType(names.Length, IrType.Ptr), [.. names.Select(StringLiteral)]), 8));
+        AggregateConstants.Add((namesName, new IrArrayConstant(new ArrayIrType(names.Length, IrType.Ptr), [.. names.Select(StringLiteral)]), PtrAlign));
         IrConstant typeName = IsDeclared(type) || type.IsPredefined ? StringLiteral(type.Name) : new IrNullConstant();
         return [new IrIntConstant(IrType.I8, 3), Pad7, typeName, new IrIntConstant(IrType.I8, ordType), Pad7, new IrIntConstant(IrType.I64, min),
             new IrIntConstant(IrType.I64, max), TypeInfo(baseType), new IrGlobal(namesName)];
@@ -1015,14 +1063,14 @@ internal sealed class ModuleState(IIrWriter writer)
         IrConstant table = new IrNullConstant();
         if (!managed.IsEmpty)
         {
-            var entry = new StructIrType([IrType.Ptr, IrType.I64]);
+            var entry = new StructIrType([IrType.Ptr, NativeInt]);
             var tableName = new LinkName(TypeInfoName(record).Text + ".fields", AlwaysQuote: true);
             AggregateConstants.Add((tableName, new IrArrayConstant(new ArrayIrType(managed.Length, entry),
-                [.. managed.Select(f => (IrConstant)new IrStructConstant(entry, [TypeInfo(f.Type), IrIntConstant.I64(f.Offset)]))]), 8));
+                [.. managed.Select(f => (IrConstant)new IrStructConstant(entry, [TypeInfo(f.Type), Native(f.Offset)]))]), BlockAlign));
             table = new IrGlobal(tableName);
         }
 
-        return [new IrIntConstant(IrType.I8, 12), Pad7, name, IrIntConstant.I64(record.Size), IrIntConstant.I64(managed.Length), table];
+        return [new IrIntConstant(IrType.I8, 12), Pad7, name, Native(record.Size), Native(managed.Length), table];
     }
 
     /// <summary>The block of an untyped pointer's target is never built: <c>Text</c> and untyped targets have none worth pointing at.</summary>
@@ -1063,14 +1111,14 @@ internal sealed class ModuleState(IIrWriter writer)
             [StringLiteral(m.Name), m.IsAbstract ? NoReturnHelper("_AbstractError") : Routine(m), VisibilityByte(m), new IrIntConstant(IrType.I8, MethodInfoKind(m)),
              new IrZeroConstant(new ArrayIrType(6, IrType.I8))])));
         var fieldTable = Table(name, ".fields", FieldInfoType, fields.Select(f => (IrConstant)new IrStructConstant(FieldInfoType,
-            [StringLiteral(f.Name), IrIntConstant.I64(f.Offset), TypeInfo(f.Type), VisibilityByte(f), Pad7])));
+            [StringLiteral(f.Name), Native(f.Offset), TypeInfo(f.Type), VisibilityByte(f), Pad7])));
         var attributeTable = Table(name, ".attrs", AttrInfoType, type.Attributes.Select(a => (IrConstant)new IrStructConstant(AttrInfoType,
             [Vmt(a.Type), Routine(a.Thunk)])));                                                                    // C-126 (ABI §10.1)
         IrConstant[] block =
         [
             new IrIntConstant(IrType.I8, 6), Pad7, StringLiteral(type.Name), Vmt(type), type.Parent is { } parent ? TypeInfo(parent) : new IrNullConstant(),
-            StringLiteral(UnitOf(type)), IrIntConstant.I64(properties.Length), props, IrIntConstant.I64(methods.Length), methodTable,
-            IrIntConstant.I64(fields.Length), fieldTable, IrIntConstant.I64(type.Attributes.Length), attributeTable,
+            StringLiteral(UnitOf(type)), Native(properties.Length), props, Native(methods.Length), methodTable,
+            Native(fields.Length), fieldTable, Native(type.Attributes.Length), attributeTable,
         ];
         ClassInfos.Add((type, name, new IrStructConstant(new StructIrType([.. block.Select(f => f.Type)]), [.. block])));
         return global;
@@ -1078,12 +1126,12 @@ internal sealed class ModuleState(IIrWriter writer)
 
     private static readonly StructIrType AttrInfoType = new([IrType.Ptr, IrType.Ptr]);
 
-    private static readonly StructIrType FieldInfoType = new([IrType.Ptr, IrType.I64, IrType.Ptr, IrType.I8, new ArrayIrType(7, IrType.I8)]);
+    private StructIrType FieldInfoType => new([IrType.Ptr, NativeInt, IrType.Ptr, IrType.I8, new ArrayIrType(7, IrType.I8)]);
 
     private static readonly StructIrType MethodInfoType = new([IrType.Ptr, IrType.Ptr, IrType.I8, IrType.I8, new ArrayIrType(6, IrType.I8)]);
 
-    private static readonly StructIrType PropInfoType = new([IrType.Ptr, IrType.Ptr, IrType.I8, IrType.I8, IrType.I8, IrType.I8, new ArrayIrType(4, IrType.I8),
-        IrType.I64, IrType.I64, IrType.I64, IrType.I32, IrType.I32, IrType.I64]);
+    private StructIrType PropInfoType => new([IrType.Ptr, IrType.Ptr, IrType.I8, IrType.I8, IrType.I8, IrType.I8, new ArrayIrType(4, IrType.I8),
+        NativeInt, NativeInt, NativeInt, IrType.I32, IrType.I32, IrType.I64]);
 
     /// <summary>A table <c>@"U.T.$rtti.&lt;suffix&gt;"</c> of <paramref name="entries"/>, or <c>ptr null</c> when there are none (CMP-408).</summary>
     private IrConstant Table(LinkName info, string suffix, StructIrType entry, IEnumerable<IrConstant> entries)
@@ -1095,7 +1143,7 @@ internal sealed class ModuleState(IIrWriter writer)
         }
 
         var tableName = new LinkName(info.Text + suffix, AlwaysQuote: true);
-        AggregateConstants.Add((tableName, new IrArrayConstant(new ArrayIrType(items.Length, entry), items), 8));
+        AggregateConstants.Add((tableName, new IrArrayConstant(new ArrayIrType(items.Length, entry), items), BlockAlign));
         return new IrGlobal(tableName);
     }
 
@@ -1107,16 +1155,16 @@ internal sealed class ModuleState(IIrWriter writer)
     private IrConstant PropInfo(PropertySymbol property)
     {
         (int Kind, IrConstant Value) Accessor(ImmutableArray<Symbol> path, MethodSymbol? method) =>
-            !path.IsEmpty ? (1, IrIntConstant.I64(path.OfType<FieldSymbol>().Sum(f => f.Offset)))
-            : method is null ? (0, IrIntConstant.I64(0))
-            : method.IsDispatched ? (3, IrIntConstant.I64(64 + 8 * method.VmtSlot))
-            : (2, new IrPtrToIntConstant(Routine(method)));
+            !path.IsEmpty ? (1, Native(path.OfType<FieldSymbol>().Sum(f => f.Offset)))
+            : method is null ? (0, Native(0))
+            : method.IsDispatched ? (3, Native(VmtSlotOffset(method.VmtSlot)))
+            : (2, new IrPtrToIntConstant(Routine(method), NativeInt));
         var (getKind, getter) = Accessor(property.ReadPath, property.ReadMethod);
         var (setKind, setter) = Accessor(property.WritePath, property.WriteMethod);
         // C-217 (LANG-644): StoredKind 0 constant, 1 field, 2 static method, 3 virtual method
-        var (storedKind, stored) = property.StoredField is { } storedField ? (1, IrIntConstant.I64(storedField.Offset))
+        var (storedKind, stored) = property.StoredField is { } storedField ? (1, Native(storedField.Offset))
             : property.StoredMethod is { } storedMethod ? Accessor([], storedMethod)
-            : (0, IrIntConstant.I64(property.StoredConstant ? 1 : 0));
+            : (0, Native(property.StoredConstant ? 1 : 0));
         return new IrStructConstant(PropInfoType,
         [
             StringLiteral(property.Name), TypeInfo(property.Type), new IrIntConstant(IrType.I8, getKind), new IrIntConstant(IrType.I8, setKind),
@@ -1294,6 +1342,14 @@ internal sealed class FunctionEmitter
 
     private readonly ModuleState _module;
     private readonly IIrWriter _w;
+
+    /// <summary>Alignment of a stored code or data address on the module's target.</summary>
+    private int PtrAlign => _module.PtrAlign;
+
+    /// <summary>A <c>NativeInt</c> loaded from a run-time block as the <c>i64</c> the expressions compute with (no-op on 64-bit targets).</summary>
+    private IrValue Widen(IrValue native) =>
+        _module.NativeInt.Bits == 64 ? native : _w.Cast(NewTemp(), IrCastOperator.SExt, native, IrType.I64);
+
     private readonly LoweredBody _body;
     private readonly RoutineSymbol? _routine;
     /// <summary>Implicit parameters (a method's <c>Self</c> and flag, ABI-082) first, then the declared ones.</summary>
@@ -1348,16 +1404,17 @@ internal sealed class FunctionEmitter
     /// CMP-394: a call, or inside an EH scope (when <paramref name="mayRaise"/>) an <c>invoke</c> continuing in a new block
     /// <c>cont.N</c>; inside a cleanup funclet both carry its token.
     /// </summary>
-    private IrLocal? EmitCall(string? name, IrType returnType, IrValue callee, ImmutableArray<IrValue> arguments, int? attributeGroup = null, bool mayRaise = true)
+    private IrLocal? EmitCall(string? name, IrType returnType, IrValue callee, ImmutableArray<IrValue> arguments, int? attributeGroup = null, bool mayRaise = true,
+        string callConv = "")
     {
         if (!mayRaise || UnwindTarget is not { } pad)
         {
-            return _w.Call(name, returnType, callee, arguments, attributeGroup, _funclet);
+            return _w.Call(name, returnType, callee, arguments, attributeGroup, _funclet, callConv: callConv);
         }
 
         _unwindTargets.Add(pad);
         var next = Block("cont", ++_invokeCount);                         // own counter: construct numbers stay as without EH
-        var result = _w.Invoke(name, returnType, callee, arguments, next, pad, attributeGroup, _funclet);
+        var result = _w.Invoke(name, returnType, callee, arguments, next, pad, attributeGroup, _funclet, callConv);
         Start(next);
         return result;
     }
@@ -1428,7 +1485,11 @@ internal sealed class FunctionEmitter
             .. new[] { hidden }.OfType<IrParameter>(), .. parameters[_implicitCount..]];
         var debug = BeginSubprogram(link, hidden);
         var values = _w.BeginFunction(new IrFunctionDefinition(_name, _linkage, _routine is null ? IrType.Void : IrEmitter.ReturnType(_routine),
-            all, _routine is null ? IrEmitter.RoutineGroup : IrEmitter.AttributeGroupOf(_routine)) { Subprogram = _subprogram?.Node });
+            all, _routine is null ? IrEmitter.RoutineGroup : IrEmitter.AttributeGroupOf(_routine))
+        {
+            Subprogram = _subprogram?.Node,
+            CallConv = _routine is null ? "" : _module.CallConv(_routine),               // CMP-1011
+        });
         SetLocation(debug?.Begin);                                      // DBG-117: the prologue at the body's begin
         if (link is not null)
         {
@@ -1450,7 +1511,7 @@ internal sealed class FunctionEmitter
         }
         if (_frame is not null)
         {
-            _frameAddress = _w.Alloca(Unique("$frame"), _frame.Type, 8);
+            _frameAddress = _w.Alloca(Unique("$frame"), _frame.Type, _frame.Alignment);
         }
 
         var spills = new List<(IrValue Value, IrValue Address, int Alignment)>();
@@ -1485,7 +1546,7 @@ internal sealed class FunctionEmitter
 
         if (_frame is not null)
         {
-            _w.Store(_link ?? new IrNullConstant(), _frameAddress!, 8);
+            _w.Store(_link ?? new IrNullConstant(), _frameAddress!, PtrAlign);
             foreach (var variable in _frame.Variables)
             {
                 var address = _w.GetElementPtr(Unique(variable.Name + ".addr"), _frame.Type, _frameAddress!,
@@ -1493,10 +1554,10 @@ internal sealed class FunctionEmitter
                 switch (variable)
                 {
                     case ParameterSymbol parameter when IrEmitter.HoldsAddress(parameter):
-                        spills.Add((_parameterAddresses[parameter], address, 8));
+                        spills.Add((_parameterAddresses[parameter], address, PtrAlign));
                         break;
                     case VariableSymbol when IrEmitter.HoldsAddress(variable):
-                        spills.Add((hiddenResult!, address, 8));
+                        spills.Add((hiddenResult!, address, PtrAlign));
                         break;
                     case ParameterSymbol parameter:
                         _parameterAddresses[parameter] = address;
@@ -1555,7 +1616,7 @@ internal sealed class FunctionEmitter
         }
         else if (_routine is MethodSymbol { MethodKind: MethodKind.Constructor, SelfParameter: { } self })
         {
-            _w.Ret(_w.Load(NewTemp(), IrType.Ptr, _parameterAddresses[self], 8));     // ABI-075 / CMP-368: Result := Self
+            _w.Ret(_w.Load(NewTemp(), IrType.Ptr, _parameterAddresses[self], PtrAlign));     // ABI-075 / CMP-368: Result := Self
         }
         else
         {
@@ -1697,8 +1758,8 @@ internal sealed class FunctionEmitter
             }
             else if (received is not null)
             {
-                var reference = _w.Alloca(Unique(name + ".ref"), IrType.Ptr, 8);
-                _w.Store(received, reference, 8);
+                var reference = _w.Alloca(Unique(name + ".ref"), IrType.Ptr, PtrAlign);
+                _w.Store(received, reference, PtrAlign);
                 declarations.Add((reference, node, deref));
             }
             else if (slot is not null)
@@ -1909,7 +1970,7 @@ internal sealed class FunctionEmitter
                 Store(Value(assign.Value), WrittenAddress(assign.Target), assign.Target.Type, AccessAlignment(assign.Target));
                 break;
             case LZero { Type.IsManaged: true } zero when !Lowerer.IsAggregate(zero.Type):
-                _w.Store(new IrNullConstant(), Value(zero.Address), 8);              // CMP-325 rule 1: store ptr null
+                _w.Store(new IrNullConstant(), Value(zero.Address), PtrAlign);       // CMP-325 rule 1: store ptr null
                 break;
             case LZero zero:
             {
@@ -2071,7 +2132,7 @@ internal sealed class FunctionEmitter
 
         Start(handler);
         var beginCatch = _module.Function(new IrFunctionDeclaration(Mangler.RuntimeHelper("_BeginCatch"), IrType.Ptr, []));
-        _w.Store(_w.Call(NewTemp(), IrType.Ptr, beginCatch, [])!, _locals[statement.Exception], 8);
+        _w.Store(_w.Call(NewTemp(), IrType.Ptr, beginCatch, [])!, _locals[statement.Exception], PtrAlign);
         _scopes.Add(new EhScope(cleanup, EndCatch));
         Statement(statement.Handler);
         _scopes.RemoveAt(_scopes.Count - 1);
@@ -2363,7 +2424,7 @@ internal sealed class FunctionEmitter
         var helper = Strings.IsAnsi(element.String.Type) ? "_AStrUnique" : "_UStrUnique";
         var unique = _module.Function(new IrFunctionDeclaration(Mangler.RuntimeHelper(helper), IrType.Void, [IrType.Ptr]));
         CallHelper(null, IrType.Void, helper, unique, [stringAddress]);
-        return StringElement(element, _w.Load(NewTemp(), IrType.Ptr, stringAddress, 8));
+        return StringElement(element, _w.Load(NewTemp(), IrType.Ptr, stringAddress, PtrAlign));
     }
 
     /// <summary>CMP-324/331: <c>getelementptr inbounds i16, ptr %s, i64 %i0</c>, under <c>{$R+}</c> after <c>%i0 &lt;u Length</c>.</summary>
@@ -2416,8 +2477,8 @@ internal sealed class FunctionEmitter
         IrBlock load = Block("len.load", id), end = Block("len.end", id);
         _w.CondBr(isNil, end, load);
         Start(load);
-        var field = _w.GetElementPtr(NewTemp(), IrType.I8, array, [IrIntConstant.I64(-8)]);
-        var length = _w.Load(NewTemp(), IrType.I64, field, 8);
+        var field = _w.GetElementPtr(NewTemp(), IrType.I8, array, [IrIntConstant.I64(_module.DynArrayLengthOffset)]);
+        var length = Widen(_w.Load(NewTemp(), _module.NativeInt, field, TypeLayout.NativeInt(_module.Target).Alignment));
         _w.Br(end);
         Start(end);
         return _w.Phi(NewTemp(), IrType.I64, [(IrIntConstant.I64(0), from), (length, load)]);
@@ -2553,7 +2614,7 @@ internal sealed class FunctionEmitter
         var frame = _module.Frames[outer.Owner];
         var address = FrameOf(outer.Owner);
         var field = _w.GetElementPtr(NewTemp(), frame.Type, address, [IrIntConstant.I32(0), IrIntConstant.I32(frame.FieldOf(outer.Variable))]);
-        return IrEmitter.HoldsAddress(outer.Variable) ? _w.Load(NewTemp(), IrType.Ptr, field, 8) : field;
+        return IrEmitter.HoldsAddress(outer.Variable) ? _w.Load(NewTemp(), IrType.Ptr, field, PtrAlign) : field;
     }
 
     /// <summary>The frame record of <paramref name="routine"/>, this routine or an enclosing one (null value when it has none).</summary>
@@ -2567,7 +2628,7 @@ internal sealed class FunctionEmitter
         var frame = _link ?? throw new InvalidOperationException($"'{_routine?.Name ?? _name.Text}' is not nested in '{routine.Name}'.");
         for (var level = (RoutineSymbol)_routine!.ContainingSymbol!; !ReferenceEquals(level, routine); level = (RoutineSymbol)level.ContainingSymbol!)
         {
-            frame = _w.Load(NewTemp(), IrType.Ptr, frame, 8);
+            frame = _w.Load(NewTemp(), IrType.Ptr, frame, PtrAlign);
         }
 
         return frame;
@@ -2600,10 +2661,10 @@ internal sealed class FunctionEmitter
             {
                 var method = (MethodSymbol)routine;
                 // Self is the VMT itself for class methods and for an allocating constructor call (CMP-367: through a class reference)
-                var vmt = method.IsClassMethod || method.MethodKind == MethodKind.Constructor && callee.Flag == 1 ? self : _w.Load(NewTemp(), IrType.Ptr, self, 8);
+                var vmt = method.IsClassMethod || method.MethodKind == MethodKind.Constructor && callee.Flag == 1 ? self : _w.Load(NewTemp(), IrType.Ptr, self, PtrAlign);
                 // ABI-093: an interface method's code is slot k of the IMT the interface reference points to (CMP-373)
-                var slot = _w.GetElementPtr(NewTemp(), IrType.I8, vmt, [IrIntConstant.I64((method.ContainingInterface is null ? 64 : 0) + 8 * method.VmtSlot)]);
-                function = _w.Load(NewTemp(), IrType.Ptr, slot, 8);
+                var slot = _w.GetElementPtr(NewTemp(), IrType.I8, vmt, [IrIntConstant.I64(method.ContainingInterface is null ? _module.VmtSlotOffset(method.VmtSlot) : _module.ImtSlotOffset(method.VmtSlot))]);
+                function = _w.Load(NewTemp(), IrType.Ptr, slot, PtrAlign);
             }
         }
 
@@ -2648,7 +2709,9 @@ internal sealed class FunctionEmitter
             values.Add(IrEmitter.IsPassedByAddress(parameter) ? value : ToStorage(value, parameter.Type));
         }
 
-        return EmitCall(named ? NewTemp() : null, IrEmitter.ReturnType(routine), function ?? _module.Routine(routine), values.ToImmutable());
+        // CMP-1011: the convention of the routine, or of the procedural type's signature for a call through a value
+        return EmitCall(named ? NewTemp() : null, IrEmitter.ReturnType(routine), function ?? _module.Routine(routine), values.ToImmutable(),
+            callConv: _module.CallConv(routine));
     }
 
     /// <summary>Loads a value in SSA form: Booleans are compared <c>ne 0</c> after the load (CMP-305).</summary>
@@ -2715,7 +2778,8 @@ internal sealed class FunctionEmitter
                 var tlsBase = CallHelper(NewTemp(), IrType.Ptr, "_TlsBase", _module.Function(
                     new IrFunctionDeclaration(Mangler.RuntimeHelper("_TlsBase"), IrType.Ptr, [])), [])!;
                 var descriptor = _module.TlsDescriptor(threadVar.Variable.ContainingUnit!);
-                var offset = _w.Load(NewTemp(), IrType.I64, new IrGepConstant(IrType.I8, descriptor, [IrIntConstant.I64(8)]), 8);
+                var offset = Widen(_w.Load(NewTemp(), _module.NativeInt, new IrGepConstant(IrType.I8, descriptor, [IrIntConstant.I64(_module.Target.PointerSize)]),
+                    TypeLayout.NativeInt(_module.Target).Alignment));
                 var block = _w.GetElementPtr(NewTemp(), IrType.I8, tlsBase, [offset]);
                 return _w.GetElementPtr(NewTemp(), IrType.I8, block, [IrIntConstant.I64(threadVar.Variable.ThreadVarOffset!.Value)]);
             }

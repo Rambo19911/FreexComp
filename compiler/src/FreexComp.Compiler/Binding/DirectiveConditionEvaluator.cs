@@ -32,13 +32,12 @@ internal interface IUsesScopes
 internal sealed class DirectiveConditionEvaluator : IConditionEvaluator
 {
     private readonly IUsesScopes? _uses;
+    private readonly TargetInfo _target;
 
-    private DirectiveConditionEvaluator(IUsesScopes? uses) => _uses = uses;
-
-    public static DirectiveConditionEvaluator Instance { get; } = new(null);
+    private DirectiveConditionEvaluator(IUsesScopes? uses, TargetInfo target) => (_uses, _target) = (uses, target);
 
     /// <summary>Parse options whose <c>{$IF}</c> conditions are evaluated by the binder.</summary>
-    public static ParseOptions WithBinder(ParseOptions options) => options with { ConditionEvaluator = Instance };
+    public static ParseOptions WithBinder(ParseOptions options) => options with { ConditionEvaluator = new DirectiveConditionEvaluator(null, options.Target) };
 
     /// <summary>As <see cref="WithBinder(ParseOptions)"/>, in the scope chain of the bound <paramref name="system"/> (null = built-ins only).</summary>
     public static ParseOptions WithBinder(ParseOptions options, BindingResult? system) =>
@@ -46,11 +45,11 @@ internal sealed class DirectiveConditionEvaluator : IConditionEvaluator
 
     /// <summary>As <see cref="WithBinder(ParseOptions)"/>, in the uses chains <paramref name="uses"/> builds (null = built-ins only).</summary>
     public static ParseOptions WithBinder(ParseOptions options, IUsesScopes? uses) =>
-        options with { ConditionEvaluator = uses is null ? Instance : new DirectiveConditionEvaluator(uses) };
+        options with { ConditionEvaluator = new DirectiveConditionEvaluator(uses, options.Target) };
 
     public bool Evaluate(ConditionRequest request)
     {
-        var types = _uses?.Types ?? new BuiltInTypes();
+        var types = _uses?.Types ?? new BuiltInTypes(_target);
         var scope = new Scope(ScopeKind.Block, ScopeAt(request.PrecedingTokens, types));
         if (scope.Lookup("CompilerVersion") is null)
         {

@@ -122,7 +122,23 @@ internal sealed class Preprocessor
             return _fileSystem!.FileExists(absolute) ? absolute : null;
         }
 
-        var directories = new List<string> { includerPath[..includerPath.LastIndexOf('\\')] };
+        var includerDirectory = includerPath[..includerPath.LastIndexOf('\\')];
+        var directories = new List<string> { includerDirectory };
+        if (_context.Options is { RtlDirectory: { Length: > 0 } rtl, Target: var target })
+        {
+            // CMP-1022: the target's sub-directory of the RTL root, then the root
+            var root = PathUtil.Normalize(rtl);
+            var own = PathUtil.Normalize(root + @"\" + target.RtlSubdirectory);
+            if (PathUtil.AreEqual(includerDirectory, root))
+            {
+                directories.Insert(0, own);
+            }
+            else if (PathUtil.AreEqual(includerDirectory, own))
+            {
+                directories.Add(root);
+            }
+        }
+
         directories.AddRange(_context.Options?.SearchPaths ?? []);
         foreach (var directory in directories)
         {

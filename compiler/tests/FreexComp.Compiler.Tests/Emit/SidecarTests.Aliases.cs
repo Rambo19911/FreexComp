@@ -74,7 +74,7 @@ public sealed partial class SidecarTests
     public void Sidecar_AliasEntries()
     {
         var fragment = JsonNode.Parse(EmitWithSidecar(AliasSource, @"C:\p\A.pas").Fragment)!.AsObject();
-        var merged = JsonNode.Parse(PdiSidecar.Merge("A", "codeview", [EmitWithSidecar(AliasSource, @"C:\p\A.pas").Fragment]))!.AsObject();
+        var merged = JsonNode.Parse(PdiSidecar.Merge(FreexComp.Compiler.Targets.TargetInfo.Win64, "A", "codeview", [EmitWithSidecar(AliasSource, @"C:\p\A.pas").Fragment]))!.AsObject();
 
         foreach (var pdi in new[] { fragment, merged })
         {

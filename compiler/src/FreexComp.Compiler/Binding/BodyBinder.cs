@@ -387,7 +387,7 @@ internal sealed partial class BodyBinder
         }
         else if (collection.Type is ArrayTypeSymbol staticArray && ExpressionBinder.IsAddressable(collection))
         {
-            var pointer = new PointerTypeSymbol("^" + staticArray.Name, staticArray, allowsPointerMath: false);
+            var pointer = new PointerTypeSymbol(_types.Target, "^" + staticArray.Name, staticArray, allowsPointerMath: false);
             var reference = Hidden("in", pointer);
             prologue.Add(new BoundAssignmentStatement(at, Ref(reference), new BoundAddressOfExpression(at, collection, routine: null, pointer)));
             source = new BoundDereferenceExpression(at, Ref(reference), staticArray);
@@ -684,7 +684,7 @@ internal sealed partial class BodyBinder
         {
             case RecordTypeSymbol record when ExpressionBinder.IsAddressable(designator):
             {
-                var pointer = new PointerTypeSymbol("^" + record.Name, record, allowsPointerMath: false);
+                var pointer = new PointerTypeSymbol(_types.Target, "^" + record.Name, record, allowsPointerMath: false);
                 variable = new VariableSymbol(name, pointer, isGlobal: false, _routine, []);
                 value = new BoundAddressOfExpression(designatorSyntax, designator, routine: null, pointer);
                 switch (BoundIndexExpression.RootOf(designator))

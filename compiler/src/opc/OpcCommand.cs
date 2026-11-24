@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using FreexComp.Compiler;
+using FreexComp.Compiler.Targets;
 using FreexComp.Compiler.Text;
 
 namespace FreexComp.Opc;
@@ -49,6 +50,7 @@ public static class OpcCommand
           --diagnostics text|json   (default text)
           --rtl <dir>           RTL root (default: $FREEXCOMP_HOME/rtl/src, else relative to opc.exe)
           --toolchain <dir>     LLVM bin dir (default: third_party/llvm/bin, else PATH)
+          --target <id>         compilation target (default win64; `opc --version` lists the available ids)
           --jobs <N> | -j <N>   maximum number of parallel compile jobs (0 = automatic: one per processor; default 0)
           --verbose             echo external commands
           --version | --help
@@ -70,6 +72,7 @@ public static class OpcCommand
         if (parsed.Version)
         {
             env.Out.WriteLine($"opc {CompilerInfo.Version} (abi {AbiInfo.Version}, llvm {CompilerInfo.LlvmPin} pin)");
+            env.Out.WriteLine("targets: " + TargetRegistry.IdList);                 // CMP-1017
             return 0;
         }
 
@@ -154,7 +157,8 @@ public static class OpcCommand
         var cwd = PathUtil.Normalize(currentDirectory);
         string Full(string path) => PathUtil.Normalize(Path.IsPathFullyQualified(path) ? path : Path.Combine(cwd, path));
 
-        string? main = null, output = null, objDir = null, rtl = null, toolchain = null, manifest = null;
+        string? main = null, output = null, objDir = null, rtl = null, toolchain = null, manifest = null, unknownTarget = null;
+        var target = TargetRegistry.Default;
         var searchPaths = ImmutableArray.CreateBuilder<string>();
         var defines = ImmutableArray.CreateBuilder<string>();
         var scopes = ImmutableArray.CreateBuilder<string>();
@@ -224,6 +228,13 @@ public static class OpcCommand
                 case "--diagnostics": if (Choice("text", "json") is { } f) { json = f == "json"; } break;
                 case "--rtl": if (Value() is { } rtlDir) { rtl = Full(rtlDir); } break;
                 case "--toolchain": if (Value() is { } bin) { toolchain = Full(bin); } break;
+                case "--target":                                             // CMP-1017: the id of a built-in target
+                    if (Value() is { } id && !TargetRegistry.TryGet(id, out target))
+                    {
+                        unknownTarget = id;
+                    }
+
+                    break;
                 case "--jobs" or "-j":                                       // CMP-1130: 0…256, 0 = automatic
                     if (Value() is { } n)
                     {
@@ -268,6 +279,11 @@ public static class OpcCommand
             return new OpcArguments(null, null, json, verbose, help, version, []);
         }
 
+        if (unknownTarget is not null)
+        {
+            errors.Add(Diagnostic.Create("E0011", location, unknownTarget, TargetRegistry.IdList));
+        }
+
         if (main is null)
         {
             errors.Add(Diagnostic.Create("E0007", location));
@@ -283,7 +299,8 @@ public static class OpcCommand
             MainFile = main!,
             SearchPaths = searchPaths.ToImmutable(),
             Defines = defines.ToImmutable(),
-            ObjectDirectory = objDir ?? Path.Combine(cwd, "obj", optimization == OptimizationLevel.O0 ? "Debug" : "Release"),
+            ObjectDirectory = objDir ?? TargetRegistry.ObjectDirectory(cwd, target, optimization == OptimizationLevel.O0 ? "Debug" : "Release"),   // CMP-1020
+            Target = target,
             RtlDirectory = rtl ?? "",
             ToolchainDirectory = toolchain ?? "",
             Optimization = optimization,

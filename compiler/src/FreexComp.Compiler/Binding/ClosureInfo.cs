@@ -92,7 +92,7 @@ internal sealed class ClosureInfo
     {
         Fields.Clear();
         Links.Clear();
-        var end = Class.Parent?.InstanceSize ?? 8;
+        var end = Class.Parent?.InstanceSize ?? types.Target.PointerSize;
         var fields = ImmutableArray.CreateBuilder<FieldSymbol>();
         FieldSymbol Add(string name, TypeSymbol type)
         {
@@ -144,13 +144,13 @@ internal sealed class ClosureInfo
         ClassTypeSymbol type;
         lock (unit.Closures)
         {
-            type = new ClassTypeSymbol((owner?.Name ?? "$body") + ".$closure" + (unit.Closures.Count + 1), unit, [])
+            type = new ClassTypeSymbol(types.Target, (owner?.Name ?? "$body") + ".$closure" + (unit.Closures.Count + 1), unit, [])
             {
                 IsForward = false,
                 Parent = root,
                 VirtualSlots = root?.VirtualSlots ?? [],
                 IsTypeInfo = root?.IsTypeInfo ?? false,
-                InstanceSize = root?.InstanceSize ?? 8,
+                InstanceSize = root?.InstanceSize ?? types.Target.PointerSize,
                 IsReferenced = true,
             };
             unit.Closures.Add(type);

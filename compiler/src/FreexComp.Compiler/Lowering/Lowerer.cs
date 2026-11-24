@@ -37,6 +37,7 @@ internal static class Lowerer
 
         return new(result.Unit, [.. routines, .. outlined], [.. bodies.Select(b => b.Lowered)])
         {
+            Target = result.Types.Target,
             BodyGlobals = [.. bodyGlobals],
             Initialization = bodies.FirstOrDefault(b => b.Syntax is InitializationSectionSyntax).Lowered,
             Finalization = finalization,
@@ -1157,7 +1158,7 @@ internal sealed partial class LoweringContext
     private RecordTypeSymbol? _methodParts;
 
     /// <summary>A method pointer's storage as <c>record Code, Data: Pointer end</c> (C-103).</summary>
-    public RecordTypeSymbol MethodParts => _methodParts ??= MethodPointerTypeSymbol.Parts(Types.Pointer);
+    public RecordTypeSymbol MethodParts => _methodParts ??= MethodPointerTypeSymbol.Parts(Types.Target, Types.Pointer);
 
     /// <summary>
     /// CMP-378 (C-103): a method pointer value in a temporary — Data := Self, then Code := the method's address, or the VMT slot

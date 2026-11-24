@@ -1,4 +1,5 @@
 using FreexComp.Compiler;
+using FreexComp.Compiler.Targets;
 using FreexComp.Compiler.Text;
 
 namespace FreexComp.Build;
@@ -10,8 +11,16 @@ public static class ProjectOptions
     /// The project has no file path, the configuration does not exist, or the model holds a value the loader
     /// would have rejected (optimization not 0..2, appType not console/gui).
     /// </exception>
-    public static CompilationOptions ToCompilationOptions(Project project, string configuration)
+    public static CompilationOptions ToCompilationOptions(Project project, string configuration) =>
+        ToCompilationOptions(project, configuration, TargetRegistry.Default);
+
+    /// <summary>
+    /// As <see cref="ToCompilationOptions(Project, string)"/> for <paramref name="target"/> (CMP-1019 rule 3): the baseline target
+    /// keeps <c>obj\&lt;config&gt;</c>, any other target gets <c>obj\&lt;target id&gt;\&lt;config&gt;</c> (CMP-1020).
+    /// </summary>
+    public static CompilationOptions ToCompilationOptions(Project project, string configuration, TargetInfo target)
     {
+        ArgumentNullException.ThrowIfNull(target);
         var config = GetConfiguration(project, configuration);
         var dir = RequireDirectory(project);
 
@@ -54,7 +63,8 @@ public static class ProjectOptions
                 "gui" => AppType.Gui,
                 _ => throw new ArgumentException($"Unsupported application type '{project.AppType}'", nameof(project)),
             },
-            ObjectDirectory = PathUtil.Normalize(dir + @"\obj\" + configuration),
+            ObjectDirectory = PathUtil.Normalize(TargetRegistry.ObjectDirectory(dir, target, configuration)),
+            Target = target,
             UnitScopeNames = project.UnitScopeNames,
             Rtti = config.Rtti ?? project.Rtti ?? "broad",                                      // C-240: configuration wins over project
             Manifest = project.Manifest switch                                                  // C-240: absent → "" = default per appType

@@ -34,6 +34,9 @@ internal sealed record IrFunctionDefinition(
 {
     /// <summary>CMP-421: the metadata node number of the function's <c>DISubprogram</c> (<c>define … !dbg !N</c>); null → none.</summary>
     public int? Subprogram { get; init; }
+
+    /// <summary>CMP-1011: the calling-convention keyword, printed before the return type; "" = the default convention, not printed.</summary>
+    public string CallConv { get; init; } = "";
 }
 
 /// <summary><c>declare RetType @Name(types) [#group]</c>.</summary>
@@ -41,6 +44,9 @@ internal sealed record IrFunctionDeclaration(LinkName Name, IrType ReturnType, I
 {
     /// <summary><c>declare dllimport</c>: a routine imported from a DLL (CMP-430).</summary>
     public bool DllImport { get; init; }
+
+    /// <summary>CMP-1011: the calling-convention keyword, printed before the return type; "" = the default convention, not printed.</summary>
+    public string CallConv { get; init; } = "";
 }
 
 /// <summary><c>@Name = [linkage] [unnamed_addr] global|constant Type Init, align N</c>.</summary>
@@ -122,15 +128,16 @@ internal interface IIrWriter
     /// <paramref name="funclet"/>: the pad token of the funclet the call is in (<c>[ "funclet"(token %cl) ]</c>, CMP-392/393).
     /// <paramref name="mustTail"/>: <c>musttail call</c> (interface thunks, CMP-372); a <c>ret</c> of its result must follow.
     /// </remarks>
+    /// <param name="callConv">CMP-1011: the calling-convention keyword printed after <c>call</c>; "" = none.</param>
     IrLocal? Call(string? name, IrType returnType, IrValue callee, ImmutableArray<IrValue> arguments, int? attributeGroup = null, IrValue? funclet = null,
-        bool mustTail = false);
+        bool mustTail = false, string callConv = "");
 
     /// <summary>
     /// <c>invoke … to label %normal unwind label %unwind</c> (CMP-394): a terminator. A function with an invoke or a pad gets
-    /// <c>personality ptr @__C_specific_handler</c>, which the writer declares (CMP-390).
+    /// the target's personality routine (<c>personality ptr @…</c>, CMP-1012), which the writer declares (CMP-390).
     /// </summary>
     IrLocal? Invoke(string? name, IrType returnType, IrValue callee, ImmutableArray<IrValue> arguments, IrBlock normal, IrBlock unwind,
-        int? attributeGroup = null, IrValue? funclet = null);
+        int? attributeGroup = null, IrValue? funclet = null, string callConv = "");
 
     /// <summary><c>%name = catchswitch within none [label %handler] unwind to caller|label %unwind</c> (CMP-391).</summary>
     IrLocal CatchSwitch(string name, IrBlock handler, IrBlock? unwind);

@@ -10,9 +10,10 @@ namespace FreexComp.Compiler.Emit;
 /// §1–§4 for the pinned LLVM (opaque pointers, no datalayout line). Output uses LF line endings and ends with a newline;
 /// each section (struct types, globals, declarations, every function, attribute groups) is preceded by one blank line.
 /// </summary>
-internal sealed class LlvmTextWriter : IIrWriter
+/// <param name="target">The module's target: triple and personality routine (CMP-1000); null → <see cref="TargetRegistry.Default"/>.</param>
+internal sealed class LlvmTextWriter(TargetInfo? target = null) : IIrWriter
 {
-    private const string TargetTriple = "x86_64-pc-windows-msvc";
+    private readonly TargetInfo _target = target ?? TargetRegistry.Default;
 
     private readonly List<string> _moduleAsm = [];
     private readonly List<string> _structs = [];
@@ -25,8 +26,6 @@ internal sealed class LlvmTextWriter : IIrWriter
     private int? _location;
     private string? _header;
     private string? _text;
-
-    private const string PersonalityName = "__C_specific_handler";
 
     private StringBuilder? _function;
     private int _headerEnd;
@@ -41,7 +40,7 @@ internal sealed class LlvmTextWriter : IIrWriter
             throw new InvalidOperationException("BeginModule called twice.");
         }
 
-        _header = $"; ModuleID = '{moduleName}'\nsource_filename = \"{Escape(sourceFileName)}\"\ntarget triple = \"{TargetTriple}\"\n";
+        _header = $"; ModuleID = '{moduleName}'\nsource_filename = \"{Escape(sourceFileName)}\"\ntarget triple = \"{_target.Triple}\"\n";
     }
 
     public NamedStructIrType DeclareStruct(LinkName name, StructIrType body)
@@ -89,7 +88,7 @@ internal sealed class LlvmTextWriter : IIrWriter
     public IrGlobal DeclareFunction(IrFunctionDeclaration declaration)
     {
         RequireModuleLevel();
-        var line = $"declare {(declaration.DllImport ? "dllimport " : "")}{Type(declaration.ReturnType)} @{Name(declaration.Name)}({string.Join(", ", declaration.ParameterTypes.Select(Type))})"
+        var line = $"declare {(declaration.DllImport ? "dllimport " : "")}{Cc(declaration.CallConv)}{Type(declaration.ReturnType)} @{Name(declaration.Name)}({string.Join(", ", declaration.ParameterTypes.Select(Type))})"
             + Group(declaration.AttributeGroup);
         if (_declarations.TryGetValue(declaration.Name.Text, out var existing) && existing != line)
         {
@@ -121,7 +120,7 @@ internal sealed class LlvmTextWriter : IIrWriter
         RequireModuleLevel();
         var parameters = function.Parameters.Select(p => new IrLocal(p.Type, p.Name)).ToImmutableArray();
         _function = new StringBuilder()
-            .Append("define ").Append(Linkage(function.Linkage)).Append(Type(function.ReturnType)).Append(" @").Append(Name(function.Name))
+            .Append("define ").Append(Linkage(function.Linkage)).Append(Cc(function.CallConv)).Append(Type(function.ReturnType)).Append(" @").Append(Name(function.Name))
             .Append('(').AppendJoin(", ", parameters.Select(Typed)).Append(')').Append(Group(function.AttributeGroup));
         if (function.Linkage == IrLinkage.LinkOnceOdr)
         {
@@ -249,20 +248,23 @@ internal sealed class LlvmTextWriter : IIrWriter
             $"cmpxchg {Typed(address)}, {Typed(comparand)}, {Typed(newValue)} seq_cst seq_cst, align {Int(alignment)}");
     }
 
+    /// <summary>CMP-1011: a calling-convention keyword in LangRef's position, with its separating space; nothing for the default convention.</summary>
+    private static string Cc(string callConv) => callConv.Length == 0 ? "" : callConv + " ";
+
     public IrLocal? Call(string? name, IrType returnType, IrValue callee, ImmutableArray<IrValue> arguments, int? attributeGroup = null, IrValue? funclet = null,
-        bool mustTail = false)
+        bool mustTail = false, string callConv = "")
     {
         RequirePointer(callee);
-        var text = $"{(mustTail ? "musttail " : "")}call {Type(returnType)} {Value(callee)}({string.Join(", ", arguments.Select(Typed))}){Group(attributeGroup)}{Bundle(funclet)}";
+        var text = $"{(mustTail ? "musttail " : "")}call {Cc(callConv)}{Type(returnType)} {Value(callee)}({string.Join(", ", arguments.Select(Typed))}){Group(attributeGroup)}{Bundle(funclet)}";
         return CallLike(name, returnType, text, terminates: false);
     }
 
     public IrLocal? Invoke(string? name, IrType returnType, IrValue callee, ImmutableArray<IrValue> arguments, IrBlock normal, IrBlock unwind,
-        int? attributeGroup = null, IrValue? funclet = null)
+        int? attributeGroup = null, IrValue? funclet = null, string callConv = "")
     {
         RequirePointer(callee);
         _usesEh = true;
-        var text = $"invoke {Type(returnType)} {Value(callee)}({string.Join(", ", arguments.Select(Typed))}){Group(attributeGroup)}{Bundle(funclet)}\n"
+        var text = $"invoke {Cc(callConv)}{Type(returnType)} {Value(callee)}({string.Join(", ", arguments.Select(Typed))}){Group(attributeGroup)}{Bundle(funclet)}\n"
             + $"          to label %{LocalName(normal.Name)} unwind label %{LocalName(unwind.Name)}";
         return CallLike(name, returnType, text, terminates: true);
     }
@@ -355,8 +357,8 @@ internal sealed class LlvmTextWriter : IIrWriter
         if (_usesEh)
         {
             // CMP-390: the personality of every function with an invoke or a pad, declared once per module
-            function.Insert(_headerEnd, " personality ptr @" + PersonalityName);
-            _declarations[PersonalityName] = "declare i32 @" + PersonalityName + "(...)";
+            function.Insert(_headerEnd, " personality ptr @" + _target.PersonalitySymbol);
+            _declarations[_target.PersonalitySymbol] = "declare i32 @" + _target.PersonalitySymbol + "(...)";
         }
 
         _functions.Add(function.Append("}\n").ToString());
@@ -557,7 +559,7 @@ internal sealed class LlvmTextWriter : IIrWriter
         IrStructConstant s => Braces(s.StructType.IsPacked, s.Fields.Select(Typed)),
         IrGepConstant g => $"getelementptr inbounds ({Type(g.SourceType)}, {Typed(g.Base)}{string.Concat(g.Indices.Select(i => ", " + Typed(i)))})",
         IrIntToPtrConstant c => $"inttoptr (i64 {(long)(ulong)c.Address} to ptr)",
-        IrPtrToIntConstant c => $"ptrtoint ({Typed(c.Pointer)} to i64)",
+        IrPtrToIntConstant c => $"ptrtoint ({Typed(c.Pointer)} to {Type(c.IntegerType)})",
         _ => throw new ArgumentOutOfRangeException(nameof(value), value, null),
     };
 

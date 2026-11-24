@@ -11,8 +11,12 @@ namespace FreexComp.Compiler.Syntax;
 /// </summary>
 internal sealed class PreprocessorContext
 {
-    /// <summary>LANG-870: always defined (ASSERTIONS follows the C switch, see <see cref="DirectiveProcessor"/>).</summary>
-    private static readonly string[] Predefined = ["OPC", "OPC_1", "MSWINDOWS", "WINDOWS", "WIN64", "CPUX64", "CPU64BITS", "UNICODE"];
+    /// <summary>
+    /// LANG-870 / CMP-1010: the product group of predefined symbols, always defined and target-independent (ASSERTIONS follows the
+    /// C switch, see <see cref="DirectiveProcessor"/>; CONSOLE comes with the application type). The target group is
+    /// <see cref="TargetInfo.PredefinedSymbols"/>.
+    /// </summary>
+    internal static readonly ImmutableArray<string> ProductSymbols = ["OPC", "OPC_1", "UNICODE"];
 
     /// <summary>C-127: the main file starts with <c>unit</c> (set once its first token is read): <c>{$APPTYPE}</c> there is W1003.</summary>
     public bool IsUnitFile { get; set; }
@@ -20,7 +24,8 @@ internal sealed class PreprocessorContext
     public PreprocessorContext(ParseOptions? options)
     {
         Options = options;
-        Defines.UnionWith(Predefined);
+        Defines.UnionWith(ProductSymbols);
+        Defines.UnionWith((options?.Target ?? TargetRegistry.Default).PredefinedSymbols);
         if (options is not null)
         {
             Defines.UnionWith(options.Defines);

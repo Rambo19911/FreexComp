@@ -1,3 +1,4 @@
+using FreexComp.Compiler.Targets;
 using FreexComp.Compiler.Units;
 
 namespace FreexComp.Compiler.Tests.Units;
@@ -228,6 +229,80 @@ public sealed class UnitResolverTests
     [Trait("Req", "LANG-535")]
     public void ScopeNames_NothingFound_IsNull() =>
         Assert.Null(Lang535(Files(@"C:\app\Lib.Other.pas"), StandardAliases, ["Lib", "Winapi"]).Find("Tools"));
+
+    /// <summary>
+    /// targets.md CMP-1022 (C-283): step 5 is two steps — the target's sub-directory of the RTL root, then the root; the same
+    /// order for an include file sought in the RTL root; the alias table is read from the root only.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Kind", "Unit")]
+    [Trait("Req", "CMP-1022")]
+    public void TargetSubdirectoryWinsOverRtlRoot()
+    {
+        var fake = TargetInfo.Win64 with { Id = "fake32", RtlSubdirectory = "fake32" };
+        var fs = Files(
+            @"C:\rtl\Shared.pas", @"C:\rtl\Both.pas", @"C:\rtl\fake32\Both.pas", @"C:\rtl\fake32\Only32.pas",
+            @"C:\rtl\win64\Only64.pas", @"C:\rtl\extra\Extra.pas", @"C:\app\Both.pas");
+        UnitResolver For(TargetInfo? target, string main = @"C:\other\P.pas") => new(fs, main, [], Rtl, [], target: target);
+
+        // the target's own folder first, the root for everything it does not hold
+        Assert.Equal(@"C:\rtl\fake32\Both.pas", For(fake).Resolve("Both"));
+        Assert.Equal(@"C:\rtl\fake32\Only32.pas", For(fake).Resolve("only32"));
+        Assert.Equal(@"C:\rtl\Shared.pas", For(fake).Resolve("Shared"));
+        // the other sub-directories of the root are still searched, except the folder of another built-in target
+        Assert.Equal(@"C:\rtl\extra\Extra.pas", For(fake).Resolve("Extra"));
+        Assert.Null(For(fake).Resolve("Only64"));
+        // steps 3 and 4 still come first
+        Assert.Equal(@"C:\app\Both.pas", For(fake, Main).Resolve("Both"));
+
+        // the baseline target: its folder first when it exists, and a foreign-looking folder that is no built-in target's is a
+        // plain sub-directory (searched after the root, in name order)
+        Assert.Equal(@"C:\rtl\win64\Only64.pas", For(TargetInfo.Win64).Resolve("Only64"));
+        Assert.Equal(@"C:\rtl\Both.pas", For(TargetInfo.Win64).Resolve("Both"));
+        Assert.Equal(@"C:\rtl\fake32\Only32.pas", For(null).Resolve("Only32"));
+        Assert.Equal(
+            [@"C:\other", @"C:\rtl\win64", @"C:\rtl", @"C:\rtl\extra", @"C:\rtl\fake32", @"C:\winapi\src"],
+            For(null).Directories);
+        Assert.Equal(
+            [@"C:\other", @"C:\rtl\fake32", @"C:\rtl", @"C:\rtl\extra", @"C:\winapi\src"],
+            For(fake).Directories);
+
+        // a missing sub-directory is skipped silently: with no target folder everything resolves as before the card
+        var flat = Files(@"C:\rtl\Shared.pas", @"C:\rtl\sub\Deep.pas");
+        var plain = new UnitResolver(flat, Main, [], Rtl, [], target: fake);
+        Assert.Equal(@"C:\rtl\Shared.pas", plain.Resolve("Shared"));
+        Assert.Equal(@"C:\rtl\sub\Deep.pas", plain.Resolve("Deep"));
+        Assert.Null(plain.Resolve("Missing"));
+
+        // include files: sought in the RTL root → the target's folder first; included from that folder → the root as fall-back
+        var includes = new InMemoryFileSystem()
+            .Add(@"C:\rtl\U.pas", "unit U; interface {$I part.inc} {$I common.inc} implementation end.")
+            .Add(@"C:\rtl\part.inc", "const Part = 64;")
+            .Add(@"C:\rtl\fake32\part.inc", "const Part = 32;")
+            .Add(@"C:\rtl\common.inc", "const Common = 1;")
+            .Add(@"C:\rtl\fake32\V.pas", "unit V; interface {$I common.inc} {$I part.inc} implementation end.");
+        string[] Numbers(string path, TargetInfo target)
+        {
+            var options = new Compiler.Syntax.ParseOptions([]) { Target = target, RtlDirectory = Rtl };
+            var tree = Compiler.Syntax.SyntaxTree.Parse(SourceText.From(path, includes.ReadAllText(path)), options, includes);
+            Assert.Empty(tree.Diagnostics);
+            return [.. tree.Root.DescendantTokens().Where(t => t.Kind == Compiler.Syntax.SyntaxKind.IntegerLiteralToken).Select(t => t.Text)];
+        }
+
+        Assert.Equal(["32", "1"], Numbers(@"C:\rtl\U.pas", fake));
+        Assert.Equal(["64", "1"], Numbers(@"C:\rtl\U.pas", TargetInfo.Win64));
+        Assert.Equal(["1", "32"], Numbers(@"C:\rtl\fake32\V.pas", fake));
+
+        // unit-aliases.json: only the one in the RTL root counts
+        var aliases = new InMemoryFileSystem()
+            .Add(@"C:\rtl\unit-aliases.json", """{ "aliases": { "Root.Name": "Shared" } }""")
+            .Add(@"C:\rtl\fake32\unit-aliases.json", """{ "aliases": { "Sub.Name": "Shared" } }""");
+        var table = UnitAliasTable.Load(aliases, Rtl, out var error);
+        Assert.Null(error);
+        Assert.True(table.TryGetCanonical("Root.Name", out _));
+        Assert.False(table.TryGetCanonical("Sub.Name", out _));
+    }
 
     private static bool PathUtilEquals(string expected, string? actual) => actual is not null && Compiler.Text.PathUtil.AreEqual(expected, actual);
 }

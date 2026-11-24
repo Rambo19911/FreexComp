@@ -456,6 +456,9 @@ internal sealed class PcuWriter(PcuContext context)
             }
         }
 
+        /// <summary>Prefix of the flag that records a calling-convention directive (CMP-1011).</summary>
+        internal const string CallConvFlag = "cc:";
+
         private static IEnumerable<string> Flags(RoutineSymbol routine)
         {
             if (routine.IsOverload)
@@ -476,6 +479,20 @@ internal sealed class PcuWriter(PcuContext context)
             if (routine.IsNoReturn)
             {
                 yield return "noreturn";
+            }
+
+            if (routine.CallingConvention != CallConvDirective.Default)
+            {
+                yield return CallConvFlag + routine.CallingConvention;                  // CMP-1011: only when a directive is written
+            }
+        }
+
+        /// <summary>CMP-1011: <c>"callConv"</c> of a procedural type, only when a directive is written.</summary>
+        private static void CallConv(JsonObject entry, RoutineSymbol signature)
+        {
+            if (signature.CallingConvention != CallConvDirective.Default)
+            {
+                entry["callConv"] = signature.CallingConvention.ToString();
             }
         }
 
@@ -722,6 +739,7 @@ internal sealed class PcuWriter(PcuContext context)
                     entry["result"] = procedural.Signature.ReturnType is { } result ? TypeId(result) : null;
                     entry["ofObject"] = false;
                     entry["reference"] = false;
+                    CallConv(entry, procedural.Signature);
                     return;
                 case MethodPointerTypeSymbol methodPointer:
                     entry["kind"] = "procedural";                               // C-103: architecture.md §6 ofObject
@@ -730,6 +748,7 @@ internal sealed class PcuWriter(PcuContext context)
                     entry["result"] = methodPointer.Signature.ReturnType is { } methodResult ? TypeId(methodResult) : null;
                     entry["ofObject"] = true;
                     entry["reference"] = false;
+                    CallConv(entry, methodPointer.Signature);
                     return;
                 case ClassTypeSymbol @class:
                     // architecture.md §6 `class` (C-080); interfaces, properties and RTTI arrive with M2.5
@@ -806,7 +825,8 @@ internal sealed class PcuWriter(PcuContext context)
                         ["name"] = m.Name,
                         ["params"] = Parameters(m),
                         ["result"] = m.ReturnType is { } result ? TypeId(result) : null,
-                        ["flags"] = Strings(m.IsOverload ? new[] { "overload" } : Array.Empty<string>()),
+                        ["flags"] = Strings([.. m.IsOverload ? new[] { "overload" } : Array.Empty<string>(),
+                            .. m.CallingConvention != CallConvDirective.Default ? new[] { CallConvFlag + m.CallingConvention } : Array.Empty<string>()]),
                         ["slot"] = m.VmtSlot,
                     })]);
                     // C-205: accessors are interface methods, named by their IMT slot's method name (they have no link name)

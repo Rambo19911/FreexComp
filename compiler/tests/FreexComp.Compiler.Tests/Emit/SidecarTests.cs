@@ -150,7 +150,7 @@ public sealed partial class SidecarTests
     }
 
     private static JsonObject Demo() =>
-        JsonNode.Parse(PdiSidecar.Merge("DbgDemo", "codeview", [EmitWithSidecar(DemoSource, @"C:\work\DbgDemo\DbgDemo.pas").Fragment]))!.AsObject();
+        JsonNode.Parse(PdiSidecar.Merge(FreexComp.Compiler.Targets.TargetInfo.Win64, "DbgDemo", "codeview", [EmitWithSidecar(DemoSource, @"C:\work\DbgDemo\DbgDemo.pas").Fragment]))!.AsObject();
 
     private static int LineOf(string source, string text) =>
         Array.FindIndex(source.Split('\n'), l => l.TrimEnd('\r').Equals(text, StringComparison.Ordinal)) + 1;
@@ -389,7 +389,7 @@ public sealed partial class SidecarTests
             var second = EmitWithSidecar(source, @"C:\p\M.pas").Fragment;
 
             Assert.Equal(first, second);
-            Assert.Equal(PdiSidecar.Merge("P", "codeview", [first]), PdiSidecar.Merge("P", "codeview", [second]));
+            Assert.Equal(PdiSidecar.Merge(FreexComp.Compiler.Targets.TargetInfo.Win64, "P", "codeview", [first]), PdiSidecar.Merge(FreexComp.Compiler.Targets.TargetInfo.Win64, "P", "codeview", [second]));
             Assert.DoesNotContain('\r', first);
             Assert.EndsWith("}\n", first, StringComparison.Ordinal);
         }
@@ -405,7 +405,7 @@ public sealed partial class SidecarTests
         var layout = EmitWithSidecar(LayoutSource, @"C:\p\L.pas").Fragment;
         var demo = EmitWithSidecar(DemoSource, @"C:\p\DbgDemo.pas").Fragment;
 
-        var merged = JsonNode.Parse(PdiSidecar.Merge("DbgDemo", "dwarf", [demo, layout, layout]))!.AsObject();
+        var merged = JsonNode.Parse(PdiSidecar.Merge(FreexComp.Compiler.Targets.TargetInfo.Win64, "DbgDemo", "dwarf", [demo, layout, layout]))!.AsObject();
 
         ValidateSchema(merged);
         Assert.Equal("dwarf", merged["container"]!.GetValue<string>());
@@ -415,7 +415,7 @@ public sealed partial class SidecarTests
         Assert.Single(types, t => t["name"]!.GetValue<string>() == "Integer");
         Assert.Single(types, t => t["name"]!.GetValue<string>() == "TRec");
         // the second copy of L adds no type; the unnamed and built-in types of both programs are each described once
-        var alone = JsonNode.Parse(PdiSidecar.Merge("L", "codeview", [layout]))!["types"]!.AsArray().Select(t => t!.AsObject()).ToList();
+        var alone = JsonNode.Parse(PdiSidecar.Merge(FreexComp.Compiler.Targets.TargetInfo.Win64, "L", "codeview", [layout]))!["types"]!.AsArray().Select(t => t!.AsObject()).ToList();
         Assert.Equal(alone.Count(t => t["unit"] is not null), types.Count(t => t["unit"]?.GetValue<string>() == "L"));
         var structures = types.Where(t => t["unit"] is null).Select(t => { var c = (JsonObject)t.DeepClone(); c.Remove("id"); return c.ToJsonString(); }).ToList();
         Assert.Equal(structures.Count, structures.Distinct(StringComparer.Ordinal).Count());

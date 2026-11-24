@@ -38,7 +38,7 @@ internal sealed partial class DeclarationBinder
         }
         else
         {
-            type = new InterfaceTypeSymbol(name, _container, [DiagnosticBag.LocationOf(identifier)]);
+            type = new InterfaceTypeSymbol(_types.Target, name, _container, [DiagnosticBag.LocationOf(identifier)]);
             _scope.TryDeclare(name, type, out _);
             declared.Add(type);
             if (_container is UnitSymbol { IsProgram: false } unit && IdentifierComparer.Instance.Equals(unit.Name, "System")
@@ -285,6 +285,7 @@ internal sealed partial class DeclarationBinder
         var method = new MethodSymbol(NameOf(identifier), type, [DiagnosticBag.LocationOf(identifier)], syntax, MethodKind.Ordinary, Visibility.Public)
         {
             IsOverload = syntax.Directives.Any(d => d.Keyword.ContextualKind == SyntaxKind.OverloadKeyword),
+            CallingConvention = CallConvOf(syntax.Directives.Select(d => d.Keyword)),
         };
         BindSignature(method, heading, identifier, report: true);
         method.SelfParameter = new ParameterSymbol("Self", type, ParameterMode.Value, -1, method, []);     // ABI-092: the interface reference

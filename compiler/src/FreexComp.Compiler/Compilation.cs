@@ -83,6 +83,7 @@ public sealed class Compilation
         _openFiles = openFiles;
         FileSystem = fs;
         _analysis = new Lazy<Analysis>(Analyze, LazyThreadSafetyMode.ExecutionAndPublication);
+        _standaloneTypes = new Lazy<BuiltInTypes>(() => new BuiltInTypes(options.Target), LazyThreadSafetyMode.ExecutionAndPublication);
     }
 
     // ------------------------------------------------------------------------------------------------ language service (C-129)
@@ -346,7 +347,7 @@ public sealed class Compilation
 
         // no front end (no System, invalid alias table, unreadable file): the file bound on its own against the built-ins
         var tree = GetSyntaxTree(path);
-        var result = Binder.BindCompilationUnit(tree, new BuiltInTypes());
+        var result = Binder.BindCompilationUnit(tree, new BuiltInTypes(Options.Target));
         ImmutableArray<Diagnostic> diagnostics = [.. analysis.Diagnostics.Where(d => PathUtil.AreEqual(d.Location.Path, path))];
         return new SemanticModel(this, tree, result, diagnostics.IsEmpty ? [.. tree.Diagnostics, .. result.Diagnostics] : diagnostics, _ => null);
     }
@@ -376,7 +377,7 @@ public sealed class Compilation
     public ImmutableArray<UnitInfo> Units =>
         _analysis.Value.Front is { } front ? [.. front.InitOrder.Append(front.Binder.Main!).Distinct().Select(Info)] : [];
 
-    private readonly Lazy<BuiltInTypes> _standaloneTypes = new(() => new BuiltInTypes(), LazyThreadSafetyMode.ExecutionAndPublication);
+    private readonly Lazy<BuiltInTypes> _standaloneTypes;
 
     /// <summary>
     /// api.md §1 (C-264): the predeclared types the units of this snapshot are bound with; a fresh, per-snapshot set when the
@@ -585,7 +586,7 @@ public sealed class Compilation
         foreach (var unit in compileJobs)
         {
             var ll = Path.Combine(objectDirectory, unit.Name + ".ll");
-            jobs.Add(ClangInvoker.Job(toolchain.Clang, unit.Name, ll, Path.ChangeExtension(ll, ".obj"), Options.Optimization, Options.DebugInfo));
+            jobs.Add(ClangInvoker.Job(toolchain.Clang, unit.Name, ll, Path.ChangeExtension(ll, ".obj"), Options.Optimization, Options.DebugInfo, Options.Target));
         }
 
         var link = options.Stage == EmitStage.Exe && main.Unit.IsProgram;
@@ -601,11 +602,12 @@ public sealed class Compilation
                 [.. linkUnits.Select(u => new LinkUnit(Path.GetDirectoryName(u.Path)!, u.LinkInputs))],
                 Path.GetDirectoryName(systemPath)!,
                 RtlDirectory(),
-                location);
+                location,
+                Options.Target);
             var libraryJobs = new List<BackendJob>();
             foreach (var (dll, definition) in planned)
             {
-                var (library, job, hash) = DllToolInvoker.Prepare(FileSystem, toolchain.DllTool, dll, definition, objectDirectory);
+                var (library, job, hash) = DllToolInvoker.Prepare(FileSystem, toolchain.DllTool, dll, definition, objectDirectory, Options.Target);
                 libraries.Add(library);
                 foreach (var import in imports.Where(i => i.DllName == dll))
                 {
@@ -672,6 +674,7 @@ public sealed class Compilation
         var request = new LinkRequest(output, objectDirectory,
             [.. linkUnits.Select(u => u.IsPrecompiled ? u.ObjectPath : Path.Combine(objectDirectory, u.Name + ".obj"))])
         {
+            Target = Options.Target,
             AppType = Options.AppType,
             DebugInfo = Options.DebugInfo,
             DebugFormat = Options.DebugFormat,
@@ -740,7 +743,7 @@ public sealed class Compilation
             }
         }
 
-        return Write(path, PdiSidecar.Merge(program, PdiSidecar.ContainerName(Options.DebugFormat), fragments), location, diagnostics);
+        return Write(path, PdiSidecar.Merge(Options.Target, program, PdiSidecar.ContainerName(Options.DebugFormat), fragments), location, diagnostics);
     }
 
     private bool Delete(string path, Location location, ImmutableArray<Diagnostic>.Builder diagnostics)
@@ -847,7 +850,7 @@ public sealed class Compilation
         }
 
         var optionsFingerprint = Fingerprint.Options(Options, aliases.Hash);
-        var types = reuse?.Types ?? new BuiltInTypes { DefaultRttiScope = Options.Rtti == "published" ? RttiScope.Published : RttiScope.Broad };   // C-169
+        var types = reuse?.Types ?? new BuiltInTypes(Options.Target) { DefaultRttiScope = Options.Rtti == "published" ? RttiScope.Published : RttiScope.Broad };   // C-169
         var unitBinder = new UnitBinder(types, resolver, Parse, path => ReadPcu(path, optionsFingerprint), reuse?.Unit) { PartialBodies = partial };
         unitBinder.BindAll(systemPath, mainPath, MaxParallelism);
         var initOrder = unitBinder.InitializationOrder();
@@ -967,7 +970,7 @@ public sealed class Compilation
             var defines = Options.AppType == AppType.Console ? Options.Defines.Add("CONSOLE") : Options.Defines;
             // {$IF} conditions are evaluated by the binder in the unit's uses chain (LANG-862, C-032/C-046/C-069)
             var parseOptions = DirectiveConditionEvaluator.WithBinder(
-                new ParseOptions(defines) { SearchPaths = [.. Options.SearchPaths.Select(PathUtil.Normalize)] }, uses);
+                new ParseOptions(defines) { SearchPaths = [.. Options.SearchPaths.Select(PathUtil.Normalize)], Target = Options.Target, RtlDirectory = RtlDirectory() }, uses);
             tree = SyntaxTree.Parse(text, parseOptions, FileSystem);
             if (!tree.DependsOnConditionScope)
             {
@@ -1072,7 +1075,7 @@ public sealed class Compilation
     {
         try
         {
-            var writer = new LlvmTextWriter();
+            var writer = new LlvmTextWriter(unit.Types.Target);
             ImmutableArray<UnitTableEntry> table = unit.Unit.IsProgram ? unitTable : [];
             var sidecar = IrEmitter.EmitUnit(Lowerer.Lower(unit, forms), writer, table, debug);
             return (writer.GetText(), sidecar, null);
@@ -1113,7 +1116,7 @@ public sealed class Compilation
 
     /// <summary>LANG-510 (C-068): open files are units already part of the compilation (ordinal path order); LANG-535 (C-164).</summary>
     private UnitResolver Resolver(string mainPath, UnitAliasTable aliases) =>
-        new(FileSystem, mainPath, Options.SearchPaths, RtlDirectory(), _openFiles.Keys.Order(StringComparer.Ordinal), aliases, Options.UnitScopeNames);
+        new(FileSystem, mainPath, Options.SearchPaths, RtlDirectory(), _openFiles.Keys.Order(StringComparer.Ordinal), aliases, Options.UnitScopeNames, Options.Target);
 
     /// <summary><c>--rtl</c>; "" → <c>%FREEXCOMP_HOME%\rtl\src</c>, else <c>rtl\src</c> next to the running executable (compiler-cli.md §1).</summary>
     private string RtlDirectory()
@@ -1127,9 +1130,12 @@ public sealed class Compilation
         return PathUtil.Normalize(Path.Combine(string.IsNullOrEmpty(home) ? AppContext.BaseDirectory : home, "rtl", "src"));
     }
 
-    /// <summary>"" → &lt;dir of MainFile&gt;\obj\Debug for <c>-O0</c>, else <c>\obj\Release</c> (api.md §1, compiler-cli.md §1).</summary>
+    /// <summary>
+    /// "" → &lt;dir of MainFile&gt;\obj\Debug for <c>-O0</c>, else <c>\obj\Release</c> (api.md §1, compiler-cli.md §1); a target other
+    /// than the baseline has its own folder <c>\obj\&lt;target id&gt;\…</c> (CMP-1020).
+    /// </summary>
     private string ObjectDirectory(string mainPath) =>
         PathUtil.Normalize(Options.ObjectDirectory.Length > 0
             ? Options.ObjectDirectory
-            : Path.Combine(Path.GetDirectoryName(mainPath)!, "obj", Options.Optimization == OptimizationLevel.O0 ? "Debug" : "Release"));
+            : TargetRegistry.ObjectDirectory(Path.GetDirectoryName(mainPath)!, Options.Target, Options.Optimization == OptimizationLevel.O0 ? "Debug" : "Release"));
 }

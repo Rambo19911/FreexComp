@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using FreexComp.Compiler;
+using FreexComp.Compiler.Targets;
 using FreexComp.Compiler.Text;
 
 namespace FreexComp.Build;
@@ -178,7 +179,7 @@ public static class ProjectSerializer
             Rtti = root.Optional("rtti")?.Rtti(),
             Manifest = root.Optional("manifest")?.String() is { } manifest ? ManifestValue(manifest) : null,
             Defines = root.Optional("defines")?.Strings() ?? [],
-            Platforms = root.Optional("platforms")?.Strings() ?? ["win64"],
+            Platforms = root.Optional("platforms") is { } platforms ? ReadPlatforms(platforms) : [TargetRegistry.Default.Id],
             Jobs = root.Optional("jobs") is { } jobs ? ReadJobs(jobs) : 0,
             Configurations = configurations,
             ActiveConfiguration = root.Optional("activeConfiguration")?.String() ?? "Debug",
@@ -232,6 +233,11 @@ public static class ProjectSerializer
             Slashes(node.Optional("outputDir")?.String() ?? "bin/" + name),
             node.Optional("rtti")?.Rtti());
     }
+
+    /// <summary>CMP-1019 rule 1: every entry of <c>platforms</c> is the id of a built-in target, else E9002 at its token.</summary>
+    private static ImmutableArray<string> ReadPlatforms(Node node) =>
+        [.. node.Items().Select(item => item.String() is var id && TargetRegistry.TryGet(id, out _)
+            ? id : throw ProjectFileException.Invalid(item.Offset, $"unknown platform '{id}'"))];
 
     private static ProjectGroup ReadGroup(Node root, string path)
     {

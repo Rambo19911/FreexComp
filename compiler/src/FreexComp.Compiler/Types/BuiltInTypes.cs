@@ -1,4 +1,5 @@
 using FreexComp.Compiler.Symbols;
+using FreexComp.Compiler.Targets;
 
 namespace FreexComp.Compiler.Types;
 
@@ -23,22 +24,30 @@ public sealed class BuiltInTypes
     /// </summary>
     internal HashSet<(string Code, Text.Location Location)> ReportedInstanceWarnings { get; } = [];
 
-    internal BuiltInTypes()
+    /// <summary>The compilation's target: pointer size and alignments of the predeclared types (CMP-1007).</summary>
+    public TargetInfo Target { get; }
+
+    /// <param name="target">null → <see cref="TargetRegistry.Default"/>.</param>
+    internal BuiltInTypes(TargetInfo? target = null)
     {
+        Target = target ??= TargetRegistry.Default;
         Scope = new Scope(ScopeKind.BuiltIn, parent: null);
+        var nativeBits = target.PointerSize * 8;
+        int IntAlign(int bits) => bits == 64 ? target.Int64Align : bits / 8;
+        Nil = new PointerTypeSymbol(target, "nil", pointedType: null, allowsPointerMath: false);
 
         ShortInt = Declare(new IntegerTypeSymbol("ShortInt", 8, isSigned: true));
         SmallInt = Declare(new IntegerTypeSymbol("SmallInt", 16, isSigned: true));
         Integer = Declare(new IntegerTypeSymbol("Integer", 32, isSigned: true));
         Alias("LongInt", Integer);
-        Int64 = Declare(new IntegerTypeSymbol("Int64", 64, isSigned: true));
-        NativeInt = Declare(new IntegerTypeSymbol("NativeInt", 64, isSigned: true));
+        Int64 = Declare(new IntegerTypeSymbol("Int64", 64, isSigned: true, target.Int64Align));
+        NativeInt = Declare(new IntegerTypeSymbol("NativeInt", nativeBits, isSigned: true, IntAlign(nativeBits)));
         Byte = Declare(new IntegerTypeSymbol("Byte", 8, isSigned: false));
         Word = Declare(new IntegerTypeSymbol("Word", 16, isSigned: false));
         Cardinal = Declare(new IntegerTypeSymbol("Cardinal", 32, isSigned: false));
         Alias("LongWord", Cardinal);
-        UInt64 = Declare(new IntegerTypeSymbol("UInt64", 64, isSigned: false));
-        NativeUInt = Declare(new IntegerTypeSymbol("NativeUInt", 64, isSigned: false));
+        UInt64 = Declare(new IntegerTypeSymbol("UInt64", 64, isSigned: false, target.Int64Align));
+        NativeUInt = Declare(new IntegerTypeSymbol("NativeUInt", nativeBits, isSigned: false, IntAlign(nativeBits)));
 
         Boolean = Declare(new BooleanTypeSymbol("Boolean", 1, isCStyle: false));
         ByteBool = Declare(new BooleanTypeSymbol("ByteBool", 1, isCStyle: true));
@@ -49,23 +58,23 @@ public sealed class BuiltInTypes
         Alias("WideChar", Char);
         AnsiChar = Declare(new CharTypeSymbol("AnsiChar", isWide: false));
 
-        Single = Declare(new RealTypeSymbol("Single", RealKind.Single));
-        Double = Declare(new RealTypeSymbol("Double", RealKind.Double));
+        Single = Declare(new RealTypeSymbol("Single", RealKind.Single, 4));
+        Double = Declare(new RealTypeSymbol("Double", RealKind.Double, target.Float64Align));
         Alias("Real", Double);
         Alias("Extended", Double);
-        Currency = Declare(new RealTypeSymbol("Currency", RealKind.Currency));
+        Currency = Declare(new RealTypeSymbol("Currency", RealKind.Currency, target.Int64Align));
 
-        String = Declare(new StringTypeSymbol("string", StringVariant.Unicode, codePage: 1200));
+        String = Declare(new StringTypeSymbol(target, "string", StringVariant.Unicode, codePage: 1200));
         Alias("UnicodeString", String);
-        AnsiString = Declare(new StringTypeSymbol("AnsiString", StringVariant.Ansi, codePage: 65001));
-        Utf8String = Declare(new StringTypeSymbol("UTF8String", StringVariant.Ansi, codePage: 65001));
-        RawByteString = Declare(new StringTypeSymbol("RawByteString", StringVariant.Ansi, codePage: 0xFFFF));
-        ShortString = Declare(new StringTypeSymbol("ShortString", StringVariant.Short, codePage: 65001, maxLength: 255));
+        AnsiString = Declare(new StringTypeSymbol(target, "AnsiString", StringVariant.Ansi, codePage: 65001));
+        Utf8String = Declare(new StringTypeSymbol(target, "UTF8String", StringVariant.Ansi, codePage: 65001));
+        RawByteString = Declare(new StringTypeSymbol(target, "RawByteString", StringVariant.Ansi, codePage: 0xFFFF));
+        ShortString = Declare(new StringTypeSymbol(target, "ShortString", StringVariant.Short, codePage: 65001, maxLength: 255));
 
-        Pointer = Declare(new PointerTypeSymbol("Pointer", pointedType: null, allowsPointerMath: false));
-        PChar = Declare(new PointerTypeSymbol("PChar", Char, allowsPointerMath: true));
+        Pointer = Declare(new PointerTypeSymbol(target, "Pointer", pointedType: null, allowsPointerMath: false));
+        PChar = Declare(new PointerTypeSymbol(target, "PChar", Char, allowsPointerMath: true));
         Alias("PWideChar", PChar);
-        PAnsiChar = Declare(new PointerTypeSymbol("PAnsiChar", AnsiChar, allowsPointerMath: true));
+        PAnsiChar = Declare(new PointerTypeSymbol(target, "PAnsiChar", AnsiChar, allowsPointerMath: true));
 
         Text = Declare(new TextTypeSymbol("Text"));
         Alias("TextFile", Text);
@@ -178,7 +187,7 @@ public sealed class BuiltInTypes
     public TypeSymbol Text { get; }
 
     /// <summary>The type of <c>nil</c> (LANG-266): a pointer compatible with every pointer type (not declared in any scope).</summary>
-    public PointerTypeSymbol Nil { get; } = new("nil", pointedType: null, allowsPointerMath: false);
+    public PointerTypeSymbol Nil { get; }
 
     /// <summary>The type of erroneous expressions (not declared in any scope).</summary>
     public TypeSymbol Error { get; } = new ErrorTypeSymbol();
@@ -206,7 +215,7 @@ public sealed class BuiltInTypes
         {
             if (!_openArrays.TryGetValue((element, isArrayOfConst), out var type))
             {
-                _openArrays[(element, isArrayOfConst)] = type = new OpenArrayTypeSymbol(element, isArrayOfConst);
+                _openArrays[(element, isArrayOfConst)] = type = new OpenArrayTypeSymbol(Target, element, isArrayOfConst);
             }
 
             return type;

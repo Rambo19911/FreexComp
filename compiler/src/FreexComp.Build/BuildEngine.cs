@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using System.Diagnostics;
 using FreexComp.Compiler;
+using FreexComp.Compiler.Targets;
 using FreexComp.Compiler.Text;
 using FreexComp.Compiler.Toolchain;
 
@@ -27,6 +28,12 @@ public sealed class BuildEngine : IBuildEngine
 
     /// <summary>The clock of the tool timeouts (CMP-1137); a test seam, null = the system clock.</summary>
     internal TimeProvider? ToolTimeProvider { get; init; }
+
+    /// <summary>
+    /// A test seam (CMP-1004: a descriptor outside the registry cannot be named in a project): maps the registered target of the
+    /// effective platform to the descriptor the build uses; null = the registered one.
+    /// </summary>
+    internal Func<TargetInfo, TargetInfo>? TargetOverride { get; init; }
 
     /// <summary>
     /// Never blocks a thread-pool thread (C-269, I-217): the compile runs on the calling thread up to its first tool process and
@@ -213,7 +220,7 @@ public sealed class BuildEngine : IBuildEngine
         var project = load.Value;
         var requested = request.Configuration ?? project?.ActiveConfiguration ?? "Debug";
         var configuration = project?.ConfigurationNames.FirstOrDefault(n => string.Equals(n, requested, StringComparison.OrdinalIgnoreCase));
-        var platform = request.Platform ?? (project is { Platforms.IsEmpty: false } ? project.Platforms[0] : "win64");
+        var platform = request.Platform ?? (project is { Platforms.IsEmpty: false } ? project.Platforms[0] : TargetRegistry.Default.Id);
         sink.Report(new BuildEvent.Started(DateTime.UtcNow, path, configuration ?? requested, platform, target));
 
         var diagnostics = skippedBecause is null ? new List<Diagnostic>(load.Diagnostics) : [];
@@ -231,13 +238,18 @@ public sealed class BuildEngine : IBuildEngine
             {
                 diagnostics.Add(Diagnostic.Create("E9005", location, requested));
             }
-            else if (!string.Equals(platform, "win64", StringComparison.OrdinalIgnoreCase))
+            else if (!project.Platforms.Contains(platform, StringComparer.Ordinal))
             {
-                diagnostics.Add(Diagnostic.Create("E9002", location, $"unsupported platform '{platform}'"));     // CMP-805, ADR 007
+                // CMP-1019 rule 2: the effective platform must be one the project lists
+                diagnostics.Add(Diagnostic.Create("E9012", location, platform, project.Name, string.Join(", ", project.Platforms)));
+            }
+            else if (!TargetRegistry.TryGet(platform, out var registered))
+            {
+                diagnostics.Add(Diagnostic.Create("E9002", location, $"unknown platform '{platform}'"));        // CMP-1019 rule 1 (a model not made by the loader)
             }
             else
             {
-                var run = new ProjectRun(this, project, configuration, request, sink, diagnostics, location);
+                var run = new ProjectRun(this, project, configuration, TargetOverride?.Invoke(registered) ?? registered, request, sink, diagnostics, location);
                 try
                 {
                     (upToDate, output) = await run.ExecuteAsync(target, ct).ConfigureAwait(false);
@@ -314,6 +326,7 @@ public sealed class BuildEngine : IBuildEngine
         BuildEngine engine,
         Project project,
         string configuration,
+        TargetInfo target,
         BuildRequest request,
         EventSink sink,
         List<Diagnostic> diagnostics,
@@ -355,16 +368,21 @@ public sealed class BuildEngine : IBuildEngine
             }
         }
 
-        /// <summary>CMP-832: <c>obj/&lt;config&gt;/</c> recursively and the output exe (+ <c>.pdb</c>); nothing else.</summary>
+        /// <summary>
+        /// CMP-832: <c>obj/&lt;config&gt;/</c> (the baseline target) or <c>obj/&lt;target id&gt;/&lt;config&gt;/</c> (CMP-1020) recursively and the
+        /// output exe (+ <c>.pdb</c>); nothing else.
+        /// </summary>
         private bool Clean()
         {
-            var options = ProjectOptions.ToCompilationOptions(project, configuration);
+            var options = ProjectOptions.ToCompilationOptions(project, configuration, target);
             var objectDirectory = options.ObjectDirectory;
             var inside = objectDirectory.StartsWith(project.Directory.TrimEnd('\\') + @"\", StringComparison.OrdinalIgnoreCase)
-                && objectDirectory.EndsWith(@"\obj\" + configuration, StringComparison.OrdinalIgnoreCase);
+                && (objectDirectory.EndsWith(@"\obj\" + configuration, StringComparison.OrdinalIgnoreCase)
+                    || objectDirectory.EndsWith(@"\obj\" + target.Id + @"\" + configuration, StringComparison.OrdinalIgnoreCase));
             if (!inside)
             {
-                diagnostics.Add(Diagnostic.Create("E9002", location, $"object directory '{objectDirectory}' is not '<project dir>/obj/<config>'"));
+                diagnostics.Add(Diagnostic.Create("E9002", location,
+                    $"object directory '{objectDirectory}' is not '<project dir>/obj/<config>' or '<project dir>/obj/<target>/<config>'"));
                 return false;
             }
 
@@ -403,7 +421,7 @@ public sealed class BuildEngine : IBuildEngine
                 diagnostics.Add(Diagnostic.Create("W9001", location));
             }
 
-            var projectOptions = ProjectOptions.ToCompilationOptions(project, configuration);
+            var projectOptions = ProjectOptions.ToCompilationOptions(project, configuration, target);    // CMP-1019 rule 3
             var options = projectOptions with                                               // CMP-805
             {
                 ToolchainDirectory = request.ToolchainDirectory ?? "",

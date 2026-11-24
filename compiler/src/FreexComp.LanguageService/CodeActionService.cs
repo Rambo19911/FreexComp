@@ -147,7 +147,7 @@ public static class CodeActionService
     {
         var compilation = doc.Compilation;
         var options = compilation.Options;
-        var resolver = new UnitResolver(compilation.FileSystem, options.MainFile, options.SearchPaths, options.RtlDirectory, []);
+        var resolver = new UnitResolver(compilation.FileSystem, options.MainFile, options.SearchPaths, options.RtlDirectory, [], target: options.Target);
         var result = new List<(string, HashSet<string>)>();
         var seen = new HashSet<string>(Names);
         foreach (var directory in resolver.Directories)

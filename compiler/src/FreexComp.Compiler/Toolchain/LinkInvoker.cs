@@ -9,6 +9,9 @@ namespace FreexComp.Compiler.Toolchain;
 /// <param name="UnitObjects">Program unit, <c>System</c>, then every other unit in init order (LANG-520).</param>
 internal sealed record LinkRequest(string OutputPath, string ObjectDirectory, ImmutableArray<string> UnitObjects)
 {
+    /// <summary>CMP-1016: entry symbol, machine and extra linker lines come from the target.</summary>
+    public TargetInfo Target { get; init; } = TargetRegistry.Default;
+
     public AppType AppType { get; init; } = AppType.Console;
 
     public bool DebugInfo { get; init; }
@@ -55,9 +58,9 @@ internal sealed class LinkInvoker(ToolRunner runner, string lldLinkPath, IFileSy
         args.AddRange(
             "/nologo",
             "/out:" + request.OutputPath,
-            "/entry:_start",
+            "/entry:" + request.Target.EntrySymbol,
             request.AppType == AppType.Gui ? "/subsystem:windows" : "/subsystem:console",
-            "/machine:x64",
+            "/machine:" + request.Target.LinkerMachine,
             "/nodefaultlib",
             "/incremental:no",
             "/opt:ref",
@@ -67,6 +70,7 @@ internal sealed class LinkInvoker(ToolRunner runner, string lldLinkPath, IFileSy
             "/largeaddressaware",
             "/dynamicbase",
             "/nxcompat");
+        args.AddRange(request.Target.LinkerArguments);
         if (request.DebugInfo)
         {
             args.Add(request.DebugFormat == DebugFormat.Dwarf ? "/debug:dwarf" : "/debug");

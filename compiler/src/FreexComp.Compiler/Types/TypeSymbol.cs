@@ -110,8 +110,9 @@ public sealed class IntegerTypeSymbol : TypeSymbol
 {
     private readonly IntegerTypeSymbol? _representation;
 
-    internal IntegerTypeSymbol(string name, int bits, bool isSigned)
-        : base(TypeKind.Integer, name, size: bits / 8, alignment: bits / 8)
+    /// <param name="alignment">0 → the size; the target's alignment for the 64-bit types (CMP-1007).</param>
+    internal IntegerTypeSymbol(string name, int bits, bool isSigned, int alignment = 0)
+        : base(TypeKind.Integer, name, size: bits / 8, alignment: alignment == 0 ? bits / 8 : alignment)
     {
         Bits = bits;
         IsSigned = isSigned;
@@ -332,14 +333,18 @@ public sealed class ArrayTypeSymbol : TypeSymbol
 /// </summary>
 public sealed class RecordTypeSymbol : TypeSymbol
 {
-    internal RecordTypeSymbol(string name, long size, int alignment, bool isPacked, int packing, bool isAnonymous, Symbol? containingSymbol,
+    internal RecordTypeSymbol(TargetInfo target, string name, long size, int alignment, bool isPacked, int packing, bool isAnonymous, Symbol? containingSymbol,
         ImmutableArray<Location> locations)
         : base(TypeKind.Record, name, size, alignment, containingSymbol, locations)
     {
+        Target = target;
         IsPacked = isPacked;
         Packing = packing;
         IsAnonymous = isAnonymous;
     }
+
+    /// <summary>The target whose back-end layout rules decide the record's LLVM form (<see cref="TypeLayout"/>, CMP-1007).</summary>
+    internal TargetInfo Target { get; }
 
     public ImmutableArray<FieldSymbol> Fields { get; internal set; } = [];
 
@@ -478,8 +483,9 @@ public enum RealKind { Single, Double, Currency }
 /// <summary><c>Single</c>, <c>Double</c> and <c>Currency</c> (Phase 8+, E2900 on use).</summary>
 public sealed class RealTypeSymbol : TypeSymbol
 {
-    internal RealTypeSymbol(string name, RealKind realKind, Symbol? containingSymbol = null, ImmutableArray<Location> locations = default)
-        : base(TypeKind.Real, name, size: realKind == RealKind.Single ? 4 : 8, alignment: realKind == RealKind.Single ? 4 : 8, containingSymbol, locations)
+    /// <param name="alignment">The target's alignment of the storage type (<c>double</c>, <c>i64</c> for <c>Currency</c>; CMP-1007).</param>
+    internal RealTypeSymbol(string name, RealKind realKind, int alignment, Symbol? containingSymbol = null, ImmutableArray<Location> locations = default)
+        : base(TypeKind.Real, name, size: realKind == RealKind.Single ? 4 : 8, alignment: realKind == RealKind.Single ? 4 : alignment, containingSymbol, locations)
     {
         RealKind = realKind;
     }
@@ -492,13 +498,13 @@ public enum StringVariant { Unicode, Ansi, Short }
 /// <summary>Long strings (UTF-16 or byte strings with a code page, ABI-027) and short strings.</summary>
 public sealed class StringTypeSymbol : TypeSymbol
 {
-    internal StringTypeSymbol(string name, StringVariant variant, int codePage, int maxLength = 0, Symbol? containingSymbol = null,
+    internal StringTypeSymbol(TargetInfo target, string name, StringVariant variant, int codePage, int maxLength = 0, Symbol? containingSymbol = null,
                               ImmutableArray<Location> locations = default)
         : base(
             variant == StringVariant.Short ? TypeKind.ShortString : TypeKind.String,
             name,
-            size: variant == StringVariant.Short ? maxLength + 1 : 8,
-            alignment: variant == StringVariant.Short ? 1 : 8,
+            size: variant == StringVariant.Short ? maxLength + 1 : target.PointerSize,
+            alignment: variant == StringVariant.Short ? 1 : target.PointerAlign,
             containingSymbol,
             locations)
     {
@@ -524,8 +530,8 @@ public sealed class StringTypeSymbol : TypeSymbol
 /// </summary>
 public sealed class DynamicArrayTypeSymbol : TypeSymbol
 {
-    internal DynamicArrayTypeSymbol(string name, TypeSymbol elementType, Symbol? containingSymbol, ImmutableArray<Location> locations)
-        : base(TypeKind.DynamicArray, name, size: 8, alignment: 8, containingSymbol, locations)
+    internal DynamicArrayTypeSymbol(TargetInfo target, string name, TypeSymbol elementType, Symbol? containingSymbol, ImmutableArray<Location> locations)
+        : base(TypeKind.DynamicArray, name, size: target.PointerSize, alignment: target.PointerAlign, containingSymbol, locations)
     {
         ElementType = elementType;
     }
@@ -547,12 +553,16 @@ public sealed class DynamicArrayTypeSymbol : TypeSymbol
 /// </summary>
 public sealed class OpenArrayTypeSymbol : TypeSymbol
 {
-    internal OpenArrayTypeSymbol(TypeSymbol elementType, bool isArrayOfConst)
-        : base(TypeKind.OpenArray, isArrayOfConst ? "array of const" : "array of " + elementType.Name, size: -1, alignment: 8)
+    internal OpenArrayTypeSymbol(TargetInfo target, TypeSymbol elementType, bool isArrayOfConst)
+        : base(TypeKind.OpenArray, isArrayOfConst ? "array of const" : "array of " + elementType.Name, size: -1, alignment: target.PointerAlign)
     {
+        Target = target;
         ElementType = elementType;
         IsArrayOfConst = isArrayOfConst;
     }
+
+    /// <summary>The target of the data pointer the parameter travels as (<see cref="TypeLayout"/>).</summary>
+    internal TargetInfo Target { get; }
 
     public TypeSymbol ElementType { get; }
 
@@ -650,8 +660,8 @@ internal static class Strings
 /// <summary>Untyped <c>Pointer</c> (<see cref="PointedType"/> null) and typed pointers.</summary>
 public sealed class PointerTypeSymbol : TypeSymbol
 {
-    internal PointerTypeSymbol(string name, TypeSymbol? pointedType, bool allowsPointerMath)
-        : base(TypeKind.Pointer, name, size: 8, alignment: 8)
+    internal PointerTypeSymbol(TargetInfo target, string name, TypeSymbol? pointedType, bool allowsPointerMath)
+        : base(TypeKind.Pointer, name, size: target.PointerSize, alignment: target.PointerAlign)
     {
         PointedType = pointedType;
         AllowsPointerMath = allowsPointerMath;
@@ -671,8 +681,8 @@ public sealed class PointerTypeSymbol : TypeSymbol
 /// </summary>
 public sealed class ProceduralTypeSymbol : TypeSymbol
 {
-    internal ProceduralTypeSymbol(string name, Symbol? containingSymbol, ImmutableArray<Location> locations)
-        : base(TypeKind.Procedural, name, size: 8, alignment: 8, containingSymbol, locations)
+    internal ProceduralTypeSymbol(TargetInfo target, string name, Symbol? containingSymbol, ImmutableArray<Location> locations)
+        : base(TypeKind.Procedural, name, size: target.PointerSize, alignment: target.PointerAlign, containingSymbol, locations)
     {
         Signature = new RoutineSymbol(name, this);
     }
@@ -688,8 +698,8 @@ public sealed class ProceduralTypeSymbol : TypeSymbol
 /// </summary>
 public sealed class MethodPointerTypeSymbol : TypeSymbol
 {
-    internal MethodPointerTypeSymbol(string name, Symbol? containingSymbol, ImmutableArray<Location> locations)
-        : base(TypeKind.MethodPointer, name, size: 16, alignment: 8, containingSymbol, locations)
+    internal MethodPointerTypeSymbol(TargetInfo target, string name, Symbol? containingSymbol, ImmutableArray<Location> locations)
+        : base(TypeKind.MethodPointer, name, size: 2 * target.PointerSize, alignment: target.PointerAlign, containingSymbol, locations)
     {
         Signature = new RoutineSymbol(name, this);
     }
@@ -698,10 +708,10 @@ public sealed class MethodPointerTypeSymbol : TypeSymbol
     public RoutineSymbol Signature { get; }
 
     /// <summary>The storage seen as <c>record Code, Data: Pointer end</c> (field 0 = Code, field 1 = Data), for the lowering.</summary>
-    internal static RecordTypeSymbol Parts(TypeSymbol pointer)
+    internal static RecordTypeSymbol Parts(TargetInfo target, TypeSymbol pointer)
     {
-        var record = new RecordTypeSymbol("", 16, 8, isPacked: false, packing: 8, isAnonymous: true, containingSymbol: null, []);
-        record.Fields = [new FieldSymbol("Code", pointer, 0, record, []), new FieldSymbol("Data", pointer, 8, record, [])];
+        var record = new RecordTypeSymbol(target, "", 2 * pointer.Size, pointer.Alignment, isPacked: false, packing: 8, isAnonymous: true, containingSymbol: null, []);
+        record.Fields = [new FieldSymbol("Code", pointer, 0, record, []), new FieldSymbol("Data", pointer, pointer.Size, record, [])];
         return record;
     }
 }

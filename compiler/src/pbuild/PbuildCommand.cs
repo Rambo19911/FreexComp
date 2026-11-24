@@ -31,10 +31,11 @@ public sealed record PbuildEnvironment(string CurrentDirectory, TextWriter Out, 
 public static class PbuildCommand
 {
     public const string HelpText = """
-        pbuild <project.pproj | group.pgroup> [--config Debug|Release] [--target build|rebuild|clean|run]
+        pbuild <project.pproj | group.pgroup> [--config Debug|Release] [--target build|rebuild|clean|run] [--platform <id>]
                [--diagnostics text|json] [--rtl <dir>] [--toolchain <dir>] [--jobs <N>] [--verbose]
           --config <name>       configuration (default: the project's active configuration; matched case-insensitively)
           --target <target>     build (default), rebuild, clean or run (build, then run the program)
+          --platform <id>       target id (default: the first entry of the project's platforms)
           --diagnostics text|json   output form (default text)
           --rtl <dir>           RTL root (default: $FREEXCOMP_HOME/rtl/src, else relative to pbuild.exe)
           --toolchain <dir>     LLVM bin dir (default: third_party/llvm/bin, else PATH)
@@ -55,7 +56,7 @@ public static class PbuildCommand
         var cwd = PathUtil.Normalize(env.CurrentDirectory);
         string Full(string path) => PathUtil.Normalize(Path.IsPathFullyQualified(path) ? path : Path.Combine(cwd, path));
 
-        string? project = null, configuration = null, rtl = null, toolchain = null;
+        string? project = null, configuration = null, rtl = null, toolchain = null, platform = null;
         var target = BuildTarget.Build;
         var jobs = 0;
         bool json = false, verbose = false, help = false, version = false;
@@ -96,6 +97,7 @@ public static class PbuildCommand
                 case "--version": version = true; break;
                 case "--verbose": verbose = true; break;
                 case "--config": configuration = Value() ?? configuration; break;
+                case "--platform": platform = Value() ?? platform; break;                           // CMP-1018
                 case "--rtl": if (Value() is { } rtlDir) { rtl = Folder(arg, rtlDir); } break;          // C-239: as opc §1
                 case "--toolchain": if (Value() is { } bin) { toolchain = Folder(arg, bin); } break;
                 case "--jobs" or "-j":                                                           // CMP-1130: 0…256, 0 = automatic
@@ -191,6 +193,7 @@ public static class PbuildCommand
         {
             ProjectPath = project!,
             Configuration = configuration,
+            Platform = platform,
             Target = target,
             Verbose = verbose,
             ToolchainDirectory = toolchain ?? env.ToolchainDirectory,

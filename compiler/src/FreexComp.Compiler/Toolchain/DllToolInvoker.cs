@@ -15,15 +15,19 @@ internal sealed class DllToolInvoker(ToolRunner runner, string dllToolPath, IFil
     /// <summary>
     /// CMP-620 order: a <c>{$L x.def}</c> file of a unit whose base name is the DLL's base name; then
     /// <c>&lt;dir&gt;\&lt;dll-base&gt;.def</c> for each declaring unit's directory in order; then
-    /// <c>&lt;rtl root&gt;\..\winapi\def\&lt;dll-base&gt;.def</c>. Not found → E4006. Names compare case-insensitively.
+    /// <c>&lt;rtl root&gt;\..\winapi\def\&lt;target sub-directory&gt;\&lt;dll-base&gt;.def</c>, then
+    /// <c>&lt;rtl root&gt;\..\winapi\def\&lt;dll-base&gt;.def</c> (CMP-1023; a missing sub-directory is skipped). Not found → E4006.
+    /// Names compare case-insensitively.
     /// </summary>
+    /// <param name="target">null → <see cref="TargetRegistry.Default"/>.</param>
     public static (string? Path, Diagnostic? Diagnostic) FindDefinition(
         IFileSystem fs,
         string dllName,
         IEnumerable<string> unitDefinitionFiles,
         IEnumerable<string> declaringUnitDirectories,
         string rtlDirectory,
-        Location location)
+        Location location,
+        TargetInfo? target = null)
     {
         var baseName = BaseName(dllName);
         var fromUnit = unitDefinitionFiles.FirstOrDefault(
@@ -33,7 +37,8 @@ internal sealed class DllToolInvoker(ToolRunner runner, string dllToolPath, IFil
             return (fromUnit, null);
         }
 
-        var candidates = declaringUnitDirectories.Append(PathUtil.Normalize(Path.Combine(rtlDirectory, "..", "winapi", "def")));
+        var flat = PathUtil.Normalize(Path.Combine(rtlDirectory, "..", "winapi", "def"));
+        var candidates = declaringUnitDirectories.Append(Path.Combine(flat, (target ?? TargetRegistry.Default).ImportDefSubdirectory)).Append(flat);
         foreach (var dir in candidates)
         {
             var path = Path.Combine(dir, baseName + ".def");
@@ -49,8 +54,9 @@ internal sealed class DllToolInvoker(ToolRunner runner, string dllToolPath, IFil
     public static string LibraryPath(string objectDirectory, string dllName) =>
         Path.Combine(objectDirectory, "imports", BaseName(dllName) + ".lib");
 
-    public static ImmutableArray<string> BuildArguments(string definitionPath, string dllName, string libraryPath) =>
-        ["-m", "i386:x86-64", "-d", definitionPath, "-D", dllName, "-l", libraryPath];
+    /// <param name="target">CMP-1015: the machine of the import library; null → <see cref="TargetRegistry.Default"/>.</param>
+    public static ImmutableArray<string> BuildArguments(string definitionPath, string dllName, string libraryPath, TargetInfo? target = null) =>
+        ["-m", (target ?? TargetRegistry.Default).DllToolMachine, "-d", definitionPath, "-D", dllName, "-l", libraryPath];
 
     /// <summary>
     /// Runs <c>llvm-dlltool</c> unless <c>&lt;lib&gt;.sha256</c> holds the SHA-256 of the <c>.def</c> and the
@@ -79,7 +85,7 @@ internal sealed class DllToolInvoker(ToolRunner runner, string dllToolPath, IFil
     /// replaced). <see cref="Complete"/> records <c>Hash</c> after the job succeeded.
     /// </summary>
     public static (string LibraryPath, BackendJob? Job, string Hash) Prepare(
-        IFileSystem fs, string dllToolPath, string dllName, string definitionPath, string objectDirectory)
+        IFileSystem fs, string dllToolPath, string dllName, string definitionPath, string objectDirectory, TargetInfo? target = null)
     {
         var lib = LibraryPath(objectDirectory, dllName);
         var hashFile = lib + ".sha256";
@@ -91,7 +97,7 @@ internal sealed class DllToolInvoker(ToolRunner runner, string dllToolPath, IFil
 
         fs.Delete(hashFile);
         fs.CreateDirectory(Path.GetDirectoryName(lib)!);
-        return (lib, new BackendJob(null, dllName, dllToolPath, BuildArguments(definitionPath, dllName, lib), objectDirectory, lib), hash);
+        return (lib, new BackendJob(null, dllName, dllToolPath, BuildArguments(definitionPath, dllName, lib, target), objectDirectory, lib), hash);
     }
 
     /// <summary>The hash of the <c>.def</c> a successfully generated library was made from (CMP-622).</summary>

@@ -4,8 +4,17 @@ namespace FreexComp.Compiler.Syntax;
 
 public sealed record ParseOptions(ImmutableArray<string> Defines)
 {
+    /// <summary>The target whose group of predefined conditional symbols is defined (CMP-1010).</summary>
+    public TargetInfo Target { get; init; } = TargetRegistry.Default;
+
     /// <summary>Absolute directories searched for <c>{$I file}</c> after the including file's directory (LANG-875).</summary>
     public ImmutableArray<string> SearchPaths { get; init; } = [];
+
+    /// <summary>
+    /// The RTL root (CMP-1022): an include file sought in it is first sought in the target's sub-directory, and one included from
+    /// that sub-directory falls back to the root. "" = no RTL root.
+    /// </summary>
+    internal string RtlDirectory { get; init; } = "";
 
     /// <summary>LANG-862: evaluates <c>{$IF}</c> conditions; null = they count as True (pure syntax operations).</summary>
     internal IConditionEvaluator? ConditionEvaluator { get; init; }

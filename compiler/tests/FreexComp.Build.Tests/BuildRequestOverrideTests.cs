@@ -54,11 +54,13 @@ public sealed class BuildRequestOverrideTests
         Assert.True(result.Success, string.Join("\n", log.Lines));
     }
 
+    /// <summary>CMP-1019 replaced the platform sentence of CMP-805: a platform the project does not list is E9012.</summary>
     [Theory]
     [Trait("Req", "CMP-805")]
+    [Trait("Req", "CMP-1019")]
     [InlineData("win32")]
     [InlineData("linux64")]
-    public async Task Platform_OtherThanWin64_IsE9002(string platform)
+    public async Task Platform_NotListedInTheProject_IsE9012(string platform)
     {
         var w = new BuildWorkspace();
 
@@ -66,7 +68,8 @@ public sealed class BuildRequestOverrideTests
 
         Assert.False(result.Success);
         Assert.Equal($"started Hello.pproj Debug {platform} Build", log.Lines[0]);
-        Assert.Equal($@"C:\p\Hello.pproj(0,0): error E9002: Invalid project file: unsupported platform '{platform}'", log.Events.OfType<BuildEvent.Diagnostic>().Single().Value.ToText());
+        Assert.Equal($@"C:\p\Hello.pproj(0,0): error E9012: Platform '{platform}' is not available for project 'Hello' (available: win64)",
+            log.Events.OfType<BuildEvent.Diagnostic>().Single().Value.ToText());
         Assert.Empty(w.Tools.Calls);
     }
 
@@ -74,14 +77,16 @@ public sealed class BuildRequestOverrideTests
     [Trait("Req", "CMP-805")]
     public async Task Platform_Null_IsTheFirstEntryOfTheProjectsPlatforms()
     {
-        var w = new BuildWorkspace(projectJson: BuildWorkspace.ProjectJson("Hello", extra: """ "platforms": ["win32", "win64"]"""));
+        // CMP-1019: every listed platform is a registered target id, so the list of this product version is ["win64"]
+        var w = new BuildWorkspace(projectJson: BuildWorkspace.ProjectJson("Hello", extra: """ "platforms": ["win64"]"""));
 
         var (result, log) = await w.RunAsync(w.Request());
-        var (explicitWin64, _) = await w.RunAsync(w.Request() with { Platform = "win64" });
+        var (explicitWin64, explicitLog) = await w.RunAsync(w.Request(BuildTarget.Rebuild) with { Platform = "win64" });
 
-        Assert.False(result.Success);
-        Assert.Equal("started Hello.pproj Debug win32 Build", log.Lines[0]);
+        Assert.True(result.Success, string.Join("\n", log.Lines));
+        Assert.Equal("started Hello.pproj Debug win64 Build", log.Lines[0]);
         Assert.True(explicitWin64.Success);
+        Assert.Equal("started Hello.pproj Debug win64 Rebuild", explicitLog.Lines[0]);
     }
 
     [Fact]

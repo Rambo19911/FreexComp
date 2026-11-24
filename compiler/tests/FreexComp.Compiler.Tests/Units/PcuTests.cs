@@ -277,7 +277,7 @@ public sealed class PcuTests
                 """{"kind":"routine","name":"Add","linkName":"U.Add","params":[{"name":"A","type":"Integer","mode":"value","openArray":false},{"name":"B","type":"Integer","mode":"value","openArray":false}],"result":"Integer","flags":[],"dll":null,"importName":null}""",
                 """{"kind":"routine","name":"Show","linkName":"U.Show$c:string,v:U.TSmall","params":[{"name":"S","type":"string","mode":"const","openArray":false},{"name":"N","type":"=TSmall","mode":"var","openArray":false}],"result":null,"flags":["overload"],"dll":null,"importName":null}""",
                 """{"kind":"routine","name":"Show","linkName":"U.Show$","params":[],"result":null,"flags":["overload"],"dll":null,"importName":null}""",
-                """{"kind":"routine","name":"Ticks","linkName":"GetTickCount","params":[],"result":"Cardinal","flags":["external"],"dll":"kernel32.dll","importName":"GetTickCount"}""",
+                """{"kind":"routine","name":"Ticks","linkName":"GetTickCount","params":[],"result":"Cardinal","flags":["external","cc:StdCall"],"dll":"kernel32.dll","importName":"GetTickCount"}""",
                 """{"kind":"routine","name":"First","linkName":"U.First","params":[],"result":"V.TThing","flags":[],"dll":null,"importName":null}""",
             ],
             Symbols(Pcu("U")));

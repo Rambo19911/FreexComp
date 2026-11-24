@@ -61,6 +61,9 @@ public sealed record CompilationOptions
     /// </summary>
     public string Manifest { get; init; } = "";
 
+    /// <summary>The compilation target (CMP-1003): one compilation has one target.</summary>
+    public Targets.TargetInfo Target { get; init; } = Targets.TargetRegistry.Default;
+
     /// <summary>Unit scope names tried as prefixes for unresolved unit names, in order (LANG-535; <c>--unit-scope</c>).</summary>
     public ImmutableArray<string> UnitScopeNames { get; init; } = [];
 }

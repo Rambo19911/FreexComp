@@ -132,6 +132,12 @@ public class RoutineSymbol : Symbol
     /// <summary>The library of an <c>external 'lib'</c> routine (LANG-463); null otherwise.</summary>
     public string? LibraryName { get; internal set; }
 
+    /// <summary>
+    /// CMP-1011: the calling-convention directive written on the declaration (<see cref="CallConvDirective.Default"/> when none);
+    /// what it means is the target's business (<see cref="TargetInfo.CallingConventions"/>).
+    /// </summary>
+    public CallConvDirective CallingConvention { get; internal set; }
+
     /// <summary>Import name of an external routine or the <c>public name</c> (LANG-463, 470).</summary>
     internal string? ExplicitLinkName { get; set; }
 

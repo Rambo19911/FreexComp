@@ -7,8 +7,9 @@ namespace FreexComp.Compiler.Units;
 /// LANG-510: locates the source file of one candidate unit name (which candidates are tried is LANG-535, C-164). In order:
 /// (1) an <c>in 'path'</c> clause (relative to the main file's directory; a missing file is not found, no fall-through);
 /// (2) the units already part of the compilation (open files, project files) whose file is <c>&lt;Name&gt;.pas</c>, in the given
-/// order; (3) the main file's directory; (4) each <c>-U</c> directory in order; (5) the RTL root, then its immediate
-/// sub-directories in ordinal name order, then <c>&lt;rtl root&gt;\..\winapi\src</c> (C-184, the Win32 binding units, like the
+/// order; (3) the main file's directory; (4) each <c>-U</c> directory in order; (5) the target's sub-directory of the RTL root
+/// (CMP-1022; skipped when missing), the RTL root, then its other immediate sub-directories in ordinal name order (never the
+/// sub-directory of another built-in target), then <c>&lt;rtl root&gt;\..\winapi\src</c> (C-184, the Win32 binding units, like the
 /// CMP-620 <c>.def</c> lookup). File names match case-insensitively; dots in a name are part of the file name.
 /// A compilation file in a searched directory counts even when it is not on disk. The main file is never a candidate.
 /// The caller checks the heading name (E2201) and reports E2202.
@@ -23,6 +24,7 @@ internal sealed class UnitResolver
     private readonly ImmutableHashSet<string> _compilationFileSet;
     private readonly UnitAliasTable _aliases;
     private readonly ImmutableArray<string> _unitScopeNames;
+    private readonly TargetInfo _target;
     private ImmutableArray<string> _directories;
 
     /// <param name="mainFile">Absolute path of the program (or unit) being compiled.</param>
@@ -31,10 +33,12 @@ internal sealed class UnitResolver
     /// <param name="compilationFiles">Files already part of the compilation (open files, project files), in priority order.</param>
     /// <param name="aliases">The unit alias table (LANG-533) for <see cref="Find"/>; null → none.</param>
     /// <param name="unitScopeNames">The unit scope names (LANG-535 step 4) for <see cref="Find"/>, in order.</param>
+    /// <param name="target">The target whose RTL sub-directory is searched first (CMP-1022); null → <see cref="TargetRegistry.Default"/>.</param>
     public UnitResolver(
         IFileSystem fileSystem, string mainFile, ImmutableArray<string> searchPaths, string rtlRoot, IEnumerable<string> compilationFiles,
-        UnitAliasTable? aliases = null, ImmutableArray<string> unitScopeNames = default)
+        UnitAliasTable? aliases = null, ImmutableArray<string> unitScopeNames = default, TargetInfo? target = null)
     {
+        _target = target ?? TargetRegistry.Default;
         _fileSystem = fileSystem;
         _mainFile = PathUtil.Normalize(mainFile);
         _searchPaths = [.. searchPaths.Select(PathUtil.Normalize)];
@@ -87,8 +91,13 @@ internal sealed class UnitResolver
                 directories.AddRange(_searchPaths);
                 if (_rtlRoot.Length > 0)
                 {
+                    // CMP-1022: the target's own sub-directory wins over the root; another target's sub-directory is never searched
+                    var own = PathUtil.Normalize(Path.Combine(_rtlRoot, _target.RtlSubdirectory));
+                    var foreign = TargetRegistry.BuiltIn.Select(t => t.RtlSubdirectory)
+                        .Where(d => !string.Equals(d, _target.RtlSubdirectory, StringComparison.OrdinalIgnoreCase)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                    directories.Add(own);
                     directories.Add(_rtlRoot);
-                    directories.AddRange(SubDirectories(_rtlRoot));
+                    directories.AddRange(SubDirectories(_rtlRoot).Where(d => !foreign.Contains(Path.GetFileName(d))));
                     directories.Add(PathUtil.Normalize(Path.Combine(_rtlRoot, "..", "winapi", "src")));     // C-184, like CMP-620
                 }
 

@@ -41,7 +41,7 @@ internal sealed partial class DeclarationBinder
         }
         else
         {
-            type = new ClassTypeSymbol(name, _container, [DiagnosticBag.LocationOf(identifier)]);
+            type = new ClassTypeSymbol(_types.Target, name, _container, [DiagnosticBag.LocationOf(identifier)]);
             _scope.TryDeclare(name, type, out _);
             declared.Add(type);
             if (_container is UnitSymbol { IsProgram: false } unit && IdentifierComparer.Instance.Equals(unit.Name, "System")
@@ -414,6 +414,7 @@ internal sealed partial class DeclarationBinder
     /// <summary>LANG-622/623 binding directives; calling conventions and hints are accepted, <c>message</c> is M2.5.</summary>
     private void BindMethodDirectives(MethodSymbol method, SyntaxList<DirectiveSyntax> directives, bool isClass)
     {
+        method.CallingConvention = CallConvOf(directives.Select(d => d.Keyword));                          // CMP-1011
         foreach (var directive in directives)
         {
             switch (directive.Keyword.ContextualKind)

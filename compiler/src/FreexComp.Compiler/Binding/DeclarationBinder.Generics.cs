@@ -307,7 +307,7 @@ internal sealed partial class DeclarationBinder
         {
             case ClassTypeSyntax { EndKeyword: not null } classSyntax when declaration.TypeKeyword is null:
             {
-                var type = new ClassTypeSymbol(display, generic.ContainingSymbol, generic.Locations);
+                var type = new ClassTypeSymbol(_types.Target, display, generic.ContainingSymbol, generic.Locations);
                 Register(type);                                                 // before the body: members may name the instance
                 binder.BindClassBody(type, classSyntax);
                 instance = type;
@@ -317,7 +317,7 @@ internal sealed partial class DeclarationBinder
             case InterfaceTypeSyntax { EndKeyword: not null } interfaceSyntax when declaration.TypeKeyword is null:
             {
                 // C-222: a generic interface (LANG-700); every instance has the declared GUID, if any
-                var type = new InterfaceTypeSymbol(display, generic.ContainingSymbol, generic.Locations);
+                var type = new InterfaceTypeSymbol(_types.Target, display, generic.ContainingSymbol, generic.Locations);
                 Register(type);
                 binder.BindInterfaceBody(type, interfaceSyntax);
                 instance = type;
