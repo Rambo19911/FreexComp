@@ -24,6 +24,16 @@
     <!-- UI-ED-001: the code editor's control templates (not forked). -->
     <StyleInclude Source="avares://AvaloniaEdit/Themes/Fluent/AvaloniaEdit.xaml" />
     <StyleInclude Source="avares://FreexComp.Ide/Themes/TextStyles.axaml" />
+    <!-- design-tokens.md §8 Tooltip: max width 480. A string tip wraps inside it; a full path only after its
+         separators (I-245, ToolTipText). -->
+    <Style Selector="ToolTip">
+      <Setter Property="MaxWidth" Value="{StaticResource FxcMetricTooltipMaxWidth}" />
+      <Setter Property="ContentTemplate">
+        <DataTemplate DataType="x:String">
+          <views:ToolTipText Source="{Binding}" />
+        </DataTemplate>
+      </Setter>
+    </Style>
     <!-- I-153: opening a menu or clicking a toolbar button takes focus; the TextBox keeps its selection so that
          Edit > Cut/Copy invoked by mouse still acts on it. -->
     <Style Selector="TextBox">

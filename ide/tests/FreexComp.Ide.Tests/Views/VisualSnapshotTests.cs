@@ -669,6 +669,103 @@ public sealed class VisualSnapshotTests
     }
 
     /// <summary>
+    /// I-245: the full-path tooltip of a Project Manager row (UI-TW-111) for a long path without spaces, in the main
+    /// window at 800 × 500 and 1920 × 1040, light and dark: the tooltip lies inside the window, is at most 480 wide
+    /// (design-tokens.md §8), shows the whole path and breaks it only after path separators. PNGs under
+    /// <c>project-manager-path-tooltip</c>.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-TW-111")]
+    public async Task ProjectManagerPathTooltip_RendersAtMinimumAndLargeWindow()
+    {
+        if (!SkiaProcess.IsCurrent)
+        {
+            await SkiaProcess.RunThisTestAsync(typeof(VisualSnapshotTests));
+            return;
+        }
+
+        const string subject = "project-manager-path-tooltip";
+        Size[] sizes = [new(800, 500), new(1920, 1040)];
+        if (Directory.Exists(VisualSnapshot.FolderOf(subject)))
+            Directory.Delete(VisualSnapshot.FolderOf(subject), recursive: true);
+        var defects = new List<(string Variant, string Defect)>();
+        var files = new List<(string Theme, Size Size, SnapshotFile File)>();
+        foreach (var theme in Themes)
+        {
+            await using var h = await HeadlessHarness.StartAsync(o =>
+            {
+                o.Settings["appearance.theme"] = theme;
+                ProjectManagerViewTests.DeepProject(o);
+            });
+            var path = Path.Combine(h.TempDir, ProjectManagerViewTests.DeepProjectDir, "Unit1.pas");
+            Assert.True(await h.Services.Projects.OpenAsync(Path.Combine(h.TempDir, ProjectManagerViewTests.DeepProjectDir, "Hello.pproj")));
+            var pm = h.Services.ProjectManager;
+            await h.WaitForAsync(() => !pm.IsCheckingMissingFiles, "missing-file check done");
+            Assert.True(h.Services.ToolWindows.Show(Core.ViewModels.ProjectManagerViewModel.ToolName, focus: true));
+            Dispatcher.UIThread.RunJobs();
+
+            foreach (var size in sizes)
+            {
+                VisualSnapshot.Arrange(h.Window, size, 1.0);
+                var variant = $"{subject} {VisualSnapshot.FileName(theme, 1.0, size)}";
+                var row = h.Find<TreeViewItem>("Tool.ProjectManager.Row.Unit1.pas");
+                Assert.True(row.IsEffectivelyVisible, variant + ": the row is not shown");
+                Assert.Equal(path, ToolTip.GetTip(row));
+                // The pointer rests on the row; the tooltip is shown as after its delay.
+                var name = h.Find<TextBlock>("Tool.ProjectManager.Row.Unit1.pas.Name");
+                h.Window.MouseMove(name.TranslatePoint(new Point(10, name.Bounds.Height / 2), h.Window)!.Value);
+                ToolTip.SetIsOpen(row, true);
+                Dispatcher.UIThread.RunJobs();
+                try
+                {
+                    var tip = ProjectManagerViewTests.OpenToolTip(h);
+                    await h.WaitForAsync(() =>
+                    {
+                        AvaloniaHeadlessPlatform.ForceRenderTimerTick(); // the fade-in (UI-TOK-051) runs on the render timer
+                        return tip.Opacity == 1;
+                    }, "tooltip faded in");
+                    var block = Assert.Single(tip.GetVisualDescendants().OfType<TextBlock>());
+                    var lines = ProjectManagerViewTests.ShownLines(block);
+                    Assert.True(lines.Count > 1, variant + ": the path is on one line");
+                    Assert.Equal(path, string.Concat(lines));
+                    foreach (var line in lines.Take(lines.Count - 1).Where(l => !l.EndsWith('\\')))
+                        defects.Add((variant, $"tooltip line '{line}' does not end at a path separator"));
+                    if (lines[0].Length <= 3)
+                        defects.Add((variant, $"tooltip starts with the line '{lines[0]}'"));
+                    if (block.TextLayout.TextLines.Any(l => l.HasCollapsed || l.Width > block.Bounds.Width + 0.5))
+                        defects.Add((variant, "cut: a tooltip line is wider than the tooltip"));
+                    var area = new Rect(tip.TranslatePoint(default, h.Window)!.Value, tip.Bounds.Size);
+                    if (tip.Bounds.Width > 480.5 || !new Rect(size).Contains(area))
+                        defects.Add((variant, $"cut: the tooltip is at {area} in a window of {size}"));
+                    defects.AddRange(VisualSnapshot.LayoutDefects(tip).Select(d => (variant, d)));
+                    files.Add((theme, size, VisualSnapshot.Capture(h.Window, subject, theme)));
+                    Assert.True(VisualSnapshot.DistinctColors(h.Window, block) >= 2, variant + ": the tooltip text is not drawn");
+                }
+                finally
+                {
+                    ToolTip.SetIsOpen(row, false);
+                    Dispatcher.UIThread.RunJobs();
+                }
+            }
+        }
+
+        Assert.Equal(4, Directory.GetFiles(VisualSnapshot.FolderOf(subject), "*.png").Length);
+        foreach (var (_, size, file) in files)
+        {
+            Assert.Equal(((int)size.Width, (int)size.Height), VisualSnapshot.PngSize(file.Path));
+            Assert.True(file.DistinctColors >= 16, $"{file.Path}: only {file.DistinctColors} colours — not a real rendering");
+        }
+
+        foreach (var light in files.Where(f => f.Theme == "light"))
+        {
+            var dark = files.Single(f => f.Theme == "dark" && f.Size == light.Size);
+            Assert.True(dark.File.MeanLuminance + 64 < light.File.MeanLuminance, $"{dark.File.Path}: {dark.File.MeanLuminance} against {light.File.MeanLuminance}");
+        }
+
+        Assert.True(defects.Count == 0, Report(defects));
+    }
+
+    /// <summary>
     /// Adds a defect when the text block is cut by a control above it, is arranged narrower than its whole text (also
     /// when it trims with an ellipsis), or reaches beyond <paramref name="rightLimit"/> (window coordinates).
     /// </summary>

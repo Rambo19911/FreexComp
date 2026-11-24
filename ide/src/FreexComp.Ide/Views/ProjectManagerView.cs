@@ -330,6 +330,10 @@ public sealed class ProjectManagerView : UserControl
             }
 
             _dragging = true;
+            // I-245: no row tooltip while rows are dragged (it would cover the drop target); an open one closes.
+            foreach (var open in _tree.GetVisualDescendants().OfType<Control>().Where(ToolTip.GetIsOpen).ToList())
+                ToolTip.SetIsOpen(open, false);
+            ToolTip.SetServiceEnabled(_tree, false);
             e.Pointer.Capture(_tree);
             ShowDragAdorner(_pressed, _model.DraggedRows.Count);
             _edgeScroll = new Avalonia.Threading.DispatcherTimer(TimeSpan.FromMilliseconds(50), Avalonia.Threading.DispatcherPriority.Input, (_, _) => ScrollAtEdge());
@@ -439,6 +443,7 @@ public sealed class ProjectManagerView : UserControl
         _dragLayer.Children.Clear();
         _dragAdorner = null;
         _tree.ClearValue(CursorProperty);
+        _tree.ClearValue(ToolTip.ServiceEnabledProperty);
     }
 
     private void OnContextRequested(object? sender, ContextRequestedEventArgs e)
