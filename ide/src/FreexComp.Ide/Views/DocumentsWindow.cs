@@ -131,6 +131,9 @@ public sealed class DocumentsWindow(DocumentsViewModel model) : DialogWindow(mod
         var button = new Button { Content = model.AccessLabel, IsEnabled = model.IsEnabled, HorizontalContentAlignment = HorizontalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Stretch };
         button.Bind(MinWidthProperty, button.GetResourceObservable("FxcMetricButtonMinWidth"));
         button.Bind(HeightProperty, button.GetResourceObservable("FxcMetricButtonHeight"));
+        // I-242: the 26 px button holds its 18 px text line — no vertical padding, the label centred.
+        button.Bind(Avalonia.Controls.Primitives.TemplatedControl.PaddingProperty, button.GetResourceObservable("FxcSpace5Horizontal"));
+        button.VerticalContentAlignment = Avalonia.Layout.VerticalAlignment.Center;
         AutomationProperties.SetAutomationId(button, Id(model.Id));
         AutomationProperties.SetName(button, model.Label);
         button.Click += async (_, _) => await model.PressAsync();

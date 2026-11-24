@@ -18,7 +18,13 @@ public static class TestAppBuilder
     public static AppBuilder BuildAvaloniaApp()
     {
         Logger.Sink = Infrastructure.BindingErrorSink.Instance; // IDE-ARCH-055: binding errors fail the test
-        return AppBuilder.Configure<App>().UseHeadless(new AvaloniaHeadlessPlatformOptions()).AfterSetup(_ => WarmUp());
+        // IDE-TEST-010: the default headless drawing backend — except in the child process of a visual snapshot test
+        // (I-240, SkiaProcess), which renders with the real Skia renderer. One process never uses both: the two back
+        // ends do not mix (typefaces of one are cached and reach the other).
+        var builder = Infrastructure.SkiaProcess.IsCurrent
+            ? AppBuilder.Configure<App>().UseSkia().UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false })
+            : AppBuilder.Configure<App>().UseHeadless(new AvaloniaHeadlessPlatformOptions());
+        return builder.AfterSetup(_ => WarmUp());
     }
 
     /// <summary>

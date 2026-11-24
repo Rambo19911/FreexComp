@@ -303,6 +303,9 @@ internal static class KeyMappingsPageView
         var button = new Button { Content = label, HorizontalContentAlignment = HorizontalAlignment.Center };
         button.Bind(Layoutable.MinWidthProperty, button.GetResourceObservable("FxcMetricButtonMinWidth"));
         button.Bind(Layoutable.HeightProperty, button.GetResourceObservable("FxcMetricButtonHeight"));
+        // I-242: the 26 px button holds its 18 px text line — no vertical padding, the label centred.
+        button.Bind(Avalonia.Controls.Primitives.TemplatedControl.PaddingProperty, button.GetResourceObservable("FxcSpace5Horizontal"));
+        button.VerticalContentAlignment = Avalonia.Layout.VerticalAlignment.Center;
         AutomationProperties.SetAutomationId(button, Id(field));
         AutomationProperties.SetName(button, label.Replace("_", "", StringComparison.Ordinal));
         return button;

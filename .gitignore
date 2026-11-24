@@ -18,3 +18,6 @@ TestResults/
 
 # review sheet of the icon generator
 assets/brand/_preview.png
+
+# rendered UI snapshots of the visual check (I-240)
+artifacts/

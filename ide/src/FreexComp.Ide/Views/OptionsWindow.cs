@@ -266,7 +266,7 @@ public sealed class OptionsWindow : DialogWindow
                 var number = new NumericUpDown
                 {
                     Value = (int)field.Value,
-                    Width = 96,
+                    MinWidth = 120, // I-241: room for four digits (the widest value of any field); grows with a longer text, never clips it
                     HorizontalAlignment = HorizontalAlignment.Left,
                     ParsingNumberStyle = System.Globalization.NumberStyles.Integer,
                     FormatString = "0",
@@ -360,6 +360,9 @@ public sealed class OptionsWindow : DialogWindow
     {
         var browse = new Button { Content = "…", Margin = new Thickness(4, 2, 0, 2), VerticalAlignment = VerticalAlignment.Center, IsEnabled = field.IsEnabled };
         browse.Bind(HeightProperty, browse.GetResourceObservable("FxcMetricButtonHeight"));
+        // I-242: the 26 px button holds its 18 px text line — no vertical padding, the label centred.
+        browse.Bind(Avalonia.Controls.Primitives.TemplatedControl.PaddingProperty, browse.GetResourceObservable("FxcSpace5Horizontal"));
+        browse.VerticalContentAlignment = Avalonia.Layout.VerticalAlignment.Center;
         AutomationProperties.SetAutomationId(browse, Id(field.Id + ".Browse"));
         AutomationProperties.SetName(browse, Strings.Options_Browse);
         ToolTip.SetTip(browse, Strings.Options_Browse);
@@ -416,6 +419,7 @@ public sealed class OptionsWindow : DialogWindow
             Width = 16,
             Height = 16,
             Padding = new Thickness(0),
+            BorderThickness = new Thickness(0), // the 16 px box holds the glyph line
             Margin = new Thickness(8, 0, 0, 0),
             VerticalAlignment = VerticalAlignment.Center,
             HorizontalContentAlignment = HorizontalAlignment.Center,
