@@ -759,4 +759,43 @@ public sealed class OptionsDialogTests
         await shown;
         Assert.False(settings.Get(SettingsCatalog.LayoutAutoSwitch));
     }
+
+    /// <summary>
+    /// phase8-delivery.md IDE-P8-002, 003 (I-230): the phase-8 field <c>Language</c> of Environment › General (dialogs.md
+    /// §9.6, "disabled until P8+") is shown disabled; delivered as <c>options:Environment.General.Language</c> it is
+    /// enabled — but not in a composition pinned below phase 7.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Phase", "8")]
+    [Trait("Req", "IDE-P8-002")]
+    [Trait("Req", "IDE-P8-003")]
+    public async Task DeliveredPhase8FieldIsEnabled()
+    {
+        (string, string, ISettingKey, bool)[] Language(bool enabled) => [("Language", "_Language:", SettingsCatalog.EnvironmentLanguage, enabled)];
+
+        async Task CheckAsync(HeadlessHarness harness, bool enabled)
+        {
+            var running = harness.Services.Commands.ExecuteAsync("tools.options", "Environment.General");
+            var dlg = await harness.WaitForDialogAsync("Options");
+            CheckFields(dlg, harness.Services.Settings, Language(enabled));
+            Assert.Equal(["English"], ChoiceTexts(dlg, "Language"));
+            Assert.True(dlg.Find<Control>("Theme").IsEffectivelyEnabled); // the page itself is not a later-phase page
+            Assert.False(dlg.Find<TextBlock>("LaterVersion").IsEffectivelyVisible);
+            dlg.Click("Cancel");
+            await running;
+        }
+
+        await using var h = await HeadlessHarness.StartAsync();
+        Assert.DoesNotContain("options:Environment.General.Language", Core.Composition.Phase8Features.Delivered);
+        await CheckAsync(h, enabled: false); // not delivered: as before
+
+        using (Core.Composition.Phase8Features.WithDelivered("options:Environment.General.Language"))
+        {
+            await CheckAsync(h, enabled: true);
+            await using var early = await HeadlessHarness.StartAsync(o => o.ImplementedPhase = 5);
+            await CheckAsync(early, enabled: false);
+        }
+
+        await CheckAsync(h, enabled: false); // the scope ended
+    }
 }

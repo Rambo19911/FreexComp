@@ -320,7 +320,7 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel, ICommandTarge
             }
 
             var command = _commands.Get(id);
-            if (command.Definition.Phase > _implementedPhase)
+            if (!Composition.Phase8Features.IsAvailable(id, command.Definition.Phase, _implementedPhase))
                 continue;
             if (id == "projectManager.openForm" && SelectedFormPath() is null)
                 continue; // only for units with a form and .form rows (tool-windows.md §2)

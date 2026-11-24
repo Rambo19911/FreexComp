@@ -93,7 +93,7 @@ public sealed class KeyMappingsPageViewModel : ObservableObject
         Rows =
         [
             .. CommandCatalog.All.Where(c => !c.TakesArgument)
-                .Select(c => new KeyMappingRow(c, TitleOf(c), c.Phase > implementedPhase))
+                .Select(c => new KeyMappingRow(c, TitleOf(c), !Composition.Phase8Features.IsAvailable(c.Id, c.Phase, implementedPhase)))
                 .OrderBy(r => categories.IndexOf(r.Command.Category))
                 .ThenBy(r => r.Text, StringComparer.CurrentCultureIgnoreCase),
         ];

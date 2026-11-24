@@ -15,7 +15,7 @@ public static class EditorCommandRoute
     {
         ArgumentNullException.ThrowIfNull(commands);
         ArgumentNullException.ThrowIfNull(activeDocument);
-        foreach (var definition in commands.Definitions.Where(d => d.Scope == CommandScope.Editor && d.Phase <= implementedPhase && !commands.IsHandled(d.Id)))
+        foreach (var definition in commands.Definitions.Where(d => d.Scope == CommandScope.Editor && Composition.Phase8Features.IsAvailable(d.Id, d.Phase, implementedPhase) && !commands.IsHandled(d.Id)))
         {
             commands.RegisterHandler(definition.Id, new Handler(definition.Id, activeDocument));
         }

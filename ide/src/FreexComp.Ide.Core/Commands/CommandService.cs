@@ -32,6 +32,9 @@ public sealed class CommandService : ICommandService
     private readonly Dictionary<string, ICommandHandler> _handlers = new(StringComparer.Ordinal);
     private readonly Dictionary<string, IdeCommand> _commands = new(StringComparer.Ordinal);
     private readonly HashSet<string> _running = new(StringComparer.Ordinal);
+
+    /// <summary>The phase the later-phase stubs were registered for (the start-up check of IDE-P8-004 uses it).</summary>
+    private int _stubPhase;
     private bool _invalidatePending;
     private (string Text, DateTimeOffset At)? _lastError;
 
@@ -88,7 +91,8 @@ public sealed class CommandService : ICommandService
 
     public void RegisterLaterPhaseStubs(int implementedPhase)
     {
-        foreach (var definition in Definitions.Where(d => d.Phase > implementedPhase && !_handlers.ContainsKey(d.Id)))
+        _stubPhase = implementedPhase;
+        foreach (var definition in Definitions.Where(d => !Composition.Phase8Features.IsAvailable(d.Id, d.Phase, implementedPhase) && !_handlers.ContainsKey(d.Id)))
         {
             _handlers[definition.Id] = StubHandler.Instance;
         }
@@ -102,6 +106,15 @@ public sealed class CommandService : ICommandService
         if (missing.Count > 0)
         {
             throw new InvalidOperationException("Commands without a handler: " + string.Join(", ", missing));
+        }
+
+        // IDE-P8-004: a command treated as implemented (a delivered phase-8 one) must not sit on the later-phase stub.
+        var stubbed = Definitions
+            .Where(d => _handlers[d.Id] is StubHandler && Composition.Phase8Features.IsAvailable(d.Id, d.Phase, _stubPhase))
+            .Select(d => d.Id).ToList();
+        if (stubbed.Count > 0)
+        {
+            throw new InvalidOperationException("Delivered commands on the later-phase stub: " + string.Join(", ", stubbed));
         }
     }
 

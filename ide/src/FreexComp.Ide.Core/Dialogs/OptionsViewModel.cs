@@ -123,8 +123,8 @@ public sealed class OptionsViewModel : DialogViewModel<bool>
     private readonly ILayoutService _layout;
     private readonly IKeymapService _keymap;
     private readonly FilePrompts _prompts;
-    private readonly int _implementedPhase;
     private readonly Dictionary<string, OptionField> _fields = new(StringComparer.Ordinal);
+    private readonly HashSet<OptionField> _availableFields = [];
     private OptionsPage? _selectedPage;
     private string _filter = "";
     private string? _filterEmptyText;
@@ -145,7 +145,6 @@ public sealed class OptionsViewModel : DialogViewModel<bool>
         _keymap = keymap;
         _prompts = prompts;
         _layout = layout;
-        _implementedPhase = implementedPhase;
 
         var general = Page(EditorGeneralPage, 1,
         [
@@ -198,6 +197,7 @@ public sealed class OptionsViewModel : DialogViewModel<bool>
         [
             FixedChoice("Theme", SettingsCatalog.AppearanceTheme, 1,
                 ("system", Strings.Options_Theme_System), ("light", Strings.Options_Theme_Light), ("dark", Strings.Options_Theme_Dark)),
+            FixedChoice("Language", SettingsCatalog.EnvironmentLanguage, 8, ("en", Strings.Options_Language_English)), // disabled until P8+
             Check("ShowFullPath", SettingsCatalog.AppearanceShowFullPathInTitle, 1),
             Check("ReopenLastProject", SettingsCatalog.EnvironmentReopenLastProject, 1, Strings.Options_Group_Startup),
             Check("RestoreOpenFiles", SettingsCatalog.EnvironmentRestoreOpenFiles, 1),
@@ -250,7 +250,12 @@ public sealed class OptionsViewModel : DialogViewModel<bool>
         Pages = [general, display, templatesPage, colors, keys, environmentGeneral, environmentFiles, designer, toolchainPage];
         foreach (var page in Pages)
         {
-            page.IsLaterPhase = page.Phase > implementedPhase;
+            // phase8-delivery.md IDE-P8-002/003: a phase-8 page or field counts as implemented once it is delivered.
+            page.IsLaterPhase = !Composition.Phase8Features.IsAvailable("options:" + page.Id, page.Phase, implementedPhase);
+            foreach (var field in page.Fields.Where(f => Composition.Phase8Features.IsAvailable("options:" + page.Id + "." + f.Id, f.Phase, implementedPhase)))
+            {
+                _availableFields.Add(field);
+            }
         }
 
         Rows = BuildRows([("Editor", [general, display, templatesPage]), (null, [colors, keys]), ("Environment", [environmentGeneral, environmentFiles]), (null, [designer, toolchainPage])]);
@@ -463,7 +468,7 @@ public sealed class OptionsViewModel : DialogViewModel<bool>
     {
         foreach (var field in _fields.Values)
         {
-            field.IsEnabled = field.Phase <= _implementedPhase
+            field.IsEnabled = _availableFields.Contains(field)
                 && (field.EnabledBy is null || _fields[field.EnabledBy].Value is true);
         }
 

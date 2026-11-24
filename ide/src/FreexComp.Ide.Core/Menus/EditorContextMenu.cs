@@ -33,7 +33,7 @@ public static class EditorContextMenu
             }
 
             var command = commands.Get(id);
-            if (command.Definition.Phase > implementedPhase || (id == "view.toggleFormCode" && !hasForm))
+            if (!Composition.Phase8Features.IsAvailable(id, command.Definition.Phase, implementedPhase) || (id == "view.toggleFormCode" && !hasForm))
                 continue;
             if (pendingSeparator)
                 items.Add(MenuItemModel.Separator());

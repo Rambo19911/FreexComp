@@ -2445,6 +2445,10 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   <data name="Menu_project_addExistingFile" xml:space="preserve">
     <value>&amp;Add Existing File…</value>
   </data>
+  <data name="Menu_project_newFolder" xml:space="preserve">
+    <value>New Fo&amp;lder…</value>
+    <comment>Project Manager context menus (tool-windows.md §2); shown once the command is delivered (I-230, I-234)</comment>
+  </data>
   <data name="Menu_project_removeFile" xml:space="preserve">
     <value>&amp;Remove from Project</value>
   </data>
@@ -3752,6 +3756,14 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   <data name="Options_Field_Theme" xml:space="preserve">
     <value>_Theme:</value>
     <comment>dialogs.md §9.6</comment>
+  </data>
+  <data name="Options_Field_Language" xml:space="preserve">
+    <value>_Language:</value>
+    <comment>dialogs.md §9.6</comment>
+  </data>
+  <data name="Options_Language_English" xml:space="preserve">
+    <value>English</value>
+    <comment>dialogs.md §9.6 Language choice</comment>
   </data>
   <data name="Options_Field_ShowFullPath" xml:space="preserve">
     <value>Show full _path in title bar</value>

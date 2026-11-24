@@ -35,7 +35,7 @@ public sealed class CommandPaletteViewModel : QuickPickViewModel
         ArgumentNullException.ThrowIfNull(origin);
         _commands = commands;
         _layout = layout;
-        foreach (var definition in commands.Definitions.Where(d => !d.TakesArgument && d.Phase <= implementedPhase && Applies(d, origin)))
+        foreach (var definition in commands.Definitions.Where(d => !d.TakesArgument && Composition.Phase8Features.IsAvailable(d.Id, d.Phase, implementedPhase) && Applies(d, origin)))
         {
             var category = Strings.ResourceManager.GetString("CmdCategory_" + definition.Category, CultureInfo.CurrentCulture) ?? definition.Category;
             _entries.Add(new Entry(definition.Id, category + ": " + commands.Get(definition.Id).Title, definition.Id, null));

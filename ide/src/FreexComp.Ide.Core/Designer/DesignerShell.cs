@@ -55,7 +55,7 @@ public sealed class DesignerShell
             layout.SwitchProfile(LayoutProfiles.Design);
             return Task.CompletedTask;
         }, () => layout.ActiveProfile == LayoutProfiles.Design));
-        foreach (var definition in commands.Definitions.Where(d => d.Scope == CommandScope.Designer && d.Phase <= implementedPhase && !commands.IsHandled(d.Id)))
+        foreach (var definition in commands.Definitions.Where(d => d.Scope == CommandScope.Designer && Composition.Phase8Features.IsAvailable(d.Id, d.Phase, implementedPhase) && !commands.IsHandled(d.Id)))
         {
             var id = definition.Id;
             commands.RegisterHandler(id, Toggles.TryGetValue(id, out var key)

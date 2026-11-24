@@ -138,7 +138,7 @@ public sealed class ToolBarModel : ObservableObject
     {
         Definition = definition;
         _settings = settings;
-        _phaseReached = definition.Phase <= implementedPhase;
+        _phaseReached = Composition.Phase8Features.IsAvailable("toolbar:" + definition.Name, definition.Phase, implementedPhase);
         Items = [.. definition.Items.Select(item => item switch
         {
             ToolBarButton b => (object)new ToolBarButtonModel(commands.Get(b.CommandId), b.IconName),
@@ -222,7 +222,7 @@ public static class ToolBarRowModel
     /// <summary>Registers the <c>view.toolbar.*</c> toggles of the toolbars whose phase is reached (UI-TB-004).</summary>
     public static void RegisterCommands(ICommandService commands, ISettingsService settings, int implementedPhase)
     {
-        foreach (var toolbar in ToolBarDefinitions.All.Where(t => t.Phase <= implementedPhase))
+        foreach (var toolbar in ToolBarDefinitions.All.Where(t => Composition.Phase8Features.IsAvailable("toolbar:" + t.Name, t.Phase, implementedPhase)))
         {
             commands.RegisterHandler(toolbar.ToggleCommandId, new ToggleSettingHandler(settings, toolbar.Visibility));
         }

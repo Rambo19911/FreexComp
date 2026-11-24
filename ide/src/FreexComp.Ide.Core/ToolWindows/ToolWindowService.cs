@@ -94,7 +94,7 @@ public sealed class ToolWindowService : IToolWindowService
     public bool Register(ToolWindowDefinition definition)
     {
         ArgumentNullException.ThrowIfNull(definition);
-        if (definition.Phase > _implementedPhase)
+        if (!Composition.Phase8Features.IsAvailable("toolwindow:" + definition.Name, definition.Phase, _implementedPhase))
         {
             return false;
         }

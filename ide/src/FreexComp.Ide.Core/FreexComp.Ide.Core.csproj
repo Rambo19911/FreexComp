@@ -5,6 +5,7 @@
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="FreexComp.Ide.Core.Tests" />
+    <InternalsVisibleTo Include="FreexComp.Ide.Tests" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\..\compiler\src\FreexComp.Compiler\FreexComp.Compiler.csproj" />
