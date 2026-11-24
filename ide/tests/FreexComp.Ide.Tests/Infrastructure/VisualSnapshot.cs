@@ -93,6 +93,51 @@ public static class VisualSnapshot
         return pixels;
     }
 
+    /// <summary>
+    /// Null when the whole box of <paramref name="control"/> lies inside every control above it up to the window (so
+    /// that no ancestor can cut it off); otherwise the box (window coordinates) and the first ancestor it leaves.
+    /// Scrolled content may leave its view port in the direction in which it scrolls.
+    /// </summary>
+    public static string? HiddenPart(Control control, Window window)
+    {
+        ArgumentNullException.ThrowIfNull(control);
+        ArgumentNullException.ThrowIfNull(window);
+        Dispatcher.UIThread.RunJobs();
+        if (control.TranslatePoint(default, window) is not { } origin)
+            return "not in the window";
+        var box = new Rect(origin, control.Bounds.Size);
+        var (scrollsX, scrollsY) = (false, false);
+        foreach (var ancestor in control.GetVisualAncestors().OfType<Control>())
+        {
+            if (ancestor.TranslatePoint(default, window) is not { } at)
+                continue;
+            var room = new Rect(at, ancestor.Bounds.Size).Inflate(Tolerance);
+            if (ancestor is ScrollContentPresenter port)
+            {
+                scrollsX |= port.Extent.Width > port.Viewport.Width + Tolerance;
+                scrollsY |= port.Extent.Height > port.Viewport.Height + Tolerance;
+            }
+
+            if (scrollsX)
+                room = room.WithX(box.X).WithWidth(box.Width);
+            if (scrollsY)
+                room = room.WithY(box.Y).WithHeight(box.Height);
+
+            if (!room.Contains(box))
+                return $"{box} outside {Describe(ancestor)} {new Rect(at, ancestor.Bounds.Size)}";
+        }
+
+        return null;
+    }
+
+    /// <summary>The width the whole text of the block needs on one line, in its own font (no trimming, no wrapping).</summary>
+    public static double TextWidth(TextBlock text)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+        var typeface = new Typeface(text.FontFamily, text.FontStyle, text.FontWeight, text.FontStretch);
+        return new FormattedText(text.Text ?? "", CultureInfo.CurrentCulture, text.FlowDirection, typeface, text.FontSize, null).WidthIncludingTrailingWhitespace;
+    }
+
     /// <summary>Width and height in the header of a PNG file.</summary>
     public static (int Width, int Height) PngSize(string path)
     {
@@ -120,9 +165,11 @@ public static class VisualSnapshot
         var defects = new List<string>();
         foreach (var control in root.GetVisualDescendants().OfType<Control>().Where(IsShown))
         {
-            // Not rules of a parent: scrolled content, the scaled child of a view box, and a negative margin (the
-            // control is meant to cover its parent's edge by that much).
-            if (control.GetVisualParent() is Control parent and not ScrollContentPresenter and not Viewbox)
+            // Not rules of a parent: scrolled content, the scaled child of a view box, a negative margin (the
+            // control is meant to cover its parent's edge by that much), and the parts of a scroll bar track (the
+            // toolkit places the thumb and the page areas itself from the scroll offset; the invisible page area can
+            // end a rounded pixel past the track).
+            if (control.GetVisualParent() is Control parent and not ScrollContentPresenter and not Viewbox and not Avalonia.Controls.Primitives.Track)
             {
                 var margin = control.Margin;
                 var room = new Rect(parent.Bounds.Size).Inflate(new Thickness(

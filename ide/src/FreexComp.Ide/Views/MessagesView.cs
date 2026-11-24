@@ -33,6 +33,13 @@ public sealed class MessagesView : UserControl
         ("Col", Strings.MessagesView_Column_Col, new GridLength(48), HorizontalAlignment.Right),
     ];
 
+    /// <summary>
+    /// space.6, the width of the list's scroll bar: header and rows end with an empty strip this wide, so that the last
+    /// column is not at the edge of the pane and the scroll bar, which lies over the right edge of the rows, never
+    /// covers it (I-244).
+    /// </summary>
+    private const double ScrollBarStrip = 16;
+
     private readonly ListBox _list = new() { SelectionMode = SelectionMode.Multiple };
     private readonly TextBlock _empty = new() { Text = Strings.Msg_Messages_Empty, HorizontalAlignment = HorizontalAlignment.Center, IsHitTestVisible = false };
     private readonly StackPanel _filteredEmpty = new() { HorizontalAlignment = HorizontalAlignment.Center, Spacing = 4 };
@@ -88,6 +95,7 @@ public sealed class MessagesView : UserControl
         var grid = new Grid();
         foreach (var column in Columns)
             grid.ColumnDefinitions.Add(new ColumnDefinition(column.Width));
+        grid.ColumnDefinitions.Add(new ColumnDefinition(new GridLength(ScrollBarStrip)));
         return grid;
     }
 
@@ -95,10 +103,11 @@ public sealed class MessagesView : UserControl
     {
         var header = Cells();
         header.Height = 24;
+        Bind(header, Panel.BackgroundProperty, "FxcBgHeaderBrush"); // UI-TW-011: bg.header, type.caption
         for (var i = 0; i < Columns.Length; i++)
         {
             var (id, text, _, align) = Columns[i];
-            var label = new TextBlock { Text = text, HorizontalAlignment = align, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4, 0) };
+            var label = new TextBlock { Text = text, HorizontalAlignment = align, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4, 0), Classes = { "caption" } };
             Bind(label, TextBlock.ForegroundProperty, "FxcTextSecondaryBrush");
             // UI-TW-011: the whole header cell is the click target; sortable columns cycle the sort (UI-TW-401).
             var cell = new Border { Background = Brushes.Transparent, Child = label };

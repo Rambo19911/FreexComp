@@ -5,6 +5,8 @@ using Avalonia.Threading;
 using Avalonia.VisualTree;
 using FreexComp.Ide.Core.Dialogs;
 using FreexComp.Ide.Tests.Infrastructure;
+using FreexComp.Ide.TestSupport;
+using FreexComp.Ide.Views;
 
 namespace FreexComp.Ide.Tests.Views;
 
@@ -280,6 +282,153 @@ public sealed class VisualSnapshotTests
                 await running;
             }
         }
+    }
+
+    /// <summary>
+    /// I-244: the main window with the Messages pane at its minimum size 800 × 500 (main-window.md) and at
+    /// 1920 × 1040 (standing in for a maximized window), in both themes and two states: the Welcome page in front and
+    /// no messages, and the code editor in front after a build with more messages than the pane shows (the list
+    /// scrolls). Every column
+    /// header of the Messages pane, and every Line and Col cell, is laid out completely, inside every control above it
+    /// up to the window; the last column keeps clear of the strip at the right edge in which the scroll bar of the list
+    /// appears; the layout rules hold for the whole window. PNGs under <c>main-window-welcome-messages</c> and
+    /// <c>main-window-messages-rows</c>.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-TW-011")]
+    public async Task MainWindow_MessagesPaneHeadersNotTruncated()
+    {
+        if (!SkiaProcess.IsCurrent)
+        {
+            await SkiaProcess.RunThisTestAsync(typeof(VisualSnapshotTests));
+            return;
+        }
+
+        const double scrollBarStrip = 16; // space.6: the width of the scroll bar of a list
+        string[] subjects = ["main-window-welcome-messages", "main-window-messages-rows"];
+        Size[] sizes = [new(800, 500), new(1920, 1040)];
+        string[] columns = ["Severity", "Code", "Description", "File", "Line", "Col"];
+        foreach (var subject in subjects)
+        {
+            if (Directory.Exists(VisualSnapshot.FolderOf(subject)))
+                Directory.Delete(VisualSnapshot.FolderOf(subject), recursive: true);
+        }
+
+        var defects = new List<(string Variant, string Defect)>();
+        var files = new List<(string Subject, string Theme, Size Size, SnapshotFile File)>();
+        foreach (var theme in Themes)
+        {
+            await using var h = await BuildScenario.StartAsync(o =>
+            {
+                o.Settings["appearance.theme"] = theme;
+                o.Settings.Remove("environment.showWelcomeOnStartup"); // starts like a first run: with the Welcome page
+            }, implementedPhase: null);
+            Assert.Equal((800.0, 500.0), (h.Window.MinWidth, h.Window.MinHeight));
+            Assert.Equal("Messages", h.Services.Layout.Layout.Bottom.ActiveTool);
+            var list = h.Find<ListBox>("Tool.Messages.List");
+
+            foreach (var subject in subjects)
+            {
+                var withRows = subject == subjects[1];
+                // The Welcome page in front for the first state, the code editor (the project's main source) for the second.
+                var front = h.Services.Documents.Documents.Single(d => d is Core.ViewModels.WelcomeDocumentViewModel != withRows);
+                h.Services.Documents.Activate(front);
+                Dispatcher.UIThread.RunJobs();
+                if (withRows)
+                {
+                    // 40 messages; the first with a long line and column number.
+                    h.Build.Enqueue(FakeBuildEngine.Failure(BuildScenario.ProjectPath(h), [.. Enumerable.Range(0, 40).Select(i =>
+                        FakeBuildEngine.Diag("E2003", FreexComp.Compiler.DiagnosticSeverity.Error, $"Undeclared identifier 'Foo{i}'",
+                            BuildScenario.UnitPath(h), i == 0 ? 123456 : i + 1, i == 0 ? 1024 : 3, 3))]));
+                    h.Press("Ctrl+Shift+B");
+                    await h.WaitForAsync(() => h.Services.State.Current.State == Core.Models.IdeState.Idle && h.Services.Build.ResultText is not null,
+                        "build finished");
+                    Dispatcher.UIThread.RunJobs();
+                }
+
+                foreach (var size in sizes)
+                {
+                    VisualSnapshot.Arrange(h.Window, size, 1.0);
+                    var variant = $"{subject} {VisualSnapshot.FileName(theme, 1.0, size)}";
+                    Assert.Equal(size, h.Window.ClientSize);
+                    Assert.True(h.Find<Control>(AutomationIds.DocumentTab("Welcome")).IsEffectivelyVisible, variant + ": no Welcome page");
+                    Assert.Same(front, h.Services.Documents.ActiveDocument);
+                    Assert.Equal(!withRows, h.Window.GetVisualDescendants().OfType<WelcomeDocumentView>().Any(v => v.IsEffectivelyVisible));
+                    var listRight = list.TranslatePoint(new Point(list.Bounds.Width, 0), h.Window)!.Value.X;
+
+                    foreach (var column in columns)
+                    {
+                        var cell = h.Find<Border>("Tool.Messages.Column." + column);
+                        Assert.True(cell.IsEffectivelyVisible, $"{variant}: column {column} is not shown");
+                        var label = Assert.IsType<TextBlock>(cell.Child);
+                        Assert.Equal(column == "Severity", string.IsNullOrEmpty(label.Text));
+                        // UI-TW-011: type.caption on bg.header, 24 high.
+                        Assert.Equal(11, label.FontSize);
+                        var strip = Assert.IsType<Grid>(cell.Parent);
+                        Assert.Equal(24, strip.Bounds.Height);
+                        Assert.Equal(Avalonia.Media.Color.Parse(theme == "light" ? "#ECEEEB" : "#262B29"),
+                            Assert.IsAssignableFrom<Avalonia.Media.ISolidColorBrush>(strip.Background).Color);
+                        if (VisualSnapshot.HiddenPart(cell, h.Window) is { } hiddenCell)
+                            defects.Add((variant, $"cut: header cell {column} — {hiddenCell}"));
+                        if (column != "Severity")
+                            AddCutText(defects, variant, $"header '{label.Text}'", label, h.Window, column == "Col" ? listRight - scrollBarStrip : listRight);
+                    }
+
+                    var cells = h.Window.GetVisualDescendants().OfType<TextBlock>().Where(t => t.IsEffectivelyVisible)
+                        .Select(t => (Id: Avalonia.Automation.AutomationProperties.GetAutomationId(t) ?? "", Text: t))
+                        .Where(c => c.Id.StartsWith("Tool.Messages.Row.", StringComparison.Ordinal)).ToList();
+                    foreach (var (id, text) in cells.Where(c => c.Id.EndsWith(".Line", StringComparison.Ordinal) || c.Id.EndsWith(".Col", StringComparison.Ordinal)))
+                        AddCutText(defects, variant, $"cell {id} '{text.Text}'", text, h.Window, id.EndsWith(".Col", StringComparison.Ordinal) ? listRight - scrollBarStrip : listRight);
+                    if (withRows)
+                    {
+                        Assert.Contains(cells, c => c.Id == "Tool.Messages.Row.0.Line" && c.Text.Text == "123456");
+                        Assert.Contains(cells, c => c.Id == "Tool.Messages.Row.0.Col" && c.Text.Text == "1024");
+                        var scroll = list.GetVisualDescendants().OfType<ScrollViewer>().First();
+                        Assert.True(scroll.Extent.Height > scroll.Viewport.Height, variant + ": the list does not scroll");
+                    }
+                    else
+                    {
+                        Assert.Empty(cells);
+                        Assert.True(h.Find<TextBlock>("Tool.Messages.Empty").IsEffectivelyVisible);
+                    }
+
+                    defects.AddRange(VisualSnapshot.LayoutDefects(h.Window).Select(d => (variant, d)));
+                    files.Add((subject, theme, size, VisualSnapshot.Capture(h.Window, subject, theme)));
+                }
+            }
+        }
+
+        foreach (var subject in subjects)
+            Assert.Equal(4, Directory.GetFiles(VisualSnapshot.FolderOf(subject), "*.png").Length);
+        foreach (var (_, _, size, file) in files)
+        {
+            Assert.Equal(((int)size.Width, (int)size.Height), VisualSnapshot.PngSize(file.Path));
+            Assert.True(file.DistinctColors >= 16, $"{file.Path}: only {file.DistinctColors} colours — not a real rendering");
+        }
+
+        foreach (var light in files.Where(f => f.Theme == "light"))
+        {
+            var dark = files.Single(f => f.Theme == "dark" && f.Subject == light.Subject && f.Size == light.Size);
+            Assert.True(dark.File.MeanLuminance + 64 < light.File.MeanLuminance, $"{dark.File.Path}: {dark.File.MeanLuminance} against {light.File.MeanLuminance}");
+        }
+
+        Assert.True(defects.Count == 0, Report(defects));
+    }
+
+    /// <summary>
+    /// Adds a defect when the text block is cut by a control above it, is arranged narrower than its whole text (also
+    /// when it trims with an ellipsis), or reaches beyond <paramref name="rightLimit"/> (window coordinates).
+    /// </summary>
+    private static void AddCutText(List<(string Variant, string Defect)> defects, string variant, string what, TextBlock text, Window window, double rightLimit)
+    {
+        if (VisualSnapshot.HiddenPart(text, window) is { } hidden)
+            defects.Add((variant, $"cut: {what} — {hidden}"));
+        var needed = VisualSnapshot.TextWidth(text);
+        if (needed > text.Bounds.Width + 0.5)
+            defects.Add((variant, $"cut: {what} needs {needed:0.#} wide, has {text.Bounds.Width:0.#}"));
+        var right = text.TranslatePoint(new Point(text.Bounds.Width, 0), window)!.Value.X;
+        if (right > rightLimit + 0.5)
+            defects.Add((variant, $"cut: {what} ends at x = {right:0.#}, in the scroll bar strip of the list (free up to {rightLimit:0.#})"));
     }
 
     /// <summary>The control lies completely inside the view port of the scroll viewer.</summary>
