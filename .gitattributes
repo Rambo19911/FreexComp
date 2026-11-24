@@ -9,6 +9,8 @@
 LICENSE-RUNTIME text eol=lf
 NOTICE text eol=lf
 THIRD-PARTY-NOTICES.txt text eol=lf
+# the network policy page: copied byte for byte next to the tools
+NETWORK-POLICY.md text eol=lf
 # test data must keep its exact bytes (line endings, encodings)
 ide/tests/TestData/** -text
 rtl/tests/**/*.in -text

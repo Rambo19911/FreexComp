@@ -24,6 +24,9 @@ dotnet build FreexComp.sln
 dotnet test FreexComp.sln
 ```
 
+## Network
+FreexComp needs no network connection and opens none on its own; `NETWORK-POLICY.md` lists every feature that is able to open one.
+
 ## License
 FreexComp is licensed under the Apache License 2.0 (`LICENSE`).
 The runtime libraries are licensed under Apache-2.0 WITH LLVM-exception (`LICENSE-RUNTIME`), so programs built with

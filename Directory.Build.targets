@@ -5,4 +5,14 @@
     (imported after the package targets) replaces it with an empty one, so the task never runs.
   -->
   <Target Name="AvaloniaStats" />
+
+  <!--
+    Pages shipped next to the tools: building the IDE or a command-line tool copies them from the repository root
+    to its output directory. Libraries and test projects do not get them.
+  -->
+  <Target Name="CopyProductPages" AfterTargets="Build"
+          Condition="'$(MSBuildProjectName)' == 'FreexComp.Ide' or '$(MSBuildProjectName)' == 'opc' or '$(MSBuildProjectName)' == 'pbuild'">
+    <Error Condition="!Exists('$(RepoRoot)NETWORK-POLICY.md')" Text="Policy file 'NETWORK-POLICY.md' is missing in the repository root." />
+    <Copy SourceFiles="$(RepoRoot)NETWORK-POLICY.md" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
+  </Target>
 </Project>
