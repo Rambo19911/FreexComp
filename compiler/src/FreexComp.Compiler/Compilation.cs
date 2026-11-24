@@ -605,6 +605,11 @@ public sealed class Compilation
             jobs.Add(ClangInvoker.Job(toolchain.Clang, unit.Name, ll, Path.ChangeExtension(ll, ".obj"), Options.Optimization, Options.DebugInfo, Options.Target));
         }
 
+        // C-294 (CMP-155): before anything the link consumes is rewritten (an object, an import library, the export definition
+        // file) the response file of the last link is removed, so that a run ending before its own link — cancelled (CMP-1142),
+        // a failed job (CMP-1140), a stage before the link — leaves nothing the next run could take for an up-to-date link
+        bool InvalidateLink() => Delete(Path.Combine(objectDirectory, "link.rsp"), location, diagnostics);
+
         // CMP-1060: the module kind follows the main source; the default output is next to it
         var isLibrary = main.Unit.IsLibrary;
         var output = string.IsNullOrEmpty(options.OutputPath)
@@ -619,7 +624,7 @@ public sealed class Compilation
         {
             var text = ExportDefinitionFile.Render(exports);
             exportsChanged = !FileSystem.FileExists(exportDefinition) || FileSystem.ReadAllText(exportDefinition) != text;
-            if (exportsChanged && !Write(exportDefinition, text, location, diagnostics))
+            if (exportsChanged && !(InvalidateLink() && Write(exportDefinition, text, location, diagnostics)))
             {
                 return Finish(false, null, compiled);
             }
@@ -675,6 +680,11 @@ public sealed class Compilation
             }
 
             jobs.AddRange(libraryJobs.OrderBy(j => j.Dll!.ToLowerInvariant(), StringComparer.Ordinal));
+        }
+
+        if (jobs.Count > 0 && !InvalidateLink())
+        {
+            return Finish(false, null, compiled);
         }
 
         // CMP-1136…1140: at most MaxParallelism processes; reports are released in job-key order
@@ -1202,6 +1212,9 @@ public sealed class Compilation
         new(FileSystem, mainPath, Options.SearchPaths, RtlDirectory(), _openFiles.Keys.Order(StringComparer.Ordinal), aliases, Options.UnitScopeNames, Options.Target);
 
     /// <summary><c>--rtl</c>; "" → <c>%FREEXCOMP_HOME%\rtl\src</c>, else <c>rtl\src</c> next to the running executable (compiler-cli.md §1).</summary>
+    /// <summary>C-139 (CMP-750): the normalized RTL root this snapshot resolves <c>System</c> and the alias table from.</summary>
+    internal string RtlRoot => RtlDirectory();
+
     private string RtlDirectory()
     {
         if (Options.RtlDirectory.Length > 0)

@@ -126,7 +126,7 @@ public static partial class NavigationService
     }
 
     /// <summary>The symbol and what counts as the same for references: a method's override chain, a property's redeclarations.</summary>
-    private static List<Symbol> Related(Compilation compilation, Symbol symbol)
+    internal static List<Symbol> Related(Compilation compilation, Symbol symbol)
     {
         var related = new List<Symbol> { symbol };
         switch (symbol)
@@ -152,7 +152,7 @@ public static partial class NavigationService
     }
 
     /// <summary>The identifiers of the model's own file that bind to one of <paramref name="related"/>, in text order, with their kind.</summary>
-    private static IEnumerable<(SyntaxToken Token, ReferenceKind Kind)> Occurrences(SemanticModel model, List<Symbol> related, CancellationToken ct)
+    internal static IEnumerable<(SyntaxToken Token, ReferenceKind Kind)> Occurrences(SemanticModel model, List<Symbol> related, CancellationToken ct)
     {
         var names = related.Select(r => r.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
         foreach (var token in model.SyntaxTree.Root.OwnTokens())

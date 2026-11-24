@@ -304,6 +304,28 @@ public sealed class SemanticModel
             return dottedUnit;
         }
 
+        // C-139: the accessor of a property (read / write / stored) is a member of the property's type
+        if (nameNode?.FirstAncestorOrSelf<PropertySpecifierSyntax>() is { Keyword.ContextualKind: SyntaxKind.ReadKeyword or SyntaxKind.WriteKeyword or SyntaxKind.StoredKeyword } specifier
+            && specifier.FirstAncestorOrSelf<PropertyDeclarationSyntax>() is { } property
+            && GetDeclaredSymbol(property.Identifier) is PropertySymbol ownerProperty)
+        {
+            Symbol? accessor = specifier.Keyword.ContextualKind switch
+            {
+                SyntaxKind.ReadKeyword => ownerProperty.ReadMethod ?? ownerProperty.ReadPath.FirstOrDefault(),
+                SyntaxKind.WriteKeyword => ownerProperty.WriteMethod ?? ownerProperty.WritePath.FirstOrDefault(),
+                _ => ownerProperty.StoredField,
+            };
+            if (accessor is not null && IdentifierComparer.Instance.Equals(accessor.Name, name))
+            {
+                return accessor;
+            }
+
+            if ((LookupSymbols(token.Span.Start, name, ownerProperty.Owner).FirstOrDefault() ?? ownerProperty.Owner.GetMembers(name).FirstOrDefault()) is { } member)
+            {
+                return member;
+            }
+        }
+
         return ScopeAt(node.Span.Start).Lookup(name) ?? _findUnit(name);
     }
 

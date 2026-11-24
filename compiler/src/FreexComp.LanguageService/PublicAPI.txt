@@ -190,6 +190,18 @@ sealed record FreexComp.LanguageService.DocumentSymbol : System.IEquatable<Freex
   public override System.String ToString()
   public static System.Boolean op_Equality(FreexComp.LanguageService.DocumentSymbol left, FreexComp.LanguageService.DocumentSymbol right)
   public static System.Boolean op_Inequality(FreexComp.LanguageService.DocumentSymbol left, FreexComp.LanguageService.DocumentSymbol right)
+sealed record FreexComp.LanguageService.FileRename : System.IEquatable<FreexComp.LanguageService.FileRename>
+  public FreexComp.LanguageService.FileRename <Clone>$()
+  public System.Boolean Equals(FreexComp.LanguageService.FileRename other)
+  public System.String NewPath { get; init; }
+  public System.String OldPath { get; init; }
+  public System.Void Deconstruct(out System.String OldPath, out System.String NewPath)
+  public ctor(System.String OldPath, System.String NewPath)
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public static System.Boolean op_Equality(FreexComp.LanguageService.FileRename left, FreexComp.LanguageService.FileRename right)
+  public static System.Boolean op_Inequality(FreexComp.LanguageService.FileRename left, FreexComp.LanguageService.FileRename right)
 enum FreexComp.LanguageService.FoldingKind
   Block = 5
   Comment = 7
@@ -273,6 +285,37 @@ readonly record struct FreexComp.LanguageService.ReferenceLocation : System.IEqu
   public override System.String ToString()
   public static System.Boolean op_Equality(FreexComp.LanguageService.ReferenceLocation left, FreexComp.LanguageService.ReferenceLocation right)
   public static System.Boolean op_Inequality(FreexComp.LanguageService.ReferenceLocation left, FreexComp.LanguageService.ReferenceLocation right)
+sealed record FreexComp.LanguageService.RenameInfo : System.IEquatable<FreexComp.LanguageService.RenameInfo>
+  public FreexComp.Compiler.Text.TextSpan Span { get; init; }
+  public FreexComp.LanguageService.RenameInfo <Clone>$()
+  public System.Boolean CanRename { get; init; }
+  public System.Boolean Equals(FreexComp.LanguageService.RenameInfo other)
+  public System.String CurrentName { get; init; }
+  public System.String Reason { get; init; }
+  public System.Void Deconstruct(out System.Boolean CanRename, out System.String Reason, out FreexComp.Compiler.Text.TextSpan Span, out System.String CurrentName)
+  public ctor(System.Boolean CanRename, System.String Reason, FreexComp.Compiler.Text.TextSpan Span, System.String CurrentName)
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public static System.Boolean op_Equality(FreexComp.LanguageService.RenameInfo left, FreexComp.LanguageService.RenameInfo right)
+  public static System.Boolean op_Inequality(FreexComp.LanguageService.RenameInfo left, FreexComp.LanguageService.RenameInfo right)
+sealed record FreexComp.LanguageService.RenameResult : System.IEquatable<FreexComp.LanguageService.RenameResult>
+  public FreexComp.LanguageService.FileRename FileRename { get; init; }
+  public FreexComp.LanguageService.RenameResult <Clone>$()
+  public System.Boolean Equals(FreexComp.LanguageService.RenameResult other)
+  public System.Boolean Success { get; init; }
+  public System.Collections.Immutable.ImmutableArray<FreexComp.LanguageService.DocumentEdit> Edits { get; init; }
+  public System.String Error { get; init; }
+  public System.Void Deconstruct(out System.Boolean Success, out System.String Error, out System.Collections.Immutable.ImmutableArray<FreexComp.LanguageService.DocumentEdit> Edits, out FreexComp.LanguageService.FileRename FileRename)
+  public ctor(System.Boolean Success, System.String Error, System.Collections.Immutable.ImmutableArray<FreexComp.LanguageService.DocumentEdit> Edits, FreexComp.LanguageService.FileRename FileRename = null)
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public static System.Boolean op_Equality(FreexComp.LanguageService.RenameResult left, FreexComp.LanguageService.RenameResult right)
+  public static System.Boolean op_Inequality(FreexComp.LanguageService.RenameResult left, FreexComp.LanguageService.RenameResult right)
+static class FreexComp.LanguageService.RenameService
+  public static FreexComp.LanguageService.RenameInfo GetRenameInfo(FreexComp.LanguageService.Document doc, System.Int32 position, System.Threading.CancellationToken ct)
+  public static FreexComp.LanguageService.RenameResult Rename(FreexComp.LanguageService.Document doc, System.Int32 position, System.String newName, System.Threading.CancellationToken ct)
 sealed record FreexComp.LanguageService.SignatureHelp : System.IEquatable<FreexComp.LanguageService.SignatureHelp>
   public FreexComp.Compiler.Text.TextSpan ApplicableSpan { get; init; }
   public FreexComp.LanguageService.SignatureHelp <Clone>$()
