@@ -29,11 +29,6 @@ public sealed partial class ChildPipeReadsTests
         ["ui-framework/tests/Harness/GuiHarness.cs"] = "U-142",
         ["ui-framework/tests/Harness/LayoutCasesTheory.cs"] = "U-142",
         ["data/tests/FreexComp.Data.Tests/GoldenProgramRunner.cs"] = "A-080",
-        ["debugger/tests/FreexComp.Debugger.IntegrationTests/TestSupport/IntegrationFixture.cs"] = "G-086",
-        ["debugger/tests/FreexComp.Debugger.IntegrationTests/IntegrationFixtureTests.cs"] = "G-086",
-        ["debugger/tests/FreexComp.Debugger.Tests/ProcessLeakFixtureTests.cs"] = "G-086",
-        ["debugger/tests/spike/runner/DapClient.cs"] = "G-086",
-        ["debugger/tests/FreexComp.Debugger.Tests/StreamPumpTests.cs"] = "G-086", // reads the fake adapter's stream; G-086 decides
     };
 
     /// <summary>The area guard tests: they hold the forbidden calls as samples.</summary>
