@@ -1,0 +1,76 @@
+{
+  "formatVersion": 1,
+  "unit": "DBGrids",
+  "types": {
+    "TAlignment": { "kind": "enum", "values": ["taLeftJustify", "taRightJustify", "taCenter"] },
+    "TFont": { "kind": "object", "properties": [
+      { "name": "Charset", "type": "Integer", "default": 1, "min": 0, "max": 255 },
+      { "name": "Color", "type": "TColor", "default": "clWindowText", "editor": "color" },
+      { "name": "Height", "type": "Integer", "default": -12 },
+      { "name": "Name", "type": "string", "default": "Segoe UI" },
+      { "name": "Orientation", "type": "Integer", "default": 0 },
+      { "name": "Pitch", "type": "TFontPitch", "default": "fpDefault" },
+      { "name": "Quality", "type": "TFontQuality", "default": "fqDefault" },
+      { "name": "Style", "type": "TFontStyles", "default": [] },
+      { "name": "Size", "type": "Integer", "stored": false }
+    ] },
+    "TFontPitch": { "kind": "enum", "values": ["fpDefault", "fpVariable", "fpFixed"] },
+    "TFontQuality": { "kind": "enum", "values": ["fqDefault", "fqDraft", "fqProof", "fqNonAntialiased", "fqAntialiased", "fqClearType", "fqClearTypeNatural"] },
+    "TFontStyle": { "kind": "enum", "values": ["fsBold", "fsItalic", "fsUnderline", "fsStrikeOut"] },
+    "TFontStyles": { "kind": "set", "of": "TFontStyle" },
+    "TDBGridOption": { "kind": "enum", "values": ["dgEditing", "dgAlwaysShowEditor", "dgTitles", "dgIndicator", "dgColLines", "dgRowLines", "dgTabs", "dgRowSelect", "dgAlwaysShowSelection", "dgConfirmDelete", "dgCancelOnExit"] },
+    "TDBGridOptions": { "kind": "set", "of": "TDBGridOption" },
+    "TColumn": { "kind": "object", "properties": [
+      { "name": "FieldName", "type": "string", "default": "", "editor": "fieldname", "editorOptions": { "dataSource": "DataSource" } },
+      { "name": "Title", "type": "string", "default": "", "localizable": true },
+      { "name": "Width", "type": "Integer", "default": -1, "min": -1 },
+      { "name": "Alignment", "type": "TAlignment", "default": "taLeftJustify" },
+      { "name": "ReadOnly", "type": "Boolean", "default": false },
+      { "name": "Visible", "type": "Boolean", "default": true }
+    ] }
+  },
+  "components": [
+    {
+      "class": "TDBGrid",
+      "ancestor": "TCustomControl",
+      "abstract": false,
+      "palette": { "page": "Data Controls", "order": 10, "icon": "icons/TDBGrid.svg" },
+      "kind": "wincontrol",
+      "defaultSize": { "width": 320, "height": 120 },
+      "namePrefix": "DBGrid",
+      "acceptsChildren": false,
+      "renderer": "dbgrid",
+      "designerVerbs": [
+        { "id": "editColumns", "caption": "&Columns Editor…", "command": "designer.editCollection", "arg": "Columns" }
+      ],
+      "properties": [
+        { "name": "DataSource", "type": "TDataSource", "kind": "component", "category": "Data" },
+        { "name": "Columns", "type": "TDBGridColumns", "kind": "collection", "itemClass": "TColumn", "category": "Data", "editor": "collection" },
+        { "name": "Options", "type": "TDBGridOptions", "default": ["dgEditing", "dgTitles", "dgIndicator", "dgColLines", "dgRowLines", "dgTabs", "dgConfirmDelete", "dgCancelOnExit"], "category": "Behavior" },
+        { "name": "ReadOnly", "type": "Boolean", "default": false, "category": "Behavior" },
+        { "name": "Color", "type": "TColor", "default": "clWindow", "category": "Appearance", "editor": "color" },
+        { "name": "Font", "type": "TFont", "kind": "object", "category": "Appearance", "editor": "font" },
+        { "name": "TabOrder", "type": "Integer", "default": -1, "category": "Behavior", "min": -1, "max": 32767 },
+        { "name": "TabStop", "type": "Boolean", "default": true, "category": "Behavior" }
+      ],
+      "events": [
+        { "name": "OnCellClick", "signature": "TColumnEvent", "default": true },
+        { "name": "OnColEnter", "signature": "TNotifyEvent" },
+        { "name": "OnColExit", "signature": "TNotifyEvent" },
+        { "name": "OnDblClick", "signature": "TNotifyEvent" },
+        { "name": "OnEnter", "signature": "TNotifyEvent" },
+        { "name": "OnExit", "signature": "TNotifyEvent" },
+        { "name": "OnKeyDown", "signature": "TKeyEvent" },
+        { "name": "OnKeyPress", "signature": "TKeyPressEvent" },
+        { "name": "OnTitleClick", "signature": "TColumnEvent" }
+      ]
+    }
+  ],
+  "eventSignatures": {
+    "TNotifyEvent": "procedure(Sender: TObject)",
+    "TKeyEvent": "procedure(Sender: TObject; var Key: Word; Shift: TShiftState)",
+    "TKeyPressEvent": "procedure(Sender: TObject; var Key: Char)",
+    "TColumnEvent": "procedure(Column: TColumn)"
+  },
+  "eventSignatureUnits": { "TColumn": "DBGrids", "TShiftState": "Classes" }
+}

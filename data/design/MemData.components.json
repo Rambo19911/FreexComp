@@ -1,0 +1,57 @@
+{
+  "formatVersion": 1,
+  "unit": "MemData",
+  "types": {},
+  "components": [
+    {
+      "class": "TMemTable",
+      "ancestor": "TDataSet",
+      "abstract": false,
+      "palette": { "page": "Data Access", "order": 50, "icon": "icons/TMemTable.svg" },
+      "kind": "nonvisual",
+      "namePrefix": "MemTable",
+      "acceptsChildren": false,
+      "renderer": "nonvisual",
+      "properties": [
+        { "name": "Active", "type": "Boolean", "default": false, "category": "Data" },
+        { "name": "FieldDefs", "type": "TFieldDefs", "kind": "collection", "itemClass": "TFieldDef", "category": "Data", "editor": "collection" },
+        { "name": "ReadOnly", "type": "Boolean", "default": false, "category": "Data" },
+        { "name": "Filter", "type": "string", "default": "", "category": "Data" },
+        { "name": "Filtered", "type": "Boolean", "default": false, "category": "Data" },
+        { "name": "FilterOptions", "type": "TFilterOptions", "default": [], "category": "Data" }
+      ],
+      "events": [
+        { "name": "AfterCancel", "signature": "TDataSetNotifyEvent" },
+        { "name": "AfterClose", "signature": "TDataSetNotifyEvent" },
+        { "name": "AfterDelete", "signature": "TDataSetNotifyEvent" },
+        { "name": "AfterEdit", "signature": "TDataSetNotifyEvent" },
+        { "name": "AfterInsert", "signature": "TDataSetNotifyEvent" },
+        { "name": "AfterOpen", "signature": "TDataSetNotifyEvent" },
+        { "name": "AfterPost", "signature": "TDataSetNotifyEvent" },
+        { "name": "AfterRefresh", "signature": "TDataSetNotifyEvent" },
+        { "name": "AfterScroll", "signature": "TDataSetNotifyEvent" },
+        { "name": "BeforeCancel", "signature": "TDataSetNotifyEvent" },
+        { "name": "BeforeClose", "signature": "TDataSetNotifyEvent" },
+        { "name": "BeforeDelete", "signature": "TDataSetNotifyEvent" },
+        { "name": "BeforeEdit", "signature": "TDataSetNotifyEvent" },
+        { "name": "BeforeInsert", "signature": "TDataSetNotifyEvent" },
+        { "name": "BeforeOpen", "signature": "TDataSetNotifyEvent" },
+        { "name": "BeforePost", "signature": "TDataSetNotifyEvent" },
+        { "name": "BeforeRefresh", "signature": "TDataSetNotifyEvent" },
+        { "name": "BeforeScroll", "signature": "TDataSetNotifyEvent" },
+        { "name": "OnCalcFields", "signature": "TDataSetNotifyEvent" },
+        { "name": "OnDeleteError", "signature": "TDataSetErrorEvent" },
+        { "name": "OnEditError", "signature": "TDataSetErrorEvent" },
+        { "name": "OnFilterRecord", "signature": "TFilterRecordEvent" },
+        { "name": "OnNewRecord", "signature": "TDataSetNotifyEvent" },
+        { "name": "OnPostError", "signature": "TDataSetErrorEvent" }
+      ]
+    }
+  ],
+  "eventSignatures": {
+    "TDataSetNotifyEvent": "procedure(DataSet: TDataSet)",
+    "TDataSetErrorEvent": "procedure(DataSet: TDataSet; E: EDatabaseError; var Action: TDataAction)",
+    "TFilterRecordEvent": "procedure(DataSet: TDataSet; var Accept: Boolean)"
+  },
+  "eventSignatureUnits": { "EDatabaseError": "DB", "TDataAction": "DB", "TDataSet": "DB" }
+}

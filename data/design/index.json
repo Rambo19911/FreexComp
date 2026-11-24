@@ -1,0 +1,5 @@
+{
+  "formatVersion": 1,
+  "palettePages": ["Data Access", "Data Controls"],
+  "files": ["DB.components.json", "SQLiteData.components.json", "MemData.components.json", "DBCtrls.components.json", "DBGrids.components.json"]
+}

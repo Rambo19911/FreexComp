@@ -14,13 +14,6 @@ DAT-166 | informative | usage rule for applications (one thread at a time)
 DAT-167 | informative | states the absence of a check
 DAT-308 | informative | refers to the single-thread usage rule DAT-166
 
-# component metadata
-DAT-280 | pending | A-066 metadata renderer ids
-DAT-281 | pending | A-066 metadata property typing
-DAT-282 | pending | A-066 metadata Active / Connected
-DAT-283 | pending | A-066 metadata events
-DAT-284 | pending | A-066 MetadataMatchesSource
-
 # design time
 DAT-330 | design-time | A-067 tool palette pages (ide)
 DAT-331 | design-time | A-067 non-visual components on a form (ide)

@@ -1,0 +1,52 @@
+{
+  "formatVersion": 1,
+  "unit": "DB",
+  "types": {
+    "TFilterOption": { "kind": "enum", "values": ["foCaseInsensitive", "foNoPartialCompare"] },
+    "TFilterOptions": { "kind": "set", "of": "TFilterOption" },
+    "TFieldType": { "kind": "enum", "values": ["ftUnknown", "ftString", "ftSmallint", "ftInteger", "ftWord", "ftBoolean", "ftFloat", "ftCurrency", "ftDate", "ftTime", "ftDateTime", "ftAutoInc", "ftBlob", "ftMemo", "ftLargeint"] },
+    "TFieldDef": { "kind": "object", "properties": [
+      { "name": "Name", "type": "string", "default": "" },
+      { "name": "DataType", "type": "TFieldType", "default": "ftUnknown" },
+      { "name": "Size", "type": "Integer", "default": 0 },
+      { "name": "Required", "type": "Boolean", "default": false }
+    ] }
+  },
+  "components": [
+    {
+      "class": "TDataSet",
+      "ancestor": "TComponent",
+      "abstract": true,
+      "kind": "nonvisual",
+      "acceptsChildren": false,
+      "renderer": "nonvisual",
+      "properties": [],
+      "events": []
+    },
+    {
+      "class": "TDataSource",
+      "ancestor": "TComponent",
+      "abstract": false,
+      "palette": { "page": "Data Access", "order": 10, "icon": "icons/TDataSource.svg" },
+      "kind": "nonvisual",
+      "namePrefix": "DataSource",
+      "acceptsChildren": false,
+      "renderer": "nonvisual",
+      "properties": [
+        { "name": "DataSet", "type": "TDataSet", "kind": "component", "category": "Data" },
+        { "name": "AutoEdit", "type": "Boolean", "default": true, "category": "Data" },
+        { "name": "Enabled", "type": "Boolean", "default": true, "category": "Data" }
+      ],
+      "events": [
+        { "name": "OnDataChange", "signature": "TDataChangeEvent", "default": true },
+        { "name": "OnStateChange", "signature": "TNotifyEvent" },
+        { "name": "OnUpdateData", "signature": "TNotifyEvent" }
+      ]
+    }
+  ],
+  "eventSignatures": {
+    "TNotifyEvent": "procedure(Sender: TObject)",
+    "TDataChangeEvent": "procedure(Sender: TObject; Field: TField)"
+  },
+  "eventSignatureUnits": { "TField": "DB" }
+}

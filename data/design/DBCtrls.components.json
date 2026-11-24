@@ -1,0 +1,226 @@
+{
+  "formatVersion": 1,
+  "unit": "DBCtrls",
+  "types": {
+    "TAlignment": { "kind": "enum", "values": ["taLeftJustify", "taRightJustify", "taCenter"] },
+    "TFont": { "kind": "object", "properties": [
+      { "name": "Charset", "type": "Integer", "default": 1, "min": 0, "max": 255 },
+      { "name": "Color", "type": "TColor", "default": "clWindowText", "editor": "color" },
+      { "name": "Height", "type": "Integer", "default": -12 },
+      { "name": "Name", "type": "string", "default": "Segoe UI" },
+      { "name": "Orientation", "type": "Integer", "default": 0 },
+      { "name": "Pitch", "type": "TFontPitch", "default": "fpDefault" },
+      { "name": "Quality", "type": "TFontQuality", "default": "fqDefault" },
+      { "name": "Style", "type": "TFontStyles", "default": [] },
+      { "name": "Size", "type": "Integer", "stored": false }
+    ] },
+    "TFontPitch": { "kind": "enum", "values": ["fpDefault", "fpVariable", "fpFixed"] },
+    "TFontQuality": { "kind": "enum", "values": ["fqDefault", "fqDraft", "fqProof", "fqNonAntialiased", "fqAntialiased", "fqClearType", "fqClearTypeNatural"] },
+    "TFontStyle": { "kind": "enum", "values": ["fsBold", "fsItalic", "fsUnderline", "fsStrikeOut"] },
+    "TFontStyles": { "kind": "set", "of": "TFontStyle" },
+    "TNavigateBtn": { "kind": "enum", "values": ["nbFirst", "nbPrior", "nbNext", "nbLast", "nbInsert", "nbDelete", "nbEdit", "nbPost", "nbCancel", "nbRefresh"] },
+    "TNavButtonSet": { "kind": "set", "of": "TNavigateBtn" }
+  },
+  "components": [
+    {
+      "class": "TDBEdit",
+      "ancestor": "TCustomEdit",
+      "abstract": false,
+      "palette": { "page": "Data Controls", "order": 40, "icon": "icons/TDBEdit.svg" },
+      "kind": "wincontrol",
+      "defaultSize": { "width": 121, "height": 23 },
+      "namePrefix": "DBEdit",
+      "acceptsChildren": false,
+      "renderer": "edit",
+      "properties": [
+        { "name": "DataSource", "type": "TDataSource", "kind": "component", "category": "Data" },
+        { "name": "DataField", "type": "string", "default": "", "category": "Data", "editor": "fieldname", "editorOptions": { "dataSource": "DataSource" } },
+        { "name": "ReadOnly", "type": "Boolean", "default": false, "category": "Behavior" },
+        { "name": "AutoSelect", "type": "Boolean", "default": true, "category": "Behavior" },
+        { "name": "CharCase", "type": "TEditCharCase", "default": "ecNormal", "category": "Appearance" },
+        { "name": "Color", "type": "TColor", "default": "clWindow", "category": "Appearance", "editor": "color" },
+        { "name": "Font", "type": "TFont", "kind": "object", "category": "Appearance", "editor": "font", "affectsLayout": true },
+        { "name": "MaxLength", "type": "Integer", "default": 0, "category": "Behavior" },
+        { "name": "PasswordChar", "type": "Char", "default": "", "category": "Appearance" },
+        { "name": "TabOrder", "type": "Integer", "default": -1, "category": "Behavior", "min": -1, "max": 32767 },
+        { "name": "TabStop", "type": "Boolean", "default": true, "category": "Behavior" }
+      ],
+      "events": [
+        { "name": "OnChange", "signature": "TNotifyEvent", "default": true },
+        { "name": "OnClick", "signature": "TNotifyEvent" },
+        { "name": "OnEnter", "signature": "TNotifyEvent" },
+        { "name": "OnExit", "signature": "TNotifyEvent" },
+        { "name": "OnKeyDown", "signature": "TKeyEvent" },
+        { "name": "OnKeyPress", "signature": "TKeyPressEvent" },
+        { "name": "OnKeyUp", "signature": "TKeyEvent" }
+      ]
+    },
+    {
+      "class": "TDBText",
+      "ancestor": "TCustomLabel",
+      "abstract": false,
+      "palette": { "page": "Data Controls", "order": 30, "icon": "icons/TDBText.svg" },
+      "kind": "control",
+      "defaultSize": { "width": 65, "height": 17 },
+      "namePrefix": "DBText",
+      "acceptsChildren": false,
+      "renderer": "label",
+      "properties": [
+        { "name": "DataSource", "type": "TDataSource", "kind": "component", "category": "Data" },
+        { "name": "DataField", "type": "string", "default": "", "category": "Data", "editor": "fieldname", "editorOptions": { "dataSource": "DataSource" } },
+        { "name": "Alignment", "type": "TAlignment", "default": "taLeftJustify", "category": "Appearance" },
+        { "name": "AutoSize", "type": "Boolean", "default": false, "category": "Layout", "affectsLayout": true },
+        { "name": "Color", "type": "TColor", "default": "clBtnFace", "category": "Appearance", "editor": "color" },
+        { "name": "Font", "type": "TFont", "kind": "object", "category": "Appearance", "editor": "font" },
+        { "name": "Transparent", "type": "Boolean", "default": true, "category": "Appearance" },
+        { "name": "WordWrap", "type": "Boolean", "default": false, "category": "Appearance" }
+      ],
+      "events": []
+    },
+    {
+      "class": "TDBMemo",
+      "ancestor": "TCustomMemo",
+      "abstract": false,
+      "palette": { "page": "Data Controls", "order": 50, "icon": "icons/TDBMemo.svg" },
+      "kind": "wincontrol",
+      "defaultSize": { "width": 185, "height": 89 },
+      "namePrefix": "DBMemo",
+      "acceptsChildren": false,
+      "renderer": "memo",
+      "properties": [
+        { "name": "DataSource", "type": "TDataSource", "kind": "component", "category": "Data" },
+        { "name": "DataField", "type": "string", "default": "", "category": "Data", "editor": "fieldname", "editorOptions": { "dataSource": "DataSource" } },
+        { "name": "ReadOnly", "type": "Boolean", "default": false, "category": "Behavior" },
+        { "name": "Font", "type": "TFont", "kind": "object", "category": "Appearance", "editor": "font" },
+        { "name": "MaxLength", "type": "Integer", "default": 0, "category": "Behavior" },
+        { "name": "ScrollBars", "type": "TScrollStyle", "default": "ssNone", "category": "Behavior" },
+        { "name": "TabOrder", "type": "Integer", "default": -1, "category": "Behavior", "min": -1, "max": 32767 },
+        { "name": "TabStop", "type": "Boolean", "default": true, "category": "Behavior" },
+        { "name": "WantTabs", "type": "Boolean", "default": false, "category": "Behavior" },
+        { "name": "WordWrap", "type": "Boolean", "default": true, "category": "Appearance" }
+      ],
+      "events": [
+        { "name": "OnChange", "signature": "TNotifyEvent", "default": true },
+        { "name": "OnClick", "signature": "TNotifyEvent" },
+        { "name": "OnEnter", "signature": "TNotifyEvent" },
+        { "name": "OnExit", "signature": "TNotifyEvent" },
+        { "name": "OnKeyDown", "signature": "TKeyEvent" },
+        { "name": "OnKeyPress", "signature": "TKeyPressEvent" },
+        { "name": "OnKeyUp", "signature": "TKeyEvent" }
+      ]
+    },
+    {
+      "class": "TDBCheckBox",
+      "ancestor": "TCustomCheckBox",
+      "abstract": false,
+      "palette": { "page": "Data Controls", "order": 60, "icon": "icons/TDBCheckBox.svg" },
+      "kind": "wincontrol",
+      "defaultSize": { "width": 97, "height": 17 },
+      "namePrefix": "DBCheckBox",
+      "acceptsChildren": false,
+      "renderer": "checkbox",
+      "properties": [
+        { "name": "DataSource", "type": "TDataSource", "kind": "component", "category": "Data" },
+        { "name": "DataField", "type": "string", "default": "", "category": "Data", "editor": "fieldname", "editorOptions": { "dataSource": "DataSource" } },
+        { "name": "ReadOnly", "type": "Boolean", "default": false, "category": "Behavior" },
+        { "name": "Alignment", "type": "TLeftRight", "default": "taRightJustify", "category": "Appearance" },
+        { "name": "AllowGrayed", "type": "Boolean", "default": false, "category": "Behavior" },
+        { "name": "Caption", "type": "string", "default": "", "category": "Appearance", "initial": "$(Name)", "localizable": true },
+        { "name": "Font", "type": "TFont", "kind": "object", "category": "Appearance", "editor": "font" },
+        { "name": "TabOrder", "type": "Integer", "default": -1, "category": "Behavior", "min": -1, "max": 32767 },
+        { "name": "TabStop", "type": "Boolean", "default": true, "category": "Behavior" },
+        { "name": "ValueChecked", "type": "string", "default": "True", "category": "Data" },
+        { "name": "ValueUnchecked", "type": "string", "default": "False", "category": "Data" }
+      ],
+      "events": [
+        { "name": "OnClick", "signature": "TNotifyEvent", "default": true }
+      ]
+    },
+    {
+      "class": "TDBComboBox",
+      "ancestor": "TCustomComboBox",
+      "abstract": false,
+      "palette": { "page": "Data Controls", "order": 70, "icon": "icons/TDBComboBox.svg" },
+      "kind": "wincontrol",
+      "defaultSize": { "width": 145, "height": 23 },
+      "namePrefix": "DBComboBox",
+      "acceptsChildren": false,
+      "renderer": "combobox",
+      "properties": [
+        { "name": "DataSource", "type": "TDataSource", "kind": "component", "category": "Data" },
+        { "name": "DataField", "type": "string", "default": "", "category": "Data", "editor": "fieldname", "editorOptions": { "dataSource": "DataSource" } },
+        { "name": "ReadOnly", "type": "Boolean", "default": false, "category": "Behavior" },
+        { "name": "DropDownCount", "type": "Integer", "default": 8, "category": "Behavior" },
+        { "name": "Font", "type": "TFont", "kind": "object", "category": "Appearance", "editor": "font", "affectsLayout": true },
+        { "name": "Items", "type": "TStrings", "category": "Data", "editor": "strings", "localizable": true },
+        { "name": "Sorted", "type": "Boolean", "default": false, "category": "Behavior" },
+        { "name": "Style", "type": "TComboBoxStyle", "default": "csDropDown", "category": "Appearance", "affectsLayout": true },
+        { "name": "TabOrder", "type": "Integer", "default": -1, "category": "Behavior", "min": -1, "max": 32767 },
+        { "name": "TabStop", "type": "Boolean", "default": true, "category": "Behavior" }
+      ],
+      "events": [
+        { "name": "OnChange", "signature": "TNotifyEvent", "default": true },
+        { "name": "OnClick", "signature": "TNotifyEvent" },
+        { "name": "OnDropDown", "signature": "TNotifyEvent" }
+      ]
+    },
+    {
+      "class": "TDBLookupComboBox",
+      "ancestor": "TCustomComboBox",
+      "abstract": false,
+      "palette": { "page": "Data Controls", "order": 80, "icon": "icons/TDBLookupComboBox.svg" },
+      "kind": "wincontrol",
+      "defaultSize": { "width": 145, "height": 23 },
+      "namePrefix": "DBLookupComboBox",
+      "acceptsChildren": false,
+      "renderer": "combobox",
+      "properties": [
+        { "name": "DataSource", "type": "TDataSource", "kind": "component", "category": "Data" },
+        { "name": "DataField", "type": "string", "default": "", "category": "Data", "editor": "fieldname", "editorOptions": { "dataSource": "DataSource" } },
+        { "name": "ListSource", "type": "TDataSource", "kind": "component", "category": "Data" },
+        { "name": "KeyField", "type": "string", "default": "", "category": "Data", "editor": "fieldname", "editorOptions": { "dataSource": "ListSource" } },
+        { "name": "ListField", "type": "string", "default": "", "category": "Data", "editor": "fieldname", "editorOptions": { "dataSource": "ListSource" } },
+        { "name": "DropDownRows", "type": "Integer", "default": 7, "category": "Behavior" },
+        { "name": "NullValueText", "type": "string", "default": "", "category": "Appearance", "localizable": true },
+        { "name": "ReadOnly", "type": "Boolean", "default": false, "category": "Behavior" },
+        { "name": "Font", "type": "TFont", "kind": "object", "category": "Appearance", "editor": "font", "affectsLayout": true },
+        { "name": "TabOrder", "type": "Integer", "default": -1, "category": "Behavior", "min": -1, "max": 32767 },
+        { "name": "TabStop", "type": "Boolean", "default": true, "category": "Behavior" }
+      ],
+      "events": [
+        { "name": "OnClick", "signature": "TNotifyEvent", "default": true },
+        { "name": "OnDropDown", "signature": "TNotifyEvent" }
+      ]
+    },
+    {
+      "class": "TDBNavigator",
+      "ancestor": "TCustomControl",
+      "abstract": false,
+      "palette": { "page": "Data Controls", "order": 20, "icon": "icons/TDBNavigator.svg" },
+      "kind": "wincontrol",
+      "defaultSize": { "width": 240, "height": 25 },
+      "namePrefix": "DBNavigator",
+      "acceptsChildren": false,
+      "renderer": "dbnavigator",
+      "properties": [
+        { "name": "DataSource", "type": "TDataSource", "kind": "component", "category": "Data" },
+        { "name": "VisibleButtons", "type": "TNavButtonSet", "default": ["nbFirst", "nbPrior", "nbNext", "nbLast", "nbInsert", "nbDelete", "nbEdit", "nbPost", "nbCancel", "nbRefresh"], "category": "Appearance" },
+        { "name": "ConfirmDelete", "type": "Boolean", "default": true, "category": "Behavior" },
+        { "name": "Hints", "type": "TStrings", "category": "Misc", "editor": "strings", "localizable": true },
+        { "name": "TabOrder", "type": "Integer", "default": -1, "category": "Behavior", "min": -1, "max": 32767 },
+        { "name": "TabStop", "type": "Boolean", "default": false, "category": "Behavior" }
+      ],
+      "events": [
+        { "name": "BeforeAction", "signature": "TNavClick" },
+        { "name": "OnClick", "signature": "TNavClick", "default": true }
+      ]
+    }
+  ],
+  "eventSignatures": {
+    "TNotifyEvent": "procedure(Sender: TObject)",
+    "TKeyEvent": "procedure(Sender: TObject; var Key: Word; Shift: TShiftState)",
+    "TKeyPressEvent": "procedure(Sender: TObject; var Key: Char)",
+    "TNavClick": "procedure(Sender: TObject; Button: TNavigateBtn)"
+  },
+  "eventSignatureUnits": { "TNavigateBtn": "DBCtrls", "TShiftState": "Classes" }
+}

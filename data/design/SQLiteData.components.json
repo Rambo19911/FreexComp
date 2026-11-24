@@ -1,0 +1,107 @@
+{
+  "formatVersion": 1,
+  "unit": "SQLiteData",
+  "types": {
+    "TSQLiteOpenMode": { "kind": "enum", "values": ["omCreateReadWrite", "omReadWrite", "omReadOnly"] }
+  },
+  "components": [
+    {
+      "class": "TSQLiteConnection",
+      "ancestor": "TComponent",
+      "abstract": false,
+      "palette": { "page": "Data Access", "order": 20, "icon": "icons/TSQLiteConnection.svg" },
+      "kind": "nonvisual",
+      "namePrefix": "SQLiteConnection",
+      "acceptsChildren": false,
+      "renderer": "nonvisual",
+      "properties": [
+        { "name": "Database", "type": "string", "default": "", "category": "Data", "editor": "filename", "editorOptions": { "filter": "SQLite databases (*.db;*.sqlite;*.sqlite3)|*.db;*.sqlite;*.sqlite3|All files (*.*)|*.*", "relativeToProject": true } },
+        { "name": "Connected", "type": "Boolean", "default": false, "category": "Data" },
+        { "name": "OpenMode", "type": "TSQLiteOpenMode", "default": "omCreateReadWrite", "category": "Data" },
+        { "name": "BusyTimeout", "type": "Integer", "default": 5000, "category": "Data", "min": 0 },
+        { "name": "ForeignKeys", "type": "Boolean", "default": true, "category": "Data" },
+        { "name": "Params", "type": "TStrings", "category": "Data", "editor": "strings" },
+        { "name": "LibraryName", "type": "string", "default": "sqlite3.dll", "category": "Data" }
+      ],
+      "events": [
+        { "name": "AfterConnect", "signature": "TNotifyEvent", "default": true },
+        { "name": "AfterDisconnect", "signature": "TNotifyEvent" },
+        { "name": "BeforeConnect", "signature": "TNotifyEvent" },
+        { "name": "BeforeDisconnect", "signature": "TNotifyEvent" }
+      ]
+    },
+    {
+      "class": "TSQLiteQuery",
+      "ancestor": "TDataSet",
+      "abstract": false,
+      "palette": { "page": "Data Access", "order": 30, "icon": "icons/TSQLiteQuery.svg" },
+      "kind": "nonvisual",
+      "namePrefix": "SQLiteQuery",
+      "acceptsChildren": false,
+      "renderer": "nonvisual",
+      "properties": [
+        { "name": "Connection", "type": "TSQLiteConnection", "kind": "component", "category": "Data" },
+        { "name": "SQL", "type": "TStrings", "category": "Data", "editor": "strings" },
+        { "name": "ParamCheck", "type": "Boolean", "default": true, "category": "Data" },
+        { "name": "ReadOnly", "type": "Boolean", "default": false, "category": "Data" },
+        { "name": "UpdateTable", "type": "string", "default": "", "category": "Data", "editor": "tablename", "editorOptions": { "connection": "Connection" } },
+        { "name": "KeyFields", "type": "string", "default": "", "category": "Data", "editor": "fieldname", "editorOptions": { "dataSet": "." } },
+        { "name": "Active", "type": "Boolean", "default": false, "category": "Data" },
+        { "name": "Filter", "type": "string", "default": "", "category": "Data" },
+        { "name": "Filtered", "type": "Boolean", "default": false, "category": "Data" },
+        { "name": "FilterOptions", "type": "TFilterOptions", "default": [], "category": "Data" }
+      ],
+      "events": [
+        { "name": "AfterCancel", "signature": "TDataSetNotifyEvent" },
+        { "name": "AfterClose", "signature": "TDataSetNotifyEvent" },
+        { "name": "AfterDelete", "signature": "TDataSetNotifyEvent" },
+        { "name": "AfterEdit", "signature": "TDataSetNotifyEvent" },
+        { "name": "AfterInsert", "signature": "TDataSetNotifyEvent" },
+        { "name": "AfterOpen", "signature": "TDataSetNotifyEvent" },
+        { "name": "AfterPost", "signature": "TDataSetNotifyEvent" },
+        { "name": "AfterRefresh", "signature": "TDataSetNotifyEvent" },
+        { "name": "AfterScroll", "signature": "TDataSetNotifyEvent" },
+        { "name": "BeforeCancel", "signature": "TDataSetNotifyEvent" },
+        { "name": "BeforeClose", "signature": "TDataSetNotifyEvent" },
+        { "name": "BeforeDelete", "signature": "TDataSetNotifyEvent" },
+        { "name": "BeforeEdit", "signature": "TDataSetNotifyEvent" },
+        { "name": "BeforeInsert", "signature": "TDataSetNotifyEvent" },
+        { "name": "BeforeOpen", "signature": "TDataSetNotifyEvent" },
+        { "name": "BeforePost", "signature": "TDataSetNotifyEvent" },
+        { "name": "BeforeRefresh", "signature": "TDataSetNotifyEvent" },
+        { "name": "BeforeScroll", "signature": "TDataSetNotifyEvent" },
+        { "name": "OnCalcFields", "signature": "TDataSetNotifyEvent" },
+        { "name": "OnDeleteError", "signature": "TDataSetErrorEvent" },
+        { "name": "OnEditError", "signature": "TDataSetErrorEvent" },
+        { "name": "OnFilterRecord", "signature": "TFilterRecordEvent" },
+        { "name": "OnNewRecord", "signature": "TDataSetNotifyEvent" },
+        { "name": "OnPostError", "signature": "TDataSetErrorEvent" }
+      ]
+    },
+    {
+      "class": "TSQLiteTable",
+      "ancestor": "TSQLiteQuery",
+      "abstract": false,
+      "palette": { "page": "Data Access", "order": 40, "icon": "icons/TSQLiteTable.svg" },
+      "kind": "nonvisual",
+      "namePrefix": "SQLiteTable",
+      "acceptsChildren": false,
+      "renderer": "nonvisual",
+      "properties": [
+        { "name": "SQL", "type": "TStrings", "hidden": true, "stored": false },
+        { "name": "UpdateTable", "type": "string", "hidden": true, "stored": false },
+        { "name": "KeyFields", "type": "string", "hidden": true, "stored": false },
+        { "name": "TableName", "type": "string", "default": "", "category": "Data", "editor": "tablename", "editorOptions": { "connection": "Connection" } },
+        { "name": "IndexFieldNames", "type": "string", "default": "", "category": "Data", "editor": "fieldname", "editorOptions": { "dataSet": "." } }
+      ],
+      "events": []
+    }
+  ],
+  "eventSignatures": {
+    "TNotifyEvent": "procedure(Sender: TObject)",
+    "TDataSetNotifyEvent": "procedure(DataSet: TDataSet)",
+    "TDataSetErrorEvent": "procedure(DataSet: TDataSet; E: EDatabaseError; var Action: TDataAction)",
+    "TFilterRecordEvent": "procedure(DataSet: TDataSet; var Accept: Boolean)"
+  },
+  "eventSignatureUnits": { "EDatabaseError": "DB", "TDataAction": "DB", "TDataSet": "DB" }
+}
