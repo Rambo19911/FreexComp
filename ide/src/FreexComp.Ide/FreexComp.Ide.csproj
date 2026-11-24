@@ -28,4 +28,8 @@
     <PackageReference Include="Avalonia.AvaloniaEdit" />
     <PackageReference Include="CommunityToolkit.Mvvm" />
   </ItemGroup>
+  <!-- F11-001: the IDE is a 64-bit application (ADR 002, ADR 007); a 32-bit or non-x64 build of it is refused. -->
+  <Target Name="RequireX64Ide" BeforeTargets="BeforeBuild;Publish" Condition="('$(RuntimeIdentifier)' != '' and '$(RuntimeIdentifier)' != 'win-x64') or ('$(PlatformTarget)' != '' and '$(PlatformTarget)' != 'AnyCPU' and '$(PlatformTarget)' != 'x64')">
+    <Error Text="FreexComp.Ide is built for win-x64 only (RuntimeIdentifier '$(RuntimeIdentifier)', PlatformTarget '$(PlatformTarget)')." />
+  </Target>
 </Project>
