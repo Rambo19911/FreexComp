@@ -10,6 +10,7 @@ public sealed class CodeModelWorker
     private readonly object _gate = new();
     private readonly LinkedList<Item> _queue = new();
     private bool _running;
+    private long _requestCount;
 
     /// <summary>
     /// Nothing queued or running. Once idle, every finished request has completed its task, so continuations awaiting it on
@@ -23,6 +24,12 @@ public sealed class CodeModelWorker
                 return !_running && _queue.Count == 0;
         }
     }
+
+    /// <summary>
+    /// The number of requests accepted so far. Unlike <see cref="IsIdle"/> it does not depend on how far the background
+    /// thread has come, so "this operation asked nothing" is: the count is the same before and after it (I-260).
+    /// </summary>
+    public long RequestCount => Interlocked.Read(ref _requestCount);
 
     /// <summary>Queues <paramref name="work"/>; the task completes with its result, or canceled when superseded or canceled.</summary>
     public Task<T> RunAsync<T>(string kind, Func<CancellationToken, T> work, CancellationToken ct = default)
@@ -61,6 +68,7 @@ public sealed class CodeModelWorker
             }
 
             _queue.AddLast(item);
+            _requestCount++;
             if (!_running)
                 _running = start = true;
         }

@@ -88,6 +88,12 @@ public sealed class UnitRenameTests
     private async Task<TextDocumentViewModel> OpenAsync(string name) =>
         Assert.IsType<TextDocumentViewModel>((await _services.Documents.OpenAsync(Dir + @"\" + name)).Value);
 
+    /// <summary>Opens <paramref name="gate"/> when the test ends, however it ends: the held worker is let go.</summary>
+    private sealed class Releaser(ManualResetEventSlim gate) : IDisposable
+    {
+        public void Dispose() => gate.Set();
+    }
+
     private static string Status(string resource, params object[] args) => string.Format(CultureInfo.CurrentCulture, resource, args);
 
     private void AssertFixtureUnchanged()
@@ -439,19 +445,33 @@ public sealed class UnitRenameTests
 
     private async Task CaseOnlyAndOtherFilesSkipLanguageServiceOnUiThread()
     {
+        // I-260: opening the project asks the worker for the Structure of the main source, and nothing waits for that
+        // request; whether it has finished by now is up to the thread pool. The worker is therefore held busy here, so
+        // the open-time request is always still queued: the renames below neither ask the service nor wait for it
+        // (a rename that did would wait behind the gate and end in this test's time-out).
+        var worker = _services.CodeModel.Worker;
+        var gate = new ManualResetEventSlim();
+        using var release = new Releaser(gate);
+        var gated = worker.RunAsync("test.gate", _ =>
+        {
+            gate.Wait();
+            return 0;
+        });
         await OpenFixtureAsync("""
             { "formatVersion": 1, "name": "App", "appType": "console", "mainSource": "App.pas",
               "files": [ { "path": "App.pas" }, { "path": "Unit1.pas" }, { "path": "Unit2.pas" }, { "path": "Unit3.pas" },
                          { "path": "notes.md" } ] }
             """);
         File(Dir + @"\notes.md", "Unit1 is described here\n");
+        var asked = worker.RequestCount;
+        Assert.False(worker.IsIdle);
 
         // A change of letter case only: the heading follows (lexer), no other file is touched, the service is not asked.
         Assert.True(await _services.Projects.RenameFileAsync("Unit1.pas", "UNIT1.pas"));
         Assert.StartsWith("unit UNIT1;", Text(Dir + @"\UNIT1.pas"), StringComparison.Ordinal);
         Assert.Equal(RenameFixture.App, Text(Dir + @"\App.pas"));
         Assert.Equal(0, _busyChanges);
-        Assert.True(_services.CodeModel.Worker.IsIdle);
+        Assert.Equal(asked, worker.RequestCount);
 
         // A file of another kind; a unit renamed without "update the heading".
         Assert.True(await _services.Projects.RenameFileAsync("notes.md", "readme.md"));
@@ -459,6 +479,10 @@ public sealed class UnitRenameTests
         Assert.True(await _services.Projects.RenameFileAsync("Unit3.pas", "Third.pas", updateHeading: false));
         Assert.Equal(RenameFixture.Unit3, Text(Dir + @"\Third.pas"));
         Assert.Equal(0, _busyChanges);
+        Assert.Equal(asked, worker.RequestCount);
+        Assert.False(gated.IsCompleted);
+        gate.Set(); // what follows asks the service
+        await gated;
         File(Dir + @"\Unit3.pas", RenameFixture.Unit3); // the program still uses Unit3: put it back for what follows
         _fs.DeleteFile(Dir + @"\Third.pas");
         File(ProjectPath, Text(ProjectPath).Replace("Third.pas", "Unit3.pas", StringComparison.Ordinal));
@@ -466,11 +490,13 @@ public sealed class UnitRenameTests
         Assert.True(await _services.Projects.OpenAsync(ProjectPath));
         Assert.True(await _services.Documents.CloseAllAsync());
         _busyChanges = 0;
+        asked = worker.RequestCount;
 
         // The main source: "program <Name>" through the same edit set; the project keeps its name and file (IDE-PM-073).
         Assert.True(await _services.Projects.RenameFileAsync("App.pas", "Start.pas"));
         Assert.Equal(RenameFixture.App.Replace("program App;", "program Start;", StringComparison.Ordinal), Text(Dir + @"\Start.pas"));
         Assert.Equal(2, _busyChanges);
+        Assert.Equal(asked + 1, worker.RequestCount); // the counter does see a rename that asks
         Assert.Equal("App", _services.Projects.Project!.Name);
         Assert.Equal("Start.pas", _services.Projects.Project.MainSource);
         Assert.True(_fs.FileExists(ProjectPath));
