@@ -1,0 +1,89 @@
+# record layouts (RTL-1006)
+ok SizeOf(TVariantArg)
+ok vt
+ok wReserved1
+ok wReserved3
+ok lVal
+ok llVal
+ok dblVal
+ok boolVal
+ok bstrVal
+ok byRef
+ok cyVal
+ok scode
+ok VARIANTARG
+ok SizeOf(TDispParams)
+ok rgdispidNamedArgs
+ok cArgs
+ok cNamedArgs
+ok SizeOf(TExcepInfo)
+ok wReserved
+ok bstrSource
+ok bstrDescription
+ok bstrHelpFile
+ok dwHelpContext
+ok pvReserved
+ok pfnDeferredFillIn
+ok scode
+# constants (RTL-1006)
+ok VT_BSTR
+ok VT_BOOL
+ok VT_UI8
+ok VT_BYREF
+ok DISPATCH_PROPERTYPUT
+ok DISPID_PROPERTYPUT
+ok DISP_E_EXCEPTION
+ok DISP_E_MEMBERNOTFOUND
+ok DISP_E_BADPARAMCOUNT
+ok Succeeded
+ok Failed
+# OLE strings (RTL-1007)
+ok SysAllocStringLen
+ok SysStringLen counts the embedded #0
+ok the text comes back unchanged
+ok the length of a nil OLE string
+ok an uninitialised string of a given length
+# variant functions (RTL-1007)
+ok VariantInit
+ok VariantChangeType to an OLE string
+ok the type of the result
+ok the text of the result
+ok VariantClear
+ok a cleared variant is empty
+ok VariantChangeType of a Boolean
+ok true is -1
+ok VariantClear of a number
+# error information (RTL-1006, RTL-1007)
+ok CreateErrorInfo
+ok SetGUID
+ok SetSource
+ok SetDescription
+ok SetHelpFile
+ok SetHelpContext
+ok the object is an IErrorInfo
+ok SetErrorInfo
+ok GetErrorInfo
+ok the error information of the thread
+ok GetGUID
+ok the GUID
+ok GetSource
+ok the source
+ok GetDescription
+ok the description
+ok GetHelpFile
+ok the help file
+ok GetHelpContext
+ok the help context
+ok the information is consumed by the first GetErrorInfo
+ok no object the second time
+# ole32 and shlwapi imports (RTL-1007, RTL-1008)
+ok CoInitializeEx
+ok CLSIDFromProgID
+ok a class identifier
+ok CoCreateInstance
+ok an object
+ok IDispatch.GetTypeInfoCount
+ok the object has type information
+ok SHCreateMemStream
+ok the stream is released
+# passed 82 failed 0

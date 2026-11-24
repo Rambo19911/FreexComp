@@ -1,0 +1,31 @@
+# OleCheck on success (RTL-1011)
+ok S_OK is silent
+ok S_FALSE is silent
+ok every non-negative code is silent
+# OleCheck on failure (RTL-1010, RTL-1011)
+ok the class
+ok ErrorCode
+ok the system message is not empty
+ok the message is the text of the system
+ok HelpContext
+ok OleCheck(E_NOINTERFACE) raises
+ok a code the system has no text for
+ok its ErrorCode
+ok OleCheck of an unknown code raises
+ok OleError raises for any code
+ok the code given
+ok OleError raises
+# exception classes (RTL-1009, RTL-1010)
+ok EOleError is an Exception
+ok EOleSysError is an EOleError
+ok EOleException is an EOleSysError
+ok a message that is not empty is kept
+ok ErrorCode
+ok HelpContext
+ok ErrorCode can be written
+ok Message
+ok ErrorCode
+ok Source
+ok HelpFile
+ok HelpContext
+# passed 27 failed 0

@@ -1,0 +1,9 @@
+; ole32.def - exports used by the FreexComp RTL. Source: learn.microsoft.com (function reference pages).
+; Content: the ActiveX unit (com-support.md section 2).
+LIBRARY ole32.dll
+EXPORTS
+CLSIDFromProgID
+CoCreateInstance
+CoInitializeEx
+CoTaskMemFree
+CoUninitialize

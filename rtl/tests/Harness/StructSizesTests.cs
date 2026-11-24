@@ -20,7 +20,7 @@ public sealed class StructSizesTests
     public sealed record Row(string Name, int Size, params (string Field, int Offset)[] Offsets);
 
     /// <summary>The units the generated program uses (besides TestKit).</summary>
-    public static readonly string[] Units = ["Types", "Windows", "CommCtrl", "CommDlg", "ShellAPI"];
+    public static readonly string[] Units = ["Types", "Windows", "CommCtrl", "CommDlg", "ShellAPI", "ActiveX"];
 
     /// <summary>
     /// winapi.md §4 table: the Types rows (RTL-600, R-038), the kernel32 rows, the user32 rows (R-109), the gdi32 rows (R-110), the comctl32 rows
@@ -130,6 +130,11 @@ public sealed class StructSizesTests
         new("TChooseFontW", 104, ("hDC", 16), ("lpLogFont", 24), ("iPointSize", 32), ("Flags", 36), ("rgbColors", 40), ("lCustData", 48),
             ("lpTemplateName", 64), ("hInstance", 72), ("lpszStyle", 80), ("nFontType", 88), ("nSizeMin", 92), ("nSizeMax", 96)),
         new("TDropFiles", 20, ("pt", 4), ("fNC", 12), ("fWide", 16)),
+
+        // oleaut32 rows (R-230; com-support.md RTL-1006)
+        new("TVariantArg", 24, ("wReserved1", 2), ("lVal", 8), ("bstrVal", 8), ("byRef", 8)),
+        new("TDispParams", 24, ("rgdispidNamedArgs", 8), ("cArgs", 16), ("cNamedArgs", 20)),
+        new("TExcepInfo", 64, ("bstrSource", 8), ("bstrHelpFile", 24), ("dwHelpContext", 32), ("pvReserved", 40), ("pfnDeferredFillIn", 48), ("scode", 56)),
     ];
 
     [Fact]

@@ -1,0 +1,50 @@
+# constants and IDispatch (RTL-1000, RTL-1001)
+ok S_FALSE
+ok E_UNEXPECTED
+ok IDispatch GUID bytes
+ok SafeCallErrorProc is nil at start-up
+ok DispCallProc is nil at start-up
+# TGUID = and <>
+ok equal values
+ok equal values are not different
+ok last byte differs
+ok different values are not equal
+ok first field differs
+ok value = interface type
+ok value <> another interface type
+# TObject.SafeCallException and _SafecallException (RTL-1002, RTL-1005)
+ok base method
+ok base method through the helper
+ok no instance
+ok the code of an override is returned
+ok the override receives the exception object
+ok the override receives the exception address
+ok an override returning 0 gives E_UNEXPECTED
+ok the override was called
+ok an override returning 1 gives E_UNEXPECTED
+ok an exception of the override is swallowed
+ok no handler is left active
+# _SafecallError and SafeCallErrorProc (RTL-1003, RTL-1004, RTL-1005)
+ok no hook: run-time error 230
+ok the helper does not return
+ok the hook raises
+ok the hook was called once
+ok the hook receives the code
+ok the hook receives a non-nil address
+ok a hook that returns: run-time error 230
+ok the hook was called before the error
+ok the second code
+# safecall methods use the helpers
+ok result of a safecall function
+ok the raw call returns S_OK
+ok the raw call stores the result
+ok the raw call returns the code of SafeCallException
+ok a failing safecall call without a hook
+ok a failing safecall call with a hook
+ok the hook was called once
+ok the hook receives the code of the method
+# _DispCall and DispCallProc (RTL-1003, RTL-1004, RTL-1005)
+ok no hook: run-time error 231
+ok the hook was called
+ok the hook receives the arguments
+# passed 43 failed 0

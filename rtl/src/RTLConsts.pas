@@ -37,6 +37,9 @@ resourcestring
   SAssertionFailed = 'Assertion failed';
   SAssertError = '%s (%s, line %d)';
   SIntfCastError = 'Interface not supported';
+  SSafecallException = 'Exception in safecall method';
+  SDispatchError = 'Dispatch calls need unit ComObj';
+  SOleError = 'OLE error %.8x';
   SOperationAborted = 'Operation aborted';
   SOSError = 'System Error.  Code: %d.'#13#10'%s';
   SUnkOSError = 'A call to an OS function failed';

@@ -40,13 +40,16 @@ type
     D2: Word;
     D3: Word;
     D4: array[0..7] of Byte;
+    { LANG-680: = and <> compare the 16 bytes }
+    class operator Equal(const A, B: TGUID): Boolean;
+    class operator NotEqual(const A, B: TGUID): Boolean;
   end;
   PGUID = ^TGUID;
 
   TObject = class;
   TClass = class of TObject;           { the VMT address (ABI-071) }
 
-  { the root class (system.md section 13, rtl-abi.md 7.1/7.2): the ten virtual methods in ABI-073 slot order - do not
+  { the root class (system.md section 13, rtl-abi.md 7.1/7.2): the eleven virtual methods in ABI-073 slot order - do not
     reorder them. Constructors are ptr (ptr, i8 Alloc), destructors void (ptr, i8 Dealloc) (ABI-075/076); the compiler
     emits the protocol and calls NewInstance, AfterConstruction, BeforeDestruction and FreeInstance itself. }
   TObject = class
@@ -61,6 +64,9 @@ type
     function GetHashCode: Integer; virtual;
     procedure Dispatch(var Message); virtual;
     procedure DefaultHandler(var Message); virtual;
+    { RTL-1002, ABI-200 (slot 10): the result code of a safecall routine that ends with an exception; called only
+      by _SafecallException. The base method returns E_UNEXPECTED. }
+    function SafeCallException(ExceptObject: TObject; ExceptAddr: Pointer): HResult; virtual;
     constructor Create;
     procedure Free;
     class function InitInstance(Instance: Pointer): TObject;
@@ -88,6 +94,18 @@ type
     function _Release: Integer; stdcall;
   end;
   IUnknown = IInterface;
+
+  { RTL-1001: the late-bound call interface; parameters whose record types live in unit ActiveX are pointers or
+    untyped here }
+  IDispatch = interface(IUnknown)
+    ['{00020400-0000-0000-C000-000000000046}']
+    function GetTypeInfoCount(out Count: Integer): HResult; stdcall;
+    function GetTypeInfo(Index, LocaleID: Integer; out TypeInfo): HResult; stdcall;
+    function GetIDsOfNames(const IID: TGUID; Names: Pointer; NameCount, LocaleID: Integer;
+      DispIDs: Pointer): HResult; stdcall;
+    function Invoke(DispID: Integer; const IID: TGUID; LocaleID: Integer; Flags: Word;
+      var Params; VarResult, ExcepInfo, ArgErr: Pointer): HResult; stdcall;
+  end;
 
   { ABI-097, RTL-154/155: a thread-safe counted IInterface; the count is 0 after construction (NewInstance sets 1 as a
     guard that AfterConstruction takes back), and the object frees itself when the count drops to 0 }
@@ -266,6 +284,18 @@ procedure _IntfAsg(var Dest: Pointer; Src: Pointer);
 procedure _IntfCast(var Dest: Pointer; Src: Pointer; IID: Pointer);
 procedure _ObjToIntf(var Dest: Pointer; Obj: Pointer; IID: Pointer);
 function _ObjSupports(Obj: Pointer; IID: Pointer): Boolean;
+{ COM support (rtl-abi.md ABI-201 ... 203, com-support.md RTL-1003 ... 1005). The hooks are nil at start-up and
+  installed by unit ComObj. _SafecallError: SafeCallErrorProc(HR, caller) when assigned, then run-time error 230.
+  _SafecallException: inside a handler, the code Instance.SafeCallException gives for the current exception (always
+  negative; E_UNEXPECTED without an instance). _DispCall: DispCallProc when assigned, else run-time error 231. }
+var
+  SafeCallErrorProc: procedure(ErrorCode: HResult; ErrorAddr: Pointer);
+  DispCallProc: procedure(Dest: Pointer; const Disp: IDispatch; Desc: Pointer; Args: Pointer);
+
+procedure _SafecallError(HR: HResult); noreturn;
+function _SafecallException(Instance: Pointer): HResult;
+procedure _DispCall(Dest: Pointer; Disp: Pointer; Desc: Pointer; Args: Pointer);
+
 { RTL-153: the message method for the id in the first 4 bytes of Msg (MsgTable of the class, then of each ancestor),
   else the virtual DefaultHandler }
 procedure _Dispatch(Obj: Pointer; var Msg);
@@ -5638,6 +5668,64 @@ end;
 
 procedure TObject.DefaultHandler(var Message);
 begin
+end;
+
+function TObject.SafeCallException(ExceptObject: TObject; ExceptAddr: Pointer): HResult;
+begin
+  Result := E_UNEXPECTED;
+end;
+
+{ ---------------------------------------------------------------- COM support (com-support.md section 1) }
+class operator TGUID.Equal(const A, B: TGUID): Boolean;
+begin
+  Result := (PInt64(@A)^ = PInt64(@B)^) and (PInt64(@A.D4)^ = PInt64(@B.D4)^);
+end;
+
+class operator TGUID.NotEqual(const A, B: TGUID): Boolean;
+begin
+  Result := (PInt64(@A)^ <> PInt64(@B)^) or (PInt64(@A.D4)^ <> PInt64(@B.D4)^);
+end;
+
+procedure _SafecallError(HR: HResult);
+var
+  Addr: Pointer;
+begin
+  Addr := _ReturnAddress;
+  if Assigned(SafeCallErrorProc) then
+    SafeCallErrorProc(HR, Addr);       { normally raises and does not return }
+  RunErrorAt(230, Addr);
+end;
+
+function _SafecallException(Instance: Pointer): HResult;
+var
+  H: PHandledExcept;
+  Obj, Addr: Pointer;
+begin
+  Result := E_UNEXPECTED;
+  if Instance = nil then
+    Exit;
+  Obj := nil;
+  Addr := nil;
+  H := TopHandled;
+  if H <> nil then
+  begin
+    Obj := H^.Obj;
+    Addr := H^.Addr;
+  end;
+  try
+    Result := TObject(Instance).SafeCallException(TObject(Obj), Addr);
+  except
+    Result := E_UNEXPECTED;            { an exception of the override is swallowed }
+  end;
+  if Result >= 0 then
+    Result := E_UNEXPECTED;            { a failed call must report failure }
+end;
+
+procedure _DispCall(Dest: Pointer; Disp: Pointer; Desc: Pointer; Args: Pointer);
+begin
+  if not Assigned(DispCallProc) then
+    RunErrorAt(231, _ReturnAddress);
+  DispCallProc(Dest, IDispatch(Disp), Desc, Args);
 end;
 
 type

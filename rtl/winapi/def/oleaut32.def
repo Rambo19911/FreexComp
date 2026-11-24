@@ -1,0 +1,13 @@
+; oleaut32.def - exports used by the FreexComp RTL. Source: learn.microsoft.com (function reference pages).
+; Content: the ActiveX unit (com-support.md section 2).
+LIBRARY oleaut32.dll
+EXPORTS
+CreateErrorInfo
+GetErrorInfo
+SetErrorInfo
+SysAllocStringLen
+SysFreeString
+SysStringLen
+VariantChangeType
+VariantClear
+VariantInit

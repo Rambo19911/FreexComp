@@ -14,6 +14,8 @@ ok RunError(216)
 ok RunError(218)
 ok RunError(219)
 ok RunError(228)
+ok RunError(230)
+ok RunError(231)
 ok RunError(2)
 ok RunError(3)
 ok RunError(4)
@@ -28,10 +30,10 @@ ok RunError(105)
 ok RunError(106)
 ok RunError(150)
 ok RunError(1)
-ok RunError(230)
+ok RunError(232)
 # errors raised by compiled code
 ok div by zero in a callee
 ok range check
 ok overflow check
 ok no leaks
-# passed 34 failed 0
+# passed 36 failed 0

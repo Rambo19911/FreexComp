@@ -10,6 +10,8 @@ declares for comctl32;
 `Win_CommDlgDecl` calls the functions of `CommDlg` (comdlg32) and `ShellAPI` (shell32) that run unattended.
 `LongPaths` and `LongPaths_Unaware` call the registry functions it declares for advapi32 (through the shared unit
 `rtl/tests/LongPathKit.pas`, which reads the system long-path policy with them).
+`AX_Layouts` calls every function the `ActiveX` unit declares for oleaut32, ole32 and shlwapi and checks its record
+layouts (com-support.md section 2).
 Exceptions:
 
 | Function | Covered by |

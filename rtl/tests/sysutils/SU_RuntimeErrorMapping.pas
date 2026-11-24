@@ -50,6 +50,8 @@ begin
   Expect(218, 'EPrivilege', 'Privileged instruction');
   Expect(219, 'EInvalidCast', 'Invalid class typecast');
   Expect(228, 'EIntfCastError', 'Interface not supported');
+  Expect(230, 'ESafecallException', 'Exception in safecall method');
+  Expect(231, 'EDispatchError', 'Dispatch calls need unit ComObj');
   Expect(2, 'EInOutError', 'File not found [2]');
   Expect(3, 'EInOutError', 'Path not found [3]');
   Expect(4, 'EInOutError', 'Too many open files [4]');
@@ -64,7 +66,7 @@ begin
   Expect(106, 'EInOutError', 'Invalid numeric input [106]');
   Expect(150, 'EInOutError', 'I/O error 150 [150]');
   Expect(1, 'EInOutError', 'I/O error 1 [1]');
-  Expect(230, 'Exception', 'Runtime error 230');
+  Expect(232, 'Exception', 'Runtime error 232');
 
   Section('errors raised by compiled code');
   try

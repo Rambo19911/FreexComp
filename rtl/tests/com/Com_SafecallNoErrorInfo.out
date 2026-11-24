@@ -1,0 +1,14 @@
+# no error information (RTL-1013)
+ok the thread starts without error information
+ok the code of the method is preserved
+ok the base SafeCallException
+ok the message is never empty
+ok the failure raises
+# consumed error information is not used again (RTL-1013)
+ok a failure with error information
+ok the handler consumed it
+ok the next failure without information
+ok and one of another object
+ok information again
+ok and none again
+# passed 11 failed 0

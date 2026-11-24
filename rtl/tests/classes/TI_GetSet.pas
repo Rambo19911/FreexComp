@@ -298,7 +298,7 @@ begin
   P.AInt := 3;
   CheckEqB(True, IsStoredProp(P, @Info), 'static method true');
   Info.StoredKind := 3;
-  Info.StoredProc := 64 + 8 * 13;             { slots 10..13: GetDouble, SetDouble, GetMode, StoredVirtual }
+  Info.StoredProc := 64 + 8 * 14;             { slots 11..14: GetDouble, SetDouble, GetMode, StoredVirtual }
   CheckEqB(False, IsStoredProp(P, @Info), 'virtual method of the base');
   CheckEqB(True, IsStoredProp(D, @Info), 'virtual method of the descendant');
   Info.Name := '';

@@ -1,0 +1,35 @@
+# a raw stdcall caller (RTL-1012)
+ok a method that succeeds returns S_OK
+ok its result
+ok the result code of an ordinary exception
+ok error information was published
+ok description = the message
+ok source = the ProgID
+ok the help file
+ok the help context of the exception
+ok the interface identifier
+ok the code of an EOleSysError travels
+ok error information of the second failure
+ok its description is the system message
+ok an exception object that is not an Exception
+ok error information without a description
+ok the empty description
+ok the source is still set
+# a safecall caller (RTL-1013)
+ok ComObj installed SafeCallErrorProc
+ok a method that succeeds
+ok the class
+ok Message
+ok ErrorCode
+ok Source
+ok HelpFile
+ok HelpContext
+ok raised at an address
+ok Boom raises EOleException
+ok the class of the second failure
+ok the code raised inside arrives
+ok with the message raised inside
+ok NoInterface raises
+# nothing stays allocated
+ok live allocations after three failing calls
+# passed 31 failed 0

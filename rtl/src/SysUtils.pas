@@ -420,6 +420,9 @@ type
   EAssertionFailed = class(Exception);
   EAbstractError = class(Exception);
   EIntfCastError = class(Exception);
+  { com-support.md RTL-1004: run-time errors 230 and 231 }
+  ESafecallException = class(Exception);
+  EDispatchError = class(Exception);
   EOSError = class(Exception)
   public
     ErrorCode: Cardinal;
@@ -4167,6 +4170,8 @@ begin
     218: Result := EPrivilege.Create(SPrivilege);
     219: Result := EInvalidCast.Create(SInvalidCast);
     228: Result := EIntfCastError.Create(SIntfCastError);
+    230: Result := ESafecallException.Create(SSafecallException);
+    231: Result := EDispatchError.Create(SDispatchError);
   else
     if Code < 200 then
     begin
