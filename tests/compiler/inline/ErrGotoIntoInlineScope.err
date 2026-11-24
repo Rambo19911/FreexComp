@@ -1,0 +1,4 @@
+ErrGotoIntoInlineScope.pas(12,3): error E2076: 'goto Skip' jumps into the scope of inline declaration 'S'
+ErrGotoIntoInlineScope.pas(23,5): error E2076: 'goto Inside' jumps into the scope of inline declaration 'Count'
+ErrGotoIntoInlineScope.pas(43,3): error E2076: 'goto Use' jumps into the scope of inline declaration 'Limit'
+ErrGotoIntoInlineScope.pas(57,3): error E2076: 'goto Target' jumps into the scope of inline declaration 'Second'

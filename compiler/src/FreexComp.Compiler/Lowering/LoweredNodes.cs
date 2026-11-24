@@ -323,6 +323,21 @@ internal sealed class LTryFinally : LStatement
     public LBlock? Cleanup { get; }
 }
 
+/// <summary>The target of the <see cref="LGoto"/>s of <see cref="Label"/> (LANG-380): starts a basic block.</summary>
+internal sealed class LLabel(Binding.GotoLabel label) : LStatement
+{
+    public Binding.GotoLabel Label { get; } = label;
+}
+
+/// <summary>
+/// <c>goto</c> (LANG-380): a jump to the <see cref="LLabel"/> of the same body; the regions it leaves run their finally part
+/// first, innermost first, like a <see cref="LBreak"/> (CMP-1185).
+/// </summary>
+internal sealed class LGoto(Binding.GotoLabel label) : LStatement
+{
+    public Binding.GotoLabel Label { get; } = label;
+}
+
 /// <summary>Leaves the body (branch to its exit block, CMP-310).</summary>
 internal sealed class LReturn : LStatement;
 

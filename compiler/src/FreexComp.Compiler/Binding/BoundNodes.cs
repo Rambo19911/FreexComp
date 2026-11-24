@@ -58,6 +58,8 @@ internal enum BoundKind
     TryFinallyStatement,
     WithStatement,
     LocalsStatement,
+    LabelStatement,
+    GotoStatement,
 }
 
 /// <summary>A node of the bound tree: immutable, typed, symbols resolved.</summary>
@@ -731,6 +733,43 @@ internal sealed class BoundCaseLabel
 
     /// <summary>Null for a single value.</summary>
     public BoundExpression? High { get; }
+}
+
+/// <summary>A label of a body's <c>label</c> section (LANG-380); the identity of the jump target through lowering and emission.</summary>
+internal sealed class GotoLabel(string name)
+{
+    public string Name { get; } = name;
+}
+
+/// <summary><c>Label: Statement</c> (LANG-380): the definition of <see cref="Label"/>.</summary>
+internal sealed class BoundLabelStatement : BoundStatement
+{
+    public BoundLabelStatement(SyntaxNode syntax, GotoLabel label, BoundStatement statement)
+        : base(syntax)
+    {
+        Label = label;
+        Statement = statement;
+    }
+
+    public override BoundKind Kind => BoundKind.LabelStatement;
+
+    public GotoLabel Label { get; }
+
+    public BoundStatement Statement { get; }
+}
+
+/// <summary><c>goto Label</c> (LANG-380, LANG-571): the label is declared in the same body.</summary>
+internal sealed class BoundGotoStatement : BoundStatement
+{
+    public BoundGotoStatement(SyntaxNode syntax, GotoLabel label)
+        : base(syntax)
+    {
+        Label = label;
+    }
+
+    public override BoundKind Kind => BoundKind.GotoStatement;
+
+    public GotoLabel Label { get; }
 }
 
 /// <summary><c>Break</c>: leaves the innermost enclosing loop (LANG-363).</summary>

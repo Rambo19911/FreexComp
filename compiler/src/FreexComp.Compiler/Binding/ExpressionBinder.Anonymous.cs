@@ -93,7 +93,7 @@ internal sealed partial class ExpressionBinder
         var locals = new DeclarationBinder(_types, scope, method, _diagnostics).BindDeclarations(syntax.Block.Declarations);
         var binder = new BodyBinder(_types, scope, _diagnostics, method);
         binder.AddReadOnlyVariables(ForVariables);                      // LANG-721: a captured for variable is read-only
-        var body = binder.BindBlock(syntax.Block.Body, syntax.Block.Body.Statements);
+        var body = binder.BindBody(syntax.Block.Body, syntax.Block.Body.Statements, syntax.Block.Declarations);
         binder.Expressions.CompleteClosure();
         AnonymousBodies.Add(new BoundRoutineBody(method, scope, body, [.. locals.OfType<RoutineSymbol>()], [.. binder.CapturedVariables], [])
         {

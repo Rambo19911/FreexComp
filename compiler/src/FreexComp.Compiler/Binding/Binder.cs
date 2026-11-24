@@ -263,9 +263,10 @@ internal static class Binder
         routines.AddRange(attributeThunks);
         var body = new BodyBinder(types, declarations.Scope, diagnostics);
         var bodies = ImmutableArray.CreateBuilder<BoundBlock>();
-        BoundBlock BindUnitBody(SyntaxNode syntax, SeparatedSyntaxList<StatementSyntax> statements)
+        BoundBlock BindUnitBody(SyntaxNode syntax, SeparatedSyntaxList<StatementSyntax> statements, BlockSyntax? labels = null)
         {
-            var block = body.BindBlock(syntax, statements);
+            // LANG-380: only a block has a label section (the sections of a unit have no labels)
+            var block = labels is null ? body.BindBlock(syntax, statements) : body.BindBody(syntax, statements, labels.Declarations);
             body.Expressions.CompleteClosure();
             return body.Expressions.TakeUnitClosure() is { } closure ? new BoundBlock(block.Syntax, block.Statements) { Closure = closure } : block;
         }
@@ -273,10 +274,10 @@ internal static class Binder
         switch (tree.Root)
         {
             case ProgramSyntax program when Wanted(program.Block.Body):
-                bodies.Add(BindUnitBody(program.Block.Body, program.Block.Body.Statements));
+                bodies.Add(BindUnitBody(program.Block.Body, program.Block.Body.Statements, program.Block));
                 break;
             case LibrarySyntax library when Wanted(library.Block.Body):
-                bodies.Add(BindUnitBody(library.Block.Body, library.Block.Body.Statements));     // the library block (LANG-541)
+                bodies.Add(BindUnitBody(library.Block.Body, library.Block.Body.Statements, library.Block));     // the library block (LANG-541)
                 break;
             case UnitSyntax unit:
                 if (unit.InitializationSection is { } initialization && Wanted(initialization))
@@ -370,7 +371,7 @@ internal static class Binder
         var locals = new DeclarationBinder(types, scope, routine, diagnostics).BindDeclarations(block.Declarations);
         var binder = new BodyBinder(types, scope, diagnostics, routine);
         binder.AddReadOnlyVariables(EnclosingForVariables(outer));
-        var body = binder.BindBlock(block.Body, block.Body.Statements);
+        var body = binder.BindBody(block.Body, block.Body.Statements, block.Declarations);
         binder.Expressions.CompleteClosure();                                   // CMP-380 (C-120)
         if (routine is MethodSymbol { MethodKind: MethodKind.Destructor, ContainingType.Parent: not null } destructor
             && IdentifierComparer.Instance.Equals(destructor.Name, "Destroy")

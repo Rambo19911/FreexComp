@@ -13,10 +13,6 @@
 # A code with a case must not be listed; M2.1 is never a valid status.
 
 E2008  reserved  LANG-516 makes this unused
-E2070  Phase8  goto/labels (LANG-380), optional per milestones.md M2.5; C-110 deferred after M2.6
-E2071  Phase8  goto/labels (LANG-380), optional per milestones.md M2.5; C-110 deferred after M2.6
-E2072  Phase8  goto/labels (LANG-380), optional per milestones.md M2.5; C-110 deferred after M2.6
-E2073  Phase8  goto/labels (LANG-380), optional per milestones.md M2.5; C-110 deferred after M2.6
 E2200  elsewhere UnitBindingTests  needs a unit file (uses entry with in)
 E2201  elsewhere UnitBindingTests  needs a unit file whose heading differs from its file name
 E2202  elsewhere UnitBindingTests  unit resolution over the file system (also EmitTests: System not found)

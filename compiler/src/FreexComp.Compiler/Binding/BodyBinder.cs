@@ -60,6 +60,8 @@ internal sealed partial class BodyBinder
                 var (locals, initialization, scope) = BindInlineDeclaration(statement);
                 var next = i + 1;
                 var range = ListScopeRange(statement, out var closer);
+                var declared = statement.DescendantTokens().FirstOrDefault(t => t.Kind == SyntaxKind.IdentifierToken);
+                _inlineScopes.Add((range.Start, range.End, declared.Value as string ?? declared.Text));     // LANG-571
                 foreach (var local in locals)
                 {
                     local.InlineScope = (statement.FirstToken(), closer);       // CMP-1184: the debug scope
@@ -117,9 +119,13 @@ internal sealed partial class BodyBinder
             case RepeatStatementSyntax repeat:
                 return BindRepeat(repeat);
             case ForStatementSyntax forStatement:
-                return BindFor(forStatement);
+                return InRegion(isTryPart: false, () => BindFor(forStatement));
             case CaseStatementSyntax caseStatement:
-                return BindCase(caseStatement);
+                return InRegion(isTryPart: false, () => BindCase(caseStatement));
+            case LabeledStatementSyntax labeled:
+                return BindLabeled(labeled);                                        // LANG-380 (C-110)
+            case GotoStatementSyntax @goto:
+                return BindGoto(@goto);
             case InheritedStatementSyntax inherited:
                 return _expressions.BindMethodCallStatement(inherited, inherited.Expression)!;      // LANG-624
             case RaiseStatementSyntax raise:
@@ -129,9 +135,9 @@ internal sealed partial class BodyBinder
             case TryFinallyStatementSyntax tryFinally:
                 return BindTryFinally(tryFinally);
             case WithStatementSyntax with:
-                return BindWith(with, 0);
+                return InRegion(isTryPart: false, () => BindWith(with, 0));
             case ForInStatementSyntax forIn:
-                return BindForIn(forIn);
+                return InRegion(isTryPart: false, () => BindForIn(forIn));
             case InlineVarStatementSyntax or InlineConstStatementSyntax:
                 // LANG-568: only BindStatements takes an inline declaration (an element of a statement list)
                 _diagnostics.Report(statement.FirstToken(), "E2077");
@@ -606,7 +612,7 @@ internal sealed partial class BodyBinder
     /// </summary>
     private BoundStatement BindTryExcept(TryExceptStatementSyntax syntax)
     {
-        var body = BindBlock(syntax, syntax.Statements);
+        var body = InRegion(isTryPart: true, () => BindBlock(syntax, syntax.Statements));        // LANG-380: no goto across a part
         var handlers = ImmutableArray.CreateBuilder<BoundExceptionHandler>();
         var hasErrors = false;
         _handlerDepth++;
@@ -634,11 +640,13 @@ internal sealed partial class BodyBinder
                 scope.TryDeclare(variable, out _);
             }
 
-            var statement = InScope(scope, () => BindStatement(handler.Statement));
+            var statement = InRegion(isTryPart: true, () => InScope(scope, () => BindStatement(handler.Statement)));
             handlers.Add(new BoundExceptionHandler(handler, variable, type, statement));
         }
 
-        var otherwise = syntax.ElseKeyword is not null || syntax.Handlers.Count == 0 ? BindBlock(syntax, syntax.ExceptStatements) : null;
+        var otherwise = syntax.ElseKeyword is not null || syntax.Handlers.Count == 0
+            ? InRegion(isTryPart: true, () => BindBlock(syntax, syntax.ExceptStatements))
+            : null;
         _handlerDepth--;
         return hasErrors ? new BoundErrorStatement(syntax) : new BoundTryExceptStatement(syntax, body, handlers.ToImmutable(), otherwise);
     }
@@ -646,10 +654,10 @@ internal sealed partial class BodyBinder
     /// <summary>LANG-810, 812: <c>Exit</c>, and <c>Break</c>/<c>Continue</c> of loops outside, may not leave the finally part (E2067).</summary>
     private BoundTryFinallyStatement BindTryFinally(TryFinallyStatementSyntax syntax)
     {
-        var body = BindBlock(syntax, syntax.Statements);
+        var body = InRegion(isTryPart: true, () => BindBlock(syntax, syntax.Statements));
         var outer = _finallyLoopDepth;
         _finallyLoopDepth = _loopDepth;
-        var final = BindBlock(syntax, syntax.FinallyStatements);
+        var final = InRegion(isTryPart: true, () => BindBlock(syntax, syntax.FinallyStatements));
         _finallyLoopDepth = outer;
         return new BoundTryFinallyStatement(syntax, body, final);
     }

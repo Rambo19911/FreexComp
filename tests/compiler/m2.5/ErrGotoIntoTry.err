@@ -1,0 +1,14 @@
+ErrGotoIntoTry.pas(17,3): error E2072: 'goto' cannot jump into or out of this statement
+ErrGotoIntoTry.pas(20,5): error E2072: 'goto' cannot jump into or out of this statement
+ErrGotoIntoTry.pas(23,5): error E2072: 'goto' cannot jump into or out of this statement
+ErrGotoIntoTry.pas(26,5): error E2072: 'goto' cannot jump into or out of this statement
+ErrGotoIntoTry.pas(31,7): error E2072: 'goto' cannot jump into or out of this statement
+ErrGotoIntoTry.pas(34,3): error E2072: 'goto' cannot jump into or out of this statement
+ErrGotoIntoTry.pas(45,3): error E2072: 'goto' cannot jump into or out of this statement
+ErrGotoIntoTry.pas(46,3): error E2072: 'goto' cannot jump into or out of this statement
+ErrGotoIntoTry.pas(47,3): error E2072: 'goto' cannot jump into or out of this statement
+ErrGotoIntoTry.pas(75,10): error E2073: Label 'Unused' is declared but never defined
+ErrGotoIntoTry.pas(79,10): error E2070: Label 'Twice' is not declared in the current block
+ErrGotoIntoTry.pas(85,1): error E2071: Label 'Twice' is already defined
+ErrGotoIntoTry.pas(87,1): error E2070: Label 'Missing' is not declared in the current block
+ErrGotoIntoTry.pas(88,8): error E2070: Label 'Nowhere' is not declared in the current block

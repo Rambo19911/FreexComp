@@ -478,3 +478,29 @@ begin var a, b: Integer := 1; a := b; b := a; end.
 begin var a, b := 1; end.
 === H2011 1,31
 var Limit: Integer; begin var Limit := 1; Limit := Limit + 1; end.
+=== E2070 1,12
+begin goto L end.
+=== E2070 1,7
+begin L: end.
+=== E2070 1,47
+procedure P; label L; procedure Q; begin goto L end; begin L: end; begin end.
+=== E2071 1,21
+label L; begin L: ; L: end.
+=== E2072 1,20
+label L; begin try goto L finally end; L: end.
+=== E2072 1,16
+label L; begin goto L; try L: finally end end.
+=== E2072 1,20
+label L; begin try goto L finally L: end end.
+=== E2072 1,27
+label L; begin try except goto L end; L: end.
+=== E2072 1,32
+label L; var I: Integer; begin goto L; for I := 1 to 2 do L: end.
+=== E2072 1,32
+label L; var I: Integer; begin goto L; case I of 1: L: end end.
+=== E2073 1,7
+label L; begin end.
+=== E2076 1,16
+label L; begin goto L; var X := 1; L: X := X + 1; goto L end.
+=== E2076 1,16
+label L; begin goto L; begin const C = 1; L: end end.

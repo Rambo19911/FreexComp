@@ -1621,7 +1621,89 @@ internal sealed class FunctionEmitter
     private int _returnScopes;
 
     /// <summary>An EH scope: unwinding goes to <see cref="Pad"/>; a jump leaving it first runs <see cref="Leave"/> (if any).</summary>
-    private sealed record EhScope(IrBlock Pad, Action? Leave);
+    /// <param name="Key">What opened the scope: the try statement (for a handler region its handler); null for the function-level scope.</param>
+    private sealed record EhScope(IrBlock Pad, Action? Leave, object? Key = null);
+
+    /// <summary>LANG-380: the EH scopes around each label of the body, outermost first, by <see cref="EhScope.Key"/>.</summary>
+    private readonly Dictionary<Binding.GotoLabel, ImmutableArray<object>> _labelScopes = [];
+
+    private readonly Dictionary<Binding.GotoLabel, IrBlock> _labelBlocks = [];
+
+    /// <summary>The statements that contain a label: emitted also after a jump, since a <c>goto</c> may reach them.</summary>
+    private readonly HashSet<LStatement> _labelled = new(ReferenceEqualityComparer.Instance);
+
+    /// <summary>Records the labels below <paramref name="statement"/> with the EH scopes that will be open there; whether there is one.</summary>
+    private bool FindLabels(LStatement? statement, ImmutableArray<object> scopes)
+    {
+        var found = false;
+        switch (statement)
+        {
+            case LLabel label:
+                _labelScopes[label.Label] = scopes;
+                found = true;
+                break;
+            case LBlock block:
+                foreach (var inner in block.Statements)
+                {
+                    found |= FindLabels(inner, scopes);
+                }
+
+                break;
+            case LIf branch:
+                found = FindLabels(branch.Then, scopes) | FindLabels(branch.Else, scopes);
+                break;
+            case LLoop loop:
+                found = FindLabels(loop.Body, scopes) | FindLabels(loop.Step, scopes);
+                break;
+            case LSwitch choice:
+                foreach (var section in choice.Sections)
+                {
+                    found |= FindLabels(section.Body, scopes);
+                }
+
+                found |= FindLabels(choice.Default, scopes);
+                break;
+            case LTryExcept tryExcept:
+                found = FindLabels(tryExcept.Body, scopes.Add(tryExcept)) | FindLabels(tryExcept.Handler, scopes.Add(tryExcept.Handler));
+                break;
+            case LTryFinally tryFinally:
+                found = FindLabels(tryFinally.Body, scopes.Add(tryFinally));
+                break;
+        }
+
+        if (found)
+        {
+            _labelled.Add(statement!);
+        }
+
+        return found;
+    }
+
+    private IrBlock LabelBlock(Binding.GotoLabel label)
+    {
+        if (!_labelBlocks.TryGetValue(label, out var block))
+        {
+            _labelBlocks.Add(label, block = Block("label", NewConstruct()));
+        }
+
+        return block;
+    }
+
+    /// <summary>
+    /// LANG-380, CMP-1185: jumps to the label after leaving the EH scopes that do not enclose it, innermost first — the regions
+    /// of declaration scopes (a <c>goto</c> never leaves a part of a <c>try</c> statement, E2072).
+    /// </summary>
+    private void Goto(Binding.GotoLabel label)
+    {
+        var scopes = _labelScopes[label];
+        var shared = 0;
+        while (shared < scopes.Length && _returnScopes + shared < _scopes.Count && ReferenceEquals(_scopes[_returnScopes + shared].Key, scopes[shared]))
+        {
+            shared++;
+        }
+
+        JumpLeaving(LabelBlock(label), _returnScopes + shared);
+    }
 
     /// <summary>CMP-394: helpers that never raise, always called with <c>call</c>.</summary>
     private static readonly HashSet<string> NeverRaising = new(StringComparer.Ordinal)
@@ -1832,6 +1914,7 @@ internal sealed class FunctionEmitter
         }
 
         _returnScopes = _scopes.Count;
+        FindLabels(_body.Body, []);
         Statement(_body.Body);
         SetLocation(debug?.End);                                        // DBG-118: the epilogue at the final end
         FallThrough(_returnTarget);
@@ -2171,7 +2254,7 @@ internal sealed class FunctionEmitter
     /// <summary>
     /// Emits <paramref name="statement"/> into the current block. After a jump (<see cref="LBreak"/>, <see cref="LContinue"/>,
     /// <see cref="LReturn"/>, <see cref="LUnreachable"/>) the block is terminated and the rest of the enclosing
-    /// <see cref="LBlock"/> is dead code: it is not emitted (the lowered tree has no labels, so nothing can jump into it).
+    /// <see cref="LBlock"/> is dead code: it is not emitted, unless it contains a label (LANG-380).
     /// </summary>
     private void Statement(LStatement statement)
     {
@@ -2210,7 +2293,15 @@ internal sealed class FunctionEmitter
                 {
                     if (_terminated)
                     {
-                        break;
+                        if (!_labelled.Contains(inner))
+                        {
+                            continue;                                   // dead code: no label, so nothing jumps into it
+                        }
+
+                        if (inner is not (LLabel or LBlock))
+                        {
+                            Start(Block("dead", NewConstruct()));       // reached only through the label inside
+                        }
                     }
 
                     Statement(inner);
@@ -2322,6 +2413,17 @@ internal sealed class FunctionEmitter
             case LReturn:
                 JumpLeaving(_returnTarget, _returnScopes);
                 break;
+            case LLabel label:
+            {
+                var block = LabelBlock(label.Label);
+                FallThrough(block);
+                Start(block);
+                break;
+            }
+
+            case LGoto jump:
+                Goto(jump.Label);
+                break;
             case LTryExcept tryExcept:
                 TryExcept(tryExcept);
                 break;
@@ -2399,7 +2501,7 @@ internal sealed class FunctionEmitter
             _unwindTargets.Add(outer);                                  // the catchswitch / cleanupret unwind there
         }
 
-        _scopes.Add(new EhScope(dispatch, Leave: null));
+        _scopes.Add(new EhScope(dispatch, Leave: null, statement));
         Statement(statement.Body);
         _scopes.RemoveAt(_scopes.Count - 1);
         FallThrough(end);
@@ -2420,7 +2522,7 @@ internal sealed class FunctionEmitter
         Start(handler);
         var beginCatch = _module.Function(new IrFunctionDeclaration(Mangler.RuntimeHelper("_BeginCatch"), IrType.Ptr, []));
         _w.Store(_w.Call(NewTemp(), IrType.Ptr, beginCatch, [])!, _locals[statement.Exception], PtrAlign);
-        _scopes.Add(new EhScope(cleanup, EndCatch));
+        _scopes.Add(new EhScope(cleanup, EndCatch, statement.Handler));
         Statement(statement.Handler);
         _scopes.RemoveAt(_scopes.Count - 1);
         if (syntax is not null)
@@ -2466,7 +2568,7 @@ internal sealed class FunctionEmitter
             }
         }
 
-        _scopes.Add(new EhScope(pad, CallFinally));
+        _scopes.Add(new EhScope(pad, CallFinally, statement));
         Statement(statement.Body);
         _scopes.RemoveAt(_scopes.Count - 1);
         var location = _location;

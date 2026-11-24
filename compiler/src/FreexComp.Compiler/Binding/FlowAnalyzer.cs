@@ -405,6 +405,33 @@ internal sealed class FlowAnalyzer
 
                 return null;
 
+            case BoundGotoStatement:
+                if (state != null)
+                {
+                    // LANG-380: the jump is not followed; what is stored here may be read after the label
+                    foreach (var stores in state.Pending.Values)
+                    {
+                        _readStores.UnionWith(stores);
+                    }
+                }
+
+                return null;
+
+            case BoundLabelStatement label:
+            {
+                // reachable by jumps whose states are not joined here: nothing is reported as unassigned or as a dead store
+                state ??= new State();
+                foreach (var stores in state.Pending.Values)
+                {
+                    _readStores.UnionWith(stores);
+                }
+
+                state.Pending.Clear();
+                state.Unassigned.Clear();
+                state.ForUndefined.Clear();
+                return Visit(label.Statement, state);
+            }
+
             case BoundExitStatement exit:
                 if (exit.Value != null)
                 {

@@ -40,6 +40,20 @@ public sealed class FlowAnalysisTests
         Assert.Equal([At("W1041", text, "y := |x")], Flow(text));
     }
 
+    /// <summary>
+    /// C-110 (LANG-380): the jumps of a goto are not followed, so nothing is reported for a variable read after a label (it may be
+    /// assigned on a path through a goto), no store before a goto or a label is a dead store, and code after a label is reachable.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "LANG-380")]
+    public void Goto_NoFalseWarningsAroundLabels()
+    {
+        Assert.Empty(Flow(Proc("label Use, Done; var x, y: Integer;",
+            "y := 0; if b then begin x := 1; goto Use end; x := 2; goto Use; Writeln(y); Use: Writeln(x); y := 3; if b then goto Done; y := 4; Done: Writeln(y)")));
+        var text = Proc("label L; var x: Integer;", "goto L; L: ; Writeln(x)");
+        Assert.Empty(Flow(text));                                      // not analysed past a label: no W1041 either
+    }
+
     [Fact]
     [Trait("Req", "LANG-390")]
     public void W1041_AssignedOnSomePathOnly()

@@ -258,6 +258,11 @@ internal sealed partial class LoweringContext
         // CMP-380 (C-120): a body with anonymous methods first creates its closure
         var closure = Routine is null ? body?.Closure : Routine.Closure;
         _outermostTail = IsFinally ? null : ListTail(body);             // LANG-565: its variables stay in the cleanup scope below
+        if (_outermostTail is not null && body!.Syntax.DescendantNodes().OfType<Syntax.LabeledStatementSyntax>().Any())
+        {
+            // LANG-562, 571 (C-310): a goto may execute a declaration of the outermost list again, so its scope gets a region too
+            _outermostTail = null;
+        }
         ImmutableArray<LStatement> prologue = closure is null ? [] : ClosurePrologue(closure);
         LBlock block;
         if (Routine is MethodSymbol { MethodKind: MethodKind.Constructor or MethodKind.Destructor } method && body is not null)
@@ -585,6 +590,10 @@ internal sealed partial class LoweringContext
 
             case BoundLocalsStatement locals:
                 return LocalsScope(locals);
+            case BoundLabelStatement label:
+                return new LBlock([new LLabel(label.Label), Lower(label.Statement)]);       // LANG-380 (C-110)
+            case BoundGotoStatement jump:
+                return new LGoto(jump.Label);                                               // CMP-1185: regions left run their finally
 
             default:
                 throw new InvalidOperationException($"Cannot lower {statement.Kind}.");

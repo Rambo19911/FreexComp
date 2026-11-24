@@ -118,6 +118,7 @@ public static class DiagnosticCatalog
         new("E2072", null, DiagnosticSeverity.Error, "'goto' cannot jump into or out of this statement"),
         new("E2073", null, DiagnosticSeverity.Error, "Label '%s' is declared but never defined"),
         new("E2075", null, DiagnosticSeverity.Error, "Cannot infer the type of '%s'"),
+        new("E2076", null, DiagnosticSeverity.Error, "'goto %s' jumps into the scope of inline declaration '%s'"),
         new("E2077", null, DiagnosticSeverity.Error, "An inline declaration is only allowed directly in a statement list"),
         new("E2078", null, DiagnosticSeverity.Error, "An initialiser is only allowed for a single inline variable"),
         new("E2100", null, DiagnosticSeverity.Error, "Unsatisfied forward or external declaration: '%s'"),

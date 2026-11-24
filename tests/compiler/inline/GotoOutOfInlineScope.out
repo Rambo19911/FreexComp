@@ -1,0 +1,74 @@
+pass 0
+S is []
+create first
+destroy first
+pass 1
+S is []
+create second
+destroy second
+pass 2
+S is []
+create third
+block ends
+destroy third
+after block
+pass 0
+S is []
+create outermost first
+destroy outermost first
+pass 1
+S is []
+create outermost second
+body ends
+destroy outermost second
+create outer
+create inner
+destroy inner
+destroy outer
+at Out
+create outer
+create inner
+touch inner
+destroy inner
+touch outer
+destroy outer
+at Out
+create for first
+destroy for first
+create for second
+destroy for second
+at Found
+create repeat first
+destroy repeat first
+create repeat second
+destroy repeat second
+at Done
+create stay
+touch stay
+create stay inner
+destroy stay inner
+still in the scope of G
+destroy stay
+try part ends
+finally
+frame 0
+create frame first
+frame 1
+create frame second
+frame 2
+create frame third
+frames kept
+0 10 20 1
+destroy frame second
+second released
+destroy frame first
+destroy frame third
+round 0
+Line is []
+create main first
+destroy main first
+round 1
+Line is []
+create main second
+end of program
+destroy main second

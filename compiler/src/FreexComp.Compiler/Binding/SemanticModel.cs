@@ -749,6 +749,9 @@ public sealed class SemanticModel
             case BoundHaltStatement halt:
                 Walk(halt.ExitCode);
                 break;
+            case BoundLabelStatement label:
+                Walk(label.Statement);
+                break;
         }
     }
 
