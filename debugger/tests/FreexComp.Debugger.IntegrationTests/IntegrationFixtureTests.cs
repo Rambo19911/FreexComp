@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Text;
 using FreexComp.Debugger.IntegrationTests.TestSupport;
+using FreexComp.Debugger.Session;
 using FreexComp.Debugger.Tests.TestSupport;
 using FreexComp.Debugger.Values.TypeInfo;
 
@@ -53,7 +54,10 @@ public sealed class IntegrationFixtureTests(IntegrationFixture fixture)
         ProcessLeakFixture.Registry.Track(process.Id, "DbgDemo run without a debugger");
         try
         {
-            var output = await process.StandardOutput.ReadToEndAsync(Ct).WaitAsync(IntegrationFixture.Safety, Ct);
+            // A child's pipe only blocks: it is read on a thread of its own.
+            var output = "";
+            await DedicatedThread.Run("FreexComp.Tests.DbgDemoStdout", () => output = process.StandardOutput.ReadToEnd())
+                .WaitAsync(IntegrationFixture.Safety, Ct);
             await process.WaitForExitAsync(Ct).WaitAsync(IntegrationFixture.Safety, Ct);
             Assert.Equal("Dog Rex\n24\ndone\n", output.Replace("\r\n", "\n", StringComparison.Ordinal));
             Assert.Equal(0, process.ExitCode);

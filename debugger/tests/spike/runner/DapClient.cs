@@ -53,8 +53,7 @@ internal sealed class DapClient : IDisposable
         _log.WriteLine($"# adapter {adapter}  LLDB_USE_NATIVE_PDB_READER={(nativePdbReader ? "1" : "(unset)")}");
         _process = Process.Start(psi) ?? throw new InvalidOperationException("adapter did not start");
         _stdin = _process.StandardInput.BaseStream;
-        _process.ErrorDataReceived += (_, e) => { if (e.Data != null) lock (_stderr) _stderr.AppendLine(e.Data); };
-        _process.BeginErrorReadLine();
+        new Thread(ReadStderr) { IsBackground = true, Name = "dap-stderr" }.Start();
         new Thread(ReadLoop) { IsBackground = true, Name = "dap-reader" }.Start();
     }
 
@@ -116,6 +115,19 @@ internal sealed class DapClient : IDisposable
     public string[] OutputCategories() { lock (_gate) return [.. Outputs.Select(o => Dap.Str(o, "body.category") ?? "(none)").Distinct()]; }
 
     public bool HasExited => _process.HasExited;
+
+    /// <summary>Collects the adapter's stderr on a thread of its own (a child's pipe only blocks).</summary>
+    private void ReadStderr()
+    {
+        try
+        {
+            while (_process.StandardError.ReadLine() is { } line)
+                lock (_stderr) _stderr.AppendLine(line);
+        }
+        catch (Exception ex) when (ex is IOException or ObjectDisposedException or InvalidOperationException)
+        {
+        }
+    }
 
     private void ReadLoop()
     {

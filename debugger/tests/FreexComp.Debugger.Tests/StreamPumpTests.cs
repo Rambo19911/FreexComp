@@ -172,10 +172,11 @@ public sealed class StreamPumpTests
         ProcessLeakFixture.Registry.Track(adapter.ProcessId, nameof(StreamPumpTests));
 
         // The pipe of a child process is a synchronous handle; the stream handed to the protocol reader is not it.
-        Assert.IsNotType<FileStream>(adapter.StandardOutput, exactMatch: false);
-        Assert.IsNotType<System.IO.Pipes.PipeStream>(adapter.StandardOutput, exactMatch: false);
+        var pumped = adapter.StandardOutput;
+        Assert.IsNotType<FileStream>(pumped, exactMatch: false);
+        Assert.IsNotType<System.IO.Pipes.PipeStream>(pumped, exactMatch: false);
 
         await adapter.WaitForExitAsync(Ct).WaitAsync(Safety, Ct);
-        Assert.Equal(0, await adapter.StandardOutput.ReadAsync(new byte[16], Ct).AsTask().WaitAsync(Safety, Ct));
+        Assert.Equal(0, await pumped.ReadAsync(new byte[16], Ct).AsTask().WaitAsync(Safety, Ct));
     }
 }

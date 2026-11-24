@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text;
+using FreexComp.Debugger.Session;
 using FreexComp.Debugger.Tests.TestSupport;
 
 namespace FreexComp.Debugger.IntegrationTests.TestSupport;
@@ -140,8 +141,10 @@ public sealed class IntegrationFixture : IDisposable
 
         using var process = Process.Start(info) ?? throw new InvalidOperationException("The compiler could not be started: " + command);
         ProcessLeakFixture.Registry.Track(process.Id, "compiler for " + name);
-        var stdout = process.StandardOutput.ReadToEndAsync();
-        var stderr = process.StandardError.ReadToEndAsync();
+        // Both pipes are drained while the compiler runs, each on a thread of its own (a child's pipe only blocks).
+        string stdout = "", stderr = "";
+        var stdoutRead = DedicatedThread.Run("FreexComp.Tests.CompilerStdout", () => stdout = process.StandardOutput.ReadToEnd());
+        var stderrRead = DedicatedThread.Run("FreexComp.Tests.CompilerStderr", () => stderr = process.StandardError.ReadToEnd());
         if (!process.WaitForExit(CompileLimit))
         {
             process.Kill(entireProcessTree: true);
@@ -149,7 +152,9 @@ public sealed class IntegrationFixture : IDisposable
             Assert.Fail($"Compiling {name} did not finish within {CompileLimit.TotalMinutes} minutes.");
         }
 
-        var output = stdout.GetAwaiter().GetResult() + stderr.GetAwaiter().GetResult();
+        stdoutRead.GetAwaiter().GetResult();
+        stderrRead.GetAwaiter().GetResult();
+        var output = stdout + stderr;
         Assert.True(process.ExitCode == 0, $"Compiling {name} failed with exit code {process.ExitCode}:\n{output}");
         Assert.True(File.Exists(exe), $"The compiler reported success but wrote no {exe}:\n{output}");
         return new BuiltProgram(directory, source, exe, Path.ChangeExtension(exe, ".pdi"));

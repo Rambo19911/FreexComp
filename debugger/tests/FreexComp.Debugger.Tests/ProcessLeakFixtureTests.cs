@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using FreexComp.Debugger.Session;
 using FreexComp.Debugger.Tests.TestSupport;
 
 namespace FreexComp.Debugger.Tests;
@@ -102,7 +103,9 @@ public sealed class ProcessLeakFixtureTests
         using var parent = StartWaiting("--spawn-child");
         try
         {
-            var line = await parent.StandardError.ReadLineAsync(Ct).AsTask().WaitAsync(Safety, Ct);
+            // A child's pipe only blocks: the line is read on a thread of its own.
+            string? line = null;
+            await DedicatedThread.Run("FreexComp.Tests.ParentStderr", () => line = parent.StandardError.ReadLine()).WaitAsync(Safety, Ct);
             Assert.NotNull(line);
             Assert.StartsWith("CHILD-PID ", line, StringComparison.Ordinal);
             var child = int.Parse(line["CHILD-PID ".Length..], System.Globalization.CultureInfo.InvariantCulture);
