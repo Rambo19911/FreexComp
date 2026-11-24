@@ -1,0 +1,80 @@
+== defaults and the list
+ok a combo box control
+ok DropDownRows
+ok NullValueText
+ok ReadOnly
+ok KeyValue
+ok Text
+ok the native style is the drop-down list
+ok DropDownRows reaches the native control
+ok list dataset closed: empty list
+ok list dataset open: one item per row
+ok the cursor of the list dataset did not move
+ok no ListField: the key field is shown
+ok built from another cursor position, which stays
+ok ListField again
+ok a refresh rebuilds the list from the display texts
+ok scrolling the list dataset does not rebuild the list
+ok a row being inserted is in the list, still empty
+ok field writes in the list dataset do not rebuild the list
+ok a posted row is in the list
+ok a deleted row is gone
+ok an unknown key field: empty list
+ok a disabled list source: empty list
+ok enabled again
+ok list dataset closed: empty list
+== display
+ok data dataset closed: empty
+ok no selection
+ok Field
+ok the item of the stored key
+ok is selected
+ok KeyValue
+ok a null key: NullValueText
+ok null: no selection
+ok null: KeyValue is empty
+ok a key that is not in the list: empty
+ok no selection
+ok KeyValue is the stored key
+ok the last row
+ok list dataset closed: empty display
+ok list dataset open again: the item is shown again
+== selection
+ok Down selects the next item
+ok the selection starts the edit
+ok the key is written at once
+ok KeyValue
+ok OnClick
+ok stored
+ok the list dataset was not scrolled
+ok nor edited
+ok nor changed
+== clearing
+ok Delete on the closed control clears the field
+ok the null text is shown
+ok in edit mode
+ok Cancel restores
+ok Backspace clears too
+ok a required field
+ok a required field is not cleared
+ok and no edit starts
+ok no beep so far
+== rejected and ignored changes
+ok AutoEdit off: the selection is taken back
+ok AutoEdit off: no edit
+ok AutoEdit off: beep
+ok AutoEdit off: Delete rejected
+ok AutoEdit off: beep
+ok ReadOnly: changes are ignored
+ok ReadOnly: no edit
+ok ReadOnly: no beep
+ok no OnClick for rejected changes
+ok never disabled
+== lifetime
+ok destroying the list source clears ListSource
+ok and the list
+ok nothing is shown
+ok the key is still the stored one
+ok destroying the data source clears DataSource
+ok no key
+failed checks: 0

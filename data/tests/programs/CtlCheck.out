@@ -1,0 +1,77 @@
+== defaults and state
+ok a check box control
+ok ValueChecked
+ok ValueUnchecked
+ok AllowGrayed
+ok ReadOnly
+ok TabStop
+ok State
+ok Field
+ok closed dataset: unchecked
+ok Field
+ok boolean True
+ok Checked
+ok the native state
+ok boolean False
+ok null: grayed
+ok a text that is in neither list: grayed
+ok the text matches an alternative of ValueChecked, without regard to case
+ok the text matches an alternative of ValueUnchecked
+ok null: grayed
+ok another text: grayed
+ok an unknown field: unchecked
+ok the boolean field again
+ok Close: unchecked
+== click
+ok no OnClick for state changes that come from the data
+ok checked -> unchecked
+ok the click starts the edit
+ok the field is written at once
+ok the dataset is modified
+ok OnClick once
+ok unchecked -> checked
+ok written
+ok stored
+ok AllowGrayed: checked -> grayed
+ok grayed clears the field
+ok grayed -> unchecked
+ok a value again
+ok False
+ok Cancel restores the state
+ok a null row
+ok grayed -> unchecked
+ok the null field gets a value
+== text field
+ok Y
+ok unchecked writes the first alternative of ValueUnchecked
+ok checked writes the first alternative of ValueChecked
+ok grayed clears the field
+== rejected and ignored clicks
+ok no beep so far
+ok AutoEdit off: the state stays
+ok AutoEdit off: no edit
+ok AutoEdit off: beep
+ok AutoEdit off: no OnClick
+ok after Edit by the application the click works
+ok ReadOnly: the click is ignored
+ok ReadOnly: no edit
+ok ReadOnly: no beep
+ok a read-only field: ignored
+ok closed dataset: ignored
+ok no OnClick for ignored clicks
+ok never disabled
+== assignment by code
+ok Checked assigned
+ok no edit
+ok the field is not written
+ok the control reloads
+== a write the field rejects
+ok the error of the field leaves the click
+ok no OnClick
+ok the state is restored
+ok the field keeps its value
+== lifetime
+ok linked
+ok destroying the source clears DataSource
+ok and the state
+failed checks: 0

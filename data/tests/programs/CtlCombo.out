@@ -1,0 +1,92 @@
+== drop-down style: display
+ok a combo box control
+ok Style is csDropDown by default
+ok ReadOnly
+ok DataSource
+ok Field
+ok closed dataset: empty
+ok Field
+ok Open: the field text
+ok in the edit part
+ok Next
+ok a null value: empty
+ok a text that is not in the list is shown
+ok no events for changes that come from the data
+== drop-down style: selection
+ok Down selects the next item
+ok the selection starts the edit
+ok and is written at once
+ok OnChange and OnClick
+ok stored
+== drop-down style: typing
+ok typed
+ok typing starts the edit
+ok typed text is not written yet
+ok OnChange
+ok Post writes the typed text
+ok the focus leaves
+ok focus loss writes the typed text
+ok without posting
+ok Cancel restores
+ok a rejected text raises at focus loss
+ok the combo box took the focus back
+ok and keeps the text
+== drop-down style: Escape
+ok pending: Escape is consumed
+ok and restores the field value
+ok the record stays in edit mode
+ok nothing pending: Escape is not consumed
+ok Enter is not consumed
+ok no beep so far
+== drop-down style: rejected and ignored changes
+ok AutoEdit off: the typed character is taken back
+ok AutoEdit off: no edit
+ok AutoEdit off: beep
+ok AutoEdit off: the selection is taken back
+ok AutoEdit off: still no edit
+ok AutoEdit off: beep
+ok no events for rejected changes
+ok ReadOnly: changes are ignored
+ok ReadOnly: no edit
+ok ReadOnly: no beep
+ok inactive link: changes are ignored
+ok never disabled
+ok active again
+ok Text assigned by code: no edit
+ok the control reloads
+ok no events
+== list style: display
+ok closed dataset: no selection
+ok the item equal to the field text
+ok Text
+ok Next
+ok a null value: no selection
+ok a text that is not in the list: no selection
+ok empty display
+ok the comparison ignores case
+ok no events for changes that come from the data
+== list style: selection
+ok Down selects the next item
+ok the selection starts the edit
+ok and is written at once
+ok OnChange and OnClick
+ok a typed letter selects and writes
+ok stored
+ok no beep so far
+== list style: rejected and ignored changes
+ok AutoEdit off: the selection is taken back
+ok AutoEdit off: no edit
+ok AutoEdit off: beep
+ok ReadOnly: the selection change is ignored
+ok ReadOnly: no edit
+ok ReadOnly: no beep
+ok a read-only field: ignored
+ok no events for rejected changes
+ok ItemIndex assigned by code: no edit
+ok and nothing is written
+ok the control reloads
+== lifetime
+ok destroying the source clears DataSource
+ok and the selection
+ok not linked: selection changes are ignored
+failed checks: 0

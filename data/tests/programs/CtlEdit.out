@@ -1,0 +1,175 @@
+== defaults
+ok an edit control
+ok Width
+ok Height
+ok Text is empty
+ok ReadOnly
+ok TabStop
+ok MaxLength
+ok DataSource
+ok DataField
+ok Field
+ok the name is not shown at run time
+ok not linked: the native control is read-only
+ok but never disabled
+== display
+ok closed dataset: empty
+ok closed dataset: no field
+ok Open: the value of the current row
+ok in the native control too
+ok Field
+ok an integer field
+ok Next
+ok a null value: empty
+ok a field write by the application shows at once
+ok Cancel restores
+ok DataField changed
+ok an unknown field: empty, no exception
+ok an unknown field: Field is nil
+ok resolved again, without regard to case
+ok a disabled source: empty
+ok enabled again
+ok not focused: the display text
+ok the edit is the active control
+ok focused: the edit text
+ok focused: the edit text after a scroll
+ok focus left: the display text again
+ok a blob field shows (Blob)
+ok also while focused
+ok a blob field is not editable
+ok typing changes nothing
+ok and does not start an edit
+ok Close: empty
+== auto-edit and write-back
+ok the typed character is in the control
+ok the first keystroke starts the edit
+ok the field is not written yet
+ok the dataset is not modified yet
+ok OnChange fired
+ok further typing continues at the caret
+ok Post writes the text to the field
+ok posted
+ok stored
+ok the control shows the stored value
+ok Backspace
+ok Backspace starts the edit
+ok navigation posts
+ok the text was written before the post decision
+ok the next row
+ok Delete key
+ok the Delete key starts the edit
+ok Cancel of the dataset restores the control
+ok and nothing was written
+ok WM_CLEAR removes the selection
+ok and starts the edit
+ok no beep so far
+ok AutoEdit off: the keystroke is swallowed
+ok AutoEdit off: no edit
+ok AutoEdit off: beep
+ok AutoEdit off: Backspace rejected
+ok AutoEdit off: Delete rejected
+ok AutoEdit off: paste rejected
+ok AutoEdit off: cut rejected
+ok AutoEdit off: clear rejected
+ok AutoEdit off: undo rejected
+ok a beep for every rejected attempt
+ok AutoEdit off: the native control is not read-only
+ok after Edit by the application typing works
+ok no beep
+ok written at Post
+ok Text assigned by code: no edit
+ok and nothing is written
+ok the control reloads
+== empty text
+ok emptied
+ok a string field stores an empty string
+ok which reads empty
+ok an integer field stores null
+== a text the field rejects
+ok typed
+ok Post raises the conversion error
+ok the dataset stays in edit mode
+ok the control keeps the text
+ok corrected and posted
+ok shown
+== focus loss
+ok before leaving: not written
+ok leaving with a valid text
+ok the focus moved
+ok the text was written to the field
+ok the record is not posted by the focus change
+ok the dataset is modified
+ok leaving with a text the field cannot take raises
+ok the control took the focus back
+ok and keeps the text
+ok the field is unchanged
+ok a second attempt raises again
+ok Escape restores the field value
+ok now the focus can leave
+ok the focus moved
+ok OnValidate rejects the text at focus loss
+ok the focus stays
+ok the text stays
+ok the field keeps its value
+ok a corrected text can leave
+ok and is written
+ok Cancel restores
+ok focus changes without a modification do nothing
+== Escape
+ok nothing pending: Escape is not wanted
+ok nothing pending: nothing happens
+ok pending: Escape is wanted by the control
+ok pending: Escape restores the field value
+ok the record stays in edit mode
+ok after the reset Escape is not wanted
+ok nothing was written
+== Enter
+ok Enter is never wanted
+ok Enter leaves the text
+ok Enter does not post
+ok and does not write
+== read-only state
+ok no dataset: read-only
+ok closed dataset: read-only
+ok open dataset: editable
+ok ReadOnly reads back
+ok ReadOnly: the native control is read-only
+ok ReadOnly: typing changes nothing
+ok ReadOnly: no edit
+ok ReadOnly off: editable again
+ok a read-only field: read-only at the next data change
+ok field writable again
+ok an unknown field: read-only
+ok resolved: editable
+ok a disabled source: read-only
+ok closed: read-only
+ok a dataset that cannot be modified: read-only
+ok a column that cannot be updated: read-only
+ok the control is never disabled by the link
+== input limit
+ok a string field of size 10 limits the input to 10
+ok MaxLength stays 0
+ok typing stops at the limit
+ok an integer field: no limit from the field
+ok the string field again
+ok MaxLength set: it wins
+ok also after a data change
+ok and after a reopen
+== focus request of a field
+ok the control of the field takes the focus
+ok and the other one
+ok a field without a control: nothing
+ok a control that cannot take the focus: nothing
+== lifetime
+ok linked
+ok destroying the source clears DataSource
+ok and the text
+ok read-only again
+ok attached to a new source
+ok destroying the control leaves the dataset alone
+ok the dataset works without the control
+== design time
+ok shows its name
+ok also with an open dataset
+ok follows a new name
+failed checks: 0

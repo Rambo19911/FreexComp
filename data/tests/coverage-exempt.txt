@@ -15,30 +15,6 @@ DAT-167 | informative | states the absence of a check
 DAT-308 | informative | refers to the single-thread usage rule DAT-166
 
 # data links and single-field controls
-DAT-216 | pending | A-055 focus needs a window control; the dispatch to the link's control is in LinkBasic
-DAT-221 | pending | A-055 starting a modification (edit control)
-DAT-222 | pending | A-055 write-back
-DAT-223 | pending | A-056 focus-loss validation
-DAT-224 | pending | A-056 Escape
-DAT-225 | pending | A-056 read-only state
-DAT-230 | pending | A-055 edit display
-DAT-231 | pending | A-056 input limit
-DAT-232 | pending | A-055 edit write-back
-DAT-233 | pending | A-056 Enter key
-DAT-238 | pending | A-057 memo display
-DAT-239 | pending | A-057 memo write-back
-DAT-242 | pending | A-058 check box state
-DAT-243 | pending | A-058 check box click
-DAT-246 | pending | A-059 combo box display
-DAT-247 | pending | A-059 combo box modification
-DAT-250 | pending | A-060 lookup list
-DAT-251 | pending | A-060 lookup display
-DAT-252 | pending | A-060 lookup selection
-DAT-253 | pending | A-060 lookup list dataset untouched
-DAT-256 | pending | A-061 navigator layout
-DAT-257 | pending | A-061 navigator hints
-DAT-258 | pending | A-061 navigator enabling
-DAT-259 | pending | A-061 navigator actions
 DAT-260 | pending | A-062 grid columns
 DAT-261 | pending | A-062 grid geometry
 DAT-262 | pending | A-062 grid column width
@@ -92,6 +68,4 @@ DAT-374 | crud-sample | A-069 result file
 
 # testing rules
 DAT-403 | informative | constrains where test programs keep their files; the runner gives each a fresh directory (DAT-401)
-DAT-406 | pending | A-055 control tests that need a shown form and simulated input
-DAT-407 | pending | A-061 message-box hook
 DAT-408 | pending | A-062 geometry through numbers

@@ -1,0 +1,85 @@
+== defaults and layout
+ok a custom control
+ok Width
+ok Height
+ok TabStop
+ok ConfirmDelete
+ok all buttons are visible
+ok DataSource
+ok no hint overrides
+ok ten buttons share 240: the first
+ok the second
+ok the last
+ok width 247: 24 each
+ok the last button takes the remainder
+ok three buttons share 100, full height
+ok in enumeration order
+ok the last with the remainder
+ok a hidden button has no rectangle
+ok no visible button
+ok paints without buttons
+== hints
+ok the default hints
+ok an override
+ok an empty override line: the default
+ok the third line is for the third button
+ok no line: the default
+== enabling
+ok no data source
+ok no dataset
+ok closed dataset
+ok open, at the first row (Bof)
+ok a middle row
+ok after Last (Eof)
+ok back in the middle
+ok dsEdit
+ok dsInsert
+ok paints with enabled and disabled buttons
+ok a disabled data source
+ok the control disabled
+ok enabled again
+ok a dataset that cannot be modified
+ok an empty dataset
+ok inserting into an empty dataset: neither Bof nor Eof
+== actions
+ok nbNext
+ok BeforeAction, the action, OnClick
+ok nbLast
+ok nbPrior
+ok nbFirst
+ok nbEdit
+ok nbPost
+ok posted
+ok nbInsert
+ok nbCancel
+ok nothing inserted
+ok nbRefresh
+ok nbDelete without confirmation
+== disabled buttons
+ok a call for a disabled button does nothing
+ok no state change
+== BeforeAction
+ok Abort in BeforeAction leaves BtnClick
+ok the action did not run
+ok OnClick did not fire
+== delete confirmation
+ok the confirmation is asked
+ok Cancel: nothing deleted
+ok Cancel: no OnClick
+ok asked again
+ok OK: deleted
+ok OK: OnClick
+ok ConfirmDelete off: not asked
+ok deleted
+== mouse
+ok a click on an enabled button runs its action
+ok with both events
+ok a click on a disabled button does nothing
+ok nbEdit by mouse
+ok nbCancel by mouse
+ok the click finds the button in a reduced set
+== lifetime
+ok linked
+ok destroying the source clears DataSource
+ok all buttons disabled
+failed checks: 0

@@ -1,0 +1,74 @@
+== defaults and display
+ok a memo control
+ok Width
+ok Height
+ok ReadOnly
+ok DataSource
+ok Field
+ok the name is not shown at run time
+ok not linked: read-only
+ok closed dataset: empty
+ok Field
+ok a lone line feed is shown as a line break
+ok the field keeps what is stored
+ok a memo field is editable
+ok a stored line break stays
+ok a null value: empty
+ok lone carriage returns too
+ok a string field
+ok a string field is editable
+ok another field type: its display text
+ok another field type: read-only
+ok typing changes nothing
+ok no edit
+ok an unknown field: empty
+ok Close: empty
+== auto-edit and write-back
+ok typed
+ok the first keystroke starts the edit
+ok not written yet
+ok Enter inserts a line break
+ok Enter does not post
+ok Enter belongs to the memo
+ok Post writes the text with line breaks, nothing added
+ok posted
+ok emptied
+ok an empty memo stores an empty string
+ok which reads empty
+ok one line: no trailing line break
+ok no beep so far
+ok AutoEdit off: every attempt is swallowed
+ok AutoEdit off: no edit
+ok AutoEdit off: a beep each
+ok Text assigned by code: no edit
+ok the control reloads
+== focus loss
+ok leaving with a valid text
+ok the text was written
+ok not posted
+ok a rejected text raises at focus loss
+ok the memo took the focus back
+ok and keeps the text
+== Escape
+ok pending: Escape is wanted
+ok Escape restores the field value
+ok the record stays in edit mode
+ok nothing pending: Escape is not wanted
+ok the focus can leave
+ok Cancel restores the stored text
+== read-only state
+ok closed dataset: read-only
+ok open: editable
+ok ReadOnly: read-only
+ok ReadOnly: no edit
+ok ReadOnly: no change
+ok ReadOnly off: editable
+ok a dataset that cannot be modified: read-only
+ok never disabled
+== lifetime
+ok destroying the source clears DataSource
+ok and the text
+== design time
+ok shows its name
+ok also with an open dataset
+failed checks: 0

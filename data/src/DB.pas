@@ -1001,6 +1001,8 @@ type
     property Field: TField read FField;
     property Control: TComponent read FControl write FControl;
     property CanModify: Boolean read GetCanModify;
+    { the user changed the control and the change is not written to the field yet (set by Modified) }
+    property IsModified: Boolean read FModified;
     property OnDataChange: TNotifyEvent read FOnDataChange write FOnDataChange;
     property OnEditingChange: TNotifyEvent read FOnEditingChange write FOnEditingChange;
     property OnUpdateData: TNotifyEvent read FOnUpdateData write FOnUpdateData;
