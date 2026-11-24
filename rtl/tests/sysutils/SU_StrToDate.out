@@ -63,6 +63,12 @@ ok date-time '2024-03-05 25:00'
 ok date-time '2024-03-32 10:00'
 ok date-time ''
 ok date-time 'soon'
+ok date-time '1.5'
+ok date-time '1.5 1'
+ok date-time '1'
+ok date-time '1.5.'
+ok date-time '1.'
+ok date-time '25'
 ok settings: separator and PM string
 ok settings: value
 ok settings: AM string
@@ -77,4 +83,4 @@ ok StrToTimeDef valid
 ok StrToTimeDef(FS) default
 ok StrToDateTimeDef valid
 ok StrToDateTimeDef(FS) default
-# passed 75 failed 0
+# passed 81 failed 0

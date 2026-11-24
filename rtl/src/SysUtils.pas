@@ -259,6 +259,9 @@ function StrToFloatDef(const S: string; const Default: Double): Double; overload
 function StrToFloat(const S: string): Double; overload;
 function StrToFloat(const S: string; const FS: TFormatSettings): Double; overload;
 function StrToFloatDef(const S: string; const Default: Double; const FS: TFormatSettings): Double; overload;
+{ picture strings (RTL-239): '0', '#', '.', ',', E+ / E-, up to three sections separated by ';', quoted literals }
+function FormatFloat(const Fmt: string; Value: Double): string; overload;
+function FormatFloat(const Fmt: string; Value: Double; const FS: TFormatSettings): string; overload;
 
 { ------------------------------------------------------------------------------------------ date and time (6) }
 const
@@ -2447,6 +2450,324 @@ end;
 function FloatToStr(Value: Double): string;
 begin
   Result := FloatToStrF(Value, ffGeneral, 15, 0, FormatSettings);
+end;
+
+{ ----- FormatFloat picture strings (RTL-239) ----- }
+
+type
+  TPictureInfo = record
+    IntPlaces, DecPlaces: Integer;               { digit placeholders before / after the decimal point }
+    FirstZero: Integer;                          { index of the first '0' among the integer placeholders; IntPlaces when none }
+    LastZero: Integer;                           { decimal placeholders up to and including the last '0'; 0 when none }
+    HasPoint, Thousands, Scientific: Boolean;
+  end;
+
+{ section Index (0-based; sections are separated by ';' outside quotes) of Fmt as Fmt[First..Last];
+  Last < First when the section is empty or missing }
+procedure PictureSection(const Fmt: string; Index: Integer; out First, Last: Integer);
+var
+  I, N: Integer;
+  Q: Char;
+begin
+  First := 1;
+  N := 0;
+  I := 1;
+  Q := #0;
+  while I <= Length(Fmt) do
+  begin
+    if Q <> #0 then
+    begin
+      if Fmt[I] = Q then
+        Q := #0;
+    end
+    else if (Fmt[I] = '''') or (Fmt[I] = '"') then
+      Q := Fmt[I]
+    else if Fmt[I] = ';' then
+    begin
+      if N = Index then
+        Break;
+      N := N + 1;
+      First := I + 1;
+    end;
+    I := I + 1;
+  end;
+  if N = Index then
+    Last := I - 1
+  else
+  begin
+    First := 1;
+    Last := 0;
+  end;
+end;
+
+{ the section for a zero / negative / positive value: the third / second section when it is not empty, else the first }
+function PickPictureSection(const Fmt: string; IsZero, IsNegative: Boolean; out First, Last: Integer): Integer;
+begin
+  Result := 0;
+  if IsZero then
+    Result := 2
+  else if IsNegative then
+    Result := 1;
+  if Result > 0 then
+  begin
+    PictureSection(Fmt, Result, First, Last);
+    if Last >= First then
+      Exit;
+  end;
+  Result := 0;
+  PictureSection(Fmt, 0, First, Last);
+end;
+
+{ the picture element at Fmt[I] (I <= Stop), I moved past it: '0', '#', '.', ',', 'E' (exponent with a sign always),
+  'e' (exponent with a sign for negatives only) or 'L' (literal text Lit). For an exponent Lit is the letter as
+  written and ExpDigits the number of '0' after the sign (at most 4 are counted). }
+function PictureToken(const Fmt: string; var I: Integer; Stop: Integer; out Lit: string; out ExpDigits: Integer): Char;
+var
+  C: Char;
+begin
+  Lit := '';
+  ExpDigits := 0;
+  C := Fmt[I];
+  I := I + 1;
+  if (C = '0') or (C = '#') or (C = '.') or (C = ',') then
+    Result := C
+  else if (C = '''') or (C = '"') then
+  begin
+    Result := 'L';
+    while (I <= Stop) and (Fmt[I] <> C) do
+    begin
+      Lit := Lit + Fmt[I];
+      I := I + 1;
+    end;
+    I := I + 1;                                  { the closing quote (or the end of an unterminated literal) }
+  end
+  else if ((C = 'E') or (C = 'e')) and (I <= Stop) and ((Fmt[I] = '+') or (Fmt[I] = '-')) then
+  begin
+    if Fmt[I] = '+' then
+      Result := 'E'
+    else
+      Result := 'e';
+    Lit := C;
+    I := I + 1;
+    while (I <= Stop) and (Fmt[I] = '0') do
+    begin
+      if ExpDigits < 4 then
+        ExpDigits := ExpDigits + 1;
+      I := I + 1;
+    end;
+  end
+  else
+  begin
+    Result := 'L';
+    Lit := C;
+  end;
+end;
+
+procedure ScanPicture(const Fmt: string; First, Last: Integer; out Info: TPictureInfo);
+var
+  I, ExpDigits: Integer;
+  Lit: string;
+  K: Char;
+begin
+  Info.IntPlaces := 0;
+  Info.DecPlaces := 0;
+  Info.FirstZero := -1;
+  Info.LastZero := 0;
+  Info.HasPoint := False;
+  Info.Thousands := False;
+  Info.Scientific := False;
+  I := First;
+  while I <= Last do
+  begin
+    K := PictureToken(Fmt, I, Last, Lit, ExpDigits);
+    if (K = '0') or (K = '#') then
+    begin
+      if Info.HasPoint then
+      begin
+        Info.DecPlaces := Info.DecPlaces + 1;
+        if K = '0' then
+          Info.LastZero := Info.DecPlaces;
+      end
+      else
+      begin
+        if (K = '0') and (Info.FirstZero < 0) then
+          Info.FirstZero := Info.IntPlaces;
+        Info.IntPlaces := Info.IntPlaces + 1;
+      end;
+    end
+    else if K = '.' then
+      Info.HasPoint := True
+    else if K = ',' then
+      Info.Thousands := True
+    else if (K = 'E') or (K = 'e') then
+      Info.Scientific := True;
+  end;
+  if Info.FirstZero < 0 then
+    Info.FirstZero := Info.IntPlaces;
+end;
+
+{ rounds R half away from zero to Keep digits (Keep >= 0) }
+procedure RoundDigitsHalfUp(var R: TFloatDigits; Keep: Integer);
+begin
+  if (Keep < R.Count) and (R.Digits[Keep] = 5) then
+    R.Digits[Keep] := 6;                         { a tie (or more) rounds up whatever follows }
+  RoundDigits(R, Keep);
+end;
+
+{ the text of section Fmt[First..Last] for the digits R, already rounded for Info (no sign) }
+function RenderPicture(const Fmt: string; First, Last: Integer; const Info: TPictureInfo; const R: TFloatDigits;
+  const FS: TFormatSettings): string;
+var
+  I, ExpDigits, Base, IntDigits, DecEmit, IntSeen, DecSeen, K, ExpValue: Integer;
+  Lit: string;
+  T: Char;
+  PointDone, Group: Boolean;
+begin
+  Result := '';
+  { digit index Base is the first digit after the decimal point }
+  ExpValue := 0;
+  if Info.Scientific then
+  begin
+    Base := Info.IntPlaces;
+    IntDigits := Info.IntPlaces;
+    if R.Count > 0 then
+      ExpValue := R.Exponent - Info.IntPlaces;
+  end
+  else
+  begin
+    Base := R.Exponent;
+    IntDigits := 0;
+    if (R.Count > 0) and (Base > 0) then
+      IntDigits := Base;
+  end;
+  DecEmit := 0;
+  if R.Count > 0 then
+    DecEmit := R.Count - Base;
+  if DecEmit > Info.DecPlaces then
+    DecEmit := Info.DecPlaces;
+  if DecEmit < Info.LastZero then
+    DecEmit := Info.LastZero;
+  Group := Info.Thousands and not Info.Scientific and (FS.ThousandSeparator <> #0);
+  IntSeen := 0;
+  DecSeen := 0;
+  PointDone := False;
+  I := First;
+  while I <= Last do
+  begin
+    T := PictureToken(Fmt, I, Last, Lit, ExpDigits);
+    if T = 'L' then
+      Result := Result + Lit
+    else if (T = 'E') or (T = 'e') then
+    begin
+      if ExpDigits < 1 then
+        ExpDigits := 1;
+      Result := Result + Lit + ExponentText(ExpValue, ExpDigits, T = 'E');
+    end
+    else if T = '.' then
+    begin
+      if not PointDone then
+      begin
+        PointDone := True;
+        if Info.IntPlaces = 0 then               { no integer placeholder: the integer digits go before the point }
+          for K := 0 to IntDigits - 1 do
+          begin
+            Result := Result + DigitAt(R, K);
+            if Group and (IntDigits - 1 - K > 0) and ((IntDigits - 1 - K) mod 3 = 0) then
+              Result := Result + FS.ThousandSeparator;
+          end;
+        if DecEmit > 0 then
+          Result := Result + FS.DecimalSeparator;
+      end;
+    end
+    else if (T = '0') or (T = '#') then
+    begin
+      if PointDone then
+      begin
+        if DecSeen < DecEmit then
+          Result := Result + DigitAt(R, Base + DecSeen);
+        DecSeen := DecSeen + 1;
+      end
+      else
+      begin
+        if IntSeen = 0 then                      { digits the picture has no placeholder for }
+          for K := 0 to IntDigits - Info.IntPlaces - 1 do
+          begin
+            Result := Result + DigitAt(R, K);
+            if Group and ((IntDigits - 1 - K) mod 3 = 0) then
+              Result := Result + FS.ThousandSeparator;
+          end;
+        K := IntDigits - Info.IntPlaces + IntSeen;
+        if (K >= 0) or (IntSeen >= Info.FirstZero) then
+        begin
+          if K >= 0 then
+            Result := Result + DigitAt(R, K)
+          else
+            Result := Result + '0';
+          K := Info.IntPlaces - 1 - IntSeen;     { integer positions to the right }
+          if Group and (K > 0) and (K mod 3 = 0) then
+            Result := Result + FS.ThousandSeparator;
+        end;
+        IntSeen := IntSeen + 1;
+      end;
+    end;
+  end;
+end;
+
+function FormatFloat(const Fmt: string; Value: Double; const FS: TFormatSettings): string;
+var
+  R: TFloatDigits;
+  Info: TPictureInfo;
+  First, Last, Sec, Keep: Integer;
+  Neg: Boolean;
+begin
+  _FloatDigitsPrecision(Value, 15, R);
+  if R.IsNaN or R.IsInfinite then
+  begin
+    Result := FloatToStrF(Value, ffGeneral, 15, 0, FS);
+    Exit;
+  end;
+  while (R.Count > 0) and (R.Digits[R.Count - 1] = 0) do
+    R.Count := R.Count - 1;
+  Neg := R.Negative and (R.Count > 0);
+  Sec := PickPictureSection(Fmt, R.Count = 0, Neg, First, Last);
+  if Last < First then
+  begin
+    Result := FloatToStrF(Value, ffGeneral, 15, 0, FS);
+    Exit;
+  end;
+  ScanPicture(Fmt, First, Last, Info);
+  if R.Count > 0 then
+  begin
+    if Info.Scientific then
+      Keep := Info.IntPlaces + Info.DecPlaces
+    else
+      Keep := R.Exponent + Info.DecPlaces;
+    if Keep < 0 then
+      R.Count := 0
+    else
+      RoundDigitsHalfUp(R, Keep);
+    if R.Count = 0 then
+    begin                                        { rounded to zero: formatted as zero, without a sign }
+      Neg := False;
+      Sec := PickPictureSection(Fmt, True, False, First, Last);
+      if Last < First then
+      begin
+        Result := '0';
+        Exit;
+      end;
+      ScanPicture(Fmt, First, Last, Info);
+    end;
+  end;
+  if R.Count = 0 then
+    R.Exponent := 0;
+  Result := RenderPicture(Fmt, First, Last, Info, R, FS);
+  if Neg and (Sec = 0) then
+    Result := '-' + Result;
+end;
+
+function FormatFloat(const Fmt: string; Value: Double): string;
+begin
+  Result := FormatFloat(Fmt, Value, FormatSettings);
 end;
 
 function TryStrToFloat(const S: string; out Value: Double; const FS: TFormatSettings): Boolean;

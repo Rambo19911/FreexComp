@@ -1,9 +1,8 @@
 namespace FreexComp.Rtl.Tests.Harness;
 
 /// <summary>
-/// RTL rules checked by compiling programs against <c>rtl/src</c>: zero warnings in every unit (RTL-003), the import
-/// libraries generated from the <c>.def</c> files and all passed to the linker (RTL-813), and <c>FormatFloat</c> not
-/// declared before it is implemented (RTL-239).
+/// RTL rules checked by compiling programs against <c>rtl/src</c>: zero warnings in every unit (RTL-003) and the import
+/// libraries generated from the <c>.def</c> files and all passed to the linker (RTL-813).
 /// </summary>
 [Trait("Phase", "2")]
 [Trait("Kind", "Golden")]
@@ -92,25 +91,6 @@ public sealed class ToolchainRulesTests
             var (run, text) = await ImportTableTests.RunAsync(Path.Combine(work, "LinkCheck.exe"), "", work);
             Assert.Equal(0, run);
             Assert.Equal("A", text.TrimEnd());
-        });
-    }
-
-    /// <summary>RTL-239: <c>FormatFloat</c> picture strings are Phase 8+; until then <c>SysUtils</c> does not declare it.</summary>
-    [Fact]
-    [Trait("Req", "RTL-239")]
-    public async Task FormatFloat_IsNotDeclared()
-    {
-        await WithWorkDirectoryAsync(async work =>
-        {
-            var (exit, output) = await CompileAsync(work, "PictureCheck",
-                "program PictureCheck;\nuses SysUtils;\nbegin\n  Writeln(FormatFloat('0.00', 1.5));\nend.\n", ["--check"]);
-            Assert.True(exit != 0, "a program calling FormatFloat compiled:\n" + output);
-            Assert.Contains("E2003", output, StringComparison.Ordinal);
-            Assert.Contains("'FormatFloat'", output, StringComparison.Ordinal);
-
-            var (ok, okOutput) = await CompileAsync(work, "FloatCheck",
-                "program FloatCheck;\nuses SysUtils;\nbegin\n  Writeln(FloatToStrF(1.5, ffFixed, 15, 2));\nend.\n", ["--check"]);
-            Assert.True(ok == 0, "the same program with FloatToStrF does not compile:\n" + okOutput);
         });
     }
 

@@ -143,6 +143,13 @@ begin
   DateTime('2024-03-32 10:00', 'invalid');
   DateTime('', 'invalid');
   DateTime('soon', 'invalid');
+  { RTL-245: a two-part date may use '.', and a time may be the hour alone (task R-216) }
+  DateTime('1.5', IntToStr(CurrentYear) + '-01-05 00:00:00.000');
+  DateTime('1.5 1', IntToStr(CurrentYear) + '-01-05 01:00:00.000');
+  DateTime('1', '1899-12-30 01:00:00.000');
+  DateTime('1.5.', 'invalid');
+  DateTime('1.', 'invalid');
+  DateTime('25', 'invalid');
   FS := InvariantFormatSettings;
   FS.TimeSeparator := '.';
   FS.TimeAMString := 'vorm';
