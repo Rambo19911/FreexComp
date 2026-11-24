@@ -11,7 +11,7 @@ public sealed class LicenseFilesTests
 
     private const string NoticeText =
         "FreexComp\n" +
-        "Copyright 2026 The FreexComp authors\n" +
+        "Copyright 2026 Rihards Laškovs\n" +
         "\n" +
         "This product is licensed under the Apache License, Version 2.0 (see LICENSE).\n" +
         "\n" +
