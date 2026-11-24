@@ -28,7 +28,6 @@ public sealed partial class ChildPipeReadsTests
         ["rtl/tests/Harness/ImportTableTests.cs"] = "R-233",
         ["ui-framework/tests/Harness/GuiHarness.cs"] = "U-142",
         ["ui-framework/tests/Harness/LayoutCasesTheory.cs"] = "U-142",
-        ["data/tests/FreexComp.Data.Tests/GoldenProgramRunner.cs"] = "A-080",
     };
 
     /// <summary>The area guard tests: they hold the forbidden calls as samples.</summary>
