@@ -84,6 +84,16 @@ public static class VisualSnapshot
         return Pixels(frame, area).Distinct().Count();
     }
 
+    /// <summary>The pixels the window draws inside <paramref name="area"/> (window coordinates), row by row.</summary>
+    public static int[] PixelsOf(Window window, Rect area)
+    {
+        ArgumentNullException.ThrowIfNull(window);
+        Dispatcher.UIThread.RunJobs();
+        var frame = window.CaptureRenderedFrame()
+            ?? throw new InvalidOperationException("No frame was rendered: not in the Skia process of the test (SkiaProcess).");
+        return Pixels(frame, PixelRect.FromRect(area, window.RenderScaling).Intersect(new PixelRect(frame.PixelSize)));
+    }
+
     private static int[] Pixels(Avalonia.Media.Imaging.WriteableBitmap frame, PixelRect area)
     {
         using var locked = frame.Lock();

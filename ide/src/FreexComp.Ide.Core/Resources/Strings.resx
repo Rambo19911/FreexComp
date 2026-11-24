@@ -1576,6 +1576,9 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   <data name="Cmd_run_setNextStatement" xml:space="preserve">
     <value>Set Next Statement</value>
   </data>
+  <data name="Cmd_run_toggleLibraryStepping" xml:space="preserve">
+    <value>Step Into Library Source</value>
+  </data>
   <data name="Cmd_run_showExecutionPoint" xml:space="preserve">
     <value>Show Execution Point</value>
   </data>
@@ -2543,6 +2546,9 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   </data>
   <data name="Menu_run_setNextStatement" xml:space="preserve">
     <value>Set &amp;Next Statement</value>
+  </data>
+  <data name="Menu_run_toggleLibraryStepping" xml:space="preserve">
+    <value>Step Into Librar&amp;y Source</value>
   </data>
   <data name="Menu_run_showExecutionPoint" xml:space="preserve">
     <value>Show E&amp;xecution Point</value>

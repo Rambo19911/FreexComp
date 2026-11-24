@@ -2,8 +2,10 @@ using System.Globalization;
 using FreexComp.Debugger;
 using FreexComp.Ide.Core.Build;
 using FreexComp.Ide.Core.Debugging;
+using FreexComp.Ide.Core.Editing;
 using FreexComp.Ide.Core.Models;
 using FreexComp.Ide.Core.Resources;
+using FreexComp.Ide.Core.ViewModels;
 using FreexComp.Ide.TestSupport;
 
 namespace FreexComp.Ide.Core.Tests.Debugging;
@@ -280,4 +282,135 @@ public sealed class DebugServiceTests
     [InlineData(@"a\\b pre""mid dle""post", new[] { @"a\\b", "premid dlepost" })]
     [Trait("Req", "DBG-200")]
     public void SplitsRunArguments(string commandLine, string[] expected) => Assert.Equal(expected, DebugService.SplitArguments(commandLine));
+
+    /// <summary>
+    /// IDE-LIB-022 / IDE-LIB-025: a session started with the library-stepping choice on gets the project directory, the
+    /// project's search paths and the library roots as user-code roots, in this order and without duplicates (ignoring
+    /// case); with the choice off the list is the project's alone. Nothing else of the session options differs.
+    /// </summary>
+    [Fact(Timeout = TestDeadline.DebugTestTimeout)]
+    [Trait("Phase", "8")]
+    [Trait("Req", "IDE-LIB-022")]
+    [Trait("Req", "IDE-LIB-024")]
+    [Trait("Req", "IDE-LIB-025")]
+    public Task LibraryStepping_AddsLibraryRootsToUserSourceRoots() => TestUiThread.RunAsync(LibraryStepping_AddsLibraryRootsOnUiThread);
+
+    private static async Task LibraryStepping_AddsLibraryRootsOnUiThread()
+    {
+        using var bed = new DebugTestBed();
+        var rtl = Assert.Single(bed.Services.LibrarySource.Roots);
+        var framework = Path.Combine(Path.GetDirectoryName(rtl)!, "ui");
+        Directory.CreateDirectory(framework);
+        bed.Services.Settings.Set(Core.Settings.SettingsCatalog.ToolchainFrameworkDir, framework);
+        var roots = bed.Services.LibrarySource.Roots;
+        Assert.Equal([rtl, framework], roots);
+
+        // The run-time library directory is a search path of the project too, in another letter case: listed once.
+        var searched = rtl.ToUpperInvariant();
+        await bed.OpenHelloAsync($$""", "searchPaths": ["lib", {{DebugTestBed.Json(searched)}}]""");
+        bed.Sessions.UseScenario("{}");
+        var lib = Path.Combine(bed.Dir, "lib");
+
+        // Off (the default): as before.
+        Assert.True(await bed.Debug.StartAsync());
+        var off = bed.Sessions.Requested[^1];
+        Assert.Equal([bed.Dir, lib, searched], off.UserSourceRoots);
+        await bed.Debug.StopAsync();
+
+        // On: the library roots follow, duplicates removed.
+        await bed.Services.Commands.ExecuteAsync("run.toggleLibraryStepping");
+        Assert.True(await bed.Debug.StartAsync());
+        var on = bed.Sessions.Requested[^1];
+        Assert.Equal([bed.Dir, lib, searched, framework], on.UserSourceRoots);
+        Assert.Equal((off.AdapterPath, off.RequestTimeout, off.LaunchTimeout, off.Format), (on.AdapterPath, on.RequestTimeout, on.LaunchTimeout, on.Format)); // IDE-LIB-025: the only input that differs
+        await bed.Debug.StopAsync();
+
+        // IDE-LIB-024: the same with a configuration without debug information (the roots are passed; no extra message).
+        await bed.Services.Commands.ExecuteAsync("project.setConfiguration", "Release");
+        bed.Dialogs.Answer("Msg.Debug.NoDebugInfo", "RunAnyway");
+        Assert.True(await bed.Debug.StartAsync());
+        Assert.Equal([bed.Dir, lib, searched, framework], bed.Sessions.Requested[^1].UserSourceRoots);
+        Assert.Equal(["Msg.Debug.NoDebugInfo"], bed.Dialogs.Requests.Select(r => r.MessageId));
+        await bed.Debug.StopAsync();
+
+        // Off again.
+        await bed.Services.Commands.ExecuteAsync("run.toggleLibraryStepping");
+        bed.Dialogs.Answer("Msg.Debug.NoDebugInfo", "RunAnyway");
+        Assert.True(await bed.Debug.StartAsync());
+        Assert.Equal([bed.Dir, lib, searched], bed.Sessions.Requested[^1].UserSourceRoots);
+        await bed.Debug.StopAsync();
+    }
+
+    /// <summary>
+    /// IDE-LIB-023: a stop whose location is a library file opens that file as a protected document (IDE-LIB-002) with the
+    /// execution-line marker — independent of the library-stepping choice (off: a breakpoint stop in the library file;
+    /// on: a Step Into that ends in it).
+    /// </summary>
+    [Theory(Timeout = TestDeadline.DebugTestTimeout)]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Trait("Phase", "8")]
+    [Trait("Req", "IDE-LIB-023")]
+    public Task StopInLibraryFileOpensProtectedDocument(bool stepping) => TestUiThread.RunAsync(() => StopInLibraryFileOnUiThread(stepping));
+
+    private static async Task StopInLibraryFileOnUiThread(bool stepping)
+    {
+        using var bed = new DebugTestBed();
+        var commands = bed.Services.Commands;
+        var root = Assert.Single(bed.Services.LibrarySource.Roots);
+        var lib = bed.File(Path.Combine(root, "LibUnit.pas"), "unit LibUnit;\ninterface\nprocedure LibProc;\nimplementation\nprocedure LibProc;\nbegin\nend;\nend.\n");
+        await bed.OpenHelloAsync();
+        if (stepping)
+            await commands.ExecuteAsync("run.toggleLibraryStepping");
+        Assert.Equal(stepping, bed.Debug.StepIntoLibrarySource);
+
+        async Task<StopInfo> StopAfterAsync(Func<Task> act)
+        {
+            var stopped = new TaskCompletionSource<StopInfo>(TaskCreationOptions.RunContinuationsAsynchronously);
+            void OnStopped(object? sender, StopInfo e) => stopped.TrySetResult(e);
+            bed.Debug.Stopped += OnStopped;
+            await act();
+            await DebugTestBed.WaitAsync(stopped.Task, "the stop");
+            bed.Debug.Stopped -= OnStopped;
+            return await stopped.Task;
+        }
+
+        StopInfo stop;
+        if (stepping)
+        {
+            bed.Sessions.UseScenario($$"""
+                { "steps": [ {{DebugTestBed.StopAtStart(bed.UnitPath, 7)}}, {{DebugScenarios.StepTo("stepIn", lib, 6)}},
+                             {{DebugScenarios.Continue(DebugTestBed.Exit())}} ] }
+                """);
+            stop = await StopAfterAsync(async () => Assert.True(await bed.Debug.StartAsync()));
+            Assert.Equal(bed.UnitPath, stop.Location!.Path);
+            Assert.DoesNotContain(bed.Services.Documents.Documents, d => string.Equals(d.FilePath, lib, StringComparison.OrdinalIgnoreCase));
+            stop = await StopAfterAsync(() => commands.ExecuteAsync("run.stepInto"));
+            Assert.Equal(StopReason.Step, stop.Reason);
+        }
+        else
+        {
+            bed.Sessions.UseScenario($$"""
+                { "steps": [ {{DebugTestBed.StopAtStart(lib, 6)}}, {{DebugScenarios.Continue(DebugTestBed.Exit())}} ] }
+                """);
+            stop = await StopAfterAsync(async () => Assert.True(await bed.Debug.StartAsync()));
+        }
+
+        Assert.Equal(stepping, bed.Sessions.Requested[^1].UserSourceRoots.Contains(root, StringComparer.OrdinalIgnoreCase));
+        Assert.Equal((lib, 6), (stop.Location!.Path, stop.Location.Line));
+        var document = Assert.IsType<TextDocumentViewModel>(bed.Services.Documents.ActiveDocument);
+        Assert.Equal(lib, document.FilePath);
+        Assert.True(document.IsLibraryProtected);
+        Assert.True(document.Buffer.IsReadOnly);
+        Assert.Equal(TextDocumentViewModel.LibrarySourceInfoBarKind, document.VisibleInfoBars[0].Kind);
+        Assert.Equal(LineGlyphKind.Execution, document.Decorations.GlyphAt(6)?.Kind);
+        Assert.Equal(6, document.ViewState.Caret.Line);
+        Assert.Empty(bed.Dialogs.Requests);
+
+        // The marker goes with the stop; the document stays protected.
+        await commands.ExecuteAsync("run.start");
+        await bed.WaitForStateAsync(IdeState.Idle);
+        Assert.Null(document.Decorations.GlyphAt(6));
+        Assert.True(document.IsLibraryProtected);
+    }
 }

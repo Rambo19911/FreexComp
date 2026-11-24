@@ -153,6 +153,25 @@ public sealed class SessionService : ISessionService
     private Debugging.WatchList? _watches;
 
     /// <summary>
+    /// IDE-LIB-020: the debug service whose library-stepping choice is stored in and restored from the project session's
+    /// <c>debug.stepIntoLibrarySource</c> member (absent or not a boolean = false); null before Phase 6.
+    /// </summary>
+    public Debugging.IDebugService? Debug
+    {
+        get => _debug;
+        set
+        {
+            if (_debug is not null)
+                _debug.StepIntoLibrarySourceChanged -= OnBookmarksChanged;
+            _debug = value;
+            if (value is not null)
+                value.StepIntoLibrarySourceChanged += OnBookmarksChanged;
+        }
+    }
+
+    private Debugging.IDebugService? _debug;
+
+    /// <summary>
     /// D-109: the Object Inspector whose page, collapsed categories, expanded rows and name column ratio are stored in and
     /// restored from the session's <c>objectInspector</c> member (DSG-OI-003, DSG-OI-013, UI-DSG-103).
     /// </summary>
@@ -210,6 +229,13 @@ public sealed class SessionService : ISessionService
         _watches?.Load(_projects.Project is not null && root["watches"] is JsonArray watches
             ? [.. watches.Select(LayoutStateJson.Str).OfType<string>()]
             : []);
+
+        // IDE-LIB-020: the library-stepping choice is per project; absent or not a boolean = false.
+        if (_debug is not null)
+        {
+            _debug.StepIntoLibrarySource = _projects.Project is not null && root["debug"] is JsonObject debug
+                && debug["stepIntoLibrarySource"] is JsonValue stepping && stepping.TryGetValue<bool>(out var on) && on;
+        }
 
         if (_inspector is not null && root["objectInspector"] is JsonObject inspector)
             _inspector.RestoreSessionState(ReadInspector(inspector));
@@ -281,6 +307,13 @@ public sealed class SessionService : ISessionService
             Put(root, "breakpoints", new JsonArray([.. _breakpoints.All.Select(WriteBreakpoint)]));
         if (_watches is not null && project is not null && (_watches.Expressions.Count > 0 || root.ContainsKey("watches")))
             Put(root, "watches", new JsonArray([.. _watches.Expressions.Select(e => (JsonNode)e)]));
+        if (_debug is not null && project is not null && (_debug.StepIntoLibrarySource || root.ContainsKey("debug")))
+        {
+            // Other members of "debug" are kept as read (IDE-ARCH-076).
+            if (root["debug"] is not JsonObject debug)
+                Put(root, "debug", debug = []);
+            debug["stepIntoLibrarySource"] = _debug.StepIntoLibrarySource;
+        }
         if (_inspector is not null)
             Put(root, "objectInspector", WriteInspector(_inspector.SessionState));
         if (project is not null)

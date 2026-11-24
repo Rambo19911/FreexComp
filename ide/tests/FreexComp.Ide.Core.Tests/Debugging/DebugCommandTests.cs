@@ -390,4 +390,124 @@ public sealed class DebugCommandTests
         Assert.True(await bed.Services.Projects.ApplyOptionsAsync(bed.Services.Projects.Definition! with { AppType = "console" }));
         Assert.Equal(["run.start", "run.stepOver", "run.stepInto", "run.runToCursor"], ids.Where(id => commands.CanExecute(id)));
     }
+
+    /// <summary>
+    /// IDE-LIB-020 / IDE-LIB-021 / IDE-LIB-024: <c>run.toggleLibraryStepping</c> is a toggle that is enabled with a project
+    /// and no debug session — also for a configuration without debug information; its value lives in the project's session
+    /// file as <c>debug.stepIntoLibrarySource</c> (never in the project file), is written with the session, read on project
+    /// open, and false when absent or not a boolean.
+    /// </summary>
+    [Fact(Timeout = TestDeadline.DebugTestTimeout)]
+    [Trait("Phase", "8")]
+    [Trait("Req", "IDE-LIB-020")]
+    [Trait("Req", "IDE-LIB-021")]
+    [Trait("Req", "IDE-LIB-024")]
+    public Task LibrarySteppingToggle_EnablementAndPersistence() => TestUiThread.RunAsync(LibrarySteppingToggle_EnablementAndPersistenceOnUiThread);
+
+    private static async Task LibrarySteppingToggle_EnablementAndPersistenceOnUiThread()
+    {
+        const string id = "run.toggleLibraryStepping";
+        using var bed = new DebugTestBed();
+        var commands = bed.Services.Commands;
+        var command = commands.Get(id);
+        var definition = commands.Definitions.Single(d => d.Id == id);
+        Assert.True(definition.IsToggle);
+        Assert.Empty(definition.DefaultGestures);
+        Assert.Equal("Step Into Library Source", command.Title);
+
+        // The value of the session file; null when the member is absent.
+        JsonElement? Stored()
+        {
+            using var json = JsonDocument.Parse(File.ReadAllText(bed.SessionPath));
+            return json.RootElement.TryGetProperty("debug", out var debug) && debug.TryGetProperty("stepIntoLibrarySource", out var value) ? value.Clone() : null;
+        }
+
+        // Completes once the command's check mark is as asked (the command states are re-queried by a posted job).
+        Task CheckedAsync(bool expected)
+        {
+            var reached = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            void Check(object? sender, EventArgs e)
+            {
+                if (command.IsChecked != expected)
+                    return;
+                command.PropertyChanged -= Check;
+                reached.TrySetResult();
+            }
+
+            command.PropertyChanged += Check;
+            Check(null, EventArgs.Empty);
+            return DebugTestBed.WaitAsync(reached.Task, $"the check mark {expected}");
+        }
+
+        // No project: disabled, not checked.
+        Assert.False(commands.CanExecute(id));
+        Assert.False(command.IsChecked);
+        Assert.False(bed.Debug.StepIntoLibrarySource);
+
+        // A project without a session file: enabled, off.
+        await bed.OpenHelloAsync();
+        var projectText = File.ReadAllText(bed.ProjectPath);
+        Assert.True(commands.CanExecute(id));
+        Assert.False(bed.Debug.StepIntoLibrarySource);
+        Assert.False(command.IsChecked);
+
+        // Off is not written into a session that never had the member.
+        bed.Services.Session.Save();
+        Assert.Null(Stored());
+
+        // On: checked; written with the session; the project file is not touched.
+        await commands.ExecuteAsync(id);
+        Assert.True(bed.Debug.StepIntoLibrarySource);
+        await CheckedAsync(true);
+        bed.Services.Session.Save();
+        Assert.Equal(JsonValueKind.True, Stored()?.ValueKind);
+        Assert.Equal(projectText, File.ReadAllText(bed.ProjectPath));
+        Assert.False(bed.Services.Projects.Project!.IsModified);
+
+        // IDE-LIB-021: no toggling while a debug session exists; the check mark stays.
+        bed.Sessions.UseScenario("{}");
+        Assert.True(await bed.Debug.StartAsync());
+        Assert.False(commands.CanExecute(id));
+        await commands.ExecuteAsync(id);
+        Assert.True(bed.Debug.StepIntoLibrarySource);
+        Assert.True(command.IsChecked);
+        await bed.Debug.StopAsync();
+        Assert.True(commands.CanExecute(id));
+
+        // IDE-LIB-024: a configuration without debug information changes nothing about the command.
+        await commands.ExecuteAsync("project.setConfiguration", "Release");
+        Assert.False(bed.Services.Projects.Definition!.Configurations["Release"].DebugInfo);
+        Assert.True(commands.CanExecute(id));
+        Assert.True(bed.Debug.StepIntoLibrarySource);
+        Assert.Empty(bed.Dialogs.Requests);
+
+        // Off again: the stored member follows.
+        await commands.ExecuteAsync(id);
+        await CheckedAsync(false);
+        bed.Services.Session.Save();
+        Assert.Equal(JsonValueKind.False, Stored()?.ValueKind);
+        await commands.ExecuteAsync(id);
+        await CheckedAsync(true);
+
+        // Per project: closing writes the session and clears the value; opening reads it.
+        Assert.True(await bed.Services.Projects.CloseAsync());
+        Assert.Equal(JsonValueKind.True, Stored()?.ValueKind);
+        Assert.False(bed.Debug.StepIntoLibrarySource);
+        Assert.False(commands.CanExecute(id));
+        await CheckedAsync(false);
+        Assert.True(await bed.Services.Projects.OpenAsync(bed.ProjectPath));
+        Assert.True(bed.Debug.StepIntoLibrarySource);
+        await CheckedAsync(true);
+        Assert.True(commands.CanExecute(id));
+
+        // A value that is not a boolean is false; other members of "debug" are kept when the session is written.
+        Assert.True(await bed.Services.Projects.CloseAsync());
+        bed.File(bed.SessionPath, """{ "formatVersion": 1, "project": "Hello.pproj", "debug": { "stepIntoLibrarySource": "yes", "later": 7 } }""");
+        Assert.True(await bed.Services.Projects.OpenAsync(bed.ProjectPath));
+        Assert.False(bed.Debug.StepIntoLibrarySource);
+        await CheckedAsync(false);
+        bed.Services.Session.Save();
+        Assert.Equal(JsonValueKind.False, Stored()?.ValueKind);
+        Assert.Contains("\"later\": 7", File.ReadAllText(bed.SessionPath), StringComparison.Ordinal);
+    }
 }

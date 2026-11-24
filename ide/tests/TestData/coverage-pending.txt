@@ -1,7 +1,1 @@
 # IDE-TEST-030: in-scope behaviour without a test yet (known gaps). "<id> <note>". Remove a line when a test covers the id.
-IDE-LIB-020 pending I-233: stepping into library source is not implemented yet (library-source.md §3)
-IDE-LIB-021 pending I-233: stepping into library source is not implemented yet
-IDE-LIB-022 pending I-233: stepping into library source is not implemented yet
-IDE-LIB-023 pending I-233: stepping into library source is not implemented yet
-IDE-LIB-024 pending I-233: stepping into library source is not implemented yet
-IDE-LIB-025 pending I-233: stepping into library source is not implemented yet

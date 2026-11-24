@@ -269,6 +269,7 @@ public static class MainMenuDefinition
             Command("run.stepOut"),
             Command("run.runToCursor"),
             Command("run.setNextStatement"),
+            Command("run.toggleLibraryStepping"),
             Command("run.showExecutionPoint"),
             Separator,
             Command("run.toggleBreakpoint"),

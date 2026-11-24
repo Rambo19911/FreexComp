@@ -185,6 +185,7 @@ public static class CommandCatalog
         new("run.stepOut", [Global], 6, ["Shift+F11"], RequiresDebugSession: true),
         new("run.runToCursor", [Editor], 6, ["Ctrl+F10"]),
         new("run.setNextStatement", [Editor], 8, ["Ctrl+Shift+F10"], RequiresDebugSession: true),
+        new("run.toggleLibraryStepping", [Global], 8, [], IsToggle: true),
         new("run.showExecutionPoint", [Global], 6, ["Alt+Multiply"], RequiresDebugSession: true),
         new("run.toggleBreakpoint", [Editor], 6, ["F9"]),
         new("run.toggleBreakpointEnabled", [Editor], 6, ["Ctrl+F9"]),

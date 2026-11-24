@@ -246,10 +246,12 @@ public static class ServiceGraph
                 UiState = layout,
                 SelectProgramOutput = () => outputView.SelectChannel(OutputChannels.Program),
                 ShowWatches = () => toolWindowService.Show(ViewModels.WatchesViewModel.ToolName, focus: false), // UI-DLG-200
+                LibrarySource = librarySource, // IDE-LIB-022
             };
             debug.RegisterCommands(commands);
             breakpoints.ValidateCondition = debug.ConditionProblemAsync;
             session.Watches = debug.Watches; // IDE-ARCH-076
+            session.Debug = debug; // IDE-LIB-020
             parameterInfo.DebugValue = debug.HoverValueAsync; // UI-ED-130: "= value" in the hover tooltip while paused
         }
 
@@ -262,6 +264,8 @@ public static class ServiceGraph
                 messages.Clear(); // IDE-P3-067
                 breakpoints?.Load([]); // UI-TW-800: breakpoints belong to the project (its session file has them)
                 debug?.Watches.Load([]); // UI-TW-1100: and so do the watches
+                if (debug is not null)
+                    debug.StepIntoLibrarySource = false; // IDE-LIB-020: and the library-stepping choice
             }
         };
         var application = new ApplicationService(documents, projects, session, recovery, settings, keymap, platform.Dialogs, platform.Clock,

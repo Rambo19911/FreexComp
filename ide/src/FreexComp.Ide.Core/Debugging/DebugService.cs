@@ -40,6 +40,15 @@ public interface IDebugService
     /// <summary>The user's watch expressions (UI-TW-1100).</summary>
     WatchList Watches { get; }
 
+    /// <summary>
+    /// IDE-LIB-020: the open project's "Step Into Library Source" choice (session value <c>debug.stepIntoLibrarySource</c>);
+    /// read when a debug session starts (IDE-LIB-022). False without a project.
+    /// </summary>
+    bool StepIntoLibrarySource { get; set; }
+
+    /// <summary><see cref="StepIntoLibrarySource"/> changed.</summary>
+    event EventHandler? StepIntoLibrarySourceChanged;
+
     /// <summary>A session started or ended.</summary>
     event EventHandler? SessionChanged;
 
@@ -192,6 +201,25 @@ public sealed partial class DebugService : IDebugService
     public StackFrameInfo? SelectedFrame => _selectedFrame;
 
     public WatchList Watches { get; } = new();
+
+    /// <summary>IDE-LIB-022: the library roots a session started with <see cref="StepIntoLibrarySource"/> treats as user code.</summary>
+    public ILibrarySourceService? LibrarySource { get; init; }
+
+    public bool StepIntoLibrarySource
+    {
+        get => _stepIntoLibrarySource;
+        set
+        {
+            if (_stepIntoLibrarySource == value)
+                return;
+            _stepIntoLibrarySource = value;
+            StepIntoLibrarySourceChanged?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    private bool _stepIntoLibrarySource;
+
+    public event EventHandler? StepIntoLibrarySourceChanged;
 
     public event EventHandler? SessionChanged;
 
@@ -463,6 +491,16 @@ public sealed partial class DebugService : IDebugService
             EditorFile is not { } editor ? Task.CompletedTask
                 : Paused() ? ControlAsync(s => s.RunToLineAsync(editor.FilePath!, editor.ViewState.Caret.Line))
                 : StartAsync(stopOnEntry: false, (editor.FilePath!, editor.ViewState.Caret.Line))));
+        // IDE-LIB-020 / IDE-LIB-021: a project and no debug session; the value is read when a session starts.
+        commands.RegisterHandler("run.toggleLibraryStepping", new Handler(() => _projects.Project is not null, () => _active is null, () =>
+        {
+            StepIntoLibrarySource = !StepIntoLibrarySource;
+            return Task.CompletedTask;
+        })
+        {
+            Checked = () => StepIntoLibrarySource,
+        });
+        StepIntoLibrarySourceChanged += (_, _) => commands.InvalidateCanExecute();
         commands.RegisterHandler("run.showExecutionPoint", new Handler(() => _active is not null, Paused, ShowExecutionPointAsync));
         // tool-windows.md §12, §13: from a Locals or Watches row the commands take the row's expression.
         commands.RegisterHandler("run.evaluate", new Handler(() => _active is not null, Paused, () =>
@@ -566,7 +604,9 @@ public sealed partial class DebugService : IDebugService
         var options = new DebugSessionOptions
         {
             AdapterPath = Path.Combine(_toolchain.Resolve().LlvmBinDir ?? "", AdapterFileName),
-            UserSourceRoots = [project.Directory, .. searchPaths],
+            // IDE-LIB-022: with the project's library-stepping choice the library roots count as user code too.
+            UserSourceRoots = [.. ((string[])[project.Directory, .. searchPaths, .. StepIntoLibrarySource && LibrarySource is { } library ? library.Roots : []])
+                .Distinct(StringComparer.OrdinalIgnoreCase)],
         };
         var active = new Active(_factory.Create(options), exe, _clock.Now, stopOnEntry) { StopAtMainBody = stopAtMainBody };
         var session = active.Session;
@@ -901,6 +941,11 @@ public sealed partial class DebugService : IDebugService
         public Func<string?>? Title { get; init; }
 
         public Func<string?>? MenuLabel { get; init; }
+
+        /// <summary>The check mark of a toggle command; null = never checked.</summary>
+        public Func<bool>? Checked { get; init; }
+
+        public bool IsChecked(string? argument) => Checked?.Invoke() ?? false;
 
         public bool CanExecute(string? argument) => available() && stateAllows();
 

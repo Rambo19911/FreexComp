@@ -24,6 +24,7 @@ public static class Phase8Features
         "project.configurationManager", // F09-004
         "project.moveFile", // F09-054
         "project.newFolder", // F09-054
+        "run.toggleLibraryStepping", // F02-004
     ];
 
     private static readonly FrozenSet<string> Shipped = DeliveredIds.ToFrozenSet(StringComparer.Ordinal);
