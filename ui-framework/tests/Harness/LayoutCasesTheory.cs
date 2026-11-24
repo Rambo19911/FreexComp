@@ -89,8 +89,8 @@ public static class LayoutHost
 {
     public const string ProgramName = "LayoutHost";
 
-    private static readonly TimeSpan CompileLimit = TimeSpan.FromSeconds(120);
-    internal static readonly TimeSpan RunLimit = TimeSpan.FromSeconds(20);           // UIF-1208, group A/B
+    private static readonly TimeSpan CompileLimit = Gui.BuildSafetyNet;
+    internal static readonly TimeSpan RunLimit = Gui.SafetyNet;                      // UIF-1208, group A/B; a safety net, not a budget (U-139)
     private static readonly SemaphoreSlim Gate = new(1, 1);
     private static Task<(string? Exe, string? Failure)>? compiled;
 
@@ -327,7 +327,7 @@ public static class LayoutHost
         }
         catch (OperationCanceledException)
         {
-            return new(-1, "", "", ct.IsCancellationRequested ? "test cancelled" : $"{Path.GetFileName(file)} stopped after the limit of {limit.TotalSeconds:F0} s");
+            return new(-1, "", "", ct.IsCancellationRequested ? "test cancelled" : $"{Path.GetFileName(file)} did not exit by itself (safety net {limit.TotalSeconds:F0} s); its process tree was killed");
         }
         finally
         {

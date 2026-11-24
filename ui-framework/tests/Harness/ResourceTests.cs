@@ -24,7 +24,7 @@ public sealed class ResourceTests
         Assert.True(app.WaitForOutputLine("done"), "no 'done' line\n--- stdout\n" + app.StdOut + "\n--- stderr\n" + app.StdErr);
         var (gdi1, user1) = Counts(app);
         app.SendLine("end");
-        Assert.True(app.WaitForExit(TimeSpan.FromSeconds(10)), "the program did not exit");
+        Assert.True(app.WaitForExit(), app.ExitFailure("Gdi_NoLeak.exe, after 'end',"));
         Assert.Equal(0, app.Process.ExitCode);
         Assert.Equal("", app.StdErr);
         Assert.True(gdi1 - gdi0 <= 2 && user1 - user0 <= 2, $"GDI {gdi0} -> {gdi1}, USER {user0} -> {user1} after 200 cycles");

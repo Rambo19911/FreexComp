@@ -1,3 +1,5 @@
+using System.Text.RegularExpressions;
+
 namespace FreexComp.UiFramework.Tests;
 
 /// <summary>
@@ -27,9 +29,10 @@ public sealed class GuiHarnessTests
         using (var app = Gui.StartGui(exe, ["first arg"], new Dictionary<string, string> { ["PROBE_VALUE"] = "42" }))
         {
             pid = app.Process.Id;
-            Assert.Equal(IntPtr.Zero, Gui.WaitForMainWindow(app, "FxcGuiProbe", "Wrong Title", TimeSpan.FromMilliseconds(300)));
             var main = Gui.WaitForMainWindow(app, "FxcGuiProbe", "Probe Window");
             Assert.NotEqual(IntPtr.Zero, main);
+            Assert.Equal(IntPtr.Zero, Gui.WaitForMainWindow(app, "FxcGuiProbe", "Wrong Title", TimeSpan.Zero));   // the title must match exactly
+            Assert.Equal(IntPtr.Zero, Gui.WaitForMainWindow(app, "FxcGuiProbeX", "Probe Window", TimeSpan.Zero)); // and the class
             Assert.Equal(main, app.MainWindow);
             var dpi = Gui.Dpi(main);
             Assert.InRange(dpi, 96, 960);
@@ -56,7 +59,7 @@ public sealed class GuiHarnessTests
             Assert.Equal("cmd102,0;kd13;ku13;ld12,34;lu12,34", Gui.WaitForText(info, "cmd102,0;kd13;ku13;ld12,34;lu12,34"));
 
             Gui.Post(main, Gui.WM_CLOSE);
-            Assert.True(app.WaitForExit(TimeSpan.FromSeconds(5)), "the probe closes on WM_CLOSE");
+            Assert.True(app.WaitForExit(), app.ExitFailure("the probe, after WM_CLOSE,"));
             Assert.Equal(7, app.Process.ExitCode);
             Assert.Equal("probe env=1 value=42 arg=first arg", app.StdOut.Trim());
             Assert.Equal("probe: close", app.StdErr.Trim());
@@ -95,6 +98,72 @@ public sealed class GuiHarnessTests
         }
 
         Gui.Post(main, Gui.WM_CLOSE);
-        Assert.True(app.WaitForExit(TimeSpan.FromSeconds(5)));
+        Assert.True(app.WaitForExit(), app.ExitFailure("the probe, after WM_CLOSE,"));
+    }
+
+    /// <summary>
+    /// U-139: a wait for an exit that does not come ends at its net, kills the process tree and words the failure (the
+    /// probe never exits by itself before <c>WM_CLOSE</c>, so a zero net is a missed exit without any timing).
+    /// </summary>
+    [Fact]
+    [Trait("Req", "UIF-1208")]
+    public void GuiHarness_MissedExitKillsTheTreeAndSaysSo()
+    {
+        Harness.RequireDesktop();
+        var exe = Gui.BuildProgram(Path.Combine(UiCorpus.AreaDirectory, "tests", "gui", "GuiProbe.pas"));
+        using var app = Gui.StartGui(exe, [], new Dictionary<string, string>());
+        Assert.NotEqual(IntPtr.Zero, Gui.WaitForMainWindow(app, "FxcGuiProbe", "Probe Window"));
+        Assert.False(app.Killed);
+
+        Assert.False(app.WaitForExit(TimeSpan.Zero));
+        Assert.True(app.Killed);
+        Assert.True(app.Process.HasExited, "the probe still runs after the missed exit");
+        Assert.False(app.WaitForExit(), "a killed process does not count as having exited by itself");
+        var message = app.ExitFailure("the probe");
+        Assert.StartsWith("the probe did not exit by itself (safety net 120 s, session backstop 480 s); its process tree was killed", message);
+        Assert.Contains("--- stdout\n", message);
+        Assert.Contains("--- stderr\n", message);
+    }
+}
+
+/// <summary>
+/// U-139: the GUI tests wait for events; their only time limits are the shared nets of <see cref="Gui"/>. A fixed short
+/// budget (<c>TimeSpan.FromSeconds(10)</c>, <c>WaitForExit(5000)</c>) failed under a loaded full-suite run.
+/// </summary>
+[Trait("Category", "Integration")]
+public sealed partial class WaitBudgetTests
+{
+    [GeneratedRegex(@"TimeSpan\.From(?:Milliseconds|Seconds|Minutes|Hours)\s*\(|WaitForExit\s*\(\s*\d")]
+    private static partial Regex FixedBudget();
+
+    [Fact]
+    [Trait("Req", "UIF-1208")]
+    public void GuiTests_HaveNoFixedWaitBudget()
+    {
+        Assert.Equal(TimeSpan.FromSeconds(120), Gui.SafetyNet);
+        Assert.True(Gui.SessionTimeout > Gui.SafetyNet && Gui.BuildSafetyNet >= Gui.SafetyNet);
+        Assert.Equal(Gui.SafetyNet, LayoutHost.RunLimit);
+
+        var problems = new List<string>();
+        foreach (var file in Directory.EnumerateFiles(Path.Combine(UiCorpus.AreaDirectory, "tests"), "*.cs", SearchOption.AllDirectories)
+            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase)
+                && !f.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase)))
+        {
+            var lines = File.ReadAllLines(file);
+            for (var i = 0; i < lines.Length; i++)
+            {
+                var line = lines[i];
+                var allowed = line.Contains("SafetyNet { get; } = TimeSpan.FromSeconds(120)", StringComparison.Ordinal)   // the net itself
+                    || line.Contains("// attempt slice, not a budget", StringComparison.Ordinal)
+                    || line.Contains("FixedBudget", StringComparison.Ordinal) || line.Contains("Assert.Equal(TimeSpan.FromSeconds(120)", StringComparison.Ordinal)
+                    || line.TrimStart().StartsWith("///", StringComparison.Ordinal);
+                if (!allowed && FixedBudget().IsMatch(line))
+                {
+                    problems.Add($"{Path.GetRelativePath(UiCorpus.AreaDirectory, file)}({i + 1}): {line.Trim()}");
+                }
+            }
+        }
+
+        Assert.True(problems.Count == 0, "fixed wait budgets (use Gui.SafetyNet):\n" + string.Join("\n", problems));
     }
 }

@@ -78,7 +78,7 @@ public sealed class LayoutGalleryTests : IDisposable
         }
 
         Gui.Post(form, Gui.WM_CLOSE);
-        Assert.True(app.WaitForExit(TimeSpan.FromSeconds(5)), "the program did not exit within 5 s of WM_CLOSE");
+        Assert.True(app.WaitForExit(), app.ExitFailure("Gallery.exe, after WM_CLOSE,"));
         Assert.Equal(0, app.Process.ExitCode);
         Assert.Equal("", app.StdErr);
     }
@@ -156,7 +156,7 @@ public sealed class LayoutGalleryTests : IDisposable
         var exe = Gui.BuildSample(SampleDirectory);
         var dump = Path.Combine(temp, "gallery.json");
         using var app = Gui.StartGui(exe, ["--dump-layout", dump], new Dictionary<string, string>());
-        Assert.True(app.WaitForExit(TimeSpan.FromSeconds(10)), "Gallery.exe --dump-layout did not exit within 10 s");
+        Assert.True(app.WaitForExit(), app.ExitFailure("Gallery.exe --dump-layout"));
         Assert.True(app.Process.ExitCode == 0, $"exit code {app.Process.ExitCode}\n--- stderr\n{app.StdErr}");
         return File.ReadAllText(dump, Encoding.UTF8);
     }

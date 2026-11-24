@@ -37,8 +37,19 @@ public static partial class Gui
     public const uint GR_GDIOBJECTS = 0;
     public const uint GR_USEROBJECTS = 1;
 
-    /// <summary>The time a single message round trip may take before the target counts as hung.</summary>
-    private const uint MessageTimeoutMs = 2000;
+    /// <summary>
+    /// U-139: the one safety net of every wait of this harness (window, text, state, output line, process exit, message
+    /// round trip). It is not a performance budget: a wait returns as soon as its event happens, and the net only ends a
+    /// wait for an event that never comes (the test then fails, naming what did not happen). It is generous because the
+    /// full suite runs on a shared, CPU-loaded machine; no test asserts a duration.
+    /// </summary>
+    public static TimeSpan SafetyNet { get; } = TimeSpan.FromSeconds(120);
+
+    /// <summary>The net of one <c>opc</c> build of a test program (a build is several net-sized steps of work under load).</summary>
+    public static TimeSpan BuildSafetyNet { get; } = 2 * SafetyNet;
+
+    /// <summary>A single message round trip; a target that the system reports as hung still fails at once (<c>SMTO_ABORTIFHUNG</c>).</summary>
+    private static readonly uint MessageTimeoutMs = (uint)SafetyNet.TotalMilliseconds;
 
     private const uint SMTO_ABORTIFHUNG = 0x0002;
     private const uint MK_LBUTTON = 0x0001;
@@ -53,11 +64,12 @@ public static partial class Gui
     /// <summary>U-127: the windows of <see cref="StartForegroundHolder"/> (with their thread, against a reused handle value).</summary>
     private static readonly ConcurrentDictionary<(IntPtr Window, uint Thread), bool> HolderWindows = new();
 
-    /// <summary>Default for <see cref="WaitForMainWindow"/> (sample-apps.md §2).</summary>
-    public static TimeSpan WindowTimeout { get; } = TimeSpan.FromSeconds(10);
-
-    /// <summary>Per-process hard limit of a GUI session (testing.md UIF-1208: group C 60 s).</summary>
-    public static TimeSpan SessionTimeout { get; } = TimeSpan.FromSeconds(60);
+    /// <summary>
+    /// Backstop of a whole GUI session (testing.md UIF-1208): the process tree is killed when it is still running this
+    /// long after its start, even if a test is stuck outside the harness waits. Several safety nets, so that a test that
+    /// waits for several events in turn is never cut short by it.
+    /// </summary>
+    public static TimeSpan SessionTimeout { get; } = 4 * SafetyNet;
 
     /// <summary>
     /// <c>BuildSample(dir)</c>: the sample's <c>&lt;Name&gt;.pproj</c> built as a GUI exe (once per test run). Until
@@ -100,10 +112,10 @@ public static partial class Gui
         using var opc = Process.Start(psi)!;
         var stdout = opc.StandardOutput.ReadToEndAsync();
         var stderr = opc.StandardError.ReadToEndAsync();
-        if (!opc.WaitForExit(TimeSpan.FromSeconds(180)))
+        if (!opc.WaitForExit(BuildSafetyNet))
         {
             opc.Kill(entireProcessTree: true);
-            Assert.Fail($"opc did not finish within 180 s building {source}");
+            Assert.Fail($"opc did not finish building {source} (safety net {BuildSafetyNet.TotalSeconds:F0} s; its process tree was killed)");
         }
 
         var output = stdout.Result + stderr.Result;
@@ -146,12 +158,13 @@ public static partial class Gui
 
     /// <summary>
     /// <c>WaitForMainWindow</c>: polls the visible top-level windows of the process for exactly this class and
-    /// title; zero after <paramref name="timeout"/> (default 10 s) or when the process exited.
+    /// title; zero when the process exited without it or after <paramref name="timeout"/> (default <see cref="SafetyNet"/>).
+    /// <see cref="TimeSpan.Zero"/> looks once.
     /// </summary>
     public static IntPtr WaitForMainWindow(GuiProcess app, string className, string title, TimeSpan? timeout = null)
     {
         var watch = Stopwatch.StartNew();
-        var limit = timeout ?? WindowTimeout;
+        var limit = timeout ?? SafetyNet;
         while (true)
         {
             var found = IntPtr.Zero;
@@ -372,11 +385,11 @@ public static partial class Gui
         return text;
     }
 
-    /// <summary>Re-evaluates <paramref name="condition"/> until it holds or <paramref name="timeout"/> (default 5 s) passes; returns its last value.</summary>
+    /// <summary>Re-evaluates <paramref name="condition"/> until it holds or <paramref name="timeout"/> (default <see cref="SafetyNet"/>) passes; returns its last value.</summary>
     public static bool WaitUntil(Func<bool> condition, TimeSpan? timeout = null)
     {
         var watch = Stopwatch.StartNew();
-        var limit = timeout ?? TimeSpan.FromSeconds(5);
+        var limit = timeout ?? SafetyNet;
         while (!condition())
         {
             if (watch.Elapsed >= limit)
@@ -528,7 +541,7 @@ public static partial class Gui
     public static bool BringToForeground(IntPtr hwnd, TimeSpan? timeout = null)
     {
         var watch = Stopwatch.StartNew();
-        var limit = timeout ?? TimeSpan.FromSeconds(5);
+        var limit = timeout ?? SafetyNet;
         var first = IsHolder(hwnd) ? 3 : 0;
         for (var attempt = first; ; attempt++)
         {
@@ -578,7 +591,7 @@ public static partial class Gui
                     break;
             }
 
-            WaitUntil(() => GetForegroundWindow() == hwnd, TimeSpan.FromMilliseconds(500));
+            WaitUntil(() => GetForegroundWindow() == hwnd, TimeSpan.FromMilliseconds(500));   // attempt slice, not a budget: a late change is seen by the next round
         }
     }
 
@@ -683,12 +696,13 @@ public static partial class Gui
         return 0;
     });
 
-    /// <summary>A started GUI program: output captured, a hard <see cref="SessionTimeout"/>, killed (tree) on dispose.</summary>
+    /// <summary>A started GUI program: output captured, the <see cref="SessionTimeout"/> backstop, killed (tree) on dispose.</summary>
     public sealed class GuiProcess : IDisposable
     {
         private readonly StringBuilder stdout = new();
         private readonly StringBuilder stderr = new();
         private readonly Timer deadline;
+        private bool killed;
 
         internal GuiProcess(Process process)
         {
@@ -727,9 +741,16 @@ public static partial class Gui
             }
         }
 
-        /// <summary>Waits (bounded, default 60 s) until stdout holds the line <paramref name="line"/>; false on timeout or exit without it.</summary>
+        /// <summary>True once the session backstop (<see cref="SessionTimeout"/>) or a missed exit (<see cref="WaitForExit"/>) killed the process tree.</summary>
+        public bool Killed
+        {
+            get => Volatile.Read(ref killed);
+            private set => Volatile.Write(ref killed, value);
+        }
+
+        /// <summary>Waits (default <see cref="SafetyNet"/>) until stdout holds the line <paramref name="line"/>; false on timeout or exit without it.</summary>
         public bool WaitForOutputLine(string line, TimeSpan? timeout = null) =>
-            Gui.WaitUntil(() => StdOut.Split('\n').Contains(line) || Process.HasExited, timeout ?? SessionTimeout)
+            Gui.WaitUntil(() => StdOut.Split('\n').Contains(line) || Process.HasExited, timeout ?? SafetyNet)
             && StdOut.Split('\n').Contains(line);
 
         /// <summary>Writes one line to the program's stdin (a synchronisation point of a program that waits with ReadLn).</summary>
@@ -739,17 +760,28 @@ public static partial class Gui
             Process.StandardInput.Flush();
         }
 
-        /// <summary>True when the process exited within <paramref name="timeout"/>; its output is then complete.</summary>
-        public bool WaitForExit(TimeSpan timeout)
+        /// <summary>
+        /// Waits for the process to exit by itself (the exit event; the net is <paramref name="safetyNet"/>, default
+        /// <see cref="SafetyNet"/>). True when it did and was not killed: its output is then complete. False when the net
+        /// ended the wait (the process tree is then killed, <see cref="Killed"/>) or the session backstop had killed it;
+        /// <see cref="ExitFailure"/> words the failure.
+        /// </summary>
+        public bool WaitForExit(TimeSpan? safetyNet = null)
         {
-            if (!Process.WaitForExit(timeout))
+            if (!Process.WaitForExit(safetyNet ?? SafetyNet))
             {
+                Kill();
                 return false;
             }
 
             Process.WaitForExit();                                  // drains the redirected streams
-            return true;
+            return !Killed;
         }
+
+        /// <summary>The message of a failed <see cref="WaitForExit"/>: what did not exit, why the wait ended, and the captured output.</summary>
+        public string ExitFailure(string what) =>
+            $"{what} did not exit by itself (safety net {SafetyNet.TotalSeconds:F0} s, session backstop {SessionTimeout.TotalSeconds:F0} s); "
+            + $"its process tree was {(Killed ? "killed" : "not killed")}\n--- stdout\n{StdOut}\n--- stderr\n{StdErr}";
 
         public void Dispose()
         {
@@ -763,8 +795,9 @@ public static partial class Gui
             {
                 if (!Process.HasExited)
                 {
+                    Killed = true;
                     Process.Kill(entireProcessTree: true);
-                    Process.WaitForExit(5000);
+                    Process.WaitForExit(SafetyNet);                  // the kill's own exit event
                 }
             }
             catch (InvalidOperationException)

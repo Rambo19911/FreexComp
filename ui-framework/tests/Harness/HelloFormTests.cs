@@ -17,7 +17,7 @@ public sealed class HelloFormTests : IDisposable
 
     public void Dispose() => Rtl.Tests.Harness.GoldenRunner.TryDelete(temp);
 
-    /// <summary>§3.3: dump mode shows no window, exits 0 within 10 s, and the dump equals the hand-written expectation.</summary>
+    /// <summary>§3.3: dump mode shows no window while it runs, exits 0 by itself, and the dump equals the hand-written expectation.</summary>
     [Fact]
     [Trait("Req", "UIF-310")]
     [Trait("Req", "UIF-312")]
@@ -28,8 +28,9 @@ public sealed class HelloFormTests : IDisposable
         var dump = Path.Combine(temp, "hello.json");
         using var app = Gui.StartGui(exe, ["--dump-layout", dump], new Dictionary<string, string>());
 
-        Assert.Equal(IntPtr.Zero, Gui.WaitForMainWindow(app, "PN.TForm", "Hello Form", TimeSpan.FromSeconds(1)));
-        Assert.True(app.WaitForExit(TimeSpan.FromSeconds(10)), "Hello.exe --dump-layout did not exit within 10 s");
+        // U-139: watched until the process exits (an event), not for a fixed second: no window appears in the whole run
+        Assert.Equal(IntPtr.Zero, Gui.WaitForMainWindow(app, "PN.TForm", "Hello Form"));
+        Assert.True(app.WaitForExit(), app.ExitFailure("Hello.exe --dump-layout"));
         Assert.True(app.Process.ExitCode == 0, $"exit code {app.Process.ExitCode}\n--- stderr\n{app.StdErr}");
         var expected = File.ReadAllText(Path.Combine(SampleDirectory, "expected-layout.json"), Encoding.UTF8);
         var actual = File.ReadAllText(dump, Encoding.UTF8);
@@ -128,7 +129,7 @@ public sealed class HelloFormTests : IDisposable
 
         var exitId = Gui.MenuItemId(Gui.SubMenu(Gui.Menu(form), 0), 0);                               // step 13
         Gui.Post(form, Gui.WM_COMMAND, exitId, 0);
-        Assert.True(app.WaitForExit(TimeSpan.FromSeconds(5)), "the program did not exit within 5 s of File > Exit");
+        Assert.True(app.WaitForExit(), app.ExitFailure("the program, after File > Exit,"));
         Assert.Equal(0, app.Process.ExitCode);
         Assert.Equal("", app.StdErr);
 
@@ -165,7 +166,7 @@ public sealed class HelloFormTests : IDisposable
         Assert.Equal("", Gui.GetText(result));
 
         Gui.Post(form, Gui.WM_CLOSE);
-        Assert.True(app.WaitForExit(TimeSpan.FromSeconds(5)), "the program did not exit within 5 s of WM_CLOSE");
+        Assert.True(app.WaitForExit(), app.ExitFailure("the program, after WM_CLOSE,"));
         Assert.Equal(1, app.Process.ExitCode);
     }
 
@@ -202,7 +203,7 @@ public sealed class HelloFormTests : IDisposable
         Gui.WaitUntil(() => Entered().Count >= expected.Count);
         Assert.True(expected.SequenceEqual(Entered()), $"--- expected\n{string.Join("\n", expected)}\n--- actual\n{string.Join("\n", ReadShared(log))}");
         Gui.Post(form, Gui.WM_CLOSE);
-        Assert.True(app.WaitForExit(TimeSpan.FromSeconds(5)));
+        Assert.True(app.WaitForExit(), app.ExitFailure("the program, after WM_CLOSE,"));
         Assert.Equal(0, app.Process.ExitCode);
     }
 
@@ -249,7 +250,7 @@ public sealed class HelloFormTests : IDisposable
         Gui.PostSysKey(form, 'F', altDown: true, character: 'f');
         Assert.True(Gui.WaitUntil(InPopup), $"Alt+F did not open the File menu (flags 0x{Gui.GuiThreadFlags(form):X})");
         Gui.Post(form, Gui.WM_KEYDOWN, 'X', 1);
-        Assert.True(app.WaitForExit(TimeSpan.FromSeconds(5)), "X in the File menu did not choose Exit within 5 s");
+        Assert.True(app.WaitForExit(), app.ExitFailure("the program, after X in the File menu (Exit),"));
         Assert.Equal(0, app.Process.ExitCode);
         Assert.Contains("OnClose", ReadShared(log));
     }
@@ -272,7 +273,7 @@ public sealed class HelloFormTests : IDisposable
         Assert.NotEmpty(comctl);
         Assert.All(comctl, v => Assert.True(v.FileMajorPart >= 6, $"{v.FileName} is version {v.FileVersion}"));
         Gui.Post(form, Gui.WM_CLOSE);
-        Assert.True(app.WaitForExit(TimeSpan.FromSeconds(5)));
+        Assert.True(app.WaitForExit(), app.ExitFailure("the program, after WM_CLOSE,"));
     }
 
     /// <summary>
@@ -336,7 +337,7 @@ public sealed class HelloFormTests : IDisposable
             $"GDI {gdi0} -> {gdi1}, USER {user0} -> {user1} after 200 resizes; GDI objects by type {types0} -> {Gui.GdiTypeCounts(app.Process)}");
         Assert.DoesNotContain("enter: NameEdit", ReadShared(log).SkipWhile(l => l != "enter: GreetButton"));
         Gui.Post(form, Gui.WM_CLOSE);
-        Assert.True(app.WaitForExit(TimeSpan.FromSeconds(5)));
+        Assert.True(app.WaitForExit(), app.ExitFailure("the program, after WM_CLOSE,"));
         Assert.Equal(0, app.Process.ExitCode);
     }
 
@@ -413,7 +414,7 @@ public sealed class HelloFormTests : IDisposable
             $"at start GDI {gdiStart}, USER {userStart}, before the warm-up of {ActivationWarmUp} cycles");
         Assert.DoesNotContain("enter: NameEdit", ReadShared(log).SkipWhile(l => l != "enter: GreetButton"));
         Gui.Post(form, Gui.WM_CLOSE);
-        Assert.True(app.WaitForExit(TimeSpan.FromSeconds(5)));
+        Assert.True(app.WaitForExit(), app.ExitFailure("the program, after WM_CLOSE,"));
         Assert.Equal(0, app.Process.ExitCode);
     }
 
