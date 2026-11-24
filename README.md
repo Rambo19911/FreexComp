@@ -66,9 +66,13 @@
 <!-- ABOUT THE PROJECT -->
 ## About The Project
 
-<!-- SCREENSHOT: add an image at assets/screenshots/ide-main.png, then uncomment:
-[![FreexComp IDE][product-screenshot]](#about-the-project)
--->
+[![FreexComp form designer with Object Inspector and Tool Palette][product-screenshot]](assets/screenshots/ide-designer.png)
+
+<details>
+  <summary>More screenshots</summary>
+  <br />
+  <img src="assets/screenshots/ide-code.png" alt="FreexComp code editor with the project manager" />
+</details>
 
 FreexComp is a rapid application development environment for native Windows programs. You design a form
 visually, write Object Pascal, press Run, and get a real x64 executable, without installing a commercial toolchain,
@@ -309,4 +313,4 @@ Project link: [https://github.com/Rambo19911/FreexComp](https://github.com/Rambo
 [llvm-url]: https://llvm.org/
 [sqlite-shield]: https://img.shields.io/badge/SQLite-003B57?style=for-the-badge
 [sqlite-url]: https://www.sqlite.org/
-[product-screenshot]: assets/screenshots/ide-main.png
+[product-screenshot]: assets/screenshots/ide-designer.png
