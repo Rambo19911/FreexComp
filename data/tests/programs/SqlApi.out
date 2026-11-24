@@ -1,0 +1,100 @@
+== failing loads
+ok nothing is loaded at program start
+ok the function variables are nil
+ok a missing library does not load
+ok the reason names the library
+ok a name with a path separator is that exact file only
+ok the reason names the path
+ok still nothing loaded
+ok a library without the functions does not load
+ok the reason names the first missing function
+ok a rejected library is not kept
+ok the function variables are nil again
+ok version 3.7.17 is too old
+ok the last version below the limit
+ok version 3.8.0 is accepted
+ok a current version is accepted
+== load
+ok the library beside the executable loads
+ok no reason on success
+ok loaded
+ok a later load with another name uses the loaded library
+ok whatever the name
+ok library and connection functions
+ok statement functions
+ok bind functions
+ok column functions
+ok connection state functions
+ok optional sqlite3_column_table_name is present
+ok optional sqlite3_column_origin_name is present
+ok optional sqlite3_column_database_name is present
+ok optional sqlite3_interrupt is present
+ok the version number passes the check
+ok the version text matches the version number
+== result code texts
+ok SQLITE_OK
+ok SQLITE_ERROR
+ok SQLITE_BUSY
+ok SQLITE_LOCKED
+ok SQLITE_READONLY
+ok SQLITE_CANTOPEN
+ok SQLITE_CONSTRAINT
+ok SQLITE_MISUSE
+ok SQLITE_RANGE
+ok SQLITE_NOTADB
+ok SQLITE_ROW
+ok SQLITE_DONE
+== codes observed
+ok open in memory
+ok a handle
+ok extended result codes on
+ok prepare
+ok step returns SQLITE_ROW
+ok SQLITE_INTEGER
+ok SQLITE_FLOAT
+ok SQLITE_TEXT
+ok SQLITE_BLOB
+ok SQLITE_NULL
+ok the integer value
+ok step returns SQLITE_DONE
+ok finalize
+ok prepare with parameters
+ok SQLITE_RANGE for a bind index out of range
+ok bind with SQLITE_TRANSIENT
+ok bind with SQLITE_STATIC
+ok a row
+ok SQLite kept its own copy of the transient text
+ok the empty static text is text, not null
+ok SQLITE_ERROR
+ok the schema
+ok SQLITE_CONSTRAINT_CHECK
+ok the extended code of the handle
+ok its primary code is SQLITE_CONSTRAINT
+ok SQLITE_CONSTRAINT_FOREIGNKEY
+ok SQLITE_CONSTRAINT_NOTNULL
+ok SQLITE_CONSTRAINT_PRIMARYKEY
+ok SQLITE_CONSTRAINT_UNIQUE
+ok SQLITE_CONSTRAINT_ROWID
+ok SQLITE_CONSTRAINT_TRIGGER
+ok close
+== open flags
+ok SQLITE_OPEN_READWRITE does not create a file
+ok the handle of a failed open is closed
+ok no file
+ok SQLITE_OPEN_CREATE creates it
+ok and it can be written
+ok the file exists
+ok SQLITE_OPEN_READONLY opens it
+ok for reading
+ok SQLITE_READONLY for a write
+ok no busy timeout
+ok the first connection locks the file
+ok SQLITE_BUSY for the second
+ok not in autocommit mode inside a transaction
+ok commit
+ok autocommit again
+ok the file is deleted
+ok SQLITE_OPEN_URI accepts a file: name
+ok an in-memory database
+ok that creates no file
+failed checks: 0

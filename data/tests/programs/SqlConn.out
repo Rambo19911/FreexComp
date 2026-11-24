@@ -1,0 +1,175 @@
+== errors: library
+ok Open with a missing library
+ok BeforeConnect ran before the library was loaded
+ok the connection stays closed
+ok LibraryVersion with a missing library
+ok Open with a library that is not SQLite
+ok nothing is loaded yet
+ok Open with the library beside the executable
+ok the library is loaded on first use
+ok LibraryVersion
+ok a later connection uses the loaded library whatever its LibraryName
+== errors: result codes
+ok SQLITE_OK, SQLITE_ROW and SQLITE_DONE raise nothing
+ok without a handle the text of the result code is used
+ok ESQLiteError is an EDatabaseError
+ok message, codes and statement text
+ok an unknown table
+ok a NOT NULL violation has the extended code
+ok a CHECK violation
+ok the connection stays usable
+ok a UNIQUE violation
+ok a primary key violation
+ok a syntax error
+ok one row was stored
+== open: defaults
+ok Database
+ok OpenMode
+ok BusyTimeout
+ok ForeignKeys
+ok LibraryName
+ok Params
+ok closed, no handle
+== open: open and close
+ok Open without a database name
+ok no event for it
+ok Close on a closed connection does nothing
+ok the events of Open
+ok connected, with a handle
+ok Open on an open connection does nothing
+ok the events of Close
+ok closed again
+ok Connected := True opens
+ok once
+ok Connected := False closes
+== open: properties while connected
+ok Database
+ok OpenMode
+ok LibraryName
+ok assigning the current values is allowed
+ok the busy timeout was applied at open
+ok BusyTimeout is applied at once
+ok foreign keys are on
+ok ForeignKeys is applied at once
+ok foreign keys are enforced
+ok values set while closed are applied at open
+== open: pragmas
+ok each line is one pragma
+ok a pragma name with a space
+ok no AfterConnect
+ok a failure after the handle exists leaves the connection closed
+ok a pragma name starting with a digit
+ok an empty pragma name
+ok a line without a value
+ok the value is inserted verbatim
+ok closed after the failing pragma
+ok an unknown pragma with a valid name is ignored by SQLite
+== open: deferred while loading
+ok Connected := True while loading does not open
+ok Loaded opens the connection
+ok Loaded without a stored Connected opens nothing
+== open: modes
+ok omReadWrite needs an existing file
+ok closed, no file
+ok only BeforeConnect ran
+ok omReadOnly needs an existing file
+ok omCreateReadWrite creates and writes
+ok the file exists
+ok omReadWrite writes an existing file
+ok omReadOnly reads
+ok omReadOnly does not write
+== open: busy timeout
+ok a locked database fails at once with BusyTimeout = 0
+ok and works after the lock is gone
+== open: a failed open releases the file
+ok a failing open of a file database
+ok the file can be deleted
+== open: path resolution
+ok a relative name is resolved against the directory of the executable
+ok not against the current directory
+ok the file is deleted
+ok the path is normalised
+ok that file is deleted
+ok a file: name is passed as a URI
+ok mode=memory creates no file
+== exec
+ok ExecSQL on a closed connection
+ok a script returns the total of rows changed
+ok every statement ran
+ok an update
+ok a delete
+ok a query changes nothing; its rows are discarded
+ok an update that matches no row
+ok statements that change no rows add nothing after one that did
+ok they ran
+ok an empty script
+ok white space only
+ok comments only
+ok empty statements between semicolons
+ok semicolons in literals and comments do not split
+ok six rows now
+ok rows changed by triggers are not counted
+ok the trigger ran
+ok a delete of all rows
+== exec: errors
+ok a statement that does not compile is named by the error
+ok the statements before it stay, those after it did not run
+ok a statement that fails while running is named by the error
+ok the same rule for the other statements
+ok the connection stays usable
+== transaction
+ok InTransaction is False on a closed connection
+ok StartTransaction on a closed connection
+ok Commit on a closed connection
+ok Rollback on a closed connection
+ok no transaction after Open
+ok Commit without a transaction
+ok Rollback without a transaction
+ok StartTransaction begins one
+ok no nesting
+ok the first transaction is still active
+ok Commit ends it
+ok the row is kept
+ok rows are visible inside the transaction
+ok Rollback ends it
+ok the rows are gone
+ok InTransaction follows a BEGIN executed as SQL
+ok StartTransaction inside it
+ok Commit ends that one too
+ok Close ends an active transaction
+ok by rolling it back
+ok the file is deleted
+== schema helpers
+ok GetTableNames on a closed connection
+ok GetFieldNames on a closed connection
+ok LastInsertRowId on a closed connection
+ok an empty database has no tables; the list is cleared first
+ok an internal table exists
+ok GetTableNames: user tables by name, no views, indexes or internal tables
+ok GetFieldNames in column order
+ok the table name is not case-sensitive
+ok a table name with a quote and a space
+ok an unknown table gives an empty list
+ok an identifier is quoted
+ok with every quote doubled
+ok also when empty
+ok LastInsertRowId after the first insert
+ok after an insert with an explicit key
+ok after the next automatic key
+ok a 64-bit row id
+== close cascade
+ok no dataset is registered at first
+ok a dataset is registered once; an unregistered one is forgotten
+ok in registration order
+ok Close: datasets close, statements are released, then rollback and disconnect
+ok the registered datasets are closed
+ok the unregistered one is not
+ok the datasets stay registered
+ok Close on a closed connection leaves the datasets alone
+ok a closed dataset is not closed again
+== destroying the connection
+ok an open connection closes, then detaches its datasets
+ok the dataset is closed
+ok a closed connection only detaches
+ok and leaves the dataset open
+failed checks: 0

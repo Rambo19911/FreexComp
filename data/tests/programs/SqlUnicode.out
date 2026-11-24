@@ -1,0 +1,52 @@
+== UTF-16 to UTF-8
+ok an empty string is the terminator alone
+ok ASCII, zero-terminated
+ok the one-byte and two-byte boundary
+ok two bytes
+ok the two-byte and three-byte boundary
+ok three bytes
+ok the last three-byte character
+ok a surrogate pair is four bytes
+ok the first supplementary character
+ok the last supplementary character
+ok an unpaired high surrogate at the end
+ok an unpaired high surrogate before a character
+ok an unpaired low surrogate
+ok a reversed pair is two replacement characters
+ok a high surrogate before a pair
+ok an embedded #0 is kept
+== UTF-8 to UTF-16
+ok nil is the empty string
+ok an empty text
+ok ASCII
+ok two bytes
+ok the two-byte range
+ok the three-byte range
+ok around the surrogate range
+ok four bytes become a surrogate pair
+ok the four-byte range
+== invalid UTF-8
+ok a lone continuation byte
+ok each stray continuation byte is one replacement
+ok a lead byte without its continuation
+ok a lead byte at the end
+ok a truncated three-byte sequence is one maximal subpart
+ok a three-byte sequence cut by the end
+ok a truncated four-byte sequence is one maximal subpart
+ok decoding continues at the offending byte
+ok an overlong two-byte form
+ok the other overlong lead byte
+ok an overlong three-byte form
+ok the last overlong three-byte form
+ok an encoded surrogate
+ok an overlong four-byte form
+ok beyond U+10FFFF
+ok a byte that is never valid
+ok FF and FE
+== file names and identifiers
+ok the database file has the UTF-16 name
+ok the table name comes back unchanged
+ok the column name comes back unchanged
+ok and is stored in the file
+ok the file is deleted
+failed checks: 0
