@@ -80,8 +80,14 @@ Why FreexComp:
 * **One tool from form to program.** Designer, editor, build, debugger and data access live in one window.
 
 > [!WARNING]
-> FreexComp is in active development and has not had a public release yet. Expect missing features and
-> breaking changes. See the [roadmap](#roadmap).
+> **FreexComp is an experimental product.** Its goal is to build a free alternative to the RAD Studio
+> compilers and IDE for Windows. It is in active development and has not had a public release yet: expect
+> missing features, rough edges and breaking changes. Do not use it for production work yet. See the
+> [roadmap](#roadmap).
+
+FreexComp is an independent clean-room implementation. It contains no code, headers, documentation or assets
+of any commercial product, and it is not affiliated with, endorsed by or sponsored by the owner of RAD Studio.
+RAD Studio is a trademark of its respective owner and is named here only to describe the goal of the project.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
