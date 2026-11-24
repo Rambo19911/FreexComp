@@ -219,4 +219,14 @@ public sealed class Phase8LibraryTests
         Assert.True(program.Contains("scaled 43") && program.Contains("freed TRUE"), Diagnostics());
         Assert.Empty(h.Messages.Requests);
     }
+
+    /// <summary>
+    /// Card F02-004 (IDE-LIB-022, IDE-LIB-023) with the real build engine, toolchain and debug adapter: Step Into at a call
+    /// of a SysUtils routine stays in the program with "Step Into Library Source" off and stops in the protected
+    /// <c>SysUtils.pas</c> with it on (<see cref="LibrarySteppingScenario"/>).
+    /// </summary>
+    [AvaloniaFact(Timeout = 120000)]
+    [Trait("Req", "IDE-LIB-022")]
+    [Trait("Req", "IDE-LIB-023")]
+    public Task E2E_Phase8_StepIntoLibrarySource() => LibrarySteppingScenario.StepIntoSysUtilsAsync();
 }
