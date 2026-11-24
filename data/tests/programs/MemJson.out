@@ -1,0 +1,192 @@
+== save: the people table
+ok the fixture is there
+ok the fixture has LF line ends
+ok SaveToJSON equals fixtures/people.json
+ok SaveToStream writes the same bytes, without a byte order mark
+ok SaveToStream writes at the position of the stream
+ok SaveToFile writes the same bytes
+ok SaveToFile replaces an existing file
+ok the written file is removed
+== save: state
+ok a filtered view
+ok a filter does not change what is saved
+ok the cursor does not matter
+ok and stays where it was
+ok saving posts a pending edit
+ok the posted value is saved
+ok saving in an unmodified edit
+ok cancels the edit
+ok SaveToJSON on a closed table
+== save: every type
+ok the text of every field type
+== save: special cases
+ok a table without rows and without auto-increment fields
+ok a calculated field
+ok is not saved
+ok two auto-increment counters
+ok saving a NaN
+ok saving an infinity
+ok saving a negative infinity
+ok the table stays open
+== load: the people table
+ok events of a load into a closed table
+ok the loaded table is open
+ok the definitions
+ok RecordCount
+ok the cursor is on the first row
+ok the first row
+ok the bytes of the photo
+ok the second row
+ok saving the loaded table gives the same text
+ok the auto-increment counter is restored
+ok events of a load into an open table
+ok a load replaces the rows
+ok a load discards a pending edit
+== load: stream and file
+ok LoadFromFile
+ok LoadFromStream skips a byte order mark
+ok LoadFromStream without a byte order mark
+ok LoadFromFile of a missing file
+ok a missing file leaves the table as it was
+== load: accepted forms
+ok any property order, unknown properties, type names without case
+ok the rows
+ok without autoInc the counter is the highest value + 1
+ok any whitespace; no rows property
+ok without autoInc and rows the counter is 1
+ok autoInc: names without case; other names are ignored
+ok the number forms of float fields
+ok the string escapes
+ok characters outside ASCII
+ok the limits, first row
+ok the limits, second row
+== round trip
+ok identical definitions
+ok the text of the loaded table is identical
+ok the same number of rows
+ok identical values in the first row
+ok identical values in the second row
+ok the smallest float and the zero
+ok the largest float
+ok identical text through a file
+ok the written file is removed
+ok identical text through a stream
+ok identical auto-increment counter
+== errors: state after a failed load
+ok a failing load
+ok events of a failing load
+ok the table is closed
+ok and empty
+ok with a new auto-increment counter
+ok an error found after the rows
+ok leaves no row either
+ok persistent fields must match the loaded definitions
+ok the table is closed after the mismatch
+== errors: JSON syntax
+ok an empty text
+ok only whitespace
+ok not an object
+ok the text ends inside the object
+ok two commas
+ok a wrong closing bracket
+ok a missing colon
+ok a name without quotes
+ok a broken literal
+ok a number with a leading zero
+ok a number without digits after the point
+ok a sign without digits
+ok an exponent without digits
+ok a plus sign
+ok an unknown escape
+ok a broken \u escape
+ok a control character in a string
+ok a string without its end
+ok a comma before a closing bracket
+ok a comma before a closing brace
+ok text after the object
+ok single quotes
+== errors: structure
+ok fields is not an array
+ok a field is not an object
+ok a field without a name
+ok a name that is not a string
+ok a size that is not an integer
+ok a required that is not a boolean
+ok autoInc is not an object
+ok rows is not an array
+ok a row is not an array
+== errors: format version and fields
+ok version 2
+ok version 0
+ok a version string
+ok a version with a fraction
+ok no version
+ok no fields
+ok an empty fields array
+ok an unknown type name
+ok the type Unknown
+ok a type name with its prefix
+ok a type that is not a string
+ok a field without a type
+ok two fields with one name
+== errors: rows
+ok a short row
+ok a long row
+ok an empty row
+== errors: wrong type
+ok a string for an integer
+ok a fraction for an integer
+ok an exponent for an integer
+ok a boolean for an integer
+ok a number for a string
+ok a boolean for a memo
+ok a number for a boolean
+ok a string for a boolean
+ok a string for a float
+ok a boolean for a currency value
+ok a number for a date
+ok a number for a time
+ok a number for a date and time
+ok a number for a blob
+ok an array as a value
+ok an object as a value
+ok a counter that is not an integer
+== errors: out of range
+ok a small integer above its range
+ok a small integer below its range
+ok a negative word
+ok a word above its range
+ok an integer above its range
+ok an auto-increment value below its range
+ok a large integer above its range
+ok a large integer below its range
+ok a float above its range
+ok a float below its range
+ok a string longer than its size
+ok a counter above its range
+== errors: date and time
+ok a day that does not exist
+ok a month with one digit
+ok a date without separators
+ok an empty date
+ok a date with a time
+ok the year 0
+ok hour 24
+ok a time without seconds
+ok a fraction with one digit
+ok a fraction with four digits
+ok a letter in a time
+ok a space between date and time
+ok second 60
+ok a date and time without a time
+ok month 13
+== errors: base64
+ok a length that is not a multiple of four
+ok a character outside the alphabet
+ok the URL alphabet
+ok padding at the start
+ok padding in the middle
+ok three padding characters
+ok a space
+ok padding before the last group
+failed checks: 0

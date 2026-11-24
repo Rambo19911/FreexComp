@@ -6,7 +6,8 @@ namespace FreexComp.Data.Tests;
 /// <summary>
 /// Compiles and runs one golden program (DAT-400, DAT-401): opc with <c>-U data/src -U data/tests/programs/lib</c>
 /// (+ the UI framework sources), the SQLite library copied next to the exe, the exe started in a fresh, empty
-/// working directory; exit code 0 and stdout equal to <c>NAME.out</c> after CRLF→LF. Returns null or what failed.
+/// working directory with a copy of <c>data/tests/fixtures</c> beside it (the program reads <c>../fixtures/NAME</c>);
+/// exit code 0 and stdout equal to <c>NAME.out</c> after CRLF→LF. Returns null or what failed.
 /// The time limits are safety nets against a hung process, not performance checks.
 /// </summary>
 public static class GoldenProgramRunner
@@ -84,6 +85,7 @@ public static class GoldenProgramRunner
 
         File.Copy(DataCorpus.SqliteLibrary, Path.Combine(bin, Path.GetFileName(DataCorpus.SqliteLibrary)), overwrite: true);
         var runDirectory = Directory.CreateDirectory(Path.Combine(work, "run")).FullName;      // fresh and empty (DAT-401, DAT-403)
+        CopyFixtures(Path.Combine(work, "fixtures"));                                          // a copy: programs cannot change the originals
         var run = await RunProcessAsync(exe, [], runDirectory, RunLimit, ct).ConfigureAwait(false);
         if (run.Stopped is { } runStopped)
         {
@@ -97,6 +99,21 @@ public static class GoldenProgramRunner
 
         var expected = Encoding.UTF8.GetString(await File.ReadAllBytesAsync(program.ExpectedPath, ct).ConfigureAwait(false));
         return Compare(expected, run.StdOut);
+    }
+
+    /// <summary>Copies the files of <c>data/tests/fixtures</c> (when it exists) into <paramref name="target"/>, beside the run directory.</summary>
+    private static void CopyFixtures(string target)
+    {
+        if (!Directory.Exists(DataCorpus.FixturesDirectory))
+        {
+            return;
+        }
+
+        Directory.CreateDirectory(target);
+        foreach (var file in Directory.EnumerateFiles(DataCorpus.FixturesDirectory))
+        {
+            File.Copy(file, Path.Combine(target, Path.GetFileName(file)), overwrite: true);
+        }
     }
 
     private static void TryDelete(string directory)

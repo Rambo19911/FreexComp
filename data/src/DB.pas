@@ -305,7 +305,7 @@ type
   public
     constructor Create(AOwner: TComponent); override;
   published
-    { the number picture of DisplayText: placeholders 0 and #, a decimal point, ',' for digit grouping }
+    { the number picture of DisplayText (the picture strings of SysUtils.FormatFloat) }
     property DisplayFormat: string read FDisplayFormat write FDisplayFormat;
   end;
 
@@ -637,6 +637,8 @@ type
     property CalcFieldCount: Integer read FCalcFieldCount;
     procedure CheckActive;
     procedure CheckInactive;
+    { Called after FieldDefs.Add and FieldDefs.Clear changed the definitions. Default: nothing. }
+    procedure DefsChanged; virtual;
     { Creates the dynamic fields or binds the persistent ones to FieldDefs; called by InternalOpen
       between building the definitions and loading the rows. }
     procedure BindFields;
@@ -822,6 +824,15 @@ type
     function AddLoadedRow: TDataRow;
     { Whether the field with this number was written in the current edit; for the apply methods. }
     function IsAssigned(Buffer: TDataRow; FieldNo: Integer): Boolean;
+    { For drivers that keep their rows in memory. ClearRows removes every row of the open dataset (no
+      event; a pending edit must be finished before). RowsReplaced follows a bulk change of the rows of the
+      open dataset (ClearRows, AddLoadedRow): the view is rebuilt, the cursor goes to the first row,
+      [DS deDataSetChange], then AfterScroll when Scroll. }
+    procedure ClearRows;
+    procedure RowsReplaced(Scroll: Boolean);
+    { The value a data field of any dataset reads for a row of the view, through the active-row override
+      (the cursor of the dataset does not move, no event fires). }
+    function ViewValue(Source: TDataSet; ViewIndex: Integer; Field: TField): TDBValue;
     property Rows: TDataRowList read FRows;
     property View: TDataRowList read FView;
   public
@@ -946,105 +957,6 @@ begin
   else
     Result := nil;
   end;
-end;
-
-{ The number picture of TNumericField.DisplayFormat: '0' = a digit, always shown; '#' = a digit, shown when
-  significant; '.' = the decimal point; ',' = group the integer digits in threes. The text before the first
-  and after the last of these characters is copied. Separators come from FormatSettings. }
-function FormatNumber(const Picture: string; Value: Double): string;
-var
-  I, First, Last, IntZeros, Decimals, MinDecimals, PointPos: Integer;
-  Grouping, AfterPoint, Negative: Boolean;
-  C: Char;
-  Digits, IntPart, DecPart, Grouped: string;
-begin
-  First := 0;
-  Last := 0;
-  for I := 1 to Length(Picture) do
-  begin
-    C := Picture[I];
-    if (C = '0') or (C = '#') or (C = '.') then
-    begin
-      if First = 0 then
-        First := I;
-      Last := I;
-    end;
-  end;
-  if First = 0 then
-  begin
-    Result := FloatToStr(Value);
-    Exit;
-  end;
-  IntZeros := 0;
-  Decimals := 0;
-  MinDecimals := 0;
-  Grouping := False;
-  AfterPoint := False;
-  for I := First to Last do
-  begin
-    C := Picture[I];
-    if C = '.' then
-      AfterPoint := True
-    else if C = ',' then
-      Grouping := True
-    else if (C = '0') or (C = '#') then
-      if AfterPoint then
-      begin
-        Decimals := Decimals + 1;
-        if C = '0' then
-          MinDecimals := Decimals;
-      end
-      else if C = '0' then
-        IntZeros := IntZeros + 1;
-  end;
-  Digits := FloatToStrF(Abs(Value), ffFixed, 17, Decimals);
-  if Pos('E', Digits) > 0 then
-  begin
-    Result := FloatToStr(Value);
-    Exit;
-  end;
-  PointPos := Pos(FormatSettings.DecimalSeparator, Digits);
-  if PointPos > 0 then
-  begin
-    IntPart := Copy(Digits, 1, PointPos - 1);
-    DecPart := Copy(Digits, PointPos + 1, Length(Digits) - PointPos);
-  end
-  else
-  begin
-    IntPart := Digits;
-    DecPart := '';
-  end;
-  while (Length(DecPart) > MinDecimals) and (DecPart[Length(DecPart)] = '0') do
-    DecPart := Copy(DecPart, 1, Length(DecPart) - 1);
-  while (IntPart <> '') and (IntPart[1] = '0') do
-    IntPart := Copy(IntPart, 2, Length(IntPart) - 1);
-  Negative := False;
-  if Value < 0 then
-    for I := 1 to Length(IntPart) + Length(DecPart) do
-      if I <= Length(IntPart) then
-        Negative := Negative or (IntPart[I] <> '0')
-      else
-        Negative := Negative or (DecPart[I - Length(IntPart)] <> '0');
-  while Length(IntPart) < IntZeros do
-    IntPart := '0' + IntPart;
-  if Grouping then
-  begin
-    Grouped := '';
-    for I := 1 to Length(IntPart) do
-    begin
-      if (I > 1) and ((Length(IntPart) - I + 1) mod 3 = 0) then
-        Grouped := Grouped + FormatSettings.ThousandSeparator;
-      Grouped := Grouped + IntPart[I];
-    end;
-    IntPart := Grouped;
-  end;
-  Result := Copy(Picture, 1, First - 1);
-  if Negative then
-    Result := '-' + Result;
-  Result := Result + IntPart;
-  if DecPart <> '' then
-    Result := Result + FormatSettings.DecimalSeparator + DecPart;
-  Result := Result + Copy(Picture, Last + 1, Length(Picture) - Last);
 end;
 
 { Persistent fields match definitions by type class: the integer types are mutually compatible, the
@@ -1185,6 +1097,8 @@ begin
   Result.FSize := Size;
   Result.FRequired := Required;
   FItems.Add(Result);
+  if FDataSet <> nil then
+    FDataSet.DefsChanged;
 end;
 
 procedure TFieldDefs.Clear;
@@ -1195,6 +1109,8 @@ begin
   for I := 0 to FItems.Count - 1 do
     TFieldDef(FItems[I]).Free;
   FItems.Clear;
+  if FDataSet <> nil then
+    FDataSet.DefsChanged;
 end;
 
 function TFieldDefs.IndexOf(const Name: string): Integer;
@@ -1837,7 +1753,7 @@ end;
 function TNumericField.DefaultText(const V: TDBValue; Display: Boolean): string;
 begin
   if Display and (FDisplayFormat <> '') then
-    Result := FormatNumber(FDisplayFormat, ValueAsFloat(V))
+    Result := FormatFloat(FDisplayFormat, ValueAsFloat(V))
   else
     Result := ValueAsString(V);
 end;
@@ -1984,7 +1900,7 @@ begin
   if not Display then
     Result := FloatToStr(V.FloatVal)
   else if FDisplayFormat <> '' then
-    Result := FormatNumber(FDisplayFormat, V.FloatVal)
+    Result := FormatFloat(FDisplayFormat, V.FloatVal)
   else
     Result := FloatToStrF(V.FloatVal, ffGeneral, FPrecision, 0);
 end;
@@ -2519,6 +2435,10 @@ begin
     FActiveRow := -1
   else
     FActiveRow := ViewIndex;
+end;
+
+procedure TDataSet.DefsChanged;
+begin
 end;
 
 procedure TDataSet.CheckInactive;
@@ -4134,6 +4054,46 @@ begin
   end;
   FView.Free;
   FView := NewView;
+end;
+
+procedure TRowDataSet.ClearRows;
+begin
+  CheckActive;
+  FView.Clear;
+  FRows.Clear;
+  FCursor := -1;
+  FBof := True;
+  FEof := True;
+end;
+
+procedure TRowDataSet.RowsReplaced(Scroll: Boolean);
+begin
+  CheckActive;
+  FCursor := -1;
+  FBof := True;
+  FEof := True;
+  BuildView;
+  if FView.Count > 0 then
+  begin
+    FCursor := 0;
+    FEof := False;
+  end;
+  Notify(deDataSetChange, nil);
+  if Scroll and Assigned(FAfterScroll) then
+    FAfterScroll(Self);
+end;
+
+function TRowDataSet.ViewValue(Source: TDataSet; ViewIndex: Integer; Field: TField): TDBValue;
+var
+  Saved: Integer;
+begin
+  Saved := Source.FActiveRow;
+  Source.FActiveRow := ViewIndex;
+  try
+    Result := Source.GetFieldValue(Field);
+  finally
+    Source.FActiveRow := Saved;
+  end;
 end;
 
 function TRowDataSet.AddLoadedRow: TDataRow;

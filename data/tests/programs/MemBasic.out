@@ -1,0 +1,113 @@
+== open and create
+ok a new table is closed and not read-only
+ok Open without definitions
+ok CreateDataSet without definitions
+ok the table stays closed
+ok events of CreateDataSet on a closed table
+ok the created table is open, empty and modifiable
+ok one field per definition
+ok the class of the auto-increment field
+ok three rows
+ok Open on an open table does nothing
+== rows survive Close
+ok events of Close
+ok closed
+ok the dynamic fields are gone
+ok events of Open
+ok the rows after Close and Open
+ok a reopened table is on its first row
+ok the auto-increment counter survives Close
+ok Close discards a pending edit only
+ok the filtered view
+ok rows hidden by a filter survive Close
+ok Active := False and True keeps the rows
+== CreateDataSet on an open table
+ok events of CreateDataSet on an open table
+ok open and empty
+ok CreateDataSet resets the auto-increment counter
+== field definitions
+ok FieldDefs.Add on an open table
+ok FieldDefs.Clear on an open table
+ok the row is still there
+ok adding a definition discards the rows
+ok the new definition has a field
+ok and resets the auto-increment counter
+ok new definitions, no rows
+== definitions from persistent fields
+ok the definitions of the data fields
+ok a row through the persistent fields
+ok the row after Close and Open
+ok a calculated field alone gives no definition
+== driver hooks
+ok Insert stores the row before the current row
+ok the inserted row is current
+ok update and delete
+ok the row order survives Close
+ok a string longer than Size
+== Refresh
+ok events of Refresh
+ok Refresh keeps the rows
+ok Refresh keeps the record number
+ok Refresh keeps the auto-increment counter
+== ReadOnly
+ok CanModify of a read-only table
+ok CanModify of its fields
+ok Edit on a read-only table
+ok Append on a read-only table
+ok Delete on a read-only table
+ok nothing changed
+ok a read-only table can be navigated
+ok a read-only table can be closed and opened
+ok CanModify after ReadOnly := False
+ok and the table can be edited again
+== auto-increment
+ok the counter starts at 1
+ok a deleted value is not used again
+ok the id is null until Post
+ok a cancelled insert uses no value
+ok the id cannot be written in an edit
+ok Post of an edit keeps the id
+ok a value assigned in OnNewRecord is kept
+ok the counter continues after the assigned value
+ok a smaller assigned value is kept too
+ok and does not move the counter back
+ok EmptyDataSet resets the counter
+ok every auto-increment field has its own counter
+== EmptyDataSet
+ok EmptyDataSet on a closed table
+ok events of EmptyDataSet
+ok open and empty
+ok State
+ok events of EmptyDataSet on an empty table
+ok a pending edit is cancelled first
+ok State and RecordCount
+ok a pending insert is cancelled first
+ok RecordCount after the cancelled insert
+ok the rows hidden by a filter are removed too
+ok still empty after Close and Open
+ok a read-only table can be emptied
+== CopyDataSet
+ok CopyDataSet from a closed dataset
+ok the table is untouched
+ok events of CopyDataSet into a closed table
+ok the source fires no event
+ok the definitions; the auto-increment field becomes an integer field
+ok RecordCount
+ok the cursor is on the first row
+ok the cursor of the source did not move
+ok the values of the first row
+ok the bytes of the first row
+ok the second row, with its null values
+ok the copy has no auto-increment counter
+ok the id of the copy can be written
+ok the source is unchanged
+ok events of CopyDataSet into an open table
+ok the source fires no event again
+ok the rows of the filtered view, as stored
+ok the pending edit of the source is untouched
+ok a read-only, filtered table shows the copied rows that pass
+ok and holds them all
+ok a table copied from itself
+ok one definition per data field of the source
+ok the rows of another dataset class
+failed checks: 0

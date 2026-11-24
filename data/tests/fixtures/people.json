@@ -1,0 +1,16 @@
+{
+  "formatVersion": 1,
+  "fields": [
+    { "name": "id", "type": "AutoInc", "size": 0, "required": false },
+    { "name": "name", "type": "String", "size": 50, "required": true },
+    { "name": "score", "type": "Float", "size": 0, "required": false },
+    { "name": "active", "type": "Boolean", "size": 0, "required": false },
+    { "name": "born", "type": "Date", "size": 0, "required": false },
+    { "name": "photo", "type": "Blob", "size": 0, "required": false }
+  ],
+  "autoInc": { "id": 3 },
+  "rows": [
+    [1, "Ada", 9.5, true, "1815-12-10", "iVBORw0KGgo="],
+    [2, "Bob \"B\" Stone", null, false, null, null]
+  ]
+}

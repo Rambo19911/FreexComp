@@ -34,6 +34,8 @@ public static class DataCorpus
 
     public static string LibDirectory => Path.Combine(ProgramsDirectory, "lib");
 
+    public static string FixturesDirectory => Path.Combine(RepositoryRoot, "data", "tests", "fixtures");
+
     /// <summary>Every <c>*.pas</c> directly in <paramref name="directory"/>, by ordinal name; an absent folder yields no program.</summary>
     public static ImmutableArray<DataProgram> Discover(string directory)
     {

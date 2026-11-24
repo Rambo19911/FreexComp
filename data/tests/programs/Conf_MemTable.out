@@ -1,0 +1,192 @@
+== conformance TMemTable
+== preconditions
+ok the dataset is open
+ok State
+ok the dataset is empty
+ok RecordCount
+ok position of an empty dataset
+ok the dataset can be modified
+ok id is an auto-increment field
+ok name is a required string(50) field
+ok amount is a float field
+ok born is a date field
+ok flag is a boolean field
+ok note is a memo field
+== insert
+ok events of Append
+ok State after Append
+ok position while inserting
+ok a new record is all null
+ok events of a field assignment
+ok Modified after an assignment
+ok events of Post
+ok State after Post
+ok RecordCount after the first insert
+ok RecNo after the first insert
+ok the first id
+ok the second id
+ok the third id
+ok RecordCount after three inserts
+ok an appended row is the last row and current
+ok not empty
+== navigation
+ok First
+ok Prior on the first row
+ok Next
+ok Next to the last row
+ok Next on the last row
+ok Prior
+ok Last
+ok MoveBy(-5) moves two rows
+ok position after MoveBy(-5)
+ok MoveBy(2)
+ok position after MoveBy(2)
+ok MoveBy(1) on the last row
+ok position after MoveBy(1) on the last row
+ok MoveBy(0)
+ok MoveBy(0) keeps the flags
+ok RecNo := 2
+ok the row of RecNo 2
+ok RecNo beyond the last row
+ok the forward loop visits every row once
+ok the backward loop visits every row once
+== edit, cancel, post
+ok a write in dsBrowse
+ok State after Edit
+ok Edit starts unmodified
+ok Modified after a write
+ok the edit buffer is read
+ok the auto-increment field is read-only
+ok State after Cancel
+ok Cancel restores the value
+ok State after Post
+ok Post stores the value
+ok the id is unchanged by an edit
+ok Next posts a modified edit and moves
+ok the value posted by Next
+ok Next cancels an unmodified edit and moves
+ok a cancelled insert adds no row
+ok the cursor returns to the row before the insert
+ok State after Insert
+ok position after a cancelled Insert
+== required field
+ok Post of an insert without the name
+ok the failed Post keeps dsInsert
+ok no row was added
+ok Post of an edit with a cleared name
+ok the failed Post keeps dsEdit
+ok the name after Cancel
+== locate
+ok Locate by name
+ok position after Locate
+ok Locate is case-sensitive
+ok a failed Locate keeps the cursor
+ok Locate with loCaseInsensitive
+ok the row found without case
+ok Locate with loPartialKey
+ok the row found by prefix
+ok Locate by id
+ok the row found by id
+ok Locate by a float
+ok the row found by a float
+ok Locate by two fields
+ok the row found by two fields
+ok Locate by two fields, one differs
+ok Locate of a null value
+ok the row with the null date
+ok Locate of a missing value
+ok Locate with a wrong number of values
+== filter
+ok a filter text alone filters nothing
+ok RecordCount with amount > 0
+ok the rows with amount > 0
+ok a prefix filter
+ok a boolean and a null test
+ok a date comparison, OR and NOT
+ok a posted row that fails the filter leaves the view
+ok the cursor moves to the last visible row
+ok a filter with an unknown field
+ok the old filter is kept
+ok RecordCount without the filter
+ok the hidden row is back
+== bookmarks
+ok a bookmark has 8 bytes
+ok GotoBookmark
+ok BookmarkValid
+ok CompareBookmarks of rows 1 and 2
+ok CompareBookmarks of rows 2 and 1
+ok CompareBookmarks of the same row
+ok nil sorts before a bookmark
+ok two nil bookmarks are equal
+ok a bookmark of the wrong length is not valid
+ok GotoBookmark with an invalid bookmark
+ok no bookmark while inserting
+== event order
+ok events of Edit
+ok events of Post of an edit
+ok events of Cancel of an edit
+ok events of Cancel of an insert
+ok events of First
+ok events of Prior on the first row
+ok events of Next in a modified edit
+ok events of Prior in an unmodified edit
+ok Locate for the event order
+ok events of a successful Locate
+ok failed Locate for the event order
+ok a failed Locate fires no event
+ok events of Refresh
+ok a failing Post for the event order
+ok the required check comes before BeforePost
+== conversions of stored values
+ok id.AsString
+ok id.AsFloat
+ok id.AsLargeInt
+ok id.AsBoolean
+ok name.AsString
+ok amount.AsString
+ok amount.AsInteger
+ok flag.AsString
+ok flag.AsInteger
+ok flag.DisplayText
+ok born.AsDateTime
+ok born.AsFloat
+ok born formatted
+ok note.AsString
+ok note.DisplayText
+ok the null values of the second row
+ok a null date reads as 0
+ok a null memo reads as an empty string
+ok a null date has no text
+ok a stored False is not null
+ok amount of the second row
+ok a name of 51 characters
+ok a name of 50 characters is stored
+ok a date field drops the time of day
+ok Clear stores null
+ok an empty memo is not null
+== refresh
+ok RecordCount after Refresh
+ok Refresh keeps the record number
+ok a bookmark taken before Refresh is not valid
+ok the second row after Refresh
+ok the first row after Refresh
+ok the third row after Refresh
+ok the rows after Refresh
+== delete
+ok the fourth id
+ok the fifth id
+ok events of Delete
+ok after deleting the first row
+ok RecordCount after deleting the first row
+ok the bookmark of a deleted row is not valid
+ok after deleting a middle row
+ok after deleting the last row
+ok the rows left
+ok Delete in dsEdit cancels the edit and deletes
+ok Delete in dsInsert only cancels
+ok empty after deleting every row
+ok position of the emptied dataset
+ok Delete on an empty dataset
+ok RecordCount after Refresh of the emptied dataset
+ok the dataset stays open
+failed checks: 0
