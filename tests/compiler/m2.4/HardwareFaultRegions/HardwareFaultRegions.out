@@ -1,0 +1,23 @@
+locals: except X=2
+locals: after X=2
+dead read: caught
+finally: stage 1
+finally: caught, stage 1
+break: outer caught, N=2
+exit: finally
+exit: result 2
+exit: caller caught
+handler: first
+handler: second
+handler: leaked 0
+loop: caught 3
+guard: caught fault
+guard: leaked 0
+guard: released raise 1
+guard: caught before
+guard: released block
+guard: handler inside
+guard: released raise 2
+guard: released block
+guard: released raise 3
+guard: caught after

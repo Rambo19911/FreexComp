@@ -359,15 +359,17 @@ internal sealed class DebugInfoEmitter
     // ------------------------------------------------------------------ module
 
     /// <summary>Writes <c>!llvm.dbg.cu</c>, <c>!llvm.module.flags</c> and every node (CMP-420).</summary>
-    public void Finish(IIrWriter writer)
+    /// <param name="asyncEh">CMP-398: the module has try regions, so its flags include <c>eh-asynch</c>.</param>
+    public void Finish(IIrWriter writer, bool asyncEh)
     {
+        var flags = asyncEh ? $", !{N(Add(IrEmitter.AsyncEhFlag))}" : "";
         var enums = _enums.Count == 0 ? "" : $", enums: !{N(Tuple([.. _enums.Select(e => "!" + N(e))]))}";
         var globals = _globals.Count == 0 ? "" : $", globals: !{N(Tuple([.. _globals.Select(g => "!" + N(g))]))}";
         _nodes[CompileUnit] = $"distinct !DICompileUnit(language: DW_LANG_Pascal83, file: !{N(MainFile)}, producer: {Quote("FreexComp opc " + CompilerInfo.Version)}, "
             + $"isOptimized: {(_options.IsOptimized ? "true" : "false")}, runtimeVersion: 0, emissionKind: FullDebug{enums}{globals}, "
             + "splitDebugInlining: false, nameTableKind: None)";
         writer.AppendMetadata("!llvm.dbg.cu = !{!0}");
-        writer.AppendMetadata("!llvm.module.flags = !{!1, !2}");
+        writer.AppendMetadata($"!llvm.module.flags = !{{!1, !2{flags}}}");
         for (var i = 0; i < _nodes.Count; i++)
         {
             writer.AppendMetadata($"!{N(i)} = {_nodes[i] ?? throw new InvalidOperationException($"Metadata node !{i} was never written.")}");

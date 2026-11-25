@@ -114,7 +114,13 @@ public sealed class EmitTests
             "define void @_start() #0 personality ptr @__C_specific_handler {\n" +
             "entry:\n" +
             "  call void @\"System._Startup\"(ptr @\"$units\", i64 1)\n" +
+            "  invoke void @llvm.seh.try.begin()\n" +
+            "          to label %try.begun unwind label %catch.dispatch\n" +
+            "try.begun:\n" +
             "  invoke void @\"$main\"()\n" +
+            "          to label %try.called unwind label %catch.dispatch\n" +
+            "try.called:\n" +
+            "  invoke void @llvm.seh.try.end()\n" +
             "          to label %done unwind label %catch.dispatch\n" +
             "done:\n" +
             "  call void @\"System._Halt0\"() #1\n" +

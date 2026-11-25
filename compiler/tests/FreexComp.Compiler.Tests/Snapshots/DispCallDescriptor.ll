@@ -21,6 +21,8 @@ declare void @"System._UStrAsg"(ptr, ptr)
 declare void @"System._UStrClr"(ptr)
 declare i32 @__C_specific_handler(...)
 declare void @llvm.memset.p0.i64(ptr, i8, i64, i1)
+declare void @llvm.seh.try.begin()
+declare void @llvm.seh.try.end()
 
 define void @"M.Run"(ptr %D) #0 personality ptr @__C_specific_handler {
 entry:
@@ -62,6 +64,9 @@ entry:
   %$tmp29.addr = alloca ptr, align 8
   %$tmp30.addr = alloca [1 x i64], align 8
   store ptr %D, ptr %D.addr, align 8
+  invoke void @llvm.seh.try.begin()
+          to label %cont.1 unwind label %cleanup.pad
+cont.1:
   store ptr null, ptr %S.addr, align 8
   store ptr null, ptr %Name.addr, align 8
   store ptr null, ptr %O.addr, align 8
@@ -78,12 +83,12 @@ entry:
   store ptr %t3, ptr %t4, align 8
   %t5 = load ptr, ptr %$tmp1.addr, align 8
   invoke void @"System._DispCall"(ptr %$tmp4.addr, ptr %t5, ptr @"M.$disp.1", ptr %$tmp2.addr)
-          to label %cont.1 unwind label %cleanup.pad
-cont.1:
-  %t6 = load ptr, ptr %$tmp4.addr, align 8
-  invoke void @"System._UStrAsg"(ptr %S.addr, ptr %t6)
           to label %cont.2 unwind label %cleanup.pad
 cont.2:
+  %t6 = load ptr, ptr %$tmp4.addr, align 8
+  invoke void @"System._UStrAsg"(ptr %S.addr, ptr %t6)
+          to label %cont.3 unwind label %cleanup.pad
+cont.3:
   %t7 = load ptr, ptr %D.addr, align 8
   store ptr %t7, ptr %$tmp5.addr, align 8
   %t8 = getelementptr inbounds [2 x i64], ptr %$tmp6.addr, i64 0, i64 0
@@ -94,14 +99,14 @@ cont.2:
   store ptr %t9, ptr %t10, align 8
   %t11 = load ptr, ptr %$tmp5.addr, align 8
   invoke void @"System._DispCall"(ptr %$tmp8.addr, ptr %t11, ptr @"M.$disp.1", ptr %$tmp6.addr)
-          to label %cont.3 unwind label %cleanup.pad
-cont.3:
+          to label %cont.4 unwind label %cleanup.pad
+cont.4:
   %t12 = load ptr, ptr %D.addr, align 8
   store ptr %t12, ptr %$tmp9.addr, align 8
   %t13 = load ptr, ptr %$tmp9.addr, align 8
   invoke void @"System._DispCall"(ptr null, ptr %t13, ptr @"M.$disp.2", ptr null)
-          to label %cont.4 unwind label %cleanup.pad
-cont.4:
+          to label %cont.5 unwind label %cleanup.pad
+cont.5:
   %t14 = load ptr, ptr %D.addr, align 8
   store ptr %t14, ptr %$tmp10.addr, align 8
   %t15 = getelementptr inbounds [10 x i64], ptr %$tmp11.addr, i64 0, i64 0
@@ -138,8 +143,8 @@ cont.4:
   store i64 %t31, ptr %t32, align 8
   %t33 = load ptr, ptr %$tmp10.addr, align 8
   invoke void @"System._DispCall"(ptr null, ptr %t33, ptr @"M.$disp.3", ptr %$tmp11.addr)
-          to label %cont.5 unwind label %cleanup.pad
-cont.5:
+          to label %cont.6 unwind label %cleanup.pad
+cont.6:
   %t34 = load ptr, ptr %D.addr, align 8
   store ptr %t34, ptr %$tmp12.addr, align 8
   store ptr %C.addr, ptr %$tmp14.addr, align 8
@@ -152,8 +157,8 @@ cont.5:
   store ptr %S.addr, ptr %$tmp16.addr, align 8
   %t39 = load ptr, ptr %$tmp16.addr, align 8
   invoke void @"System._UStrClr"(ptr %t39)
-          to label %cont.6 unwind label %cleanup.pad
-cont.6:
+          to label %cont.7 unwind label %cleanup.pad
+cont.7:
   %t40 = load ptr, ptr %$tmp16.addr, align 8
   %t41 = getelementptr inbounds [3 x i64], ptr %$tmp13.addr, i64 0, i64 1
   store ptr %t40, ptr %t41, align 8
@@ -163,8 +168,8 @@ cont.6:
   store ptr %t42, ptr %t43, align 8
   %t44 = load ptr, ptr %$tmp12.addr, align 8
   invoke void @"System._DispCall"(ptr null, ptr %t44, ptr @"M.$disp.4", ptr %$tmp13.addr)
-          to label %cont.7 unwind label %cleanup.pad
-cont.7:
+          to label %cont.8 unwind label %cleanup.pad
+cont.8:
   %t45 = load i32, ptr %$tmp15.addr, align 4
   %t46 = trunc i32 %t45 to i8
   %t47 = load ptr, ptr %$tmp14.addr, align 8
@@ -174,8 +179,8 @@ cont.7:
   call void @llvm.memset.p0.i64(ptr align 4 %$tmp19.addr, i8 0, i64 4, i1 false)
   %t49 = load ptr, ptr %$tmp18.addr, align 8
   invoke void @"System._DispCall"(ptr %$tmp19.addr, ptr %t49, ptr @"M.$disp.5", ptr null)
-          to label %cont.8 unwind label %cleanup.pad
-cont.8:
+          to label %cont.9 unwind label %cleanup.pad
+cont.9:
   %t50 = load i32, ptr %$tmp19.addr, align 4
   %t51 = trunc i32 %t50 to i8
   store i8 %t51, ptr %C.addr, align 1
@@ -184,8 +189,8 @@ cont.8:
   call void @llvm.memset.p0.i64(ptr align 4 %$tmp21.addr, i8 0, i64 4, i1 false)
   %t53 = load ptr, ptr %$tmp20.addr, align 8
   invoke void @"System._DispCall"(ptr %$tmp21.addr, ptr %t53, ptr @"M.$disp.6", ptr null)
-          to label %cont.9 unwind label %cleanup.pad
-cont.9:
+          to label %cont.10 unwind label %cleanup.pad
+cont.10:
   %t54 = load i32, ptr %$tmp21.addr, align 4
   store i32 %t54, ptr %N.addr, align 4
   %t55 = load ptr, ptr %D.addr, align 8
@@ -199,8 +204,8 @@ cont.9:
   call void @llvm.memset.p0.i64(ptr align 4 %$tmp26.addr, i8 0, i64 4, i1 false)
   %t59 = load ptr, ptr %$tmp24.addr, align 8
   invoke void @"System._DispCall"(ptr %$tmp26.addr, ptr %t59, ptr @"M.$disp.7", ptr %$tmp25.addr)
-          to label %cont.10 unwind label %cleanup.pad
-cont.10:
+          to label %cont.11 unwind label %cleanup.pad
+cont.11:
   %t60 = load i32, ptr %$tmp26.addr, align 4
   %t61 = add i32 %t60, 1
   %t62 = sext i32 %t61 to i64
@@ -208,18 +213,18 @@ cont.10:
   store i64 %t62, ptr %t63, align 8
   %t64 = load ptr, ptr %$tmp22.addr, align 8
   invoke void @"System._DispCall"(ptr null, ptr %t64, ptr @"M.$disp.8", ptr %$tmp23.addr)
-          to label %cont.11 unwind label %cleanup.pad
-cont.11:
+          to label %cont.12 unwind label %cleanup.pad
+cont.12:
   %t65 = load ptr, ptr %D.addr, align 8
   store ptr %t65, ptr %$tmp27.addr, align 8
   %t66 = load ptr, ptr %$tmp27.addr, align 8
   invoke void @"System._DispCall"(ptr %$tmp28.addr, ptr %t66, ptr @"M.$disp.9", ptr null)
-          to label %cont.12 unwind label %cleanup.pad
-cont.12:
-  %t67 = load ptr, ptr %$tmp28.addr, align 8
-  invoke void @"System._IntfAsg"(ptr %O.addr, ptr %t67)
           to label %cont.13 unwind label %cleanup.pad
 cont.13:
+  %t67 = load ptr, ptr %$tmp28.addr, align 8
+  invoke void @"System._IntfAsg"(ptr %O.addr, ptr %t67)
+          to label %cont.14 unwind label %cleanup.pad
+cont.14:
   %t68 = load ptr, ptr %D.addr, align 8
   store ptr %t68, ptr %$tmp29.addr, align 8
   %t69 = load ptr, ptr %O.addr, align 8
@@ -227,10 +232,13 @@ cont.13:
   store ptr %t69, ptr %t70, align 8
   %t71 = load ptr, ptr %$tmp29.addr, align 8
   invoke void @"System._DispCall"(ptr null, ptr %t71, ptr @"M.$disp.10", ptr %$tmp30.addr)
-          to label %cont.14 unwind label %cleanup.pad
-cont.14:
+          to label %cont.15 unwind label %cleanup.pad
+cont.15:
   br label %cleanup
 cleanup:
+  invoke void @llvm.seh.try.end()
+          to label %cont.16 unwind label %cleanup.pad
+cont.16:
   call void @"System._UStrClr"(ptr %S.addr)
   call void @"System._UStrClr"(ptr %Name.addr)
   call void @"System._IntfClr"(ptr %O.addr)
@@ -266,3 +274,6 @@ exit:
 }
 
 attributes #0 = { uwtable "frame-pointer"="all" }
+
+!llvm.module.flags = !{!0}
+!0 = !{i32 2, !"eh-asynch", i32 1}

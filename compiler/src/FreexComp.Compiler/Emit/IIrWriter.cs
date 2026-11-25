@@ -91,6 +91,12 @@ internal interface IIrWriter
 
     IrLocal Alloca(string name, IrType type, int alignment);
 
+    /// <summary>
+    /// CMP-398: while set, <see cref="Load"/> and <see cref="Store"/> write <c>load volatile</c> / <c>store volatile</c>. Cleared by
+    /// <see cref="BeginFunction"/>.
+    /// </summary>
+    bool VolatileAccesses { get; set; }
+
     IrLocal Load(string name, IrType type, IrValue address, int alignment);
 
     void Store(IrValue value, IrValue address, int alignment);

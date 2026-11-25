@@ -139,6 +139,7 @@ internal sealed class LlvmTextWriter(TargetInfo? target = null) : IIrWriter
         _inBlock = false;
         _blockTerminated = false;
         _usesEh = false;
+        VolatileAccesses = false;
         return parameters;
     }
 
@@ -158,16 +159,20 @@ internal sealed class LlvmTextWriter(TargetInfo? target = null) : IIrWriter
     public IrLocal Alloca(string name, IrType type, int alignment) =>
         Define(new IrLocal(IrType.Ptr, name), $"alloca {Type(type)}, align {Int(alignment)}");
 
+    public bool VolatileAccesses { get; set; }
+
+    private string Volatile => VolatileAccesses ? "volatile " : "";
+
     public IrLocal Load(string name, IrType type, IrValue address, int alignment)
     {
         RequirePointer(address);
-        return Define(new IrLocal(type, name), $"load {Type(type)}, {Typed(address)}, align {Int(alignment)}");
+        return Define(new IrLocal(type, name), $"load {Volatile}{Type(type)}, {Typed(address)}, align {Int(alignment)}");
     }
 
     public void Store(IrValue value, IrValue address, int alignment)
     {
         RequirePointer(address);
-        Instruction($"store {Typed(value)}, {Typed(address)}, align {Int(alignment)}");
+        Instruction($"store {Volatile}{Typed(value)}, {Typed(address)}, align {Int(alignment)}");
     }
 
     public IrLocal Binary(string name, IrBinaryOperator op, IrValue left, IrValue right)

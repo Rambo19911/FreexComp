@@ -15,6 +15,8 @@ declare void @"System._DllInitFailed"()
 declare void @"System._InitUnits"()
 declare i32 @"System._SehFilter"(ptr, ptr)
 declare i32 @__C_specific_handler(...)
+declare void @llvm.seh.try.begin()
+declare void @llvm.seh.try.end()
 
 define internal i32 @"mathlib.Add"(i32 %A, i32 %B) #0 {
 entry:
@@ -79,7 +81,13 @@ entry:
   %run = icmp ne i32 %init, 0
   br i1 %run, label %attach, label %ok
 attach:
+  invoke void @llvm.seh.try.begin()
+          to label %try.begun unwind label %catch.dispatch
+try.begun:
   invoke void @"$main"()
+          to label %try.called unwind label %catch.dispatch
+try.called:
+  invoke void @llvm.seh.try.end()
           to label %attached unwind label %catch.dispatch
 attached:
   call void @"System._DllInitDone"()
@@ -128,3 +136,6 @@ entry:
 }
 
 attributes #0 = { uwtable "frame-pointer"="all" }
+
+!llvm.module.flags = !{!0}
+!0 = !{i32 2, !"eh-asynch", i32 1}

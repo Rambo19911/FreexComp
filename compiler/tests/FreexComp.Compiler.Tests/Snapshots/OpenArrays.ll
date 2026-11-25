@@ -27,6 +27,8 @@ declare void @"System._UStrCat"(ptr, ptr, ptr)
 declare i32 @__C_specific_handler(...)
 declare void @llvm.memmove.p0.p0.i64(ptr, ptr, i64, i1)
 declare void @llvm.memset.p0.i64(ptr, i8, i64, i1)
+declare void @llvm.seh.try.begin()
+declare void @llvm.seh.try.end()
 
 define i32 @"M.Sum"(ptr %a, i64 %a$high) #0 {
 entry:
@@ -89,6 +91,9 @@ entry:
   %$tmp3.addr = alloca [4096 x i8], align 1
   store ptr %s, ptr %s.addr, align 8
   store i64 %s$high, ptr %s$high.addr, align 8
+  invoke void @llvm.seh.try.begin()
+          to label %cont.1 unwind label %cleanup.pad
+cont.1:
   %t1 = load i64, ptr %s$high.addr, align 8
   %t2 = add i64 %t1, 1
   %t3 = mul i64 %t2, 8
@@ -104,8 +109,8 @@ if.then.1:
 if.else.1:
   %t7 = load i64, ptr %$tmp1.addr, align 8
   %t8 = invoke ptr @"System._GetMem"(i64 %t7)
-          to label %cont.1 unwind label %cleanup.pad
-cont.1:
+          to label %cont.2 unwind label %cleanup.pad
+cont.2:
   store ptr %t8, ptr %s.addr, align 8
   br label %if.end.1
 if.end.1:
@@ -117,8 +122,8 @@ if.end.1:
   %t13 = load i64, ptr %s$high.addr, align 8
   %t14 = add i64 %t13, 1
   invoke void @"System._AddRefArray"(ptr %t12, ptr @"System.string.$rtti", i64 %t14)
-          to label %cont.2 unwind label %cleanup.pad
-cont.2:
+          to label %cont.3 unwind label %cleanup.pad
+cont.3:
   %t15 = load ptr, ptr %s.addr, align 8
   %t16 = load i64, ptr %s$high.addr, align 8
   %t17 = add i64 %t16, 1
@@ -126,8 +131,8 @@ cont.2:
   br i1 %t18, label %range.ok.2, label %range.error.2
 range.error.2:
   invoke void @"System._RangeError"() #1
-          to label %cont.3 unwind label %cleanup.pad
-cont.3:
+          to label %cont.4 unwind label %cleanup.pad
+cont.4:
   unreachable
 range.ok.2:
   %t19 = getelementptr inbounds ptr, ptr %t15, i64 0
@@ -138,17 +143,20 @@ range.ok.2:
   br i1 %t23, label %range.ok.3, label %range.error.3
 range.error.3:
   invoke void @"System._RangeError"() #1
-          to label %cont.4 unwind label %cleanup.pad
-cont.4:
+          to label %cont.5 unwind label %cleanup.pad
+cont.5:
   unreachable
 range.ok.3:
   %t24 = getelementptr inbounds ptr, ptr %t20, i64 0
   %t25 = load ptr, ptr %t24, align 8
   invoke void @"System._UStrCat"(ptr %t19, ptr %t25, ptr getelementptr inbounds ({ i32, i32, i16, i16, i32, [2 x i16] }, ptr @.str.1, i32 0, i32 5))
-          to label %cont.5 unwind label %cleanup.pad
-cont.5:
+          to label %cont.6 unwind label %cleanup.pad
+cont.6:
   br label %cleanup
 cleanup:
+  invoke void @llvm.seh.try.end()
+          to label %cont.7 unwind label %cleanup.pad
+cont.7:
   %t26 = load ptr, ptr %s.addr, align 8
   %t27 = load i64, ptr %s$high.addr, align 8
   %t28 = add i64 %t27, 1
@@ -188,11 +196,14 @@ entry:
   %n.addr = alloca i32, align 4
   %$tmp1.addr = alloca [2 x i32], align 4
   %$tmp2.addr = alloca [1 x ptr], align 8
+  invoke void @llvm.seh.try.begin()
+          to label %cont.1 unwind label %cleanup.pad
+cont.1:
   store ptr null, ptr %d.addr, align 8
   call void @llvm.memset.p0.i64(ptr align 8 %$tmp2.addr, i8 0, i64 8, i1 false)
   %t1 = invoke i32 @"M.Sum"(ptr %f.addr, i64 2)
-          to label %cont.1 unwind label %cleanup.pad
-cont.1:
+          to label %cont.2 unwind label %cleanup.pad
+cont.2:
   %t2 = load ptr, ptr %d.addr, align 8
   %t3 = icmp eq ptr %t2, null
   br i1 %t3, label %len.end.1, label %len.load.1
@@ -201,11 +212,11 @@ len.load.1:
   %t5 = load i64, ptr %t4, align 8
   br label %len.end.1
 len.end.1:
-  %t6 = phi i64 [ 0, %cont.1 ], [ %t5, %len.load.1 ]
+  %t6 = phi i64 [ 0, %cont.2 ], [ %t5, %len.load.1 ]
   %t7 = sub i64 %t6, 1
   %t8 = invoke i32 @"M.Sum"(ptr %t2, i64 %t7)
-          to label %cont.2 unwind label %cleanup.pad
-cont.2:
+          to label %cont.3 unwind label %cleanup.pad
+cont.3:
   %t9 = add i32 %t1, %t8
   %t10 = getelementptr inbounds [2 x i32], ptr %$tmp1.addr, i64 0, i64 0
   store i32 1, ptr %t10, align 4
@@ -213,28 +224,31 @@ cont.2:
   %t12 = getelementptr inbounds [2 x i32], ptr %$tmp1.addr, i64 0, i64 1
   store i32 %t11, ptr %t12, align 4
   %t13 = invoke i32 @"M.Sum"(ptr %$tmp1.addr, i64 1)
-          to label %cont.3 unwind label %cleanup.pad
-cont.3:
+          to label %cont.4 unwind label %cleanup.pad
+cont.4:
   %t14 = add i32 %t9, %t13
   %t15 = sub i64 2, 1
   %t16 = invoke i32 @"M.Sum"(ptr %f.addr, i64 %t15)
-          to label %cont.4 unwind label %cleanup.pad
-cont.4:
-  %t17 = add i32 %t14, %t16
-  %t18 = invoke i32 @"M.Sum"(ptr null, i64 -1)
           to label %cont.5 unwind label %cleanup.pad
 cont.5:
+  %t17 = add i32 %t14, %t16
+  %t18 = invoke i32 @"M.Sum"(ptr null, i64 -1)
+          to label %cont.6 unwind label %cleanup.pad
+cont.6:
   %t19 = add i32 %t17, %t18
   store i32 %t19, ptr %n.addr, align 4
   %t20 = getelementptr inbounds [1 x ptr], ptr %$tmp2.addr, i64 0, i64 0
   invoke void @"System._UStrAsg"(ptr %t20, ptr getelementptr inbounds ({ i32, i32, i16, i16, i32, [2 x i16] }, ptr @.str.2, i32 0, i32 5))
-          to label %cont.6 unwind label %cleanup.pad
-cont.6:
-  invoke void @"M.Bump"(ptr %$tmp2.addr, i64 0)
           to label %cont.7 unwind label %cleanup.pad
 cont.7:
+  invoke void @"M.Bump"(ptr %$tmp2.addr, i64 0)
+          to label %cont.8 unwind label %cleanup.pad
+cont.8:
   br label %cleanup
 cleanup:
+  invoke void @llvm.seh.try.end()
+          to label %cont.9 unwind label %cleanup.pad
+cont.9:
   call void @"System._DynArrayClr"(ptr %d.addr, ptr @"M.$rtti.array of Integer")
   call void @"System._Finalize"(ptr %$tmp2.addr, ptr @"M.$rtti.array[0..0] of string")
   br label %exit
@@ -263,3 +277,6 @@ exit:
 
 attributes #0 = { uwtable "frame-pointer"="all" }
 attributes #1 = { noreturn uwtable }
+
+!llvm.module.flags = !{!0}
+!0 = !{i32 2, !"eh-asynch", i32 1}

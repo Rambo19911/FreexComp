@@ -290,7 +290,7 @@ public sealed class DebugInfoTests
         }
     }
 
-    /// <summary>CMP-424: without <c>-g</c> no metadata at all.</summary>
+    /// <summary>CMP-424: without <c>-g</c> no metadata at all, but the module flag of a module with try regions (CMP-398).</summary>
     [Fact]
     [Trait("Req", "CMP-424")]
     public void WithoutDebugInfo_NoMetadataIsEmitted()
@@ -300,7 +300,7 @@ public sealed class DebugInfoTests
             var text = IrSnapshotTests.Emit(source);
             Assert.DoesNotContain("!dbg", text);
             Assert.DoesNotContain("#dbg_", text);
-            Assert.DoesNotContain("\n!", text);
+            Assert.DoesNotContain("\n!", text.Replace("\n!llvm.module.flags = !{!0}\n!0 = " + IrEmitter.AsyncEhFlag + "\n", "\n", StringComparison.Ordinal));
         }
     }
 

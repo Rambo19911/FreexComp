@@ -162,7 +162,13 @@ public sealed class ExportThunkTests
             "  %run = icmp ne i32 %init, 0\n" +
             "  br i1 %run, label %attach, label %ok\n" +
             "attach:\n" +
+            "  invoke void @llvm.seh.try.begin()\n" +
+            "          to label %try.begun unwind label %catch.dispatch\n" +
+            "try.begun:\n" +
             "  invoke void @\"$main\"()\n" +
+            "          to label %try.called unwind label %catch.dispatch\n" +
+            "try.called:\n" +
+            "  invoke void @llvm.seh.try.end()\n" +
             "          to label %attached unwind label %catch.dispatch\n" +
             "attached:\n" +
             "  call void @\"System._DllInitDone\"()\n" +

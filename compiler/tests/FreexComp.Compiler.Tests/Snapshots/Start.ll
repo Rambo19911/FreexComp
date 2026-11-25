@@ -17,6 +17,8 @@ declare void @"System._WriteEnd"(ptr)
 declare void @"System._WriteLn"(ptr)
 declare void @"System._WriteUStr"(ptr, ptr, i32)
 declare i32 @__C_specific_handler(...)
+declare void @llvm.seh.try.begin()
+declare void @llvm.seh.try.end()
 
 define internal void @"$main"() #0 {
 entry:
@@ -33,7 +35,13 @@ exit:
 define void @_start() #0 personality ptr @__C_specific_handler {
 entry:
   call void @"System._Startup"(ptr @"$units", i64 1)
+  invoke void @llvm.seh.try.begin()
+          to label %try.begun unwind label %catch.dispatch
+try.begun:
   invoke void @"$main"()
+          to label %try.called unwind label %catch.dispatch
+try.called:
+  invoke void @llvm.seh.try.end()
           to label %done unwind label %catch.dispatch
 done:
   call void @"System._Halt0"() #1
@@ -51,3 +59,6 @@ unhandled:
 
 attributes #0 = { uwtable "frame-pointer"="all" }
 attributes #1 = { noreturn uwtable }
+
+!llvm.module.flags = !{!0}
+!0 = !{i32 2, !"eh-asynch", i32 1}

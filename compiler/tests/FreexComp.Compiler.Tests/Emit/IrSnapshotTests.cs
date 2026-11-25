@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using FreexComp.Compiler.Binding;
 using FreexComp.Compiler.Emit;
 using FreexComp.Compiler.Lowering;
@@ -2063,6 +2064,7 @@ public sealed class IrSnapshotTests
         ["ThreadVar"] = ThreadVarSource,
         ["TryExcept"] = TryExceptSource,
         ["TryFinally"] = TryFinallySource,
+        ["TryRegionAsyncScope"] = TryRegionAsyncScopeSource,
         ["Vmt"] = VmtSource,
         ["ProcValue"] = ProcValueSource,
         ["Atomic"] = AtomicSource,
@@ -2307,7 +2309,7 @@ public sealed class IrSnapshotTests
     /// <summary>
     /// C-093: a routine's managed cleanup scope (CMP-325 rule 2) is its outermost EH scope (CMP-393): raising calls are invokes
     /// unwinding to <c>cleanup.pad</c> (CMP-394), a try statement's dispatch and cleanup unwind there, and the funclet finalises
-    /// the locals; a routine whose body has no raising call keeps a plain function.
+    /// the locals; the scope's region (CMP-398) gives a routine whose body has no raising call the same funclet.
     /// </summary>
     [Fact]
     [Trait("Req", "CMP-393")]
@@ -2341,24 +2343,138 @@ public sealed class IrSnapshotTests
         var p = text[text.IndexOf("define void @\"M.P\"", StringComparison.Ordinal)..];
         p = p[..p.IndexOf("\n}\n", StringComparison.Ordinal)];
         Assert.StartsWith("define void @\"M.P\"() #0 personality ptr @__C_specific_handler {", p);
+        Assert.Contains("  invoke void @llvm.seh.try.begin()\n          to label %cont.1 unwind label %cleanup.pad\n", p);
         Assert.Contains("  invoke void @\"System._UStrAsg\"(ptr %S.addr, ptr getelementptr", p);
-        Assert.Contains("          to label %cont.1 unwind label %cleanup.pad\n", p);
+        Assert.Contains("          to label %cont.2 unwind label %cleanup.pad\n", p);
         Assert.Contains("  %cs.1 = catchswitch within none [label %ex.pad.1] unwind label %cleanup.pad\n", p);
         Assert.Contains("  invoke void @\"System._EndCatch\"() [ \"funclet\"(token %cl.1) ]\n          to label %cont.", p);
         Assert.Contains("  cleanupret from %cl.1 unwind label %cleanup.pad\n", p);
-        Assert.Contains("cleanup:\n  call void @\"System._UStrClr\"(ptr %S.addr)\n  br label %exit\n", p);
+        Assert.Matches(@"\ncleanup:\n  invoke void @llvm\.seh\.try\.end\(\)\n          to label %cont\.(\d+) unwind label %cleanup\.pad\ncont\.\1:\n"
+            + @"  call void @""System\._UStrClr""\(ptr %S\.addr\)\n  br label %exit\n", p);
         Assert.EndsWith("cleanup.pad:\n  %cl = cleanuppad within none []\n  call void @\"System._UStrClr\"(ptr %S.addr) [ \"funclet\"(token %cl) ]\n"
             + "  cleanupret from %cl unwind to caller", p);
         var q = text[text.IndexOf("define i32 @\"M.Q\"", StringComparison.Ordinal)..];
         q = q[..q.IndexOf("\n}\n", StringComparison.Ordinal)];
-        Assert.StartsWith("define i32 @\"M.Q\"() #0 {", q);
-        Assert.DoesNotContain("cleanuppad", q);
+        Assert.StartsWith("define i32 @\"M.Q\"() #0 personality ptr @__C_specific_handler {", q);
+        Assert.EndsWith("cleanup.pad:\n  %cl = cleanuppad within none []\n  call void @\"System._UStrClr\"(ptr %S.addr) [ \"funclet\"(token %cl) ]\n"
+            + "  cleanupret from %cl unwind to caller", q);
     }
 
     [Fact]
     [Trait("Req", "CMP-392")]
     [Trait("Req", "LANG-810")]
     public void TryFinally() => Snapshot.Verify("TryFinally", Emit(TryFinallySource));
+
+    internal const string TryRegionAsyncScopeSource = """
+        unit M;
+        interface
+        type PInteger = ^Integer;
+        procedure Step;
+        function Plain(P: PInteger): Integer;
+        function Managed(P: PInteger): Integer;
+        function Caught(P: PInteger): Integer;
+        function Leaves(P: PInteger; N: Integer): Integer;
+        implementation
+        procedure Step; begin end;
+        function Plain(P: PInteger): Integer;
+        begin
+          Result := P^;
+        end;
+        function Managed(P: PInteger): Integer;
+        var S: string;
+        begin
+          S := 'x';
+          Result := P^ + Length(S);
+        end;
+        function Caught(P: PInteger): Integer;
+        begin
+          Result := 1;
+          try
+            try
+              Result := 2;
+              P^ := 7;
+            finally
+              Step;
+            end;
+          except
+            Result := Result + P^;
+          end;
+        end;
+        function Leaves(P: PInteger; N: Integer): Integer;
+        var I: Integer;
+        begin
+          Result := 0;
+          for I := 1 to N do
+            try
+              if I = 2 then Continue;
+              if I = 3 then Break;
+              if I = 4 then Exit;
+              Result := P^;
+            except
+              if I = 5 then Break;
+            end;
+        end;
+        end.
+        """;
+
+    /// <summary>
+    /// C-312 (CMP-398): every EH scope — try part, handler region, the routine's cleanup scope — is opened by an <c>invoke</c> of
+    /// <c>llvm.seh.try.begin</c> unwinding to the scope's pad and closed by one of <c>llvm.seh.try.end</c> on each exit (completion,
+    /// <c>Continue</c>, <c>Break</c>, <c>Exit</c>), nested regions nested; the module carries the <c>eh-asynch</c> flag; the loads and
+    /// stores of a routine with a try statement are volatile, those of other routines are not.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "CMP-398")]
+    [Trait("Req", "LANG-830")]
+    public void TryRegionAsyncScope()
+    {
+        var text = Emit(TryRegionAsyncScopeSource);
+
+        Snapshot.Verify("TryRegionAsyncScope", text);
+
+        Assert.Contains("declare void @llvm.seh.try.begin()\n", text);
+        Assert.Contains("declare void @llvm.seh.try.end()\n", text);
+        Assert.EndsWith("!llvm.module.flags = !{!0}\n!0 = !{i32 2, !\"eh-asynch\", i32 1}\n", text);
+        string Routine(string name)
+        {
+            var body = text[text.IndexOf($"@\"M.{name}\"(", StringComparison.Ordinal)..];
+            return body[..body.IndexOf("\n}\n", StringComparison.Ordinal)];
+        }
+
+        static int Count(string body, string part) => body.Split(part).Length - 1;
+        const string Begin = "  invoke void @llvm.seh.try.begin()\n          to label ", End = "  invoke void @llvm.seh.try.end()\n          to label ";
+
+        var plain = Routine("Plain");
+        Assert.DoesNotContain("volatile", plain);
+        Assert.DoesNotContain("llvm.seh", plain);
+
+        // the routine's cleanup scope: opened at the start of the body, closed where the normal path enters block cleanup
+        var managed = Routine("Managed");
+        Assert.DoesNotContain("volatile", managed);
+        Assert.Equal(1, Count(managed, Begin));
+        Assert.Equal(1, Count(managed, End));
+        Assert.Contains(Begin + "%cont.1 unwind label %cleanup.pad\ncont.1:\n", managed);
+        Assert.Matches(@"\ncleanup:\n" + Regex.Escape(End) + @"%cont\.(\d+) unwind label %cleanup\.pad\ncont\.\1:\n  call void @""System\._UStrClr""\(ptr %S\.addr\)\n", managed);
+
+        // try…finally inside try…except: the inner pair inside the outer one, then the handler region's pair
+        var caught = Routine("Caught");
+        Assert.DoesNotMatch("(= load|  store) (?!volatile )", caught);
+        Assert.Contains("  store volatile i32 7, ptr %", caught);
+        Assert.Equal(3, Count(caught, Begin));
+        Assert.Equal(3, Count(caught, End));
+        Assert.Contains(Begin + "%cont.1 unwind label %ex.dispatch.1\ncont.1:\n" + Begin + "%cont.2 unwind label %fin.pad.2\n", caught);
+        Assert.Contains(End + "%cont.3 unwind label %fin.pad.2\n", caught);
+        Assert.Contains(End + "%cont.6 unwind label %ex.dispatch.1\n", caught);
+        Assert.Contains(Begin + "%cont.7 unwind label %ex.cleanup.1\n", caught);
+        Assert.Contains(End + "%cont.8 unwind label %ex.cleanup.1\n", caught);
+        Assert.True(caught.IndexOf(End + "%cont.3", StringComparison.Ordinal) < caught.IndexOf(End + "%cont.6", StringComparison.Ordinal));
+
+        // one begin per region; the try part ends on Continue, Break, Exit and completion, the handler region on Break and completion
+        var leaves = Routine("Leaves");
+        Assert.Equal(2, Count(leaves, Begin));
+        Assert.Equal(4, Regex.Count(leaves, Regex.Escape(End) + @"%cont\.\d+ unwind label %ex\.dispatch.3\n"));
+        Assert.Equal(2, Regex.Count(leaves, Regex.Escape(End) + @"%cont\.\d+ unwind label %ex\.cleanup.3\n"));
+    }
 
     /// <summary>CMP-392 in <see cref="TryFinallySource"/>: outlined <c>$fin</c> routines on the frame, called on every way out.</summary>
     [Fact]
@@ -2951,7 +3067,8 @@ public sealed class IrSnapshotTests
                      " = getelementptr inbounds i8, ptr %", ", i64 -12\n",                  // ABI-023
                      " = getelementptr inbounds i16, ptr %",                                // ABI-024
                      " = icmp ult i64 %",                                                   // CMP-331
-                     "cleanup:\n  call void @\"System._UStrClr\"(ptr %t.addr)\n  call void @\"System._UStrClr\"(ptr %$tmp1.addr)\n  call void @\"System._UStrClr\"(ptr %$tmp2.addr)\n  br label %exit\n",
+                     ":\n  call void @\"System._UStrClr\"(ptr %t.addr)\n  call void @\"System._UStrClr\"(ptr %$tmp1.addr)\n  call void @\"System._UStrClr\"(ptr %$tmp2.addr)\n  br label %exit\n",
+                     "cleanup:\n  invoke void @llvm.seh.try.end()\n          to label %cont.",       // CMP-398: block cleanup closes the scope's region
                      "declare void @\"System._UStrAsg\"(ptr, ptr)\n",
                      "declare void @\"System._UStrFromWChar\"(ptr, i16)\n",
                  ])

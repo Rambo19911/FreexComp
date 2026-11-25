@@ -24,14 +24,22 @@ declare void @"System._UStrClr"(ptr)
 declare i32 @__C_specific_handler(...)
 declare void @llvm.memmove.p0.p0.i64(ptr, ptr, i64, i1)
 declare void @llvm.memset.p0.i64(ptr, i8, i64, i1)
+declare void @llvm.seh.try.begin()
+declare void @llvm.seh.try.end()
 
 define i32 @"M.TFoo.Ping"(ptr %Self) #0 personality ptr @__C_specific_handler {
 entry:
   %Self.addr = alloca ptr, align 8
   %$tmp1.addr = alloca i32, align 4
   %$tmp2.addr = alloca ptr, align 8
-  store ptr %Self, ptr %Self.addr, align 8
-  store i32 0, ptr %$tmp1.addr, align 4
+  store volatile ptr %Self, ptr %Self.addr, align 8
+  store volatile i32 0, ptr %$tmp1.addr, align 4
+  invoke void @llvm.seh.try.begin()
+          to label %cont.1 unwind label %ex.dispatch.1
+cont.1:
+  invoke void @llvm.seh.try.end()
+          to label %cont.2 unwind label %ex.dispatch.1
+cont.2:
   br label %try.end.1
 ex.dispatch.1:
   %cs.1 = catchswitch within none [label %ex.pad.1] unwind to caller
@@ -40,12 +48,18 @@ ex.pad.1:
   catchret from %cp.1 to label %ex.body.1
 ex.body.1:
   %t1 = call ptr @"System._BeginCatch"()
-  store ptr %t1, ptr %$tmp2.addr, align 8
-  %t2 = load ptr, ptr %Self.addr, align 8
+  store volatile ptr %t1, ptr %$tmp2.addr, align 8
+  invoke void @llvm.seh.try.begin()
+          to label %cont.3 unwind label %ex.cleanup.1
+cont.3:
+  %t2 = load volatile ptr, ptr %Self.addr, align 8
   %t3 = invoke i32 @"System._SafecallException"(ptr %t2)
-          to label %cont.1 unwind label %ex.cleanup.1
-cont.1:
-  store i32 %t3, ptr %$tmp1.addr, align 4
+          to label %cont.4 unwind label %ex.cleanup.1
+cont.4:
+  store volatile i32 %t3, ptr %$tmp1.addr, align 4
+  invoke void @llvm.seh.try.end()
+          to label %cont.5 unwind label %ex.cleanup.1
+cont.5:
   call void @"System._EndCatch"()
   br label %try.end.1
 ex.cleanup.1:
@@ -55,7 +69,7 @@ ex.cleanup.1:
 try.end.1:
   br label %exit
 exit:
-  %t4 = load i32, ptr %$tmp1.addr, align 4
+  %t4 = load volatile i32, ptr %$tmp1.addr, align 4
   ret i32 %t4
 }
 
@@ -66,10 +80,19 @@ entry:
   %Result.addr = alloca i32, align 4
   %$tmp1.addr = alloca i32, align 4
   %$tmp2.addr = alloca ptr, align 8
-  store ptr %Self, ptr %Self.addr, align 8
-  store ptr %$ret, ptr %$ret.addr, align 8
-  store i32 0, ptr %$tmp1.addr, align 4
-  store i32 5, ptr %Result.addr, align 4
+  store volatile ptr %Self, ptr %Self.addr, align 8
+  store volatile ptr %$ret, ptr %$ret.addr, align 8
+  invoke void @llvm.seh.try.begin()
+          to label %cont.1 unwind label %cleanup.pad
+cont.1:
+  store volatile i32 0, ptr %$tmp1.addr, align 4
+  invoke void @llvm.seh.try.begin()
+          to label %cont.2 unwind label %ex.dispatch.1
+cont.2:
+  store volatile i32 5, ptr %Result.addr, align 4
+  invoke void @llvm.seh.try.end()
+          to label %cont.3 unwind label %ex.dispatch.1
+cont.3:
   br label %try.end.1
 ex.dispatch.1:
   %cs.1 = catchswitch within none [label %ex.pad.1] unwind label %cleanup.pad
@@ -78,45 +101,54 @@ ex.pad.1:
   catchret from %cp.1 to label %ex.body.1
 ex.body.1:
   %t1 = call ptr @"System._BeginCatch"()
-  store ptr %t1, ptr %$tmp2.addr, align 8
-  %t2 = load ptr, ptr %Self.addr, align 8
+  store volatile ptr %t1, ptr %$tmp2.addr, align 8
+  invoke void @llvm.seh.try.begin()
+          to label %cont.4 unwind label %ex.cleanup.1
+cont.4:
+  %t2 = load volatile ptr, ptr %Self.addr, align 8
   %t3 = invoke i32 @"System._SafecallException"(ptr %t2)
-          to label %cont.1 unwind label %ex.cleanup.1
-cont.1:
-  store i32 %t3, ptr %$tmp1.addr, align 4
+          to label %cont.5 unwind label %ex.cleanup.1
+cont.5:
+  store volatile i32 %t3, ptr %$tmp1.addr, align 4
+  invoke void @llvm.seh.try.end()
+          to label %cont.6 unwind label %ex.cleanup.1
+cont.6:
   invoke void @"System._EndCatch"()
-          to label %cont.2 unwind label %cleanup.pad
-cont.2:
+          to label %cont.7 unwind label %cleanup.pad
+cont.7:
   br label %try.end.1
 ex.cleanup.1:
   %cl.1 = cleanuppad within none []
   invoke void @"System._EndCatch"() [ "funclet"(token %cl.1) ]
-          to label %cont.3 unwind label %cleanup.pad
-cont.3:
+          to label %cont.8 unwind label %cleanup.pad
+cont.8:
   cleanupret from %cl.1 unwind label %cleanup.pad
 try.end.1:
   br label %cleanup
 cleanup:
-  %t4 = load i32, ptr %$tmp1.addr, align 4
+  invoke void @llvm.seh.try.end()
+          to label %cont.9 unwind label %cleanup.pad
+cont.9:
+  %t4 = load volatile i32, ptr %$tmp1.addr, align 4
   %t5 = icmp sge i32 %t4, 0
   br i1 %t5, label %if.then.2, label %if.end.2
 if.then.2:
-  %t6 = load ptr, ptr %$ret.addr, align 8
-  call void @llvm.memmove.p0.p0.i64(ptr align 4 %t6, ptr align 4 %Result.addr, i64 4, i1 false)
+  %t6 = load volatile ptr, ptr %$ret.addr, align 8
+  call void @llvm.memmove.p0.p0.i64(ptr align 4 %t6, ptr align 4 %Result.addr, i64 4, i1 true)
   br label %if.end.2
 if.end.2:
   br label %exit
 exit:
-  %t7 = load i32, ptr %$tmp1.addr, align 4
+  %t7 = load volatile i32, ptr %$tmp1.addr, align 4
   ret i32 %t7
 cleanup.pad:
   %cl = cleanuppad within none []
-  %t8 = load i32, ptr %$tmp1.addr, align 4
+  %t8 = load volatile i32, ptr %$tmp1.addr, align 4
   %t9 = icmp sge i32 %t8, 0
   br i1 %t9, label %if.then.3, label %if.end.3
 if.then.3:
-  %t10 = load ptr, ptr %$ret.addr, align 8
-  call void @llvm.memmove.p0.p0.i64(ptr align 4 %t10, ptr align 4 %Result.addr, i64 4, i1 false)
+  %t10 = load volatile ptr, ptr %$ret.addr, align 8
+  call void @llvm.memmove.p0.p0.i64(ptr align 4 %t10, ptr align 4 %Result.addr, i64 4, i1 true)
   br label %if.end.3
 if.end.3:
   cleanupret from %cl unwind to caller
@@ -130,23 +162,35 @@ entry:
   %Result.addr = alloca ptr, align 8
   %$tmp1.addr = alloca i32, align 4
   %$tmp2.addr = alloca ptr, align 8
-  store ptr %Self, ptr %Self.addr, align 8
-  store i32 %N, ptr %N.addr, align 4
-  store ptr %$ret, ptr %$ret.addr, align 8
-  store ptr null, ptr %Result.addr, align 8
-  store i32 0, ptr %$tmp1.addr, align 4
-  %t1 = load i32, ptr %N.addr, align 4
+  store volatile ptr %Self, ptr %Self.addr, align 8
+  store volatile i32 %N, ptr %N.addr, align 4
+  store volatile ptr %$ret, ptr %$ret.addr, align 8
+  invoke void @llvm.seh.try.begin()
+          to label %cont.1 unwind label %cleanup.pad
+cont.1:
+  store volatile ptr null, ptr %Result.addr, align 8
+  store volatile i32 0, ptr %$tmp1.addr, align 4
+  invoke void @llvm.seh.try.begin()
+          to label %cont.2 unwind label %ex.dispatch.1
+cont.2:
+  %t1 = load volatile i32, ptr %N.addr, align 4
   %t2 = icmp eq i32 %t1, 0
   br i1 %t2, label %if.then.2, label %if.end.2
 if.then.2:
   invoke void @"System._UStrAsg"(ptr %Result.addr, ptr null)
-          to label %cont.1 unwind label %ex.dispatch.1
-cont.1:
+          to label %cont.3 unwind label %ex.dispatch.1
+cont.3:
+  invoke void @llvm.seh.try.end()
+          to label %cont.4 unwind label %ex.dispatch.1
+cont.4:
   br label %cleanup
 if.end.2:
   invoke void @"System._UStrAsg"(ptr %Result.addr, ptr getelementptr inbounds ({ i32, i32, i16, i16, i32, [2 x i16] }, ptr @.str.0, i32 0, i32 5))
-          to label %cont.2 unwind label %ex.dispatch.1
-cont.2:
+          to label %cont.5 unwind label %ex.dispatch.1
+cont.5:
+  invoke void @llvm.seh.try.end()
+          to label %cont.6 unwind label %ex.dispatch.1
+cont.6:
   br label %try.end.1
 ex.dispatch.1:
   %cs.1 = catchswitch within none [label %ex.pad.1] unwind label %cleanup.pad
@@ -155,56 +199,65 @@ ex.pad.1:
   catchret from %cp.1 to label %ex.body.1
 ex.body.1:
   %t3 = call ptr @"System._BeginCatch"()
-  store ptr %t3, ptr %$tmp2.addr, align 8
-  %t4 = load ptr, ptr %Self.addr, align 8
+  store volatile ptr %t3, ptr %$tmp2.addr, align 8
+  invoke void @llvm.seh.try.begin()
+          to label %cont.7 unwind label %ex.cleanup.1
+cont.7:
+  %t4 = load volatile ptr, ptr %Self.addr, align 8
   %t5 = invoke i32 @"System._SafecallException"(ptr %t4)
-          to label %cont.3 unwind label %ex.cleanup.1
-cont.3:
-  store i32 %t5, ptr %$tmp1.addr, align 4
+          to label %cont.8 unwind label %ex.cleanup.1
+cont.8:
+  store volatile i32 %t5, ptr %$tmp1.addr, align 4
+  invoke void @llvm.seh.try.end()
+          to label %cont.9 unwind label %ex.cleanup.1
+cont.9:
   invoke void @"System._EndCatch"()
-          to label %cont.4 unwind label %cleanup.pad
-cont.4:
+          to label %cont.10 unwind label %cleanup.pad
+cont.10:
   br label %try.end.1
 ex.cleanup.1:
   %cl.1 = cleanuppad within none []
   invoke void @"System._EndCatch"() [ "funclet"(token %cl.1) ]
-          to label %cont.5 unwind label %cleanup.pad
-cont.5:
+          to label %cont.11 unwind label %cleanup.pad
+cont.11:
   cleanupret from %cl.1 unwind label %cleanup.pad
 try.end.1:
   br label %cleanup
 cleanup:
-  %t6 = load i32, ptr %$tmp1.addr, align 4
+  invoke void @llvm.seh.try.end()
+          to label %cont.12 unwind label %cleanup.pad
+cont.12:
+  %t6 = load volatile i32, ptr %$tmp1.addr, align 4
   %t7 = icmp sge i32 %t6, 0
   br i1 %t7, label %if.then.3, label %if.else.3
 if.then.3:
-  %t8 = load ptr, ptr %$ret.addr, align 8
-  call void @llvm.memmove.p0.p0.i64(ptr align 8 %t8, ptr align 8 %Result.addr, i64 8, i1 false)
-  store ptr null, ptr %Result.addr, align 8
+  %t8 = load volatile ptr, ptr %$ret.addr, align 8
+  call void @llvm.memmove.p0.p0.i64(ptr align 8 %t8, ptr align 8 %Result.addr, i64 8, i1 true)
+  store volatile ptr null, ptr %Result.addr, align 8
   br label %if.end.3
 if.else.3:
-  %t9 = load ptr, ptr %$ret.addr, align 8
-  store ptr null, ptr %t9, align 8
+  %t9 = load volatile ptr, ptr %$ret.addr, align 8
+  store volatile ptr null, ptr %t9, align 8
   br label %if.end.3
 if.end.3:
   call void @"System._UStrClr"(ptr %Result.addr)
   br label %exit
 exit:
-  %t10 = load i32, ptr %$tmp1.addr, align 4
+  %t10 = load volatile i32, ptr %$tmp1.addr, align 4
   ret i32 %t10
 cleanup.pad:
   %cl = cleanuppad within none []
-  %t11 = load i32, ptr %$tmp1.addr, align 4
+  %t11 = load volatile i32, ptr %$tmp1.addr, align 4
   %t12 = icmp sge i32 %t11, 0
   br i1 %t12, label %if.then.4, label %if.else.4
 if.then.4:
-  %t13 = load ptr, ptr %$ret.addr, align 8
-  call void @llvm.memmove.p0.p0.i64(ptr align 8 %t13, ptr align 8 %Result.addr, i64 8, i1 false)
-  store ptr null, ptr %Result.addr, align 8
+  %t13 = load volatile ptr, ptr %$ret.addr, align 8
+  call void @llvm.memmove.p0.p0.i64(ptr align 8 %t13, ptr align 8 %Result.addr, i64 8, i1 true)
+  store volatile ptr null, ptr %Result.addr, align 8
   br label %if.end.4
 if.else.4:
-  %t14 = load ptr, ptr %$ret.addr, align 8
-  store ptr null, ptr %t14, align 8
+  %t14 = load volatile ptr, ptr %$ret.addr, align 8
+  store volatile ptr null, ptr %t14, align 8
   br label %if.end.4
 if.end.4:
   call void @"System._UStrClr"(ptr %Result.addr) [ "funclet"(token %cl) ]
@@ -218,12 +271,21 @@ entry:
   %Result.addr = alloca i32, align 4
   %$tmp1.addr = alloca i32, align 4
   %$tmp2.addr = alloca ptr, align 8
-  store i32 %N, ptr %N.addr, align 4
-  store ptr %$ret, ptr %$ret.addr, align 8
-  store i32 0, ptr %$tmp1.addr, align 4
-  %t1 = load i32, ptr %N.addr, align 4
+  store volatile i32 %N, ptr %N.addr, align 4
+  store volatile ptr %$ret, ptr %$ret.addr, align 8
+  invoke void @llvm.seh.try.begin()
+          to label %cont.1 unwind label %cleanup.pad
+cont.1:
+  store volatile i32 0, ptr %$tmp1.addr, align 4
+  invoke void @llvm.seh.try.begin()
+          to label %cont.2 unwind label %ex.dispatch.1
+cont.2:
+  %t1 = load volatile i32, ptr %N.addr, align 4
   %t2 = mul i32 %t1, 2
-  store i32 %t2, ptr %Result.addr, align 4
+  store volatile i32 %t2, ptr %Result.addr, align 4
+  invoke void @llvm.seh.try.end()
+          to label %cont.3 unwind label %ex.dispatch.1
+cont.3:
   br label %try.end.1
 ex.dispatch.1:
   %cs.1 = catchswitch within none [label %ex.pad.1] unwind label %cleanup.pad
@@ -232,44 +294,53 @@ ex.pad.1:
   catchret from %cp.1 to label %ex.body.1
 ex.body.1:
   %t3 = call ptr @"System._BeginCatch"()
-  store ptr %t3, ptr %$tmp2.addr, align 8
+  store volatile ptr %t3, ptr %$tmp2.addr, align 8
+  invoke void @llvm.seh.try.begin()
+          to label %cont.4 unwind label %ex.cleanup.1
+cont.4:
   %t4 = invoke i32 @"System._SafecallException"(ptr null)
-          to label %cont.1 unwind label %ex.cleanup.1
-cont.1:
-  store i32 %t4, ptr %$tmp1.addr, align 4
+          to label %cont.5 unwind label %ex.cleanup.1
+cont.5:
+  store volatile i32 %t4, ptr %$tmp1.addr, align 4
+  invoke void @llvm.seh.try.end()
+          to label %cont.6 unwind label %ex.cleanup.1
+cont.6:
   invoke void @"System._EndCatch"()
-          to label %cont.2 unwind label %cleanup.pad
-cont.2:
+          to label %cont.7 unwind label %cleanup.pad
+cont.7:
   br label %try.end.1
 ex.cleanup.1:
   %cl.1 = cleanuppad within none []
   invoke void @"System._EndCatch"() [ "funclet"(token %cl.1) ]
-          to label %cont.3 unwind label %cleanup.pad
-cont.3:
+          to label %cont.8 unwind label %cleanup.pad
+cont.8:
   cleanupret from %cl.1 unwind label %cleanup.pad
 try.end.1:
   br label %cleanup
 cleanup:
-  %t5 = load i32, ptr %$tmp1.addr, align 4
+  invoke void @llvm.seh.try.end()
+          to label %cont.9 unwind label %cleanup.pad
+cont.9:
+  %t5 = load volatile i32, ptr %$tmp1.addr, align 4
   %t6 = icmp sge i32 %t5, 0
   br i1 %t6, label %if.then.2, label %if.end.2
 if.then.2:
-  %t7 = load ptr, ptr %$ret.addr, align 8
-  call void @llvm.memmove.p0.p0.i64(ptr align 4 %t7, ptr align 4 %Result.addr, i64 4, i1 false)
+  %t7 = load volatile ptr, ptr %$ret.addr, align 8
+  call void @llvm.memmove.p0.p0.i64(ptr align 4 %t7, ptr align 4 %Result.addr, i64 4, i1 true)
   br label %if.end.2
 if.end.2:
   br label %exit
 exit:
-  %t8 = load i32, ptr %$tmp1.addr, align 4
+  %t8 = load volatile i32, ptr %$tmp1.addr, align 4
   ret i32 %t8
 cleanup.pad:
   %cl = cleanuppad within none []
-  %t9 = load i32, ptr %$tmp1.addr, align 4
+  %t9 = load volatile i32, ptr %$tmp1.addr, align 4
   %t10 = icmp sge i32 %t9, 0
   br i1 %t10, label %if.then.3, label %if.end.3
 if.then.3:
-  %t11 = load ptr, ptr %$ret.addr, align 8
-  call void @llvm.memmove.p0.p0.i64(ptr align 4 %t11, ptr align 4 %Result.addr, i64 4, i1 false)
+  %t11 = load volatile ptr, ptr %$ret.addr, align 8
+  call void @llvm.memmove.p0.p0.i64(ptr align 4 %t11, ptr align 4 %Result.addr, i64 4, i1 true)
   br label %if.end.3
 if.end.3:
   cleanupret from %cl unwind to caller
@@ -291,97 +362,106 @@ entry:
   %$tmp8.addr = alloca ptr, align 8
   %$tmp9.addr = alloca i32, align 4
   %$tmp10.addr = alloca i32, align 4
-  store ptr %Obj, ptr %Obj.addr, align 8
-  store ptr null, ptr %S.addr, align 8
-  store ptr null, ptr %$tmp4.addr, align 8
-  %t1 = load ptr, ptr %Obj.addr, align 8
-  %t2 = load ptr, ptr %t1, align 8
-  %t3 = getelementptr inbounds i8, ptr %t2, i64 0
-  %t4 = load ptr, ptr %t3, align 8
-  %t5 = invoke i32 %t4(ptr %t1)
+  store volatile ptr %Obj, ptr %Obj.addr, align 8
+  invoke void @llvm.seh.try.begin()
           to label %cont.1 unwind label %cleanup.pad
 cont.1:
-  store i32 %t5, ptr %$tmp1.addr, align 4
-  %t6 = load i32, ptr %$tmp1.addr, align 4
+  store volatile ptr null, ptr %S.addr, align 8
+  store volatile ptr null, ptr %$tmp4.addr, align 8
+  %t1 = load volatile ptr, ptr %Obj.addr, align 8
+  %t2 = load volatile ptr, ptr %t1, align 8
+  %t3 = getelementptr inbounds i8, ptr %t2, i64 0
+  %t4 = load volatile ptr, ptr %t3, align 8
+  %t5 = invoke i32 %t4(ptr %t1)
+          to label %cont.2 unwind label %cleanup.pad
+cont.2:
+  store volatile i32 %t5, ptr %$tmp1.addr, align 4
+  %t6 = load volatile i32, ptr %$tmp1.addr, align 4
   %t7 = icmp slt i32 %t6, 0
   br i1 %t7, label %if.then.1, label %if.end.1
 if.then.1:
-  %t8 = load i32, ptr %$tmp1.addr, align 4
+  %t8 = load volatile i32, ptr %$tmp1.addr, align 4
   invoke void @"System._SafecallError"(i32 %t8) #1
-          to label %cont.2 unwind label %cleanup.pad
-cont.2:
-  unreachable
-if.end.1:
-  call void @llvm.memset.p0.i64(ptr align 4 %$tmp2.addr, i8 0, i64 4, i1 false)
-  %t9 = load ptr, ptr %Obj.addr, align 8
-  %t10 = load ptr, ptr %t9, align 8
-  %t11 = getelementptr inbounds i8, ptr %t10, i64 8
-  %t12 = load ptr, ptr %t11, align 8
-  %t13 = invoke i32 %t12(ptr %t9, ptr %$tmp2.addr)
           to label %cont.3 unwind label %cleanup.pad
 cont.3:
-  store i32 %t13, ptr %$tmp3.addr, align 4
-  %t14 = load i32, ptr %$tmp3.addr, align 4
+  unreachable
+if.end.1:
+  call void @llvm.memset.p0.i64(ptr align 4 %$tmp2.addr, i8 0, i64 4, i1 true)
+  %t9 = load volatile ptr, ptr %Obj.addr, align 8
+  %t10 = load volatile ptr, ptr %t9, align 8
+  %t11 = getelementptr inbounds i8, ptr %t10, i64 8
+  %t12 = load volatile ptr, ptr %t11, align 8
+  %t13 = invoke i32 %t12(ptr %t9, ptr %$tmp2.addr)
+          to label %cont.4 unwind label %cleanup.pad
+cont.4:
+  store volatile i32 %t13, ptr %$tmp3.addr, align 4
+  %t14 = load volatile i32, ptr %$tmp3.addr, align 4
   %t15 = icmp slt i32 %t14, 0
   br i1 %t15, label %if.then.2, label %if.end.2
 if.then.2:
-  %t16 = load i32, ptr %$tmp3.addr, align 4
+  %t16 = load volatile i32, ptr %$tmp3.addr, align 4
   invoke void @"System._SafecallError"(i32 %t16) #1
-          to label %cont.4 unwind label %cleanup.pad
-cont.4:
-  unreachable
-if.end.2:
-  %t17 = load i32, ptr %$tmp2.addr, align 4
-  store i32 %t17, ptr %V.addr, align 4
-  invoke void @"System._UStrClr"(ptr %$tmp4.addr)
           to label %cont.5 unwind label %cleanup.pad
 cont.5:
-  %t18 = load ptr, ptr %Obj.addr, align 8
-  %t19 = load ptr, ptr %t18, align 8
-  %t20 = getelementptr inbounds i8, ptr %t19, i64 16
-  %t21 = load ptr, ptr %t20, align 8
-  %t22 = load i32, ptr %V.addr, align 4
-  %t23 = invoke i32 %t21(ptr %t18, i32 %t22, ptr %$tmp4.addr)
+  unreachable
+if.end.2:
+  %t17 = load volatile i32, ptr %$tmp2.addr, align 4
+  store volatile i32 %t17, ptr %V.addr, align 4
+  invoke void @"System._UStrClr"(ptr %$tmp4.addr)
           to label %cont.6 unwind label %cleanup.pad
 cont.6:
-  store i32 %t23, ptr %$tmp5.addr, align 4
-  %t24 = load i32, ptr %$tmp5.addr, align 4
+  %t18 = load volatile ptr, ptr %Obj.addr, align 8
+  %t19 = load volatile ptr, ptr %t18, align 8
+  %t20 = getelementptr inbounds i8, ptr %t19, i64 16
+  %t21 = load volatile ptr, ptr %t20, align 8
+  %t22 = load volatile i32, ptr %V.addr, align 4
+  %t23 = invoke i32 %t21(ptr %t18, i32 %t22, ptr %$tmp4.addr)
+          to label %cont.7 unwind label %cleanup.pad
+cont.7:
+  store volatile i32 %t23, ptr %$tmp5.addr, align 4
+  %t24 = load volatile i32, ptr %$tmp5.addr, align 4
   %t25 = icmp slt i32 %t24, 0
   br i1 %t25, label %if.then.3, label %if.end.3
 if.then.3:
-  %t26 = load i32, ptr %$tmp5.addr, align 4
+  %t26 = load volatile i32, ptr %$tmp5.addr, align 4
   invoke void @"System._SafecallError"(i32 %t26) #1
-          to label %cont.7 unwind label %cleanup.pad
-cont.7:
-  unreachable
-if.end.3:
-  %t27 = load ptr, ptr %$tmp4.addr, align 8
-  invoke void @"System._UStrAsg"(ptr %S.addr, ptr %t27)
           to label %cont.8 unwind label %cleanup.pad
 cont.8:
-  %t28 = load i32, ptr %V.addr, align 4
-  call void @llvm.memset.p0.i64(ptr align 4 %$tmp6.addr, i8 0, i64 4, i1 false)
-  %t29 = load ptr, ptr %Obj.addr, align 8
-  %t30 = load ptr, ptr %t29, align 8
-  %t31 = getelementptr inbounds i8, ptr %t30, i64 8
-  %t32 = load ptr, ptr %t31, align 8
-  %t33 = invoke i32 %t32(ptr %t29, ptr %$tmp6.addr)
-          to label %cont.9 unwind label %ex.dispatch.4
+  unreachable
+if.end.3:
+  %t27 = load volatile ptr, ptr %$tmp4.addr, align 8
+  invoke void @"System._UStrAsg"(ptr %S.addr, ptr %t27)
+          to label %cont.9 unwind label %cleanup.pad
 cont.9:
-  store i32 %t33, ptr %$tmp7.addr, align 4
-  %t34 = load i32, ptr %$tmp7.addr, align 4
+  invoke void @llvm.seh.try.begin()
+          to label %cont.10 unwind label %ex.dispatch.4
+cont.10:
+  %t28 = load volatile i32, ptr %V.addr, align 4
+  call void @llvm.memset.p0.i64(ptr align 4 %$tmp6.addr, i8 0, i64 4, i1 true)
+  %t29 = load volatile ptr, ptr %Obj.addr, align 8
+  %t30 = load volatile ptr, ptr %t29, align 8
+  %t31 = getelementptr inbounds i8, ptr %t30, i64 8
+  %t32 = load volatile ptr, ptr %t31, align 8
+  %t33 = invoke i32 %t32(ptr %t29, ptr %$tmp6.addr)
+          to label %cont.11 unwind label %ex.dispatch.4
+cont.11:
+  store volatile i32 %t33, ptr %$tmp7.addr, align 4
+  %t34 = load volatile i32, ptr %$tmp7.addr, align 4
   %t35 = icmp slt i32 %t34, 0
   br i1 %t35, label %if.then.5, label %if.end.5
 if.then.5:
-  %t36 = load i32, ptr %$tmp7.addr, align 4
+  %t36 = load volatile i32, ptr %$tmp7.addr, align 4
   invoke void @"System._SafecallError"(i32 %t36) #1
-          to label %cont.10 unwind label %ex.dispatch.4
-cont.10:
+          to label %cont.12 unwind label %ex.dispatch.4
+cont.12:
   unreachable
 if.end.5:
-  %t37 = load i32, ptr %$tmp6.addr, align 4
+  %t37 = load volatile i32, ptr %$tmp6.addr, align 4
   %t38 = add i32 %t28, %t37
-  store i32 %t38, ptr %V.addr, align 4
+  store volatile i32 %t38, ptr %V.addr, align 4
+  invoke void @llvm.seh.try.end()
+          to label %cont.13 unwind label %ex.dispatch.4
+cont.13:
   br label %try.end.4
 ex.dispatch.4:
   %cs.4 = catchswitch within none [label %ex.pad.4] unwind label %cleanup.pad
@@ -390,44 +470,53 @@ ex.pad.4:
   catchret from %cp.4 to label %ex.body.4
 ex.body.4:
   %t39 = call ptr @"System._BeginCatch"()
-  store ptr %t39, ptr %$tmp8.addr, align 8
-  store i32 0, ptr %V.addr, align 4
+  store volatile ptr %t39, ptr %$tmp8.addr, align 8
+  invoke void @llvm.seh.try.begin()
+          to label %cont.14 unwind label %ex.cleanup.4
+cont.14:
+  store volatile i32 0, ptr %V.addr, align 4
+  invoke void @llvm.seh.try.end()
+          to label %cont.15 unwind label %ex.cleanup.4
+cont.15:
   invoke void @"System._EndCatch"()
-          to label %cont.11 unwind label %cleanup.pad
-cont.11:
+          to label %cont.16 unwind label %cleanup.pad
+cont.16:
   br label %try.end.4
 ex.cleanup.4:
   %cl.4 = cleanuppad within none []
   invoke void @"System._EndCatch"() [ "funclet"(token %cl.4) ]
-          to label %cont.12 unwind label %cleanup.pad
-cont.12:
+          to label %cont.17 unwind label %cleanup.pad
+cont.17:
   cleanupret from %cl.4 unwind label %cleanup.pad
 try.end.4:
-  call void @llvm.memset.p0.i64(ptr align 4 %$tmp9.addr, i8 0, i64 4, i1 false)
-  %t40 = load i32, ptr %V.addr, align 4
+  call void @llvm.memset.p0.i64(ptr align 4 %$tmp9.addr, i8 0, i64 4, i1 true)
+  %t40 = load volatile i32, ptr %V.addr, align 4
   %t41 = invoke i32 @"M.Twice"(i32 %t40, ptr %$tmp9.addr)
-          to label %cont.13 unwind label %cleanup.pad
-cont.13:
-  store i32 %t41, ptr %$tmp10.addr, align 4
-  %t42 = load i32, ptr %$tmp10.addr, align 4
+          to label %cont.18 unwind label %cleanup.pad
+cont.18:
+  store volatile i32 %t41, ptr %$tmp10.addr, align 4
+  %t42 = load volatile i32, ptr %$tmp10.addr, align 4
   %t43 = icmp slt i32 %t42, 0
   br i1 %t43, label %if.then.6, label %if.end.6
 if.then.6:
-  %t44 = load i32, ptr %$tmp10.addr, align 4
+  %t44 = load volatile i32, ptr %$tmp10.addr, align 4
   invoke void @"System._SafecallError"(i32 %t44) #1
-          to label %cont.14 unwind label %cleanup.pad
-cont.14:
+          to label %cont.19 unwind label %cleanup.pad
+cont.19:
   unreachable
 if.end.6:
-  %t45 = load i32, ptr %$tmp9.addr, align 4
-  store i32 %t45, ptr %Result.addr, align 4
+  %t45 = load volatile i32, ptr %$tmp9.addr, align 4
+  store volatile i32 %t45, ptr %Result.addr, align 4
   br label %cleanup
 cleanup:
+  invoke void @llvm.seh.try.end()
+          to label %cont.20 unwind label %cleanup.pad
+cont.20:
   call void @"System._UStrClr"(ptr %S.addr)
   call void @"System._UStrClr"(ptr %$tmp4.addr)
   br label %exit
 exit:
-  %t46 = load i32, ptr %Result.addr, align 4
+  %t46 = load volatile i32, ptr %Result.addr, align 4
   ret i32 %t46
 cleanup.pad:
   %cl = cleanuppad within none []
@@ -473,3 +562,6 @@ entry:
 
 attributes #0 = { uwtable "frame-pointer"="all" }
 attributes #1 = { noreturn uwtable }
+
+!llvm.module.flags = !{!0}
+!0 = !{i32 2, !"eh-asynch", i32 1}

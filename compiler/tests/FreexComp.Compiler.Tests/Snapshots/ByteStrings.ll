@@ -28,6 +28,8 @@ declare void @"System._WritePWChar"(ptr, ptr, i32)
 declare void @"System._WriteSStr"(ptr, ptr, i32)
 declare void @"System._WriteUStr"(ptr, ptr, i32)
 declare i32 @__C_specific_handler(...)
+declare void @llvm.seh.try.begin()
+declare void @llvm.seh.try.end()
 
 define i8 @"M.Ansi"(ptr %a, ptr %s, i8 %c) #0 personality ptr @__C_specific_handler {
 entry:
@@ -38,32 +40,35 @@ entry:
   %$tmp1.addr = alloca ptr, align 8
   store ptr %s, ptr %s.addr, align 8
   store i8 %c, ptr %c.addr, align 1
+  invoke void @llvm.seh.try.begin()
+          to label %cont.1 unwind label %cleanup.pad
+cont.1:
   store ptr null, ptr %u.addr, align 8
   store ptr null, ptr %$tmp1.addr, align 8
   invoke void @"System._AStrAsg"(ptr %a, ptr getelementptr inbounds ({ i32, i32, i16, i16, i32, [6 x i8] }, ptr @.str.0, i32 0, i32 5))
-          to label %cont.1 unwind label %cleanup.pad
-cont.1:
-  %t1 = load ptr, ptr %s.addr, align 8
-  invoke void @"System._AStrFromUStr"(ptr %u.addr, ptr %t1, i16 -535)
           to label %cont.2 unwind label %cleanup.pad
 cont.2:
+  %t1 = load ptr, ptr %s.addr, align 8
+  invoke void @"System._AStrFromUStr"(ptr %u.addr, ptr %t1, i16 -535)
+          to label %cont.3 unwind label %cleanup.pad
+cont.3:
   %t2 = load ptr, ptr %a, align 8
   %t3 = load ptr, ptr %u.addr, align 8
   invoke void @"System._AStrCat"(ptr %$tmp1.addr, ptr %t2, ptr %t3)
-          to label %cont.3 unwind label %cleanup.pad
-cont.3:
-  %t4 = load ptr, ptr %$tmp1.addr, align 8
-  invoke void @"System._AStrCat"(ptr %$tmp1.addr, ptr %t4, ptr getelementptr inbounds ({ i32, i32, i16, i16, i32, [2 x i8] }, ptr @.str.1, i32 0, i32 5))
           to label %cont.4 unwind label %cleanup.pad
 cont.4:
-  %t5 = load ptr, ptr %$tmp1.addr, align 8
-  invoke void @"System._AStrAsg"(ptr %a, ptr %t5)
+  %t4 = load ptr, ptr %$tmp1.addr, align 8
+  invoke void @"System._AStrCat"(ptr %$tmp1.addr, ptr %t4, ptr getelementptr inbounds ({ i32, i32, i16, i16, i32, [2 x i8] }, ptr @.str.1, i32 0, i32 5))
           to label %cont.5 unwind label %cleanup.pad
 cont.5:
-  %t6 = load i8, ptr %c.addr, align 1
-  invoke void @"System._AStrUnique"(ptr %a)
+  %t5 = load ptr, ptr %$tmp1.addr, align 8
+  invoke void @"System._AStrAsg"(ptr %a, ptr %t5)
           to label %cont.6 unwind label %cleanup.pad
 cont.6:
+  %t6 = load i8, ptr %c.addr, align 1
+  invoke void @"System._AStrUnique"(ptr %a)
+          to label %cont.7 unwind label %cleanup.pad
+cont.7:
   %t7 = load ptr, ptr %a, align 8
   %t8 = getelementptr inbounds i8, ptr %t7, i64 0
   store i8 %t6, ptr %t8, align 1
@@ -77,28 +82,31 @@ or.rhs.1:
   %t14 = icmp eq ptr %t13, null
   br label %or.end.1
 or.end.1:
-  %t15 = phi i1 [ true, %cont.6 ], [ %t14, %or.rhs.1 ]
+  %t15 = phi i1 [ true, %cont.7 ], [ %t14, %or.rhs.1 ]
   %t16 = zext i1 %t15 to i8
   store i8 %t16, ptr %Result.addr, align 1
   %t17 = load ptr, ptr %a, align 8
   invoke void @"System._WriteAStr"(ptr @"System.Output", ptr %t17, i32 0)
-          to label %cont.7 unwind label %cleanup.pad
-cont.7:
-  %t18 = load ptr, ptr %s.addr, align 8
-  invoke void @"System._WriteUStr"(ptr @"System.Output", ptr %t18, i32 0)
           to label %cont.8 unwind label %cleanup.pad
 cont.8:
-  invoke void @"System._WriteLn"(ptr @"System.Output")
+  %t18 = load ptr, ptr %s.addr, align 8
+  invoke void @"System._WriteUStr"(ptr @"System.Output", ptr %t18, i32 0)
           to label %cont.9 unwind label %cleanup.pad
 cont.9:
-  invoke void @"System._WriteEnd"(ptr @"System.Output")
+  invoke void @"System._WriteLn"(ptr @"System.Output")
           to label %cont.10 unwind label %cleanup.pad
 cont.10:
-  invoke void @"System._IOCheck"()
+  invoke void @"System._WriteEnd"(ptr @"System.Output")
           to label %cont.11 unwind label %cleanup.pad
 cont.11:
+  invoke void @"System._IOCheck"()
+          to label %cont.12 unwind label %cleanup.pad
+cont.12:
   br label %cleanup
 cleanup:
+  invoke void @llvm.seh.try.end()
+          to label %cont.13 unwind label %cleanup.pad
+cont.13:
   call void @"System._AStrClr"(ptr %u.addr)
   call void @"System._AStrClr"(ptr %$tmp1.addr)
   br label %exit
@@ -165,13 +173,16 @@ entry:
   store ptr %a, ptr %a.addr, align 8
   store ptr %p, ptr %p.addr, align 8
   store ptr %pa, ptr %pa.addr, align 8
+  invoke void @llvm.seh.try.begin()
+          to label %cont.1 unwind label %cleanup.pad
+cont.1:
   store ptr null, ptr %t.addr, align 8
   store ptr null, ptr %$tmp1.addr, align 8
   store ptr null, ptr %$tmp4.addr, align 8
   %t1 = load ptr, ptr %p.addr, align 8
   invoke void @"System._UStrFromPWChar"(ptr %t.addr, ptr %t1)
-          to label %cont.1 unwind label %cleanup.pad
-cont.1:
+          to label %cont.2 unwind label %cleanup.pad
+cont.2:
   %t2 = load ptr, ptr %pa.addr, align 8
   store ptr %t2, ptr %$tmp2.addr, align 8
   store i32 0, ptr %$tmp3.addr, align 4
@@ -199,16 +210,16 @@ if.end.1:
   %t13 = load ptr, ptr %$tmp2.addr, align 8
   %t14 = load i32, ptr %$tmp3.addr, align 4
   invoke void @"System._AStrFromPCharLen"(ptr %$tmp1.addr, ptr %t13, i32 %t14, i16 -535)
-          to label %cont.2 unwind label %cleanup.pad
-cont.2:
-  %t15 = load ptr, ptr %$tmp1.addr, align 8
-  invoke void @"System._UStrFromAStr"(ptr %t.addr, ptr %t15)
           to label %cont.3 unwind label %cleanup.pad
 cont.3:
-  %t16 = load ptr, ptr %p.addr, align 8
-  invoke void @"System._WritePWChar"(ptr @"System.Output", ptr %t16, i32 0)
+  %t15 = load ptr, ptr %$tmp1.addr, align 8
+  invoke void @"System._UStrFromAStr"(ptr %t.addr, ptr %t15)
           to label %cont.4 unwind label %cleanup.pad
 cont.4:
+  %t16 = load ptr, ptr %p.addr, align 8
+  invoke void @"System._WritePWChar"(ptr @"System.Output", ptr %t16, i32 0)
+          to label %cont.5 unwind label %cleanup.pad
+cont.5:
   %t17 = load ptr, ptr %pa.addr, align 8
   store ptr %t17, ptr %$tmp5.addr, align 8
   store i32 0, ptr %$tmp6.addr, align 4
@@ -236,21 +247,21 @@ if.end.3:
   %t28 = load ptr, ptr %$tmp5.addr, align 8
   %t29 = load i32, ptr %$tmp6.addr, align 4
   invoke void @"System._AStrFromPCharLen"(ptr %$tmp4.addr, ptr %t28, i32 %t29, i16 -535)
-          to label %cont.5 unwind label %cleanup.pad
-cont.5:
-  %t30 = load ptr, ptr %$tmp4.addr, align 8
-  invoke void @"System._WriteAStr"(ptr @"System.Output", ptr %t30, i32 0)
           to label %cont.6 unwind label %cleanup.pad
 cont.6:
-  invoke void @"System._WriteLn"(ptr @"System.Output")
+  %t30 = load ptr, ptr %$tmp4.addr, align 8
+  invoke void @"System._WriteAStr"(ptr @"System.Output", ptr %t30, i32 0)
           to label %cont.7 unwind label %cleanup.pad
 cont.7:
-  invoke void @"System._WriteEnd"(ptr @"System.Output")
+  invoke void @"System._WriteLn"(ptr @"System.Output")
           to label %cont.8 unwind label %cleanup.pad
 cont.8:
-  invoke void @"System._IOCheck"()
+  invoke void @"System._WriteEnd"(ptr @"System.Output")
           to label %cont.9 unwind label %cleanup.pad
 cont.9:
+  invoke void @"System._IOCheck"()
+          to label %cont.10 unwind label %cleanup.pad
+cont.10:
   %t31 = load ptr, ptr %s.addr, align 8
   %t32 = icmp eq ptr %t31, null
   %t33 = select i1 %t32, ptr @.str.empty, ptr %t31
@@ -264,6 +275,9 @@ if.then.5:
 if.end.5:
   br label %cleanup
 cleanup:
+  invoke void @llvm.seh.try.end()
+          to label %cont.11 unwind label %cleanup.pad
+cont.11:
   call void @"System._UStrClr"(ptr %t.addr)
   call void @"System._AStrClr"(ptr %$tmp1.addr)
   call void @"System._AStrClr"(ptr %$tmp4.addr)
@@ -294,3 +308,6 @@ exit:
 }
 
 attributes #0 = { uwtable "frame-pointer"="all" }
+
+!llvm.module.flags = !{!0}
+!0 = !{i32 2, !"eh-asynch", i32 1}

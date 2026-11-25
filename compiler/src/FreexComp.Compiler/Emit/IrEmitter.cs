@@ -43,6 +43,13 @@ internal static class IrEmitter
     public const int FinallyGroup = 3;
 
     /// <summary>
+    /// CMP-398: the module flag of a module with try regions. With it the scope tables cover what lies between the
+    /// <c>llvm.seh.try.begin</c> / <c>llvm.seh.try.end</c> invokes of a region, so a hardware fault of an instruction there (not
+    /// only of a call) reaches the region's handler; without it the back end drops the two intrinsics.
+    /// </summary>
+    public const string AsyncEhFlag = "!{i32 2, !\"eh-asynch\", i32 1}";
+
+    /// <summary>
     /// <c>attributes #4 = { noinline … }</c>: ABI-125 — every routine of unit <c>System</c> whose name starts with <c>_</c> (the
     /// compiler helpers; <c>_Raise</c> is the debugger's raise hook) is never inlined (C-193).
     /// </summary>
@@ -359,7 +366,16 @@ internal static class IrEmitter
             writer.DefineAttributeGroup(SystemHelperGroup, [IrAttribute.Enum("noinline"), IrAttribute.Enum("uwtable"), IrAttribute.String("frame-pointer", "all")]);
         }
 
-        module.Debug?.Finish(writer);
+        if (module.Debug is { } flagsOwner)
+        {
+            flagsOwner.Finish(writer, module.UsesAsyncEh);
+        }
+        else if (module.UsesAsyncEh)
+        {
+            writer.AppendMetadata("!llvm.module.flags = !{!0}");
+            writer.AppendMetadata("!0 = " + AsyncEhFlag);
+        }
+
         writer.EndModule();
         if (module.Debug is not { } debugInfo)
         {
@@ -420,7 +436,7 @@ internal static class IrEmitter
         w.BeginFunction(new IrFunctionDefinition(new LinkName(module.Target.EntrySymbol, AlwaysQuote: false), IrLinkage.External, IrType.Void, [], RoutineGroup));
         w.AppendBlock(new IrBlock("entry"));
         w.Call(null, IrType.Void, startup, [new IrGlobal(UnitsName), module.Native(unitCount)]);
-        w.Invoke(null, IrType.Void, new IrGlobal(MainName), [], done, dispatch);
+        TryRegion(module, new IrGlobal(MainName), done, dispatch);
         w.AppendBlock(done);
         w.Call(null, IrType.Void, halt0, [], NoReturnGroup);
         w.Unreachable();
@@ -434,6 +450,22 @@ internal static class IrEmitter
         w.Unreachable();
         w.EndFunction();
         module.DeclarePending();
+    }
+
+    /// <summary>
+    /// CMP-398: the region of an entry routine — <c>llvm.seh.try.begin</c>, the call of <paramref name="callee"/>,
+    /// <c>llvm.seh.try.end</c>, each an invoke unwinding to <paramref name="pad"/>; continues at <paramref name="next"/>.
+    /// </summary>
+    private static void TryRegion(ModuleState module, IrValue callee, IrBlock next, IrBlock pad)
+    {
+        var w = module.Writer;
+        IrBlock begun = new("try.begun"), called = new("try.called");
+        module.UsesAsyncEh = true;
+        w.Invoke(null, IrType.Void, module.Intrinsic("llvm.seh.try.begin", IrType.Void, []), [], begun, pad);
+        w.AppendBlock(begun);
+        w.Invoke(null, IrType.Void, callee, [], called, pad);
+        w.AppendBlock(called);
+        w.Invoke(null, IrType.Void, module.Intrinsic("llvm.seh.try.end", IrType.Void, []), [], next, pad);
     }
 
     /// <summary>
@@ -460,7 +492,7 @@ internal static class IrEmitter
         var init = w.Call("init", IrType.I32, dllEntry, [parameters[0], parameters[1], parameters[2], new IrGlobal(UnitsName), module.Native(unitCount)])!;
         w.CondBr(w.ICmp("run", IrIntPredicate.Ne, init, IrIntConstant.I32(0)), attach, ok);
         w.AppendBlock(attach);
-        w.Invoke(null, IrType.Void, new IrGlobal(MainName), [], attached, dispatch);
+        TryRegion(module, new IrGlobal(MainName), attached, dispatch);
         w.AppendBlock(attached);
         w.Call(null, IrType.Void, initDone, []);
         w.Br(ok);
@@ -1544,6 +1576,9 @@ internal sealed class ModuleState(IIrWriter writer)
             [.. helper.ParameterTypes.Select(p => TypeLayout.Of(p).StorageType)], helper.IsNoReturn ? IrEmitter.NoReturnGroup : null));
     }
 
+    /// <summary>CMP-398: some function of the module has a try region; the module gets <see cref="IrEmitter.AsyncEhFlag"/>.</summary>
+    public bool UsesAsyncEh { get; set; }
+
     public IrGlobal Intrinsic(string name, IrType returnType, ImmutableArray<IrType> parameterTypes) =>
         Declare(new IrFunctionDeclaration(new LinkName(name, AlwaysQuote: false), returnType, parameterTypes));
 
@@ -1627,7 +1662,40 @@ internal sealed class FunctionEmitter
 
     /// <summary>An EH scope: unwinding goes to <see cref="Pad"/>; a jump leaving it first runs <see cref="Leave"/> (if any).</summary>
     /// <param name="Key">What opened the scope: the try statement (for a handler region its handler); null for the function-level scope.</param>
-    private sealed record EhScope(IrBlock Pad, Action? Leave, object? Key = null);
+    /// <param name="Region">CMP-398: a try part or handler region, opened by <see cref="TryBegin"/>: every exit closes it with <see cref="TryEnd"/>.</param>
+    private sealed record EhScope(IrBlock Pad, Action? Leave, object? Key = null, bool Region = false);
+
+    /// <summary>
+    /// CMP-398: opens the region of <paramref name="scope"/> — pushes it and writes <c>invoke void @llvm.seh.try.begin()</c> unwinding
+    /// to its pad, so the scope table covers every instruction up to the matching <see cref="TryEnd"/>, not only the invokes.
+    /// </summary>
+    private void TryBegin(EhScope scope)
+    {
+        _module.UsesAsyncEh = true;
+        _scopes.Add(scope);
+        EmitCall(null, IrType.Void, _module.Intrinsic("llvm.seh.try.begin", IrType.Void, []), []);
+    }
+
+    /// <summary>CMP-398: <c>invoke void @llvm.seh.try.end()</c> of the innermost scope (a region), which stays open for the caller to pop.</summary>
+    private void TryEnd() => EmitCall(null, IrType.Void, _module.Intrinsic("llvm.seh.try.end", IrType.Void, []), []);
+
+    /// <summary>
+    /// CMP-398: whether the body has a try statement (a try…except, or a try…finally with an outlined finally part; not a
+    /// declaration scope, whose cleanup reads only what the run-time library's helpers stored). Then every load and store of the
+    /// function is volatile: the handler, the finally part and the code after the statement read the values the try part stored
+    /// before a fault (no promotion to registers, no forwarding along the unwind edges, which leave only from the invokes), and an
+    /// access that may fault is neither removed nor moved.
+    /// </summary>
+    private static bool HasTry(LStatement? statement) => statement switch
+    {
+        LTryExcept or LTryFinally { Cleanup: null } => true,
+        LTryFinally scope => HasTry(scope.Body),
+        LBlock block => block.Statements.Any(HasTry),
+        LIf branch => HasTry(branch.Then) || HasTry(branch.Else),
+        LLoop loop => HasTry(loop.Body) || HasTry(loop.Step),
+        LSwitch choice => choice.Sections.Any(s => HasTry(s.Body)) || HasTry(choice.Default),
+        _ => false,
+    };
 
     /// <summary>LANG-380: the EH scopes around each label of the body, outermost first, by <see cref="EhScope.Key"/>.</summary>
     private readonly Dictionary<Binding.GotoLabel, ImmutableArray<object>> _labelScopes = [];
@@ -1751,6 +1819,12 @@ internal sealed class FunctionEmitter
         var open = _scopes.ToList();
         for (var i = open.Count - 1; i >= depth; i--)
         {
+            if (open[i].Region)
+            {
+                _scopes.RemoveRange(i + 1, _scopes.Count - i - 1);
+                TryEnd();                               // CMP-398: the jump closes the region it leaves
+            }
+
             _scopes.RemoveRange(i, _scopes.Count - i);
             open[i].Leave?.Invoke();                    // runs in the scope enclosing the one being left
         }
@@ -1760,7 +1834,7 @@ internal sealed class FunctionEmitter
         Jump(target);
     }
 
-    private bool LeavesScopes(int depth) => _scopes.Skip(depth).Any(s => s.Leave is not null);
+    private bool LeavesScopes(int depth) => _scopes.Skip(depth).Any(s => s.Leave is not null || s.Region);
 
     private IrBlock _current = Entry;
     private bool _terminated;
@@ -1815,6 +1889,7 @@ internal sealed class FunctionEmitter
             Subprogram = _subprogram?.Node,
             CallConv = _routine is null ? "" : _module.CallConv(_routine),               // CMP-1011
         });
+        _w.VolatileAccesses = HasTry(_body.Body);                       // CMP-398
         SetLocation(debug?.Begin);                                      // DBG-117: the prologue at the body's begin
         if (link is not null)
         {
@@ -1915,7 +1990,7 @@ internal sealed class FunctionEmitter
 
         if (_body.Cleanup is not null)
         {
-            _scopes.Add(new EhScope(CleanupPadBlock, Leave: null));         // CMP-393: the outermost EH scope
+            TryBegin(new EhScope(CleanupPadBlock, Leave: null, Region: true));     // CMP-393: the outermost EH scope
         }
 
         _returnScopes = _scopes.Count;
@@ -1923,11 +1998,13 @@ internal sealed class FunctionEmitter
         Statement(_body.Body);
         SetLocation(debug?.End);                                        // DBG-118: the epilogue at the final end
         FallThrough(_returnTarget);
-        _scopes.Clear();
         if (_body.Cleanup is { } cleanup)
         {
-            // CMP-325 rule 2: the function-level cleanup scope on the normal exit path (outside every EH scope)
+            // CMP-325 rule 2: the function-level cleanup scope on the normal exit path (outside every EH scope: CMP-398, the
+            // block first closes the scope's region)
             Start(CleanupBlock);
+            TryEnd();
+            _scopes.Clear();
             Statement(cleanup);
             FallThrough(Exit);
         }
@@ -1953,10 +2030,11 @@ internal sealed class FunctionEmitter
             _w.Ret(null);
         }
 
+        _scopes.Clear();
         if (_body.Cleanup is { } unwindCleanup && _unwindTargets.Contains(CleanupPadBlock))
         {
-            // CMP-393: the same finalisation on the unwind path, in a cleanup funclet that unwinds to the caller (only when some
-            // invoke unwinds to it: a body without raising calls keeps a plain function)
+            // CMP-393: the same finalisation on the unwind path, in a cleanup funclet that unwinds to the caller (the invoke that
+            // opens the scope's region unwinds to it, CMP-398)
             Start(CleanupPadBlock);
             var token = _w.CleanupPad(Unique("cl"));
             _funclet = token;
@@ -2394,7 +2472,7 @@ internal sealed class FunctionEmitter
                 var layout = TypeLayout.Of(zero.Type);
                 var memset = _module.Intrinsic("llvm.memset.p0.i64", IrType.Void, [IrType.Ptr, IrType.I8, IrType.I64, IrType.I1]);
                 _w.Call(null, IrType.Void, memset,
-                    [new IrAlignedPointer(Value(zero.Address), layout.Alignment), new IrIntConstant(IrType.I8, 0), IrIntConstant.I64(layout.Size), IrIntConstant.I1(false)]);
+                    [new IrAlignedPointer(Value(zero.Address), layout.Alignment), new IrIntConstant(IrType.I8, 0), IrIntConstant.I64(layout.Size), IrIntConstant.I1(_w.VolatileAccesses)]);
                 break;
             }
 
@@ -2405,7 +2483,7 @@ internal sealed class FunctionEmitter
                 var count = Value(fill.Count);
                 var value = Value(fill.Value);
                 var memset = _module.Intrinsic("llvm.memset.p0.i64", IrType.Void, [IrType.Ptr, IrType.I8, IrType.I64, IrType.I1]);
-                _w.Call(null, IrType.Void, memset, [new IrAlignedPointer(address, AccessAlignment(fill.Target)), value, count, IrIntConstant.I1(false)]);
+                _w.Call(null, IrType.Void, memset, [new IrAlignedPointer(address, AccessAlignment(fill.Target)), value, count, IrIntConstant.I1(_w.VolatileAccesses)]);
                 break;
             }
 
@@ -2417,7 +2495,7 @@ internal sealed class FunctionEmitter
                 var count = Value(move.Count);
                 var memmove = _module.Intrinsic("llvm.memmove.p0.p0.i64", IrType.Void, [IrType.Ptr, IrType.Ptr, IrType.I64, IrType.I1]);
                 _w.Call(null, IrType.Void, memmove,
-                    [new IrAlignedPointer(destination, AccessAlignment(move.Destination)), new IrAlignedPointer(source, AccessAlignment(move.Source)), count, IrIntConstant.I1(false)]);
+                    [new IrAlignedPointer(destination, AccessAlignment(move.Destination)), new IrAlignedPointer(source, AccessAlignment(move.Source)), count, IrIntConstant.I1(_w.VolatileAccesses)]);
                 break;
             }
 
@@ -2540,8 +2618,13 @@ internal sealed class FunctionEmitter
             _unwindTargets.Add(outer);                                  // the catchswitch / cleanupret unwind there
         }
 
-        _scopes.Add(new EhScope(dispatch, Leave: null, statement));
+        TryBegin(new EhScope(dispatch, Leave: null, statement, Region: true));
         Statement(statement.Body);
+        if (!_terminated)
+        {
+            TryEnd();
+        }
+
         _scopes.RemoveAt(_scopes.Count - 1);
         FallThrough(end);
 
@@ -2561,15 +2644,21 @@ internal sealed class FunctionEmitter
         Start(handler);
         var beginCatch = _module.Function(new IrFunctionDeclaration(Mangler.RuntimeHelper("_BeginCatch"), IrType.Ptr, []));
         _w.Store(_w.Call(NewTemp(), IrType.Ptr, beginCatch, [])!, _locals[statement.Exception], PtrAlign);
-        _scopes.Add(new EhScope(cleanup, EndCatch, statement.Handler));
+        TryBegin(new EhScope(cleanup, EndCatch, statement.Handler, Region: true));
         Statement(statement.Handler);
-        _scopes.RemoveAt(_scopes.Count - 1);
+        var completes = !_terminated;
         if (syntax is not null)
         {
             SetLocation(LocationOf(syntax.EndKeyword));                 // DBG-127: cleanup at the closing end
         }
 
-        if (!_terminated)
+        if (completes)
+        {
+            TryEnd();
+        }
+
+        _scopes.RemoveAt(_scopes.Count - 1);
+        if (completes)
         {
             EndCatch();
             Jump(end);
@@ -2607,16 +2696,22 @@ internal sealed class FunctionEmitter
             }
         }
 
-        _scopes.Add(new EhScope(pad, CallFinally, statement));
+        TryBegin(new EhScope(pad, CallFinally, statement, Region: true));
         Statement(statement.Body);
-        _scopes.RemoveAt(_scopes.Count - 1);
+        var completes = !_terminated;
         var location = _location;
         if (_statementSyntax is Syntax.TryFinallyStatementSyntax syntax)
         {
             SetLocation(LocationOf(syntax.FinallyKeyword));             // DBG-127: running the finally part at finally
         }
 
-        if (!_terminated)
+        if (completes)
+        {
+            TryEnd();
+        }
+
+        _scopes.RemoveAt(_scopes.Count - 1);
+        if (completes)
         {
             CallFinally();
             Jump(end);
@@ -2992,7 +3087,7 @@ internal sealed class FunctionEmitter
 
         var memcpy = _module.Intrinsic(mayOverlap ? "llvm.memmove.p0.p0.i64" : "llvm.memcpy.p0.p0.i64", IrType.Void, [IrType.Ptr, IrType.Ptr, IrType.I64, IrType.I1]);
         _w.Call(null, IrType.Void, memcpy,
-            [new IrAlignedPointer(destination, destinationAlignment), new IrAlignedPointer(source, sourceAlignment), IrIntConstant.I64(layout.Size), IrIntConstant.I1(false)]);
+            [new IrAlignedPointer(destination, destinationAlignment), new IrAlignedPointer(source, sourceAlignment), IrIntConstant.I64(layout.Size), IrIntConstant.I1(_w.VolatileAccesses)]);
     }
 
     /// <summary>

@@ -78,7 +78,7 @@ public sealed partial class PdiSidecarTests
         Assert.Equal(expected.Select(e => e.Split(' ')[0]).Order(StringComparer.Ordinal),
             LocalVariableRegex().Matches(ir).Select(m => m.Groups[1].Value).Where(n => !n.StartsWith('$')).Order(StringComparer.Ordinal));
         Assert.Equal(expected.Length, GlobalDeclareRegex().Count(ir));
-        Assert.Contains("""store ptr @"P.$main.Top.""", ir, StringComparison.Ordinal);
+        Assert.Contains("""store volatile ptr @"P.$main.Top.""", ir, StringComparison.Ordinal);    // CMP-398: the block has a try statement
 
         (_, unit, _) = Emit(UnitSectionsSource);
         int U(string marker) => LineOf(UnitSectionsSource, "// " + marker);

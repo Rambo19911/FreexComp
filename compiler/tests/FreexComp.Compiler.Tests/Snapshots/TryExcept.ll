@@ -19,6 +19,8 @@ declare void @"System._Raise"(ptr, ptr) #1
 declare void @"System._ReRaise"() #1
 declare i32 @"System._SehFilter"(ptr, ptr)
 declare i32 @__C_specific_handler(...)
+declare void @llvm.seh.try.begin()
+declare void @llvm.seh.try.end()
 
 define ptr @"M.EA.Create"(ptr %Self, i8 %Alloc) #0 {
 entry:
@@ -69,12 +71,21 @@ entry:
   %$tmp1.addr = alloca ptr, align 8
   %E.addr = alloca ptr, align 8
   %$tmp2.addr = alloca ptr, align 8
-  store i32 %N, ptr %N.addr, align 4
-  store i32 0, ptr %Result.addr, align 4
-  %t1 = load i32, ptr %N.addr, align 4
-  invoke void @"M.Fail"(i32 %t1)
-          to label %cont.1 unwind label %ex.dispatch.2
+  store volatile i32 %N, ptr %N.addr, align 4
+  store volatile i32 0, ptr %Result.addr, align 4
+  invoke void @llvm.seh.try.begin()
+          to label %cont.1 unwind label %ex.dispatch.1
 cont.1:
+  invoke void @llvm.seh.try.begin()
+          to label %cont.2 unwind label %ex.dispatch.2
+cont.2:
+  %t1 = load volatile i32, ptr %N.addr, align 4
+  invoke void @"M.Fail"(i32 %t1)
+          to label %cont.3 unwind label %ex.dispatch.2
+cont.3:
+  invoke void @llvm.seh.try.end()
+          to label %cont.4 unwind label %ex.dispatch.2
+cont.4:
   br label %try.end.2
 ex.dispatch.2:
   %cs.2 = catchswitch within none [label %ex.pad.2] unwind label %ex.dispatch.1
@@ -83,46 +94,55 @@ ex.pad.2:
   catchret from %cp.2 to label %ex.body.2
 ex.body.2:
   %t2 = call ptr @"System._BeginCatch"()
-  store ptr %t2, ptr %$tmp1.addr, align 8
-  %t3 = load ptr, ptr %$tmp1.addr, align 8
+  store volatile ptr %t2, ptr %$tmp1.addr, align 8
+  invoke void @llvm.seh.try.begin()
+          to label %cont.5 unwind label %ex.cleanup.2
+cont.5:
+  %t3 = load volatile ptr, ptr %$tmp1.addr, align 8
   %t4 = call i8 @"System._IsClass"(ptr %t3, ptr @"M.EB.$vmt")
   %t5 = icmp ne i8 %t4, 0
   br i1 %t5, label %if.then.3, label %if.else.3
 if.then.3:
-  %t6 = load ptr, ptr %$tmp1.addr, align 8
-  store ptr %t6, ptr %E.addr, align 8
-  %t7 = load ptr, ptr %E.addr, align 8
-  store ptr %t7, ptr %X.addr, align 8
+  %t6 = load volatile ptr, ptr %$tmp1.addr, align 8
+  store volatile ptr %t6, ptr %E.addr, align 8
+  %t7 = load volatile ptr, ptr %E.addr, align 8
+  store volatile ptr %t7, ptr %X.addr, align 8
   br label %if.end.3
 if.else.3:
-  %t8 = load ptr, ptr %$tmp1.addr, align 8
+  %t8 = load volatile ptr, ptr %$tmp1.addr, align 8
   %t9 = call i8 @"System._IsClass"(ptr %t8, ptr @"M.EA.$vmt")
   %t10 = icmp ne i8 %t9, 0
   br i1 %t10, label %if.then.4, label %if.else.4
 if.then.4:
   invoke void @"System._ReRaise"() #1
-          to label %cont.2 unwind label %ex.cleanup.2
-cont.2:
+          to label %cont.6 unwind label %ex.cleanup.2
+cont.6:
   unreachable
 if.else.4:
   invoke void @"System._ReRaise"() #1
-          to label %cont.3 unwind label %ex.cleanup.2
-cont.3:
+          to label %cont.7 unwind label %ex.cleanup.2
+cont.7:
   unreachable
 if.end.4:
   br label %if.end.3
 if.end.3:
+  invoke void @llvm.seh.try.end()
+          to label %cont.8 unwind label %ex.cleanup.2
+cont.8:
   invoke void @"System._EndCatch"()
-          to label %cont.4 unwind label %ex.dispatch.1
-cont.4:
+          to label %cont.9 unwind label %ex.dispatch.1
+cont.9:
   br label %try.end.2
 ex.cleanup.2:
   %cl.2 = cleanuppad within none []
   invoke void @"System._EndCatch"() [ "funclet"(token %cl.2) ]
-          to label %cont.5 unwind label %ex.dispatch.1
-cont.5:
+          to label %cont.10 unwind label %ex.dispatch.1
+cont.10:
   cleanupret from %cl.2 unwind label %ex.dispatch.1
 try.end.2:
+  invoke void @llvm.seh.try.end()
+          to label %cont.11 unwind label %ex.dispatch.1
+cont.11:
   br label %try.end.1
 ex.dispatch.1:
   %cs.1 = catchswitch within none [label %ex.pad.1] unwind to caller
@@ -131,8 +151,14 @@ ex.pad.1:
   catchret from %cp.1 to label %ex.body.1
 ex.body.1:
   %t11 = call ptr @"System._BeginCatch"()
-  store ptr %t11, ptr %$tmp2.addr, align 8
-  store i32 1, ptr %Result.addr, align 4
+  store volatile ptr %t11, ptr %$tmp2.addr, align 8
+  invoke void @llvm.seh.try.begin()
+          to label %cont.12 unwind label %ex.cleanup.1
+cont.12:
+  store volatile i32 1, ptr %Result.addr, align 4
+  invoke void @llvm.seh.try.end()
+          to label %cont.13 unwind label %ex.cleanup.1
+cont.13:
   call void @"System._EndCatch"()
   br label %try.end.1
 ex.cleanup.1:
@@ -142,7 +168,7 @@ ex.cleanup.1:
 try.end.1:
   br label %exit
 exit:
-  %t12 = load i32, ptr %Result.addr, align 4
+  %t12 = load volatile i32, ptr %Result.addr, align 4
   ret i32 %t12
 }
 
@@ -162,3 +188,6 @@ exit:
 
 attributes #0 = { uwtable "frame-pointer"="all" }
 attributes #1 = { noreturn uwtable }
+
+!llvm.module.flags = !{!0}
+!0 = !{i32 2, !"eh-asynch", i32 1}

@@ -15,6 +15,8 @@ declare i8 @"System._IsClass"(ptr, ptr)
 declare void @"System._ReRaise"() #1
 declare i32 @"System._SehFilter"(ptr, ptr)
 declare i32 @__C_specific_handler(...)
+declare void @llvm.seh.try.begin()
+declare void @llvm.seh.try.end()
 
 define void @"M.Step"(i32 %N) #0 !dbg !4 {
 entry:
@@ -33,18 +35,24 @@ entry:
   %X.addr = alloca ptr, align 8, !dbg !15
   %$tmp1.addr = alloca ptr, align 8, !dbg !15
   %E.addr = alloca ptr, align 8, !dbg !15
-  store ptr null, ptr %$frame, align 8, !dbg !15
+  store volatile ptr null, ptr %$frame, align 8, !dbg !15
   %Result.addr = getelementptr inbounds %"M.Run.$frame", ptr %$frame, i32 0, i32 1, !dbg !15
-  store i32 %N, ptr %N.addr, align 4, !dbg !15
+  store volatile i32 %N, ptr %N.addr, align 4, !dbg !15
     #dbg_declare(ptr %N.addr, !17, !DIExpression(), !15)
     #dbg_declare(ptr %$frame, !18, !DIExpression(DW_OP_plus_uconst, 8), !15)
     #dbg_declare(ptr %X.addr, !24, !DIExpression(), !15)
     #dbg_declare(ptr %E.addr, !25, !DIExpression(), !15)
-  store i32 0, ptr %Result.addr, align 4, !dbg !26
-  %t1 = load i32, ptr %N.addr, align 4, !dbg !28
-  invoke void @"M.Step"(i32 %t1)
-          to label %cont.1 unwind label %fin.pad.1, !dbg !28
+  store volatile i32 0, ptr %Result.addr, align 4, !dbg !26
+  invoke void @llvm.seh.try.begin()
+          to label %cont.1 unwind label %fin.pad.1, !dbg !27
 cont.1:
+  %t1 = load volatile i32, ptr %N.addr, align 4, !dbg !28
+  invoke void @"M.Step"(i32 %t1)
+          to label %cont.2 unwind label %fin.pad.1, !dbg !28
+cont.2:
+  invoke void @llvm.seh.try.end()
+          to label %cont.3 unwind label %fin.pad.1, !dbg !29
+cont.3:
   call void @"M.Run.$fin1"(ptr %$frame), !dbg !29
   br label %try.end.1, !dbg !29
 fin.pad.1:
@@ -52,10 +60,16 @@ fin.pad.1:
   call void @"M.Run.$fin1"(ptr %$frame) [ "funclet"(token %cl.1) ], !dbg !29
   cleanupret from %cl.1 unwind to caller, !dbg !29
 try.end.1:
-  %t2 = load i32, ptr %Result.addr, align 4, !dbg !31
+  invoke void @llvm.seh.try.begin()
+          to label %cont.4 unwind label %ex.dispatch.2, !dbg !30
+cont.4:
+  %t2 = load volatile i32, ptr %Result.addr, align 4, !dbg !31
   invoke void @"M.Step"(i32 %t2)
-          to label %cont.2 unwind label %ex.dispatch.2, !dbg !31
-cont.2:
+          to label %cont.5 unwind label %ex.dispatch.2, !dbg !31
+cont.5:
+  invoke void @llvm.seh.try.end()
+          to label %cont.6 unwind label %ex.dispatch.2, !dbg !30
+cont.6:
   br label %try.end.2, !dbg !30
 ex.dispatch.2:
   %cs.2 = catchswitch within none [label %ex.pad.2] unwind to caller, !dbg !32
@@ -64,23 +78,29 @@ ex.pad.2:
   catchret from %cp.2 to label %ex.body.2, !dbg !32
 ex.body.2:
   %t3 = call ptr @"System._BeginCatch"(), !dbg !32
-  store ptr %t3, ptr %$tmp1.addr, align 8, !dbg !32
-  %t4 = load ptr, ptr %$tmp1.addr, align 8, !dbg !32
+  store volatile ptr %t3, ptr %$tmp1.addr, align 8, !dbg !32
+  invoke void @llvm.seh.try.begin()
+          to label %cont.7 unwind label %ex.cleanup.2, !dbg !32
+cont.7:
+  %t4 = load volatile ptr, ptr %$tmp1.addr, align 8, !dbg !32
   %t5 = call i8 @"System._IsClass"(ptr %t4, ptr @"M.EA.$vmt"), !dbg !32
   %t6 = icmp ne i8 %t5, 0, !dbg !32
   br i1 %t6, label %if.then.3, label %if.else.3, !dbg !32
 if.then.3:
-  %t7 = load ptr, ptr %$tmp1.addr, align 8, !dbg !32
-  store ptr %t7, ptr %E.addr, align 8, !dbg !32
-  %t8 = load ptr, ptr %E.addr, align 8, !dbg !33
-  store ptr %t8, ptr %X.addr, align 8, !dbg !33
+  %t7 = load volatile ptr, ptr %$tmp1.addr, align 8, !dbg !32
+  store volatile ptr %t7, ptr %E.addr, align 8, !dbg !32
+  %t8 = load volatile ptr, ptr %E.addr, align 8, !dbg !33
+  store volatile ptr %t8, ptr %X.addr, align 8, !dbg !33
   br label %if.end.3, !dbg !33
 if.else.3:
   invoke void @"System._ReRaise"() #1
-          to label %cont.3 unwind label %ex.cleanup.2, !dbg !32
-cont.3:
+          to label %cont.8 unwind label %ex.cleanup.2, !dbg !32
+cont.8:
   unreachable, !dbg !32
 if.end.3:
+  invoke void @llvm.seh.try.end()
+          to label %cont.9 unwind label %ex.cleanup.2, !dbg !34
+cont.9:
   call void @"System._EndCatch"(), !dbg !34
   br label %try.end.2, !dbg !34
 ex.cleanup.2:
@@ -90,7 +110,7 @@ ex.cleanup.2:
 try.end.2:
   br label %exit, !dbg !16
 exit:
-  %t9 = load i32, ptr %Result.addr, align 4, !dbg !16
+  %t9 = load volatile i32, ptr %Result.addr, align 4, !dbg !16
   ret i32 %t9, !dbg !16
 }
 
@@ -125,7 +145,7 @@ attributes #1 = { noreturn uwtable }
 attributes #3 = { noinline optnone uwtable "frame-pointer"="all" }
 
 !llvm.dbg.cu = !{!0}
-!llvm.module.flags = !{!1, !2}
+!llvm.module.flags = !{!1, !2, !43}
 !0 = distinct !DICompileUnit(language: DW_LANG_Pascal83, file: !3, producer: "FreexComp opc 0.1.0", isOptimized: false, runtimeVersion: 0, emissionKind: FullDebug, splitDebugInlining: false, nameTableKind: None)
 !1 = !{i32 2, !"Debug Info Version", i32 3}
 !2 = !{i32 2, !"CodeView", i32 1}
@@ -169,3 +189,4 @@ attributes #3 = { noinline optnone uwtable "frame-pointer"="all" }
 !40 = !DILocation(line: 19, column: 3, scope: !36)
 !41 = !DILocation(line: 15, column: 3, scope: !36)
 !42 = !DILocation(line: 18, column: 5, scope: !36)
+!43 = !{i32 2, !"eh-asynch", i32 1}

@@ -528,6 +528,9 @@ public sealed class UnitBindingTests
         Assert.Matches("""
             (?s)invoke void @"System._WriteEnd"\(ptr @"System.Output"\).*
             cleanup:
+              invoke void @llvm\.seh\.try\.end\(\)
+                      to label %cont\.\d+ unwind label %cleanup\.pad
+            cont\.\d+:
               call void @"System._UStrClr"\(ptr @"A.U"\)
               call void @"System._DynArrayClr"\(ptr @"A.D", ptr @[^)]+\)
               call void @"System._UStrClr"\(ptr @"A.T"\)
@@ -536,10 +539,15 @@ public sealed class UnitBindingTests
         Assert.Contains("define void @\"A.$init\"() #0 {\nentry:\n  br label %exit\n", unit);
 
         var other = fs.ReadAllText(@"C:\p\obj\B.ll");
-        Assert.Contains("define void @\"B.$final\"() #0 {\nentry:\n  br label %cleanup\ncleanup:\n  call void @\"System._UStrClr\"(ptr @\"B.V\")\n  br label %exit\n", other);
+        // CMP-398: the cleanup scope is a region, also around an empty body
+        Assert.Contains("define void @\"B.$final\"() #0 personality ptr @__C_specific_handler {\nentry:\n  invoke void @llvm.seh.try.begin()\n          to label %cont.1 unwind label %cleanup.pad\n"
+            + "cont.1:\n  br label %cleanup\ncleanup:\n  invoke void @llvm.seh.try.end()\n          to label %cont.2 unwind label %cleanup.pad\n"
+            + "cont.2:\n  call void @\"System._UStrClr\"(ptr @\"B.V\")\n  br label %exit\n", other);
 
         var program = fs.ReadAllText(@"C:\p\obj\P.ll");
-        Assert.Contains("define internal void @\"P.$final\"() #0 {\nentry:\n  br label %cleanup\ncleanup:\n  call void @\"System._UStrClr\"(ptr @\"P.S\")\n  br label %exit\n", program);
+        Assert.Contains("define internal void @\"P.$final\"() #0 personality ptr @__C_specific_handler {\nentry:\n  invoke void @llvm.seh.try.begin()\n          to label %cont.1 unwind label %cleanup.pad\n"
+            + "cont.1:\n  br label %cleanup\ncleanup:\n  invoke void @llvm.seh.try.end()\n          to label %cont.2 unwind label %cleanup.pad\n"
+            + "cont.2:\n  call void @\"System._UStrClr\"(ptr @\"P.S\")\n  br label %exit\n", program);
         Assert.Contains("{ ptr, ptr } { ptr @\"A.$init\", ptr @\"A.$final\" }, { ptr, ptr } { ptr @\"B.$init\", ptr @\"B.$final\" }, " +
             "{ ptr, ptr } { ptr null, ptr @\"P.$final\" }]", program);
     }
@@ -567,10 +575,16 @@ public sealed class UnitBindingTests
         Assert.DoesNotContain("_UStrClr\"(ptr @\"P.S\")", main);
         Assert.DoesNotContain("_DynArrayClr\"(ptr @\"P.D\"", main);
         Assert.Matches("""
-            (?s)define internal void @"P\.\$final"\(\) #0 \{
+            (?s)define internal void @"P\.\$final"\(\) #0 personality ptr @__C_specific_handler \{
             entry:
+              invoke void @llvm\.seh\.try\.begin\(\)
+                      to label %cont\.1 unwind label %cleanup\.pad
+            cont\.1:
               br label %cleanup
             cleanup:
+              invoke void @llvm\.seh\.try\.end\(\)
+                      to label %cont\.\d+ unwind label %cleanup\.pad
+            cont\.\d+:
               call void @"System._DynArrayClr"\(ptr @"P.D", ptr @[^)]+\)
               call void @"System._UStrClr"\(ptr @"P.S"\)
               br label %exit

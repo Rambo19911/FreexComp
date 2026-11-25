@@ -13,6 +13,8 @@ declare i32 @"System._SehFilter"(ptr, ptr)
 declare void @"System._Startup"(ptr, i64)
 declare void @"System._UnhandledException"() #1
 declare i32 @__C_specific_handler(...)
+declare void @llvm.seh.try.begin()
+declare void @llvm.seh.try.end()
 
 define internal i32 @"hello.Twice"(i32 %X) #0 !dbg !4 {
 entry:
@@ -52,7 +54,13 @@ exit:
 define void @_start() #0 personality ptr @__C_specific_handler {
 entry:
   call void @"System._Startup"(ptr @"$units", i64 0)
+  invoke void @llvm.seh.try.begin()
+          to label %try.begun unwind label %catch.dispatch
+try.begun:
   invoke void @"$main"()
+          to label %try.called unwind label %catch.dispatch
+try.called:
+  invoke void @llvm.seh.try.end()
           to label %done unwind label %catch.dispatch
 done:
   call void @"System._Halt0"() #1
@@ -72,8 +80,8 @@ attributes #0 = { uwtable "frame-pointer"="all" }
 attributes #1 = { noreturn uwtable }
 
 !llvm.dbg.cu = !{!0}
-!llvm.module.flags = !{!1, !2}
-!0 = distinct !DICompileUnit(language: DW_LANG_Pascal83, file: !3, producer: "FreexComp opc 0.1.0", isOptimized: false, runtimeVersion: 0, emissionKind: FullDebug, globals: !27, splitDebugInlining: false, nameTableKind: None)
+!llvm.module.flags = !{!1, !2, !27}
+!0 = distinct !DICompileUnit(language: DW_LANG_Pascal83, file: !3, producer: "FreexComp opc 0.1.0", isOptimized: false, runtimeVersion: 0, emissionKind: FullDebug, globals: !28, splitDebugInlining: false, nameTableKind: None)
 !1 = !{i32 2, !"Debug Info Version", i32 3}
 !2 = !{i32 2, !"CodeView", i32 1}
 !3 = !DIFile(filename: "hello.pas", directory: "C:\5Cp", checksumkind: CSK_MD5, checksum: "eb7fff482e1998f98c6b0aadb6799a41")
@@ -100,4 +108,5 @@ attributes #1 = { noreturn uwtable }
 !24 = distinct !DIGlobalVariable(name: "A", linkageName: "hello.A", scope: !0, file: !3, line: 9, type: !5, isLocal: true, isDefinition: true)
 !25 = !DIGlobalVariableExpression(var: !26, expr: !DIExpression())
 !26 = distinct !DIGlobalVariable(name: "B", linkageName: "hello.B", scope: !0, file: !3, line: 9, type: !5, isLocal: true, isDefinition: true)
-!27 = !{!23, !25}
+!27 = !{i32 2, !"eh-asynch", i32 1}
+!28 = !{!23, !25}

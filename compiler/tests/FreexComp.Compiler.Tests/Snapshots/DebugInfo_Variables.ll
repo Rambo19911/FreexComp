@@ -23,6 +23,9 @@ $"M.$rtti.array of Word" = comdat any
 
 declare void @"System._DynArrayClr"(ptr, ptr)
 declare void @"System._UStrClr"(ptr)
+declare i32 @__C_specific_handler(...)
+declare void @llvm.seh.try.begin()
+declare void @llvm.seh.try.end()
 
 define i32 @"M.Sum"(i64 %P, ptr %Total, ptr %Items, i64 %Items$high) #0 !dbg !4 {
 entry:
@@ -106,22 +109,33 @@ exit:
   ret void
 }
 
-define void @"M.$final"() #0 {
+define void @"M.$final"() #0 personality ptr @__C_specific_handler {
 entry:
+  invoke void @llvm.seh.try.begin()
+          to label %cont.1 unwind label %cleanup.pad
+cont.1:
   br label %cleanup
 cleanup:
+  invoke void @llvm.seh.try.end()
+          to label %cont.2 unwind label %cleanup.pad
+cont.2:
   call void @"System._DynArrayClr"(ptr @"M.Words", ptr @"M.$rtti.array of Word")
   call void @"System._UStrClr"(ptr @"M.Name")
   br label %exit
 exit:
   ret void
+cleanup.pad:
+  %cl = cleanuppad within none []
+  call void @"System._DynArrayClr"(ptr @"M.Words", ptr @"M.$rtti.array of Word") [ "funclet"(token %cl) ]
+  call void @"System._UStrClr"(ptr @"M.Name") [ "funclet"(token %cl) ]
+  cleanupret from %cl unwind to caller
 }
 
 attributes #0 = { uwtable "frame-pointer"="all" }
 
 !llvm.dbg.cu = !{!0}
-!llvm.module.flags = !{!1, !2}
-!0 = distinct !DICompileUnit(language: DW_LANG_Pascal83, file: !3, producer: "FreexComp opc 0.1.0", isOptimized: false, runtimeVersion: 0, emissionKind: FullDebug, enums: !84, globals: !85, splitDebugInlining: false, nameTableKind: None)
+!llvm.module.flags = !{!1, !2, !84}
+!0 = distinct !DICompileUnit(language: DW_LANG_Pascal83, file: !3, producer: "FreexComp opc 0.1.0", isOptimized: false, runtimeVersion: 0, emissionKind: FullDebug, enums: !85, globals: !86, splitDebugInlining: false, nameTableKind: None)
 !1 = !{i32 2, !"Debug Info Version", i32 3}
 !2 = !{i32 2, !"CodeView", i32 1}
 !3 = !DIFile(filename: "M.pas", directory: "C:\5Cp", checksumkind: CSK_MD5, checksum: "5fd3d4ab624306f7ee901f05d377183b")
@@ -205,5 +219,6 @@ attributes #0 = { uwtable "frame-pointer"="all" }
 !81 = !DIDerivedType(tag: DW_TAG_pointer_type, name: "array of Word", baseType: !82, size: 64)
 !82 = !DIBasicType(name: "Word", size: 16, encoding: DW_ATE_unsigned)
 !83 = distinct !DIGlobalVariable(name: "Words", linkageName: "M.Words", scope: !0, file: !3, line: 27, type: !81, isLocal: true, isDefinition: true)
-!84 = !{!32}
-!85 = !{!29, !31, !39, !47, !50, !55, !65, !72, !75, !77, !80}
+!84 = !{i32 2, !"eh-asynch", i32 1}
+!85 = !{!32}
+!86 = !{!29, !31, !39, !47, !50, !55, !65, !72, !75, !77, !80}

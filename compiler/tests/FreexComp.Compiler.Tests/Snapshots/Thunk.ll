@@ -24,6 +24,8 @@ declare void @"System._IntfAsg"(ptr, ptr)
 declare void @"System._IntfClr"(ptr)
 declare void @"System._UStrAsg"(ptr, ptr)
 declare i32 @__C_specific_handler(...)
+declare void @llvm.seh.try.begin()
+declare void @llvm.seh.try.end()
 
 define void @"M.TFoo.Baz"(ptr %Self, i32 %A) #0 {
 entry:
@@ -80,35 +82,41 @@ entry:
   %Result.addr = alloca i32, align 4
   %B.addr = alloca ptr, align 8
   store ptr %Q, ptr %Q.addr, align 8
+  invoke void @llvm.seh.try.begin()
+          to label %cont.1 unwind label %cleanup.pad
+cont.1:
   store ptr null, ptr %B.addr, align 8
   %t1 = load ptr, ptr %Q.addr, align 8
   %t2 = load ptr, ptr %t1, align 8
   %t3 = getelementptr inbounds i8, ptr %t2, i64 0
   %t4 = load ptr, ptr %t3, align 8
   invoke void %t4(ptr %t1, i32 2)
-          to label %cont.1 unwind label %cleanup.pad
-cont.1:
+          to label %cont.2 unwind label %cleanup.pad
+cont.2:
   %t5 = load ptr, ptr %Q.addr, align 8
   %t6 = load ptr, ptr %t5, align 8
   %t7 = getelementptr inbounds i8, ptr %t6, i64 24
   %t8 = load ptr, ptr %t7, align 8
   invoke void %t8(ptr %t5)
-          to label %cont.2 unwind label %cleanup.pad
-cont.2:
-  %t9 = load ptr, ptr %Q.addr, align 8
-  invoke void @"System._IntfAsg"(ptr %B.addr, ptr %t9)
           to label %cont.3 unwind label %cleanup.pad
 cont.3:
+  %t9 = load ptr, ptr %Q.addr, align 8
+  invoke void @"System._IntfAsg"(ptr %B.addr, ptr %t9)
+          to label %cont.4 unwind label %cleanup.pad
+cont.4:
   %t10 = load ptr, ptr %B.addr, align 8
   %t11 = load ptr, ptr %t10, align 8
   %t12 = getelementptr inbounds i8, ptr %t11, i64 8
   %t13 = load ptr, ptr %t12, align 8
   %t14 = invoke i32 %t13(ptr %t10)
-          to label %cont.4 unwind label %cleanup.pad
-cont.4:
+          to label %cont.5 unwind label %cleanup.pad
+cont.5:
   store i32 %t14, ptr %Result.addr, align 4
   br label %cleanup
 cleanup:
+  invoke void @llvm.seh.try.end()
+          to label %cont.6 unwind label %cleanup.pad
+cont.6:
   call void @"System._IntfClr"(ptr %B.addr)
   br label %exit
 exit:
@@ -166,3 +174,6 @@ entry:
 }
 
 attributes #0 = { uwtable "frame-pointer"="all" }
+
+!llvm.module.flags = !{!0}
+!0 = !{i32 2, !"eh-asynch", i32 1}

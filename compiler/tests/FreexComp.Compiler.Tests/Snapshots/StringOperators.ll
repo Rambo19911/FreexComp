@@ -11,6 +11,8 @@ declare i8 @"System._UStrEq"(ptr, ptr)
 declare void @"System._UStrFromWChar"(ptr, i16)
 declare void @"System._UStrUnique"(ptr)
 declare i32 @__C_specific_handler(...)
+declare void @llvm.seh.try.begin()
+declare void @llvm.seh.try.end()
 
 define void @"M.Join"(ptr %Result, ptr %a, ptr %b, ptr %c, i16 %ch) #0 personality ptr @__C_specific_handler {
 entry:
@@ -26,14 +28,17 @@ entry:
   store ptr %b, ptr %b.addr, align 8
   store ptr %c, ptr %c.addr, align 8
   store i16 %ch, ptr %ch.addr, align 2
+  invoke void @llvm.seh.try.begin()
+          to label %cont.1 unwind label %cleanup.pad
+cont.1:
   store ptr null, ptr %$tmp2.addr, align 8
   store ptr null, ptr %$tmp3.addr, align 8
   store ptr null, ptr %$tmp4.addr, align 8
   %t1 = load ptr, ptr %a.addr, align 8
   %t2 = load ptr, ptr %b.addr, align 8
   invoke void @"System._UStrCat"(ptr %Result, ptr %t1, ptr %t2)
-          to label %cont.1 unwind label %cleanup.pad
-cont.1:
+          to label %cont.2 unwind label %cleanup.pad
+cont.2:
   %t3 = load ptr, ptr %a.addr, align 8
   %t4 = getelementptr inbounds [3 x ptr], ptr %$tmp1.addr, i64 0, i64 0
   store ptr %t3, ptr %t4, align 8
@@ -44,32 +49,35 @@ cont.1:
   %t8 = getelementptr inbounds [3 x ptr], ptr %$tmp1.addr, i64 0, i64 2
   store ptr %t7, ptr %t8, align 8
   invoke void @"System._UStrCatN"(ptr %Result, ptr %$tmp1.addr, i32 3)
-          to label %cont.2 unwind label %cleanup.pad
-cont.2:
+          to label %cont.3 unwind label %cleanup.pad
+cont.3:
   %t9 = load ptr, ptr %Result, align 8
   %t10 = load i16, ptr %ch.addr, align 2
   invoke void @"System._UStrFromWChar"(ptr %$tmp2.addr, i16 %t10)
-          to label %cont.3 unwind label %cleanup.pad
-cont.3:
-  %t11 = load ptr, ptr %$tmp2.addr, align 8
-  invoke void @"System._UStrCat"(ptr %Result, ptr %t9, ptr %t11)
           to label %cont.4 unwind label %cleanup.pad
 cont.4:
-  %t12 = load i16, ptr %ch.addr, align 2
-  invoke void @"System._UStrFromWChar"(ptr %$tmp3.addr, i16 %t12)
+  %t11 = load ptr, ptr %$tmp2.addr, align 8
+  invoke void @"System._UStrCat"(ptr %Result, ptr %t9, ptr %t11)
           to label %cont.5 unwind label %cleanup.pad
 cont.5:
+  %t12 = load i16, ptr %ch.addr, align 2
+  invoke void @"System._UStrFromWChar"(ptr %$tmp3.addr, i16 %t12)
+          to label %cont.6 unwind label %cleanup.pad
+cont.6:
   %t13 = load ptr, ptr %$tmp3.addr, align 8
   %t14 = load i16, ptr %ch.addr, align 2
   invoke void @"System._UStrFromWChar"(ptr %$tmp4.addr, i16 %t14)
-          to label %cont.6 unwind label %cleanup.pad
-cont.6:
-  %t15 = load ptr, ptr %$tmp4.addr, align 8
-  invoke void @"System._UStrCat"(ptr %Result, ptr %t13, ptr %t15)
           to label %cont.7 unwind label %cleanup.pad
 cont.7:
+  %t15 = load ptr, ptr %$tmp4.addr, align 8
+  invoke void @"System._UStrCat"(ptr %Result, ptr %t13, ptr %t15)
+          to label %cont.8 unwind label %cleanup.pad
+cont.8:
   br label %cleanup
 cleanup:
+  invoke void @llvm.seh.try.end()
+          to label %cont.9 unwind label %cleanup.pad
+cont.9:
   call void @"System._UStrClr"(ptr %$tmp2.addr)
   call void @"System._UStrClr"(ptr %$tmp3.addr)
   call void @"System._UStrClr"(ptr %$tmp4.addr)
@@ -92,6 +100,9 @@ entry:
   %$tmp1.addr = alloca ptr, align 8
   store ptr %a, ptr %a.addr, align 8
   store ptr %b, ptr %b.addr, align 8
+  invoke void @llvm.seh.try.begin()
+          to label %cont.1 unwind label %cleanup.pad
+cont.1:
   store ptr null, ptr %$tmp1.addr, align 8
   store i32 0, ptr %Result.addr, align 4
   %t1 = load ptr, ptr %a.addr, align 8
@@ -149,8 +160,8 @@ if.end.5:
   %t28 = load ptr, ptr %a.addr, align 8
   %t29 = load ptr, ptr %b.addr, align 8
   invoke void @"System._UStrCat"(ptr %$tmp1.addr, ptr %t28, ptr %t29)
-          to label %cont.1 unwind label %cleanup.pad
-cont.1:
+          to label %cont.2 unwind label %cleanup.pad
+cont.2:
   %t30 = load ptr, ptr %$tmp1.addr, align 8
   %t31 = icmp ne ptr %t30, null
   br i1 %t31, label %if.then.6, label %if.end.6
@@ -162,6 +173,9 @@ if.then.6:
 if.end.6:
   br label %cleanup
 cleanup:
+  invoke void @llvm.seh.try.end()
+          to label %cont.3 unwind label %cleanup.pad
+cont.3:
   call void @"System._UStrClr"(ptr %$tmp1.addr)
   br label %exit
 exit:
@@ -252,3 +266,6 @@ exit:
 
 attributes #0 = { uwtable "frame-pointer"="all" }
 attributes #1 = { noreturn uwtable }
+
+!llvm.module.flags = !{!0}
+!0 = !{i32 2, !"eh-asynch", i32 1}
