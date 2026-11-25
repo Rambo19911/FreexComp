@@ -11,7 +11,7 @@ public sealed class BuildTrustTests
     private const string Events = """ "events": { "preBuild": ["echo hi"], "postBuild": [] }""";
     private const string E9021 =
         @"C:\p\Hello.pproj(0,0): error E9021: Project 'C:\p\Hello.pproj' has build event commands and is not trusted (pbuild: --trust-events runs them, --no-events builds without them)";
-    private const string W9001 = @"C:\p\Hello.pproj(0,0): warning W9001: Project events are not supported yet and were ignored";
+    private const string RunningPreBuild = "Running pre-build command 1 of 1";
 
     private static BuildWorkspace WithEvents() => new(projectJson: BuildWorkspace.ProjectJson("Hello", extra: Events));
 
@@ -80,13 +80,16 @@ public sealed class BuildTrustTests
         var (changed, changedLog) = await w.RunAsync(request);
 
         Assert.True(trusted.Success);
-        Assert.Equal([W9001], Diagnostics(trustedLog));
+        Assert.Empty(Diagnostics(trustedLog));
+        Assert.Equal(["echo hi"], w.Commands.Commands);                         // trusted: the command ran
         Assert.False(changed.Success);
         Assert.Equal([E9021], Diagnostics(changedLog));                         // one code, one text for Untrusted and Changed
         Assert.Equal(calls, w.Tools.Calls.Length);
+        Assert.Equal(["echo hi"], w.Commands.Commands);                         // changed: neither the old nor the new command ran
 
         store.TrustProject(BuildWorkspace.ProjectPath, Hash(w));                // trusted again with the new commands
         Assert.True((await w.RunAsync(request)).Result.Success);
+        Assert.Equal(["echo hi", "echo hi", "del x"], w.Commands.Commands);
     }
 
     [Theory]
@@ -110,10 +113,12 @@ public sealed class BuildTrustTests
         var (result, log) = await w.RunAsync(w.Request() with { TrustStore = store });
 
         Assert.True(result.Success);
-        Assert.Equal([W9001], Diagnostics(log));                                // behind the gate: CMP-834, nothing executed
+        Assert.Empty(Diagnostics(log));
+        Assert.Equal([("echo hi", @"C:\p")], w.Commands.Calls);                 // behind the gate the command is run (build-events.md)
+        Assert.Equal(RunningPreBuild, log.Info[0]);
         Assert.True(w.Fs.FileExists(BuildWorkspace.Exe));
         Assert.Empty(w.Tools.Programs);
-        Assert.Equal("finished Hello.pproj success=True upToDate=False 0/1/0", log.Lines[^1]);
+        Assert.Equal("finished Hello.pproj success=True upToDate=False 0/0/0", log.Lines[^1]);
     }
 
     [Fact]
@@ -131,6 +136,7 @@ public sealed class BuildTrustTests
         Assert.Equal(["Compiling System", "Compiling Hello", "Linking Hello.exe"], log.Info);
         Assert.True(w.Fs.FileExists(BuildWorkspace.Exe));
         Assert.Empty(w.Tools.Programs);
+        Assert.Empty(w.Commands.Calls);                                         // no command reached the runner
         Assert.Equal(text, w.Fs.ReadAllText(BuildWorkspace.ProjectPath));       // the project file is not changed
     }
 
@@ -143,7 +149,9 @@ public sealed class BuildTrustTests
         var (result, log) = await w.RunAsync(w.Request() with { Events = EventsPolicy.Run, TrustStore = new ThrowingStore() });
 
         Assert.True(result.Success);
-        Assert.Equal([W9001], Diagnostics(log));
+        Assert.Empty(Diagnostics(log));
+        Assert.Equal(["echo hi"], w.Commands.Commands);                         // the caller vouches: the command is run
+        Assert.Equal(RunningPreBuild, log.Info[0]);
         Assert.True(w.Fs.FileExists(BuildWorkspace.Exe));
         Assert.False(w.Fs.FileExists(TrustFile));                               // nothing is added to the trust list
     }
@@ -239,6 +247,40 @@ public sealed class BuildTrustTests
         Assert.Empty(w.Tools.Calls);
         Assert.Empty(w.Fs.EnumerateDirectories(@"C:\g\App"));
         Assert.Empty(w.Fs.EnumerateDirectories(@"C:\g\Lib"));
+    }
+
+    [Fact]
+    [Trait("Req", "CMP-1255")]
+    public async Task ConfigurationCommandsAreGatedAndSkipped()
+    {
+        // the only commands are in Release; Debug (the active configuration) has none
+        var w = new BuildWorkspace(projectJson: BuildWorkspace.ProjectJson("Hello", extra:
+            """ "configurations": { "Debug": { "optimization": 0 }, "Release": { "optimization": 2, "events": { "preBuild": ["echo release"] } } }"""));
+        var text = w.Fs.ReadAllText(BuildWorkspace.ProjectPath);
+
+        // the gate is per project file: also a build of a configuration whose effective events are empty needs trust
+        var (untrusted, untrustedLog) = await w.RunAsync(w.Request() with { TrustStore = new FileTrustStore(w.Fs, TrustFile) });
+
+        Assert.False(untrusted.Success);
+        Assert.Equal([E9021], Diagnostics(untrustedLog));
+        Assert.Empty(w.Tools.Calls);
+        Assert.Empty(w.Commands.Calls);
+        Assert.Empty(w.Fs.EnumerateDirectories(@"C:\p"));
+
+        // Skip treats all lists as empty: Debug and Release build, nothing is reported
+        foreach (var configuration in new[] { "Debug", "Release" })
+        {
+            var (skipped, skippedLog) = await w.RunAsync(w.Request() with { Configuration = configuration, Events = EventsPolicy.Skip, TrustStore = new ThrowingStore() });
+
+            Assert.True(skipped.Success);
+            Assert.Empty(Diagnostics(skippedLog));                              // no W9001
+            Assert.Equal(0, skipped.Warnings);
+            Assert.Empty(w.Commands.Calls);
+            Assert.True(w.Fs.FileExists($@"C:\p\bin\{configuration}\Hello.exe"));
+        }
+
+        Assert.Equal(text, w.Fs.ReadAllText(BuildWorkspace.ProjectPath));
+        Assert.False(w.Fs.FileExists(TrustFile));
     }
 
     /// <summary>Adds <c>C:\g\&lt;name&gt;\&lt;name&gt;.pproj</c> with a program <c>&lt;name&gt;.pas</c>.</summary>

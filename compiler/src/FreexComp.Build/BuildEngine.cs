@@ -36,6 +36,12 @@ public sealed class BuildEngine : IBuildEngine
     internal Func<TargetInfo, TargetInfo>? TargetOverride { get; init; }
 
     /// <summary>
+    /// Runs the build event commands of a project (build-events.md CMP-1270); null → <see cref="ShellCommandRunner.Instance"/>.
+    /// The only way a command reaches a process.
+    /// </summary>
+    public ICommandRunner? CommandRunner { get; init; }
+
+    /// <summary>
     /// Never blocks a thread-pool thread (C-269, I-217): the compile runs on the calling thread up to its first tool process and
     /// tools are awaited. A caller on a UI thread starts it with <c>Task.Run</c>.
     /// </summary>
@@ -150,7 +156,13 @@ public sealed class BuildEngine : IBuildEngine
             var gated = target != BuildTarget.Clean && ProjectTrust.HasCommands(project);
             if (gated && request.Events == EventsPolicy.Skip)
             {
-                project = project with { Events = new ProjectEvents([], []) };              // CMP-1241: for this build only
+                // CMP-1241, CMP-1255: for this build only, every list of the project file
+                project = project with
+                {
+                    Events = new ProjectEvents([], []),
+                    Configurations = project.Configurations.ToImmutableDictionary(
+                        c => c.Key, c => c.Value.Events is null ? c.Value : c.Value with { Events = new ProjectEvents([], []) }, StringComparer.Ordinal),
+                };
             }
 
             if (gated && request.Events == EventsPolicy.RequireTrust && !gate.Passes(project, path, location, diagnostics))
@@ -294,10 +306,14 @@ public sealed class BuildEngine : IBuildEngine
         /// <summary>The name of the file in the object directory that lists the deployed files, one per line (CMP-1084).</summary>
         private const string DeployedFile = "deployed.txt";
 
+        /// <summary>The two kinds of build event commands, as they appear in messages and Info lines (build-events.md §2).</summary>
+        private const string PreBuildKind = "pre-build", PostBuildKind = "post-build";
+
         private readonly IFileSystem _fs = engine._fs;
         private string? _exe;
         private DateTime? _exeTimeBefore;
         private string? _objectDirectory;
+        private bool _reachedCompile;
 
         /// <summary>Target = Run and the program ran.</summary>
         public int? RunExitCode { get; private set; }
@@ -316,14 +332,9 @@ public sealed class BuildEngine : IBuildEngine
                     Clean();
                     return (false, null);
                 case BuildTarget.Rebuild:
-                    if (!Clean())
-                    {
-                        return (false, null);
-                    }
-
-                    return await BuildAsync(force: true, ct).ConfigureAwait(false);
+                    return await BuildAsync(rebuild: true, ct).ConfigureAwait(false);
                 case BuildTarget.Run:
-                    var built = await BuildAsync(force: false, ct).ConfigureAwait(false);
+                    var built = await BuildAsync(rebuild: false, ct).ConfigureAwait(false);
                     if (built.Output is not null && IsLibrary)
                     {
                         // CMP-1083: a library runs inside its host application
@@ -343,8 +354,125 @@ public sealed class BuildEngine : IBuildEngine
 
                     return built;
                 default:
-                    return await BuildAsync(force: false, ct).ConfigureAwait(false);
+                    return await BuildAsync(rebuild: false, ct).ConfigureAwait(false);
             }
+        }
+
+        /// <summary>
+        /// One build of the project with its events (build-events.md CMP-1259…1267): validation of the commands → for a rebuild
+        /// <see cref="Clean"/> → pre-build commands → compile and link → post-build commands. A build that has a runnable command
+        /// is never up to date (CMP-1262).
+        /// </summary>
+        private async Task<(bool UpToDate, string? Output)> BuildAsync(bool rebuild, CancellationToken ct)
+        {
+            var events = ProjectOptions.GetEffectiveEvents(project, configuration);     // CMP-1252
+            var preBuild = Runnable(events.PreBuild);
+            var postBuild = Runnable(events.PostBuild);
+            var hasCommands = preBuild.Count + postBuild.Count > 0;
+            IReadOnlyDictionary<string, string> macros = hasCommands
+                ? EventMacros.Values(project, configuration, target.Id)                 // CMP-1257: all computed before the first command runs
+                : System.Collections.Immutable.ImmutableDictionary<string, string>.Empty;
+
+            // CMP-1259: before Clean, before the first command, before any file is written or deleted; all findings
+            var valid = Validate(PreBuildKind, preBuild, macros);
+            valid &= Validate(PostBuildKind, postBuild, macros);
+            if (!valid || (rebuild && !Clean()))
+            {
+                return (false, null);
+            }
+
+            if (!await RunCommandsAsync(PreBuildKind, preBuild, macros, ct).ConfigureAwait(false))
+            {
+                return (false, null);                                                   // CMP-1266: no compile step, no post-build
+            }
+
+            var built = await CompileAndLinkAsync(force: rebuild, quiet: hasCommands, ct).ConfigureAwait(false);
+            var succeeded = built.Output is not null;
+
+            // CMP-1267: after a failed compile, link or deployment step only with postBuildWhen = always; never without a main source
+            if (_reachedCompile && (succeeded || events.PostBuildWhen == PostBuildWhen.Always))
+            {
+                if (succeeded)
+                {
+                    _exe = null;                                                        // CMP-1266: a complete output is not a partial output
+                }
+
+                if (!await RunCommandsAsync(PostBuildKind, postBuild, macros, ct).ConfigureAwait(false))
+                {
+                    return (false, null);
+                }
+            }
+
+            return hasCommands ? (false, built.Output) : built;
+        }
+
+        /// <summary>The entries that are run (build-events.md §2): not empty and not white space only.</summary>
+        private static List<string> Runnable(ImmutableArray<string> commands) =>
+            commands.IsDefault ? [] : [.. commands.Where(c => !string.IsNullOrWhiteSpace(c))];
+
+        /// <summary>
+        /// CMP-1259: E9022 for each unknown macro of a command, E9023 for a command with a control character (a line break must
+        /// not hide a second command from the reader of the trust prompt).
+        /// </summary>
+        private bool Validate(string kind, List<string> commands, IReadOnlyDictionary<string, string> macros)
+        {
+            var valid = true;
+            for (var i = 0; i < commands.Count; i++)
+            {
+                foreach (var name in EventMacros.Expand(commands[i], macros).UnknownNames)
+                {
+                    diagnostics.Add(Diagnostic.Create("E9022", location, name, kind, i + 1));
+                    valid = false;
+                }
+
+                if (commands[i].Any(c => (c < '\u0020' && c != '\t') || c == '\u007F'))
+                {
+                    diagnostics.Add(Diagnostic.Create("E9023", location, kind, i + 1));
+                    valid = false;
+                }
+            }
+
+            return valid;
+        }
+
+        /// <summary>
+        /// The commands of one list, one at a time, in the project directory (CMP-1263…1266, 1268). This is the only place a
+        /// command of a project is handed to the command runner, and it is reached only behind the trust gate (CMP-1239).
+        /// </summary>
+        /// <returns>False when a command failed: E9020 was added and the rest of the list was not run.</returns>
+        private async Task<bool> RunCommandsAsync(string kind, List<string> commands, IReadOnlyDictionary<string, string> macros, CancellationToken ct)
+        {
+            for (var i = 0; i < commands.Count; i++)
+            {
+                ct.ThrowIfCancellationRequested();                                      // CMP-1269: no further command
+                var expanded = EventMacros.Expand(commands[i], macros).Text;
+                sink.Info(string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Running {kind} command {i + 1} of {commands.Count}"));
+                if (request.Verbose)
+                {
+                    sink.Command(expanded);
+                }
+
+                int exitCode;
+                try
+                {
+                    exitCode = await (engine.CommandRunner ?? ShellCommandRunner.Instance)
+                        .RunAsync(expanded, project.Directory, sink.Tool, sink.Tool, ct).ConfigureAwait(false);
+                }
+                catch (System.ComponentModel.Win32Exception e)
+                {
+                    sink.Info(e.Message);                                               // CMP-1268: cannot be started
+                    exitCode = -1;
+                }
+
+                ct.ThrowIfCancellationRequested();                                      // a killed command's exit code means nothing
+                if (exitCode != 0)
+                {
+                    diagnostics.Add(Diagnostic.Create("E9020", location, kind, i + 1, exitCode, commands[i]));    // the command as stored
+                    return false;
+                }
+            }
+
+            return true;
         }
 
         /// <summary>
@@ -400,14 +528,9 @@ public sealed class BuildEngine : IBuildEngine
             return true;
         }
 
-        /// <summary>CMP-830, 834, 835.</summary>
-        private async Task<(bool UpToDate, string? Output)> BuildAsync(bool force, CancellationToken ct)
+        /// <summary>CMP-830, 835; <paramref name="quiet"/>: no "up to date" line (the build runs commands, CMP-1262).</summary>
+        private async Task<(bool UpToDate, string? Output)> CompileAndLinkAsync(bool force, bool quiet, CancellationToken ct)
         {
-            if (!project.Events.PreBuild.IsEmpty || !project.Events.PostBuild.IsEmpty)
-            {
-                diagnostics.Add(Diagnostic.Create("W9001", location));
-            }
-
             var projectOptions = ProjectOptions.ToCompilationOptions(project, configuration, target);    // CMP-1019 rule 3
             var options = projectOptions with                                               // CMP-805
             {
@@ -436,6 +559,7 @@ public sealed class BuildEngine : IBuildEngine
                 return (false, null);
             }
 
+            _reachedCompile = true;
             var output = ProjectOptions.GetOutputPath(project, configuration);
             _exe = output;
             _exeTimeBefore = _fs.FileExists(output) ? _fs.GetLastWriteTimeUtc(output) : null;
@@ -473,7 +597,7 @@ public sealed class BuildEngine : IBuildEngine
                 return (false, null);
             }
 
-            if (!didWork)
+            if (!didWork && !quiet)
             {
                 sink.Info(project.Name + ": up to date");
             }

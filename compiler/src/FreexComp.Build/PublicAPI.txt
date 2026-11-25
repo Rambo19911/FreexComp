@@ -1,4 +1,5 @@
 sealed class FreexComp.Build.BuildEngine : FreexComp.Build.IBuildEngine
+  public FreexComp.Build.ICommandRunner CommandRunner { get; init; }
   public System.Threading.Tasks.Task<FreexComp.Build.BuildResult> RunAsync(FreexComp.Build.BuildRequest request, System.IProgress<FreexComp.Build.BuildEvent> progress, System.Threading.CancellationToken ct)
   public ctor(FreexComp.Compiler.IFileSystem fs, FreexComp.Compiler.Toolchain.IProcessRunner processRunner = null)
 abstract record FreexComp.Build.BuildEvent : System.IEquatable<FreexComp.Build.BuildEvent>
@@ -154,6 +155,20 @@ enum FreexComp.Build.BuildTarget
   Clean = 2
   Rebuild = 1
   Run = 3
+sealed record FreexComp.Build.CommandList : System.IEquatable<FreexComp.Build.CommandList>
+  public FreexComp.Build.CommandList <Clone>$()
+  public System.Boolean Equals(FreexComp.Build.CommandList other)
+  public System.Boolean PostBuild { get; init; }
+  public System.Collections.Immutable.ImmutableArray<System.String> Commands { get; init; }
+  public System.String Configuration { get; init; }
+  public System.String Name { get; init; }
+  public System.Void Deconstruct(out System.String Name, out System.String Configuration, out System.Boolean PostBuild, out System.Collections.Immutable.ImmutableArray<System.String> Commands)
+  public ctor(System.String Name, System.String Configuration, System.Boolean PostBuild, System.Collections.Immutable.ImmutableArray<System.String> Commands)
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public static System.Boolean op_Equality(FreexComp.Build.CommandList left, FreexComp.Build.CommandList right)
+  public static System.Boolean op_Inequality(FreexComp.Build.CommandList left, FreexComp.Build.CommandList right)
 static class FreexComp.Build.ConfigurationResolver
   public static FreexComp.Build.EffectiveConfiguration Resolve(FreexComp.Build.Project project, System.String configuration)
   public static System.String ToJson(FreexComp.Build.EffectiveConfiguration effective)
@@ -175,6 +190,10 @@ sealed record FreexComp.Build.EffectiveConfiguration : System.IEquatable<FreexCo
   public override System.String ToString()
   public static System.Boolean op_Equality(FreexComp.Build.EffectiveConfiguration left, FreexComp.Build.EffectiveConfiguration right)
   public static System.Boolean op_Inequality(FreexComp.Build.EffectiveConfiguration left, FreexComp.Build.EffectiveConfiguration right)
+static class FreexComp.Build.EventMacros
+  public static FreexComp.Build.MacroExpansion Expand(System.String command, System.Collections.Generic.IReadOnlyDictionary<System.String, System.String> values)
+  public static System.Collections.Immutable.ImmutableArray<System.String> Names { get; }
+  public static System.Collections.Immutable.ImmutableDictionary<System.String, System.String> Values(FreexComp.Build.Project project, System.String configuration, System.String platform)
 enum FreexComp.Build.EventsPolicy
   RequireTrust = 0
   Run = 1
@@ -188,6 +207,8 @@ sealed class FreexComp.Build.FileTrustStore : FreexComp.Build.ITrustStore
   public ctor(FreexComp.Compiler.IFileSystem fs, System.String filePath)
 interface FreexComp.Build.IBuildEngine
   public System.Threading.Tasks.Task<FreexComp.Build.BuildResult> RunAsync(FreexComp.Build.BuildRequest request, System.IProgress<FreexComp.Build.BuildEvent> progress, System.Threading.CancellationToken ct)
+interface FreexComp.Build.ICommandRunner
+  public System.Threading.Tasks.Task<System.Int32> RunAsync(System.String command, System.String workingDirectory, System.Action<System.String> onStdOut, System.Action<System.String> onStdErr, System.Threading.CancellationToken ct)
 interface FreexComp.Build.ITrustStore
   public FreexComp.Build.TrustSnapshot Read()
   public System.Boolean Remove(FreexComp.Build.TrustEntry entry)
@@ -205,6 +226,18 @@ sealed record FreexComp.Build.LoadResult<T> : System.IEquatable<FreexComp.Build.
   public override System.String ToString()
   public static System.Boolean op_Equality(FreexComp.Build.LoadResult<T> left, FreexComp.Build.LoadResult<T> right)
   public static System.Boolean op_Inequality(FreexComp.Build.LoadResult<T> left, FreexComp.Build.LoadResult<T> right)
+sealed record FreexComp.Build.MacroExpansion : System.IEquatable<FreexComp.Build.MacroExpansion>
+  public FreexComp.Build.MacroExpansion <Clone>$()
+  public System.Boolean Equals(FreexComp.Build.MacroExpansion other)
+  public System.Collections.Immutable.ImmutableArray<System.String> UnknownNames { get; init; }
+  public System.String Text { get; init; }
+  public System.Void Deconstruct(out System.String Text, out System.Collections.Immutable.ImmutableArray<System.String> UnknownNames)
+  public ctor(System.String Text, System.Collections.Immutable.ImmutableArray<System.String> UnknownNames)
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public static System.Boolean op_Equality(FreexComp.Build.MacroExpansion left, FreexComp.Build.MacroExpansion right)
+  public static System.Boolean op_Inequality(FreexComp.Build.MacroExpansion left, FreexComp.Build.MacroExpansion right)
 sealed record FreexComp.Build.ManifestSettings : System.IEquatable<FreexComp.Build.ManifestSettings>
   public FreexComp.Build.ManifestSettings <Clone>$()
   public System.Boolean Equals(FreexComp.Build.ManifestSettings other)
@@ -223,6 +256,9 @@ enum FreexComp.Build.OutputSource
   ProgramStdErr = 2
   ProgramStdOut = 1
   Tool = 0
+enum FreexComp.Build.PostBuildWhen
+  Always = 1
+  Success = 0
 sealed record FreexComp.Build.Project : System.IEquatable<FreexComp.Build.Project>
   public FreexComp.Build.ManifestSettings ManifestSettings { get; init; }
   public FreexComp.Build.Project <Clone>$()
@@ -273,6 +309,7 @@ sealed record FreexComp.Build.ProjectBuildResult : System.IEquatable<FreexComp.B
   public static System.Boolean op_Inequality(FreexComp.Build.ProjectBuildResult left, FreexComp.Build.ProjectBuildResult right)
 sealed record FreexComp.Build.ProjectConfiguration : System.IEquatable<FreexComp.Build.ProjectConfiguration>
   public FreexComp.Build.ProjectConfiguration <Clone>$()
+  public FreexComp.Build.ProjectEvents Events { get; init; }
   public System.Boolean DebugInfo { get; init; }
   public System.Boolean Equals(FreexComp.Build.ProjectConfiguration other)
   public System.Boolean InheritsDebugInfo { get; init; }
@@ -296,6 +333,7 @@ static class FreexComp.Build.ProjectConfigurations
   public static System.Collections.Immutable.ImmutableArray<System.String> ChildrenOf(FreexComp.Build.Project project, System.String name)
   public static System.Collections.Immutable.ImmutableArray<System.String> DescendantsOf(FreexComp.Build.Project project, System.String name)
 sealed record FreexComp.Build.ProjectEvents : System.IEquatable<FreexComp.Build.ProjectEvents>
+  public FreexComp.Build.PostBuildWhen PostBuildWhen { get; init; }
   public FreexComp.Build.ProjectEvents <Clone>$()
   public System.Boolean Equals(FreexComp.Build.ProjectEvents other)
   public System.Collections.Immutable.ImmutableArray<System.String> PostBuild { get; init; }
@@ -336,6 +374,7 @@ sealed record FreexComp.Build.ProjectGroup : System.IEquatable<FreexComp.Build.P
   public static System.Boolean op_Equality(FreexComp.Build.ProjectGroup left, FreexComp.Build.ProjectGroup right)
   public static System.Boolean op_Inequality(FreexComp.Build.ProjectGroup left, FreexComp.Build.ProjectGroup right)
 static class FreexComp.Build.ProjectOptions
+  public static FreexComp.Build.ProjectEvents GetEffectiveEvents(FreexComp.Build.Project project, System.String configuration)
   public static FreexComp.Compiler.CompilationOptions ToCompilationOptions(FreexComp.Build.Project project, System.String configuration)
   public static FreexComp.Compiler.CompilationOptions ToCompilationOptions(FreexComp.Build.Project project, System.String configuration, FreexComp.Compiler.Targets.TargetInfo target)
   public static System.String GetHostApplicationPath(FreexComp.Build.Project project)
@@ -351,6 +390,7 @@ static class FreexComp.Build.ProjectSerializer
 static class FreexComp.Build.ProjectTrust
   public static FreexComp.Build.TrustState Evaluate(FreexComp.Build.Project project, System.String projectPath, FreexComp.Build.TrustSnapshot trust)
   public static System.Boolean HasCommands(FreexComp.Build.Project project)
+  public static System.Collections.Immutable.ImmutableArray<FreexComp.Build.CommandList> CommandLists(FreexComp.Build.Project project)
   public static System.Collections.Immutable.ImmutableArray<FreexComp.Build.UntrustedProject> FindUntrusted(FreexComp.Compiler.IFileSystem fs, System.String projectOrGroupPath, System.String projectInGroup, FreexComp.Build.ITrustStore store)
   public static System.String CommandsHash(FreexComp.Build.Project project)
   public static System.String DefaultStorePath(System.Func<System.String, System.String> environment)
@@ -367,6 +407,9 @@ sealed record FreexComp.Build.RunSettings : System.IEquatable<FreexComp.Build.Ru
   public override System.String ToString()
   public static System.Boolean op_Equality(FreexComp.Build.RunSettings left, FreexComp.Build.RunSettings right)
   public static System.Boolean op_Inequality(FreexComp.Build.RunSettings left, FreexComp.Build.RunSettings right)
+sealed class FreexComp.Build.ShellCommandRunner : FreexComp.Build.ICommandRunner
+  public System.Threading.Tasks.Task<System.Int32> RunAsync(System.String command, System.String workingDirectory, System.Action<System.String> onStdOut, System.Action<System.String> onStdErr, System.Threading.CancellationToken ct)
+  public static FreexComp.Build.ShellCommandRunner Instance { get; }
 sealed record FreexComp.Build.TrustEntry : System.IEquatable<FreexComp.Build.TrustEntry>
   public FreexComp.Build.TrustEntry <Clone>$()
   public FreexComp.Build.TrustEntryKind Kind { get; init; }
@@ -405,6 +448,7 @@ sealed record FreexComp.Build.UntrustedProject : System.IEquatable<FreexComp.Bui
   public FreexComp.Build.TrustState State { get; init; }
   public FreexComp.Build.UntrustedProject <Clone>$()
   public System.Boolean Equals(FreexComp.Build.UntrustedProject other)
+  public System.Collections.Immutable.ImmutableArray<FreexComp.Build.CommandList> Lists { get; init; }
   public System.Collections.Immutable.ImmutableArray<System.String> PostBuild { get; init; }
   public System.Collections.Immutable.ImmutableArray<System.String> PreBuild { get; init; }
   public System.String ProjectPath { get; init; }

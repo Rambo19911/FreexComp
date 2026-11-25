@@ -125,6 +125,21 @@ public static class ProjectOptions
     public static string? GetHostApplicationPath(Project project) =>
         project.Run.HostApplication.Length == 0 ? null : Resolve(RequireDirectory(project), project.Run.HostApplication);
 
+    /// <summary>
+    /// The events <paramref name="configuration"/> (exact name) is built with (build-events.md CMP-1252): walking from the
+    /// configuration itself to its root ancestor, the first one that has an <c>events</c> key supplies the whole value — lists and
+    /// <c>postBuildWhen</c>; when none has one, the project-level events. Nothing is merged.
+    /// </summary>
+    /// <exception cref="ArgumentException">The name is unknown, a parent is missing, or the <c>inherits</c> links form a cycle.</exception>
+    public static ProjectEvents GetEffectiveEvents(Project project, string configuration)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+        ArgumentNullException.ThrowIfNull(configuration);
+        return ConfigurationResolver.ChainOf(project, configuration).Reverse()
+            .Select(name => project.Configurations[name].Events)
+            .FirstOrDefault(events => events is not null) ?? project.Events;
+    }
+
     private static EffectiveConfiguration GetConfiguration(Project project, string configuration)
     {
         ArgumentNullException.ThrowIfNull(project);

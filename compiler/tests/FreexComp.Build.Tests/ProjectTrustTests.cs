@@ -137,4 +137,113 @@ public sealed class ProjectTrustTests
         Assert.Empty(ProjectTrust.FindUntrusted(fs, Lib, null, store));
         Assert.Empty(ProjectTrust.FindUntrusted(fs, @"C:\g\Missing.pgroup", null, store));
     }
+
+    // ---- build-events.md CMP-1253…1255 (task C-327): the command lists of configurations
+
+    private const string WithConfigurationEvents = """
+        "configurations": {
+          "Debug": { "optimization": 0 },
+          "Release": { "optimization": 2, "events": { "preBuild": [], "postBuild": ["echo \u017e"], "postBuildWhen": "always" } },
+          "Quiet": { "inherits": "Release", "events": {} }
+        }
+        """;
+
+    private static string Describe(CommandList list) =>
+        $"{list.Name} | {list.Configuration ?? "-"} | {(list.PostBuild ? "post" : "pre")} | {string.Join(" ; ", list.Commands)}";
+
+    [Fact]
+    [Trait("Req", "CMP-1253")]
+    public void CommandLists_FixedOrderAndNames()
+    {
+        var project = Parse("""{ "preBuild": ["echo hi"], "postBuild": [] }""", extra: WithConfigurationEvents);
+
+        // project level first (both lists, also the empty one), then per configuration that has an events key, in file order
+        Assert.Equal(
+            ["preBuild | - | pre | echo hi",
+             "postBuild | - | post | ",
+             "configurations/Release/preBuild | Release | pre | ",
+             "configurations/Release/postBuild | Release | post | echo \u017e",
+             "configurations/Quiet/preBuild | Quiet | pre | ",
+             "configurations/Quiet/postBuild | Quiet | post | "],
+            ProjectTrust.CommandLists(project).Select(Describe));
+
+        // a project without any events key: the two project-level lists, empty
+        Assert.Equal(["preBuild | - | pre | ", "postBuild | - | post | "], ProjectTrust.CommandLists(Parse("")).Select(Describe));
+        Assert.Equal(
+            ["preBuild | - | pre | ", "postBuild | - | post | "],
+            ProjectTrust.CommandLists(Parse("", extra: """ "configurations": { "Debug": {}, "Demo": { "inherits": "Debug" } } """)).Select(Describe));
+    }
+
+    [Fact]
+    [Trait("Req", "CMP-1253")]
+    [Trait("Req", "CMP-1254")]
+    public void CommandsHash_CoversConfigurationLists()
+    {
+        static string Configurations(string release, string name = "Release", string more = "") =>
+            $$""" "configurations": { "Debug": { "optimization": 0 }, "{{name}}": { "optimization": 2{{release}} }{{more}} } """;
+        const string Events = """{ "preBuild": ["echo hi"], "postBuild": [] }""";
+        const string ReleaseEvents = """, "events": { "preBuild": [], "postBuild": ["echo \u017e"] }""";
+
+        // sha256 of "freexcomp-commands-v1\npreBuild\n1\n7\necho hi\npostBuild\n0\nconfigurations/Release/preBuild\n0\n" +
+        // "configurations/Release/postBuild\n1\n7\necho ž\n" (ž = 2 bytes), computed outside the product
+        const string Expected = "sha256:ebed2f79b93b9e36cb148fe619dff9d560ae0380450e44b887622231348c8703";
+        var hash = ProjectTrust.CommandsHash(Parse(Events, extra: Configurations(ReleaseEvents)));
+        Assert.Equal(Expected, hash);
+
+        // configurations without an events key do not count: the hash of before this card
+        var plain = ProjectTrust.CommandsHash(Parse(Events));
+        Assert.Equal(plain, ProjectTrust.CommandsHash(Parse(Events, extra: Configurations(""))));
+        Assert.NotEqual(plain, hash);
+
+        // a changed configuration command; a command moved to the other list; the configuration's name; "events": {} added
+        Assert.NotEqual(hash, ProjectTrust.CommandsHash(Parse(Events, extra: Configurations(""", "events": { "preBuild": [], "postBuild": ["echo z"] }"""))));
+        Assert.NotEqual(hash, ProjectTrust.CommandsHash(Parse(Events, extra: Configurations(""", "events": { "preBuild": ["echo \u017e"], "postBuild": [] }"""))));
+        Assert.NotEqual(hash, ProjectTrust.CommandsHash(Parse(Events, extra: Configurations(ReleaseEvents, name: "Final"))));
+        Assert.NotEqual(hash, ProjectTrust.CommandsHash(Parse(Events, extra: Configurations(ReleaseEvents, more: """, "Demo": { "inherits": "Release", "events": {} }"""))));
+        Assert.NotEqual(plain, ProjectTrust.CommandsHash(Parse(Events, extra: Configurations(""", "events": {}"""))));
+        // a command of a configuration is not the same as that command at project level
+        Assert.NotEqual(
+            ProjectTrust.CommandsHash(Parse("""{ "preBuild": ["x"], "postBuild": [] }""", extra: Configurations(""", "events": {}"""))),
+            ProjectTrust.CommandsHash(Parse("", extra: Configurations(""", "events": { "preBuild": ["x"] }"""))));
+
+        // postBuildWhen adds no command: not hashed, at either level
+        Assert.Equal(hash, ProjectTrust.CommandsHash(Parse(Events, extra: Configurations(""", "events": { "preBuild": [], "postBuild": ["echo \u017e"], "postBuildWhen": "always" }"""))));
+        Assert.Equal(plain, ProjectTrust.CommandsHash(Parse("""{ "preBuild": ["echo hi"], "postBuild": [], "postBuildWhen": "always" }""")));
+
+        // HasCommands looks at every list
+        Assert.True(ProjectTrust.HasCommands(Parse("", extra: Configurations(ReleaseEvents))));
+        Assert.False(ProjectTrust.HasCommands(Parse("", extra: Configurations(""", "events": {}"""))));
+        Assert.Equal(TrustState.Untrusted, ProjectTrust.Evaluate(Parse("", extra: Configurations(ReleaseEvents)), @"C:\Work\App\App.pproj", Snapshot()));
+    }
+
+    [Fact]
+    [Trait("Req", "CMP-1255")]
+    public void FindUntrusted_ListsConfigurationCommands()
+    {
+        const string App = @"C:\g\App\App.pproj", Lib = @"C:\g\Lib\Lib.pproj", TrustFile = @"C:\user\roaming\trust.json";
+        var fs = new InMemoryFileSystem();
+        fs.Add(App, $$"""{ "formatVersion": 1, "name": "App", "mainSource": "App.pas", "dependencies": ["../Lib/Lib.pproj"], "events": { "preBuild": ["a1"], "postBuild": [] }, {{WithConfigurationEvents}} }""");
+        // the only commands of this one are in a configuration
+        fs.Add(Lib, """{ "formatVersion": 1, "name": "Lib", "mainSource": "Lib.pas", "configurations": { "Debug": {}, "Release": { "events": { "preBuild": ["l1", "l2"] } } } }""");
+        var store = new FileTrustStore(fs, TrustFile);
+
+        var all = ProjectTrust.FindUntrusted(fs, App, null, store);
+
+        Assert.Equal([Lib, App], all.Select(u => u.ProjectPath));
+        // Lists: the non-empty lists, in the order of CommandLists; PreBuild / PostBuild stay the project-level lists
+        Assert.Equal(["configurations/Release/preBuild | Release | pre | l1 ; l2"], all[0].Lists.Select(Describe));
+        Assert.Empty(all[0].PreBuild);
+        Assert.Empty(all[0].PostBuild);
+        Assert.Equal(["preBuild | - | pre | a1", "configurations/Release/postBuild | Release | post | echo \u017e"], all[1].Lists.Select(Describe));
+        Assert.Equal(["a1"], all[1].PreBuild);
+        Assert.Empty(all[1].PostBuild);
+
+        // trusted with the hash over all lists → not listed; a changed configuration command → Changed
+        store.TrustProject(Lib, ProjectTrust.CommandsHash(ProjectSerializer.LoadProject(Lib, fs).Value!));
+        Assert.Equal([App], ProjectTrust.FindUntrusted(fs, App, null, store).Select(u => u.ProjectPath));
+        fs.Add(Lib, fs.ReadAllText(Lib).Replace("\"l2\"", "\"l3\"", StringComparison.Ordinal));
+        var changed = ProjectTrust.FindUntrusted(fs, App, null, store)[0];
+        Assert.Equal((Lib, TrustState.Changed), (changed.ProjectPath, changed.State));
+        Assert.Equal(["configurations/Release/preBuild | Release | pre | l1 ; l3"], changed.Lists.Select(Describe));
+    }
 }

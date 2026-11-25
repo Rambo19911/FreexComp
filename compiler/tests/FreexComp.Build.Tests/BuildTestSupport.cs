@@ -53,6 +53,9 @@ internal sealed class BuildWorkspace
 
     public FakeToolchain Tools { get; }
 
+    /// <summary>The recording command runner every engine of this workspace gets: no test of the in-memory bed starts a process for a build event.</summary>
+    public FakeCommandRunner Commands { get; } = new();
+
     /// <summary>A minimal valid project file text; <paramref name="extra"/> is inserted as further top-level keys.</summary>
     public static string ProjectJson(string name, string mainSource = "Hello.pas", string extra = "") =>
         $$"""{ "formatVersion": 1, "name": "{{name}}", "mainSource": "{{mainSource}}"{{(extra.Length > 0 ? ", " + extra : "")}} }""";
@@ -69,7 +72,7 @@ internal sealed class BuildWorkspace
     public async Task<(BuildResult Result, EventLog Log)> RunAsync(BuildRequest request, CancellationToken? ct = null, IFileSystem? fs = null)
     {
         var log = new EventLog();
-        var result = await new BuildEngine(fs ?? Fs, Tools).RunAsync(request, log, ct ?? TestContext.Current.CancellationToken);
+        var result = await new BuildEngine(fs ?? Fs, Tools) { CommandRunner = Commands }.RunAsync(request, log, ct ?? TestContext.Current.CancellationToken);
         return (result, log);
     }
 }
@@ -112,6 +115,63 @@ internal sealed class EventLog : IProgress<BuildEvent>
         BuildEvent.Finished f => $"finished {Path.GetFileName(f.ProjectPath)} success={f.Success} upToDate={f.UpToDate} {f.Errors}/{f.Warnings}/{f.Hints}",
         _ => e.ToString(),
     };
+}
+
+/// <summary>
+/// A recording fake behind <see cref="ICommandRunner"/> (build-events.md CMP-1270): notes every command with its working
+/// directory and answers through <see cref="Behavior"/>; it never starts a process.
+/// </summary>
+internal sealed class FakeCommandRunner : ICommandRunner
+{
+    private readonly List<(string Command, string WorkingDirectory)> _calls = [];
+
+    /// <summary>Every command handed to the runner, in order, with its working directory.</summary>
+    public ImmutableArray<(string Command, string WorkingDirectory)> Calls
+    {
+        get
+        {
+            lock (_calls)
+            {
+                return [.. _calls];
+            }
+        }
+    }
+
+    /// <summary>The commands of <see cref="Calls"/>.</summary>
+    public ImmutableArray<string> Commands => [.. Calls.Select(c => c.Command)];
+
+    /// <summary>Runs before a command answers (e.g. to block until cancelled, or to write files).</summary>
+    public Func<string, CancellationToken, Task>? Before { get; set; }
+
+    /// <summary>Command, working directory → stdout lines, stderr lines, exit code; the default prints nothing and succeeds.</summary>
+    public Func<string, string, (string[] StdOut, string[] StdErr, int ExitCode)> Behavior { get; set; } = (_, _) => ([], [], 0);
+
+    public async Task<int> RunAsync(string command, string workingDirectory, Action<string> onStdOut, Action<string> onStdErr, CancellationToken ct)
+    {
+        lock (_calls)
+        {
+            _calls.Add((command, workingDirectory));
+        }
+
+        if (Before is { } before)
+        {
+            await before(command, ct);
+        }
+
+        ct.ThrowIfCancellationRequested();
+        var (stdout, stderr, exitCode) = Behavior(command, workingDirectory);
+        foreach (var line in stdout)
+        {
+            onStdOut(line);
+        }
+
+        foreach (var line in stderr)
+        {
+            onStdErr(line);
+        }
+
+        return exitCode;
+    }
 }
 
 /// <summary>

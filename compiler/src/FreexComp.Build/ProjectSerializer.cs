@@ -188,14 +188,7 @@ public static class ProjectSerializer
             };
         }
 
-        var events = new ProjectEvents([], []);
-        if (root.Optional("events") is { } eventsNode)
-        {
-            eventsNode.RequireObject();
-            events = new ProjectEvents(
-                eventsNode.Optional("preBuild")?.Strings() ?? [],
-                eventsNode.Optional("postBuild")?.Strings() ?? []);
-        }
+        var events = root.Optional("events") is { } eventsNode ? ReadEvents(eventsNode) : new ProjectEvents([], []);
 
         // CMP-1110: the string forms, or an object with the settings of the generated manifest
         string? manifest = null;
@@ -340,7 +333,29 @@ public static class ProjectSerializer
             InheritsOptimization = inherits is not null && optimizationNode is null,      // CMP-1151: absent = the parent's value
             InheritsDebugInfo = inherits is not null && debugInfo is null,
             SearchPaths = node.Optional("searchPaths") is { } searchPaths ? ReadList(searchPaths, path: true, resetAllowed: true) : [],
+            Events = node.Optional("events") is { } events ? ReadEvents(events) : null,       // CMP-1251
         };
+    }
+
+    /// <summary>
+    /// The <c>events</c> object of the project or of a configuration (build-events.md CMP-1250, 1251): every member is optional,
+    /// the lists default to empty and <c>postBuildWhen</c> to <c>success</c>.
+    /// </summary>
+    private static ProjectEvents ReadEvents(Node node)
+    {
+        node.RequireObject();
+        var when = PostBuildWhen.Success;
+        if (node.Optional("postBuildWhen") is { } whenNode)
+        {
+            when = whenNode.String() switch
+            {
+                "success" => PostBuildWhen.Success,
+                "always" => PostBuildWhen.Always,
+                _ => throw ProjectFileException.Invalid(whenNode.Offset, $"'{whenNode.Display}' must be \"success\" or \"always\""),
+            };
+        }
+
+        return new ProjectEvents(node.Optional("preBuild")?.Strings() ?? [], node.Optional("postBuild")?.Strings() ?? []) { PostBuildWhen = when };
     }
 
     /// <summary>
@@ -501,11 +516,7 @@ public static class ProjectSerializer
                     ? w => w.WriteStringValue(Slashes(p.Run.HostApplication))
                     : null),
             ])),
-            ("events", w => WriteObject(w, Child(source, "events"),
-            [
-                ("preBuild", w => WriteStrings(w, p.Events.PreBuild)),
-                ("postBuild", w => WriteStrings(w, p.Events.PostBuild)),
-            ])),
+            ("events", w => WriteEvents(w, p.Events, Child(source, "events"), always: true)),
             ("dependencies", w => WriteStrings(w, p.Dependencies, path: true)),
         ]);
     }
@@ -560,6 +571,7 @@ public static class ProjectSerializer
                     ? w => w.WriteStringValue(Slashes(c.OutputDir))
                     : null),
                 ("rtti", c.Rtti is { } rtti ? w => w.WriteStringValue(rtti) : null),
+                ("events", c.Events is { } events ? w => WriteEvents(w, events, Child(entry, "events"), always: false) : null),   // CMP-1251
             ])));
         }).ToList();
 
@@ -568,6 +580,26 @@ public static class ProjectSerializer
             .Except(p.ConfigurationNames, StringComparer.Ordinal)
             .Select(name => (name, (Action<Utf8JsonWriter>?)null));
         WriteObject(w, source, [.. known, .. names]);
+    }
+
+    /// <summary>
+    /// An <c>events</c> object: <c>preBuild</c>, <c>postBuild</c>, <c>postBuildWhen</c> (CMP-1250). The lists are written
+    /// <paramref name="always"/> (project level) or when they are non-empty or present in the loaded file (a configuration, so
+    /// that <c>{}</c> stays <c>{}</c>); <c>postBuildWhen</c> when it is <c>always</c> or present in the loaded file.
+    /// </summary>
+    private static void WriteEvents(Utf8JsonWriter w, ProjectEvents events, JsonElement? source, bool always)
+    {
+        Action<Utf8JsonWriter>? List(string key, ImmutableArray<string> commands) =>
+            always || !commands.IsDefaultOrEmpty || Has(source, key) ? w => WriteStrings(w, commands) : null;
+
+        WriteObject(w, source,
+        [
+            ("preBuild", List("preBuild", events.PreBuild)),
+            ("postBuild", List("postBuild", events.PostBuild)),
+            ("postBuildWhen", events.PostBuildWhen == PostBuildWhen.Always || Has(source, "postBuildWhen")
+                ? w => w.WriteStringValue(events.PostBuildWhen == PostBuildWhen.Always ? "always" : "success")
+                : null),
+        ]);
     }
 
     /// <summary>

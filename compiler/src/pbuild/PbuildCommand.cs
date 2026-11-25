@@ -17,6 +17,9 @@ public sealed record PbuildEnvironment(string CurrentDirectory, TextWriter Out, 
 {
     public IProcessRunner? ProcessRunner { get; init; }
 
+    /// <summary>Runs the build event commands (build-events.md CMP-1278); null → the engine's default.</summary>
+    public ICommandRunner? CommandRunner { get; init; }
+
     public string? ToolchainDirectory { get; init; }
 
     public string? RtlDirectory { get; init; }
@@ -225,7 +228,7 @@ public static class PbuildCommand
         BuildResult result;
         try
         {
-            result = new BuildEngine(env.FileSystem, env.ProcessRunner).RunAsync(request, writer, ct).GetAwaiter().GetResult();
+            result = new BuildEngine(env.FileSystem, env.ProcessRunner) { CommandRunner = env.CommandRunner }.RunAsync(request, writer, ct).GetAwaiter().GetResult();
         }
         catch (Exception e) when (e is not OperationCanceledException)
         {

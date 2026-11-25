@@ -201,22 +201,21 @@ public sealed class BuildEventOrderTests
     }
 
     [Fact]
-    [Trait("Req", "CMP-834")]
     [Trait("Req", "CMP-835")]
-    public async Task ProjectEventsAndMissingListedFiles_AreWarnings_BuildContinues()
+    public async Task MissingListedFiles_AreWarnings_BuildContinues()
     {
+        // the events half of the former test: BuildEventsTests.PreBuildRunsBeforeCompile_PostBuildAfterLink (CMP-1275: W9001 is retired)
         var w = new BuildWorkspace(projectJson: BuildWorkspace.ProjectJson("Hello", extra:
-            """ "files": [{ "path": "Hello.pas" }, { "path": "Gone.pas" }], "events": { "preBuild": ["echo hi"], "postBuild": [] }"""));
+            """ "files": [{ "path": "Hello.pas" }, { "path": "Gone.pas" }]"""));
 
-        var (result, log) = await w.RunAsync(w.Request() with { Events = EventsPolicy.Run });        // CMP-1245: behind the trust gate
+        var (result, log) = await w.RunAsync(w.Request());
 
         Assert.True(result.Success);
         Assert.Equal(
-            [@"C:\p\Hello.pproj(0,0): warning W9001: Project events are not supported yet and were ignored",
-             @"C:\p\Hello.pproj(0,0): warning W9002: File 'C:\p\Gone.pas' listed in the project does not exist"],
+            [@"C:\p\Hello.pproj(0,0): warning W9002: File 'C:\p\Gone.pas' listed in the project does not exist"],
             log.Events.OfType<BuildEvent.Diagnostic>().Select(d => d.Value.ToText()));
-        Assert.Equal("finished Hello.pproj success=True upToDate=False 0/2/0", log.Lines[^1]);
-        Assert.Equal(2, result.Warnings);
+        Assert.Equal("finished Hello.pproj success=True upToDate=False 0/1/0", log.Lines[^1]);
+        Assert.Equal(1, result.Warnings);
     }
 
     [Fact]

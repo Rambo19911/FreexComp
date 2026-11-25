@@ -147,6 +147,13 @@ public sealed record ProjectConfiguration(int Optimization, bool DebugInfo, Immu
     /// <c>"!"</c>; used when this configuration or one derived from it is built.
     /// </summary>
     public ImmutableArray<string> SearchPaths { get; init; } = [];
+
+    /// <summary>
+    /// The key <c>events</c> of the configuration (build-events.md CMP-1251): null = the configuration has no such key. A value
+    /// replaces the project's events as a whole for this configuration and for those derived from it that have none of their own
+    /// (<see cref="ProjectOptions.GetEffectiveEvents"/>).
+    /// </summary>
+    public ProjectEvents? Events { get; init; }
 }
 
 public sealed record RunSettings(string Arguments, string WorkingDir)
@@ -159,7 +166,22 @@ public sealed record RunSettings(string Arguments, string WorkingDir)
     public string HostApplication { get; init; } = "";
 }
 
-public sealed record ProjectEvents(ImmutableArray<string> PreBuild, ImmutableArray<string> PostBuild);
+/// <summary>The command lines run before the build and after it (build-events.md).</summary>
+public sealed record ProjectEvents(ImmutableArray<string> PreBuild, ImmutableArray<string> PostBuild)
+{
+    /// <summary>The key <c>postBuildWhen</c> (CMP-1250); written when it is <see cref="PostBuildWhen.Always"/> or present in the loaded file.</summary>
+    public PostBuildWhen PostBuildWhen { get; init; }
+}
+
+/// <summary>When the post-build commands run (build-events.md CMP-1250, 1267).</summary>
+public enum PostBuildWhen
+{
+    /// <summary>Only when the build of the project succeeded so far.</summary>
+    Success,
+
+    /// <summary>Also when the compile, link or deployment step failed.</summary>
+    Always,
+}
 
 /// <summary>A <c>.pgroup</c> file (project-format.md §2).</summary>
 public sealed record ProjectGroup(int FormatVersion, ImmutableArray<string> Projects, string ActiveProject, string FilePath)

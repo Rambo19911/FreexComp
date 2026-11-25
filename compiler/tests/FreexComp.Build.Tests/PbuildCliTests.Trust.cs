@@ -8,12 +8,19 @@ public sealed partial class PbuildCliTests
     private const string TrustFile = @"C:\user\roaming\trust.json";
     private const string TrustE9021 =
         @"C:\p\Hello.pproj(0,0): error E9021: Project 'C:\p\Hello.pproj' has build event commands and is not trusted (pbuild: --trust-events runs them, --no-events builds without them)";
-    private const string TrustW9001 = @"C:\p\Hello.pproj(0,0): warning W9001: Project events are not supported yet and were ignored";
 
     private static readonly string[] PlainBuildOutput = ["Compiling System", "Compiling Hello", "Linking Hello.exe", "fake lld-link done"];
 
-    private static BuildWorkspace WithEvents() =>
-        new(projectJson: BuildWorkspace.ProjectJson("Hello", extra: """ "events": { "preBuild": ["echo hi"], "postBuild": ["echo done"] }"""));
+    /// <summary>The output of a build of <see cref="WithEvents"/> behind the gate: the commands run, the fake runner echoes them.</summary>
+    private static readonly string[] EventsBuildOutput =
+        ["Running pre-build command 1 of 1", "ran: echo hi", .. PlainBuildOutput, "Running post-build command 1 of 1", "ran: echo done"];
+
+    private static BuildWorkspace WithEvents()
+    {
+        var w = new BuildWorkspace(projectJson: BuildWorkspace.ProjectJson("Hello", extra: """ "events": { "preBuild": ["echo hi"], "postBuild": ["echo done"] }"""));
+        w.Commands.Behavior = (command, _) => (["ran: " + command], [], 0);
+        return w;
+    }
 
     /// <summary>As <see cref="Run(BuildWorkspace, string[])"/>, with the trust list at <paramref name="trustFile"/> of the in-memory file system.</summary>
     private static (int ExitCode, string[] Out) RunWithTrust(BuildWorkspace w, string? trustFile, params string[] args)
@@ -22,6 +29,7 @@ public sealed partial class PbuildCliTests
         var env = new PbuildEnvironment(@"C:\p", stdout, new StringWriter(), w.Fs)
         {
             ProcessRunner = w.Tools,
+            CommandRunner = w.Commands,
             ToolchainDirectory = BuildWorkspace.Llvm,
             RtlDirectory = BuildWorkspace.Rtl,
             TrustFilePath = trustFile,
@@ -55,6 +63,7 @@ public sealed partial class PbuildCliTests
         Assert.Equal(TrustE9021, run[0]);
         Assert.Empty(w.Tools.Calls);                                            // nothing run
         Assert.Empty(w.Tools.Programs);
+        Assert.Empty(w.Commands.Calls);
         Assert.False(w.Fs.FileExists(BuildWorkspace.Exe));
         Assert.False(w.Fs.FileExists(TrustFile));
     }
@@ -76,6 +85,7 @@ public sealed partial class PbuildCliTests
         Assert.Equal(PlainBuildOutput, output[..^1]);                           // as if the project had no events: no W9001
         Assert.Matches(@"^Build succeeded \(0 errors, 0 warnings, ", output[^1]);
         Assert.Empty(w.Tools.Programs);                                         // no command was run
+        Assert.Empty(w.Commands.Calls);
         Assert.All(w.Tools.Calls, c => Assert.Contains(c, new[] { "clang.exe", "lld-link.exe", "llvm-dlltool.exe" }));
         Assert.Equal(0, plainCode);                                             // accepted and without effect for a project without commands
         Assert.Equal(PlainBuildOutput, plainOutput[..^1]);
@@ -100,7 +110,8 @@ public sealed partial class PbuildCliTests
         var (cleanCode, _) = RunWithTrust(w, TrustFile, "Hello.pproj", "--trust-events", "--target", "clean");
 
         Assert.Equal(0, code);
-        Assert.Equal([.. PlainBuildOutput, TrustW9001], output[..^1]);           // behind the gate: the events reach the execution step
+        Assert.Equal(EventsBuildOutput, output[..^1]);                           // behind the gate: the commands run
+        Assert.Equal(["echo hi", "echo done"], w.Commands.Commands);            // … once: the gated invocation and Clean run none
         Assert.False(w.Fs.FileExists(TrustFile));                                // nothing is remembered …
         Assert.Equal(1, again);                                                 // … so the next plain invocation is gated again
         Assert.Equal(TrustE9021, afterwards[0]);
@@ -125,7 +136,8 @@ public sealed partial class PbuildCliTests
         var (brokenCode, brokenOutput) = RunWithTrust(broken, TrustFile, "Hello.pproj");
 
         Assert.Equal(0, code);
-        Assert.Equal([.. PlainBuildOutput, TrustW9001], output[..^1]);
+        Assert.Equal(EventsBuildOutput, output[..^1]);
+        Assert.Equal(["echo hi", "echo done"], w.Commands.Commands);
         Assert.True(w.Fs.FileExists(BuildWorkspace.Exe));
         Assert.Equal(1, brokenCode);
         Assert.Equal(
@@ -133,6 +145,7 @@ public sealed partial class PbuildCliTests
              TrustE9021],
             brokenOutput[..^1]);
         Assert.Empty(broken.Tools.Calls);
+        Assert.Empty(broken.Commands.Calls);
     }
 
     [Theory]

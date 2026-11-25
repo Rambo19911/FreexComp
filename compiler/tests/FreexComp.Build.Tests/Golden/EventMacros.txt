@@ -1,0 +1,8 @@
+App Debug: C:\Work\My App|App|Debug|win64|C:\Work\My App\bin\Debug|C:\Work\My App\bin\Debug\App.exe
+App Release: C:\Work\My App|App|Release|win64|C:\Work\My App\out\final|C:\Work\My App\out\final\App.exe
+App Release-Demo: C:\Work\My App|App|Release-Demo|win64|C:\Work\My App\bin\Release-Demo|C:\Work\My App\bin\Release-Demo\App.exe
+App Shared: C:\Work\My App|App|Shared|win64|C:\Work\Shared Output\bin|C:\Work\Shared Output\bin\App.exe
+App Far: C:\Work\My App|App|Far|win64|D:\|D:\App.exe
+Core Debug: C:\Work\My App\lib|Core|Debug|win64|C:\Work\My App\lib\bin\Debug|C:\Work\My App\lib\bin\Debug\Core.dll
+Core Release: C:\Work\My App\lib|Core|Release|win64|C:\Work\My App\lib\bin\Release|C:\Work\My App\lib\bin\Release\Core.dll
+Root Debug: C:\|Root|Debug|win64|C:\bin\Debug|C:\bin\Debug\Root.exe

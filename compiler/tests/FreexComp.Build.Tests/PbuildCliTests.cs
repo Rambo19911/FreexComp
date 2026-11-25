@@ -18,6 +18,7 @@ public sealed partial class PbuildCliTests
         var env = new PbuildEnvironment(@"C:\p", stdout, stderr, fs)
         {
             ProcessRunner = w.Tools,
+            CommandRunner = w.Commands,
             ToolchainDirectory = BuildWorkspace.Llvm,
             RtlDirectory = BuildWorkspace.Rtl,
         };

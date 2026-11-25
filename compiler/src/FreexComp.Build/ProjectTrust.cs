@@ -41,7 +41,20 @@ public sealed record TrustSnapshot(ImmutableArray<TrustEntry> Entries, string? R
 public enum TrustState { NoCommands, TrustedFolder, TrustedProject, Changed, Untrusted }
 
 /// <summary>A project of a build that has commands and is not trusted (CMP-1238); <paramref name="State"/> is Untrusted or Changed.</summary>
-public sealed record UntrustedProject(string ProjectPath, TrustState State, ImmutableArray<string> PreBuild, ImmutableArray<string> PostBuild);
+/// <param name="PreBuild">The project-level pre-build list.</param>
+/// <param name="PostBuild">The project-level post-build list.</param>
+public sealed record UntrustedProject(string ProjectPath, TrustState State, ImmutableArray<string> PreBuild, ImmutableArray<string> PostBuild)
+{
+    /// <summary>The non-empty lists of <see cref="ProjectTrust.CommandLists"/>, in that order (build-events.md CMP-1255).</summary>
+    public ImmutableArray<CommandList> Lists { get; init; } = [];
+}
+
+/// <summary>One command list of a project (build-events.md CMP-1253).</summary>
+/// <param name="Name"><c>preBuild</c>, <c>postBuild</c>, <c>configurations/&lt;Name&gt;/preBuild</c> or <c>configurations/&lt;Name&gt;/postBuild</c>.</param>
+/// <param name="Configuration">The configuration as spelled in the file; null = project level.</param>
+/// <param name="PostBuild">Whether it is a post-build list.</param>
+/// <param name="Commands">The commands as stored.</param>
+public sealed record CommandList(string Name, string? Configuration, bool PostBuild, ImmutableArray<string> Commands);
 
 /// <summary>Trust in the command lists of a project (project-trust.md CMP-1230, 1233, 1235, 1237, 1238).</summary>
 public static class ProjectTrust
@@ -63,16 +76,37 @@ public static class ProjectTrust
         return Path.GetFullPath(Path.Combine(roaming, "FreexComp", "trust.json"));
     }
 
-    /// <summary>Whether at least one command list of the project is non-empty.</summary>
-    public static bool HasCommands(Project project)
+    /// <summary>
+    /// The command lists of the project in their fixed order (build-events.md CMP-1253): the project-level <c>preBuild</c> and
+    /// <c>postBuild</c> (always, also when empty), then for every configuration that has an <c>events</c> key, in file order, its
+    /// <c>preBuild</c> and its <c>postBuild</c>.
+    /// </summary>
+    public static ImmutableArray<CommandList> CommandLists(Project project)
     {
         ArgumentNullException.ThrowIfNull(project);
-        return !project.Events.PreBuild.IsDefaultOrEmpty || !project.Events.PostBuild.IsDefaultOrEmpty;
+        static ImmutableArray<string> Of(ImmutableArray<string> commands) => commands.IsDefault ? [] : commands;
+        var lists = ImmutableArray.CreateBuilder<CommandList>();
+        lists.Add(new CommandList("preBuild", null, false, Of(project.Events.PreBuild)));
+        lists.Add(new CommandList("postBuild", null, true, Of(project.Events.PostBuild)));
+        foreach (var name in project.ConfigurationNames)
+        {
+            if (project.Configurations[name].Events is { } events)
+            {
+                lists.Add(new CommandList($"configurations/{name}/preBuild", name, false, Of(events.PreBuild)));
+                lists.Add(new CommandList($"configurations/{name}/postBuild", name, true, Of(events.PostBuild)));
+            }
+        }
+
+        return lists.ToImmutable();
     }
 
+    /// <summary>Whether at least one command list of the project (<see cref="CommandLists"/>) is non-empty.</summary>
+    public static bool HasCommands(Project project) => CommandLists(project).Any(list => !list.Commands.IsEmpty);
+
     /// <summary>
-    /// CMP-1233: <c>sha256:</c> + lower-case hex SHA-256 of the line <c>freexcomp-commands-v1</c>, then per list (preBuild, postBuild)
-    /// its name, its number of commands and, per command, its UTF-8 byte length and its text; every item ends with one LF.
+    /// CMP-1233, CMP-1253: <c>sha256:</c> + lower-case hex SHA-256 of the line <c>freexcomp-commands-v1</c>, then per list of
+    /// <see cref="CommandLists"/> its name, its number of commands and, per command, its UTF-8 byte length and its text; every item
+    /// ends with one LF. A project without configuration events has the hash it had before those lists existed (CMP-1254).
     /// </summary>
     public static string CommandsHash(Project project)
     {
@@ -85,9 +119,8 @@ public static class ProjectTrust
         }
 
         Item("freexcomp-commands-v1");
-        foreach (var (name, commands) in new[] { ("preBuild", project.Events.PreBuild), ("postBuild", project.Events.PostBuild) })
+        foreach (var (name, _, _, list) in CommandLists(project))
         {
-            var list = commands.IsDefault ? [] : commands;
             Item(name);
             Item(list.Length.ToString(CultureInfo.InvariantCulture));
             foreach (var command in list)
@@ -150,7 +183,10 @@ public static class ProjectTrust
             trust ??= store?.Read() ?? new TrustSnapshot([], null);
             if (Evaluate(project, path, trust) is var state and (TrustState.Untrusted or TrustState.Changed))
             {
-                result.Add(new UntrustedProject(path, state, project.Events.PreBuild, project.Events.PostBuild));
+                result.Add(new UntrustedProject(path, state, project.Events.PreBuild, project.Events.PostBuild)
+                {
+                    Lists = [.. CommandLists(project).Where(list => !list.Commands.IsEmpty)],
+                });
             }
         }
 

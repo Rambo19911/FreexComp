@@ -132,13 +132,15 @@ public sealed class RunTests
     [Trait("Req", "CMP-801")]
     public async Task Run_BuildDiagnosticsArriveBeforeTheProgramOutput()
     {
-        var w = new BuildWorkspace(projectJson: BuildWorkspace.ProjectJson("Hello", extra: """ "events": { "preBuild": ["x"], "postBuild": [] }"""));
+        // a build diagnostic: a listed file that does not exist (W9002)
+        var w = new BuildWorkspace(projectJson: BuildWorkspace.ProjectJson("Hello", extra: """ "files": [{ "path": "Hello.pas" }, { "path": "Gone.pas" }]"""));
         w.Tools.Program = (_, _, _) => (["hello"], [], 0);
 
-        var (_, log) = await w.RunAsync(RunRequest(w) with { Events = EventsPolicy.Run });         // CMP-1245: behind the trust gate
+        var (_, log) = await w.RunAsync(RunRequest(w));
 
         var lines = log.Lines;
-        Assert.True(lines.IndexOf("diagnostic W9001") < lines.IndexOf("programstdout hello"));
+        Assert.Contains("diagnostic W9002", lines);
+        Assert.True(lines.IndexOf("diagnostic W9002") < lines.IndexOf("programstdout hello"));
         Assert.Equal("finished Hello.pproj success=True upToDate=False 0/1/0", lines[^1]);
     }
 
