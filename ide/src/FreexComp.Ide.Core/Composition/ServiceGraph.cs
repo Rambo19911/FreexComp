@@ -83,8 +83,9 @@ public static class ServiceGraph
         var toolchain = new ToolchainLocator(settings, platform.FileSystem, platform.ToolchainEnvironment); // IDE-P3-010
         var librarySource = new LibrarySourceService(toolchain, platform.FileSystem); // IDE-LIB-001
         var templates = new Editing.CodeTemplateService(platform.UserPaths, platform.FileSystem); // I-118
+        var trust = new TrustService(platform.UserPaths, platform.FileSystem, platform.Dialogs, platform.FileDialogs, platform.Clipboard, layout); // I-267
         OptionsViewModel.RegisterCommands(commands, settings, keymap, layout, platform.Dialogs, prompts, theme, toolWindowPhase ?? ImplementedPhase, toolchain,
-            platform.FileSystem, templates); // the phase override enables later pages in tests (I-132)
+            platform.FileSystem, templates, trust.Store); // the phase override enables later pages in tests (I-132); the trust list: I-268
         ShellCommands.RegisterCommands(commands, platform.Shell, platform.FileSystem, platform.UserPaths, platform.Log);
         var documents = new DocumentService(platform.FileSystem, platform.TextBuffers, languages, settings, status, focus, platform.Dialogs, prompts)
         {
@@ -179,7 +180,7 @@ public static class ServiceGraph
         var messages = new MessagesService(documents, navigation, platform.FileSystem, status, layout) { IsProjectFile = projects.IsMember };
         var engine = platform.BuildEngine;
         var build = new BuildService(engine, projects, documents, settings, state, toolchain, output, messages, platform.Clock,
-            platform.Dispatcher, platform.Dialogs, status, platform.Log, platform.Processes)
+            platform.Dispatcher, platform.Dialogs, status, platform.Log, platform.Processes, trust)
         {
             OpenToolchainOptions = () => commands.ExecuteAsync("tools.options", OptionsViewModel.ToolchainPathsPage),
         };
@@ -367,6 +368,7 @@ public static class ServiceGraph
             Options = options,
             ImplementedPhase = toolWindowPhase ?? ImplementedPhase,
             UserPaths = platform.UserPaths,
+            Trust = trust,
             Log = platform.Log,
             FileSystem = platform.FileSystem,
             Clock = platform.Clock,

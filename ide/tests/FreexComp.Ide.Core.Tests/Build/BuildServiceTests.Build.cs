@@ -190,6 +190,8 @@ public sealed partial class BuildServiceTests
     {
         var bed = new BuildTestBed();
         await bed.OpenHelloAsync(extra: """, "events": { "preBuild": [ "echo pre" ], "postBuild": [ "echo post" ] }""");
+        // IDE-TRUST-003 (I-267): a project with events is built only after the question; here it is trusted at the first build.
+        bed.Dialogs.Script("TrustProject", prompt => prompt.Buttons.Single(b => b.Id == "TrustProject").PressAsync());
         await bed.Services.Build.BuildAsync(BuildKind.Build);
         Assert.Equal(1, bed.OutputText(OutputChannels.Build).Count(l => l == Strings.Msg_Project_EventsIgnored));
         bed.Services.Settings.Set(SettingsCatalog.OutputClearOnBuild, false);

@@ -158,6 +158,10 @@ public class DialogWindow : Window
         {
             if (e.PropertyName == nameof(DialogButtonViewModel.IsEnabled))
                 button.IsEnabled = model.IsEnabled;
+            else if (e.PropertyName == nameof(DialogButtonViewModel.AccessLabel))
+                button.Content = model.AccessLabel;
+            else if (e.PropertyName == nameof(DialogButtonViewModel.Label))
+                AutomationProperties.SetName(button, model.Label);
         };
         return button;
     }
@@ -201,9 +205,18 @@ public class DialogWindow : Window
         }
     }
 
+    /// <summary>True: the initial focus is on the default button even when the body has a field (UI-DLG-291).</summary>
+    protected virtual bool FocusesDefaultButtonFirst => false;
+
     /// <summary>UI-A11Y-008: the first editable field, else the default button.</summary>
     private void FocusInitial()
     {
+        if (FocusesDefaultButtonFirst && FindButton(Model.DefaultButton) is { } first)
+        {
+            first.Focus(NavigationMethod.Tab);
+            return;
+        }
+
         var focusable = _body.GetVisualDescendants().OfType<InputElement>()
             .Where(c => c.Focusable && c.IsEffectivelyEnabled && c.IsEffectivelyVisible);
         var field = focusable.FirstOrDefault(c => c is TextBox or ComboBox or CheckBox or RadioButton or ListBox or NumericUpDown);

@@ -101,6 +101,7 @@ public sealed class OptionsViewModel : DialogViewModel<bool>
     public const string KeyMappingsPage = "KeyMappings";
     public const string EnvironmentGeneralPage = "Environment.General";
     public const string EnvironmentFilesPage = "Environment.Files";
+    public const string EnvironmentTrustPage = "Environment.Trust";
     public const string ToolchainPathsPage = "ToolchainPaths";
     public const string DesignerPage = "Designer";
 
@@ -123,6 +124,7 @@ public sealed class OptionsViewModel : DialogViewModel<bool>
     private readonly ILayoutService _layout;
     private readonly IKeymapService _keymap;
     private readonly FilePrompts _prompts;
+    private readonly IDialogService _dialogs;
     private readonly Dictionary<string, OptionField> _fields = new(StringComparer.Ordinal);
     private readonly HashSet<OptionField> _availableFields = [];
     private OptionsPage? _selectedPage;
@@ -134,7 +136,7 @@ public sealed class OptionsViewModel : DialogViewModel<bool>
     /// <param name="actualTheme">The theme in effect: the Colors page edits its set first.</param>
     public OptionsViewModel(ISettingsService settings, IKeymapService keymap, ILayoutService layout, IDialogService dialogs, FilePrompts prompts,
         ThemeKind actualTheme, string? pageId, int implementedPhase, Build.IToolchainLocator? toolchain = null, Platform.IFileSystem? fileSystem = null,
-        Editing.CodeTemplateService? templates = null)
+        Editing.CodeTemplateService? templates = null, FreexComp.Build.ITrustStore? trustStore = null)
     {
         ArgumentNullException.ThrowIfNull(settings);
         ArgumentNullException.ThrowIfNull(keymap);
@@ -145,6 +147,7 @@ public sealed class OptionsViewModel : DialogViewModel<bool>
         _keymap = keymap;
         _prompts = prompts;
         _layout = layout;
+        _dialogs = dialogs;
 
         var general = Page(EditorGeneralPage, 1,
         [
@@ -221,6 +224,12 @@ public sealed class OptionsViewModel : DialogViewModel<bool>
             Integer("RecoveryInterval", SettingsCatalog.EnvironmentRecoveryIntervalSeconds, 1, () => Strings.Msg_Options_RecoveryRange),
             Integer("LargeFile", SettingsCatalog.FilesLargeFileThresholdMb, 1, () => Strings.Msg_Options_LargeFileRange),
         ]);
+        // dialogs.md §9.10 (I-268): a custom page over the trust list, read now (IDE-TRUST-014, 015).
+        Trust = new TrustedLocationsPageViewModel(trustStore);
+        var environmentTrust = new OptionsPage(EnvironmentTrustPage, Strings.Options_Page_EnvironmentTrust, Strings.Options_Tree_EnvironmentTrust, 8, [])
+        {
+            OtherLabels = TrustedLocationsPageViewModel.FieldLabels,
+        };
         // dialogs.md §9.8 (I-132).
         var designer = Page(DesignerPage, 5,
         [
@@ -252,7 +261,7 @@ public sealed class OptionsViewModel : DialogViewModel<bool>
             ToolchainFolder("FrameworkDir", SettingsCatalog.ToolchainFrameworkDir, 5, automatic?.FrameworkDir, Build.ToolchainLocator.FrameworkFiles,
                 fileSystem),
         ]);
-        Pages = [general, display, templatesPage, colors, keys, environmentGeneral, environmentFiles, designer, toolchainPage];
+        Pages = [general, display, templatesPage, colors, keys, environmentGeneral, environmentFiles, environmentTrust, designer, toolchainPage];
         foreach (var page in Pages)
         {
             // phase8-delivery.md IDE-P8-002/003: a phase-8 page or field counts as implemented once it is delivered.
@@ -263,10 +272,11 @@ public sealed class OptionsViewModel : DialogViewModel<bool>
             }
         }
 
-        Rows = BuildRows([("Editor", [general, display, templatesPage]), (null, [colors, keys]), ("Environment", [environmentGeneral, environmentFiles]), (null, [designer, toolchainPage])]);
+        Rows = BuildRows([("Editor", [general, display, templatesPage]), (null, [colors, keys]), ("Environment", [environmentGeneral, environmentFiles, environmentTrust]), (null, [designer, toolchainPage])]);
         Colors.PendingChanged += (_, _) => Update();
         KeyMappings.PendingChanged += (_, _) => Update();
         CodeTemplates.PendingChanged += (_, _) => Update();
+        Trust.PendingChanged += (_, _) => Update();
         Colors.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(ColorsPageViewModel.ColorError))
@@ -339,6 +349,9 @@ public sealed class OptionsViewModel : DialogViewModel<bool>
     /// <summary>The Key Mappings page (dialogs.md §9.5).</summary>
     public KeyMappingsPageViewModel KeyMappings { get; }
 
+    /// <summary>The Trusted Locations page (dialogs.md §9.10).</summary>
+    public TrustedLocationsPageViewModel Trust { get; }
+
     /// <summary>The Code Templates page (dialogs.md §9.3).</summary>
     public CodeTemplatesPageViewModel CodeTemplates { get; }
 
@@ -382,7 +395,7 @@ public sealed class OptionsViewModel : DialogViewModel<bool>
     }
 
     /// <summary>True while a pending value differs from its setting.</summary>
-    public bool HasChanges => Colors.HasChanges || KeyMappings.HasChanges || CodeTemplates.HasChanges || _fields.Values.Any(f => !SettingValues.AreEqual(f.Value, Read(f.Key)));
+    public bool HasChanges => Colors.HasChanges || KeyMappings.HasChanges || CodeTemplates.HasChanges || Trust.HasChanges || _fields.Values.Any(f => !SettingValues.AreEqual(f.Value, Read(f.Key)));
 
     public bool HasErrors => Colors.HasErrors || CodeTemplates.HasErrors || _fields.Values.Any(f => f.Error is not null);
 
@@ -395,11 +408,11 @@ public sealed class OptionsViewModel : DialogViewModel<bool>
     /// </summary>
     public static void RegisterCommands(ICommandService commands, ISettingsService settings, IKeymapService keymap, ILayoutService layout,
         IDialogService dialogs, FilePrompts prompts, IThemeService theme, int implementedPhase, Build.IToolchainLocator? toolchain = null,
-        Platform.IFileSystem? fileSystem = null, Editing.CodeTemplateService? templates = null)
+        Platform.IFileSystem? fileSystem = null, Editing.CodeTemplateService? templates = null, FreexComp.Build.ITrustStore? trustStore = null)
     {
         ArgumentNullException.ThrowIfNull(commands);
-        commands.RegisterHandler("tools.options", new OpenHandler(settings, keymap, layout, dialogs, prompts, theme, implementedPhase, null, toolchain, fileSystem, templates));
-        commands.RegisterHandler("tools.keyMappings", new OpenHandler(settings, keymap, layout, dialogs, prompts, theme, implementedPhase, KeyMappingsPage, toolchain, fileSystem, templates));
+        commands.RegisterHandler("tools.options", new OpenHandler(settings, keymap, layout, dialogs, prompts, theme, implementedPhase, null, toolchain, fileSystem, templates, trustStore));
+        commands.RegisterHandler("tools.keyMappings", new OpenHandler(settings, keymap, layout, dialogs, prompts, theme, implementedPhase, KeyMappingsPage, toolchain, fileSystem, templates, trustStore));
     }
 
     /// <summary>A row was selected: a group selects its first visible page (UI-DLG-090).</summary>
@@ -437,13 +450,30 @@ public sealed class OptionsViewModel : DialogViewModel<bool>
     }
 
     /// <summary><c>Apply</c>: the changed pending values in one settings batch, then a flush (UI-DLG-093).</summary>
-    public async Task ApplyAsync()
+    public Task ApplyAsync() => ApplyChangesAsync();
+
+    /// <summary>False when the trust list could not be written (IDE-TRUST-017): the dialog stays open.</summary>
+    private async Task<bool> ApplyChangesAsync()
     {
         if (HasErrors)
-            return;
+            return false;
         var changed = _fields.Values.Where(f => !SettingValues.AreEqual(f.Value, Read(f.Key))).ToList();
-        if (changed.Count == 0 && !Colors.HasChanges && !KeyMappings.HasChanges && !CodeTemplates.HasChanges)
-            return;
+        if (changed.Count == 0 && !Colors.HasChanges && !KeyMappings.HasChanges && !CodeTemplates.HasChanges && !Trust.HasChanges)
+            return true;
+        if (Trust.HasChanges)
+        {
+            try
+            {
+                Trust.Apply(); // IDE-TRUST-017: Store.Remove for each removed entry
+            }
+            catch (IOException e)
+            {
+                Update();
+                await _dialogs.ShowMessageAsync(new MessageRequest("Msg.Trust.SaveFailed", [e.Message]));
+                return false;
+            }
+        }
+
         using (_settings.BeginBatch())
         {
             foreach (var field in changed)
@@ -459,14 +489,15 @@ public sealed class OptionsViewModel : DialogViewModel<bool>
         Update();
         await _settings.FlushAsync();
         await _keymap.FlushAsync();
+        return true;
     }
 
     private async Task OkAsync()
     {
         if (HasErrors)
             return;
-        await ApplyAsync();
-        Close(true);
+        if (await ApplyChangesAsync())
+            Close(true);
     }
 
     private void Update()
@@ -639,12 +670,13 @@ public sealed class OptionsViewModel : DialogViewModel<bool>
         Strings.ResourceManager.GetString(name, CultureInfo.CurrentCulture) ?? throw new InvalidOperationException($"Missing resource {name}.");
 
     private sealed class OpenHandler(ISettingsService settings, IKeymapService keymap, ILayoutService layout, IDialogService dialogs, FilePrompts prompts,
-        IThemeService theme, int implementedPhase, string? fixedPage, Build.IToolchainLocator? toolchain, Platform.IFileSystem? fileSystem, Editing.CodeTemplateService? templates) : ICommandHandler
+        IThemeService theme, int implementedPhase, string? fixedPage, Build.IToolchainLocator? toolchain, Platform.IFileSystem? fileSystem, Editing.CodeTemplateService? templates,
+        FreexComp.Build.ITrustStore? trustStore) : ICommandHandler
     {
         public bool CanExecute(string? argument) => true;
 
         public Task ExecuteAsync(string? argument) =>
             dialogs.ShowAsync(new OptionsViewModel(settings, keymap, layout, dialogs, prompts, theme.ActualTheme, fixedPage ?? argument, implementedPhase,
-                toolchain, fileSystem, templates));
+                toolchain, fileSystem, templates, trustStore));
     }
 }

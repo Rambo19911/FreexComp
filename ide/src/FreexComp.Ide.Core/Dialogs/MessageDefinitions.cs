@@ -67,6 +67,7 @@ public static class MessageDefinitions
         new("Msg.Project.ChangedOnDisk", Q, ["Reload", "Keep"]),
         new("Msg.Build.ToolchainMissing", E, ["OpenOptions", "Cancel"]),
         new("Msg.Build.OutputLocked", E, ["StopAndBuild", "Cancel"]),
+        new("Msg.Trust.SaveFailed", E, ["OK"]),
         new("Msg.Run.BuildFailedRunPrevious", Q, ["Cancel", "RunLastBuild"]),
         new("Msg.Run.NoExecutable", E, ["OK"]),
         new("Msg.Run.StartFailed", E, ["OK"]),

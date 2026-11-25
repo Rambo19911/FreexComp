@@ -100,6 +100,7 @@ public sealed class OptionsWindow : DialogWindow
                     {
                         OptionsViewModel.ColorsPage => ColorsPageView.Create(model.Colors),
                         OptionsViewModel.KeyMappingsPage => KeyMappingsPageView.Create(model.KeyMappings),
+                        OptionsViewModel.EnvironmentTrustPage => TrustedLocationsPageView.Create(model.Trust),
                         _ => CreatePage(model, page),
                     };
                 control.IsEnabled = !page.IsLaterPhase;

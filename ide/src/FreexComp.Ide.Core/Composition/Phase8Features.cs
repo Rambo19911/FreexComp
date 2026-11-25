@@ -21,6 +21,7 @@ public static class Phase8Features
         "file.openInTerminal", // F09-054
         "help.contents", // I-257
         "options:Environment.General.BuildJobs", // F01-010
+        "options:Environment.Trust", // F09-008
         "project.addNewFile", // F09-054
         "project.configurationManager", // F09-004
         "project.moveFile", // F09-054

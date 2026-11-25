@@ -17,7 +17,7 @@ namespace FreexComp.Ide.Tests.Views;
 /// <summary>The IDE Options dialog frame and the Editor › General / Editor › Display pages (dialogs.md §9, §9.1, §9.2).</summary>
 [Trait("Phase", "1")]
 [Trait("Kind", "Ui")]
-public sealed class OptionsDialogTests
+public sealed partial class OptionsDialogTests
 {
     /// <summary>dialogs.md §9.1: field id, label (mnemonic as <c>_</c>), key, enabled at the product's phase (pending tasks: disabled).</summary>
     private static readonly (string Field, string Label, ISettingKey Key, bool Enabled)[] GeneralFields =
@@ -170,7 +170,7 @@ public sealed class OptionsDialogTests
         Assert.Equal("Options", dlg.Window.Title);
         Assert.Equal((820.0, 580.0, true), (dlg.Window.Width, dlg.Window.Height, dlg.Window.CanResize));
         Assert.Equal((820.0, 580.0), (dlg.Window.MinWidth, dlg.Window.MinHeight));
-        Assert.Equal(["Editor", "Editor.General", "Editor.Display", "Editor.CodeTemplates", "Colors", "KeyMappings", "Environment", "Environment.General", "Environment.Files", "Designer", "ToolchainPaths"], VisiblePages(dlg));
+        Assert.Equal(["Editor", "Editor.General", "Editor.Display", "Editor.CodeTemplates", "Colors", "KeyMappings", "Environment", "Environment.General", "Environment.Files", "Environment.Trust", "Designer", "ToolchainPaths"], VisiblePages(dlg)); // Environment.Trust: I-268
         Assert.Equal("Editor › General", PageTitle(dlg)); // first time: Editor.General (UI-DLG-092)
         Assert.Equal("Dialog.Options.Filter", dlg.FocusedAutomationId);
 
@@ -325,7 +325,7 @@ public sealed class OptionsDialogTests
 
         // Cleared: every page is back, nothing is highlighted.
         SetText(dlg, "Filter", "");
-        Assert.Equal(["Editor", "Editor.General", "Editor.Display", "Editor.CodeTemplates", "Colors", "KeyMappings", "Environment", "Environment.General", "Environment.Files", "Designer", "ToolchainPaths"], VisiblePages(dlg));
+        Assert.Equal(["Editor", "Editor.General", "Editor.Display", "Editor.CodeTemplates", "Colors", "KeyMappings", "Environment", "Environment.General", "Environment.Files", "Environment.Trust", "Designer", "ToolchainPaths"], VisiblePages(dlg)); // Environment.Trust: I-268
         Assert.False(dlg.Find<TextBlock>("FilterEmpty").IsEffectivelyVisible);
         dlg.Click("Page.Editor.Display");
         Assert.False(IsHighlighted(dlg, "ShowLineNumbers"));
@@ -443,7 +443,7 @@ public sealed class OptionsDialogTests
         var running = h.Services.Commands.ExecuteAsync("tools.options", "Environment.General");
         var dlg = await h.WaitForDialogAsync("Options");
         Assert.Equal(["Editor", "Editor.General", "Editor.Display", "Editor.CodeTemplates", "Colors", "KeyMappings", "Environment",
-            "Environment.General", "Environment.Files", "Designer", "ToolchainPaths"], VisiblePages(dlg));
+            "Environment.General", "Environment.Files", "Environment.Trust", "Designer", "ToolchainPaths"], VisiblePages(dlg)); // Environment.Trust: I-268
 
         // Environment › General: every P1 field bound to its key; the theme combo lists the three values.
         Assert.Equal("Environment › General", PageTitle(dlg));

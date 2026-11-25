@@ -29,3 +29,4 @@ spec/ide/phase8-project-files.md
 spec/ide/library-source.md
 spec/ide/phase8-delivery.md
 spec/ide/phase8-configurations.md
+spec/ide/phase8-trust-prompt.md

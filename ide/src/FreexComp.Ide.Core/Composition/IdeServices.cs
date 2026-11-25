@@ -85,6 +85,9 @@ public sealed record IdeServices
     /// <summary>The Messages model (IDE-P3-060…068).</summary>
     public required Build.MessagesService Messages { get; init; }
 
+    /// <summary>Trust in project commands: the trust list and the question before a build (IDE-TRUST-001).</summary>
+    public required Build.ITrustService Trust { get; init; }
+
     /// <summary>Build, rebuild, clean (phase3-build-run.md §5).</summary>
     public required Build.BuildService Build { get; init; }
 

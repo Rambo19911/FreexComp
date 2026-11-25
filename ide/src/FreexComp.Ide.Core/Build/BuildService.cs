@@ -59,14 +59,18 @@ public sealed class BuildService : IBuildService
     private TaskCompletionSource<bool>? _forced;
     private IDisposable? _cancelTimer;
     private bool _internalError;
+    private bool _eventsSkipped;
     private string? _lockedOutput;
     private readonly IProcessLauncher _processes;
+    private readonly ITrustService _trust;
 
     public BuildService(IBuildEngine engine, IProjectService projects, IDocumentService documents, ISettingsService settings,
         IdeStateMachine state, IToolchainLocator toolchain, IOutputService output, MessagesService messages, IClock clock,
-        IUiDispatcher dispatcher, IDialogService dialogs, IStatusService status, ILog log, IProcessLauncher processes)
+        IUiDispatcher dispatcher, IDialogService dialogs, IStatusService status, ILog log, IProcessLauncher processes,
+        ITrustService trust)
     {
         _processes = processes;
+        _trust = trust;
         _engine = engine;
         _projects = projects;
         _documents = documents;
@@ -113,8 +117,8 @@ public sealed class BuildService : IBuildService
         _lockedOutput = null;
         if (kind == BuildKind.CheckSyntax)
             throw new ArgumentException("Check Syntax does not use the build engine (IDE-P3-055).", nameof(kind));
-        if (_projects.Project is not { } project || _state.Current.State != IdeState.Idle)
-            return null;
+        if (_projects.Project is not { } project || _state.Current.State != IdeState.Idle || _trust.IsPromptOpen)
+            return null; // IDE-TRUST-013: the state is still Idle while the question is open; no second build starts behind it
 
         // IDE-P3-012: the toolchain first; nothing is saved when it is missing.
         var toolchain = _toolchain.CheckForBuild(needsLlvm: true);
@@ -130,13 +134,31 @@ public sealed class BuildService : IBuildService
         if (_projects.Project is null || _state.Current.State != IdeState.Idle)
             return null;
 
+        // IDE-TRUST-003: after the save (the project file on disk is the one the engine reads), before Building.
+        var events = EventsPolicy.RequireTrust;
+        if (kind != BuildKind.Clean)
+        {
+            var trust = await _trust.CheckBeforeBuildAsync(project);
+            if (!trust.Proceed)
+            {
+                // IDE-TRUST-009: nothing is built or run; Messages and Output keep what they show.
+                _status.ShowMessage(Strings.Msg_Trust_BuildCancelled, TimeSpan.FromSeconds(5));
+                _output.Append(OutputChannels.Build, Strings.Msg_Trust_BuildCancelled, OutputKind.Ide);
+                return null;
+            }
+
+            events = trust.Events;
+            if (_projects.Project is null || _state.Current.State != IdeState.Idle)
+                return null;
+        }
+
         if (!_state.TryTransition(new IdeStateInfo(IdeState.Building, kind, false, null, null)))
             return null;
         BuildResult? result = null;
         var active = BeginActive();
         try
         {
-            result = await RunEngineAsync(project, kind);
+            result = await RunEngineAsync(project, kind, events);
             return result;
         }
         finally
@@ -313,15 +335,16 @@ public sealed class BuildService : IBuildService
         return true;
     }
 
-    private async Task<BuildResult?> RunEngineAsync(ProjectModel project, BuildKind kind)
+    private async Task<BuildResult?> RunEngineAsync(ProjectModel project, BuildKind kind, EventsPolicy events)
     {
         if (_settings.Get(SettingsCatalog.OutputClearOnBuild))
             _output.Clear(OutputChannels.Build);
         _messages.BeginBuild();
         _internalError = false;
         ShowBuildOutput?.Invoke();
-        if (_projects.Definition is { Events: var events } && (events.PreBuild.Length > 0 || events.PostBuild.Length > 0))
-            _output.Append(OutputChannels.Build, Strings.Msg_Project_EventsIgnored, OutputKind.Ide); // IDE-P3-036
+        _eventsSkipped = events == EventsPolicy.Skip;
+        if (!_eventsSkipped && _projects.Definition is { Events: var listed } && (listed.PreBuild.Length > 0 || listed.PostBuild.Length > 0))
+            _output.Append(OutputChannels.Build, Strings.Msg_Project_EventsIgnored, OutputKind.Ide); // IDE-P3-036; not after IDE-TRUST-007
 
         var paths = _toolchain.Resolve();
         var request = new BuildRequest
@@ -341,6 +364,8 @@ public sealed class BuildService : IBuildService
             RtlDirectory = paths.RtlDir,
             // IDE-P3-010: the framework and (P7) the data-access directory contribute <dir>\src, in that order.
             ExtraSearchPaths = [.. new[] { paths.FrameworkDir, paths.DataDir }.OfType<string>().Select(dir => Path.Combine(dir, "src"))],
+            Events = events, // IDE-TRUST-002: RequireTrust, or Skip for this one build; never Run
+            TrustStore = _trust.Store,
         };
 
         using var cts = new CancellationTokenSource();
@@ -454,6 +479,13 @@ public sealed class BuildService : IBuildService
                     FlushDiagnostics(diagnostics);
                     _output.Append(OutputChannels.Build, Format(Strings.Msg_Build_StartedHeader, Path.GetFileNameWithoutExtension(s.ProjectPath),
                         s.Configuration, s.Platform), OutputKind.Ide);
+                    if (_eventsSkipped)
+                    {
+                        // IDE-TRUST-007: directly after the (first) started header.
+                        _eventsSkipped = false;
+                        _output.Append(OutputChannels.Build, Strings.Msg_Trust_EventsSkipped, OutputKind.Ide);
+                    }
+
                     break;
                 case BuildEvent.Diagnostic { Value: var d }:
                     _output.Append(OutputChannels.Build, d.ToText(), d.Severity == DiagnosticSeverity.Error ? OutputKind.Error : OutputKind.Normal);

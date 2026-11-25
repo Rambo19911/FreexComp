@@ -90,6 +90,8 @@ public sealed class DialogDriver(DialogWindow window, string dialogName)
     public void Click(string id)
     {
         var control = TryFind<Control>(id) ?? Find<Control>("Button." + id);
+        control.BringIntoView(); // a row below the visible part of its list is scrolled to first, as a user would
+        Dispatcher.UIThread.RunJobs();
         var point = control.TranslatePoint(new Point(control.Bounds.Width / 2, control.Bounds.Height / 2), Window)
             ?? throw new InvalidOperationException($"'{id}' is not in dialog {Name}.");
         Window.MouseDown(point, MouseButton.Left);

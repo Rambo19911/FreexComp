@@ -11,12 +11,14 @@ public sealed class DialogButtonViewModel : ObservableObject
 {
     private readonly Func<Task> _execute;
     private bool _isEnabled = true;
+    private string _label;
+    private string _accessLabel;
 
     public DialogButtonViewModel(string id, string label, Func<Task> execute)
     {
         Id = id;
-        Label = label;
-        AccessLabel = label.Replace("_", "__", StringComparison.Ordinal);
+        _label = label;
+        _accessLabel = label.Replace("_", "__", StringComparison.Ordinal);
         _execute = execute;
     }
 
@@ -31,10 +33,19 @@ public sealed class DialogButtonViewModel : ObservableObject
 
     public string Id { get; }
 
-    public string Label { get; }
+    /// <summary>The label without a mnemonic mark; a dialog may change it while it is open (UI-DLG-292).</summary>
+    public string Label
+    {
+        get => _label;
+        set => SetProperty(ref _label, value);
+    }
 
     /// <summary>The label with its mnemonic marked by <c>_</c> (no mnemonic: the label with <c>_</c> doubled).</summary>
-    public string AccessLabel { get; set; }
+    public string AccessLabel
+    {
+        get => _accessLabel;
+        set => SetProperty(ref _accessLabel, value);
+    }
 
     public bool IsDefault { get; init; }
 
