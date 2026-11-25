@@ -11,7 +11,7 @@
     to its output directory. Libraries and test projects do not get them.
   -->
   <Target Name="CopyProductPages" AfterTargets="Build"
-          Condition="'$(MSBuildProjectName)' == 'FreexComp.Ide' or '$(MSBuildProjectName)' == 'opc' or '$(MSBuildProjectName)' == 'pbuild'">
+          Condition="'$(MSBuildProjectName)' == 'FreexComp.Ide' or '$(MSBuildProjectName)' == 'opc' or '$(MSBuildProjectName)' == 'pbuild' or '$(MSBuildProjectName)' == 'prc'">
     <Error Condition="!Exists('$(RepoRoot)NETWORK-POLICY.md')" Text="Policy file 'NETWORK-POLICY.md' is missing in the repository root." />
     <Copy SourceFiles="$(RepoRoot)NETWORK-POLICY.md" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
   </Target>
@@ -20,7 +20,7 @@
     Licence files shipped next to the tools: the four root files are copied to <output>/licenses/.
     Libraries and test projects do not get the folder.
   -->
-  <ItemGroup Condition="'$(MSBuildProjectName)' == 'FreexComp.Ide' or '$(MSBuildProjectName)' == 'opc' or '$(MSBuildProjectName)' == 'pbuild'">
+  <ItemGroup Condition="'$(MSBuildProjectName)' == 'FreexComp.Ide' or '$(MSBuildProjectName)' == 'opc' or '$(MSBuildProjectName)' == 'pbuild' or '$(MSBuildProjectName)' == 'prc'">
     <ProductLicenseFile Include="LICENSE;LICENSE-RUNTIME;NOTICE;THIRD-PARTY-NOTICES.txt" />
   </ItemGroup>
   <Target Name="CopyLicenseFiles" AfterTargets="Build" Condition="'@(ProductLicenseFile)' != ''">

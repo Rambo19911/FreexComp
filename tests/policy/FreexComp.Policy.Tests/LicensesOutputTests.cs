@@ -4,7 +4,7 @@ namespace FreexComp.Policy.Tests;
 [Trait("Phase", "8")]
 public sealed class LicensesOutputTests
 {
-    private static readonly string[] Tools = ["FreexComp.Ide", "opc", "pbuild"];
+    private static readonly string[] Tools = ["FreexComp.Ide", "opc", "pbuild", "prc"];
 
     [Fact]
     [Trait("Req", "NET-040")]

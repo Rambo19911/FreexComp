@@ -22,7 +22,7 @@ public sealed partial class NetworkPolicyTests
 
     private static readonly string[] RequiredAssemblies =
     [
-        "opc", "pbuild", "FreexComp.Compiler", "FreexComp.Build", "FreexComp.LanguageService", "FreexComp.Ide",
+        "opc", "pbuild", "prc", "FreexComp.Compiler", "FreexComp.Build", "FreexComp.LanguageService", "FreexComp.Ide",
         "FreexComp.Ide.Core", "FreexComp.Designer", "FreexComp.Debugger",
     ];
 
