@@ -68,6 +68,62 @@ public sealed class ImportTableTests
         });
     }
 
+    /// <summary>A console program that uses the rich edit binding unit: constants and record sizes only.</summary>
+    private const string RichEditProgram = """
+        program ImportCheckRichEdit;
+        uses
+          Windows, RichEdit;
+        var
+          CF: TCharFormat2W;
+        begin
+          CF.cbSize := SizeOf(CF);
+          Writeln(MSFTEDIT_CLASS, ' ', CF.cbSize, ' ', EM_SETTEXTEX, ' ', SizeOf(TEditStream), ' ', CP_ACP);
+        end.
+        """;
+
+    /// <summary>The same program without the rich edit unit: what <c>Windows</c> alone causes.</summary>
+    private const string WindowsOnlyProgram = """
+        program ImportCheckWindowsOnly;
+        uses
+          Windows;
+        begin
+          Writeln('RICHEDIT50W', ' ', 116, ' ', 1121, ' ', 20, ' ', CP_ACP);
+        end.
+        """;
+
+    /// <summary>
+    /// RTL-1025: unit <c>RichEdit</c> compiles with only <c>rtl/src</c> and <c>rtl/winapi/src</c> and declares no import:
+    /// a console program that uses it imports exactly the libraries the same program imports with <c>Windows</c> alone,
+    /// and neither the engine library nor <c>user32.dll</c>.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "RTL-1025")]
+    [Trait("Phase", "8")]
+    public async Task RichEditUnitAddsNoImport()
+    {
+        List<string> baseline = [];
+        await WithProgramAsync("ImportCheckWindowsOnly", WindowsOnlyProgram, async (exe, work) =>
+        {
+            baseline = ImportedDlls(await File.ReadAllBytesAsync(exe, TestContext.Current.CancellationToken));
+            var (exit, output) = await RunAsync(exe, "", work);
+            Assert.Equal(0, exit);
+            Assert.Equal("RICHEDIT50W 116 1121 20 0", output.TrimEnd());
+        });
+        Assert.Contains("kernel32.dll", baseline);
+
+        await WithProgramAsync("ImportCheckRichEdit", RichEditProgram, async (exe, work) =>
+        {
+            var dlls = ImportedDlls(await File.ReadAllBytesAsync(exe, TestContext.Current.CancellationToken));
+            Assert.Equal(baseline.Order(StringComparer.Ordinal), dlls.Order(StringComparer.Ordinal));
+            Assert.DoesNotContain("msftedit.dll", dlls);
+            Assert.DoesNotContain("user32.dll", dlls);
+
+            var (exit, output) = await RunAsync(exe, "", work);
+            Assert.Equal(0, exit);
+            Assert.Equal("RICHEDIT50W 116 1121 20 0", output.TrimEnd());
+        });
+    }
+
     /// <summary>Compiles <paramref name="text"/> against <c>rtl/src</c> in a fresh directory and hands the exe to <paramref name="check"/>.</summary>
     private static async Task WithProgramAsync(string name, string text, Func<string, string, Task> check)
     {

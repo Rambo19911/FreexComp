@@ -1,0 +1,118 @@
+# library and class
+ok LoadLibraryExW(MSFTEDIT_DLL)
+ok RegisterClassExW
+ok parent
+ok MSFTEDIT_CLASS
+ok parent stays hidden
+# text (EM_SETTEXTEX, EM_GETTEXTLENGTHEX, EM_GETTEXTEX)
+ok EM_SETTEXTEX
+ok GTL_DEFAULT
+ok GTL_USECRLF
+ok GT_DEFAULT
+ok GT_USECRLF
+ok EM_SETTEXTEX sample
+ok GTL_NUMCHARS
+ok sample text
+# selection (EM_EXSETSEL, EM_EXGETSEL, EM_GETSELTEXT, EM_HIDESELECTION)
+ok EM_EXSETSEL
+ok EM_EXGETSEL cpMin
+ok EM_EXGETSEL cpMax
+ok EM_GETSELTEXT
+ok selected text
+ok EM_HIDESELECTION keeps the selection
+# character format (EM_SETCHARFORMAT, EM_GETCHARFORMAT)
+ok EM_SETCHARFORMAT bold + colour
+ok CFE_BOLD read back
+ok CFE_AUTOCOLOR cleared by a colour
+ok crTextColor
+ok dwMask names every attribute of a uniform selection
+ok other effects are off
+ok yHeight
+ok szFaceName
+ok text outside the range is not bold
+ok CFE_AUTOCOLOR outside the range
+ok SCF_DEFAULT is not bold
+ok a mixed selection does not name CFM_BOLD
+ok a mixed selection still names CFM_ITALIC
+# paragraph format (EM_SETPARAFORMAT, EM_GETPARAFORMAT)
+ok PFA_LEFT is the initial alignment
+ok no tab stop initially
+ok EM_SETPARAFORMAT alignment + tab stop
+ok PFA_CENTER
+ok cTabCount
+ok rgxTabs[0]
+ok EM_GETPARAFORMAT mask
+ok dwMask is the result
+# streams (EM_STREAMOUT, EM_STREAMIN)
+ok EM_STREAMOUT SF_TEXT
+ok dwError
+ok dwCookie reaches the callback
+ok SF_TEXT bytes
+ok SF_UNICODE writes two bytes per character
+ok SFF_SELECTION
+ok EM_STREAMOUT SF_RTF
+ok dwError after SF_RTF
+ok the stream starts with {\rtf
+ok clear
+ok empty
+ok EM_STREAMIN SF_RTF
+ok dwError after EM_STREAMIN
+ok dwCookie reaches the read callback
+ok the whole stream was read
+ok text after the round trip
+ok bold after the round trip
+ok colour after the round trip
+ok alignment after the round trip
+# find (EM_FINDTEXTEXW) and range text (EM_GETTEXTRANGE)
+ok FR_DOWN
+ok chrgText.cpMin
+ok chrgText.cpMax
+ok case is ignored without FR_MATCHCASE
+ok FR_MATCHCASE
+ok part of a word
+ok FR_WHOLEWORD
+ok forward finds the first
+ok without FR_DOWN the search runs backwards
+ok EM_GETTEXTRANGE
+ok range text
+# background colour (EM_SETBKGNDCOLOR)
+ok EM_SETBKGNDCOLOR returns the previous colour
+# event mask (EM_SETEVENTMASK, EM_GETEVENTMASK)
+ok ENM_NONE initially
+ok EM_SETEVENTMASK returns the previous mask
+ok EM_GETEVENTMASK
+ok mask off
+# undo and redo (EM_SETUNDOLIMIT, EM_REDO, EM_CANREDO, ST_KEEPUNDO, ST_SELECTION)
+ok EM_SETUNDOLIMIT
+ok ST_DEFAULT empties the undo list
+ok EM_CANREDO with nothing undone
+ok ST_SELECTION replaces the selection only
+ok ST_KEEPUNDO keeps the change undoable
+ok EM_UNDO
+ok text after undo
+ok EM_CANREDO
+ok EM_REDO
+ok text after redo
+ok EM_CANREDO after redo
+# zoom (EM_SETZOOM, EM_GETZOOM)
+ok EM_SETZOOM
+ok EM_GETZOOM
+ok numerator
+ok denominator
+ok zoom off
+# URL detection (EM_AUTOURLDETECT, EM_GETAUTOURLDETECT)
+ok off initially
+ok EM_AUTOURLDETECT on
+ok EM_GETAUTOURLDETECT
+ok a detected URL carries CFE_LINK
+ok plain text does not
+ok EM_AUTOURLDETECT off
+ok off again
+# text limit and target device (EM_EXLIMITTEXT, EM_SETTARGETDEVICE)
+ok EM_EXLIMITTEXT
+ok EM_SETTARGETDEVICE: wrap to the window
+# clean up
+ok DestroyWindow parent
+ok UnregisterClassW
+ok FreeLibrary
+# passed 103 failed 0

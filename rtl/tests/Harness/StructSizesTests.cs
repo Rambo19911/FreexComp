@@ -20,7 +20,7 @@ public sealed class StructSizesTests
     public sealed record Row(string Name, int Size, params (string Field, int Offset)[] Offsets);
 
     /// <summary>The units the generated program uses (besides TestKit).</summary>
-    public static readonly string[] Units = ["Types", "Windows", "CommCtrl", "CommDlg", "ShellAPI", "ActiveX"];
+    public static readonly string[] Units = ["Types", "Windows", "CommCtrl", "CommDlg", "ShellAPI", "ActiveX", "RichEdit"];
 
     /// <summary>
     /// winapi.md §4 table: the Types rows (RTL-600, R-038), the kernel32 rows, the user32 rows (R-109), the gdi32 rows (R-110), the comctl32 rows
@@ -135,6 +135,20 @@ public sealed class StructSizesTests
         new("TVariantArg", 24, ("wReserved1", 2), ("lVal", 8), ("bstrVal", 8), ("byRef", 8)),
         new("TDispParams", 24, ("rgdispidNamedArgs", 8), ("cArgs", 16), ("cNamedArgs", 20)),
         new("TExcepInfo", 64, ("bstrSource", 8), ("bstrHelpFile", 24), ("dwHelpContext", 32), ("pvReserved", 40), ("pfnDeferredFillIn", 48), ("scode", 56)),
+
+        // rich edit rows (R-235; RTL-1023, RTL-1024): 4-byte packing, so pointer-sized members are not aligned to 8
+        new("TCharRange", 8, ("cpMax", 4)),
+        new("TTextRangeW", 16, ("lpstrText", 8)),
+        new("TFindTextExW", 24, ("lpstrText", 8), ("chrgText", 16)),
+        new("TCharFormat2W", 116, ("crTextColor", 20), ("bCharSet", 24), ("szFaceName", 26), ("wWeight", 90), ("crBackColor", 96), ("sStyle", 108), ("bUnderlineColor", 115)),
+        new("TParaFormat2", 188, ("wNumbering", 8), ("dxStartIndent", 12), ("wAlignment", 24), ("cTabCount", 26), ("rgxTabs", 28), ("dySpaceBefore", 156), ("sStyle", 168), ("wBorders", 186)),
+        new("TEditStream", 20, ("dwError", 8)),
+        new("TGetTextLengthEx", 8, ("codepage", 4)),
+        new("TGetTextEx", 28, ("codepage", 8), ("lpDefaultChar", 12), ("lpUsedDefChar", 20)),
+        new("TSetTextEx", 8, ("codepage", 4)),
+        new("TENLink", 52, ("msg", 24), ("wParam", 28), ("lParam", 36), ("chrg", 44)),
+        new("TSelChange", 36, ("chrg", 24), ("seltyp", 32)),
+        new("TENProtected", 52, ("msg", 24), ("wParam", 28), ("lParam", 36), ("chrg", 44)),
     ];
 
     [Fact]

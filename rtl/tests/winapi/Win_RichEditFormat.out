@@ -1,0 +1,74 @@
+# library and class
+ok LoadLibraryExW(MSFTEDIT_DLL)
+ok RegisterClassExW
+ok parent
+ok MSFTEDIT_CLASS
+ok parent stays hidden
+ok EM_SETTEXTEX sample
+# character effects, size, face, character set
+ok set italic
+ok CFE_ITALIC
+ok set underline
+ok CFE_UNDERLINE
+ok set strikeout
+ok CFE_STRIKEOUT
+ok set link
+ok CFE_LINK
+ok clear link
+ok set size and face
+ok CFM_SIZE
+ok CFM_FACE
+ok set character set
+ok CFM_CHARSET
+ok size kept when CFM_SIZE is not named
+ok a selection of two character sets does not name CFM_CHARSET
+ok size of the other text is unchanged
+ok SCF_ALL
+ok SCF_ALL reaches text outside the selection
+ok SCF_ALL clear
+# paragraph indents and bullet
+ok EM_SETPARAFORMAT indents + bullet
+ok PFA_RIGHT
+ok PFM_STARTINDENT
+ok PFM_RIGHTINDENT
+ok PFM_OFFSET
+ok PFN_BULLET
+ok MAX_TAB_STOPS
+ok rgxTabs holds MAX_TAB_STOPS positions
+# event mask and notifications
+ok ENM_NONE initially
+ok no EN_SELCHANGE without its mask
+ok no EN_CHANGE without its mask
+ok EM_SETEVENTMASK returns the previous mask
+ok EM_GETEVENTMASK
+ok EN_SELCHANGE
+ok SELCHANGE.nmhdr.code
+ok SELCHANGE.nmhdr.hwndFrom
+ok SELCHANGE.chrg.cpMin
+ok SELCHANGE.chrg.cpMax
+ok SEL_TEXT
+ok SEL_EMPTY
+ok empty selection position
+ok EN_CHANGE under ENM_CHANGE
+ok EM_REPLACESEL
+ok set protected
+ok CFE_PROTECTED
+ok EN_PROTECTED
+ok ENPROTECTED.nmhdr.code
+ok ENPROTECTED.nmhdr.hwndFrom
+ok ENPROTECTED.chrg.cpMin
+ok ENPROTECTED.chrg.cpMax
+ok the refused change left the text alone
+ok a refused format change fails
+ok EN_PROTECTED for a format change
+ok ENPROTECTED.msg
+ok ENPROTECTED.wParam
+ok ENPROTECTED.lParam
+ok clear protected
+ok protection removed
+ok mask off
+# clean up
+ok DestroyWindow parent
+ok UnregisterClassW
+ok FreeLibrary
+# passed 68 failed 0

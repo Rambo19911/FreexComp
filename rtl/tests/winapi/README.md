@@ -12,6 +12,11 @@ declares for comctl32;
 `rtl/tests/LongPathKit.pas`, which reads the system long-path policy with them).
 `AX_Layouts` calls every function the `ActiveX` unit declares for oleaut32, ole32 and shlwapi and checks its record
 layouts (com-support.md section 2).
+`Win_RichEditLayouts` checks the record layouts of the `RichEdit` unit (4-byte packing); `Win_RichEditSmoke` and
+`Win_RichEditFormat` (the second half: one program grew too long) use its messages, flags and records against a
+control of the engine created under a hidden window, through the shared unit `rtl/tests/RichEditKit.pas`. The unit declares
+no function. Not exercised against the system: the `EN_LINK` notification (the engine sends it for mouse input over
+a link only), so `EN_LINK` and the use of `TENLink` rest on the reference pages and the layout test.
 Exceptions:
 
 | Function | Covered by |

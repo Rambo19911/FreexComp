@@ -38,6 +38,7 @@
     "Winapi.CommCtrl": "CommCtrl",
     "Winapi.CommDlg": "CommDlg",
     "Winapi.Messages": "Messages",
+    "Winapi.RichEdit": "RichEdit",
     "Winapi.ShellAPI": "ShellAPI",
     "Winapi.Windows": "Windows"
   }
