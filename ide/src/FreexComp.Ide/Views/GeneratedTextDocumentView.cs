@@ -44,6 +44,10 @@ public sealed class GeneratedTextDocumentView : Decorator, ICommandTarget
         Bind(TextEditor.FontFamilyProperty, "FxcFontMono");
         Bind(TextEditor.FontSizeProperty, "FxcTypeCodeSize");
         _editor.TextArea.Bind(AvaloniaEdit.Editing.TextArea.SelectionBrushProperty, _editor.TextArea.GetResourceObservable("FxcEditorSelectionBgBrush"));
+        // I-257: the text keeps space.4 free at the left; at x = 0 the first glyph of every line was cut by the tab's edge.
+        var padding = new Border();
+        padding.Bind(WidthProperty, padding.GetResourceObservable("FxcSpace4"));
+        _editor.TextArea.LeftMargins.Add(padding);
         _editor.TextArea.TextView.BackgroundRenderers.Add(new FindMatchRenderer(this, () => _find));
         _editor.TextArea.Caret.PositionChanged += (_, _) => MirrorSelection();
         _editor.TextArea.SelectionChanged += (_, _) => MirrorSelection();

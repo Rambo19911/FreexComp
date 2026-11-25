@@ -124,6 +124,11 @@ public sealed partial class VisualSnapshotTests
                         defects.Add((variant, $"cut: {AutomationIds.Get(control)} — {hidden}"));
                 }
 
+                // The text keeps its left padding: no glyph touches the left edge of the tab's content.
+                var textLeft = editor.TextArea.TextView.TranslatePoint(default, editor)!.Value.X;
+                if (textLeft < 8)
+                    defects.Add((variant, $"the text starts {textLeft} px from the left edge"));
+
                 // Heading lines are styled by the help colorizer; body lines are not.
                 Assert.Single(editor.TextArea.TextView.LineTransformers.OfType<HelpHeadingColorizer>());
                 Assert.StartsWith("# ", editor.Document.GetText(editor.Document.GetLineByNumber(1)), StringComparison.Ordinal);

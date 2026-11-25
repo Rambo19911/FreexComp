@@ -1,3 +1,4 @@
+using Avalonia;
 using Avalonia.Headless.XUnit;
 using Avalonia.Threading;
 using AvaloniaEdit;
@@ -88,5 +89,27 @@ public sealed class HelpTests
         dlg.Click("Cancel");
         await running;
         Assert.Empty(h.Services.Documents.Documents.OfType<GeneratedTextDocumentViewModel>());
+    }
+
+    /// <summary>
+    /// I-257: the text of a generated document (Keyboard Shortcuts, a help page: one view) does not start at the left
+    /// edge of its tab, where the first glyph of every line was cut: the text area keeps 8 px free before it.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Phase", "8")]
+    [Trait("Req", "UI-MENU-030")]
+    public async Task GeneratedDocumentTextKeepsLeftPadding()
+    {
+        await using var h = await HeadlessHarness.StartAsync();
+        await h.ExecuteAsync("help.keyboardShortcuts");
+        Dispatcher.UIThread.RunJobs();
+        var editor = h.Find<TextEditor>("Document.KeyboardShortcuts");
+        var view = editor.TextArea.TextView;
+        var left = view.TranslatePoint(default, editor)!.Value.X;
+        Assert.True(left >= 8, $"the text starts {left} px from the left edge of the document");
+
+        // Also when the text is scrolled to its start and the first column is asked for: column 1 lies inside the view.
+        var first = view.GetVisualPosition(new AvaloniaEdit.TextViewPosition(1, 1), AvaloniaEdit.Rendering.VisualYPosition.LineTop);
+        Assert.True(view.TranslatePoint(first - view.ScrollOffset, editor)!.Value.X >= 8);
     }
 }
