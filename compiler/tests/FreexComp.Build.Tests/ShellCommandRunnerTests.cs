@@ -313,10 +313,22 @@ public sealed class ShellCommandRunnerTests : IDisposable
         var pid = 0;
         var runner = new ShellCommandRunner { ProcessStarted = id => pid = id };
         var lines = new List<string>();
+        var delivered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
         var run = runner.RunAsync($"echo started& \"{Interpreter}\" /d /c \"set /p X=<\\\\.\\pipe\\{pipeName}\"& echo never", _dir,
-            line => { lock (lines) { lines.Add(line); } }, _ => { }, cts.Token);
+            line =>
+            {
+                lock (lines)
+                {
+                    lines.Add(line);
+                }
+
+                delivered.TrySetResult();
+            }, _ => { }, cts.Token);
         await pipe.WaitForConnectionAsync(TestContext.Current.CancellationToken).WaitAsync(Limit, TestContext.Current.CancellationToken);   // the child runs and waits
+        // C-341: the line is in the pipe by now, but only the runner's reader thread hands it over, and a cancel ends the
+        // delivery at once (CMP-1269 promises the kill, not the lines still unread) — so the cancel waits for the line
+        await delivered.Task.WaitAsync(Limit, TestContext.Current.CancellationToken);
         Assert.False(run.IsCompleted);
         await cts.CancelAsync();
 
@@ -328,6 +340,54 @@ public sealed class ShellCommandRunnerTests : IDisposable
         lock (lines)
         {
             Assert.Equal(["started"], lines);                                    // nothing after the kill
+        }
+    }
+
+    /// <summary>
+    /// C-341: the cancel arrives when the command has written a line and its child waits, but the runner has read nothing yet —
+    /// the hook holds the runner between the start of the interpreter and the start of its pipe readers until the cancel is
+    /// requested (on a loaded machine the reader threads can be that late by themselves). The tree is killed all the same.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "CMP-1269")]
+    public async Task Cancellation_BeforeTheRunnerReadTheOutput_StillKillsTheTree()
+    {
+        var pipeName = "freexcomp-test-" + Guid.NewGuid().ToString("N");
+        await using var pipe = new NamedPipeServerStream(pipeName, PipeDirection.InOut, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        using var cancelRequested = new ManualResetEventSlim();
+        var pid = 0;
+        var runner = new ShellCommandRunner
+        {
+            ProcessStarted = id =>
+            {
+                pid = id;
+                cancelRequested.Wait();
+            },
+        };
+        var lines = new List<string>();
+        Task<int> run;
+        try
+        {
+            // on a pool thread: the hook blocks the call until the cancel is requested
+            run = Task.Run(() => runner.RunAsync($"echo started& \"{Interpreter}\" /d /c \"set /p X=<\\\\.\\pipe\\{pipeName}\"& echo never", _dir,
+                line => { lock (lines) { lines.Add(line); } }, _ => { }, cts.Token), TestContext.Current.CancellationToken);
+            await pipe.WaitForConnectionAsync(TestContext.Current.CancellationToken).WaitAsync(Limit, TestContext.Current.CancellationToken);   // the child runs and waits
+            await cts.CancelAsync();
+        }
+        finally
+        {
+            cancelRequested.Set();
+        }
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => run.WaitAsync(Limit, TestContext.Current.CancellationToken));
+        Assert.NotEqual(0, pid);
+        Assert.True(HasExited(pid), "the cancelled interpreter is still running");
+        // the child held the only client end of the pipe: the pipe ends exactly when that process is gone
+        Assert.Equal(0, await ReadToEndOfPipeAsync(pipe));
+        lock (lines)
+        {
+            Assert.DoesNotContain("never", lines);                               // nothing after the kill; "started" may be unread
         }
     }
 

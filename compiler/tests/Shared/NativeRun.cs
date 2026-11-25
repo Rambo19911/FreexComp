@@ -97,7 +97,7 @@ internal static class NativeRun
     private static readonly Encoding Utf8 = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
 
     /// <summary>Kills the process tree and reaps it; the reap is bounded by the test's token, not a fixed wall-clock wait (C-259).</summary>
-    private static async Task KillAsync(Process process, CancellationToken ct)
+    internal static async Task KillAsync(Process process, CancellationToken ct)
     {
         try
         {
@@ -340,7 +340,17 @@ internal sealed class RunLimit : IDisposable
         }
     }
 
-    /// <summary>CPU time, whether the process still runs, and each thread's state (and wait reason).</summary>
+    /// <summary>
+    /// What a report says of a process that still runs, as a regular expression: the wall and CPU time and every thread — a
+    /// waiting one as <c>wait:</c> and what it waits for, any other by its state. Which of the two a thread is depends on the
+    /// moment of the stop (C-341), so a test that cannot wait for the program's wait asserts this and no particular state.
+    /// </summary>
+    public const string StillRunningPattern = @" s wall, \d+\.\d s CPU, still running, threads \[((wait:\w+|(?!Wait\b)\w+)(, |\]))+";
+
+    /// <summary>
+    /// CPU time, whether the process still runs, and each thread's state (and wait reason) — as they are at this moment: a
+    /// program that has not reached its wait yet (a loaded machine) shows as ready or running, or in a wait of its start (C-341).
+    /// </summary>
     private static string State(Process? process)
     {
         if (process is null)

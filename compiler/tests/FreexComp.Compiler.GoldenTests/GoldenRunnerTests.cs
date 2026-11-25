@@ -50,7 +50,10 @@ public sealed class GoldenRunnerTests : IDisposable
         TestContext.Current.TestOutputHelper?.WriteLine(failure ?? "");
         Assert.NotNull(failure);
         Assert.Contains("program stopped: wall-clock limit 2.0 s reached: Blocked.exe stopped after ", failure);
-        Assert.Contains("still running, threads [wait:", failure);
+        // C-341: the cap counts from the start of the program, and on a loaded machine the program has not reached its wait by
+        // then — the state is the one at the stop, so this asserts the times and the thread states, not a waiting thread (that
+        // one is proven where the test can wait for it: NativeRunTests.BlockedHang_IsStoppedByTheWallCap_WithTheWaitingThreads)
+        Assert.Matches(FreexComp.Tests.Shared.RunLimit.StillRunningPattern, failure);
         const string kept = "(work directory: ";
         GoldenRunner.TryDelete(failure[(failure.LastIndexOf(kept, StringComparison.Ordinal) + kept.Length)..].TrimEnd(')'));
     }

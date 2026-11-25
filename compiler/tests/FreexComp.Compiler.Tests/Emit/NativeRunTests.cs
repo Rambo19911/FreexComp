@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using FreexComp.Tests.Shared;
 
 namespace FreexComp.Compiler.Tests.Emit;
@@ -5,6 +6,7 @@ namespace FreexComp.Compiler.Tests.Emit;
 /// <summary>
 /// C-249: the native run limit is load-tolerant — the program's CPU time, not the wall clock, decides a busy hang; a
 /// blocked program meets the wall-clock cap; a stopped run reports elapsed time and process state.
+/// C-341: that state is the one at the stop — a test that expects a waiting thread first waits until the program waits.
 /// </summary>
 [Trait("Phase", "2")]
 public sealed class NativeRunTests
@@ -54,13 +56,29 @@ public sealed class NativeRunTests
     {
         var (exe, dir) = EmitTests.Build("Blocked",
             "program Blocked; procedure Sleep(Ms: Cardinal); stdcall; external 'kernel32.dll'; begin Sleep($FFFFFFFF); end.", OptimizationLevel.O0);
+        var ct = TestContext.Current.CancellationToken;
+        string? report;
 
-        var failure = await Assert.ThrowsAsync<Xunit.Sdk.FailException>(() =>
-            NativeRun.RunAsync(exe, dir, _ => { }, _ => { }, 20 * S, S, TestContext.Current.CancellationToken));
+        // C-341: the report shows the threads as they are at the stop, so the cap is counted from the moment the program is in
+        // its wait — counted from the start, a cap of any fixed length can run out before that on a loaded machine
+        using var process = Process.Start(new ProcessStartInfo(exe) { UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = dir })!;
+        try
+        {
+            await MainThreadSleepsAsync(process, ct);
+            using var limit = new RunLimit(Path.GetFileName(exe), 20 * S, S, ct);
+            limit.Attach(process.Id);
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Task.Delay(Timeout.InfiniteTimeSpan, limit.Token));
+            report = limit.Report;
+        }
+        finally
+        {
+            await NativeRun.KillAsync(process, ct);
+        }
 
-        TestContext.Current.TestOutputHelper?.WriteLine(failure.Message);
-        Assert.StartsWith("wall-clock limit 1.0 s reached: Blocked.exe stopped after ", failure.Message);
-        Assert.Contains("still running, threads [wait:", failure.Message);
+        Assert.NotNull(report);
+        TestContext.Current.TestOutputHelper?.WriteLine(report);
+        Assert.StartsWith("wall-clock limit 1.0 s reached: Blocked.exe stopped after ", report);
+        Assert.Contains("still running, threads [wait:ExecutionDelay", report);  // the program's own wait, not one of its start
         TestDirectories.Delete(dir);
     }
 
@@ -79,5 +97,57 @@ public sealed class NativeRunTests
         Assert.Equal(0, exitCode);
         Assert.Equal(["done"], stdout);
         TestDirectories.Delete(dir);
+    }
+
+    /// <summary>
+    /// C-341: the state in the report is read at the stop, whatever the program does then. A program that is still on its way
+    /// to its wait when the cap runs out — on a loaded machine any program; here one that never gets there — is reported with
+    /// the states its threads have: a waiting thread with what it waits for, any other with its state.
+    /// </summary>
+    [Fact]
+    [Trait("Kind", "Native")]
+    [Trait("Category", "Toolchain")]
+    public async Task WallCap_ReportsThreadStates_AlsoWhenTheProgramHasNotReachedItsWait()
+    {
+        var (exe, dir) = EmitTests.Build("Late",
+            "program Late; procedure Sleep(Ms: Cardinal); stdcall; external 'kernel32.dll'; var I: Integer; "
+            + "begin I := 0; while I >= 0 do I := (I + 1) and 1023; Sleep($FFFFFFFF); end.", OptimizationLevel.O0);
+
+        var failure = await Assert.ThrowsAsync<Xunit.Sdk.FailException>(() =>
+            NativeRun.RunAsync(exe, dir, _ => { }, _ => { }, 20 * S, S, TestContext.Current.CancellationToken));
+
+        TestContext.Current.TestOutputHelper?.WriteLine(failure.Message);
+        Assert.StartsWith("wall-clock limit 1.0 s reached: Late.exe stopped after ", failure.Message);
+        Assert.Matches(RunLimit.StillRunningPattern + "$", failure.Message);
+        TestDirectories.Delete(dir);
+    }
+
+    /// <summary>
+    /// Completes when the main thread of <paramref name="process"/> is in the wait of <c>Sleep</c>; from then on it stays there.
+    /// The system has no event for "a thread began to wait", so the state is sampled — the reading the report of a stop takes —
+    /// until it holds, at most for the wall cap of every native run and the test's token.
+    /// </summary>
+    private static async Task MainThreadSleepsAsync(Process process, CancellationToken ct)
+    {
+        using var limit = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        limit.CancelAfter(NativeRun.WallLimit);
+        using var sample = new PeriodicTimer(TimeSpan.FromMilliseconds(10));
+        try
+        {
+            do
+            {
+                process.Refresh();
+                if (process.Threads.Count > 0 && process.Threads[0].ThreadState == System.Diagnostics.ThreadState.Wait
+                    && process.Threads[0].WaitReason == ThreadWaitReason.ExecutionDelay)
+                {
+                    return;
+                }
+            }
+            while (await sample.WaitForNextTickAsync(limit.Token));
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            Assert.Fail($"{process.ProcessName} did not reach its wait within {NativeRun.Seconds(NativeRun.WallLimit)}");
+        }
     }
 }
