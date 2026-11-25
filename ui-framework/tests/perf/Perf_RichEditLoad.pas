@@ -15,21 +15,11 @@ const
   FileSize = 5 * 1024 * 1024;
   Loads = 5;
 
-type
-  TGetThreadTimes = function(hThread: THandle; var lpCreationTime, lpExitTime, lpKernelTime,
-    lpUserTime: TFileTime): BOOL; stdcall;
-
-var
-  { the Windows unit has no binding for GetThreadTimes: the function is looked up in kernel32 by name }
-  GetThreadTimes: TGetThreadTimes;
-
 { CPU time of the calling thread (kernel + user) in units of 100 ns }
 function ThreadCpu: Int64;
 var
   Created, Exited, Kernel, User: TFileTime;
 begin
-  if not Assigned(GetThreadTimes) then
-    GetThreadTimes := TGetThreadTimes(GetProcAddress(GetModuleHandleW(kernel32), 'GetThreadTimes'));
   GetThreadTimes(GetCurrentThread, Created, Exited, Kernel, User);
   Result := (Int64(Kernel.dwHighDateTime) shl 32 or Kernel.dwLowDateTime)
     + (Int64(User.dwHighDateTime) shl 32 or User.dwLowDateTime);

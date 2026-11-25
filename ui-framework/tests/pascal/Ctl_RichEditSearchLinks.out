@@ -18,7 +18,9 @@ ok engine positions: a paragraph break counts once
 ok the match in the third paragraph
 ok without a handle: -1
 # AutoURLDetect (UIF-1331)
-ok off (default): nothing is marked
+ok on by default
+ok switched off: the engine does not detect
+ok off: nothing is marked
 ok no link, no OnLinkClick
 ok the engine detects URLs
 ok existing text is scanned when the property becomes True
@@ -94,4 +96,4 @@ ok kept without a window
 ok clamped without a window
 ok pushed to the new window
 ok Zoom never changes a stored size
-# passed 89 failed 0
+# passed 91 failed 0

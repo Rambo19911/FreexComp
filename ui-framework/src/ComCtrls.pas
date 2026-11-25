@@ -1184,7 +1184,7 @@ type
     procedure ApplyMaxLength; override;
     function GetCaretPos: TPoint; override;
     procedure SetCaretPos(const Value: TPoint); override;
-    property AutoURLDetect: Boolean read FAutoURLDetect write SetAutoURLDetect default False;
+    property AutoURLDetect: Boolean read FAutoURLDetect write SetAutoURLDetect default True;
     property PlainText: Boolean read FPlainText write FPlainText default False;
     property Zoom: Integer read GetZoom write SetZoom default 100;
     property OnLinkClick: TRichEditLinkClickEvent read FOnLinkClick write FOnLinkClick;
@@ -5670,6 +5670,7 @@ constructor TCustomRichEdit.Create(AOwner: TComponent);
 begin
   inherited Create(AOwner);
   FZoom := 100;
+  FAutoURLDetect := True;
   AutoSelect := False;
   FSelAttributes := TTextAttributes.Create(Self, atSelected);
   FDefAttributes := TTextAttributes.Create(Self, atDefaultText);

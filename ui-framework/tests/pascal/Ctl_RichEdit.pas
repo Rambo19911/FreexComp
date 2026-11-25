@@ -30,6 +30,7 @@ type
 
 const
   CRLF = #13#10;
+  Linked = 'see https://example.org/page now';
   Tall = '1'#13#10'2'#13#10'3'#13#10'4'#13#10'5'#13#10'6'#13#10'7'#13#10'8'#13#10'9'#13#10'10'#13#10'11'#13#10'12';
   Wide = 'a line that is much wider than the control when the words are not wrapped at its right edge';
 
@@ -197,10 +198,25 @@ begin
   CheckEqI(2, M.Lines.Count, Kind + ': two lines');
 end;
 
+{ True when the character at Pos is marked as a link by the engine }
+function IsLink(R: TRichEdit; Pos: Integer): Boolean;
+var
+  CR: TCharRange;
+  CF: TCharFormat2W;
+begin
+  CR.cpMin := Pos;
+  CR.cpMax := Pos + 1;
+  SendMessageW(R.Handle, EM_EXSETSEL, 0, LPARAM(@CR));
+  FillChar(CF, SizeOf(CF), 0);
+  CF.cbSize := SizeOf(CF);
+  SendMessageW(R.Handle, EM_GETCHARFORMAT, SCF_SELECTION, LPARAM(@CF));
+  Result := (CF.dwEffects and CFE_LINK) <> 0;
+end;
+
 procedure Run;
 var
   F: TForm;
-  M: TRichEdit;
+  M, U: TRichEdit;
   SF: TRichForm;
   H: HWND;
   P: TPoint;
@@ -219,7 +235,7 @@ begin
     CheckEqI(185, M.Width, 'Width 185');
     CheckEqI(89, M.Height, 'Height 89');
     CheckEqB(True, M.Alignment = taLeftJustify, 'Alignment');
-    CheckEqB(False, M.AutoURLDetect, 'AutoURLDetect');
+    CheckEqB(True, M.AutoURLDetect, 'AutoURLDetect is True');
     CheckEqB(True, M.BorderStyle = bsSingle, 'BorderStyle');
     CheckEqB(True, M.Color = clWindow, 'Color clWindow');
     CheckEqB(True, M.HideSelection, 'HideSelection');
@@ -502,6 +518,26 @@ begin
     CheckEqI(200, M.Zoom, 'zoom');
     CheckEqS('B', Bold(M, 0, 12), 'the content has the font of the control');
 
+    Section('AutoURLDetect is on in a new control (UIF-1331)');
+    U := TRichEdit.Create(F);
+    U.Text := Linked;
+    U.Parent := F;
+    CheckEqB(True, SendMessageW(U.Handle, EM_GETAUTOURLDETECT, 0, 0) <> 0, 'the engine detects URLs without the property being set');
+    CheckEqB(True, IsLink(U, 6), 'a URL in text set before the handle is a link');
+    CheckEqB(False, IsLink(U, 1), 'the text before that URL is no link');
+    U.Text := 'go to ' + Linked + '!';
+    CheckEqB(True, IsLink(U, 12), 'a URL in text set after the handle is a link');
+    CheckEqB(False, IsLink(U, 3), 'the text before it is no link');
+    CheckEqB(False, IsLink(U, 35), 'the text after it is no link');
+    U.Free;
+    U := TRichEdit.Create(F);
+    U.AutoURLDetect := False;
+    U.Text := Linked;
+    U.Parent := F;
+    CheckEqB(False, SendMessageW(U.Handle, EM_GETAUTOURLDETECT, 0, 0) <> 0, 'switched off before the handle: the engine does not detect');
+    CheckEqB(False, IsLink(U, 6), 'switched off before the handle: nothing is marked');
+    U.Free;
+
     Section('streaming (UIF-1309)');
     Log.Text := '';
     SF := TRichForm.Create(nil);
@@ -510,7 +546,7 @@ begin
       CheckEqI(3, SF.Notes.Lines.Count, 'Lines');
       CheckEqS('{\rtf1 plain}||third', Shown(SF.Notes.Text), 'Lines are plain text, also when they look like RTF');
       CheckEqB(True, SF.Notes.Alignment = taRightJustify, 'Alignment');
-      CheckEqB(True, SF.Notes.AutoURLDetect, 'AutoURLDetect');
+      CheckEqB(False, SF.Notes.AutoURLDetect, 'AutoURLDetect False is read from the form');
       CheckEqB(True, SF.Notes.BorderStyle = bsNone, 'BorderStyle');
       CheckEqB(True, SF.Notes.Color = clYellow, 'Color');
       CheckEqI(-15, SF.Notes.Font.Height, 'Font.Height');

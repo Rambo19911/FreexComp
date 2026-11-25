@@ -2,7 +2,7 @@
 ok Width 185
 ok Height 89
 ok Alignment
-ok AutoURLDetect
+ok AutoURLDetect is True
 ok BorderStyle
 ok Color clWindow
 ok HideSelection
@@ -181,12 +181,21 @@ ok ES_NOHIDESEL
 ok URL detection
 ok zoom
 ok the content has the font of the control
+# AutoURLDetect is on in a new control (UIF-1331)
+ok the engine detects URLs without the property being set
+ok a URL in text set before the handle is a link
+ok the text before that URL is no link
+ok a URL in text set after the handle is a link
+ok the text before it is no link
+ok the text after it is no link
+ok switched off before the handle: the engine does not detect
+ok switched off before the handle: nothing is marked
 # streaming (UIF-1309)
 ok no OnChange while loading
 ok Lines
 ok Lines are plain text, also when they look like RTF
 ok Alignment
-ok AutoURLDetect
+ok AutoURLDetect False is read from the form
 ok BorderStyle
 ok Color
 ok Font.Height
@@ -207,4 +216,4 @@ ok the window holds the plain lines
 ok OnChange handler of the form
 # leak
 ok GUI objects after 100 instances with handles
-# passed 195 failed 0
+# passed 203 failed 0

@@ -9,7 +9,7 @@ object RichForm: TRichForm
     Width = 200
     Height = 120
     Alignment = taRightJustify
-    AutoURLDetect = True
+    AutoURLDetect = False
     BorderStyle = bsNone
     Color = clYellow
     Font.Height = -15

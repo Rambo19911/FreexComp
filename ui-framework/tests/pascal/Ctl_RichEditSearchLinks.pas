@@ -148,8 +148,11 @@ begin
 
     Section('AutoURLDetect (UIF-1331)');
     R.OnLinkClick := Log.Link;
+    CheckEqB(True, R.AutoURLDetect, 'on by default');
+    R.AutoURLDetect := False;
+    CheckEqB(False, SendMessageW(R.Handle, EM_GETAUTOURLDETECT, 0, 0) <> 0, 'switched off: the engine does not detect');
     R.Text := Linked;
-    CheckEqB(False, IsLink(R, 6), 'off (default): nothing is marked');
+    CheckEqB(False, IsLink(R, 6), 'off: nothing is marked');
     Log.Text := '';
     Click(R, 8, WM_LBUTTONDOWN, WM_LBUTTONUP, MK_LBUTTON);
     CheckEqS('', Log.Text, 'no link, no OnLinkClick');

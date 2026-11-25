@@ -461,7 +461,7 @@
       "renderer": "memo",
       "properties": [
         { "name": "Alignment", "type": "TAlignment", "default": "taLeftJustify", "category": "Appearance" },
-        { "name": "AutoURLDetect", "type": "Boolean", "default": false, "category": "Behavior" },
+        { "name": "AutoURLDetect", "type": "Boolean", "default": true, "category": "Behavior" },
         { "name": "BorderStyle", "type": "TBorderStyle", "default": "bsSingle", "category": "Appearance", "affectsLayout": true },
         { "name": "Color", "type": "TColor", "default": "clWindow", "category": "Appearance", "editor": "color" },
         { "name": "Font", "type": "TFont", "kind": "object", "category": "Appearance", "editor": "font" },
