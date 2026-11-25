@@ -296,6 +296,19 @@ public sealed class ProjectManagerView : UserControl
                 _model.ClearSelection();
             else if (!_model.Selection.Contains(node))
                 _model.Select(node);
+            // I-281: the commands of the menu act on the selection of the focused Project Manager, and the toolkit moves
+            // the focus on a left press only. The right press moves it the same way (to the nearest focusable element
+            // around the pressed one: the row, or the tool window's content for the empty area), so the menu belongs to
+            // the right-clicked row whatever had the focus before.
+            for (var v = e.Source as Visual; v is not null; v = v.GetVisualParent())
+            {
+                if (v is InputElement { Focusable: true, IsEffectivelyEnabled: true, IsEffectivelyVisible: true } target)
+                {
+                    target.Focus(NavigationMethod.Pointer);
+                    break;
+                }
+            }
+
             e.Handled = true;
         }
         else if (point.Properties.IsLeftButtonPressed && e.ClickCount == 2 && node is not null)

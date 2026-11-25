@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Controls;
+using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Input;
 using Avalonia.Media;
@@ -379,5 +380,125 @@ public sealed partial class ProjectManagerViewTests
         Dispatcher.UIThread.RunJobs();
         Assert.Contains("No project is open", empty.GetLogicalDescendantsTexts());
         Assert.NotNull(h.TryFind<Button>("Tool.ProjectManager.Empty.Link.file.openProject"));
+    }
+
+    /// <summary>
+    /// I-281: the context menu belongs to the right-clicked row whatever had the keyboard focus before (UI-TW-014,
+    /// UI-TW-129). A fresh window with the focus in the editor: the group commands of a listed root, of the active root
+    /// and of the empty area are enabled per the row, and the commands of a file row act on that row, not on the
+    /// active document.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Phase", "8")]
+    [Trait("Req", "UI-TW-014")]
+    [Trait("Req", "UI-TW-129")]
+    public async Task Group_ContextMenuOfListedRoot_IsEnabledWithoutPriorFocus()
+    {
+        await using var h = await HeadlessHarness.StartAsync(o => AppGroup(o, withTools: true));
+        var pm = await OpenGroupAsync(h);
+        var clipboard = (FreexComp.Ide.TestSupport.FakeClipboard)h.Services.Clipboard;
+        var tree = h.Find<TreeView>("Tool.ProjectManager.Tree");
+        var appMain = Path.Combine(h.TempDir, "App", "App.pas");
+
+        // The focus is in the editor (the main source of the active project); the Project Manager never had it.
+        async Task FocusEditorAsync()
+        {
+            h.Click("Editor.App.pas");
+            await h.WaitForAsync(() => h.FocusedAutomationId == "Editor.App.pas", "editor focused");
+            Assert.Equal(Core.Commands.CommandScope.Editor, h.Services.FocusTracker.Current.Scope);
+            Assert.Null(h.Services.FocusTracker.Current.ToolWindowName);
+        }
+
+        // The open context menu of the tree: its command items by automation id.
+        Dictionary<string, MenuItem> OpenMenu()
+        {
+            var menu = tree.ContextMenu!;
+            Assert.True(menu.IsOpen);
+            return menu.Items.OfType<MenuItem>().ToDictionary(i => AutomationIds.Get(i)!);
+        }
+
+        void CloseMenu()
+        {
+            tree.ContextMenu!.Close();
+            Dispatcher.UIThread.RunJobs();
+        }
+
+        static void Click(MenuItem item) => item.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(MenuItem.ClickEvent));
+
+        Assert.True(await h.Services.Documents.OpenAsync(appMain) is { Success: true });
+        await h.WaitForAsync(() => h.FocusedAutomationId == "Editor.App.pas", "editor focused");
+        Assert.Equal(Core.Commands.CommandScope.Editor, h.Services.FocusTracker.Current.Scope);
+        Assert.Empty(pm.Selection);
+
+        // A listed root in the middle of a saved group, Idle: everything is enabled.
+        h.RightClick(Row + "$project:CoreLib.Name");
+        Assert.Equal(["$project:CoreLib"], pm.Selection.Select(n => n.Key));
+        var items = OpenMenu();
+        string[] group = ["Context.project.setActive", "Context.project.removeFromGroup", "Context.project.moveProjectUp", "Context.project.moveProjectDown"];
+        Assert.Equal([true, true, true, true], group.Select(id => items[id].IsEffectivelyEnabled));
+        Assert.All(items.Values, i => Assert.True(i.IsEffectivelyEnabled, AutomationIds.Get(i)));
+        // The path commands act on the row, not on the active document.
+        Click(items["Context.file.copyPath"]);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(Path.Combine(h.TempDir, "CoreLib", "CoreLib.pproj"), clipboard.Text);
+        CloseMenu();
+
+        // The last listed root cannot move down.
+        await FocusEditorAsync();
+        h.RightClick(Row + "$project:Tools.Name");
+        items = OpenMenu();
+        Assert.Equal([true, true, true, false], group.Select(id => items[id].IsEffectivelyEnabled));
+        CloseMenu();
+
+        // The active root (the first): it can be removed and moved down; the two commands that add a project.
+        await FocusEditorAsync();
+        h.RightClick(Row + "$project.Name");
+        Assert.Equal(["$project"], pm.Selection.Select(n => n.Key));
+        items = OpenMenu();
+        Assert.Equal([true, false, true], group.Skip(1).Select(id => items[id].IsEffectivelyEnabled));
+        Assert.True(items["Context.project.addExistingProject"].IsEffectivelyEnabled);
+        Assert.True(items["Context.project.addNewProject"].IsEffectivelyEnabled);
+        Click(items["Context.file.copyPath"]);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(Path.Combine(h.TempDir, "App", "App.pproj"), clipboard.Text);
+        CloseMenu();
+
+        // A file row: its commands act on the row (the active document is the main source, which cannot be removed).
+        await FocusEditorAsync();
+        h.RightClick(Row + "AppUnit.pas.Name");
+        Assert.Equal(["AppUnit.pas"], pm.Selection.Select(n => n.Key));
+        items = OpenMenu();
+        Assert.True(items["Context.project.renameFile"].IsEffectivelyEnabled);
+        Assert.True(items["Context.project.removeFile"].IsEffectivelyEnabled);
+        Assert.True(items["Context.project.deleteFile"].IsEffectivelyEnabled);
+        Click(items["Context.file.copyPath"]);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(Path.Combine(h.TempDir, "App", "AppUnit.pas"), clipboard.Text);
+        CloseMenu();
+
+        // The empty area below the rows: the selection is cleared; the two commands that add a project are enabled.
+        await FocusEditorAsync();
+        var lastRow = h.Find<TreeViewItem>(Row + "$project:Tools");
+        var below = lastRow.TranslatePoint(new Point(lastRow.Bounds.Width / 2, lastRow.Bounds.Height + 11), h.Window)!.Value;
+        var hit = Assert.IsAssignableFrom<Visual>(h.Window.InputHitTest(below));
+        Assert.Contains(tree, hit.GetSelfAndVisualAncestors());
+        Assert.Null(hit.FindAncestorOfType<TreeViewItem>(includeSelf: true));
+        h.Window.MouseDown(below, MouseButton.Right);
+        h.Window.MouseUp(below, MouseButton.Right);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Empty(pm.Selection);
+        items = OpenMenu();
+        Assert.True(items["Context.project.addExistingProject"].IsEffectivelyEnabled);
+        Assert.True(items["Context.project.addNewProject"].IsEffectivelyEnabled);
+        Assert.True(items["Context.project.addNewUnit"].IsEffectivelyEnabled);
+        CloseMenu();
+
+        // A left click on a row, then the right click on another one.
+        await FocusEditorAsync();
+        h.Click(Row + "$project:Tools.Name");
+        h.RightClick(Row + "$project:CoreLib.Name");
+        items = OpenMenu();
+        Assert.Equal([true, true, true, true], group.Select(id => items[id].IsEffectivelyEnabled));
+        CloseMenu();
     }
 }

@@ -238,4 +238,33 @@ public sealed class OutputViewTests
         await h.WaitForAsync(() => h.Services.Status.Message == Strings.Msg_Messages_SourceMissing, "source missing reported");
         Assert.Equal(4, text.TextArea.Caret.Line);
     }
+
+    /// <summary>
+    /// I-282: the selected channel ("Build", "Program") is fully visible in the combo box of the tool bar at every
+    /// scale factor (UI-TOK-062); the combo box keeps the height of design-tokens.md §8.
+    /// </summary>
+    [AvaloniaTheory(Timeout = 30000)]
+    [Trait("Req", "UI-TW-501")]
+    [Trait("Req", "UI-TOK-062")]
+    [InlineData(1.0)]
+    [InlineData(1.5)]
+    [InlineData(2.0)]
+    public async Task SourceCombo_SelectedTextIsNotClipped(double scale)
+    {
+        await using var h = await StartAsync(o => o.Scale = scale);
+        Assert.Equal(scale, h.Window.RenderScaling);
+        h.Press("Alt+6"); // view.output
+        await h.WaitForAsync(() => h.FocusedAutomationId == "Tool.Output.Text", "Output text focused");
+        var combo = h.Find<ComboBox>("Tool.Output.Channel");
+        Assert.Equal(["Build", "Program"], combo.Items.Cast<object>().Select(i => i.ToString()));
+
+        foreach (var index in new[] { 0, 1 })
+        {
+            combo.SelectedIndex = index;
+            Dispatcher.UIThread.RunJobs();
+            ComboBoxChecks.AssertSelectedTextNotClipped(combo);
+        }
+
+        Assert.Equal(24, combo.Bounds.Height); // design-tokens.md §8: a combo box of a tool bar
+    }
 }

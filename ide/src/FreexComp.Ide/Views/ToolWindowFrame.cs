@@ -201,6 +201,11 @@ public sealed class ToolWindowFrame : DockPanel
             Width = choice.Width,
             Height = 24,
             MinHeight = 24,
+            // I-282: the theme's vertical padding (5 + 7) is that of its 32-high combo box and leaves 12 of the 24 here,
+            // less than a text line, so the selected item was cut. No vertical padding (the theme's horizontal one
+            // stays), text centred vertically - as FitFilterBox does for a filter box.
+            Padding = new Thickness(12, 0, 0, 0),
+            VerticalContentAlignment = VerticalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
             ItemsSource = choice.Items,
             Margin = new Thickness(0, 0, ToolWindowViewModel.ChoiceMargin, 0),

@@ -220,6 +220,41 @@ public sealed class ToolWindowVisualTests
         Assert.True(problems.Count == 0, string.Join("\n", problems));
     }
 
+    /// <summary>
+    /// I-282 (owner visual report): every combo box of a tool window — the channel of Output, the instance selector of
+    /// the Object Inspector, and any other one a tool window shows — displays its selected item at the full height of
+    /// the text, in both themes and at every scale factor (UI-TOK-062).
+    /// </summary>
+    [AvaloniaTheory(Timeout = 30000)]
+    [Trait("Req", "UI-TW-008")]
+    [Trait("Req", "UI-TOK-062")]
+    [InlineData(1.0)]
+    [InlineData(1.5)]
+    [InlineData(2.0)]
+    public async Task ToolWindowHeaderCombos_SelectedTextIsNotClipped(double scale)
+    {
+        var problems = new List<string>();
+        var combos = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var theme in Themes)
+        {
+            await using var h = await StartDesignAsync(theme, scale);
+            Assert.Equal(scale, h.Window.RenderScaling);
+            foreach (var (name, frame) in ShowAll(h))
+            {
+                foreach (var combo in frame.GetVisualDescendants().OfType<ComboBox>().Where(c => c.IsEffectivelyVisible))
+                {
+                    combos.Add(Id(combo));
+                    if (ComboBoxChecks.SelectedTextProblem(combo) is { } problem)
+                        problems.Add($"{theme} {name}: {problem}");
+                }
+            }
+        }
+
+        Assert.Contains("Tool.Output.Channel", combos);
+        Assert.Contains("Tool.ObjectInspector.InstanceSelector", combos);
+        Assert.True(problems.Count == 0, string.Join(Environment.NewLine, problems) + Environment.NewLine + "combo boxes: " + string.Join(", ", combos.Order(StringComparer.Ordinal)));
+    }
+
     private static string Id(Control control) => AutomationProperties.GetAutomationId(control) ?? control.GetType().Name;
 
     /// <summary>
@@ -300,13 +335,14 @@ public sealed class ToolWindowVisualTests
     private static string Describe(Rect r) => string.Create(CultureInfo.InvariantCulture, $"[{r.Left:0.#},{r.Top:0.#} {r.Width:0.#}×{r.Height:0.#}]");
 
     /// <summary>The lead's window size, Phase 5 files, the form open in its Design view with an edit box selected (Boolean rows).</summary>
-    private static async Task<HeadlessHarness> StartDesignAsync(string theme)
+    private static async Task<HeadlessHarness> StartDesignAsync(string theme, double scale = 1)
     {
         var h = await HeadlessHarness.StartAsync(o =>
         {
             ToolPaletteViewTests.Phase5(o);
             o.Settings["appearance.theme"] = theme;
             o.WindowSize = new Size(1456, 819);
+            o.Scale = scale;
         });
         var document = await ToolPaletteViewTests.OpenDesignAsync(h);
         document.Designer.Surface!.Selection.Select(document.Designer.Model!.FindByName("NameEdit")!);
