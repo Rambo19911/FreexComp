@@ -292,6 +292,49 @@ public sealed class BuiltInTypesTests
     public void ConstantValue_DisplaysAsPascalLiteral(object? value, string expected) =>
         Assert.Equal(expected, new ConstantValue(value, Types.Integer).ToDisplayString());
 
+    /// <summary>
+    /// C-234 (ABI-172): the intrinsics the ABI names for <c>System</c> and every other unit — the four public atomic intrinsics and
+    /// <c>_ReturnAddress</c> — are predeclared under exactly those names; there is no private atomic intrinsic (no <c>_Atomic…</c> name).
+    /// </summary>
+    [Theory]
+    [Trait("Req", "ABI-172")]
+    [InlineData("AtomicIncrement", "AtomicIncrement", "AtomicIncrement(var Target[; Increment]): Target")]
+    [InlineData("AtomicDecrement", "AtomicDecrement", "AtomicDecrement(var Target[; Decrement]): Target")]
+    [InlineData("AtomicExchange", "AtomicExchange", "AtomicExchange(var Target; Value): Target")]
+    [InlineData("AtomicCmpExchange", "AtomicCmpExchange", "AtomicCmpExchange(var Target; NewValue, Comparand): Target")]
+    [InlineData("_ReturnAddress", "ReturnAddress", "_ReturnAddress: Pointer")]
+    public void Abi172_Intrinsics_ArePredeclared(string name, string kind, string signature)
+    {
+        var intrinsic = Assert.IsType<IntrinsicSymbol>(Types.Scope.LookupLocal(name));
+
+        Assert.Equal(kind, intrinsic.Intrinsic.ToString());
+        Assert.Equal(signature, intrinsic.Signature);
+        Assert.DoesNotContain(Types.Scope.Names, n => n.StartsWith("_Atomic", StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// C-234: every intrinsic that ABI-172 (rtl-abi.md) names — a code span starting with <c>Atomic…</c> or <c>_Name</c> — is a
+    /// predeclared intrinsic, and the document names no <c>_Atomic…</c> intrinsic anywhere.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "Spec")]
+    [Trait("Req", "ABI-172")]
+    public void Abi172_NamesOnlyImplementedIntrinsics()
+    {
+        var lines = File.ReadAllLines(Path.Combine(RepoPaths.RequireDocs(), "interfaces", "rtl-abi.md"));
+        var start = Array.FindIndex(lines, l => l.StartsWith("- **ABI-172**", StringComparison.Ordinal));
+        Assert.True(start >= 0, "ABI-172 not found in rtl-abi.md");
+        var end = Array.FindIndex(lines, start + 1, l => l.StartsWith("- **ABI-", StringComparison.Ordinal) || l.StartsWith('#'));
+        var requirement = string.Join('\n', lines[start..(end < 0 ? lines.Length : end)]);
+
+        var named = System.Text.RegularExpressions.Regex.Matches(requirement, @"`(_[A-Za-z][A-Za-z0-9]*|Atomic[A-Za-z0-9]+)")
+            .Select(m => m.Groups[1].Value).Distinct(StringComparer.Ordinal).ToArray();
+
+        Assert.Equal(["AtomicCmpExchange", "AtomicDecrement", "AtomicExchange", "AtomicIncrement", "_ReturnAddress"], named.Order(StringComparer.Ordinal));
+        Assert.All(named, name => Assert.IsType<IntrinsicSymbol>(Types.Scope.LookupLocal(name)));
+        Assert.DoesNotContain(lines, l => l.Contains("`_Atomic", StringComparison.Ordinal));
+    }
+
     [Fact]
     public void ConstantValue_StoresClrIntegersAsBigInteger()
     {
