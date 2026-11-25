@@ -810,6 +810,9 @@ The form change was undone.</value>
   <data name="Msg_Options_GuidelineRange" xml:space="preserve">
     <value>Enter a distance from 1 to 16.</value>
   </data>
+  <data name="Msg_Options_GuidelineSpacingRange" xml:space="preserve">
+    <value>Enter a distance from 0 to 64.</value>
+  </data>
   <data name="Msg_Options_ColorInvalid" xml:space="preserve">
     <value>Enter a color as # followed by six hexadecimal digits, such as #0F7B6C.</value>
   </data>
@@ -4738,6 +4741,10 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   <data name="Options_Field_GuidelineDistance" xml:space="preserve">
     <value>Guideline snap _distance:</value>
     <comment>dialogs.md §9.8</comment>
+  </data>
+  <data name="Options_Field_GuidelineSpacing" xml:space="preserve">
+    <value>Guideline spa_cing:</value>
+    <comment>dialogs.md §9.8 (UI-DSG-133)</comment>
   </data>
   <data name="Options_Field_HandleSize" xml:space="preserve">
     <value>Selection _handle size:</value>

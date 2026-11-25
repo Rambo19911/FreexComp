@@ -711,4 +711,84 @@ public sealed class SurfaceRuleTests
         Assert.Equal(["FillRect", "DrawText"], canvas.Ops.Select(o => o.Kind));
         Assert.StartsWith("FillRect 1,2,3,4 ", canvas.Ops[0].Text, StringComparison.Ordinal);
     }
+
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "DSG-SUR-204")]
+    public void SnapInputsCarryMarginsAndPadding()
+    {
+        using var h = Guides("""
+            object F: TForm
+              ClientWidth = 400
+              ClientHeight = 300
+              object P: TPanel
+                Left = 10
+                Top = 10
+                Width = 300
+                Height = 200
+                Padding.Left = 12
+                Padding.Top = 5
+                object E: TEdit
+                  Left = 40
+                  Top = 40
+                  Width = 100
+                  Height = 23
+                  Margins.Left = 4
+                  Margins.Bottom = 9
+                end
+                object S: TButton
+                  Left = 160
+                  Top = 40
+                  Width = 75
+                  Height = 25
+                  Margins.Right = 8
+                  Margins.Top = 3
+                end
+                object T: TButton
+                  Left = 160
+                  Top = 100
+                  Width = 75
+                  Height = 25
+                end
+              end
+            end
+
+            """);
+        var (p, e) = (h.Object("P"), h.Object("E"));
+
+        // The margins of a control: effective values; declared where the value differs from the metadata default (3).
+        var anchor = DesignSurfaceController.MarginsOf(e);
+        Assert.Equal(new SnapMargins(4, 3, 3, 9, LeftDeclared: true, BottomDeclared: true), anchor);
+        Assert.Equal(SnapMargins.Default, DesignSurfaceController.MarginsOf(h.Object("T")));
+        Assert.Equal(SnapMargins.Default, DesignSurfaceController.MarginsOf(e.Catalog, null, null)); // a class without metadata
+
+        // The inputs of a drag of E: the parent's padding, the anchor's margins, every sibling with its own margins.
+        var target = h.Controller.SnapTargetOf(p, [e], anchor);
+        Assert.Same(p, target.Parent);
+        Assert.Equal(new SnapPadding(12, 5, 0, 0), target.Padding);
+        Assert.Equal(anchor, target.Margins);
+        Assert.Equal(["S", "T"], target.Siblings.Select(s => s.Object.Name));
+        Assert.Equal(new SnapMargins(3, 3, 8, 3, RightDeclared: true), target.Siblings[0].Margins); // Margins.Top = 3 is the default
+        Assert.Equal(SnapMargins.Default, target.Siblings[1].Margins);
+
+        // A parent without Padding values: zeros. Inputs made without these members behave as in Phase 5.
+        Assert.Equal(default, h.Controller.SnapTargetOf(h.Object("F"), [], SnapMargins.Default).Padding);
+        var bare = new SnapTarget(p, 300, 200, [new SnapReference(h.Object("S"), new Rect(160, 40, 75, 25), null)]);
+        Assert.Equal((default(SnapPadding), SnapMargins.Default, SnapMargins.Default), (bare.Padding, bare.Margins, bare.Siblings[0].Margins));
+
+        // The engine is a pure function of these inputs: E's right edge (declared nowhere) to S's left (160): the
+        // setting; E's left edge to the padded parent: 12 + 4; the guideline carries the spacing.
+        var options = new SnapOptions(false, 8, 8, true, 4, 8);
+        var move = SnapEngine.SnapMove(new Rect(51, 40, 100, 23), null, target, options, snapY: false);
+        Assert.Equal((1, GuidelineKind.Margin, 152, 8), (move.Dx, move.Guidelines[0].Kind, move.Guidelines[0].Coordinate, move.Guidelines[0].Spacing));
+        move = SnapEngine.SnapMove(new Rect(18, 40, 100, 23), null, target, options, snapY: false);
+        Assert.Equal((-2, GuidelineKind.Margin, 16, 16), (move.Dx, move.Guidelines[0].Kind, move.Guidelines[0].Coordinate, move.Guidelines[0].Spacing));
+
+        // The controller passes them on: the drag of E snaps to the same line.
+        h.Press("E");
+        h.MoveBy(-22, 0); // left 18
+        Assert.Equal((16, 40), h.Position("E"));
+        Assert.Equal(16, Assert.Single(h.Guidelines, l => l.Axis == SnapAxis.X).Spacing); // (Y: the top edge it shares with S)
+        h.Key(DesignKey.Escape);
+    }
 }

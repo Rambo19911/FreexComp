@@ -230,6 +230,8 @@ public sealed class OptionsViewModel : DialogViewModel<bool>
             Integer("GridSizeY", SettingsCatalog.DesignerGridSizeY, 5, () => Strings.Msg_Options_GridRange),
             Check("UseGuidelines", SettingsCatalog.DesignerUseGuidelines, 5),
             Integer("GuidelineDistance", SettingsCatalog.DesignerGuidelineSnapDistance, 5, () => Strings.Msg_Options_GuidelineRange),
+            Integer("GuidelineSpacing", SettingsCatalog.DesignerGuidelineMargin, 5, () => Strings.Msg_Options_GuidelineSpacingRange,
+                enabledBy: "UseGuidelines"), // UI-DSG-133, DSG-SUR-212
             NumberChoice("HandleSize", SettingsCatalog.DesignerHandleSize, 5, 5, 7, 9, 11),
             Check("ShowCaptions", SettingsCatalog.DesignerShowComponentCaptions, 5),
             FixedChoice("DefaultView", SettingsCatalog.DesignerDefaultView, 5,

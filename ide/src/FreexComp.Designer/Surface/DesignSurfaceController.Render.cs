@@ -295,14 +295,7 @@ public sealed partial class DesignSurfaceController
     /// <summary>UI-DSG-050 … 054: the guidelines of the snaps applied to the dragged control (or the placement rectangle).</summary>
     private void DrawGuidelines(IDesignCanvas canvas, SurfaceGeometry g, SurfacePalette p)
     {
-        Rect? dragged = State switch
-        {
-            InteractionState.Moving when _moveAnchor is { } a && !_moveTray => g.GetBounds(a),
-            InteractionState.Resizing when _resizePrimary is { Parent: not null } r => g.GetBounds(r),
-            InteractionState.Placing => PlacementRect,
-            _ => null,
-        };
-        if (dragged is not { } d || !_settings.UseGuidelines)
+        if (DraggedRect(g) is not { } d)
         {
             return;
         }
@@ -341,29 +334,98 @@ public sealed partial class DesignSurfaceController
         }
     }
 
-    /// <summary>UI-DSG-053: a line in the gap between the dragged rect and the reference (or the parent's client edge), centred on the overlap, with 5 DIP ticks.</summary>
-    private static void DrawMarginLine(IDesignCanvas canvas, Rect d, Rect r, bool parent, bool x, Rgba color)
+    /// <summary>The surface rectangle the guidelines of a drag relate to: the anchor control or the placement rectangle; null: none are drawn.</summary>
+    private Rect? DraggedRect(SurfaceGeometry g) => !_settings.UseGuidelines ? null : State switch
+    {
+        InteractionState.Moving when _moveAnchor is { } a && !_moveTray => g.GetBounds(a),
+        InteractionState.Resizing when _resizePrimary is { Parent: not null } r => g.GetBounds(r),
+        InteractionState.Placing => PlacementRect,
+        _ => null,
+    };
+
+    /// <summary>
+    /// The surface rectangle of a guideline of <see cref="Guidelines"/> as it is drawn (UI-DSG-051 … 053, for automation,
+    /// UI-DSG-131): a line of thickness 1 for an edge, centre or baseline guideline; for a margin guideline the gap
+    /// between the two edges along its axis and its ticks across — no extent along the axis at distance 0 (UI-DSG-132).
+    /// Null when no guideline is drawn.
+    /// </summary>
+    public Rect? GuidelineRect(Guideline line)
+    {
+        ArgumentNullException.ThrowIfNull(line);
+        var g = Geometry;
+        if (DraggedRect(g) is not { } d)
+        {
+            return null;
+        }
+
+        var origin = g.GetClientRect(line.Parent);
+        var r = line.Reference is { } reference ? g.GetBounds(reference) : origin;
+        var x = line.Axis == SnapAxis.X;
+        var at = (x ? origin.Left : origin.Top) + line.Coordinate;
+        switch (line.Kind)
+        {
+            case GuidelineKind.Edge or GuidelineKind.Center:
+            {
+                var pixel = at == (x ? d.Right : d.Bottom) || at == (x ? r.Right : r.Bottom) ? at - 1 : at;
+                var (lo, hi) = x ? (Math.Min(d.Top, r.Top) - 4, Math.Max(d.Bottom, r.Bottom) + 4) : (Math.Min(d.Left, r.Left) - 4, Math.Max(d.Right, r.Right) + 4);
+                return x ? new Rect(pixel, lo, 1, hi - lo) : new Rect(lo, pixel, hi - lo, 1);
+            }
+
+            case GuidelineKind.Baseline:
+            {
+                var (lo, hi) = (Math.Min(d.Left, r.Left) - 4, Math.Max(d.Right, r.Right) + 4);
+                return new Rect(lo, at, hi - lo, 1);
+            }
+
+            default:
+            {
+                var (a, b, mid) = MarginGap(d, r, line.Reference is null, x);
+                return b < a ? null : x ? new Rect(a, mid - 2, b - a, 5) : new Rect(mid - 2, a, 5, b - a);
+            }
+        }
+    }
+
+    /// <summary>The gap [a, b) of a margin guideline along its axis and the line's position on the other axis (UI-DSG-053).</summary>
+    private static (int A, int B, int Mid) MarginGap(Rect d, Rect r, bool parent, bool x)
     {
         var (dLo, dHi, rLo, rHi) = x ? (d.Left, d.Right, r.Left, r.Right) : (d.Top, d.Bottom, r.Top, r.Bottom);
         var (a, b) = parent
             ? (dLo - rLo <= rHi - dHi ? (rLo, dLo) : (dHi, rHi))
             : (dLo >= rHi ? (rHi, dLo) : (dHi, rLo));
-        if (b <= a)
+        var (oLo, oHi) = x ? (Math.Max(d.Top, r.Top), Math.Min(d.Bottom, r.Bottom)) : (Math.Max(d.Left, r.Left), Math.Min(d.Right, r.Right));
+        var mid = oHi > oLo ? (oLo + oHi - 1) / 2 : (x ? d.Top + (d.Height - 1) / 2 : d.Left + (d.Width - 1) / 2);
+        return (a, b, mid);
+    }
+
+    /// <summary>
+    /// UI-DSG-053: a line in the gap between the dragged rect and the reference (or the parent's client edge), centred on
+    /// the overlap, with 5 DIP ticks. UI-DSG-132: without a gap (distance 0) only the two ticks, at the shared edge.
+    /// </summary>
+    private static void DrawMarginLine(IDesignCanvas canvas, Rect d, Rect r, bool parent, bool x, Rgba color)
+    {
+        var (a, b, mid) = MarginGap(d, r, parent, x);
+        if (b < a)
         {
             return;
         }
 
-        var (oLo, oHi) = x ? (Math.Max(d.Top, r.Top), Math.Min(d.Bottom, r.Bottom)) : (Math.Max(d.Left, r.Left), Math.Min(d.Right, r.Right));
-        var mid = oHi > oLo ? (oLo + oHi - 1) / 2 : (x ? d.Top + (d.Height - 1) / 2 : d.Left + (d.Width - 1) / 2);
         if (x)
         {
-            canvas.HLine(a, b, mid, color);
+            if (b > a)
+            {
+                canvas.HLine(a, b, mid, color);
+            }
+
             canvas.VLine(a, mid - 2, mid + 3, color);
             canvas.VLine(b - 1, mid - 2, mid + 3, color);
         }
         else
         {
-            canvas.VLine(mid, a, b, color);
+            if (b > a)
+            {
+                canvas.VLine(mid, a, b, color);
+            }
+
             canvas.HLine(mid - 2, mid + 3, a, color);
             canvas.HLine(mid - 2, mid + 3, b - 1, color);
         }

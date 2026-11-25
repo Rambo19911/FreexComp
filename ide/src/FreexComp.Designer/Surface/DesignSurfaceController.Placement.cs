@@ -153,7 +153,7 @@ public sealed partial class DesignSurfaceController
         var b = g.SurfaceToParentClient(parent, (x, y));
         var raw = new Rect(Math.Min(a.X, b.X), Math.Min(a.Y, b.Y), Math.Abs(a.X - b.X), Math.Abs(a.Y - b.Y));
         var options = SnapOptions.From(_settings, input.Modifiers.HasFlag(InputModifiers.Alt));
-        var target = SnapTargetOf(parent, []);
+        var target = SnapTargetOf(parent, [], MarginsOf(Catalog, _placeClass is { } placed ? Catalog.Find(placed) : null, null)); // DSG-SUR-205
         var low = SnapEngine.SnapResize(raw, SnapEdges.Left | SnapEdges.Top, target, options);
         var high = SnapEngine.SnapResize(raw, SnapEdges.Right | SnapEdges.Bottom, target, options);
         var (left, top) = (raw.Left + low.Dx, raw.Top + low.Dy);

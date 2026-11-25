@@ -311,13 +311,73 @@ public static class CatalogLoader
                 }
             }
 
+            // DSG-SUR-207, 210: the own value, else the inherited one; an invalid value is reported and ignored.
+            var baseline = inherited?.Baseline;
+            if (e.TryGetProperty("baseline", out var b))
+            {
+                if (ParseBaseline(b) is { } rule)
+                {
+                    baseline = rule;
+                }
+                else
+                {
+                    Problem(raw.File, raw.Path, $"invalid \"baseline\" of {raw.ClassName} (ignored)");
+                }
+            }
+
             var info = new ComponentInfo(raw.ClassName, raw.Ancestor, raw.Unit, Bool(e, "abstract") ?? false, kind, palette,
                 defaultSize, namePrefix, acceptsChildren, renderer,
                 [.. properties.Select(m => BuildProperty(m, raw.ClassName))],
                 [.. events.Select(m => new EventInfo(m.Name, String(m.Keys, "signature") ?? "", Bool(m.Keys, "default") ?? false, m.DeclaringClass))],
                 Strings(e, "childClasses"), Strings(e, "parentClasses"),
-                Verbs(e, inherited?.DesignerVerbs ?? []), String(e, "componentEditor") ?? inherited?.ComponentEditor);
+                Verbs(e, inherited?.DesignerVerbs ?? []), String(e, "componentEditor") ?? inherited?.ComponentEditor)
+            {
+                Baseline = baseline,
+            };
             return new Flattened(info, properties, events);
+        }
+
+        /// <summary>
+        /// DSG-SUR-207: <c>"none"</c>, <c>{ "align": "top", "inset": 0 … 255 }</c> (inset optional) or
+        /// <c>{ "align": "center" }</c>; null for anything else (wrong type, unknown align or member, inset out of range).
+        /// </summary>
+        private static BaselineRule? ParseBaseline(JsonElement value)
+        {
+            if (value.ValueKind == JsonValueKind.String)
+            {
+                return value.GetString() == "none" ? new BaselineRule(BaselineAlign.None) : null;
+            }
+
+            if (value.ValueKind != JsonValueKind.Object)
+            {
+                return null;
+            }
+
+            string? align = null;
+            int? inset = null;
+            foreach (var member in value.EnumerateObject())
+            {
+                if (member.Name == "align" && member.Value.ValueKind == JsonValueKind.String)
+                {
+                    align = member.Value.GetString();
+                }
+                else if (member.Name == "inset" && member.Value.ValueKind == JsonValueKind.Number
+                    && member.Value.TryGetInt32(out var number) && number is >= 0 and <= 255)
+                {
+                    inset = number;
+                }
+                else
+                {
+                    return null;
+                }
+            }
+
+            return align switch
+            {
+                "top" => new BaselineRule(BaselineAlign.Top, inset ?? 0),
+                "center" when inset is null => new BaselineRule(BaselineAlign.Center),
+                _ => null,
+            };
         }
 
         /// <summary>DSG-TP-006: inherited entries first; a redeclaration replaces in place, merging keys.</summary>

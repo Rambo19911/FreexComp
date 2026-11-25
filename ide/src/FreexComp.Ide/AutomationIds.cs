@@ -80,6 +80,9 @@ public static partial class AutomationIds
     /// <summary>A selection handle of the primary: <c>Designer.&lt;formName&gt;.Handle.&lt;NW|N|NE|E|SE|S|SW|W&gt;</c>.</summary>
     public static string DesignerHandle(string formName, string position) => Designer(formName) + ".Handle." + position;
 
+    /// <summary>A guideline shown during a drag: <c>Designer.&lt;formName&gt;.Guideline.&lt;Edge|Baseline|Margin&gt;.&lt;X|Y&gt;</c>.</summary>
+    public static string DesignerGuideline(string formName, string kind, string axis) => Designer(formName) + ".Guideline." + kind + "." + axis;
+
     public static string Tool(string name) => "Tool." + name;
 
     public static string ToolTab(string name) => "ToolTab." + name;

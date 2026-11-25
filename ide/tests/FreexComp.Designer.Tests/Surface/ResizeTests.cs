@@ -465,4 +465,54 @@ public sealed class ResizeTests
         h.ExecuteUndo();
         Assert.Equal(original, h.Text);
     }
+
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "DSG-SUR-205")]
+    public void DraggedEdgeUsesDeclaredSpacing()
+    {
+        // A (75 × 25 at 100, 100) stores Margins.Left = 7; B (50 × 25 at 20, 160) is resized.
+        using var h = DesignerHarness.FromText("""
+            object F: TForm
+              ClientWidth = 400
+              ClientHeight = 300
+              object A: TButton
+                Left = 100
+                Top = 100
+                Width = 75
+                Height = 25
+                Margins.Left = 7
+              end
+              object B: TButton
+                Left = 20
+                Top = 160
+                Width = 50
+                Height = 25
+                Margins.Top = 5
+              end
+            end
+
+            """);
+        h.Settings.SnapToGrid = false;
+        h.Select("B");
+
+        // The dragged right edge faces A's left edge: 3 (B's default) + 7 = 10 → 90.
+        h.PressHandle("B", HandleKind.E);
+        h.MoveBy(18, 0); // right 88
+        Assert.Equal(new Rect(20, 160, 70, 25), h.Bounds("B"));
+        var line = Assert.Single(h.Guidelines);
+        Assert.Equal(new Guideline(SnapAxis.X, GuidelineKind.Margin, 90, h.Object("F"), h.Object("A")), line);
+        Assert.Equal(10, line.Spacing);
+        Assert.True(h.Key(DesignKey.Escape));
+
+        // The dragged top edge faces A's bottom edge (125): 5 (declared on B) + 3 = 8 → 133; the left edge is not
+        // dragged and gives no candidate although it stands 12 from the parent's edge.
+        h.PressHandle("B", HandleKind.N);
+        h.MoveBy(0, -25); // top 135
+        Assert.Equal(new Rect(20, 133, 50, 52), h.Bounds("B"));
+        line = Assert.Single(h.Guidelines);
+        Assert.Equal((SnapAxis.Y, GuidelineKind.Margin, 133, 8), (line.Axis, line.Kind, line.Coordinate, line.Spacing));
+        h.Release();
+        Assert.Equal(new Rect(20, 133, 50, 52), h.Bounds("B"));
+    }
 }

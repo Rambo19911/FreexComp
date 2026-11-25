@@ -13,6 +13,9 @@ namespace FreexComp.Ide.Designer;
 /// <c>Designer.&lt;formName&gt;</c>; its virtual children are the form frame (<c>.Form</c>, holding the controls as nested
 /// <c>.Control.&lt;Name&gt;</c> elements), the tray (<c>.Tray</c> with <c>.Tray.&lt;Name&gt;</c>) and the handles of the primary
 /// selection (<c>.Handle.&lt;Position&gt;</c>). Components expose their surface bounds and their selection state.
+/// During a drag the guidelines of the applied snaps are children too (<c>.Guideline.&lt;Kind&gt;.&lt;Axis&gt;</c>, designer.md
+/// §10; a centre line is an <c>Edge</c> guideline); a margin guideline's help text is its distance in design units as
+/// an invariant integer (UI-DSG-131).
 /// </summary>
 public sealed class DesignSurfaceAutomationPeer(DesignSurfaceControl owner) : ControlAutomationPeer(owner)
 {
@@ -53,6 +56,20 @@ public sealed class DesignSurfaceAutomationPeer(DesignSurfaceControl owner) : Co
             }
         }
 
+        // UI-DSG-054: at most one guideline per axis and kind is drawn — the first one.
+        foreach (var line in surface.Guidelines)
+        {
+            var kind = line.Kind == GuidelineKind.Center ? GuidelineKind.Edge : line.Kind;
+            var id = AutomationIds.DesignerGuideline(form, kind.ToString(), line.Axis.ToString());
+            if (surface.GuidelineRect(line) is { } rect && !children.Exists(c => c.GetAutomationId() == id))
+            {
+                var peer = Peer(id, PeerKind.Guideline, null, this);
+                peer.Bounds = rect;
+                peer.HelpText = line.Kind == GuidelineKind.Margin ? line.Spacing.ToString(System.Globalization.CultureInfo.InvariantCulture) : null;
+                children.Add(peer);
+            }
+        }
+
         return children;
     }
 
@@ -89,7 +106,7 @@ public sealed class DesignSurfaceAutomationPeer(DesignSurfaceControl owner) : Co
         {
             PeerKind.Form => g.FrameRect,
             PeerKind.Tray => g.TrayRect,
-            PeerKind.Handle => peer.Bounds,
+            PeerKind.Handle or PeerKind.Guideline => peer.Bounds,
             _ => peer.Object is { } obj ? g.GetBounds(obj) : default,
         };
         return new Rect(origin.X + r.Left, origin.Y + r.Top, r.Width, r.Height);
@@ -113,9 +130,9 @@ public sealed class DesignSurfaceAutomationPeer(DesignSurfaceControl owner) : Co
     protected override AutomationControlType GetAutomationControlTypeCore() => AutomationControlType.Pane;
 }
 
-internal enum PeerKind { Form, Tray, Component, Handle }
+internal enum PeerKind { Form, Tray, Component, Handle, Guideline }
 
-/// <summary>A virtual element of the design surface: the form frame, the tray, a component or a handle.</summary>
+/// <summary>A virtual element of the design surface: the form frame, the tray, a component, a handle or a guideline.</summary>
 internal sealed class VirtualPeer(DesignSurfaceAutomationPeer root, string id, PeerKind kind, FormObject? obj) : AutomationPeer, ISelectionItemProvider
 {
     public PeerKind Kind => kind;
@@ -124,8 +141,11 @@ internal sealed class VirtualPeer(DesignSurfaceAutomationPeer root, string id, P
 
     public AutomationPeer? Parent { get; set; }
 
-    /// <summary>The hit square of a handle (surface coordinates).</summary>
+    /// <summary>The hit square of a handle or the rectangle of a guideline (surface coordinates).</summary>
     public DesignRect Bounds { get; set; }
+
+    /// <summary>The distance of a margin guideline (UI-DSG-131); null for every other element.</summary>
+    public string? HelpText { get; set; }
 
     public bool IsSelected => obj is not null && kind != PeerKind.Handle && root.Surface.Surface?.Selection.Contains(obj) == true;
 
@@ -162,6 +182,7 @@ internal sealed class VirtualPeer(DesignSurfaceAutomationPeer root, string id, P
     protected override string GetNameCore() => kind switch
     {
         PeerKind.Handle => id[(id.LastIndexOf('.') + 1)..],
+        PeerKind.Guideline => id[(id.IndexOf(".Guideline.", StringComparison.Ordinal) + 1)..],
         PeerKind.Tray => "Tray",
         _ => obj?.Name ?? "",
     };
@@ -173,6 +194,7 @@ internal sealed class VirtualPeer(DesignSurfaceAutomationPeer root, string id, P
         PeerKind.Form => AutomationControlType.Window,
         PeerKind.Tray => AutomationControlType.List,
         PeerKind.Handle => AutomationControlType.Thumb,
+        PeerKind.Guideline => AutomationControlType.Separator,
         _ => AutomationControlType.Custom,
     };
 
@@ -181,6 +203,8 @@ internal sealed class VirtualPeer(DesignSurfaceAutomationPeer root, string id, P
     protected override IReadOnlyList<AutomationPeer> GetOrCreateChildrenCore() => root.ChildrenOf(this);
 
     protected override AutomationPeer? GetParentCore() => Parent;
+
+    protected override string? GetHelpTextCore() => HelpText;
 
     protected override AutomationPeer? GetLabeledByCore() => null;
 

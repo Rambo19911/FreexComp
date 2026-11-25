@@ -875,4 +875,71 @@ public sealed class OptionsDialogTests
         await again;
         Assert.Equal(0, settings.Get(SettingsCatalog.BuildJobs));
     }
+
+    /// <summary>
+    /// DSG-SUR-212, UI-DSG-133 (D-116): Options › Designer has the field <c>GuidelineSpacing</c> for
+    /// <c>designer.guidelineMargin</c> directly after <c>GuidelineDistance</c>; 0–64, else the range message; enabled
+    /// only while <c>UseGuidelines</c> is checked; OK writes the key and the designer's settings read it live.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Phase", "8")]
+    [Trait("Req", "DSG-SUR-212")]
+    [Trait("Req", "UI-DSG-133")]
+    public async Task GuidelineSpacingFieldEditsSetting()
+    {
+        await using var h = await HeadlessHarness.StartAsync();
+        var settings = h.Services.Settings;
+        var designer = new Core.Designer.SettingsDesignerSettings(settings);
+        Assert.Equal((8, 8), (settings.Get(SettingsCatalog.DesignerGuidelineMargin), designer.GuidelineMargin));
+
+        var running = h.Services.Commands.ExecuteAsync("tools.options", "Designer");
+        var dlg = await h.WaitForDialogAsync("Options");
+        CheckFields(dlg, settings, [("GuidelineSpacing", "Guideline spa_cing:", SettingsCatalog.DesignerGuidelineMargin, true)]);
+        var model = (OptionsViewModel)dlg.Window.Model;
+        var page = model.Pages.Single(p => p.Fields.Any(f => f.Id == "GuidelineSpacing"));
+        var ids = page.Fields.Select(f => f.Id).ToList();
+        Assert.Equal(ids.IndexOf("GuidelineDistance") + 1, ids.IndexOf("GuidelineSpacing"));
+        Assert.True(dlg.Find<Control>("GuidelineDistance").Bounds.Height > 0);
+
+        // Its mnemonic is free on the page.
+        var mnemonics = page.Fields.Select(f => f.Label).Where(l => l.Contains('_', StringComparison.Ordinal))
+            .Select(l => char.ToUpperInvariant(l[l.IndexOf('_', StringComparison.Ordinal) + 1])).ToList();
+        Assert.Equal(mnemonics.Count, mnemonics.Distinct().Count());
+
+        // The range: 0–64.
+        SetText(dlg, "GuidelineSpacing", "65");
+        Assert.Equal("Enter a distance from 0 to 64.", dlg.ErrorText("GuidelineSpacing"));
+        Assert.False(dlg.Find<Button>("Ok").IsEnabled);
+        SetText(dlg, "GuidelineSpacing", "-1");
+        Assert.Equal("Enter a distance from 0 to 64.", dlg.ErrorText("GuidelineSpacing"));
+        SetText(dlg, "GuidelineSpacing", "64");
+        Assert.True(string.IsNullOrEmpty(dlg.ErrorText("GuidelineSpacing")));
+        SetText(dlg, "GuidelineSpacing", "0");
+        Assert.True(string.IsNullOrEmpty(dlg.ErrorText("GuidelineSpacing")));
+        Assert.True(dlg.Find<Button>("Ok").IsEnabled);
+
+        // Enabled only while UseGuidelines is checked.
+        dlg.Find<Control>("UseGuidelines").BringIntoView();
+        Dispatcher.UIThread.RunJobs();
+        dlg.Click("UseGuidelines");
+        Assert.False(((CheckBox)dlg.Find<Control>("UseGuidelines")).IsChecked);
+        Assert.False(dlg.Find<Control>("GuidelineSpacing").IsEffectivelyEnabled);
+        dlg.Click("UseGuidelines");
+        Assert.True(dlg.Find<Control>("GuidelineSpacing").IsEffectivelyEnabled);
+
+        // OK writes the key; the designer reads it (per pointer move, as the other snap settings).
+        SetText(dlg, "GuidelineSpacing", "12");
+        dlg.Click("Ok");
+        await running;
+        Assert.Equal(12, settings.Get(SettingsCatalog.DesignerGuidelineMargin));
+        Assert.Equal(12, designer.GuidelineMargin);
+        Assert.True(settings.Get(SettingsCatalog.DesignerUseGuidelines));
+
+        // The page shows the stored value next time.
+        running = h.Services.Commands.ExecuteAsync("tools.options", "Designer");
+        dlg = await h.WaitForDialogAsync("Options");
+        Assert.Equal("12", FieldText(dlg, "GuidelineSpacing"));
+        dlg.Press("Escape");
+        await running;
+    }
 }

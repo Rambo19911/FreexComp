@@ -529,8 +529,8 @@ public sealed partial class DesignSurfaceController
             var origin = g.GetClientRect(target);
             var s = g.GetBounds(anchor);
             var candidate = s with { Left = s.Left + dx - origin.Left, Top = s.Top + dy - origin.Top };
-            var snap = SnapEngine.SnapMove(candidate, BaselineOffset(anchor), SnapTargetOf(target, _moveSet.Select(m => m.Object)), options,
-                snapX, snapY);
+            var snap = SnapEngine.SnapMove(candidate, BaselineOffset(anchor),
+                SnapTargetOf(target, _moveSet.Select(m => m.Object), MarginsOf(anchor)), options, snapX, snapY);
             (dx, dy, guidelines) = (dx + snap.Dx, dy + snap.Dy, snap.Guidelines);
             _moveTarget = (target, origin.Left, origin.Top);
             DropTarget = ReferenceEquals(target, anchor.Parent) || target.Parent is null ? null : target;
@@ -608,8 +608,10 @@ public sealed partial class DesignSurfaceController
     /// <summary>
     /// DSG-SUR-072: the guideline references in <paramref name="parent"/>: its visual children that are not dragged and not
     /// preserved, with their baselines, and its client size. From the model's layout (call with no preview active).
+    /// DSG-SUR-204: with the margins of the siblings, the padding of the parent and <paramref name="anchor"/>, the
+    /// margins of the moved or resized control (DSG-SUR-205), all read from the design model in design units.
     /// </summary>
-    private SnapTarget SnapTargetOf(FormObject parent, IEnumerable<FormObject> dragged)
+    internal SnapTarget SnapTargetOf(FormObject parent, IEnumerable<FormObject> dragged, SnapMargins anchor)
     {
         var g = Geometry;
         var excluded = new HashSet<FormObject>(dragged, ReferenceEqualityComparer.Instance);
@@ -618,18 +620,67 @@ public sealed partial class DesignSurfaceController
             .Select(c =>
             {
                 var b = Layout.GetBounds(c);
-                return new SnapReference(c, b, BaselineOffset(c) is { } offset ? b.Top + offset : null);
+                return new SnapReference(c, b, BaselineOffset(c) is { } offset ? b.Top + offset : null) { Margins = MarginsOf(c) };
             })
             .ToList();
         var client = g.GetClientRect(parent);
-        return new SnapTarget(parent, client.Width, client.Height, siblings);
+        var padding = new SnapPadding(Side(parent.Catalog, parent.Info, parent, "Padding.Left", 0).Value,
+            Side(parent.Catalog, parent.Info, parent, "Padding.Top", 0).Value,
+            Side(parent.Catalog, parent.Info, parent, "Padding.Right", 0).Value,
+            Side(parent.Catalog, parent.Info, parent, "Padding.Bottom", 0).Value);
+        return new SnapTarget(parent, client.Width, client.Height, siblings) { Padding = padding, Margins = anchor };
     }
 
-    /// <summary>The text baseline below the control's top (<c>IDesignRenderer.GetBaseline</c>); null for controls without text.</summary>
-    private int? BaselineOffset(FormObject obj)
+    /// <summary>DSG-SUR-200: the effective <c>Margins</c> of <paramref name="obj"/> and which of them are declared.</summary>
+    internal static SnapMargins MarginsOf(FormObject obj) => MarginsOf(obj.Catalog, obj.Info, obj);
+
+    /// <summary>
+    /// The margins of an object of class <paramref name="info"/>; <paramref name="obj"/> null: the class defaults, nothing
+    /// declared (a class being placed, DSG-SUR-205). Never reads <c>AlignWithMargins</c> (DSG-SUR-206).
+    /// </summary>
+    internal static SnapMargins MarginsOf(ComponentCatalog catalog, ComponentInfo? info, FormObject? obj)
+    {
+        var (left, top) = (Side(catalog, info, obj, "Margins.Left", 3), Side(catalog, info, obj, "Margins.Top", 3));
+        var (right, bottom) = (Side(catalog, info, obj, "Margins.Right", 3), Side(catalog, info, obj, "Margins.Bottom", 3));
+        return new SnapMargins(left.Value, top.Value, right.Value, bottom.Value, left.Declared, top.Declared, right.Declared, bottom.Declared);
+    }
+
+    /// <summary>
+    /// The effective integer of a property path (stored, else the metadata default; never negative) and whether it
+    /// differs from the metadata default; (<paramref name="missing"/>, false) for a class without the property.
+    /// </summary>
+    private static (int Value, bool Declared) Side(ComponentCatalog catalog, ComponentInfo? info, FormObject? obj, string path, int missing)
+    {
+        if (info is null || catalog.FindPropertyPath(info, path) is not { Kind: not PropertyKind.Object } property)
+        {
+            return (missing, false);
+        }
+
+        long standard = missing;
+        try
+        {
+            standard = PropertyAccess.DefaultValue(catalog, property) is IntegerValue d ? d.Value : missing;
+        }
+        catch (Exception e) when (e is FormatException or OverflowException or ArgumentException)
+        {
+            // a malformed metadata default is a metadata error, not a reason to fail a drag
+        }
+
+        var value = obj?.FindProperty(path) is { Value: IntegerValue stored } ? stored.Value : standard;
+        return ((int)Math.Clamp(value, 0, int.MaxValue), value != standard);
+    }
+
+    /// <summary>
+    /// The text baseline below the control's top; null for controls without text. DSG-SUR-209: the <c>baseline</c> key
+    /// of the component metadata when the class or an ancestor has it (DSG-SUR-208; the renderer is not asked), else
+    /// <c>IDesignRenderer.GetBaseline</c>.
+    /// </summary>
+    internal int? BaselineOffset(FormObject obj)
     {
         var ctx = RenderContext.FromLayout(obj, Layout);
-        return _layout.Renderers.Resolve(ctx.Info.RendererId).GetBaseline(ctx);
+        return ctx.Info.Baseline is { } rule
+            ? rule.Offset(ctx.Metrics, ctx.Height)
+            : _layout.Renderers.Resolve(ctx.Info.RendererId).GetBaseline(ctx);
     }
 
     /// <summary>
@@ -827,7 +878,8 @@ public sealed partial class DesignSurfaceController
             var snapEdges = !keepRatio ? edges
                 : edges & (widthDrives ? SnapEdges.Left | SnapEdges.Right : SnapEdges.Top | SnapEdges.Bottom);
             var options = SnapOptions.From(_settings, input.Modifiers.HasFlag(InputModifiers.Alt));
-            var snap = SnapEngine.SnapResize(raw, snapEdges, SnapTargetOf(primary.Parent!, _resizeSet.Select(m => m.Object)), options);
+            var snap = SnapEngine.SnapResize(raw, snapEdges,
+                SnapTargetOf(primary.Parent!, _resizeSet.Select(m => m.Object), MarginsOf(primary)), options);
             Guidelines = snap.Guidelines;
             var snapped = Resized(b, edges, dx + snap.Dx, dx + snap.Dx, dy + snap.Dy, dy + snap.Dy);
             r = Clamp(primary, snapped, edges);

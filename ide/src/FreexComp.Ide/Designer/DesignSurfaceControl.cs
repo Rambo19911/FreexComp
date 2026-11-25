@@ -37,6 +37,7 @@ public sealed class DesignSurfaceControl : Control, ICommandTarget
     private DesignSurfaceController? _surface;
     private DesignSurfaceCommands? _commands;
     private DesignSurfaceAutomationPeer? _peer;
+    private string _guidelines = "";
     private Point _pointer;
 
     /// <summary>
@@ -154,7 +155,18 @@ public sealed class DesignSurfaceControl : Control, ICommandTarget
         Invalidate();
     }
 
-    private void OnInvalidated(object? sender, EventArgs e) => Invalidate();
+    private void OnInvalidated(object? sender, EventArgs e)
+    {
+        // The guidelines of a drag are automation children (UI-DSG-131): they change with the drag, not with the model.
+        var guidelines = _surface is null ? "" : string.Join(';', _surface.Guidelines.Select(l => $"{l.Kind}{l.Axis}{l.Coordinate}/{l.Spacing}"));
+        if (guidelines != _guidelines)
+        {
+            _guidelines = guidelines;
+            _peer?.Refresh();
+        }
+
+        Invalidate();
+    }
 
     private void Invalidate()
     {

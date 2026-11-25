@@ -1223,4 +1223,153 @@ public sealed class DesignerViewTests
                 break;
         }
     }
+
+    /// <summary>
+    /// UI-DSG-131, UI-DSG-132 (D-114): while a drag snaps to a margin guideline the surface has the virtual element
+    /// <c>Designer.&lt;form&gt;.Guideline.Margin.&lt;Axis&gt;</c> whose help text is the applied distance — the setting, the sum
+    /// of two margins, or 0 at the parent's client edge (then the element has no extent along its axis); the other
+    /// guidelines have no help text; after the drop there is no guideline element.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Phase", "8")]
+    [Trait("Req", "UI-DSG-131")]
+    [Trait("Req", "UI-DSG-132")]
+    public async Task MarginGuidelineExposesSpacing()
+    {
+        static AutomationPeer[] Guides(AutomationPeer surface) =>
+            [.. surface.GetChildren().Where(p => p.GetAutomationId()!.StartsWith("Designer.MainForm.Guideline.", StringComparison.Ordinal))];
+
+        // The setting: GreetButton (left 232) dragged 6 to the left snaps to NameEdit's right edge (216) + 8.
+        await using (var h = await HeadlessHarness.StartAsync(o =>
+        {
+            Files(o);
+            o.Settings["designer.snapToGrid"] = false;
+        }))
+        {
+            var s = await OpenDesignAsync(h);
+            var peer = ControlAutomationPeer.CreatePeerForElement(s.Control);
+            Assert.Empty(Guides(peer));
+            var (x, y) = s.Center("GreetButton");
+            s.Down(x, y);
+            s.Move(x - 3, y);
+            s.Move(x - 6, y);
+            Assert.Equal(InteractionState.Moving, s.Surface.State);
+            var line = Assert.Single(s.Surface.Guidelines, l => l.Kind == GuidelineKind.Margin);
+            Assert.Equal((SnapAxis.X, 224, 8), (line.Axis, line.Coordinate, line.Spacing));
+            var item = Assert.Single(Guides(peer), p => p.GetAutomationId() == "Designer.MainForm.Guideline.Margin.X");
+            Assert.Equal("8", item.GetHelpText());
+            Assert.Same(peer, item.GetParent());
+
+            // Its bounds: the gap between the two controls, 8 wide.
+            var edit = s.Surface.Geometry.GetBounds(s.Object("NameEdit"));
+            var origin = peer.GetBoundingRectangle().TopLeft;
+            var bounds = item.GetBoundingRectangle();
+            Assert.Equal((origin.X + edit.Right, 8.0), (bounds.X, bounds.Width));
+            Assert.True(bounds.Height > 0);
+
+            // The guidelines of the other axis (the shared top edge or baseline) are elements too, without a help text.
+            Assert.Equal(s.Surface.Guidelines.Count, Guides(peer).Length);
+            Assert.All(Guides(peer).Where(p => p != item), p => Assert.True(string.IsNullOrEmpty(p.GetHelpText()), p.GetAutomationId()));
+            Assert.All(Guides(peer), p => Assert.Matches(@"^Designer\.MainForm\.Guideline\.(Edge|Baseline|Margin)\.[XY]$", p.GetAutomationId()!));
+
+            s.Up(x - 6, y);
+            Assert.Equal(224, s.Prop("GreetButton", "Left"));
+            Assert.Empty(s.Surface.Guidelines);
+            Assert.Empty(Guides(peer));
+        }
+
+        // Declared margins: NameEdit stores Margins.Right = 8, the button's left margin is the default 3 → 11.
+        await using (var h = await HeadlessHarness.StartAsync(o =>
+        {
+            Files(o);
+            o.InitialFiles["MainForm.form"] = FormText.Replace("    TabOrder = 0\n", "    TabOrder = 0\n    Margins.Right = 8\n", StringComparison.Ordinal)
+                .ReplaceLineEndings("\r\n");
+            o.Settings["designer.snapToGrid"] = false;
+        }))
+        {
+            var s = await OpenDesignAsync(h);
+            Assert.Equal(8, s.Prop("NameEdit", "Margins.Right"));
+            var peer = ControlAutomationPeer.CreatePeerForElement(s.Control);
+            var (x, y) = s.Center("GreetButton");
+            s.Down(x, y);
+            s.Move(x - 3, y);
+            s.Move(x - 6, y); // left 226 → 227
+            var item = Assert.Single(Guides(peer), p => p.GetAutomationId() == "Designer.MainForm.Guideline.Margin.X");
+            Assert.Equal("11", item.GetHelpText());
+            Assert.Equal(11.0, item.GetBoundingRectangle().Width);
+            s.Up(x - 6, y);
+            Assert.Equal(227, s.Prop("GreetButton", "Left"));
+        }
+
+        // Distance 0 (UI-DSG-132): the setting is 0 and neither padding nor margin applies — NameEdit (left 16) dragged
+        // to 2 snaps to the parent's client edge; the element lies on that edge and has no width.
+        await using (var h = await HeadlessHarness.StartAsync(o =>
+        {
+            Files(o);
+            o.Settings["designer.snapToGrid"] = false;
+            o.Settings["designer.guidelineMargin"] = 0;
+        }))
+        {
+            var s = await OpenDesignAsync(h);
+            var peer = ControlAutomationPeer.CreatePeerForElement(s.Control);
+            var (x, y) = s.Center("NameEdit");
+            s.Down(x, y);
+            s.Move(x - 7, y);
+            s.Move(x - 14, y);
+            var line = Assert.Single(s.Surface.Guidelines, l => l.Kind == GuidelineKind.Margin);
+            Assert.Equal((SnapAxis.X, 0, 0, null), (line.Axis, line.Coordinate, line.Spacing, line.Reference));
+            var item = Assert.Single(Guides(peer), p => p.GetAutomationId() == "Designer.MainForm.Guideline.Margin.X");
+            Assert.Equal("0", item.GetHelpText());
+            var client = s.Surface.Geometry.GetClientRect(s.Object("MainForm"));
+            var bounds = item.GetBoundingRectangle();
+            Assert.Equal((peer.GetBoundingRectangle().X + client.Left, 0.0, 5.0), (bounds.X, bounds.Width, bounds.Height)); // the two ticks
+            s.Up(x - 14, y);
+            Assert.Equal(0, s.Prop("NameEdit", "Left"));
+        }
+    }
+
+    /// <summary>
+    /// DSG-SUR-213 (card acceptance, D-116): the button dragged with the pointer until its top is within the snap distance
+    /// of the edit's top snaps to it — the guideline is shown while dragging (UI-DSG-050) — and the drop stores a Top
+    /// equal to the edit's; <c>file.save</c> writes equal Top values to the .form.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Phase", "8")]
+    [Trait("Req", "DSG-SUR-213")]
+    [Trait("Req", "UI-DSG-050")]
+    public async Task DragNearSiblingSnapsTopAndSavesEqualTop()
+    {
+        await using var h = await HeadlessHarness.StartAsync(Files);
+        var s = await OpenDesignAsync(h);
+        Assert.Equal((16, 15), (s.Prop("NameEdit", "Top"), s.Prop("GreetButton", "Top")));
+        Assert.Empty(s.Surface.Guidelines);
+
+        // Pointer press on the button, move 3 down: its top (18) is 2 from the edit's top — within the distance (4).
+        var (x, y) = s.Center("GreetButton");
+        s.Down(x, y);
+        s.Move(x, y + 9); // past the drag threshold
+        s.Move(x, y + 3);
+        Assert.Equal(InteractionState.Moving, s.Surface.State);
+        var line = Assert.Single(s.Surface.Guidelines, l => l.Axis == SnapAxis.Y);
+        Assert.Equal((GuidelineKind.Edge, 16, "NameEdit"), (line.Kind, line.Coordinate, line.Reference?.Name));
+        Assert.Equal(15, s.Prop("GreetButton", "Top")); // not stored before the drop
+        s.Up(x, y + 3);
+
+        // The drop stores the snapped position; no guideline is left.
+        Assert.Equal(InteractionState.Idle, s.Surface.State);
+        Assert.Empty(s.Surface.Guidelines);
+        Assert.Equal(s.Prop("NameEdit", "Top"), s.Prop("GreetButton", "Top"));
+        Assert.Equal((232, 16), (s.Prop("GreetButton", "Left"), s.Prop("GreetButton", "Top")));
+        Assert.True(s.Document.IsModified);
+
+        // Saved: the .form on disk, parsed, has equal Top values.
+        await h.ExecuteAsync("file.save");
+        Assert.False(s.Document.IsModified);
+        var path = Path.Combine(h.TempDir, "MainForm.form");
+        var saved = FreexComp.Designer.Text.FormParser.Parse(File.ReadAllText(path).ReplaceLineEndings("\n"), path, Catalog.Value).Document;
+        Assert.NotNull(saved);
+        Assert.Empty(saved.Diagnostics);
+        int Top(string name) => (int)((IntegerValue)saved.FindByName(name)!.FindProperty("Top")!.Value).Value;
+        Assert.Equal((16, 16), (Top("NameEdit"), Top("GreetButton")));
+    }
 }
