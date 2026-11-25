@@ -1,7 +1,9 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Presenters;
 using Avalonia.Headless.XUnit;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using AvaloniaEdit;
 using FreexComp.Ide.Core.ViewModels;
 using FreexComp.Ide.Tests.Infrastructure;
@@ -14,7 +16,8 @@ public sealed partial class VisualSnapshotTests
 {
     /// <summary>
     /// Help › Contents…, light and dark: <c>help-contents</c> — the dialog at its own size (440 × 360) and enlarged
-    /// (800 × 600) with one row per deployed page; <c>help-page</c> — the main window at 800 × 500 and 1920 × 1040 with
+    /// (800 × 600) with one row per deployed page; the list scrolls, and every row, scrolled into view, is drawn
+    /// completely inside the list's view port; <c>help-page</c> — the main window at 800 × 500 and 1920 × 1040 with
     /// the page "Library source" open as a read-only document. Rules: the list, every row and the buttons are drawn
     /// completely inside the dialog; the page's tab and text are drawn completely inside the window, the text is the
     /// one derived from the deployed file (UI-MENU-032), and its heading lines (only they) are heading lines.
@@ -65,11 +68,14 @@ public sealed partial class VisualSnapshotTests
             var opened = false;
             try
             {
-                Assert.Equal(pages.Select(p => "Dialog.HelpContents.Page." + p.Id), dlg.FindAll("Dialog.HelpContents.Page.").Select(AutomationIds.Get));
+                // The list virtualizes its rows: the rows are its items, only the ones in view are realized.
+                var list = dlg.Find<ListBox>("Pages");
+                string[] rowIds = [.. pages.Select(p => "Dialog.HelpContents.Page." + p.Id)];
+                Assert.Equal(rowIds, list.Items.Cast<Control>().Select(AutomationIds.Get));
                 dlg.Click("Page.library-source");
                 Control[] parts =
                 [
-                    dlg.Find<Control>("Pages"), .. dlg.FindAll("Dialog.HelpContents.Page."),
+                    list,
                     dlg.TryFind<Control>("Open") ?? dlg.Find<Control>("Button.Open"),
                     dlg.TryFind<Control>("Cancel") ?? dlg.Find<Control>("Button.Cancel"),
                 ];
@@ -85,6 +91,31 @@ public sealed partial class VisualSnapshotTests
                             defects.Add((variant, $"cut: {AutomationIds.Get(control)} — {hidden}"));
                     }
 
+                    // Every row is reachable: scrolled into view, it is realized, shown and lies completely inside the
+                    // list's view port (not only inside the scrolled extent).
+                    var port = list.GetVisualDescendants().OfType<ScrollContentPresenter>().Single();
+                    for (var i = 0; i < rowIds.Length; i++)
+                    {
+                        list.ScrollIntoView(i);
+                        Dispatcher.UIThread.RunJobs();
+                        if (list.ContainerFromIndex(i) is not { } row)
+                        {
+                            defects.Add((variant, $"not realized when scrolled into view: {rowIds[i]}"));
+                            continue;
+                        }
+
+                        Assert.Equal(rowIds[i], AutomationIds.Get(row));
+                        Assert.True(row.IsEffectivelyVisible, $"{variant}: {rowIds[i]} is not shown");
+                        if (VisualSnapshot.HiddenPart(row, dlg.Window) is { } hidden)
+                            defects.Add((variant, $"cut: {rowIds[i]} — {hidden}"));
+                        var rowBox = new Rect(row.TranslatePoint(default, dlg.Window)!.Value, row.Bounds.Size);
+                        var portBox = new Rect(port.TranslatePoint(default, dlg.Window)!.Value, port.Bounds.Size).Inflate(0.5);
+                        if (!portBox.Contains(rowBox))
+                            defects.Add((variant, $"cut: {rowIds[i]} {rowBox} outside the list's view port {portBox} when scrolled into view"));
+                    }
+
+                    list.ScrollIntoView(0);
+                    Dispatcher.UIThread.RunJobs();
                     if (VisualSnapshot.DistinctColors(dlg.Window, parts[0]) < 3)
                         defects.Add((variant, "the page list is not drawn"));
                     defects.AddRange(VisualSnapshot.LayoutDefects(dlg.Window).Select(d => (variant, d)));
