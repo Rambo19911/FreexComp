@@ -84,9 +84,15 @@ public static class MenuBarBuilder
                 };
             }
 
+            if (model.IsDisabled)
+            {
+                item.IsEnabled = false; // UI-TW-134: whatever the command says
+            }
+
             if (model.ToolTip is { } tip)
             {
                 ToolTip.SetTip(item, tip); // UI-MENU-009: the full path
+                ToolTip.SetShowOnDisabled(item, true); // IDE-PLAT-013: a disabled item says why
             }
             if (model.IconName is { } icon)
             {
@@ -99,7 +105,11 @@ public static class MenuBarBuilder
                 MenuToggleKind.Radio => MenuItemToggleType.Radio,
                 _ => MenuItemToggleType.None,
             };
-            if (model.ToggleKind != MenuToggleKind.None)
+            if (model.IsCheckedEntry is { } bullet)
+            {
+                item.IsChecked = bullet; // an entry of a generated exclusive list: fixed until the list is generated again
+            }
+            else if (model.ToggleKind != MenuToggleKind.None)
             {
                 item.Bind(MenuItem.IsCheckedProperty, new Binding(nameof(IdeCommand.IsChecked)) { Source = command, Mode = BindingMode.OneWay });
             }

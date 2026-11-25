@@ -202,8 +202,19 @@ public sealed class RunParametersViewModel : DialogViewModel<bool>
             return host.Length == 0 ? "" : RunFields.Resolve(project.Directory, host) ?? host;
         }
 
-        var outputDir = ConfigurationEdits.Effective(project, configuration)?.OutputDir ?? "";
-        var dir = RunFields.Resolve(project.Directory, outputDir) ?? project.Directory;
+        // IDE-PLAT-005: the output directory of the configuration on the project's active platform (CMP-1366).
+        if (ConfigurationEdits.Effective(project, configuration) is null)
+            return Path.Combine(project.Directory, project.Name + ".exe");
+        string dir;
+        try
+        {
+            dir = Path.GetFullPath(ProjectOptions.GetOutputDirectory(project, configuration, ProjectOptions.GetEffectivePlatform(project)));
+        }
+        catch (ArgumentException)
+        {
+            dir = project.Directory; // an output folder that is no path (still being typed in Project Options)
+        }
+
         return Path.Combine(dir, project.Name + ".exe");
     }
 

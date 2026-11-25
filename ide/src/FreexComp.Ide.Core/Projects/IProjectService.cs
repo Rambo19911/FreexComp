@@ -17,6 +17,22 @@ public interface IProjectService
     /// <summary>The open project as read by <c>FreexComp.Build</c> (run settings, configurations); null without one.</summary>
     FreexComp.Build.Project? Definition { get; }
 
+    /// <summary>The installed platforms (IDE-PLAT-001); labels and the code model's descriptor come from it.</summary>
+    IPlatformCatalog PlatformCatalog => BuiltInPlatformCatalog.Instance;
+
+    /// <summary>
+    /// IDE-PLAT-013: appends the installed platform <paramref name="id"/> to <c>platforms</c> (one project mutation,
+    /// IDE-PM-004); the active platform does not change. False when it is listed already, not installed, or the save failed.
+    /// </summary>
+    Task<bool> AddPlatformAsync(string id);
+
+    /// <summary>
+    /// IDE-PLAT-014: removes the listed platform <paramref name="id"/> — not the only one — with its
+    /// <c>platformOptions</c> entry, after <c>Msg.Platform.RemoveConfirm</c> when it has one; when it was the active
+    /// platform the first remaining one becomes active. Nothing on disk is deleted. False when nothing was removed.
+    /// </summary>
+    Task<bool> RemovePlatformAsync(string id);
+
     /// <summary>
     /// UI-DLG-081 <c>IProjectService.ApplyOptions</c>: replaces the open project's definition with
     /// <paramref name="workingCopy"/> (edited from <see cref="Definition"/> with <c>with</c>, so keys the dialogs do not

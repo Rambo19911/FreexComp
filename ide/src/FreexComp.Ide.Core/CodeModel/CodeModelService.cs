@@ -21,7 +21,7 @@ public sealed class CodeModelService
     private readonly IDocumentService _documents;
     private readonly IToolchainLocator _toolchain;
     private readonly Dictionary<string, long> _overrides = new(StringComparer.OrdinalIgnoreCase);
-    private (Project? Definition, string? Rtl, string? Framework, string? Data) _projectKey;
+    private (Project? Definition, FreexComp.Compiler.Targets.TargetInfo? Target, string? Rtl, string? Framework, string? Data) _projectKey;
 
     public CodeModelService(IProjectService projects, IDocumentService documents, IToolchainLocator toolchain,
         Platform.IFileSystem fileSystem)
@@ -45,11 +45,14 @@ public sealed class CodeModelService
         if (_projects.Definition is not { } definition || _projects.Project is not { } project)
             return null;
         var paths = _toolchain.Resolve();
-        var key = (definition, paths.RtlDir, paths.FrameworkDir, paths.DataDir);
+        // IDE-PLAT-006: the key holds the definition (its active platform included) and the descriptor of that platform.
+        // IDE-PLAT-007: a platform that is not installed is analysed with the baseline descriptor and its own lists.
+        var target = _projects.PlatformCatalog.Find(project.ActivePlatform)?.Target ?? BuiltInPlatformCatalog.Baseline with { Id = project.ActivePlatform };
+        var key = (definition, target, paths.RtlDir, paths.FrameworkDir, paths.DataDir);
         if (key != _projectKey)
         {
             _projectKey = key;
-            var options = ProjectOptions.ToCompilationOptions(definition, project.ActiveConfiguration) with
+            var options = ProjectOptions.ToCompilationOptions(definition, project.ActiveConfiguration, target) with
             {
                 RtlDirectory = paths.RtlDir ?? "",
                 UsePcuCache = false, // Check Syntax reads sources only and writes nothing (IDE-P3-055)

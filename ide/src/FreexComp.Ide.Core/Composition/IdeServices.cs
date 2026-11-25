@@ -85,6 +85,9 @@ public sealed record IdeServices
     /// <summary>The build engine (IDE-P3-030).</summary>
     public required FreexComp.Build.IBuildEngine BuildEngine { get; init; }
 
+    /// <summary>The installed platforms (IDE-PLAT-001).</summary>
+    public required Projects.IPlatformCatalog PlatformCatalog { get; init; }
+
     /// <summary>The Messages model (IDE-P3-060…068).</summary>
     public required Build.MessagesService Messages { get; init; }
 

@@ -118,6 +118,9 @@ public static class IdeCommandAvailability
         ["project.checkSyntax"] = IdleOnly,
         ["project.options"] = IdleOnly,
         ["project.setConfiguration"] = IdleOnly,
+        ["project.setPlatform"] = IdleOnly, // IDE-PLAT-003
+        ["project.addPlatform"] = IdleOnly, // IDE-PLAT-013
+        ["project.removePlatform"] = IdleOnly, // IDE-PLAT-014
         ["project.configurationManager"] = IdleOnly,
         ["project.setActive"] = IdleOnly, // IDE-PM-160
         ["project.dependencies"] = IdleOnly, // IDE-PM-175

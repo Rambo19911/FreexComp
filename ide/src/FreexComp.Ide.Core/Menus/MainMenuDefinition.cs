@@ -256,7 +256,11 @@ public static class MainMenuDefinition
             [
                 DynamicList("project.setConfiguration", 20),
             ]),
-            Command("project.configurationManager"),
+            Command("project.configurationManager"), // IDE-CFG-010: directly after Active Configuration
+            Submenu("Project.Platform", // IDE-PLAT-004
+            [
+                DynamicList("project.setPlatform", 20),
+            ]),
             Command("project.openOutputFolder"),
             Separator,
             Command("project.dependencies"),

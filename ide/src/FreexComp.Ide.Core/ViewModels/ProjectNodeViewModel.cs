@@ -12,12 +12,19 @@ public enum ProjectNodeKind
 
     /// <summary>The companion <c>.form</c> child of a unit (UI-TW-103).</summary>
     Form,
+
+    /// <summary>The node <c>Target Platforms</c>, the last child of the loaded project's root (IDE-PLAT-010).</summary>
+    Platforms,
+
+    /// <summary>One listed platform under <see cref="Platforms"/> (IDE-PLAT-011).</summary>
+    Platform,
 }
 
 /// <summary>
 /// One row of the Project Manager tree. <see cref="Key"/> is the UI-TW-114 row key (<c>$project</c>, <c>lib/</c>, the
 /// stored file path, the form path; the virtual External folder is <c>$external/</c>). In a project group the root of a
 /// listed or unavailable member is <c>$project:&lt;name&gt;</c> and the rows below it are prefixed <c>&lt;name&gt;:</c> (UI-TW-128).
+/// The node Target Platforms is <c>$platforms/</c>, a platform row <c>$platforms/&lt;id&gt;</c> (IDE-PLAT-010).
 /// </summary>
 public sealed class ProjectNodeViewModel : ObservableObject
 {
@@ -74,10 +81,25 @@ public sealed class ProjectNodeViewModel : ObservableObject
     /// <summary>The root of the active project of a group with further members: its screen-reader name says so (UI-TW-125).</summary>
     public bool AnnounceActive { get; init; }
 
-    /// <summary>The row's tooltip: the full path (UI-TW-111); for the root of a library project the DLL path (IDE-TGT-017).</summary>
-    public string ToolTipText
+    /// <summary>The id of a platform row (IDE-PLAT-011); null for every other row.</summary>
+    public string? PlatformId { get; init; }
+
+    /// <summary>The row of the active platform: drawn strong, its screen-reader name says so (UI-TW-132).</summary>
+    public bool IsActivePlatform { get; init; }
+
+    /// <summary>A platform row whose platform is not installed: disabled text, warning overlay, the tooltip says why (UI-TW-133).</summary>
+    public bool IsNotInstalled { get; init; }
+
+    /// <summary>The node Target Platforms or one of its rows: no path, no part in file operations (IDE-PLAT-015).</summary>
+    public bool IsPlatformRow => Kind is ProjectNodeKind.Platforms or ProjectNodeKind.Platform;
+
+    /// <summary>
+    /// The row's tooltip: the full path (UI-TW-111); for the root of a library project the DLL path (IDE-TGT-017); for a
+    /// platform that is not installed <c>Msg.Platform.NotInstalled</c>; null (no tooltip) for the other platform rows.
+    /// </summary>
+    public string? ToolTipText
     {
-        get => field ?? FullPath;
+        get => field ?? (IsPlatformRow ? null : FullPath);
         init;
     }
 
@@ -93,6 +115,8 @@ public sealed class ProjectNodeViewModel : ObservableObject
         ProjectNodeKind.Project => IsLibrary ? "project.library" : "project",
         ProjectNodeKind.Folder => IsExpanded ? "open-folder" : "folder",
         ProjectNodeKind.Form => "form",
+        ProjectNodeKind.Platforms => "platforms", // UI-TW-131
+        ProjectNodeKind.Platform => "platform",
         _ => Path.GetExtension(Name).ToLowerInvariant() switch
         {
             ".pas" or ".pp" or ".inc" => "unit",
@@ -199,6 +223,7 @@ public sealed class ProjectNodeViewModel : ObservableObject
     public string AutomationName =>
         Name + (IsMissing ? Resources.Strings.ProjectManager_MissingSuffix : "") + (IsModified ? Resources.Strings.ProjectManager_ModifiedSuffix : "")
         + (AnnounceActive ? Resources.Strings.ProjectManager_ActiveProjectSuffix : "") // UI-TW-125
+        + (IsActivePlatform ? Resources.Strings.ProjectManager_ActivePlatformSuffix : "") // UI-TW-132
         + (IsDropTarget ? Resources.Strings.ProjectManager_DropTargetSuffix : ""); // UI-TW-122
 
     internal void SetMatch(int start, int length)

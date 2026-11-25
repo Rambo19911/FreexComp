@@ -1580,6 +1580,58 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   <data name="Cmd_project_setConfiguration" xml:space="preserve">
     <value>Set Active Configuration</value>
   </data>
+  <data name="Cmd_project_setPlatform" xml:space="preserve">
+    <value>Set Active Platform</value>
+    <comment>commands.md §2.5 project.setPlatform (IDE-PLAT-003)</comment>
+  </data>
+  <data name="Cmd_project_addPlatform" xml:space="preserve">
+    <value>Add Platform…</value>
+    <comment>commands.md §2.5 project.addPlatform (IDE-PLAT-013)</comment>
+  </data>
+  <data name="Cmd_project_removePlatform" xml:space="preserve">
+    <value>Remove Platform</value>
+    <comment>commands.md §2.5 project.removePlatform (IDE-PLAT-014)</comment>
+  </data>
+  <data name="Menu_project_setPlatform" xml:space="preserve">
+    <value>Set as &amp;Active Platform</value>
+    <comment>Project Manager context menu of a platform row (UI-TW-134)</comment>
+  </data>
+  <data name="Menu_project_addPlatform" xml:space="preserve">
+    <value>A&amp;dd Platform…</value>
+    <comment>Project Manager context menu of the Target Platforms node and its rows (UI-TW-134)</comment>
+  </data>
+  <data name="Menu_project_removePlatform" xml:space="preserve">
+    <value>&amp;Remove Platform</value>
+    <comment>Project Manager context menu of a platform row (UI-TW-134)</comment>
+  </data>
+  <data name="ProjectManager_TargetPlatforms" xml:space="preserve">
+    <value>Target Platforms</value>
+    <comment>IDE-PLAT-010: the last child of the loaded project's root</comment>
+  </data>
+  <data name="ProjectManager_ActivePlatformSuffix" xml:space="preserve">
+    <value>, active platform</value>
+    <comment>UI-TW-132: ends the screen-reader name of the active platform's row</comment>
+  </data>
+  <data name="QuickPick_AddPlatform_Title" xml:space="preserve">
+    <value>Add Platform</value>
+    <comment>UI-TW-135, IDE-PLAT-013</comment>
+  </data>
+  <data name="Msg_Platform_NotInstalled" xml:space="preserve">
+    <value>This platform is not installed. The project cannot be built for it here.</value>
+    <comment>states-and-messages.md Msg.Platform.NotInstalled (tooltip, UI-TW-133)</comment>
+  </data>
+  <data name="Msg_Platform_NothingToAdd" xml:space="preserve">
+    <value>Every installed platform is already in the project.</value>
+    <comment>states-and-messages.md Msg.Platform.NothingToAdd (tooltip of the disabled command, IDE-PLAT-013)</comment>
+  </data>
+  <data name="Msg_Platform_RemoveConfirm" xml:space="preserve">
+    <value>Remove the platform {0} from the project? Its platform options in the project file are removed too. Files already built are not deleted.</value>
+    <comment>states-and-messages.md Msg.Platform.RemoveConfirm (IDE-PLAT-014); 0 = platform label</comment>
+  </data>
+  <data name="ProjectOptions_PlatformActiveSuffix" xml:space="preserve">
+    <value>(active)</value>
+    <comment>IDE-PLAT-016: follows, after a space, the active platform in the Platforms row</comment>
+  </data>
   <data name="Cmd_project_configurationManager" xml:space="preserve">
     <value>Configuration Manager…</value>
   </data>
@@ -2556,6 +2608,14 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   </data>
   <data name="Menu_Project_Configuration" xml:space="preserve">
     <value>Active Confi&amp;guration</value>
+  </data>
+  <data name="Menu_Project_Platform" xml:space="preserve">
+    <value>Active Pla&amp;tform</value>
+    <comment>menus.md §6 submenu Menu.Project.Platform (IDE-PLAT-004)</comment>
+  </data>
+  <data name="Platform_NotInstalledSuffix" xml:space="preserve">
+    <value>(not installed)</value>
+    <comment>UI-TB-022: follows, after a space, the label of a listed platform that is not installed</comment>
   </data>
   <data name="Menu_project_openOutputFolder" xml:space="preserve">
     <value>Open O&amp;utput Folder</value>
@@ -4391,10 +4451,6 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
     <value>Target platform:</value>
     <comment>dialogs.md §8.1</comment>
   </data>
-  <data name="ProjectOptions_PlatformWin64" xml:space="preserve">
-    <value>Windows 64-bit</value>
-    <comment>dialogs.md §8.1</comment>
-  </data>
   <data name="ProjectOptions_ProjectFile" xml:space="preserve">
     <value>Project file:</value>
     <comment>dialogs.md §8.1</comment>
@@ -5084,6 +5140,10 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   <data name="ChildListEditor_Grid" xml:space="preserve">
     <value>Properties of the selected item:</value>
     <comment>dialogs.md §27 Dialog.ChildListEditor.Grid accessible name</comment>
+  </data>
+  <data name="ChildListEditor_NoCategory" xml:space="preserve">
+    <value>(No Category)</value>
+    <comment>dialogs.md §27 UI-DLG-309, DSG-SUR-217: header row of the children without a category</comment>
   </data>
   <data name="Menu_run_continue" xml:space="preserve">
     <value>&amp;Continue</value>

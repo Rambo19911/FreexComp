@@ -20,7 +20,7 @@ internal sealed class DebugTestBed : IDisposable
 {
     private readonly TempDirectory _temp = new();
 
-    public DebugTestBed()
+    public DebugTestBed(Action<TestCompositionOptions>? configure = null)
     {
         Dir = _temp.Combine("Hello");
         Services = TestComposition.Build(o =>
@@ -33,6 +33,7 @@ internal sealed class DebugTestBed : IDisposable
             o.DebugSessions = Sessions;
             o.ImplementedPhase = 6;
             o.UserDir = _temp.Combine("user");
+            configure?.Invoke(o);
         });
         foreach (var tool in (string[])[@"tc\llvm\clang.exe", @"tc\llvm\lld-link.exe", @"tc\llvm\llvm-dlltool.exe", @"tc\rtl\System.pas"])
             File(_temp.Combine(tool), "");

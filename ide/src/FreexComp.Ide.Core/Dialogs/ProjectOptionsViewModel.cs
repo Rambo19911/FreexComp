@@ -314,7 +314,19 @@ public sealed partial class ProjectOptionsViewModel : DialogViewModel<bool>
 
     public string LanguageText => Strings.ProjectOptions_LanguagePascal;
 
-    public string PlatformText => Strings.ProjectOptions_PlatformWin64;
+    /// <summary>
+    /// IDE-PLAT-016: the listed platforms by label (UI-TB-022), comma-separated, the active one followed by
+    /// <c> (active)</c>. Read-only: platforms are edited in the Project Manager.
+    /// </summary>
+    public string PlatformText
+    {
+        get
+        {
+            var active = FreexComp.Build.ProjectOptions.GetEffectivePlatform(_baseline);
+            return string.Join(", ", _baseline.Platforms.Select(p =>
+                PlatformLabels.Label(p, _projects.PlatformCatalog) + (p == active ? " " + Strings.ProjectOptions_PlatformActiveSuffix : "")));
+        }
+    }
 
     public string ProjectFile => _baseline.FilePath;
 

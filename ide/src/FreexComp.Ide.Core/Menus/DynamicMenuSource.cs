@@ -3,7 +3,11 @@ using FreexComp.Ide.Core.Services;
 namespace FreexComp.Ide.Core.Menus;
 
 /// <summary>One generated entry of a dynamic list: the provider's command with <paramref name="Argument"/>.</summary>
-public sealed record DynamicMenuEntry(string Label, string Argument, string? ToolTip);
+public sealed record DynamicMenuEntry(string Label, string Argument, string? ToolTip)
+{
+    /// <summary>An entry of an exclusive group (UI-MENU-007): whether it carries the bullet; null = no bullet group.</summary>
+    public bool? IsChecked { get; init; }
+}
 
 /// <summary>The entries of the <see cref="DynamicListNode"/>s (UI-MENU-002, UI-MENU-009).</summary>
 public interface IDynamicMenuSource
@@ -65,4 +69,59 @@ public sealed class RecentMenuSource : IDynamicMenuSource
 
         return "…" + path[^(max - 1)..];
     }
+}
+
+/// <summary>
+/// Project › Active Configuration and Project › Active Platform (IDE-PM-090, IDE-PLAT-004): one entry per configuration
+/// and per listed platform of the open project in file order, the active one with the bullet. Platform entries are
+/// labelled per UI-TB-022 and carry the platform id as their argument.
+/// </summary>
+public sealed class ProjectMenuSource : IDynamicMenuSource
+{
+    private readonly Projects.IProjectService _projects;
+
+    public ProjectMenuSource(Projects.IProjectService projects)
+    {
+        ArgumentNullException.ThrowIfNull(projects);
+        _projects = projects;
+        projects.ProjectChanged += (_, _) => Changed?.Invoke(this, EventArgs.Empty);
+    }
+
+    public event EventHandler? Changed;
+
+    public IReadOnlyList<DynamicMenuEntry> GetEntries(string providerId, int max)
+    {
+        if (_projects.Project is not { } project)
+            return [];
+        return providerId switch
+        {
+            "project.setConfiguration" =>
+                [.. project.Configurations.Take(max).Select(c => new DynamicMenuEntry(c, c, null) { IsChecked = c == project.ActiveConfiguration })],
+            "project.setPlatform" =>
+            [
+                .. project.Platforms.Take(max).Select(p =>
+                    new DynamicMenuEntry(Projects.PlatformLabels.Label(p, _projects.PlatformCatalog), p, null) { IsChecked = p == project.ActivePlatform }),
+            ],
+            _ => [],
+        };
+    }
+}
+
+/// <summary>Several sources as one: the first that knows a provider supplies its entries.</summary>
+public sealed class CompositeMenuSource : IDynamicMenuSource
+{
+    private readonly IReadOnlyList<IDynamicMenuSource> _sources;
+
+    public CompositeMenuSource(params IDynamicMenuSource[] sources)
+    {
+        ArgumentNullException.ThrowIfNull(sources);
+        _sources = sources;
+        foreach (var source in sources)
+            source.Changed += (_, _) => Changed?.Invoke(this, EventArgs.Empty);
+    }
+
+    public event EventHandler? Changed;
+
+    public IReadOnlyList<DynamicMenuEntry> GetEntries(string providerId, int max) =>
+        _sources.Select(s => s.GetEntries(providerId, max)).FirstOrDefault(e => e.Count > 0) ?? [];
 }

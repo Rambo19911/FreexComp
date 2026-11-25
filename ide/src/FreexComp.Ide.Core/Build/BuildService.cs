@@ -161,15 +161,16 @@ public sealed class BuildService : IBuildService
                 var files = member.Files.SelectMany(f => new[] { f.Path, f.Form }).OfType<string>()
                     .Select(f => Path.GetFullPath(Path.Combine(directory, f.Replace('/', Path.DirectorySeparatorChar))))
                     .Append(member.FilePath).ToHashSet(StringComparer.OrdinalIgnoreCase);
-                return new Subject(member.FilePath, member.Name, member.Configuration, definition.Platforms.FirstOrDefault(),
+                return new Subject(member.FilePath, member.Name, member.Configuration, ProjectOptions.GetEffectivePlatform(definition),
                     () => AvailableMember(member.FilePath) is not null, files.Contains);
             case Scope.Group when HasGroupToBuild && Group!.FilePath is { } groupPath:
                 // IDE-PM-171: every project uses its own active values; the set of all modified file documents is saved.
                 return new Subject(groupPath, Path.GetFileNameWithoutExtension(groupPath), null, null,
                     () => HasGroupToBuild && Same(Group?.FilePath, groupPath), _ => true);
             case Scope.Active when _projects.Project is { } project:
+                // IDE-PLAT-005: the request carries the active platform (the engine never falls back to another one).
                 return new Subject(project.FilePath, project.Name, project.ActiveConfiguration,
-                    project.Platforms.Count > 0 ? project.Platforms[0] : null, () => Same(_projects.Project?.FilePath, project.FilePath),
+                    project.ActivePlatform, () => Same(_projects.Project?.FilePath, project.FilePath),
                     _projects.IsMember);
             default:
                 return null;

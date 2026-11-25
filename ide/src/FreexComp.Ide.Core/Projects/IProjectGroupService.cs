@@ -21,8 +21,8 @@ public sealed record ProjectGroupMember(string FilePath, Project? Definition, st
     public string? Configuration => Definition is not { } d ? null
         : d.Configurations.ContainsKey(d.ActiveConfiguration) || d.ConfigurationNames.Length == 0 ? d.ActiveConfiguration : d.ConfigurationNames[0];
 
-    /// <summary>The platform shown in the badge; null when unavailable.</summary>
-    public string? Platform => Definition is null ? null : Definition.Platforms.FirstOrDefault() ?? "win64";
+    /// <summary>The member's own active platform (IDE-PLAT-008), the id; null when unavailable.</summary>
+    public string? Platform => Definition is null ? null : ProjectOptions.GetEffectivePlatform(Definition);
 
     /// <summary>The <c>files</c> entries as stored; empty when unavailable.</summary>
     public IReadOnlyList<ProjectFile> Files => Definition is null ? [] : Definition.Files;

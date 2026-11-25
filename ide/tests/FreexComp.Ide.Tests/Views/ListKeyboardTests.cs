@@ -82,7 +82,7 @@ public sealed class ListKeyboardTests
         h.Press("Right"); // expand
         Assert.True(pm.Find("lib/")!.IsExpanded);
         h.Press("End");
-        Assert.Equal(["Unit2.pas"], Selected(pm));
+        Assert.Equal(["$platforms/"], Selected(pm)); // the last row: the node Target Platforms (IDE-PLAT-010)
         h.Press("Home");
         Assert.Equal(["$project"], Selected(pm));
 

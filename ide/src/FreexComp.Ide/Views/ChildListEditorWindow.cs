@@ -1,10 +1,14 @@
 using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
+using Avalonia.Controls.Primitives.PopupPositioning;
+using Avalonia.Controls.Presenters;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Styling;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using FreexComp.Designer.Model;
@@ -17,10 +21,13 @@ namespace FreexComp.Ide.Views;
 /// <summary>
 /// The Child List Editor (dialogs.md §27, DSG-SUR-198, 199; D-099): 640 × 400, resizable; the child list (240 px,
 /// extended selection, <c>Dialog.ChildListEditor.Item.&lt;ComponentName&gt;</c>) with New / Delete / Move Up / Move Down
-/// under it — New is a drop-down of class names (<c>Dialog.ChildListEditor.New.&lt;ClassName&gt;</c>) only when several
-/// item classes exist — and the embedded property grid with its Properties / Events page tabs. Keys in the list: Insert,
-/// Delete, Ctrl+Up / Ctrl+Down, Enter or a double-click (the default handler, UI-DLG-260). Close (Escape / ×) only
-/// closes: every operation is already applied.
+/// under it and the embedded property grid with its Properties / Events page tabs. When a child has a category the list
+/// is grouped under header rows (<c>Dialog.ChildListEditor.Group.&lt;Category&gt;</c>; UI-DLG-306, DSG-SUR-217, 218): not
+/// selectable, skipped by the keyboard. With several item classes New is a split button (UI-DLG-307): its button part
+/// creates the first class, its arrow part (Alt+Down) opens the class picker — a menu with section headers
+/// (<c>Dialog.ChildListEditor.New.Group.&lt;Category&gt;</c>) and class rows (<c>Dialog.ChildListEditor.New.&lt;ClassName&gt;</c>).
+/// Keys in the list: Insert, Delete, Ctrl+Up / Ctrl+Down, Enter or a double-click (the default handler, UI-DLG-260).
+/// Close (Escape / ×) only closes: every operation is already applied.
 /// </summary>
 public sealed class ChildListEditorWindow : DialogWindow
 {
@@ -45,14 +52,22 @@ public sealed class ChildListEditorWindow : DialogWindow
 
         public PropertyGridView Grid { get; } = new(Id("Grid"), Id("Grid.Row.")) { IsInDialog = true, BorderThickness = new Thickness(1) };
 
+        /// <summary>The rows the list shows now.</summary>
+        public IReadOnlyList<ChildListRow> Shown { get; set; } = [];
+
         public bool Syncing { get; set; }
     }
 
     private static Grid Body(ChildListEditorViewModel model, Parts p)
     {
-        var itemsLabel = new Label { Content = Strings.ChildListEditor_Items, Target = p.List, Padding = new Thickness(0, 0, 0, 4) };
+        var itemsLabel = new Label { Content = Access(Strings.ChildListEditor_Items), Target = p.List, Padding = new Thickness(0, 0, 0, 4) };
         AutomationProperties.SetAutomationId(p.List, Id("Items"));
         SetKeepsEnter(p.List, true); // UI-DLG-260: Enter on a row is the default handler, not Close
+        // UI-DLG-306: a header row has no selection fill (a range of the extended selection runs across it).
+        p.List.Styles.Add(new Style(x => x.OfType<ListBoxItem>().Class(HeaderClass).Template().OfType<ContentPresenter>().Name("PART_ContentPresenter"))
+        {
+            Setters = { new Setter(ContentPresenter.BackgroundProperty, Brushes.Transparent) },
+        });
         AutomationProperties.SetName(p.List, Plain(Strings.ChildListEditor_Items));
         var placeholder = new TextBlock { Text = model.EmptyText, Margin = new Thickness(8), TextWrapping = TextWrapping.Wrap, IsHitTestVisible = false };
         placeholder.Bind(TextBlock.ForegroundProperty, placeholder.GetResourceObservable("FxcTextTertiaryBrush"));
@@ -60,8 +75,8 @@ public sealed class ChildListEditorWindow : DialogWindow
         var listFrame = new Border { BorderThickness = new Thickness(1), Child = new Panel { Children = { p.List, placeholder } } };
         listFrame.Bind(Border.BorderBrushProperty, listFrame.GetResourceObservable("FxcBorderDefaultBrush"));
 
-        Button? newButton = null;
-        newButton = Button("New", Strings.ChildListEditor_New, () => New(model, newButton!));
+        // UI-DLG-307: a split button with the class picker when the metadata allows more than one item class.
+        Control newButton = model.HasClassChoice ? SplitNew(model) : Button("New", Strings.ChildListEditor_New, () => model.New());
         var delete = Button("Delete", Strings.ChildListEditor_Delete, model.Delete);
         var up = Button("MoveUp", Strings.ChildListEditor_MoveUp, model.MoveUp);
         var down = Button("MoveDown", Strings.ChildListEditor_MoveDown, model.MoveDown);
@@ -88,6 +103,7 @@ public sealed class ChildListEditorWindow : DialogWindow
         Place(body, itemsLabel, 0, 0);
         Place(body, listFrame, 1, 0);
         Place(body, buttons, 2, 0);
+        Grid.SetColumnSpan(buttons, 3); // the split button makes the row wider than the list column
         Place(body, right, 0, 2);
         Grid.SetRowSpan(right, 2);
 
@@ -106,24 +122,25 @@ public sealed class ChildListEditorWindow : DialogWindow
             var hadFocus = p.List.IsKeyboardFocusWithin;
             var focused = (TopLevel.GetTopLevel(p.List)?.FocusManager?.GetFocusedElement() as Visual)?.FindAncestorOfType<ListBoxItem>(includeSelf: true)?.Tag;
             var rows = model.Rows;
-            var items = p.List.Items.Cast<ListBoxItem>().ToList();
-            if (items.Count != rows.Count || !items.Zip(rows).All(pair => ReferenceEquals(pair.First.Tag, pair.Second.Item) && (string?)pair.First.Content == pair.Second.Text))
+            if (!rows.SequenceEqual(p.Shown))
             {
+                p.Shown = rows;
                 p.List.Items.Clear();
                 foreach (var row in rows)
                 {
-                    var item = new ListBoxItem { Content = row.Text, Tag = row.Item };
-                    AutomationProperties.SetAutomationId(item, Id("Item." + row.Name));
-                    AutomationProperties.SetName(item, row.Text);
-                    p.List.Items.Add(item);
+                    p.List.Items.Add(row.IsHeader ? HeaderItem(row) : ChildItem(row));
                 }
             }
 
+            // The list's own selection is kept while it shows the model's (its anchor serves the next Shift+arrow).
             var selected = new HashSet<FormObject>(model.Selection, ReferenceEqualityComparer.Instance);
-            p.List.SelectedItems!.Clear();
-            foreach (var item in p.List.Items.Cast<ListBoxItem>().Where(i => i.Tag is FormObject o && selected.Contains(o)))
+            if (!selected.SetEquals(p.List.SelectedItems!.OfType<ListBoxItem>().Select(i => i.Tag).OfType<FormObject>()))
             {
-                p.List.SelectedItems.Add(item);
+                p.List.SelectedItems!.Clear();
+                foreach (var item in p.List.Items.Cast<ListBoxItem>().Where(i => i.Tag is FormObject o && selected.Contains(o)))
+                {
+                    p.List.SelectedItems.Add(item);
+                }
             }
 
             placeholder.IsVisible = model.IsEmpty;
@@ -150,6 +167,8 @@ public sealed class ChildListEditorWindow : DialogWindow
         {
             if (!p.Syncing)
             {
+                // DSG-SUR-218: a header row is not counted by the extended selection (a range across it, Ctrl+A): the
+                // list's own selection may hold it — it shows no selection fill — and the children alone are the selection.
                 model.Select(p.List.SelectedItems!.OfType<ListBoxItem>().Select(i => i.Tag).OfType<FormObject>());
             }
         };
@@ -191,8 +210,16 @@ public sealed class ChildListEditorWindow : DialogWindow
             }
         });
 
-        // New: the grid's Caption (else Name) row takes the focus.
-        model.GridFocusRequested += (_, _) => p.Grid.Focus(NavigationMethod.Tab);
+        // New: the new child is scrolled into view (DSG-SUR-220); the grid's Caption (else Name) row takes the focus.
+        model.GridFocusRequested += (_, _) =>
+        {
+            if (p.List.SelectedItems?.OfType<ListBoxItem>().FirstOrDefault() is { } created)
+            {
+                p.List.ScrollIntoView(created);
+            }
+
+            p.Grid.Focus(NavigationMethod.Tab);
+        };
         model.PropertyChanged += (_, _) => Sync();
         model.Grid.PropertyChanged += (_, e) =>
         {
@@ -206,25 +233,167 @@ public sealed class ChildListEditorWindow : DialogWindow
         return body;
     }
 
-    /// <summary>New: one item class creates at once; several open the class list under the button.</summary>
-    private static void New(ChildListEditorViewModel model, Button button)
+    /// <summary>The style class of a header row of the list.</summary>
+    public const string HeaderClass = "header";
+
+    /// <summary>The rows of the class picker that are visible without scrolling (UI-DLG-307).</summary>
+    public const int PickerVisibleRows = 12;
+
+    /// <summary>
+    /// UI-DLG-306: a child row — in a grouped list indented by <c>space.4</c>, its screen-reader name prefixed with the
+    /// category; in a flat list exactly the row of before.
+    /// </summary>
+    private static ListBoxItem ChildItem(ChildListRow row)
     {
-        if (!model.HasClassChoice)
+        var item = new ListBoxItem { Tag = row.Item };
+        if (row.Category is null)
         {
-            model.New();
-            return;
+            item.Content = row.Text;
+        }
+        else
+        {
+            item.Content = new TextBlock { Text = row.Text, Margin = new Thickness(Metric("FxcSpace4"), 0, 0, 0) };
         }
 
-        var menu = new ContextMenu();
-        foreach (var className in model.ItemClasses)
+        AutomationProperties.SetAutomationId(item, Id("Item." + row.Name));
+        AutomationProperties.SetName(item, row.AccessibleName);
+        return item;
+    }
+
+    /// <summary>
+    /// UI-DLG-306, DSG-SUR-218: the header row of a category — <c>type.caption</c>, <c>text.secondary</c>, as high as a
+    /// child row, left padding <c>space.2</c>; no hover or selection fill, no keyboard focus.
+    /// </summary>
+    private static ListBoxItem HeaderItem(ChildListRow row)
+    {
+        var caption = new TextBlock { Text = row.Text, Classes = { "caption" }, VerticalAlignment = VerticalAlignment.Center };
+        caption.Bind(TextBlock.ForegroundProperty, caption.GetResourceObservable("FxcTextSecondaryBrush"));
+        // An invisible line of body text gives the header the height of a child row.
+        var line = new TextBlock { Text = " ", Opacity = 0, IsHitTestVisible = false };
+        var item = new ListBoxItem
         {
-            var item = new MenuItem { Header = className };
-            AutomationProperties.SetAutomationId(item, Id("New." + className));
-            item.Click += (_, _) => model.New(className);
+            Content = new Panel { Children = { line, caption } }, Tag = row, Focusable = false, IsHitTestVisible = false, Classes = { HeaderClass },
+        };
+        item.AttachedToVisualTree += (_, _) =>
+        {
+            var styled = item.Padding; // the list row padding of the theme; only its left side differs
+            item.Padding = new Thickness(Metric("FxcSpace2"), styled.Top, styled.Right, styled.Bottom);
+        };
+        AutomationProperties.SetAutomationId(item, Id("Group." + row.Name));
+        AutomationProperties.SetName(item, row.Text);
+        return item;
+    }
+
+    /// <summary>
+    /// UI-DLG-307, 308: New as a split button — the button part creates the first class; the arrow part, Alt+Down or F4
+    /// on the focused button open the picker, a menu under the button (above it when there is no room below; a popup of
+    /// its own, never cut by the dialog) with at most <see cref="PickerVisibleRows"/> rows before it scrolls.
+    /// </summary>
+    private static SplitButton SplitNew(ChildListEditorViewModel model)
+    {
+        var split = new SplitButton { Content = Access(Strings.ChildListEditor_New), MinWidth = 0 };
+        AutomationProperties.SetAutomationId(split, Id("New"));
+        AutomationProperties.SetName(split, Plain(Strings.ChildListEditor_New));
+        split.Click += (_, e) =>
+        {
+            e.Handled = true;
+            model.New();
+        };
+        // Enter on the focused button is its own click (on release), not the dialog's default button.
+        split.AddHandler(KeyDownEvent, (_, e) => e.Handled |= e is { Key: Key.Enter, KeyModifiers: KeyModifiers.None });
+
+        var menu = new MenuFlyout
+        {
+            Placement = PlacementMode.BottomEdgeAlignedLeft,
+            PlacementConstraintAdjustment = PopupPositionerConstraintAdjustment.FlipY | PopupPositionerConstraintAdjustment.SlideX | PopupPositionerConstraintAdjustment.SlideY,
+        };
+        var items = new List<MenuItem>();
+        foreach (var row in model.PickerRows)
+        {
+            var item = row.IsHeader ? PickerHeader(row) : PickerClass(model, row, items);
+            items.Add(item);
             menu.Items.Add(item);
         }
 
-        menu.Open(button);
+        menu.Opened += (_, _) => Dispatcher.UIThread.Post(() =>
+        {
+            if (!menu.IsOpen || items.FirstOrDefault(i => i.IsEnabled) is not { } first)
+            {
+                return;
+            }
+
+            // At most twelve rows, then scrolling: the natural height less the rows beyond the twelfth.
+            if (first.Parent is MenuFlyoutPresenter { Tag: null } presenter && items.Count > PickerVisibleRows && presenter.Bounds.Height > 0)
+            {
+                presenter.Tag = presenter; // measured once
+                presenter.MaxHeight = presenter.Bounds.Height - items.Skip(PickerVisibleRows).Sum(i => i.Bounds.Height);
+            }
+
+            Highlight(first); // the keyboard starts at the first class
+        }, DispatcherPriority.Loaded);
+        split.Flyout = menu;
+        return split;
+    }
+
+    /// <summary>A section header of the picker (DSG-SUR-216, UI-DLG-307): as the list headers, not selectable.</summary>
+    private static MenuItem PickerHeader(ChildListPickerRow row)
+    {
+        var caption = new TextBlock { Text = row.Text, Classes = { "caption" }, VerticalAlignment = VerticalAlignment.Center };
+        caption.Bind(TextBlock.ForegroundProperty, caption.GetResourceObservable("FxcTextSecondaryBrush"));
+        var item = new MenuItem { Header = caption, IsEnabled = false, IsHitTestVisible = false, Focusable = false };
+        AutomationProperties.SetAutomationId(item, Id("New.Group." + row.Text));
+        AutomationProperties.SetName(item, row.Text);
+        return item;
+    }
+
+    /// <summary>
+    /// A class row of the picker (UI-DLG-307): the display name, then the class name in <c>text.secondary</c> after a gap
+    /// of <c>space.4</c>; rows of a section are indented like the children of a group. A click or Enter creates the class;
+    /// a typed character moves to the next class whose display name starts with it.
+    /// </summary>
+    private static MenuItem PickerClass(ChildListEditorViewModel model, ChildListPickerRow row, IReadOnlyList<MenuItem> all)
+    {
+        var name = new TextBlock { Text = row.Text, MinWidth = 120, VerticalAlignment = VerticalAlignment.Center };
+        var className = new TextBlock { Text = row.ClassName, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(Metric("FxcSpace4"), 0, 0, 0) };
+        className.Bind(TextBlock.ForegroundProperty, className.GetResourceObservable("FxcTextSecondaryBrush"));
+        if (row.Category is not null)
+        {
+            name.Padding = new Thickness(Metric("FxcSpace4"), 0, 0, 0);
+        }
+
+        var item = new MenuItem { Header = new StackPanel { Orientation = Orientation.Horizontal, Children = { name, className } }, Tag = row };
+        AutomationProperties.SetAutomationId(item, Id("New." + row.ClassName));
+        AutomationProperties.SetName(item, row.Text + " " + row.ClassName);
+        item.Click += (_, _) => model.New(row.ClassName);
+        item.AddHandler(TextInputEvent, (_, e) =>
+        {
+            if (e.Text is not [var typed] || char.IsControl(typed))
+            {
+                return;
+            }
+
+            // Type-ahead on the display name: the next class row after the highlighted one, wrapping around.
+            var at = all.ToList().IndexOf(item);
+            var next = Enumerable.Range(1, all.Count).Select(i => all[(at + i) % all.Count])
+                .FirstOrDefault(i => i.Tag is ChildListPickerRow { Text: [var initial, ..] } && char.ToUpperInvariant(initial) == char.ToUpperInvariant(typed));
+            if (next is not null)
+            {
+                e.Handled = true;
+                Highlight(next);
+            }
+        });
+        return item;
+    }
+
+    /// <summary>Makes <paramref name="item"/> the highlighted row of its open menu.</summary>
+    private static void Highlight(MenuItem item)
+    {
+        if (item.Parent is SelectingItemsControl menu)
+        {
+            menu.SelectedItem = item;
+        }
+
+        item.Focus(NavigationMethod.Directional);
     }
 
     private static FormObject? FocusedRow(ListBox list) =>
@@ -258,7 +427,7 @@ public sealed class ChildListEditorWindow : DialogWindow
 
     private static Button Button(string field, string text, Action action)
     {
-        var button = new Button { Content = text, MinWidth = 0 };
+        var button = new Button { Content = Access(text), MinWidth = 0 };
         AutomationProperties.SetAutomationId(button, Id(field));
         AutomationProperties.SetName(button, Plain(text));
         button.Click += (_, e) =>
@@ -268,6 +437,12 @@ public sealed class ChildListEditorWindow : DialogWindow
         };
         return button;
     }
+
+    /// <summary>A metric of design-tokens.md §5 (the spacing scale).</summary>
+    private static double Metric(string key) => Application.Current?.FindResource(key) as double? ?? 0;
+
+    /// <summary>A label resource (<c>&amp;</c> before the mnemonic) as access text: the letter is underlined, the ampersand is not shown.</summary>
+    private static string Access(string text) => text.Replace("_", "__", StringComparison.Ordinal).Replace('&', '_');
 
     private static string Plain(string text) => text.Replace("&", "", StringComparison.Ordinal);
 

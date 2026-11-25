@@ -8,6 +8,7 @@ using Avalonia.Data;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
+using Avalonia.Controls.Templates;
 using Avalonia.Media;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
@@ -254,6 +255,17 @@ public sealed class ToolBarRow : DockPanel
         var combo = new ComboBox { Width = model.Width, Height = Metric("FxcMetricToolbarComboHeight"), VerticalAlignment = VerticalAlignment.Center };
         AutomationProperties.SetAutomationId(combo, $"ToolBar.{toolbar}.{model.Name}");
         AutomationProperties.SetName(combo, model.Name);
+        if (model.ElidesItems)
+        {
+            // UI-TB-023: the combo keeps its width; a label that does not fit ends in an ellipsis and is its item's tooltip.
+            combo.ItemTemplate = new FuncDataTemplate<string>((text, _) =>
+            {
+                var block = new TextBlock { Text = text, TextTrimming = TextTrimming.CharacterEllipsis };
+                ToolTip.SetTip(block, text);
+                return block;
+            }, supportsRecycling: false);
+        }
+
         var updating = false;
         void Sync()
         {

@@ -117,7 +117,7 @@ public static class ServiceGraph
             // library-pascal is delivered in Phase 8 (IDE-TGT-015): not listed by a composition of an earlier phase.
             [.. ProjectTemplates.LoadEmbedded(platform.Log).Where(t => (t.AppType != "gui" || (toolWindowPhase ?? ImplementedPhase) >= 5)
                 && (t.AppType != "library" || (toolWindowPhase ?? ImplementedPhase) >= 7))],
-            layout, platform.Clock, platform.Shell);
+            layout, platform.Clock, platform.Shell) { PlatformCatalog = platform.PlatformCatalog };
         projects.RegisterCommands(commands);
         var groups = new ProjectGroupService(projects, platform.FileSystem, documents, platform.Dialogs, status, platform.Log)
         {
@@ -430,6 +430,7 @@ public static class ServiceGraph
             Output = output,
             Processes = platform.Processes,
             BuildEngine = engine,
+            PlatformCatalog = platform.PlatformCatalog,
             Messages = messages,
             Build = build,
             Run = run,

@@ -114,6 +114,7 @@ public sealed class ProjectService : IProjectService
         commands.RegisterHandler("project.deleteFile", new Handler(_ => PendingRename is null && CanOperateOnFiles(), _ => DeleteFilesAsync(FileTargets())));
         commands.RegisterHandler("project.renameFile", new Handler(_ => RenameTarget() is not null, _ => RenameCommandAsync()));
         commands.RegisterHandler("project.setConfiguration", new Handler(_ => Project is not null, SetActiveConfigurationAsync));
+        commands.RegisterHandler("project.setPlatform", new Handler(_ => Project is not null, SetActivePlatformAsync));
         // menus.md: enabled while a project is open and the active configuration's output folder exists (I-191).
         commands.RegisterHandler("project.openOutputFolder", new Handler(
             _ => OutputFolder() is { } dir && _fileSystem.DirectoryExists(dir),
@@ -125,12 +126,62 @@ public sealed class ProjectService : IProjectService
             }));
     }
 
-    /// <summary><c>&lt;project dir&gt;\&lt;outputDir&gt;</c> of the active configuration, or null without a project.</summary>
+    /// <summary>The installed platforms (IDE-PLAT-001); the composition passes the product's or a test's catalogue.</summary>
+    public IPlatformCatalog PlatformCatalog { get; init; } = BuiltInPlatformCatalog.Instance;
+
+    /// <summary>The output directory of the active configuration on the active platform (IDE-PLAT-005), or null without a project.</summary>
     public string? OutputFolder()
     {
-        if (_project is null || Project is null || ConfigurationEdits.Effective(_project, _project.ActiveConfiguration) is not { } configuration)
+        if (_project is null || Project is null || ConfigurationEdits.Effective(_project, _project.ActiveConfiguration) is null)
             return null;
-        return Path.GetFullPath(Path.Combine(Project.Directory, configuration.OutputDir.Replace('/', '\\')));
+        return Path.GetFullPath(ProjectOptions.GetOutputDirectory(_project, _project.ActiveConfiguration, Project.ActivePlatform));
+    }
+
+    /// <summary>
+    /// IDE-PLAT-003 <c>project.setPlatform:&lt;id&gt;</c>: sets <c>activePlatform</c> through the mutation path of
+    /// <c>project.setConfiguration</c> (IDE-PM-004). A platform that is not listed is a no-op with a log warning; a listed
+    /// one that is not installed may be made active. True when changed and saved.
+    /// </summary>
+    public async Task<bool> SetActivePlatformAsync(string? id)
+    {
+        if (_project is null || id is null || id == ProjectOptions.GetEffectivePlatform(_project))
+            return false;
+        if (!_project.Platforms.Contains(id))
+        {
+            _log.Warning(LogCategory, $"Platform '{id}' is not listed in the project.");
+            return false;
+        }
+
+        return await SaveChangedProjectAsync(_project with { ActivePlatform = id });
+    }
+
+    public async Task<bool> AddPlatformAsync(string id)
+    {
+        ArgumentNullException.ThrowIfNull(id);
+        if (_project is null || _project.Platforms.Contains(id) || PlatformCatalog.Find(id) is null)
+            return false;
+        return await SaveChangedProjectAsync(_project with { Platforms = _project.Platforms.Add(id) });
+    }
+
+    public async Task<bool> RemovePlatformAsync(string id)
+    {
+        ArgumentNullException.ThrowIfNull(id);
+        if (_project is null || _project.Platforms.Length <= 1 || !_project.Platforms.Contains(id))
+            return false;
+        if (_project.PlatformOptions.ContainsKey(id)
+            && await _dialogs.ShowMessageAsync(new MessageRequest("Msg.Platform.RemoveConfirm", [PlatformLabels.Label(id, PlatformCatalog)])) != "Remove")
+        {
+            return false;
+        }
+
+        // The model keeps an explicit active platform listed: the first remaining one takes its place.
+        var platforms = _project.Platforms.Remove(id);
+        return await SaveChangedProjectAsync(_project with
+        {
+            Platforms = platforms,
+            PlatformOptions = _project.PlatformOptions.Remove(id),
+            ActivePlatform = _project.ActivePlatform == id ? platforms[0] : _project.ActivePlatform,
+        });
     }
 
     /// <summary>
@@ -1712,7 +1763,7 @@ public sealed class ProjectService : IProjectService
 
         return new ProjectModel(project.FilePath, project.Directory, project.Name, project.Language, project.AppType,
             project.MainSource, files, project.ConfigurationNames, project.ActiveConfiguration, project.Platforms,
-            isModified: false);
+            ProjectOptions.GetEffectivePlatform(project), isModified: false);
     }
 
     /// <summary>A project path ('/', relative to the project directory or absolute) as an absolute path.</summary>

@@ -197,7 +197,7 @@ public sealed class StatusBarViewModel : ObservableObject
 
     /// <summary>R9: <c>&lt;configuration&gt; | &lt;platform&gt;</c>; hidden without a project.</summary>
     public string ConfigurationText => _projects?.Project is { } p
-        ? p.ActiveConfiguration + " | " + Menus.ProjectCombos.PlatformLabel(p.Platforms.Count > 0 ? p.Platforms[0] : "win64")
+        ? p.ActiveConfiguration + " | " + Projects.PlatformLabels.Label(p.ActivePlatform, _projects.PlatformCatalog)
         : "";
 
     public bool HasProject => _projects?.Project is not null;

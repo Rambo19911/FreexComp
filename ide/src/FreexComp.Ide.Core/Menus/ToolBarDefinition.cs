@@ -39,7 +39,7 @@ public static class ToolBarDefinitions
 
     public static readonly ToolBarDefinition Build = new("Build", 3, SettingsCatalog.AppearanceToolbarBuild, "view.toolbar.build",
     [
-        new ToolBarCombo("Configuration", "project.setConfiguration", 120), new ToolBarCombo("Platform", "project.platforms", 88),
+        new ToolBarCombo("Configuration", "project.setConfiguration", 120), new ToolBarCombo("Platform", "project.setPlatform", 88),
         Separator,
         Button("project.build", "build"), Button("project.cancelBuild", "cancel-build"),
         Separator,

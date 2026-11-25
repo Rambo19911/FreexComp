@@ -121,20 +121,34 @@ public sealed class MenuItemModel : ObservableObject
     /// <summary>An action item with a check mark: whether it is checked when the menu is built; null = no check mark.</summary>
     public bool? IsCheckedAction { get; private init; }
 
-    public bool IsEnabled => Run is not null || _alwaysEnabled
-        || (Command is not null ? Command.CanExecute(Argument) : Children.Any(c => !c.IsSeparator && c.IsEnabled));
+    /// <summary>
+    /// A generated entry of an exclusive group (Active Configuration, Active Platform): whether it carries the bullet when
+    /// the list is generated — the list is generated again when the project changes. Null = the state is the command's.
+    /// </summary>
+    public bool? IsCheckedEntry { get; private init; }
+
+    /// <summary>The item is disabled whatever its command says (the row it acts on is already in that state, UI-TW-134).</summary>
+    public bool IsDisabled { get; private init; }
+
+    public bool IsEnabled => !IsDisabled && (Run is not null || _alwaysEnabled
+        || (Command is not null ? Command.CanExecute(Argument) : Children.Any(c => !c.IsSeparator && c.IsEnabled)));
 
     internal static MenuItemModel Separator() => new(null, "", null, null, MenuToggleKind.None, [], true, false);
 
     internal static MenuItemModel ForCommand(string label, IdeCommand command, string? argument, MenuToggleKind toggleKind, string? toolTip = null) =>
         new(null, label, command, argument, toggleKind, [], false, false, toolTip);
 
+    /// <summary>A generated entry of a dynamic list; one of an exclusive group shows the bullet of <see cref="IsCheckedEntry"/>.</summary>
+    internal static MenuItemModel ForEntry(string label, IdeCommand provider, DynamicMenuEntry entry) =>
+        new(null, label, provider, entry.Argument, entry.IsChecked is null ? MenuToggleKind.None : MenuToggleKind.Radio, [], false, false, entry.ToolTip)
+        { IsCheckedEntry = entry.IsChecked };
+
     /// <summary>
     /// A context-menu item of the row the menu was opened on (IDE-PM-170): <paramref name="target"/> is the command's
     /// argument, and the element id is that of the command alone (<see cref="ArgumentIsTarget"/>).
     /// </summary>
-    internal static MenuItemModel ForCommandOn(string label, IdeCommand command, string target) =>
-        new(null, label, command, target, MenuToggleKind.None, [], false, false) { ArgumentIsTarget = true };
+    internal static MenuItemModel ForCommandOn(string label, IdeCommand command, string target, bool disabled = false) =>
+        new(null, label, command, target, MenuToggleKind.None, [], false, false) { ArgumentIsTarget = true, IsDisabled = disabled };
 
     /// <summary>A designer verb (UI-DSG-082): <paramref name="command"/> with the verb's argument under its own element id.</summary>
     internal static MenuItemModel ForVerb(string verbId, string caption, IdeCommand command, string? argument) =>

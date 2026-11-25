@@ -50,6 +50,9 @@ public interface IPlatformServices
 
     /// <summary>Creates debug sessions (the debug-session interface §1); tests pass one that starts the scripted adapter.</summary>
     FreexComp.Debugger.IDebugSessionFactory DebugSessions => new FreexComp.Debugger.DebugSessionFactory();
+
+    /// <summary>The installed platforms (IDE-PLAT-001): the compiler's registry; tests pass a catalogue with a second descriptor.</summary>
+    Projects.IPlatformCatalog PlatformCatalog => Projects.BuiltInPlatformCatalog.Instance;
 }
 
 /// <summary>Plain holder of the platform inputs.</summary>
@@ -75,4 +78,6 @@ public sealed record PlatformServices(
         new FreexComp.Build.BuildEngine(new Projects.CompilerFileSystemAdapter(FileSystem));
 
     public FreexComp.Debugger.IDebugSessionFactory DebugSessions { get; init; } = new FreexComp.Debugger.DebugSessionFactory();
+
+    public Projects.IPlatformCatalog PlatformCatalog { get; init; } = Projects.BuiltInPlatformCatalog.Instance;
 }

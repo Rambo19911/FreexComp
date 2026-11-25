@@ -48,7 +48,7 @@ public static class MainMenuModel
                     foreach (var entry in lists.GetEntries(d.ProviderId, d.Max))
                     {
                         var label = ++numbered <= 9 ? string.Create(CultureInfo.InvariantCulture, $"&{numbered} {entry.Label}") : entry.Label;
-                        items.Add(MenuItemModel.ForCommand(label, provider, entry.Argument, MenuToggleKind.None, entry.ToolTip));
+                        items.Add(MenuItemModel.ForEntry(label, provider, entry));
                     }
 
                     break;

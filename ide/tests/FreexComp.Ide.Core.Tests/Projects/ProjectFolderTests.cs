@@ -229,7 +229,7 @@ public sealed class ProjectFolderTests
 
         // IDE-PM-114: the union of derived and remembered folders with every ancestor; UI-TW-102 order.
         Assert.Equal(["Zeta/", "assets/img/", "lib/"], Pm.EmptyFolders);
-        Assert.Equal(["$project", "assets/", "assets/img/", "lib/", "lib/Unit2.pas", "Zeta/", "Hello.pas", "Unit1.pas"], Keys());
+        Assert.Equal(["$project", "assets/", "assets/img/", "lib/", "lib/Unit2.pas", "Zeta/", "Hello.pas", "Unit1.pas", "$platforms/", "$platforms/win64"], Keys());
         Assert.Equal(["assets/img/"], Pm.Selection.Select(n => n.Key)); // restored like any row
         var img = Pm.Find("assets/img/")!;
         Assert.Equal(ProjectNodeKind.Folder, img.Kind);
@@ -303,7 +303,7 @@ public sealed class ProjectFolderTests
         Assert.True(_fs.FileExists(Dir + @"\assets\raw\photo.bin"));
         Assert.True(_fs.DirectoryExists(Dir + @"\assets"));
         Assert.Empty(Pm.EmptyFolders);
-        Assert.Equal(["$project", "lib/", "lib/Unit2.pas", "Hello.pas", "Unit1.pas"], Keys());
+        Assert.Equal(["$project", "lib/", "lib/Unit2.pas", "Hello.pas", "Unit1.pas", "$platforms/", "$platforms/win64"], Keys());
         Assert.Empty(Dialogs.Requests); // nothing is lost, nothing is asked
 
         // Outside the Project Manager the command is about the active document again.

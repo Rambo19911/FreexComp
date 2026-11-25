@@ -96,6 +96,9 @@ public sealed class HarnessOptions
     /// </summary>
     public Func<FreexComp.Build.IBuildEngine, FreexComp.Build.IBuildEngine>? WrapBuildEngine { get; set; }
 
+    /// <summary>The installed platforms (IDE-PLAT-001); null = the product's catalogue.</summary>
+    public Core.Projects.IPlatformCatalog? PlatformCatalog { get; set; }
+
     /// <summary>The deadline of the harness's waits; null = the running test's own (the harness's self-tests pass one with a clock of their own).</summary>
     public TestDeadline? Deadline { get; set; }
 }
@@ -187,6 +190,8 @@ public sealed class HeadlessHarness : IAsyncDisposable
             FreexComp.Build.IBuildEngine real = new FreexComp.Build.BuildEngine(new Core.Projects.CompilerFileSystemAdapter(FileSystem));
             o.BuildEngine = options.RealBuild ? options.WrapBuildEngine?.Invoke(real) ?? real : Build;
             o.DebugSessions = DebugSessions;
+            if (options.PlatformCatalog is { } catalog)
+                o.PlatformCatalog = catalog;
         });
 
         Status = new StatusBarDriver(this);

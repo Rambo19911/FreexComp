@@ -70,11 +70,16 @@ public sealed class ToolBarComboModel(string name, double width) : ObservableObj
 
     /// <summary>The user picked <c>item</c>; null = the combo has no action.</summary>
     public Action<string>? Choose { get; set; }
+
+    /// <summary>UI-TB-023: an item that does not fit the width is elided at its end and shown in full as its tooltip.</summary>
+    public bool ElidesItems { get; set; }
 }
 
 /// <summary>
 /// UI-TB-020/021, IDE-PM-090: the Build toolbar's Configuration and Platform combos follow the open project and are
-/// enabled only with a project while Idle; picking a configuration runs <c>project.setConfiguration</c>.
+/// enabled only with a project while Idle; picking a configuration runs <c>project.setConfiguration</c>. IDE-PLAT-004,
+/// UI-TB-022, 023: the Platform combo lists the project's platforms by label in file order, selects the active one, is
+/// enabled only when the project lists two or more, and picking one runs <c>project.setPlatform:&lt;id&gt;</c>.
 /// </summary>
 public static class ProjectCombos
 {
@@ -88,6 +93,13 @@ public static class ProjectCombos
         var configuration = combos.FirstOrDefault(c => c.Name == "Configuration");
         var platform = combos.FirstOrDefault(c => c.Name == "Platform");
         configuration?.Choose = name => _ = commands.ExecuteAsync("project.setConfiguration", name);
+        platform?.ElidesItems = true;
+        platform?.Choose = label =>
+        {
+            if (projects.Project?.Platforms.FirstOrDefault(p => Label(p) == label) is { } id)
+                _ = commands.ExecuteAsync("project.setPlatform", id);
+        };
+        string Label(string id) => Projects.PlatformLabels.Label(id, projects.PlatformCatalog);
         void Update()
         {
             var project = projects.Project;
@@ -101,9 +113,9 @@ public static class ProjectCombos
 
             if (platform is not null)
             {
-                platform.Items = project is null ? [] : [.. project.Platforms.Select(PlatformLabel)];
-                platform.Selected = project is { Platforms.Count: > 0 } ? PlatformLabel(project.Platforms[0]) : null;
-                platform.IsEnabled = enabled;
+                platform.Items = project is null ? [] : [.. project.Platforms.Select(Label)];
+                platform.Selected = project is { Platforms.Count: > 0 } ? Label(project.ActivePlatform) : null;
+                platform.IsEnabled = enabled && project is { Platforms.Count: >= 2 };
             }
         }
 
@@ -113,8 +125,7 @@ public static class ProjectCombos
     }
 
     /// <summary><c>win64</c> → <c>Win64</c> (main-window.md R9).</summary>
-    public static string PlatformLabel(string platform) =>
-        string.IsNullOrEmpty(platform) ? platform : char.ToUpperInvariant(platform[0]) + platform[1..];
+    public static string PlatformLabel(string platform) => Projects.PlatformLabels.Short(platform);
 }
 
 /// <summary>A separator inside a toolbar.</summary>

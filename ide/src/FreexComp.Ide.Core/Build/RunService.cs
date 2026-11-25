@@ -256,15 +256,17 @@ public sealed class RunService : IRunService
         _waitingHost = null;
     }
 
-    /// <summary><c>&lt;project dir&gt;\&lt;outputDir&gt;\&lt;name&gt;.exe</c> of the active configuration (IDE-P3-081 fallback).</summary>
+    /// <summary>
+    /// The output file of the active configuration on the active platform (IDE-P3-081 fallback; IDE-PLAT-005:
+    /// <c>ProjectOptions.GetOutputPath</c>, <c>.dll</c> for a library, IDE-TGT-011).
+    /// </summary>
     public string? PreviousExecutable(ProjectModel project)
     {
         ArgumentNullException.ThrowIfNull(project);
         var definition = _projects.Definition;
-        if (definition is null || ConfigurationEdits.Effective(definition, project.ActiveConfiguration) is not { } configuration)
+        if (definition is null || ConfigurationEdits.Effective(definition, project.ActiveConfiguration) is null)
             return null;
-        var dir = Path.GetFullPath(Path.Combine(project.Directory, configuration.OutputDir.Replace('/', '\\')));
-        return Path.Combine(dir, project.Name + (project.AppType == "library" ? ".dll" : ".exe")); // IDE-TGT-011
+        return Path.GetFullPath(FreexComp.Build.ProjectOptions.GetOutputPath(definition, project.ActiveConfiguration, project.ActivePlatform));
     }
 
     /// <summary>"0", or "-1073741819 (0xC0000005)" when the code is above 255 or negative (states-and-messages.md).</summary>

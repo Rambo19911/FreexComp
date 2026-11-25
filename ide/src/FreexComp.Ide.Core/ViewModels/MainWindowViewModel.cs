@@ -33,7 +33,8 @@ public sealed class MainWindowViewModel : ObservableObject
                 Layout.IsStatusBarShown = StatusBar.IsVisible;
             }
         };
-        MainMenu = MainMenuModel.Build(services.Commands, new RecentMenuSource(services.RecentItems));
+        MainMenu = MainMenuModel.Build(services.Commands,
+            new CompositeMenuSource(new RecentMenuSource(services.RecentItems), new ProjectMenuSource(services.Projects)));
         ToolBars = ToolBarRowModel.Build(services.Commands, services.Settings, services.ImplementedPhase);
         ProjectCombos.Attach(ToolBars, services.Projects, services.State, services.Commands);
         ToolBarContextMenu = ToolBarRowModel.BuildContextMenu(services.Commands);

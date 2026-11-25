@@ -42,10 +42,17 @@ public sealed class SemanticHighlightService
     /// <summary>
     /// IDE-CFG-002: a project change that alters the effective defines of the active configuration — an edit of the
     /// configuration, of one of its ancestors or of the project-level list — colours the open documents again.
+    /// IDE-PLAT-006: so does a change of the active platform (its predefined symbols) or of that platform's defines.
     /// </summary>
     internal void OnProjectChanged(FreexComp.Build.Project? definition)
     {
         var defines = definition is null ? null : string.Join(";", Projects.ConfigurationEdits.Effective(definition, definition.ActiveConfiguration)?.Defines ?? []);
+        if (definition is not null)
+        {
+            var platform = FreexComp.Build.ProjectOptions.GetEffectivePlatform(definition);
+            defines += "|" + platform + "|" + string.Join(";", definition.PlatformOptions.GetValueOrDefault(platform)?.Defines ?? []);
+        }
+
         if (defines == _defines)
             return;
         _defines = defines;

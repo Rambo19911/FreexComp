@@ -154,9 +154,10 @@ public sealed partial class ProjectManagerViewTests
         Dispatcher.UIThread.RunJobs();
 
         // Folders first, then files with the main source first; External last; the unit with a form is collapsed.
+        // After the files: the node Target Platforms, collapsed (IDE-PLAT-010).
         Assert.Equal(
             ["$project", "aaa/", "aaa/Zed.pas", "lib/", "lib/StrUtils2.pas", "Hello.pas", "MainForm.pas", "Missing.pas", "notes.md",
-             "Unit1.pas", "$external/", "../Shared/Common.pas"],
+             "Unit1.pas", "$external/", "../Shared/Common.pas", "$platforms/"],
             VisibleKeys(pm));
         Assert.Equal(VisibleKeys(pm).Select(k => Row + k),
             h.FindAll(Row).OfType<TreeViewItem>().Where(i => i.IsEffectivelyVisible).Select(AutomationIds.Get));
@@ -167,7 +168,7 @@ public sealed partial class ProjectManagerViewTests
         var rootName = h.Find<TextBlock>(Row + "$project.Name");
         Assert.Equal("Hello", rootName.Text);
         Assert.Contains("bodyStrong", rootName.Classes);
-        Assert.Equal("Debug · win64", h.Find<TextBlock>(Row + "$project.Badge").Text);
+        Assert.Equal("Debug · Win64", h.Find<TextBlock>(Row + "$project.Badge").Text);
         Assert.Equal(Path.Combine(h.TempDir, "Hello", "Hello.pproj"), ToolTip.GetTip(h.Find<TreeViewItem>(Row + "$project")));
         Assert.Equal(Path.Combine(h.TempDir, "Hello", "Unit1.pas"), ToolTip.GetTip(h.Find<TreeViewItem>(Row + "Unit1.pas")));
         Assert.Equal("External", h.Find<TextBlock>(Row + "$external/.Name").Text);
@@ -280,7 +281,7 @@ public sealed partial class ProjectManagerViewTests
         pm.Find("lib/")!.IsExpanded = false;
 
         pm.FilterText = "STR";
-        Assert.Equal(11, VisibleKeys(pm).Count); // applied only after 150 ms
+        Assert.Equal(12, VisibleKeys(pm).Count); // applied only after 150 ms (the eleven file rows and the node Target Platforms)
         h.Clock.Advance(TimeSpan.FromMilliseconds(150));
         Dispatcher.UIThread.RunJobs();
         Assert.Equal(["$project", "lib/", "lib/StrUtils2.pas"], VisibleKeys(pm));
@@ -296,7 +297,7 @@ public sealed partial class ProjectManagerViewTests
         h.Clock.Advance(TimeSpan.FromMilliseconds(150));
         Dispatcher.UIThread.RunJobs();
         Assert.False(pm.Find("lib/")!.IsExpanded); // the expansion from before filtering returns
-        Assert.Equal(11, VisibleKeys(pm).Count);
+        Assert.Equal(12, VisibleKeys(pm).Count); // with the node Target Platforms again
         Assert.Equal(-1, pm.Find("lib/StrUtils2.pas")!.MatchStart);
     }
 

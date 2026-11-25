@@ -61,7 +61,7 @@ public sealed partial class ProjectManagerViewTests
 
         // One root per member in group order; the active root is expanded, the listed ones start collapsed.
         Assert.Equal(["$project", "$project:CoreLib", "$project:Tools"], pm.Roots.Select(r => r.Key));
-        Assert.Equal(["$project", "App.pas", "AppUnit.pas", "$project:CoreLib", "$project:Tools"], VisibleKeys(pm));
+        Assert.Equal(["$project", "App.pas", "AppUnit.pas", "$platforms/", "$project:CoreLib", "$project:Tools"], VisibleKeys(pm)); // IDE-PLAT-010: the node of the loaded project
         Assert.Equal(VisibleKeys(pm).Select(k => Row + k),
             h.FindAll(Row).OfType<TreeViewItem>().Where(i => i.IsEffectivelyVisible).Select(AutomationIds.Get));
 
@@ -69,7 +69,7 @@ public sealed partial class ProjectManagerViewTests
         var active = h.Find<TextBlock>(Row + "$project.Name");
         Assert.Equal("App", active.Text);
         Assert.Contains("bodyStrong", active.Classes);
-        Assert.Equal("Debug · win64", h.Find<TextBlock>(Row + "$project.Badge").Text);
+        Assert.Equal("Debug · Win64", h.Find<TextBlock>(Row + "$project.Badge").Text);
         Assert.Equal("App, active project", AutomationProperties.GetName(h.Find<TreeViewItem>(Row + "$project")));
 
         // A listed member: body, its own badge, the project icon, the project file as the tooltip.
@@ -78,7 +78,7 @@ public sealed partial class ProjectManagerViewTests
         Assert.Contains("body", listed.Classes);
         Assert.DoesNotContain("bodyStrong", listed.Classes);
         Assert.Equal(h.Window.FindResource(h.Window.ActualThemeVariant, "FxcTextPrimaryBrush"), listed.Foreground);
-        Assert.Equal("Debug · win64", h.Find<TextBlock>(Row + "$project:CoreLib.Badge").Text);
+        Assert.Equal("Debug · Win64", h.Find<TextBlock>(Row + "$project:CoreLib.Badge").Text);
         Assert.Equal("project", IconOf(h, "$project:CoreLib"));
         Assert.False(h.Find<IdeIcon>(Row + "$project:CoreLib.Icon.Missing").IsVisible);
         Assert.Equal("CoreLib", AutomationProperties.GetName(h.Find<TreeViewItem>(Row + "$project:CoreLib")));
@@ -103,7 +103,7 @@ public sealed partial class ProjectManagerViewTests
         pm.Find("$project:CoreLib")!.IsExpanded = true;
         Dispatcher.UIThread.RunJobs();
         Assert.Equal(
-            ["$project", "App.pas", "AppUnit.pas", "$project:CoreLib", "CoreLib:lib/", "CoreLib:lib/Strings2.pas", "CoreLib:CoreLib.pas",
+            ["$project", "App.pas", "AppUnit.pas", "$platforms/", "$project:CoreLib", "CoreLib:lib/", "CoreLib:lib/Strings2.pas", "CoreLib:CoreLib.pas",
              "CoreLib:CoreLibUnit.pas", "$project:Tools"],
             VisibleKeys(pm));
         Assert.Equal("Strings2.pas", h.Find<TextBlock>(Row + "CoreLib:lib/Strings2.pas.Name").Text);
@@ -118,7 +118,7 @@ public sealed partial class ProjectManagerViewTests
         Assert.True(pm.Find("$project:CoreLib")!.IsExpanded);
         Assert.False(pm.Find("$project:Tools")!.IsUnavailable);
         Assert.False(pm.Find("$project:Tools")!.IsExpanded);
-        Assert.Equal("Debug · win64", h.Find<TextBlock>(Row + "$project:Tools.Badge").Text);
+        Assert.Equal("Debug · Win64", h.Find<TextBlock>(Row + "$project:Tools.Badge").Text);
         Assert.False(h.Find<IdeIcon>(Row + "$project:Tools.Icon.Missing").IsVisible);
 
         // A project opened alone looks as before: one bold root, no suffix.

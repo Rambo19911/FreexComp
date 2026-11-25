@@ -31,6 +31,9 @@ public sealed class TestCompositionOptions
     /// <summary>The build engine (IDE-P3-031): the scripted fake by default.</summary>
     public FreexComp.Build.IBuildEngine BuildEngine { get; set; } = new FakeBuildEngine();
 
+    /// <summary>The installed platforms (IDE-PLAT-001): the product's catalogue by default; <see cref="TestPlatformCatalog"/> adds a second one.</summary>
+    public FreexComp.Ide.Core.Projects.IPlatformCatalog PlatformCatalog { get; set; } = FreexComp.Ide.Core.Projects.BuiltInPlatformCatalog.Instance;
+
     /// <summary>
     /// The debug sessions (Phase 6): real sessions over the scripted adapter once a scenario is set
     /// (<see cref="FakeAdapterSessions.UseScenario"/>); without one a start fails as with a missing adapter.
@@ -98,6 +101,7 @@ public static class TestComposition
             Processes = o.Processes,
             BuildEngine = o.BuildEngine,
             DebugSessions = o.DebugSessions,
+            PlatformCatalog = o.PlatformCatalog,
         };
 
         var services = ServiceGraph.Build(options, platform, o.ToolWindows, o.ImplementedPhase);

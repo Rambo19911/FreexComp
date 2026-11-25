@@ -57,6 +57,7 @@ public static class MessageDefinitions
         new("Msg.Project.NewerFormat", E, ["OK"]),
         new("Msg.Project.RemoveFileConfirm", Q, ["Remove", "Cancel"]),
         new("Msg.Project.RemoveFilesConfirm", Q, ["Remove", "Cancel"]),
+        new("Msg.Platform.RemoveConfirm", Q, ["Cancel", "Remove"]), // IDE-PLAT-014: Cancel is the default
         new("Msg.Project.DeleteFileConfirm", W, ["Cancel", "Delete"]),
         new("Msg.Project.DeleteFailed", E, ["OK"]),
         new("Msg.Project.RemoveMainSource", E, ["OK"]),

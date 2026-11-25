@@ -11,7 +11,7 @@ public sealed class ProjectModel
 {
     public ProjectModel(string filePath, string directory, string name, string language, string appType, string mainSource,
         IReadOnlyList<ProjectFileItem> files, IReadOnlyList<string> configurations, string activeConfiguration,
-        IReadOnlyList<string> platforms, bool isModified)
+        IReadOnlyList<string> platforms, string activePlatform, bool isModified)
     {
         FilePath = filePath;
         Directory = directory;
@@ -23,6 +23,7 @@ public sealed class ProjectModel
         Configurations = configurations;
         ActiveConfiguration = activeConfiguration;
         Platforms = platforms;
+        ActivePlatform = activePlatform;
         IsModified = isModified;
     }
 
@@ -48,7 +49,14 @@ public sealed class ProjectModel
 
     public string ActiveConfiguration { get; }
 
+    /// <summary>The listed platform ids in file order.</summary>
     public IReadOnlyList<string> Platforms { get; }
+
+    /// <summary>
+    /// IDE-PLAT-002: the platform the project is built, run and analysed for —
+    /// <c>ProjectOptions.GetEffectivePlatform</c> of the definition (<c>activePlatform</c>, else the first listed one).
+    /// </summary>
+    public string ActivePlatform { get; }
 
     /// <summary>The in-memory state differs from the disk (IDE-PM-004).</summary>
     public bool IsModified { get; }

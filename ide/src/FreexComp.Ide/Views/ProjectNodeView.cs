@@ -188,7 +188,8 @@ public sealed class ProjectNodeView : DockPanel
 
         _icon.IconName = Node.IconName;
         _icon.IsEnabled = !Node.IsMissing;
-        var absent = Node.IsMissing || Node.IsUnavailable; // UI-TW-126: an unavailable member looks like a missing file
+        // UI-TW-126: an unavailable member looks like a missing file; UI-TW-133: so does a platform that is not installed.
+        var absent = Node.IsMissing || Node.IsUnavailable || Node.IsNotInstalled;
         Opacity = Node.IsDragged ? 0.5 : 1; // UI-TW-120
         this.FindAncestorOfType<TreeViewItem>()?.Classes.Set(DropTargetClass, Node.IsDropTarget); // UI-TW-121
         _missing.IsVisible = absent;
@@ -238,5 +239,5 @@ public sealed class ProjectNodeView : DockPanel
     }
 
     /// <summary>UI-TW-125: the active project's root is strong; roots of listed members are not.</summary>
-    private bool Strong => (Node.Kind == ProjectNodeKind.Project && !Node.IsListed) || Node.IsActiveDocument;
+    private bool Strong => (Node.Kind == ProjectNodeKind.Project && !Node.IsListed) || Node.IsActiveDocument || Node.IsActivePlatform; // UI-TW-132
 }

@@ -40,6 +40,9 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel, ICommandTarge
     public const string RootKey = "$project";
     public const string ExternalKey = "$external/";
 
+    /// <summary>Row key of the node Target Platforms; a platform row appends its id (IDE-PLAT-010).</summary>
+    public const string PlatformsKey = "$platforms/";
+
     private const string LogCategory = "project";
 
     private static readonly string?[] RootMenu =
@@ -89,6 +92,11 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel, ICommandTarge
     private static readonly string?[] ListedFolderMenu = ["file.showInExplorer", "file.openInTerminal", "file.copyPath"];
 
     private static readonly string?[] ListedFilesMenu = ["projectManager.open"];
+
+    // UI-TW-134: the node Target Platforms and its rows.
+    private static readonly string?[] PlatformsNodeMenu = ["project.addPlatform"];
+
+    private static readonly string?[] PlatformRowMenu = ["project.setPlatform", null, "project.addPlatform", "project.removePlatform"];
 
     private readonly IProjectService _projects;
     private readonly IDocumentService _documents;
@@ -249,12 +257,46 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel, ICommandTarge
             ShowMoveToFolder();
             return Task.CompletedTask;
         }));
+        // IDE-PLAT-013: the quick pick of the installed platforms the project does not list; disabled without any.
+        _commands.RegisterHandler("project.addPlatform", new Handler(_ => AddablePlatforms().Count > 0, _ =>
+        {
+            ShowAddPlatform();
+            return Task.CompletedTask;
+        }));
+        // IDE-PLAT-014: the platform of the row the menu was opened on (the argument), else of the selected row.
+        _commands.RegisterHandler("project.removePlatform", new Handler(
+            id => (id ?? SelectedPlatformId) is { } target && _projects.Project is { Platforms.Count: > 1 } project && project.Platforms.Contains(target),
+            id => (id ?? SelectedPlatformId) is { } target ? _projects.RemovePlatformAsync(target) : Task.CompletedTask));
         _commands.RegisterHandler("projectManager.syncWithEditor", new Handler(_ => ActiveDocumentNode() is not null, _ =>
         {
             SyncWithEditor();
             return Task.CompletedTask;
         }));
     }
+
+    /// <summary>The id of the single selected platform row; null otherwise.</summary>
+    public string? SelectedPlatformId => _selection is [{ Kind: ProjectNodeKind.Platform, PlatformId: { } id }] ? id : null;
+
+    /// <summary>IDE-PLAT-013: the installed platforms the loaded project does not list, in catalogue order.</summary>
+    public IReadOnlyList<PlatformDescriptor> AddablePlatforms() => _projects.Project is { } project
+        ? [.. _projects.PlatformCatalog.Installed.Where(p => !project.Platforms.Contains(p.Id))]
+        : [];
+
+    /// <summary>
+    /// <c>project.addPlatform</c> (IDE-PLAT-013, UI-TW-135): the quick pick titled <c>Add Platform</c> with one item per
+    /// addable platform — display name and label; the chosen one is appended to the project.
+    /// </summary>
+    public void ShowAddPlatform()
+    {
+        var items = AddablePlatforms().Select(p => (p.Id, PlatformText(p.Id))).ToList();
+        if (items.Count > 0)
+            ShowQuickPick?.Invoke(new Popups.MoveToFolderViewModel(items, id => _projects.AddPlatformAsync(id), Strings.QuickPick_AddPlatform_Title));
+    }
+
+    /// <summary>IDE-PLAT-011: the catalogue's display name followed by the label in brackets; a platform that is not installed: its label.</summary>
+    private string PlatformText(string id) => _projects.PlatformCatalog.Find(id) is { } installed
+        ? $"{installed.DisplayName} ({PlatformLabels.Label(id, _projects.PlatformCatalog)})"
+        : PlatformLabels.Label(id, _projects.PlatformCatalog);
 
     /// <summary>The row with the UI-TW-114 key, else null.</summary>
     public ProjectNodeViewModel? Find(string key) =>
@@ -521,7 +563,7 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel, ICommandTarge
     /// </summary>
     public string? SelectedNodeDirectory => _selection switch
     {
-        [{ Key: ExternalKey }] => null,
+        [{ Key: ExternalKey }] or [{ IsPlatformRow: true }] => null,
         [{ Kind: ProjectNodeKind.Folder } folder] => folder.FullPath,
         [var node] => Path.GetDirectoryName(node.FullPath),
         _ => null,
@@ -571,6 +613,7 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel, ICommandTarge
     public ProjectNodeViewModel? DropTargetFor(ProjectNodeViewModel? over) => over switch
     {
         null or { Key: ExternalKey } or { IsListed: true } => null, // UI-TW-127: nothing is dropped on another project
+        { IsPlatformRow: true } => null, // IDE-PLAT-015: the platform node and its rows are no drop target
         { Kind: ProjectNodeKind.Project or ProjectNodeKind.Folder } => over,
         _ => DropTargetFor(over.Parent),
     };
@@ -748,7 +791,7 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel, ICommandTarge
     /// tool-windows.md §2: the full paths of the selected rows (root = project file, folder = directory, file or form =
     /// the file) for <c>file.save</c>, <c>file.copyPath</c>, <c>file.showInExplorer</c>; the External group has no path.
     /// </summary>
-    public IReadOnlyList<string> SelectedNodePaths => [.. _selection.Where(n => n.Key != ExternalKey).Select(n => n.FullPath)];
+    public IReadOnlyList<string> SelectedNodePaths => [.. _selection.Where(n => n.Key != ExternalKey && !n.IsPlatformRow).Select(n => n.FullPath)];
 
     /// <summary>IDE-PM-033: the rows of added files are selected, their ancestors expanded.</summary>
     private void SelectAdded(IReadOnlyList<string> paths)
@@ -786,6 +829,8 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel, ICommandTarge
             _ when IsListedSelection => ListedFilesMenu,
             [{ Kind: ProjectNodeKind.Project }] => RootMenu,
             [{ Kind: ProjectNodeKind.Folder }] => FolderMenu,
+            [{ Kind: ProjectNodeKind.Platforms }] => PlatformsNodeMenu,
+            [{ Kind: ProjectNodeKind.Platform }] => PlatformRowMenu,
             [_] => FileMenu,
             _ => FilesMenu,
         };
@@ -809,6 +854,21 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel, ICommandTarge
             if (pendingSeparator)
                 items.Add(MenuItemModel.Separator());
             pendingSeparator = false;
+            var label = MenuLabels.For(new CommandMenuNode(id));
+            if (ids == PlatformRowMenu && id is "project.setPlatform" or "project.removePlatform" && _selection[0].PlatformId is { } platform)
+            {
+                // UI-TW-134: the commands act on the row; Set as Active Platform is disabled on the active row.
+                items.Add(MenuItemModel.ForCommandOn(label, command, platform, disabled: id == "project.setPlatform" && _selection[0].IsActivePlatform));
+                continue;
+            }
+
+            if (id == "project.addPlatform" && AddablePlatforms().Count == 0)
+            {
+                // IDE-PLAT-013: nothing to add — the disabled item says why.
+                items.Add(MenuItemModel.ForCommand(label, command, null, MenuToggleKind.None, Strings.Msg_Platform_NothingToAdd));
+                continue;
+            }
+
             // IDE-PM-170: Build, Rebuild and Clean of a listed root act on that member, not on the loaded project.
             items.Add(ids == ListedRootMenu && id is "project.build" or "project.rebuild" or "project.clean"
                 ? MenuItemModel.ForCommandOn(MenuLabels.For(new CommandMenuNode(id)), command, _selection[0].FullPath!)
@@ -835,6 +895,13 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel, ICommandTarge
         if (_selection is [{ Kind: ProjectNodeKind.Project }] && _implementedPhase >= 3)
         {
             await _commands.ExecuteAsync("project.options");
+            return;
+        }
+
+        // IDE-PLAT-012: the default action of a platform row makes it the active platform.
+        if (_selection is [{ Kind: ProjectNodeKind.Platform, PlatformId: { } platform }])
+        {
+            await _commands.ExecuteAsync("project.setPlatform", platform);
             return;
         }
 
@@ -967,6 +1034,17 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel, ICommandTarge
             {
                 if (configuration.OutputDir.Split('/', '\\').FirstOrDefault(s => s.Length > 0) is { } first)
                     excluded.Add(first);
+            }
+
+            // IDE-PLAT-005: the output directories of the other listed platforms (CMP-1366) are no source folders either.
+            if (projects.Definition is { } listed)
+            {
+                foreach (var folder in listed.ConfigurationNames.SelectMany(c => listed.Platforms.Select(p => FreexComp.Build.ProjectOptions.GetOutputDirectory(listed, c, p))))
+                {
+                    var relative = Path.GetRelativePath(project.Directory, folder);
+                    if (!Path.IsPathRooted(relative) && relative.Split('\\', '/').FirstOrDefault(s => s.Length > 0) is { } first && first != "..")
+                        excluded.Add(first);
+                }
             }
 
             var directories = new List<string> { project.Directory };
@@ -1110,6 +1188,16 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel, ICommandTarge
     /// <summary>UI-TW-009 / UI-TW-110: a row is shown when its name or a descendant matches; ancestors of matches expand.</summary>
     private bool Filter(ProjectNodeViewModel node)
     {
+        if (node.IsPlatformRow)
+        {
+            // IDE-PLAT-015: the platform node takes no part in the filter — it is hidden while a filter text is set.
+            foreach (var child in node.Children)
+                Filter(child);
+            node.SetMatch(-1, 0);
+            node.IsVisibleInTree = _appliedFilter.Length == 0;
+            return false;
+        }
+
         var anyChild = false;
         foreach (var child in node.Children)
             anyChild |= Filter(child);
@@ -1280,27 +1368,52 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel, ICommandTarge
     /// <summary>UI-TW-100…103: folders from path segments, files outside the project under External (last).</summary>
     private ProjectNodeViewModel BuildTree(ProjectModel project, bool announceActive)
     {
-        var badge = $"{project.ActiveConfiguration} · {project.Platforms.FirstOrDefault() ?? "win64"}";
+        var badge = $"{project.ActiveConfiguration} · {PlatformLabels.Label(project.ActivePlatform, _projects.PlatformCatalog)}"; // UI-TB-022
         var library = project.AppType == "library";
         var root = new ProjectNodeViewModel(ProjectNodeKind.Project, RootKey, project.Name, project.FilePath, null)
         {
             IsLibrary = library,
             ToolTipText = library && _projects.Definition is { } definition && definition.Configurations.ContainsKey(project.ActiveConfiguration)
-                ? FreexComp.Build.ProjectOptions.GetOutputPath(definition, project.ActiveConfiguration) // IDE-TGT-011, 017
+                ? FreexComp.Build.ProjectOptions.GetOutputPath(definition, project.ActiveConfiguration, project.ActivePlatform) // IDE-TGT-011, 017
                 : null!,
             Badge = badge,
             IsExpanded = true,
             AnnounceActive = announceActive,
         };
         AddFileRows(root, project.Directory, [.. project.Files.Select(f => (f.Path, f.Form))], project.MainSource, "", _emptyFolders);
+        // phase8-delivery.md: the node is no command; it follows project.addPlatform of its card (F03-003).
+        if (Composition.Phase8Features.IsAvailable("project.addPlatform", 8, _implementedPhase))
+            root.Children.Add(BuildPlatforms(project, root));
         return root;
+    }
+
+    /// <summary>
+    /// IDE-PLAT-010, 011: the node Target Platforms — always the last child of the loaded project's root, collapsed until
+    /// the user expands it — with one row per listed platform in file order.
+    /// </summary>
+    private ProjectNodeViewModel BuildPlatforms(ProjectModel project, ProjectNodeViewModel root)
+    {
+        var node = new ProjectNodeViewModel(ProjectNodeKind.Platforms, PlatformsKey, Strings.ProjectManager_TargetPlatforms, "", root);
+        foreach (var id in project.Platforms)
+        {
+            var installed = _projects.PlatformCatalog.Find(id) is not null;
+            node.Children.Add(new ProjectNodeViewModel(ProjectNodeKind.Platform, PlatformsKey + id, PlatformText(id), "", node)
+            {
+                PlatformId = id,
+                IsActivePlatform = id == project.ActivePlatform,
+                IsNotInstalled = !installed,
+                ToolTipText = installed ? null : Strings.Msg_Platform_NotInstalled,
+            });
+        }
+
+        return node;
     }
 
     /// <summary>
     /// UI-TW-125, 126, 128: the root of a listed member (collapsed, its own badge, its files below it with the key prefix
     /// <c>&lt;name&gt;:</c>) or of an unavailable one (no badge, no rows, the reason in the tooltip).
     /// </summary>
-    private static ProjectNodeViewModel BuildListedTree(ProjectGroupMember member, string keyName)
+    private ProjectNodeViewModel BuildListedTree(ProjectGroupMember member, string keyName)
     {
         var root = new ProjectNodeViewModel(ProjectNodeKind.Project, RootKey + ":" + keyName, member.Name, member.FilePath, null)
         {
@@ -1308,7 +1421,8 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel, ICommandTarge
             IsUnavailable = !member.IsAvailable,
             IsLibrary = member.Definition?.AppType == "library",
             ToolTipText = member.IsAvailable ? null! : member.FilePath + "\n" + member.Reason,
-            Badge = member.IsAvailable ? $"{member.Configuration} · {member.Platform}" : null,
+            // IDE-PLAT-008: a listed member shows its own active platform.
+            Badge = member.IsAvailable ? $"{member.Configuration} · {PlatformLabels.Label(member.Platform!, _projects.PlatformCatalog)}" : null,
         };
         if (member.Definition is not { } definition)
             return root;

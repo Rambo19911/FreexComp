@@ -28,6 +28,7 @@ public static class Phase8Features
         "project.addExistingProject", // F09-009
         "project.addNewFile", // F09-054
         "project.addNewProject", // F09-009
+        "project.addPlatform", // F03-003
         "project.buildAll", // F09-009
         "project.cleanAll", // F09-009
         "project.configurationManager", // F09-004
@@ -38,7 +39,9 @@ public static class Phase8Features
         "project.newFolder", // F09-054
         "project.rebuildAll", // F09-009
         "project.removeFromGroup", // F09-009
+        "project.removePlatform", // F03-003
         "project.setActive", // F09-009
+        "project.setPlatform", // F03-003
         "run.toggleLibraryStepping", // F02-004
     ];
 
