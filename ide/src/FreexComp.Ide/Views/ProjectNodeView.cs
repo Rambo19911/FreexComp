@@ -28,7 +28,9 @@ public sealed class ProjectNodeView : DockPanel
     internal const string DropTargetClass = "dropTarget";
 
     private readonly IdeIcon _icon = new() { Width = 16, Height = 16 };
-    private readonly IdeIcon _missing = new() { IconName = "warning", Width = 9, Height = 9, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Bottom };
+    // I-287: the corner mark is its own glyph, filled and drawn for this size - the outlined 16 px warning icon scaled
+    // down to a corner has strokes thinner than a pixel and cannot be read at 100 %.
+    private readonly IdeIcon _missing = new() { IconName = "warning-corner", Width = 10, Height = 10, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Bottom };
     private readonly TextBlock _name = new() { VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
     private readonly Ellipse _dot = new() { Width = 6, Height = 6, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4, 0) };
     private readonly FreexComp.Ide.Designer.ProgressRing _busy = new(12, 1.5) { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4, 0) };
@@ -195,8 +197,11 @@ public sealed class ProjectNodeView : DockPanel
         _missing.IsVisible = absent;
         _name.Classes.Set("body", !Strong);
         _name.Classes.Set("bodyStrong", Strong);
+        // I-287: the active platform's row keeps text.primary also when the platform is not installed - the strong face
+        // (UI-TW-132) cannot be told from the regular one in text.disabled; the corner mark and the suffix say the rest.
+        var greyed = absent && !Node.IsActivePlatform;
         _name.Bind(TextBlock.ForegroundProperty, _name.GetResourceObservable(
-            Node.BusyName is not null ? "FxcTextSecondaryBrush" : absent ? "FxcTextDisabledBrush" : "FxcTextPrimaryBrush"));
+            Node.BusyName is not null ? "FxcTextSecondaryBrush" : greyed ? "FxcTextDisabledBrush" : "FxcTextPrimaryBrush"));
         _name.Inlines!.Clear();
         if (Node.BusyName is { } typed)
         {

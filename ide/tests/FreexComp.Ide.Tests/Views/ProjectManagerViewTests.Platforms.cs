@@ -1,3 +1,4 @@
+using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
@@ -170,5 +171,80 @@ public sealed partial class ProjectManagerViewTests
         }
 
         Assert.NotEqual(disabledColors[0], disabledColors[1]); // the tokens of both themes resolved
+    }
+
+    /// <summary>
+    /// I-287, UI-TW-132, 133 in the light and the dark theme: the active platform's row stays recognisable when its
+    /// platform is not installed — <c>type.bodyStrong</c> in <c>text.primary</c> (the strong face cannot be told from the
+    /// regular one in <c>text.disabled</c>), with the warning corner, the tooltip and ", active platform" in its
+    /// screen-reader name; the other rows are regular, and a row that is neither installed nor active is
+    /// <c>text.disabled</c>. The warning corner is the glyph drawn for that size: a filled <c>status.warning</c> triangle,
+    /// 10 × 10 in the lower right corner of the icon.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Phase", "8")]
+    [Trait("Req", "UI-TW-132")]
+    [Trait("Req", "UI-TW-133")]
+    public async Task Platforms_ActiveNotInstalledRowIsMarked()
+    {
+        var primaryColors = new List<Color>();
+        foreach (var theme in (string[])["light", "dark"])
+        {
+            await using var h = await HeadlessHarness.StartAsync(o =>
+            {
+                o.Settings["appearance.theme"] = theme;
+                o.InitialFiles[@"Hello\Hello.pproj"] = """
+                    { "formatVersion": 1, "name": "Hello", "mainSource": "Hello.pas",
+                      "platforms": ["win64", "win32"], "activePlatform": "win32",
+                      "files": [ { "path": "Hello.pas" } ] }
+                    """;
+                o.InitialFiles[@"Hello\Hello.pas"] = "program Hello;\nbegin\nend.\n";
+            });
+            var pm = await OpenHelloAsync(h);
+            await h.ExecuteAsync("view.projectManager");
+            pm.Find(ProjectManagerViewModel.PlatformsKey)!.IsExpanded = true;
+            Dispatcher.UIThread.RunJobs();
+            const string Installed = PlatformsRow + "win64", Absent = PlatformsRow + "win32";
+            Color ColorOf(string row) => Assert.IsAssignableFrom<ISolidColorBrush>(h.Find<TextBlock>(row + ".Name").Foreground).Color;
+            var (primary, disabled) = (TokenColor(h, "FxcTextPrimaryBrush"), TokenColor(h, "FxcTextDisabledBrush"));
+            primaryColors.Add(primary);
+            Assert.NotEqual(primary, disabled);
+
+            // The active row, not installed: strong and in text.primary; still marked as not installed.
+            Assert.Equal("win32", h.Services.Projects.Project!.ActivePlatform);
+            Assert.Equal("Win32 (not installed)", h.Find<TextBlock>(Absent + ".Name").Text);
+            Assert.Contains("bodyStrong", h.Find<TextBlock>(Absent + ".Name").Classes);
+            Assert.Equal(primary, ColorOf(Absent));
+            Assert.True(h.Find<IdeIcon>(Absent + ".Icon.Missing").IsVisible);
+            Assert.Equal(Strings.Msg_Platform_NotInstalled, ToolTip.GetTip(h.Find<TreeViewItem>(Absent)));
+            Assert.Equal("Win32 (not installed), active platform", AutomationProperties.GetName(h.Find<TreeViewItem>(Absent)));
+
+            // The installed row is not the active one: regular face, text.primary, no corner.
+            Assert.Contains("body", h.Find<TextBlock>(Installed + ".Name").Classes);
+            Assert.DoesNotContain("bodyStrong", h.Find<TextBlock>(Installed + ".Name").Classes);
+            Assert.Equal(primary, ColorOf(Installed));
+            Assert.False(h.Find<IdeIcon>(Installed + ".Icon.Missing").IsVisible);
+            Assert.True(h.Find<TextBlock>(Absent + ".Name").FontWeight > h.Find<TextBlock>(Installed + ".Name").FontWeight);
+
+            // The warning corner: the filled glyph of that size, in the lower right corner of the 16 × 16 icon.
+            var corner = h.Find<IdeIcon>(Absent + ".Icon.Missing");
+            Assert.Equal("warning-corner", corner.IconName);
+            var layers = IconCatalog.Get("warning-corner").Layers;
+            Assert.True(layers[0].IsFilled && layers[0].ColorToken == "status.warning", "the triangle is a filled status.warning shape");
+            Assert.All(layers, l => Assert.True(l.IsFilled));
+            Assert.Equal(new Avalonia.Size(10, 10), corner.Bounds.Size);
+            var icon = h.Find<IdeIcon>(Absent + ".Icon");
+            Assert.Equal(new Avalonia.Point(16, 16), corner.TranslatePoint(new Avalonia.Point(10, 10), icon)!.Value);
+
+            // The other platform made active: the row that is not installed is text.disabled and regular again.
+            await h.ExecuteAsync("project.setPlatform", "win64");
+            Dispatcher.UIThread.RunJobs();
+            Assert.Contains("bodyStrong", h.Find<TextBlock>(Installed + ".Name").Classes);
+            Assert.DoesNotContain("bodyStrong", h.Find<TextBlock>(Absent + ".Name").Classes);
+            Assert.Equal((primary, disabled), (ColorOf(Installed), ColorOf(Absent)));
+            Assert.True(h.Find<IdeIcon>(Absent + ".Icon.Missing").IsVisible);
+        }
+
+        Assert.NotEqual(primaryColors[0], primaryColors[1]); // the tokens of both themes resolved
     }
 }

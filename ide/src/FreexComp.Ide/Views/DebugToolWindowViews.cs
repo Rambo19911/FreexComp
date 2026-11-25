@@ -64,6 +64,7 @@ public abstract class DebugToolWindowView : UserControl
         _list.Tapped += OnTapped;
         _list.AddHandler(KeyDownEvent, OnKeyDown, RoutingStrategies.Tunnel);
         _list.ContextRequested += OnContextRequested;
+        Input.ListBehaviors.FocusOnRightPress(_list); // UI-TW-014 (I-283)
 
         var rows = new DockPanel();
         DockPanel.SetDock(_header, Dock.Top);

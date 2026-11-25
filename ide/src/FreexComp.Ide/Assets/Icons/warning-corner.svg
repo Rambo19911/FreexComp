@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" data-token="status.warning">
+  <path d="M8,0.5 L15.75,15.5 H0.25 Z" fill="currentColor" />
+  <path d="M7,5.5 H9 V10.75 H7 Z" fill="currentColor" data-token="bg.panel" />
+  <path d="M7,12 H9 V14 H7 Z" fill="currentColor" data-token="bg.panel" />
+</svg>

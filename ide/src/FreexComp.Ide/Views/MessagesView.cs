@@ -64,6 +64,7 @@ public sealed class MessagesView : UserControl
         _list.DoubleTapped += OnDoubleTapped;
         _list.AddHandler(KeyDownEvent, OnKeyDown, RoutingStrategies.Tunnel);
         _list.ContextRequested += OnContextRequested;
+        Input.ListBehaviors.FocusOnRightPress(_list); // UI-TW-014 (I-283)
         AutomationProperties.SetAutomationId(_empty, Prefix + ".Empty");
         Bind(_empty, TextBlock.ForegroundProperty, "FxcTextSecondaryBrush");
 

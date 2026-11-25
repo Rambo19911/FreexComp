@@ -56,9 +56,9 @@ public sealed class MenuDesignerWindow : DialogWindow
 
     private static Grid Body(MenuDesignerViewModel model, Parts p)
     {
-        var itemsLabel = new Label { Content = Strings.MenuDesigner_Items, Target = p.Tree, Padding = new Thickness(0, 0, 0, 4) };
+        var itemsLabel = new Label { Content = MnemonicLabel.ToAccessText(Strings.MenuDesigner_Items), Target = p.Tree, Padding = new Thickness(0, 0, 0, 4) };
         AutomationProperties.SetAutomationId(p.Tree, Id("Tree"));
-        AutomationProperties.SetName(p.Tree, Plain(Strings.MenuDesigner_Items));
+        AutomationProperties.SetName(p.Tree, MnemonicLabel.ToPlainText(Strings.MenuDesigner_Items));
         var placeholder = new TextBlock { Text = model.EmptyText, Margin = new Thickness(8), TextWrapping = TextWrapping.Wrap, IsHitTestVisible = false };
         placeholder.Bind(TextBlock.ForegroundProperty, placeholder.GetResourceObservable("FxcTextTertiaryBrush"));
         AutomationProperties.SetAutomationId(placeholder, Id("Tree.Empty"));
@@ -83,14 +83,14 @@ public sealed class MenuDesignerWindow : DialogWindow
         }
 
         AutomationProperties.SetAutomationId(p.Caption, Id("Caption"));
-        AutomationProperties.SetName(p.Caption, Plain(Strings.MenuDesigner_Caption));
+        AutomationProperties.SetName(p.Caption, MnemonicLabel.ToPlainText(Strings.MenuDesigner_Caption));
         AutomationProperties.SetAutomationId(p.ShortCut, Id("ShortCut"));
-        AutomationProperties.SetName(p.ShortCut, Plain(Strings.MenuDesigner_ShortCut));
+        AutomationProperties.SetName(p.ShortCut, MnemonicLabel.ToPlainText(Strings.MenuDesigner_ShortCut));
         p.ShortCut.ItemsSource = model.ShortCutChoices;
         var fields = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,8,*"), RowDefinitions = new RowDefinitions("Auto,6,Auto") };
-        Place(fields, new Label { Content = Strings.MenuDesigner_Caption, Target = p.Caption, VerticalAlignment = VerticalAlignment.Center, Padding = new Thickness(0) }, 0, 0);
+        Place(fields, new Label { Content = MnemonicLabel.ToAccessText(Strings.MenuDesigner_Caption), Target = p.Caption, VerticalAlignment = VerticalAlignment.Center, Padding = new Thickness(0) }, 0, 0);
         Place(fields, p.Caption, 0, 2);
-        Place(fields, new Label { Content = Strings.MenuDesigner_ShortCut, Target = p.ShortCut, VerticalAlignment = VerticalAlignment.Center, Padding = new Thickness(0) }, 2, 0);
+        Place(fields, new Label { Content = MnemonicLabel.ToAccessText(Strings.MenuDesigner_ShortCut), Target = p.ShortCut, VerticalAlignment = VerticalAlignment.Center, Padding = new Thickness(0) }, 2, 0);
         Place(fields, p.ShortCut, 2, 2);
 
         // The grid's page tabs (Dialog.MenuDesigner.Grid.Page.Properties / .Events).
@@ -404,9 +404,9 @@ public sealed class MenuDesignerWindow : DialogWindow
 
     private static Button Button(string field, string text, Action action)
     {
-        var button = new Button { Content = text, MinWidth = 0 };
+        var button = new Button { Content = MnemonicLabel.ToAccessText(text), MinWidth = 0 };
         AutomationProperties.SetAutomationId(button, Id(field));
-        AutomationProperties.SetName(button, Plain(text));
+        AutomationProperties.SetName(button, MnemonicLabel.ToPlainText(text));
         button.Click += (_, e) =>
         {
             e.Handled = true;

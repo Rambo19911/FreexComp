@@ -38,6 +38,39 @@ public static class ListBehaviors
         TextBlock.TextProperty.Changed.AddClassHandler<TextBlock>((text, _) => ScheduleTrimCheck(text));
     }
 
+    /// <summary>
+    /// UI-TW-014 (I-281, I-283): the commands of a tool window's context menu take their rows from the tool window that
+    /// has the focus, and the toolkit moves the focus on a left press only. A right press on <paramref name="list"/>
+    /// moves it the same way, so the menu belongs to the right-clicked row whatever had the focus before. (The list
+    /// has selected the row by then: its own handlers run first.)
+    /// </summary>
+    public static void FocusOnRightPress(Control list)
+    {
+        ArgumentNullException.ThrowIfNull(list);
+        list.AddHandler(InputElement.PointerPressedEvent, (_, e) =>
+        {
+            if (e.GetCurrentPoint(list).Properties.IsRightButtonPressed)
+                FocusPressed(e);
+        }, RoutingStrategies.Bubble, handledEventsToo: true);
+    }
+
+    /// <summary>
+    /// Moves the keyboard focus to the nearest focusable element around the pressed one — the row, or the list itself
+    /// for its empty area — as a left press does.
+    /// </summary>
+    public static void FocusPressed(PointerPressedEventArgs e)
+    {
+        ArgumentNullException.ThrowIfNull(e);
+        for (var v = e.Source as Visual; v is not null; v = v.GetVisualParent())
+        {
+            if (v is InputElement { Focusable: true, IsEffectivelyEnabled: true, IsEffectivelyVisible: true } target)
+            {
+                target.Focus(NavigationMethod.Pointer);
+                break;
+            }
+        }
+    }
+
     /// <summary>The services' clock through the window (a dialog: its owner); the system clock otherwise.</summary>
     private static IClock ClockOf(Visual visual)
     {

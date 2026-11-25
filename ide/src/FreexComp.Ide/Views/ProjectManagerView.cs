@@ -300,14 +300,7 @@ public sealed class ProjectManagerView : UserControl
             // the focus on a left press only. The right press moves it the same way (to the nearest focusable element
             // around the pressed one: the row, or the tool window's content for the empty area), so the menu belongs to
             // the right-clicked row whatever had the focus before.
-            for (var v = e.Source as Visual; v is not null; v = v.GetVisualParent())
-            {
-                if (v is InputElement { Focusable: true, IsEffectivelyEnabled: true, IsEffectivelyVisible: true } target)
-                {
-                    target.Focus(NavigationMethod.Pointer);
-                    break;
-                }
-            }
+            Input.ListBehaviors.FocusPressed(e);
 
             e.Handled = true;
         }

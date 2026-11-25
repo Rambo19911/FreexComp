@@ -60,7 +60,7 @@ public sealed class ChildListEditorWindow : DialogWindow
 
     private static Grid Body(ChildListEditorViewModel model, Parts p)
     {
-        var itemsLabel = new Label { Content = Access(Strings.ChildListEditor_Items), Target = p.List, Padding = new Thickness(0, 0, 0, 4) };
+        var itemsLabel = new Label { Content = MnemonicLabel.ToAccessText(Strings.ChildListEditor_Items), Target = p.List, Padding = new Thickness(0, 0, 0, 4) };
         AutomationProperties.SetAutomationId(p.List, Id("Items"));
         SetKeepsEnter(p.List, true); // UI-DLG-260: Enter on a row is the default handler, not Close
         // UI-DLG-306: a header row has no selection fill (a range of the extended selection runs across it).
@@ -68,7 +68,7 @@ public sealed class ChildListEditorWindow : DialogWindow
         {
             Setters = { new Setter(ContentPresenter.BackgroundProperty, Brushes.Transparent) },
         });
-        AutomationProperties.SetName(p.List, Plain(Strings.ChildListEditor_Items));
+        AutomationProperties.SetName(p.List, MnemonicLabel.ToPlainText(Strings.ChildListEditor_Items));
         var placeholder = new TextBlock { Text = model.EmptyText, Margin = new Thickness(8), TextWrapping = TextWrapping.Wrap, IsHitTestVisible = false };
         placeholder.Bind(TextBlock.ForegroundProperty, placeholder.GetResourceObservable("FxcTextTertiaryBrush"));
         AutomationProperties.SetAutomationId(placeholder, Id("Items.Empty"));
@@ -291,9 +291,9 @@ public sealed class ChildListEditorWindow : DialogWindow
     /// </summary>
     private static SplitButton SplitNew(ChildListEditorViewModel model)
     {
-        var split = new SplitButton { Content = Access(Strings.ChildListEditor_New), MinWidth = 0 };
+        var split = new SplitButton { Content = MnemonicLabel.ToAccessText(Strings.ChildListEditor_New), MinWidth = 0 };
         AutomationProperties.SetAutomationId(split, Id("New"));
-        AutomationProperties.SetName(split, Plain(Strings.ChildListEditor_New));
+        AutomationProperties.SetName(split, MnemonicLabel.ToPlainText(Strings.ChildListEditor_New));
         split.Click += (_, e) =>
         {
             e.Handled = true;
@@ -427,9 +427,9 @@ public sealed class ChildListEditorWindow : DialogWindow
 
     private static Button Button(string field, string text, Action action)
     {
-        var button = new Button { Content = Access(text), MinWidth = 0 };
+        var button = new Button { Content = MnemonicLabel.ToAccessText(text), MinWidth = 0 };
         AutomationProperties.SetAutomationId(button, Id(field));
-        AutomationProperties.SetName(button, Plain(text));
+        AutomationProperties.SetName(button, MnemonicLabel.ToPlainText(text));
         button.Click += (_, e) =>
         {
             e.Handled = true;
@@ -440,11 +440,6 @@ public sealed class ChildListEditorWindow : DialogWindow
 
     /// <summary>A metric of design-tokens.md §5 (the spacing scale).</summary>
     private static double Metric(string key) => Application.Current?.FindResource(key) as double? ?? 0;
-
-    /// <summary>A label resource (<c>&amp;</c> before the mnemonic) as access text: the letter is underlined, the ampersand is not shown.</summary>
-    private static string Access(string text) => text.Replace("_", "__", StringComparison.Ordinal).Replace('&', '_');
-
-    private static string Plain(string text) => text.Replace("&", "", StringComparison.Ordinal);
 
     private static void Place(Grid grid, Control control, int row, int column)
     {

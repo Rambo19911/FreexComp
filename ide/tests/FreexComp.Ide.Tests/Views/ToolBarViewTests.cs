@@ -1,3 +1,4 @@
+using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
@@ -24,7 +25,7 @@ public sealed class ToolBarViewTests
         Descendants(h.Find<Menu>(AutomationIds.MenuBar).Items.Cast<object>()).Single(i => AutomationIds.Get(i) == id);
 
     /// <summary>
-    /// UI-TB-022, 023: the combo keeps its width of 88 and its name; its items are the labels of the listed platforms —
+    /// UI-TB-022, 023: the combo is at least 88 wide and keeps its name; its items are the labels of the listed platforms —
     /// the id with an upper-case first letter, a platform that is not installed with its suffix — each elided at its end
     /// when it does not fit and shown in full as its tooltip; the active platform is selected and choosing another one
     /// runs <c>project.setPlatform</c> (the status bar and the Project menu bullet follow). Disabled while not Idle, and
@@ -40,15 +41,16 @@ public sealed class ToolBarViewTests
             , "platforms": ["win64", "win32"]
             """);
         var combo = h.Find<ComboBox>("ToolBar.Build.Platform");
-        Assert.Equal((88.0, "Platform"), (combo.Width, AutomationProperties.GetName(combo)));
-        Assert.Equal(88, combo.Bounds.Width);
+        var limit = Assert.IsType<double>(h.Window.FindResource("FxcMetricDocumentTabMaxWidth"));
+        Assert.Equal((88.0, "Platform"), (combo.MinWidth, AutomationProperties.GetName(combo)));
+        Assert.InRange(combo.Bounds.Width, 88, limit); // I-287: as wide as the widest item needs, see PlatformCombo_ShowsTheLongestLabelOrHasATooltip
         Assert.Equal(["Win64", NotInstalled], combo.ItemsSource!.Cast<string>());
         Assert.Equal("Win64", combo.SelectedItem);
         Assert.True(combo.IsEnabled);
         Assert.Equal("Debug | Win64", h.Status.Field("Configuration"));
 
         // An item: its text ends in an ellipsis when it does not fit; the full label is its tooltip.
-        var item = Assert.IsType<TextBlock>(combo.ItemTemplate!.Build(NotInstalled));
+        var item = Assert.IsAssignableFrom<TextBlock>(combo.ItemTemplate!.Build(NotInstalled));
         Assert.Equal((NotInstalled, TextTrimming.CharacterEllipsis, NotInstalled), (item.Text, item.TextTrimming, ToolTip.GetTip(item)));
 
         // The Project menu lists the same labels; the bullet is on the active platform.
@@ -67,13 +69,9 @@ public sealed class ToolBarViewTests
         Assert.True(MenuItem(h, AutomationIds.Menu("project.setPlatform", "win32")).IsChecked);
         Assert.False(MenuItem(h, AutomationIds.Menu("project.setPlatform", "win64")).IsChecked);
 
-        // The selection box: the label is cut inside the combo (width 88) with an ellipsis, never drawn over its neighbours.
-        var shown = combo.GetVisualDescendants().OfType<TextBlock>().Single(t => t.Text == NotInstalled && t.IsEffectivelyVisible);
-        Assert.Equal(TextTrimming.CharacterEllipsis, shown.TextTrimming);
-        Assert.Equal(NotInstalled, ToolTip.GetTip(shown));
-        Assert.True(shown.Bounds.Width < 88, $"text width {shown.Bounds.Width}");
-        Assert.True(shown.TextLayout.TextLines[0].HasCollapsed, "the label does not fit and is elided");
-        Assert.Equal(88, combo.Bounds.Width);
+        // The selection box: the label in full, or cut inside the combo at its widest with an ellipsis (I-287) — never
+        // drawn over its neighbours.
+        AssertShownInFullOrElidedAtTheLimit(combo, NotInstalled, limit);
 
         // Disabled while Building (UI-TB-020), enabled again afterwards.
         var held = h.Build.Enqueue(FakeBuildEngine.Success(BuildScenario.ProjectPath(h), BuildScenario.ExePath(h)).Held());
@@ -99,5 +97,123 @@ public sealed class ToolBarViewTests
         Assert.Contains(combo.GetVisualDescendants().OfType<TextBlock>(), t => t.Text == "Win64" && t.IsEffectivelyVisible);
         Assert.Equal("Debug | Win64", h.Status.Field("Configuration"));
         Assert.Equal("Win64", ToolTip.GetTip(combo.GetVisualDescendants().OfType<TextBlock>().First(t => t.Text == "Win64")));
+        Assert.Equal("Win64", ToolTip.GetTip(combo));
+    }
+
+    /// <summary>The width <paramref name="text"/> needs in the font of <paramref name="like"/>, measured without a limit.</summary>
+    private static double NeededWidth(TextBlock like, string text)
+    {
+        var probe = new TextBlock
+        {
+            Text = text, FontFamily = like.FontFamily, FontSize = like.FontSize, FontWeight = like.FontWeight, FontStyle = like.FontStyle,
+            FontStretch = like.FontStretch, UseLayoutRounding = false,
+        };
+        probe.Measure(Size.Infinity);
+        return probe.DesiredSize.Width;
+    }
+
+    private static TextBlock Shown(ComboBox combo, string label) =>
+        combo.GetVisualDescendants().OfType<TextBlock>().Single(t => t.Text == label && t.IsEffectivelyVisible);
+
+    /// <summary>What the combo adds to the width of its text: padding, border and the drop-down glyph.</summary>
+    private static double Chrome(ComboBox combo) => combo.Bounds.Width - Shown(combo, (string)combo.SelectedItem!).Bounds.Width;
+
+    /// <summary>
+    /// UI-TB-023 for the selected <paramref name="label"/>, the widest of the combo: shown in full when the combo may
+    /// be as wide as that needs; otherwise the combo is as wide as the limit and the label ends in an ellipsis inside
+    /// it. Either way the full label is the tooltip of the combo and of the item. Returns whether it is shown in full.
+    /// </summary>
+    private static bool AssertShownInFullOrElidedAtTheLimit(ComboBox combo, string label, double limit)
+    {
+        Assert.Equal(label, combo.SelectedItem);
+        var shown = Shown(combo, label);
+        var needed = NeededWidth(shown, label);
+        var fits = needed + Chrome(combo) <= limit;
+        Assert.Equal(TextTrimming.CharacterEllipsis, shown.TextTrimming);
+        Assert.InRange(combo.Bounds.Width, 88, limit);
+        var right = shown.TranslatePoint(new Point(shown.Bounds.Width, 0), combo)!.Value.X;
+        Assert.True(right <= combo.Bounds.Width, $"'{label}' ends at {right} in a combo {combo.Bounds.Width} wide");
+        if (fits)
+        {
+            Assert.False(shown.TextLayout.TextLines[0].HasCollapsed, $"'{label}' is elided in a combo {combo.Bounds.Width} wide (limit {limit}, the text needs {needed})");
+            Assert.True(shown.Bounds.Width + 0.5 >= needed, $"'{label}': text block {shown.Bounds.Width} wide, the text needs {needed}");
+        }
+        else
+        {
+            Assert.Equal(limit, combo.Bounds.Width);
+            Assert.True(shown.TextLayout.TextLines[0].HasCollapsed, $"'{label}' needs {needed}, does not fit and is elided");
+        }
+
+        Assert.Equal((label, label), (ToolTip.GetTip(combo), ToolTip.GetTip(shown)));
+        return fits;
+    }
+
+    /// <summary>
+    /// I-287, UI-TB-023: the platform combo is as wide as its widest item needs — at least 88, at most the limit of 240 —
+    /// whichever item is selected, so the longest label is shown in full; a label that needs more than the limit ends in
+    /// an ellipsis. The full label of the selected item is the combo's tooltip, also while the combo is disabled.
+    /// (The headless font is about twice as wide as the product's: <c>Win32 (not installed)</c>, in full in the product,
+    /// passes the limit here — both outcomes of the rule are asserted with labels measured in the font in use.)
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-TB-023")]
+    public async Task PlatformCombo_ShowsTheLongestLabelOrHasATooltip()
+    {
+        await using var h = await BuildScenario.StartAsync(o => o.PlatformCatalog = new TestPlatformCatalog(), projectExtra: """
+            , "platforms": ["win64", "test32"], "activePlatform": "test32"
+            """);
+        var combo = h.Find<ComboBox>("ToolBar.Build.Platform");
+        var limit = Assert.IsType<double>(h.Window.FindResource("FxcMetricDocumentTabMaxWidth"));
+        Assert.Equal(240, limit);
+        Assert.Equal((88.0, limit, true), (combo.MinWidth, combo.MaxWidth, double.IsNaN(combo.Width)));
+        Assert.True(ToolTip.GetShowOnDisabled(combo));
+
+        // Two labels that fit: the combo is as wide as the longer one needs, and the longer one is shown in full.
+        Assert.Equal(["Win64", "Test32"], combo.ItemsSource!.Cast<string>());
+        Assert.True(AssertShownInFullOrElidedAtTheLimit(combo, "Test32", limit), "Test32 fits below the limit");
+        var width = combo.Bounds.Width;
+        Assert.Equal(Math.Max(88, Math.Ceiling(NeededWidth(Shown(combo, "Test32"), "Test32")) + Chrome(combo)), width);
+        var next = h.Find<Button>(AutomationIds.ToolBarButton("project.build"));
+        var nextLeft = next.TranslatePoint(default, h.Window)!.Value.X;
+        Assert.True(combo.TranslatePoint(new Point(width, 0), h.Window)!.Value.X <= nextLeft, "the combo ends before the Build button");
+
+        // The width is that of the widest item, not of the selected one: selecting the shorter label moves nothing.
+        await h.ExecuteAsync("project.setPlatform", "win64");
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal("Win64", combo.SelectedItem);
+        Assert.False(Shown(combo, "Win64").TextLayout.TextLines[0].HasCollapsed);
+        Assert.Equal(width, combo.Bounds.Width);
+        Assert.Equal(nextLeft, next.TranslatePoint(default, h.Window)!.Value.X);
+        Assert.Equal("Win64", ToolTip.GetTip(combo));
+
+        // The label of a platform that is not installed, active: in full, or — where the font makes it pass the limit —
+        // elided at the limit; the tooltip gives it in full.
+        var definition = h.Services.Projects.Definition!;
+        Assert.True(await h.Services.Projects.ApplyOptionsAsync(definition with { Platforms = ["win64", "win32"], ActivePlatform = "win32" }));
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(["Win64", NotInstalled], combo.ItemsSource!.Cast<string>());
+        AssertShownInFullOrElidedAtTheLimit(combo, NotInstalled, limit);
+        Assert.True(combo.Bounds.Width > width, "the combo grew with its widest item");
+
+        // A label that needs more than the limit in any font: the combo stops at the limit, the label is elided.
+        const string LongId = "win32-with-a-rather-long-toolchain-name-that-no-combo-holds";
+        const string LongLabel = "Win32-with-a-rather-long-toolchain-name-that-no-combo-holds (not installed)";
+        definition = h.Services.Projects.Definition!;
+        Assert.True(await h.Services.Projects.ApplyOptionsAsync(definition with { Platforms = ["win64", LongId], ActivePlatform = LongId }));
+        Dispatcher.UIThread.RunJobs();
+        Assert.False(AssertShownInFullOrElidedAtTheLimit(combo, LongLabel, limit), "this label passes the limit");
+        Assert.Equal(limit, combo.Bounds.Width);
+
+        // One platform: the combo is disabled, its label and tooltip stay; no project: empty, 88 wide, no tooltip.
+        definition = h.Services.Projects.Definition!;
+        Assert.True(await h.Services.Projects.ApplyOptionsAsync(definition with { Platforms = ["win64"], ActivePlatform = null }));
+        Dispatcher.UIThread.RunJobs();
+        Assert.False(combo.IsEnabled);
+        Assert.True(AssertShownInFullOrElidedAtTheLimit(combo, "Win64", limit));
+        await h.ExecuteAsync("file.closeProject");
+        Dispatcher.UIThread.RunJobs();
+        Assert.Null(combo.SelectedItem);
+        Assert.Null(ToolTip.GetTip(combo));
+        Assert.Equal(88, combo.Bounds.Width);
     }
 }

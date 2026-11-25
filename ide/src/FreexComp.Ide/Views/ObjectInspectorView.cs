@@ -25,7 +25,7 @@ public sealed class ObjectInspectorView : UserControl
     private const double MinDescriptionHeight = 44; // UI-DSG-110
     private const double MinGridHeight = 44;
 
-    private readonly ComboBox _selector = new() { HorizontalAlignment = HorizontalAlignment.Stretch, Height = 26 };
+    private readonly ComboBox _selector = new() { HorizontalAlignment = HorizontalAlignment.Stretch };
     private readonly Button _tabProperties = new() { Content = Strings.Inspector_Tab_Properties };
     private readonly Button _tabEvents = new() { Content = Strings.Inspector_Tab_Events };
     // UI-DSG-102 (I-219): 22 × 22 flat toggles whose glyph gets the whole inner area (no template padding).
@@ -58,6 +58,7 @@ public sealed class ObjectInspectorView : UserControl
         ToolTip.SetTip(_byCategory, Strings.Inspector_ArrangeByCategory);
         ToolTip.SetTip(_byName, Strings.Inspector_ArrangeByName);
         ToolWindowFrame.FitFilterBox(_filter); // I-215
+        ToolWindowFrame.FitComboBox(_selector, 26); // I-285: a combo box of design-tokens.md §8, not the theme's 32
         AutomationProperties.SetAutomationId(_filter, Prefix + ".Filter");
         AutomationProperties.SetName(_grid, Strings.Cmd_view_objectInspector);
         AutomationProperties.SetAutomationId(_empty, Prefix + ".Empty");

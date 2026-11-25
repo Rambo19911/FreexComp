@@ -57,6 +57,7 @@ public sealed class SearchResultsView : UserControl
             _ = _model.GoToAsync(row);
         };
         _list.AddHandler(KeyDownEvent, OnKeyDown, RoutingStrategies.Tunnel);
+        Input.ListBehaviors.FocusOnRightPress(_list); // UI-TW-014 (I-283)
         _list.ContextRequested += (_, e) =>
         {
             if (_model is null)

@@ -199,17 +199,11 @@ public sealed class ToolWindowFrame : DockPanel
         var combo = new ComboBox
         {
             Width = choice.Width,
-            Height = 24,
-            MinHeight = 24,
-            // I-282: the theme's vertical padding (5 + 7) is that of its 32-high combo box and leaves 12 of the 24 here,
-            // less than a text line, so the selected item was cut. No vertical padding (the theme's horizontal one
-            // stays), text centred vertically - as FitFilterBox does for a filter box.
-            Padding = new Thickness(12, 0, 0, 0),
-            VerticalContentAlignment = VerticalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
             ItemsSource = choice.Items,
             Margin = new Thickness(0, 0, ToolWindowViewModel.ChoiceMargin, 0),
         };
+        FitComboBox(combo, Metric("FxcMetricToolbarComboHeight")); // I-282: a combo box of a tool bar
         AutomationProperties.SetAutomationId(combo, $"{AutomationIds.Tool(_model.Name)}.{choice.Name}");
         AutomationProperties.SetLabeledBy(combo, label);
         combo.Bind(SelectingItemsControl.SelectedIndexProperty, new Binding(nameof(choice.SelectedIndex)) { Source = choice, Mode = BindingMode.TwoWay });
@@ -269,6 +263,24 @@ public sealed class ToolWindowFrame : DockPanel
         box.Padding = new Thickness(6, 0, 6, 0);
         box.VerticalContentAlignment = VerticalAlignment.Center;
     }
+
+    /// <summary>
+    /// I-282, I-285: a combo box lower than the theme's (32) — one of a tool bar (24) or the 26 of design-tokens.md §8.
+    /// The height set alone does nothing: the theme's minimum height wins, so both are set. The theme's vertical padding
+    /// (5 + 7) is that of its 32-high combo box and leaves less than a text line here, which cut the selected item: no
+    /// vertical padding, text centred vertically, as <see cref="FitFilterBox"/> does for a filter box. The horizontal
+    /// padding stays the theme's, which is <c>space.5</c>.
+    /// </summary>
+    public static void FitComboBox(ComboBox combo, double height)
+    {
+        ArgumentNullException.ThrowIfNull(combo);
+        combo.Height = height;
+        combo.MinHeight = height;
+        combo.Padding = new Thickness(Metric("FxcSpace5"), 0, 0, 0);
+        combo.VerticalContentAlignment = VerticalAlignment.Center;
+    }
+
+    private static double Metric(string key) => Application.Current?.FindResource(key) as double? ?? 0;
 
     /// <summary>Escape: a non-empty filter is cleared, an empty one returns focus to the list (UI-TW-008).</summary>
     private void OnFilterKeyDown(object? sender, KeyEventArgs e)

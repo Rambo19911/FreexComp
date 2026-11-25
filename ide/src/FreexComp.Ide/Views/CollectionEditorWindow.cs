@@ -49,9 +49,9 @@ public sealed class CollectionEditorWindow : DialogWindow
 
     private static Grid Body(CollectionEditorViewModel model, Parts p)
     {
-        var itemsLabel = new Label { Content = Strings.CollectionEditor_Items, Target = p.List, Padding = new Thickness(0, 0, 0, 4) };
+        var itemsLabel = new Label { Content = MnemonicLabel.ToAccessText(Strings.CollectionEditor_Items), Target = p.List, Padding = new Thickness(0, 0, 0, 4) };
         AutomationProperties.SetAutomationId(p.List, Id("Items"));
-        AutomationProperties.SetName(p.List, Strings.CollectionEditor_Items.Replace("&", "", StringComparison.Ordinal));
+        AutomationProperties.SetName(p.List, MnemonicLabel.ToPlainText(Strings.CollectionEditor_Items));
         var placeholder = new TextBlock
         {
             Text = model.EmptyText, Margin = new Thickness(8), TextWrapping = TextWrapping.Wrap, IsHitTestVisible = false,
@@ -172,9 +172,9 @@ public sealed class CollectionEditorWindow : DialogWindow
 
     private static Button Button(string field, string text, Action action)
     {
-        var button = new Button { Content = text, MinWidth = 0 };
+        var button = new Button { Content = MnemonicLabel.ToAccessText(text), MinWidth = 0 };
         AutomationProperties.SetAutomationId(button, Id(field));
-        AutomationProperties.SetName(button, text.Replace("&", "", StringComparison.Ordinal));
+        AutomationProperties.SetName(button, MnemonicLabel.ToPlainText(text));
         button.Click += (_, e) =>
         {
             e.Handled = true;

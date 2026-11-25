@@ -93,7 +93,7 @@ public sealed partial class ProjectManagerViewTests
         Assert.DoesNotContain("bodyStrong", greyed.Classes);
         Assert.Equal(h.Window.FindResource(h.Window.ActualThemeVariant, "FxcTextDisabledBrush"), greyed.Foreground);
         Assert.True(h.Find<IdeIcon>(Row + "$project:Tools.Icon.Missing").IsVisible);
-        Assert.Equal("warning", h.Find<IdeIcon>(Row + "$project:Tools.Icon.Missing").IconName);
+        Assert.Equal("warning-corner", h.Find<IdeIcon>(Row + "$project:Tools.Icon.Missing").IconName); // I-287: the corner glyph
         Assert.Null(h.TryFind<TextBlock>(Row + "$project:Tools.Badge"));
         var tip = Assert.IsType<string>(ToolTip.GetTip(h.Find<TreeViewItem>(Row + "$project:Tools")));
         Assert.StartsWith(toolsPath + "\n", tip, StringComparison.Ordinal);

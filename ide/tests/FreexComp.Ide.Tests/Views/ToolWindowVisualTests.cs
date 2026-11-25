@@ -255,6 +255,67 @@ public sealed class ToolWindowVisualTests
         Assert.True(problems.Count == 0, string.Join(Environment.NewLine, problems) + Environment.NewLine + "combo boxes: " + string.Join(", ", combos.Order(StringComparer.Ordinal)));
     }
 
+    /// <summary>
+    /// I-285 (found by I-282), design-tokens.md §8: the combo boxes of the Build tool bar are 24 high (tool-bar combo
+    /// box) and the instance selector of the Object Inspector is 26 high (combo box) — the height set, not the 32 of the
+    /// theme's minimum — and each shows its selected item at the full height of the text, in both themes and at every
+    /// scale factor (UI-TOK-062). The tool-bar combos stay inside the 32-high tool bar.
+    /// </summary>
+    [AvaloniaTheory(Timeout = 30000)]
+    [Trait("Phase", "8")]
+    [Trait("Req", "UI-TOK-062")]
+    [InlineData(1.0)]
+    [InlineData(1.5)]
+    [InlineData(2.0)]
+    public async Task ToolBarCombos_HaveTheSpecifiedHeight_TextNotClipped(double scale)
+    {
+        var problems = new List<string>();
+        void Check(string theme, ComboBox combo, double height)
+        {
+            if (combo.SelectedItem is null)
+                problems.Add($"{theme}: {Id(combo)} has no selected item");
+            else if (ComboBoxChecks.SelectedTextProblem(combo) is { } problem)
+                problems.Add($"{theme}: {problem}");
+            if (Math.Abs(combo.Bounds.Height - height) > 0.01)
+                problems.Add(string.Create(CultureInfo.InvariantCulture, $"{theme}: {Id(combo)} is {combo.Bounds.Height:0.##} high, specified {height:0.##}"));
+        }
+
+        foreach (var theme in Themes)
+        {
+            await using (var h = await BuildScenario.StartAsync(o =>
+            {
+                o.Settings["appearance.theme"] = theme;
+                o.Scale = scale;
+            }, projectExtra: """, "platforms": ["win64", "win32"]"""))
+            {
+                Assert.Equal(scale, h.Window.RenderScaling);
+                var (comboHeight, barHeight) = (Assert.IsType<double>(h.Window.FindResource("FxcMetricToolbarComboHeight")), Assert.IsType<double>(h.Window.FindResource("FxcMetricToolbarHeight")));
+                Assert.Equal((24.0, 32.0), (comboHeight, barHeight));
+                foreach (var id in (string[])["ToolBar.Build.Configuration", "ToolBar.Build.Platform"])
+                {
+                    var combo = h.Find<ComboBox>(id);
+                    Check(theme, combo, comboHeight);
+                    var bar = h.Find<Control>("ToolBar.Build");
+                    var top = combo.TranslatePoint(default, bar)!.Value.Y;
+                    if (top < -0.01 || top + combo.Bounds.Height > bar.Bounds.Height + 0.01 || bar.Bounds.Height > barHeight + 0.01)
+                        problems.Add(string.Create(CultureInfo.InvariantCulture, $"{theme}: {id} spans {top:0.##}…{top + combo.Bounds.Height:0.##} in a tool bar {bar.Bounds.Height:0.##} high"));
+                }
+            }
+
+            await using (var h = await StartDesignAsync(theme, scale))
+            {
+                Assert.True(h.Services.ToolWindows.Show("ObjectInspector", focus: false));
+                Dispatcher.UIThread.RunJobs();
+                h.Window.UpdateLayout();
+                var inputHeight = Assert.IsType<double>(h.Window.FindResource("FxcMetricInputHeight"));
+                Assert.Equal(26.0, inputHeight);
+                Check(theme, h.Find<ComboBox>("Tool.ObjectInspector.InstanceSelector"), inputHeight);
+            }
+        }
+
+        Assert.True(problems.Count == 0, string.Join(Environment.NewLine, problems));
+    }
+
     private static string Id(Control control) => AutomationProperties.GetAutomationId(control) ?? control.GetType().Name;
 
     /// <summary>

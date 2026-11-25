@@ -252,15 +252,23 @@ public sealed class ToolBarRow : DockPanel
 
     private Control CreateCombo(string toolbar, ToolBarComboModel model)
     {
-        var combo = new ComboBox { Width = model.Width, Height = Metric("FxcMetricToolbarComboHeight"), VerticalAlignment = VerticalAlignment.Center };
+        var combo = new ComboBox { Width = model.Width, VerticalAlignment = VerticalAlignment.Center };
+        ToolWindowFrame.FitComboBox(combo, Metric("FxcMetricToolbarComboHeight")); // I-285: 24 high, not the theme's 32
         AutomationProperties.SetAutomationId(combo, $"ToolBar.{toolbar}.{model.Name}");
         AutomationProperties.SetName(combo, model.Name);
         if (model.ElidesItems)
         {
-            // UI-TB-023: the combo keeps its width; a label that does not fit ends in an ellipsis and is its item's tooltip.
+            // UI-TB-023 (I-287): as wide as the widest item needs, whichever is selected - at least the width of the
+            // model, at most the widest a text-sized item of the chrome gets (the document tab's maximum). A label that
+            // still does not fit ends in an ellipsis; the full label is the tooltip of the item and of the combo.
+            combo.Width = double.NaN;
+            combo.MinWidth = model.Width;
+            combo.MaxWidth = Metric("FxcMetricDocumentTabMaxWidth");
+            ToolTip.SetShowOnDisabled(combo, true);
             combo.ItemTemplate = new FuncDataTemplate<string>((text, _) =>
             {
-                var block = new TextBlock { Text = text, TextTrimming = TextTrimming.CharacterEllipsis };
+                var block = new WidestLabel { Text = text, TextTrimming = TextTrimming.CharacterEllipsis };
+                block.Bind(WidestLabel.LabelsProperty, new Binding(nameof(ToolBarComboModel.Items)) { Source = model, Mode = BindingMode.OneWay });
                 ToolTip.SetTip(block, text);
                 return block;
             }, supportsRecycling: false);
@@ -273,6 +281,8 @@ public sealed class ToolBarRow : DockPanel
             combo.ItemsSource = model.Items;
             combo.SelectedItem = model.Selected;
             combo.IsEnabled = model.IsEnabled;
+            if (model.ElidesItems)
+                ToolTip.SetTip(combo, model.Selected);
             updating = false;
         }
 
@@ -296,4 +306,37 @@ public sealed class ToolBarRow : DockPanel
 
     private double Metric(string key) =>
         this.TryFindResource(key, out var value) && value is double d ? d : Application.Current?.FindResource(key) as double? ?? 0;
+
+    /// <summary>
+    /// The text of a combo item that asks for the width of the widest of the combo's labels (I-287): the selection box,
+    /// and with it the combo, is as wide as the widest item needs and does not change with the selection.
+    /// </summary>
+    private sealed class WidestLabel : TextBlock
+    {
+        public static readonly StyledProperty<IReadOnlyList<string>?> LabelsProperty =
+            AvaloniaProperty.Register<WidestLabel, IReadOnlyList<string>?>(nameof(Labels));
+
+        static WidestLabel()
+        {
+            AffectsMeasure<WidestLabel>(LabelsProperty);
+        }
+
+        public IReadOnlyList<string>? Labels
+        {
+            get => GetValue(LabelsProperty);
+            set => SetValue(LabelsProperty, value);
+        }
+
+        protected override Type StyleKeyOverride => typeof(TextBlock);
+
+        protected override Size MeasureOverride(Size availableSize)
+        {
+            var own = base.MeasureOverride(availableSize);
+            var typeface = new Typeface(FontFamily, FontStyle, FontWeight, FontStretch);
+            var widest = own.Width;
+            foreach (var label in Labels ?? [])
+                widest = Math.Max(widest, Math.Ceiling(new Avalonia.Media.TextFormatting.TextLayout(label, typeface, FontSize, null).WidthIncludingTrailingWhitespace));
+            return new Size(Math.Min(widest, availableSize.Width), own.Height);
+        }
+    }
 }
