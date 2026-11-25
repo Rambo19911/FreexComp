@@ -35,7 +35,7 @@ public sealed class MetadataE2ETests
 
         // The Phase 4 palette (controls-standard.md): every creatable class has a page and an existing SVG icon.
         var creatable = catalog.All.Where(c => c.Palette is not null).ToList();
-        Assert.Equal(34, creatable.Count);
+        Assert.Equal(35, creatable.Count);   // 34 of Phase 4 + TRichEdit (U-144)
         foreach (var component in creatable)
         {
             Assert.Contains(component.Palette!.Page, catalog.PalettePages);

@@ -98,7 +98,7 @@ public sealed partial class SpecConformanceTests
 
     /// <summary>
     /// RTL-850: every window and control message constant that the ui-framework specification of Phases 4-7 uses is
-    /// declared by <c>Messages</c> (window and control messages) or <c>CommCtrl</c> (common-control messages), or by
+    /// declared by <c>Messages</c> (window and control messages), <c>CommCtrl</c> (common-control messages) or <c>RichEdit</c> (rich edit messages), or by
     /// <c>Windows</c> for the codes it owns. Names ending in <c>*</c> stand for a family; the Phase 8+ document is skipped.
     /// </summary>
     [Fact]
@@ -117,7 +117,7 @@ public sealed partial class SpecConformanceTests
         Assert.Contains("WM_PAINT", used);
 
         var winapi = Path.Combine(RtlSetup.RepositoryRoot, "rtl", "winapi", "src");
-        var declared = string.Concat(new[] { "Messages.pas", "CommCtrl.pas", "Windows.pas" }
+        var declared = string.Concat(new[] { "Messages.pas", "CommCtrl.pas", "Windows.pas", "RichEdit.pas" }
             .Select(f => Comment().Replace(File.ReadAllText(Path.Combine(winapi, f)), " ")));
         var missing = used.Where(n => !Regex.IsMatch(declared, @"\b" + n + @"\s*=")).Order(StringComparer.Ordinal).ToList();
         Assert.True(missing.Count == 0, "message constants used by the ui-framework spec but not declared: " + string.Join(", ", missing));
