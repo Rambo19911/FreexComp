@@ -70,6 +70,21 @@ public sealed class TestSupportTests
     }
 
     /// <summary>
+    /// I-263: the thread pool of this test process starts with <see cref="Infrastructure.TestThreadPool.WorkerMinimum"/>
+    /// workers on demand. The headless session runs its loop on a pool thread and every UI test blocks one more while
+    /// its body runs there; with the default minimum (one per processor) the first tests of the run block every worker,
+    /// and on a machine whose processors are all busy the pool adds one only after about a second per existing worker.
+    /// Whatever needs a worker meanwhile — the exit notification of a child process, a test's own timeout — waits.
+    /// </summary>
+    [Fact(Timeout = 30000)]
+    public void ThreadPoolKeepsWorkersForBlockedUiTests()
+    {
+        ThreadPool.GetMinThreads(out var workers, out _);
+        Assert.True(Infrastructure.TestThreadPool.WorkerMinimum >= 4 * Environment.ProcessorCount);
+        Assert.True(workers >= Infrastructure.TestThreadPool.WorkerMinimum, $"The pool's worker minimum is {workers}.");
+    }
+
+    /// <summary>
     /// I-262: no source file under <c>ide/</c> reads a child process's redirected stdout or stderr asynchronously. Such a
     /// pipe is a synchronous handle, so the "asynchronous" read parks a thread-pool thread until the child writes, and
     /// test projects running in parallel starve the pool. <see cref="ChildProcessOutput"/> reads on dedicated threads.
