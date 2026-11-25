@@ -1,0 +1,52 @@
+# read from the form (UIF-1365, UIF-1366)
+ok the class of the list
+ok four lines
+ok line 0 as written
+ok line 1 as written
+ok line 2 as written
+ok line 3 as written
+ok value of line 0
+ok value of line 1: any case, spaces around +
+ok value of line 2
+ok a line that is not a shortcut text has the value 0
+ok IndexOfShortCut
+ok IndexOfShortCut: not in the list
+ok IndexOfShortCut(0): the unknown line never matches
+ok every read gives the same list
+ok the primary shortcut
+ok an action without the property in the form: the list is created on first read
+ok and is empty
+# keys (UIF-1367)
+ok Ctrl+S, the primary shortcut
+ok executed once (through the linked menu item)
+ok Ctrl+Ins, a secondary shortcut
+ok executed once
+ok Shift+F2, a secondary shortcut
+ok executed once
+ok Alt+F7, a secondary shortcut
+ok executed once
+ok F2 without Shift is not in the list
+ok Ctrl+Shift+Ins is not in the list
+ok Ctrl+N: the unknown line matches no key
+ok nothing ran
+# the action must be able to run (UIF-1367, UIF-923)
+ok disabled: the secondary key is not consumed
+ok nothing ran
+ok suspended list: not consumed
+ok normal again
+# assignment and order (UIF-1365, UIF-925)
+ok assignment keeps the action's own list
+ok and copies the lines
+ok both actions have Ctrl+Ins
+ok the first action in index order runs
+ok clearing one list leaves the other
+ok Ctrl+Ins again
+ok now the second action runs
+ok a secondary key equal to another action's primary key
+ok the menu item with the primary shortcut comes first
+ok the primary shortcut removed
+ok the secondary key of the other action runs it
+# clients show the primary shortcut only (UIF-1367, UIF-934)
+ok the menu item has the primary shortcut
+ok the native item text: caption, tab, primary shortcut text
+# passed 46 failed 0

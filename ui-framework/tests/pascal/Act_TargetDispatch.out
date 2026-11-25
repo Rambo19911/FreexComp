@@ -1,0 +1,76 @@
+ok the first form is the main form
+ok no form is active: no window was shown
+# no target (UIF-1360, UIF-1362)
+ok Execute without an active form: False
+ok the search starts at the main form
+ok through the shortcut search of the second form: False, the key is not consumed
+ok active control, active form, main form: first for the update, then for the execution
+ok a TAction descendant without a handler and a target stays enabled
+# each level in turn (UIF-1362, UIF-1364)
+ok the active control answers in its ExecuteAction: True
+ok the answer of the active control ends the search
+ok the active form answers
+ok the active form is asked after its active control
+ok the main form answers
+ok the main form is asked after the active form
+ok without an active form the main form still answers
+ok only the main form was asked
+# the target methods (UIF-1360, UIF-1361)
+ok the marker is the active control: True
+ok UpdateTarget, then ExecuteTarget, for the active control
+ok the marker is the active form
+ok the target methods get the form
+ok the marker is the main form
+ok the target methods get the main form
+ok the marker is the application
+ok the application is asked last
+ok the application without an active form
+ok main form, then the application
+# which form is the active one (UIF-1362)
+ok no active control
+ok the search starts at the active form
+ok the shortcut search starts at the main form
+ok the main form is asked once; the controls of another form are not asked
+# handlers win over targets (UIF-1360, UIF-1361)
+ok OnExecute assigned: True
+ok the handler ran; nobody was asked to execute
+ok the list's OnExecute handled it
+ok nobody was asked to execute
+ok the list's OnExecute left it unhandled
+ok the target is asked after the handlers
+ok OnUpdate assigned
+ok an update handler ran: nobody is asked to update
+# a disabled action (UIF-1360)
+ok disabled: False although the form would answer
+ok updated, but nobody is asked to execute
+# a suspended list (UIF-1360)
+ok suspended: False
+ok nobody is asked
+# an exception of a target method (UIF-1364)
+ok Execute raises
+# DisableIfNoHandler (UIF-1361)
+ok False by default
+ok no handler and no target: disabled by Update
+ok the candidates were asked
+ok a target exists: its UpdateTarget decides
+ok an action with OnExecute is never disabled by the rule
+ok nor an action whose list has OnExecute
+ok an update handler ran: the rule does not apply
+ok Execute updates first: disabled, False
+ok nobody is asked to execute
+ok disabled
+# TAction without a handler (UIF-904)
+ok DisableIfNoHandler False
+ok Update: no handler ran
+ok stays enabled
+ok Execute: False
+ok still enabled
+# the search variable (UIF-1363)
+ok Forms assigned ActnList.ActionTargetSearch
+ok cleared: Execute is False although a target exists
+ok nobody is asked
+ok the shortcut is not consumed
+ok nobody is asked by the shortcut search
+ok assigned again: the search is back
+ok the main form answered
+# passed 64 failed 0

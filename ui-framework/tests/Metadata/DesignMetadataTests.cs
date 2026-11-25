@@ -24,4 +24,17 @@ public sealed class DesignMetadataTests
 
         Assert.Equal(["TShiftState"], types);
     }
+
+    /// <summary>U-151 (UIF-1378): <c>TAction</c> lists <c>SecondaryShortCuts</c> as a string-list property of the category Action.</summary>
+    [Fact]
+    [Trait("Req", "UIF-1378")]
+    public void ActionHasSecondaryShortCutsRow()
+    {
+        var action = MetadataRoot.Load(MetadataTests.DesignDirectory).Find("TAction");
+
+        Assert.NotNull(action);
+        var row = Assert.Single(action.Properties, p => p.GetProperty("name").GetString() == "SecondaryShortCuts");
+        Assert.Equal("TStrings", row.GetProperty("type").GetString());
+        Assert.Equal("Action", row.GetProperty("category").GetString());
+    }
 }

@@ -63,6 +63,7 @@
         { "name": "GroupIndex", "type": "Integer", "default": 0, "category": "Behavior" },
         { "name": "Hint", "type": "string", "default": "", "category": "Misc", "localizable": true },
         { "name": "ImageIndex", "type": "Integer", "default": -1, "category": "Appearance" },
+        { "name": "SecondaryShortCuts", "type": "TStrings", "category": "Action" },
         { "name": "ShortCut", "type": "TShortCut", "default": 0, "category": "Action", "editor": "shortcut" },
         { "name": "Visible", "type": "Boolean", "default": true, "category": "Appearance" }
       ],

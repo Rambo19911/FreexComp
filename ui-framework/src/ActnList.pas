@@ -14,10 +14,22 @@ type
 
   TCustomActionList = class;
 
+  { standard-actions.md section 3: shortcut texts, one per line (UIF-931 to UIF-933); a line that is not a shortcut
+    text has the value 0 and never matches }
+  TShortCutList = class(TStringList)
+  private
+    function GetShortCuts(Index: Integer): TShortCut;
+  public
+    { the first line whose value is ShortCut; -1 if none or for 0 }
+    function IndexOfShortCut(const ShortCut: TShortCut): Integer;
+    property ShortCuts[Index: Integer]: TShortCut read GetShortCuts;
+  end;
+
   TContainedAction = class(TBasicAction)
   private
     FActionList: TCustomActionList;
     FCategory: string;
+    FTargetUpdated: Boolean;
     function GetIndex: Integer;
     procedure SetIndex(Value: Integer);
     procedure SetActionList(Value: TCustomActionList);
@@ -25,8 +37,10 @@ type
   protected
     { UIF-902 step 1: the list is suspended }
     function Suspended: Boolean;
-    { UIF-902 steps 5 to 7: the list's OnExecute, then the action's own; True if handled }
+    { UIF-902 steps 5 to 7: the list's OnExecute, then the action's own, then a target (UIF-1360); True if handled }
     function DoExecute: Boolean;
+    { UIF-1361: the last Update found a target for UpdateTarget }
+    function TargetUpdated: Boolean;
     procedure SetParentComponent(Value: TComponent); override;
     property Category: string read FCategory write SetCategory;
   public
@@ -52,7 +66,11 @@ type
     FImageIndex: Integer;
     FShortCut: TShortCut;
     FVisible: Boolean;
+    FDisableIfNoHandler: Boolean;
+    FSecondaryShortCuts: TShortCutList;
     FOnHint: THintEvent;
+    function GetSecondaryShortCuts: TShortCutList;
+    procedure SetSecondaryShortCuts(Value: TShortCutList);
     procedure SetAutoCheck(Value: Boolean);
     procedure SetCaption(const Value: string);
     procedure SetChecked(Value: Boolean);
@@ -71,10 +89,15 @@ type
     property GroupIndex: Integer read FGroupIndex write SetGroupIndex default 0;
     property Hint: string read FHint write SetHint;
     property ImageIndex: Integer read FImageIndex write SetImageIndex default -1;
+    { UIF-1365: further keys that execute the action; created on first read, assignment copies the lines }
+    property SecondaryShortCuts: TShortCutList read GetSecondaryShortCuts write SetSecondaryShortCuts;
     property ShortCut: TShortCut read FShortCut write SetShortCut default 0;
     property Visible: Boolean read FVisible write SetVisible default True;
     property OnHint: THintEvent read FOnHint write FOnHint;
+    { UIF-1361: Update disables the action when it has neither an execute handler nor a target }
+    property DisableIfNoHandler: Boolean read FDisableIfNoHandler write FDisableIfNoHandler;
     constructor Create(AOwner: TComponent); override;
+    destructor Destroy; override;
     { UIF-902 }
     function Execute: Boolean; override;
     { UIF-903 }
@@ -93,6 +116,7 @@ type
     property GroupIndex;
     property Hint;
     property ImageIndex;
+    property SecondaryShortCuts;
     property ShortCut;
     property Visible;
     property OnExecute;
@@ -130,8 +154,8 @@ type
     function ExecuteAction(Action: TBasicAction): Boolean; override;
     { UIF-903: the list's OnUpdate for Action; True if it handled it }
     function UpdateAction(Action: TBasicAction): Boolean; override;
-    { UIF-923: the first action (index order) whose ShortCut is the key's and whose Execute returns True; False
-      while the list is not asNormal }
+    { UIF-923, UIF-1367: the first action (index order) whose ShortCut is the key's, or whose SecondaryShortCuts
+      contain it, and whose Execute returns True; False while the list is not asNormal }
     function IsShortCut(var Message: TWMKey): Boolean;
     property Actions[Index: Integer]: TContainedAction read GetAction; default;
     property ActionCount: Integer read GetActionCount;
@@ -182,8 +206,21 @@ type
     procedure RecordValues;
   end;
 
+  { UIF-1362: asks the candidates in order; Execute chooses ExecuteAction or UpdateAction; True when one answered }
+  TActionTargetSearch = function(Action: TBasicAction; Execute: Boolean): Boolean;
+
+var
+  { UIF-1363: the target search for an action whose handlers did not handle a request. Forms assigns it in its
+    initialization and clears it in its finalization; nil: no search }
+  ActionTargetSearch: TActionTargetSearch;
+
 { the two events are the same method of the same object (both nil counts as the same) }
 function SameEvent(const A, B: TNotifyEvent): Boolean;
+
+{ UIF-931: '' for 0 or an unnamed key; Ctrl+, Alt+, Shift+ in this order, then the key name }
+function ShortCutToText(ShortCut: TShortCut): string;
+{ UIF-933: case-insensitive, optional spaces around '+', modifiers in any order; 0 for anything else }
+function TextToShortCut(const Text: string): TShortCut;
 
 implementation
 
@@ -207,6 +244,145 @@ begin
     Result := Result or $4000;
   if (KeyData and $20000000) <> 0 then
     Result := Result or $8000;
+end;
+
+{ ---------------------------------------------------------------- shortcut texts (actions-menus.md section 3) }
+
+function FixedKeyName(Key: Word): string;
+begin
+  Result := '';
+  case Key of
+    Ord('A')..Ord('Z'), Ord('0')..Ord('9'): Result := Chr(Key);
+    $70..$87: Result := 'F' + IntToStr(Key - $6F);
+    8: Result := 'BkSp';
+    9: Result := 'Tab';
+    13: Result := 'Enter';
+    27: Result := 'Esc';
+    32: Result := 'Space';
+    33: Result := 'PgUp';
+    34: Result := 'PgDn';
+    35: Result := 'End';
+    36: Result := 'Home';
+    37: Result := 'Left';
+    38: Result := 'Up';
+    39: Result := 'Right';
+    40: Result := 'Down';
+    45: Result := 'Ins';
+    46: Result := 'Del';
+    $60..$69: Result := 'Num ' + Chr(Ord('0') + Key - $60);
+    $6A: Result := 'Num *';
+    $6B: Result := 'Num +';
+    $6D: Result := 'Num -';
+    $6E: Result := 'Num .';
+    $6F: Result := 'Num /';
+  end;
+end;
+
+function KeyName(Key: Word): string;
+var
+  Buffer: array[0..63] of WideChar;
+  N: Integer;
+begin
+  Result := FixedKeyName(Key);
+  if Result <> '' then
+    Exit;
+  N := GetKeyNameTextW(LONG(MapVirtualKeyW(Key, MAPVK_VK_TO_VSC) shl 16), @Buffer[0], Length(Buffer));
+  if N > 0 then
+    SetString(Result, PWideChar(@Buffer[0]), N);
+end;
+
+{ UIF-931 }
+function ShortCutToText(ShortCut: TShortCut): string;
+var
+  Name: string;
+begin
+  Result := '';
+  if ShortCut = 0 then
+    Exit;
+  Name := KeyName(ShortCut and $FF);
+  if Name = '' then
+    Exit;
+  if ShortCut and $4000 <> 0 then
+    Result := Result + 'Ctrl+';
+  if ShortCut and $8000 <> 0 then
+    Result := Result + 'Alt+';
+  if ShortCut and $2000 <> 0 then
+    Result := Result + 'Shift+';
+  Result := Result + Name;
+end;
+
+{ removes a leading "<Modifier> +" (case-insensitive, optional spaces) from S; True if one was found }
+function TakeModifier(var S: string; const Modifier: string): Boolean;
+var
+  I: Integer;
+begin
+  Result := False;
+  if not SameText(Copy(S, 1, Length(Modifier)), Modifier) then
+    Exit;
+  I := Length(Modifier) + 1;
+  while (I <= Length(S)) and (S[I] = ' ') do
+    Inc(I);
+  if (I > Length(S)) or (S[I] <> '+') then
+    Exit;
+  Inc(I);
+  while (I <= Length(S)) and (S[I] = ' ') do
+    Inc(I);
+  S := Copy(S, I, MaxInt);
+  Result := True;
+end;
+
+{ UIF-933 }
+function TextToShortCut(const Text: string): TShortCut;
+var
+  S: string;
+  Modifiers: Word;
+  Key: Integer;
+  Found: Boolean;
+begin
+  Result := 0;
+  S := Trim(Text);
+  Modifiers := 0;
+  repeat
+    Found := True;
+    if TakeModifier(S, 'Ctrl') then
+      Modifiers := Modifiers or $4000
+    else if TakeModifier(S, 'Alt') then
+      Modifiers := Modifiers or $8000
+    else if TakeModifier(S, 'Shift') then
+      Modifiers := Modifiers or $2000
+    else
+      Found := False;
+  until not Found;
+  if S = '' then
+    Exit;
+  for Key := 1 to 255 do
+    if (FixedKeyName(Key) <> '') and SameText(FixedKeyName(Key), S) then
+    begin
+      Result := Key or Modifiers;
+      Exit;
+    end;
+end;
+
+{ ---------------------------------------------------------------- TShortCutList }
+
+function TShortCutList.GetShortCuts(Index: Integer): TShortCut;
+begin
+  Result := TextToShortCut(Strings[Index]);
+end;
+
+function TShortCutList.IndexOfShortCut(const ShortCut: TShortCut): Integer;
+var
+  I: Integer;
+begin
+  Result := -1;
+  if ShortCut = 0 then
+    Exit;
+  for I := 0 to Count - 1 do
+    if TextToShortCut(Strings[I]) = ShortCut then
+    begin
+      Result := I;
+      Exit;
+    end;
 end;
 
 { ---------------------------------------------------------------- TContainedAction }
@@ -296,6 +472,13 @@ begin
     OnExecute(Self);
     Result := True;
   end;
+  if not Result and Assigned(ActionTargetSearch) then        { UIF-1360 }
+    Result := ActionTargetSearch(Self, True);
+end;
+
+function TContainedAction.TargetUpdated: Boolean;
+begin
+  Result := FTargetUpdated;
 end;
 
 function TContainedAction.Execute: Boolean;
@@ -323,6 +506,8 @@ begin
     OnUpdate(Self);
     Result := True;
   end;
+  { UIF-1361: no update handler ran }
+  FTargetUpdated := not Result and Assigned(ActionTargetSearch) and ActionTargetSearch(Self, False);
 end;
 
 { ---------------------------------------------------------------- TCustomAction }
@@ -333,6 +518,24 @@ begin
   FEnabled := True;
   FVisible := True;
   FImageIndex := -1;
+end;
+
+destructor TCustomAction.Destroy;
+begin
+  FSecondaryShortCuts.Free;
+  inherited Destroy;
+end;
+
+function TCustomAction.GetSecondaryShortCuts: TShortCutList;
+begin
+  if FSecondaryShortCuts = nil then
+    FSecondaryShortCuts := TShortCutList.Create;
+  Result := FSecondaryShortCuts;
+end;
+
+procedure TCustomAction.SetSecondaryShortCuts(Value: TShortCutList);
+begin
+  GetSecondaryShortCuts.Assign(Value);
 end;
 
 { UIF-902 }
@@ -353,6 +556,10 @@ end;
 function TCustomAction.Update: Boolean;
 begin
   Result := inherited Update;
+  { UIF-1361: neither an update handler, nor a target, nor an execute handler }
+  if not Result and not TargetUpdated and FDisableIfNoHandler and not Assigned(OnExecute)
+    and not ((FActionList <> nil) and Assigned(FActionList.FOnExecute)) then
+    Enabled := False;
   if (FActionList <> nil) and (FActionList.FState = asSuspendedEnabled) then
     Enabled := True;
 end;
@@ -586,6 +793,7 @@ var
   SC: TShortCut;
   I: Integer;
   A: TContainedAction;
+  C: TCustomAction;
 begin
   Result := False;
   SC := KeyShortCut(Message.CharCode, Message.KeyData);
@@ -594,7 +802,11 @@ begin
   for I := 0 to FActions.Count - 1 do
   begin
     A := TContainedAction(FActions[I]);
-    if (A is TCustomAction) and (TCustomAction(A).FShortCut = SC) and A.Execute then
+    if not (A is TCustomAction) then
+      Continue;
+    C := TCustomAction(A);
+    if ((C.FShortCut = SC) or ((C.FSecondaryShortCuts <> nil) and (C.FSecondaryShortCuts.IndexOfShortCut(SC) >= 0)))
+      and A.Execute then
     begin
       Result := True;
       Exit;

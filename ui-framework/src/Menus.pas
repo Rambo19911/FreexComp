@@ -282,121 +282,16 @@ begin
 end;
 
 { UIF-932: the fixed, non-localised key names; '' for a key without one }
-function FixedKeyName(Key: Word): string;
-begin
-  Result := '';
-  case Key of
-    Ord('A')..Ord('Z'), Ord('0')..Ord('9'): Result := Chr(Key);
-    $70..$87: Result := 'F' + IntToStr(Key - $6F);
-    8: Result := 'BkSp';
-    9: Result := 'Tab';
-    13: Result := 'Enter';
-    27: Result := 'Esc';
-    32: Result := 'Space';
-    33: Result := 'PgUp';
-    34: Result := 'PgDn';
-    35: Result := 'End';
-    36: Result := 'Home';
-    37: Result := 'Left';
-    38: Result := 'Up';
-    39: Result := 'Right';
-    40: Result := 'Down';
-    45: Result := 'Ins';
-    46: Result := 'Del';
-    $60..$69: Result := 'Num ' + Chr(Ord('0') + Key - $60);
-    $6A: Result := 'Num *';
-    $6B: Result := 'Num +';
-    $6D: Result := 'Num -';
-    $6E: Result := 'Num .';
-    $6F: Result := 'Num /';
-  end;
-end;
-
-function KeyName(Key: Word): string;
-var
-  Buffer: array[0..63] of WideChar;
-  N: Integer;
-begin
-  Result := FixedKeyName(Key);
-  if Result <> '' then
-    Exit;
-  N := GetKeyNameTextW(LONG(MapVirtualKeyW(Key, MAPVK_VK_TO_VSC) shl 16), @Buffer[0], Length(Buffer));
-  if N > 0 then
-    SetString(Result, PWideChar(@Buffer[0]), N);
-end;
-
-{ UIF-931 }
+{ UIF-931, UIF-933: the texts live in ActnList (secondary shortcuts need them and ActnList cannot use Menus) }
 function ShortCutToText(ShortCut: TShortCut): string;
-var
-  Name: string;
 begin
-  Result := '';
-  if ShortCut = 0 then
-    Exit;
-  Name := KeyName(ShortCut and $FF);
-  if Name = '' then
-    Exit;
-  if ShortCut and scCtrl <> 0 then
-    Result := Result + 'Ctrl+';
-  if ShortCut and scAlt <> 0 then
-    Result := Result + 'Alt+';
-  if ShortCut and scShift <> 0 then
-    Result := Result + 'Shift+';
-  Result := Result + Name;
+  Result := ActnList.ShortCutToText(ShortCut);
 end;
 
-{ removes a leading "<Modifier> +" (case-insensitive, optional spaces) from S; True if one was found }
-function TakeModifier(var S: string; const Modifier: string): Boolean;
-var
-  I: Integer;
-begin
-  Result := False;
-  if not SameText(Copy(S, 1, Length(Modifier)), Modifier) then
-    Exit;
-  I := Length(Modifier) + 1;
-  while (I <= Length(S)) and (S[I] = ' ') do
-    Inc(I);
-  if (I > Length(S)) or (S[I] <> '+') then
-    Exit;
-  Inc(I);
-  while (I <= Length(S)) and (S[I] = ' ') do
-    Inc(I);
-  S := Copy(S, I, MaxInt);
-  Result := True;
-end;
-
-{ UIF-933 }
 function TextToShortCut(const Text: string): TShortCut;
-var
-  S: string;
-  Modifiers: Word;
-  Key: Integer;
-  Found: Boolean;
 begin
-  Result := 0;
-  S := Trim(Text);
-  Modifiers := 0;
-  repeat
-    Found := True;
-    if TakeModifier(S, 'Ctrl') then
-      Modifiers := Modifiers or scCtrl
-    else if TakeModifier(S, 'Alt') then
-      Modifiers := Modifiers or scAlt
-    else if TakeModifier(S, 'Shift') then
-      Modifiers := Modifiers or scShift
-    else
-      Found := False;
-  until not Found;
-  if S = '' then
-    Exit;
-  for Key := 1 to 255 do
-    if (FixedKeyName(Key) <> '') and SameText(FixedKeyName(Key), S) then
-    begin
-      Result := Key or Modifiers;
-      Exit;
-    end;
+  Result := ActnList.TextToShortCut(Text);
 end;
-
 
 function StripHotkey(const Text: string): string;
 var

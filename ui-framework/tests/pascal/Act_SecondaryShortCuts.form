@@ -1,0 +1,32 @@
+object SecForm: TSecForm
+  Caption = 'Secondary'
+  ClientWidth = 300
+  ClientHeight = 200
+  Scaled = False
+  object MainMenu1: TMainMenu
+    DesignLeft = 16
+    DesignTop = 160
+    object Item1: TMenuItem
+      Action = ActSave
+    end
+  end
+  object ActionList1: TActionList
+    DesignLeft = 48
+    DesignTop = 160
+    object ActSave: TAction
+      Caption = 'Save'
+      SecondaryShortCuts = (
+        'Ctrl+Ins'
+        'shift + f2'
+        'Alt+F7'
+        'Ctrl+Nothing'
+      )
+      ShortCut = 16467
+      OnExecute = ActSaveExecute
+    end
+    object ActPlain: TAction
+      Caption = 'Plain'
+      OnExecute = ActPlainExecute
+    end
+  end
+end

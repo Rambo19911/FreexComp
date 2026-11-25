@@ -2176,52 +2176,100 @@ begin
     Screen.FOnActiveControlChange(Screen);
 end;
 
+var
+  { the form a running shortcut search started from (UIF-921); nil outside a search }
+  ShortCutForm: TCustomForm;
+
+function AskActionTarget(C: TComponent; Action: TBasicAction; Execute: Boolean): Boolean;
+begin
+  if Execute then
+    Result := C.ExecuteAction(Action)
+  else
+    Result := C.UpdateAction(Action);
+end;
+
+{ UIF-1362: the active control of the active form, the active form, the main form, the application. The active
+  form is the form of the running shortcut search, else the active form of the screen }
+function FormsActionTargetSearch(Action: TBasicAction; Execute: Boolean): Boolean;
+var
+  F: TCustomForm;
+begin
+  Result := False;
+  if Application = nil then
+    Exit;
+  Result := True;
+  F := ShortCutForm;
+  if (F = nil) and (Screen <> nil) then
+    F := Screen.FActiveCustomForm;
+  if F <> nil then
+  begin
+    if (F.FActiveControl <> nil) and AskActionTarget(F.FActiveControl, Action, Execute) then
+      Exit;
+    if AskActionTarget(F, Action, Execute) then
+      Exit;
+  end;
+  if (Application.FMainForm <> nil) and (Application.FMainForm <> F)
+    and AskActionTarget(Application.FMainForm, Action, Execute) then
+    Exit;
+  Result := AskActionTarget(Application, Action, Execute);
+end;
+
 function TCustomForm.IsShortCut(var Message: TWMKey): Boolean;
 var
   SC: TShortCut;
   C: TControl;
   I: Integer;
+  Outer: Boolean;
 begin
   Result := False;
-  case Message.CharCode of
-    VK_SHIFT, VK_CONTROL, VK_MENU, VK_LWIN, VK_RWIN:
+  { UIF-1362: the target search of an action starts from the form this search started from }
+  Outer := ShortCutForm = nil;
+  if Outer then
+    ShortCutForm := Self;
+  try
+    case Message.CharCode of
+      VK_SHIFT, VK_CONTROL, VK_MENU, VK_LWIN, VK_RWIN:
+        Exit;
+    end;
+    SC := Menus.ShortCut(Message.CharCode, KeyDataToShiftState(Message.KeyData));
+    if SC = 0 then
       Exit;
-  end;
-  SC := Menus.ShortCut(Message.CharCode, KeyDataToShiftState(Message.KeyData));
-  if SC = 0 then
-    Exit;
-  { (1) pop-up menus of the focused control and its parents, up to and including the form }
-  C := FActiveControl;
-  if C = nil then
-    C := Self;
-  while C <> nil do
-  begin
-    if (C.PopupMenu <> nil) and C.PopupMenu.DispatchShortCut(SC) then
+    { (1) pop-up menus of the focused control and its parents, up to and including the form }
+    C := FActiveControl;
+    if C = nil then
+      C := Self;
+    while C <> nil do
+    begin
+      if (C.PopupMenu <> nil) and C.PopupMenu.DispatchShortCut(SC) then
+      begin
+        Result := True;
+        Exit;
+      end;
+      if C = Self then
+        Break;
+      C := C.Parent;
+    end;
+    { (2) the main menu }
+    if (FMenu <> nil) and FMenu.DispatchShortCut(SC) then
     begin
       Result := True;
       Exit;
     end;
-    if C = Self then
-      Break;
-    C := C.Parent;
+    { (3) the action lists owned by the form, in component order }
+    for I := 0 to ComponentCount - 1 do
+      if (Components[I] is TCustomActionList) and TCustomActionList(Components[I]).IsShortCut(Message) then
+      begin
+        Result := True;
+        Exit;
+      end;
+    { (4) the main form }
+    if (Application.MainForm <> nil) and (Application.MainForm <> Self) and (Application.ModalLevel = 0)
+      and Application.MainForm.Enabled then
+      Result := Application.MainForm.IsShortCut(Message);
+  finally
+    if Outer then
+      ShortCutForm := nil;
   end;
-  { (2) the main menu }
-  if (FMenu <> nil) and FMenu.DispatchShortCut(SC) then
-  begin
-    Result := True;
-    Exit;
-  end;
-  { (3) the action lists owned by the form, in component order }
-  for I := 0 to ComponentCount - 1 do
-    if (Components[I] is TCustomActionList) and TCustomActionList(Components[I]).IsShortCut(Message) then
-    begin
-      Result := True;
-      Exit;
-    end;
-  { (4) the main form }
-  if (Application.MainForm <> nil) and (Application.MainForm <> Self) and (Application.ModalLevel = 0)
-    and Application.MainForm.Enabled then
-    Result := Application.MainForm.IsShortCut(Message);
 end;
 
 procedure AddAction(List: TList; A: TBasicAction);
@@ -3775,8 +3823,10 @@ initialization
   HintWindowClass := THintWindow;
   MouseControlHook := HintMouseControlChanged;
   MenuSelectHook := HintMenuSelect;
+  ActionTargetSearch := FormsActionTargetSearch;             { UIF-1363 }
   RegisterClasses([TForm, TScrollBox]);
 
 finalization
+  ActionTargetSearch := nil;
   DestroyGlobals;
 end.
