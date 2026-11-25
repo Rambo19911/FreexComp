@@ -38,7 +38,7 @@ public sealed class StackProbeImportTests
         limit.Attach(process.Id);
         try
         {
-            var stdout = await process.StandardOutput.ReadToEndAsync(limit.Token);
+            var stdout = await PipePump.Text(process.StandardOutput, "stdout").WaitAsync(limit.Token);   // C-319
             await process.WaitForExitAsync(limit.Token);
             Assert.True(process.ExitCode == 0, stdout);
 

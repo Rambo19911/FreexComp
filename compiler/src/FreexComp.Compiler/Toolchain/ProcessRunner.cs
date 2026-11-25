@@ -19,8 +19,9 @@ public interface IProcessRunner
 }
 
 /// <summary>
-/// Real processes (CMP-602): no shell, arguments as a list, stdin closed, stdout/stderr read as UTF-8 lines,
-/// process tree killed in <c>finally</c> when it has not exited (cancellation or timeout).
+/// Real processes (CMP-602): no shell, arguments as a list, stdin closed, stdout/stderr read as UTF-8 lines — each pipe on
+/// a dedicated thread (<see cref="PipeThread"/>), which is where the line callbacks run; every line is delivered before the
+/// exit code is returned. Process tree killed in <c>finally</c> when it has not exited (cancellation or timeout).
 /// </summary>
 public sealed class ProcessRunner : IProcessRunner
 {
@@ -56,30 +57,20 @@ public sealed class ProcessRunner : IProcessRunner
         }
 
         using var process = new Process { StartInfo = start };
-        process.OutputDataReceived += (_, e) =>
-        {
-            if (e.Data is not null)
-            {
-                onStdOut(e.Data);
-            }
-        };
-        process.ErrorDataReceived += (_, e) =>
-        {
-            if (e.Data is not null)
-            {
-                onStdErr(e.Data);
-            }
-        };
-
         ct.ThrowIfCancellationRequested();
         process.Start();
         try
         {
             ProcessStarted?.Invoke(process.Id);
             process.StandardInput.Close();
-            process.BeginOutputReadLine();
-            process.BeginErrorReadLine();
+
+            // C-319: each pipe on its own thread; an asynchronous read would park a pool thread until the child writes
+            var name = Path.GetFileName(fileName);
+            var pipes = Task.WhenAll(
+                PipeThread.ReadLines(process.StandardOutput, onStdOut, name + " stdout"),
+                PipeThread.ReadLines(process.StandardError, onStdErr, name + " stderr"));
             await process.WaitForExitAsync(ct).ConfigureAwait(false);
+            await pipes.WaitAsync(ct).ConfigureAwait(false);                    // every line is delivered before the exit code
             return process.ExitCode;
         }
         finally

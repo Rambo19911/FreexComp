@@ -366,9 +366,8 @@ public static class GoldenRunner
         limit.Attach(process.Id);
         try
         {
-            var stdout = new MemoryStream();
-            var copyOut = process.StandardOutput.BaseStream.CopyToAsync(stdout, limit.Token);
-            var drainErr = process.StandardError.BaseStream.CopyToAsync(Stream.Null, limit.Token);   // stderr is ignored (CMP-901)
+            var copyOut = PipePump.Bytes(process.StandardOutput.BaseStream, "stdout");       // C-319: each pipe on its own thread
+            var drainErr = PipePump.Drain(process.StandardError.BaseStream, "stderr");       // stderr is ignored (CMP-901)
             try
             {
                 await process.StandardInput.BaseStream.WriteAsync(stdin, limit.Token).ConfigureAwait(false);
@@ -379,9 +378,9 @@ public static class GoldenRunner
                 // the program exited without reading its input
             }
 
-            await Task.WhenAll(copyOut, drainErr).ConfigureAwait(false);
+            await Task.WhenAll(copyOut, drainErr).WaitAsync(limit.Token).ConfigureAwait(false);
             await process.WaitForExitAsync(limit.Token).ConfigureAwait(false);
-            return (process.ExitCode, Encoding.UTF8.GetString(stdout.ToArray()), null);
+            return (process.ExitCode, Encoding.UTF8.GetString(await copyOut.ConfigureAwait(false)), null);
         }
         catch (OperationCanceledException) when (limit.Report is { } report)
         {

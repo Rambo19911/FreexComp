@@ -70,30 +70,17 @@ internal static class NativeRun
         };
         using var limit = new RunLimit(Path.GetFileName(exe), cpuLimit, wallLimit, ct);
         using var process = new Process { StartInfo = start };
-        process.OutputDataReceived += (_, e) =>
-        {
-            if (e.Data is not null)
-            {
-                onStdOut(e.Data);
-            }
-        };
-        process.ErrorDataReceived += (_, e) =>
-        {
-            if (e.Data is not null)
-            {
-                onStdErr(e.Data);
-            }
-        };
-
         ct.ThrowIfCancellationRequested();
         process.Start();
         try
         {
             limit.Attach(process.Id);
             process.StandardInput.Close();
-            process.BeginOutputReadLine();
-            process.BeginErrorReadLine();
+            var pipes = Task.WhenAll(                                           // C-319: each pipe on its own thread
+                PipePump.Lines(process.StandardOutput, onStdOut, "stdout"),
+                PipePump.Lines(process.StandardError, onStdErr, "stderr"));
             await process.WaitForExitAsync(limit.Token);
+            await pipes.WaitAsync(limit.Token);
             return process.ExitCode;
         }
         catch (OperationCanceledException) when (limit.Report is not null)
@@ -131,6 +118,91 @@ internal static class NativeRun
     }
 
     internal static string Seconds(TimeSpan time) => time.TotalSeconds.ToString("F1", CultureInfo.InvariantCulture) + " s";
+}
+
+/// <summary>
+/// C-319: reads a redirected pipe of a child process on a dedicated background thread — the one way test helpers read a child's
+/// stdout or stderr. The pipe is a synchronous handle: an asynchronous read of it parks a thread-pool thread until the child
+/// writes, and the parallel test collections then starve the pool. Every task completes when its pipe ends (the child exited
+/// or was killed); a pipe that breaks or is closed under the read ends like one at its end.
+/// </summary>
+internal static class PipePump
+{
+    /// <summary>Hands every line to <paramref name="onLine"/>, in order.</summary>
+    public static Task Lines(TextReader reader, Action<string> onLine, string what) =>
+        Run(() =>
+        {
+            while (AtEnd(reader.ReadLine) is { } line)
+            {
+                onLine(line);
+            }
+
+            return true;
+        }, what);
+
+    /// <summary>The whole text of the pipe.</summary>
+    public static Task<string> Text(TextReader reader, string what) => Run(() => AtEnd(reader.ReadToEnd) ?? "", what);
+
+    /// <summary>The bytes of the pipe.</summary>
+    public static Task<byte[]> Bytes(Stream pipe, string what) =>
+        Run(() =>
+        {
+            var bytes = new MemoryStream();
+            Copy(pipe, bytes);
+            return bytes.ToArray();
+        }, what);
+
+    /// <summary>Reads the pipe to its end and drops what it carries, so that the child never blocks writing to it.</summary>
+    public static Task Drain(Stream pipe, string what) =>
+        Run(() =>
+        {
+            Copy(pipe, Stream.Null);
+            return true;
+        }, what);
+
+    private static void Copy(Stream pipe, Stream into)
+    {
+        var buffer = new byte[16 * 1024];
+        while (AtEnd(() => pipe.Read(buffer, 0, buffer.Length)) is > 0 and var count)
+        {
+            into.Write(buffer, 0, count);
+        }
+    }
+
+    /// <summary>The result of one read; the default (end of the pipe) when the pipe broke or was closed under it.</summary>
+    private static T? AtEnd<T>(Func<T> read)
+    {
+        try
+        {
+            return read();
+        }
+        catch (Exception e) when (e is IOException or ObjectDisposedException)
+        {
+            return default;
+        }
+    }
+
+    private static Task<T> Run<T>(Func<T> read, string what)
+    {
+        var done = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var thread = new Thread(() =>
+        {
+            try
+            {
+                done.SetResult(read());
+            }
+            catch (Exception e)
+            {
+                done.SetException(e);
+            }
+        })
+        {
+            IsBackground = true,
+            Name = "FreexComp test pipe " + what,
+        };
+        thread.Start();
+        return done.Task;
+    }
 }
 
 /// <summary>

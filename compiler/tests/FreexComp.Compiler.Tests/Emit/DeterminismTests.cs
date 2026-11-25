@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text;
+using FreexComp.Tests.Shared;
 
 namespace FreexComp.Compiler.Tests.Emit;
 
@@ -260,8 +261,8 @@ public sealed class DeterminismTests : IDisposable
         }
 
         using var process = Process.Start(psi)!;
-        var stdout = process.StandardOutput.ReadToEndAsync(TestContext.Current.CancellationToken);
-        var stderr = process.StandardError.ReadToEndAsync(TestContext.Current.CancellationToken);
+        var stdout = PipePump.Text(process.StandardOutput, "stdout");           // C-319: each pipe on its own thread
+        var stderr = PipePump.Text(process.StandardError, "stderr");
         await process.WaitForExitAsync(TestContext.Current.CancellationToken);
         Assert.True(process.ExitCode == 0, $"opc {name} exit {process.ExitCode}\n{await stdout}\n{await stderr}");
     }
