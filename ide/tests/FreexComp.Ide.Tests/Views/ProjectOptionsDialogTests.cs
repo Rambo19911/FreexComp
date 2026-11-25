@@ -10,7 +10,7 @@ namespace FreexComp.Ide.Tests.Views;
 /// <summary>The Project Options dialog (I-107, dialogs.md §8).</summary>
 [Trait("Phase", "3")]
 [Trait("Kind", "Ui")]
-public sealed class ProjectOptionsDialogTests
+public sealed partial class ProjectOptionsDialogTests
 {
     private const string Extra = """
         , "searchPaths": ["lib"], "defines": ["P1"], "custom": { "kept": [1, 2] },
@@ -96,11 +96,13 @@ public sealed class ProjectOptionsDialogTests
         ShowPage(dlg, "Run");
         SetText(dlg, "Arguments", "-q");
 
-        // Build Events: read-only with the notice.
+        // Build Events: editable (IDE-EVT-010); the project-level lists are shown first and round-trip.
         ShowPage(dlg, "BuildEvents");
         Assert.Equal("echo pre", dlg.Find<TextBox>("PreBuild").Text);
-        Assert.False(dlg.Find<TextBox>("PreBuild").IsEnabled);
-        Assert.Equal(Strings.Msg_ProjectOptions_EventsNotSupported, dlg.Find<TextBlock>("Notice").Text);
+        Assert.True(dlg.Find<TextBox>("PreBuild").IsEffectivelyEnabled);
+        Assert.False(dlg.Find<TextBox>("PreBuild").IsReadOnly);
+        Assert.Null(dlg.TryFind<TextBlock>("Notice"));
+        SetText(dlg, "PostBuild", "echo post" + Environment.NewLine + Environment.NewLine + "echo more");
 
         dlg.Click("Ok");
         await h.WaitForAsync(() => !dlg.Window.IsVisible, "dialog closed");
@@ -121,6 +123,8 @@ public sealed class ProjectOptionsDialogTests
         Assert.Equal([1, 2], json.GetProperty("custom").GetProperty("kept").EnumerateArray().Select(e => e.GetInt32()));
         Assert.Equal(2, json.GetProperty("files").GetArrayLength());
         Assert.Equal("echo pre", json.GetProperty("events").GetProperty("preBuild")[0].GetString());
+        Assert.Equal(["echo post", "echo more"], json.GetProperty("events").GetProperty("postBuild").EnumerateArray().Select(e => e.GetString()));
+        Assert.False(json.GetProperty("events").TryGetProperty("postBuildWhen", out _));
         Assert.Equal("Hello.pproj", Path.GetFileName(BuildScenario.ProjectPath(h)));
 
         // Reopening shows the stored values and the last page.

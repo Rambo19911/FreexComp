@@ -6,6 +6,7 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Media.TextFormatting;
 using FreexComp.Ide.Core.Dialogs;
 using FreexComp.Ide.Core.Resources;
 
@@ -21,8 +22,11 @@ public sealed class TrustProjectWindow(TrustProjectViewModel model) : DialogWind
     /// <summary>Indent of the rows below a project row.</summary>
     private const double ChildIndent = 20;
 
-    /// <summary>Width of the list-name cell of a command row (dialogs.md §29).</summary>
-    private const double ListNameWidth = 96;
+    /// <summary>Least width of the list-name cell of a command row (UI-DLG-298).</summary>
+    private const double ListNameMinWidth = 96;
+
+    /// <summary>Room between the widest list name and the commands.</summary>
+    private const double ListNameGap = 12;
 
     protected override bool FocusesDefaultButtonFirst => true;
 
@@ -68,8 +72,9 @@ public sealed class TrustProjectWindow(TrustProjectViewModel model) : DialogWind
         void Update()
         {
             list.Items.Clear();
+            string[] names = [.. model.Rows.Where(r => r.Kind == TrustRowKind.Command).Select(r => r.ListName).Distinct(StringComparer.Ordinal)];
             foreach (var row in model.Rows)
-                list.Items.Add(CreateRow(row));
+                list.Items.Add(CreateRow(row, names));
             error.Text = model.Error;
             error.IsVisible = model.Error is not null;
         }
@@ -90,7 +95,8 @@ public sealed class TrustProjectWindow(TrustProjectViewModel model) : DialogWind
         return body;
     }
 
-    private static ListBoxItem CreateRow(TrustRow row)
+    /// <param name="listNames">Every list name shown in the dialog: the name column is as wide as the widest of them.</param>
+    private static ListBoxItem CreateRow(TrustRow row, string[] listNames)
     {
         Control content;
         string id;
@@ -110,7 +116,10 @@ public sealed class TrustProjectWindow(TrustProjectViewModel model) : DialogWind
                 break;
             default:
                 var name = Text(row.ListName, "caption", "FxcTextSecondaryBrush");
-                name.Width = ListNameWidth;
+                name.Width = ListNameMinWidth;
+                // UI-DLG-298: never cut. The width follows from the names and the cell's own font, so every row gets the
+                // same column whichever rows are on screen.
+                name.AttachedToVisualTree += (_, _) => name.Width = NameColumnWidth(name, listNames);
                 var cells = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(ChildIndent, 0, 0, 0) };
                 cells.Children.Add(name);
                 cells.Children.Add(CommandText(row.Text));
@@ -125,6 +134,13 @@ public sealed class TrustProjectWindow(TrustProjectViewModel model) : DialogWind
         if (row.Kind == TrustRowKind.Command)
             ToolTip.SetTip(item, row.Text); // UI-DLG-294: the full command
         return item;
+    }
+
+    private static double NameColumnWidth(TextBlock cell, string[] listNames)
+    {
+        var typeface = new Typeface(cell.FontFamily, cell.FontStyle, cell.FontWeight, cell.FontStretch);
+        var widest = listNames.Max(n => new TextLayout(n, typeface, cell.FontSize, null).WidthIncludingTrailingWhitespace);
+        return Math.Max(ListNameMinWidth, Math.Ceiling(widest) + ListNameGap);
     }
 
     private static TextBlock Text(string text, string type, string brush)

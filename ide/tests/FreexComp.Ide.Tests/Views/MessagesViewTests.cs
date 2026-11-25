@@ -360,9 +360,7 @@ public sealed class MessagesViewTests
             FakeBuildEngine.Diag("E2003", DiagnosticSeverity.Error, "in a library", lib, 2, 1, 9),
             FakeBuildEngine.Diag("E2003", DiagnosticSeverity.Error, "in the project", BuildScenario.UnitPath(h), 6, 3, 3),
             FakeBuildEngine.Diag("E2003", DiagnosticSeverity.Error, "in an open file", open, 2, 1, 9)));
-        h.Press("Ctrl+Shift+B");
-        await h.WaitForAsync(() => h.Services.State.Current.State == Core.Models.IdeState.Idle && h.Services.Build.ResultText is not null,
-            "build finished");
+        await BuildScenario.BuildByShortcutAsync(h);
         var items = h.Services.Messages.Items;
 
         await h.Services.Messages.NavigateToAsync(items[0]);

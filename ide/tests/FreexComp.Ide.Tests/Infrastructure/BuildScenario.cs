@@ -40,6 +40,28 @@ public static class BuildScenario
         return h;
     }
 
+    /// <summary>
+    /// Presses the build shortcut and waits for the end of the build started by it (I-272). "Idle and a result text" is
+    /// not that: it also holds before the build has begun when the harness built before — the pre-build trust check reads
+    /// the project file on a pool thread first (IDE-TRUST-003), and until it is back the state is Idle with the result
+    /// text of the build before.
+    /// </summary>
+    public static async Task BuildByShortcutAsync(HeadlessHarness h)
+    {
+        var finished = false;
+        void OnFinished(object? sender, EventArgs e) => finished = true;
+        h.Services.Build.BuildFinished += OnFinished;
+        try
+        {
+            h.Press("Ctrl+Shift+B");
+            await h.WaitForAsync(() => finished && h.Services.State.Current.State == Core.Models.IdeState.Idle, "build finished");
+        }
+        finally
+        {
+            h.Services.Build.BuildFinished -= OnFinished;
+        }
+    }
+
     public static string ProjectPath(HeadlessHarness h) => Path.Combine(h.TempDir, @"Hello\Hello.pproj");
 
     public static string UnitPath(HeadlessHarness h) => Path.Combine(h.TempDir, @"Hello\Unit1.pas");

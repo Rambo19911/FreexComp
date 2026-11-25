@@ -72,7 +72,7 @@ public sealed class TrustService : ITrustService
         if (untrusted.IsEmpty)
             return new TrustCheckResult(true, EventsPolicy.RequireTrust);
 
-        var prompt = new TrustProjectViewModel(project.Name, untrusted, Store, Find, _dialogs, _pickers, _clipboard, _layout);
+        var prompt = new TrustProjectViewModel(project.Name, untrusted, Store, Find, HashOf, _dialogs, _pickers, _clipboard, _layout);
         IsPromptOpen = true;
         TrustPromptOutcome outcome;
         try
@@ -90,5 +90,21 @@ public sealed class TrustService : ITrustService
             TrustPromptOutcome.BuildWithoutEvents => new TrustCheckResult(true, EventsPolicy.Skip),
             _ => new TrustCheckResult(false, EventsPolicy.RequireTrust),
         };
+    }
+
+    /// <summary>
+    /// IDE-EVT-008: the hash of the project file's commands (it covers the lists of configurations, also those without a
+    /// command), when the non-empty lists of the file are still the ones the prompt shows; else null.
+    /// </summary>
+    private string? HashOf(UntrustedProject shown)
+    {
+        var load = ProjectSerializer.LoadProject(shown.ProjectPath, _files);
+        if (load.Value is not { } project || load.Diagnostics.Any(d => d.Severity == FreexComp.Compiler.DiagnosticSeverity.Error))
+            return null;
+        var lists = ProjectTrust.CommandLists(project).Where(list => !list.Commands.IsEmpty).ToList();
+        var listed = shown.Lists.IsDefault ? [] : shown.Lists;
+        var same = lists.Count == listed.Length
+            && lists.Zip(listed).All(p => p.First.Name == p.Second.Name && p.First.Commands.SequenceEqual(p.Second.Commands, StringComparer.Ordinal));
+        return same ? ProjectTrust.CommandsHash(project) : null;
     }
 }

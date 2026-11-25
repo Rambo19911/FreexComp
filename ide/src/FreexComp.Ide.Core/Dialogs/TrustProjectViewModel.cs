@@ -30,8 +30,9 @@ public enum TrustRowKind
 
 /// <summary>
 /// One row of the command tree (UI-DLG-293…295). <paramref name="Project"/> is the zero-based index of the project in the
-/// dialog; <paramref name="Index"/> the zero-based index of a command among the commands of its project (before-build
-/// commands first); <paramref name="ListName"/> is "Before build" / "After build" for a command row.
+/// dialog; <paramref name="Index"/> the zero-based index of a command among the commands of its project (counted across
+/// all its lists); <paramref name="ListName"/> is "Before build" / "After build" for a command row, followed by the
+/// configuration name in parentheses for a list of a configuration (UI-DLG-298).
 /// </summary>
 public sealed record TrustRow(TrustRowKind Kind, int Project, int Index, string ListName, string Text)
 {
@@ -60,6 +61,7 @@ public sealed class TrustProjectViewModel : DialogViewModel<TrustPromptOutcome>
 
     private readonly ITrustStore _store;
     private readonly Func<Task<ImmutableArray<UntrustedProject>>> _recheck;
+    private readonly Func<UntrustedProject, string?> _hashOf;
     private readonly IDialogService _dialogs;
     private readonly IFileDialogService _pickers;
     private readonly IClipboardService _clipboard;
@@ -73,17 +75,23 @@ public sealed class TrustProjectViewModel : DialogViewModel<TrustPromptOutcome>
     /// <param name="projectName">Name of the project the build command was started for (UI-DLG-290).</param>
     /// <param name="projects">The projects to list, in build order; not empty.</param>
     /// <param name="recheck">IDE-TRUST-008: the check of IDE-TRUST-004 again, after a folder was trusted.</param>
+    /// <param name="hashOf">
+    /// IDE-EVT-008: <c>ProjectTrust.CommandsHash</c> of the project file of a listed project, or null when the commands of that
+    /// file are not the listed ones any more.
+    /// </param>
     public TrustProjectViewModel(string projectName, ImmutableArray<UntrustedProject> projects, ITrustStore store,
-        Func<Task<ImmutableArray<UntrustedProject>>> recheck, IDialogService dialogs, IFileDialogService pickers,
+        Func<Task<ImmutableArray<UntrustedProject>>> recheck, Func<UntrustedProject, string?> hashOf, IDialogService dialogs, IFileDialogService pickers,
         IClipboardService clipboard, ILayoutService? layout = null)
     {
         ArgumentNullException.ThrowIfNull(store);
         ArgumentNullException.ThrowIfNull(recheck);
+        ArgumentNullException.ThrowIfNull(hashOf);
         if (projects.IsDefaultOrEmpty)
             throw new ArgumentException("The dialog lists at least one project.", nameof(projects));
         _projectName = projectName;
         _store = store;
         _recheck = recheck;
+        _hashOf = hashOf;
         _dialogs = dialogs;
         _pickers = pickers;
         _clipboard = clipboard;
@@ -171,11 +179,14 @@ public sealed class TrustProjectViewModel : DialogViewModel<TrustPromptOutcome>
             rows.Add(new TrustRow(TrustRowKind.Project, i, -1, "", project.ProjectPath));
             if (project.State == TrustState.Changed)
                 rows.Add(new TrustRow(TrustRowKind.Changed, i, -1, "", Strings.Msg_Trust_Changed));
+            // IDE-EVT-007: every list of the project in the engine's order; the index counts across the lists.
             var j = 0;
-            foreach (var command in Commands(project.PreBuild))
-                rows.Add(new TrustRow(TrustRowKind.Command, i, j++, Strings.Dialog_TrustProject_BeforeBuild, command));
-            foreach (var command in Commands(project.PostBuild))
-                rows.Add(new TrustRow(TrustRowKind.Command, i, j++, Strings.Dialog_TrustProject_AfterBuild, command));
+            foreach (var list in Lists(project))
+            {
+                var name = ListName(list);
+                foreach (var command in list.Commands)
+                    rows.Add(new TrustRow(TrustRowKind.Command, i, j++, name, command));
+            }
         }
 
         // UI-DLG-292: singular / plural.
@@ -186,18 +197,39 @@ public sealed class TrustProjectViewModel : DialogViewModel<TrustPromptOutcome>
         OnPropertyChanged(nameof(Projects));
     }
 
-    private static ImmutableArray<string> Commands(ImmutableArray<string> list) => list.IsDefault ? [] : list;
+    private static ImmutableArray<CommandList> Lists(UntrustedProject project) => project.Lists.IsDefault ? [] : project.Lists;
 
-    /// <summary>IDE-TRUST-006: every listed project is trusted with the hash of the commands that are shown.</summary>
+    /// <summary>UI-DLG-298: "Before build" / "After build", with the configuration name for a configuration's list.</summary>
+    private static string ListName(CommandList list) => (list.Configuration, list.PostBuild) switch
+    {
+        (null, false) => Strings.Dialog_TrustProject_BeforeBuild,
+        (null, true) => Strings.Dialog_TrustProject_AfterBuild,
+        ({ } configuration, false) => string.Format(CultureInfo.CurrentCulture, Strings.Dialog_TrustProject_BeforeBuildOf, configuration),
+        ({ } configuration, true) => string.Format(CultureInfo.CurrentCulture, Strings.Dialog_TrustProject_AfterBuildOf, configuration),
+    };
+
+    /// <summary>
+    /// IDE-TRUST-006, IDE-EVT-008: every listed project is trusted with the hash of its commands. A project file whose
+    /// commands are no longer the ones shown (it was changed while the question was open) is not trusted: the list is
+    /// read again and the question stays open with what the file holds now.
+    /// </summary>
     private async Task TrustProjectsAsync()
     {
+        var hashes = _projects.Select(_hashOf).ToList();
+        if (hashes.Contains(null))
+        {
+            var now = await _recheck();
+            if (now.IsEmpty)
+                Close(TrustPromptOutcome.Trusted); // nothing is left to ask about
+            else
+                SetProjects(now);
+            return;
+        }
+
         try
         {
-            foreach (var project in _projects)
-            {
-                var shown = new Project { Events = new ProjectEvents(Commands(project.PreBuild), Commands(project.PostBuild)) };
-                _store.TrustProject(project.ProjectPath, ProjectTrust.CommandsHash(shown));
-            }
+            for (var i = 0; i < _projects.Length; i++)
+                _store.TrustProject(_projects[i].ProjectPath, hashes[i]!);
         }
         catch (IOException e)
         {

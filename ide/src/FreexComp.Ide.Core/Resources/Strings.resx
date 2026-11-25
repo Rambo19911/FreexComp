@@ -223,9 +223,6 @@ Add the existing file to the project and open it?</value>
   <data name="Msg_Build_DatabaseLibraryCopyFailed" xml:space="preserve">
     <value>{0} could not be copied to the output folder: {1}</value>
   </data>
-  <data name="Msg_Project_EventsIgnored" xml:space="preserve">
-    <value>Pre-build and post-build events are not supported yet and were ignored.</value>
-  </data>
   <data name="Msg_Find_NoMatches" xml:space="preserve">
     <value>No matches</value>
   </data>
@@ -812,8 +809,25 @@ The form change was undone.</value>
   <data name="Msg_NewFile_NameInvalid" xml:space="preserve">
     <value>A file name cannot be empty or contain any of these characters: \ / : * ? " &lt; &gt; |</value>
   </data>
-  <data name="Msg_ProjectOptions_EventsNotSupported" xml:space="preserve">
-    <value>Build events are not supported yet. Existing entries are kept unchanged.</value>
+  <data name="Msg_ProjectOptions_EventsHint" xml:space="preserve">
+    <value>Each line is one command. Commands run in the project folder, one after another. A command that ends with an exit code other than 0 stops the build.</value>
+    <comment>UI-DLG-300</comment>
+  </data>
+  <data name="Msg_ProjectOptions_EventsTrustHint" xml:space="preserve">
+    <value>FreexComp asks before it runs commands that are new or have changed.</value>
+    <comment>UI-DLG-300, IDE-EVT-018</comment>
+  </data>
+  <data name="Msg_ProjectOptions_EventsInherited" xml:space="preserve">
+    <value>This configuration uses the commands of {0}.</value>
+    <comment>IDE-EVT-014: 0 = "All configurations" or a configuration name</comment>
+  </data>
+  <data name="Msg_ProjectOptions_EventsUnknownMacro" xml:space="preserve">
+    <value>Unknown macro {0}. Choose one from Insert Macro, or write $$( for the text $(.</value>
+    <comment>IDE-EVT-016: 0 = the reference as typed, e.g. $(OutDir)</comment>
+  </data>
+  <data name="Msg_ProjectOptions_EventsControlCharacter" xml:space="preserve">
+    <value>A command in this list contains a control character. The list cannot be edited here and the build will not run it.</value>
+    <comment>IDE-EVT-017</comment>
   </data>
   <data name="Msg_Options_LaterVersion" xml:space="preserve">
     <value>These options take effect in a later version.</value>
@@ -4484,6 +4498,50 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
     <value>_After build (one command per line):</value>
     <comment>dialogs.md §8.7</comment>
   </data>
+  <data name="ProjectOptions_PostBuildWhen" xml:space="preserve">
+    <value>_Run after-build commands:</value>
+    <comment>dialogs.md §8.7</comment>
+  </data>
+  <data name="ProjectOptions_PostBuildWhen_Success" xml:space="preserve">
+    <value>Only after a successful build</value>
+    <comment>IDE-EVT-013: postBuildWhen = success</comment>
+  </data>
+  <data name="ProjectOptions_PostBuildWhen_Always" xml:space="preserve">
+    <value>Also after a failed build</value>
+    <comment>IDE-EVT-013: postBuildWhen = always</comment>
+  </data>
+  <data name="ProjectOptions_OwnEvents" xml:space="preserve">
+    <value>_Use separate commands for this configuration</value>
+    <comment>UI-DLG-301</comment>
+  </data>
+  <data name="ProjectOptions_InsertMacro" xml:space="preserve">
+    <value>Insert _Macro</value>
+    <comment>UI-DLG-302: menu button</comment>
+  </data>
+  <data name="ProjectOptions_Macro_ProjectDir" xml:space="preserve">
+    <value>Folder of the project file</value>
+    <comment>UI-DLG-302</comment>
+  </data>
+  <data name="ProjectOptions_Macro_ProjectName" xml:space="preserve">
+    <value>Name of the project</value>
+    <comment>UI-DLG-302</comment>
+  </data>
+  <data name="ProjectOptions_Macro_Config" xml:space="preserve">
+    <value>Configuration being built</value>
+    <comment>UI-DLG-302</comment>
+  </data>
+  <data name="ProjectOptions_Macro_Platform" xml:space="preserve">
+    <value>Target platform</value>
+    <comment>UI-DLG-302</comment>
+  </data>
+  <data name="ProjectOptions_Macro_OutputDir" xml:space="preserve">
+    <value>Folder of the built file</value>
+    <comment>UI-DLG-302</comment>
+  </data>
+  <data name="ProjectOptions_Macro_OutputPath" xml:space="preserve">
+    <value>Full path of the built file</value>
+    <comment>UI-DLG-302</comment>
+  </data>
   <data name="NewConfiguration_Title" xml:space="preserve">
     <value>New Configuration</value>
     <comment>dialogs.md §8 UI-DLG-083</comment>
@@ -5425,6 +5483,14 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   <data name="Dialog_TrustProject_AfterBuild" xml:space="preserve">
     <value>After build</value>
     <comment>dialogs.md §29: list name of the postBuild commands</comment>
+  </data>
+  <data name="Dialog_TrustProject_BeforeBuildOf" xml:space="preserve">
+    <value>Before build ({0})</value>
+    <comment>UI-DLG-298: list name of the preBuild commands of a configuration; 0 = configuration name</comment>
+  </data>
+  <data name="Dialog_TrustProject_AfterBuildOf" xml:space="preserve">
+    <value>After build ({0})</value>
+    <comment>UI-DLG-298: list name of the postBuild commands of a configuration; 0 = configuration name</comment>
   </data>
   <data name="Msg_Trust_Intro" xml:space="preserve">
     <value>Building this project runs the commands below on your computer. They come from the project file, not from FreexComp. Run them only if you trust where the project came from.</value>

@@ -15,7 +15,7 @@ namespace FreexComp.Ide.Core.Tests.Build;
 /// dialogs and pickers, in-memory files; the trust list is <c>&lt;user dir&gt;\roaming\trust.json</c> of the composition.
 /// </summary>
 [Trait("Phase", "8")]
-public sealed class TrustPromptTests
+public sealed partial class TrustPromptTests
 {
     private const string Events = """, "events": { "preBuild": [ "tools\\gen.exe --out  src\\Gen.pas " ], "postBuild": [ "copy /y a b", "echo done" ] }""";
     private const string Configurations =
@@ -237,7 +237,6 @@ public sealed class TrustPromptTests
         Assert.Equal(header, output[0]);
         Assert.Equal(Strings.Msg_Trust_EventsSkipped, output[1]); // directly after the started header
         Assert.Single(output, Strings.Msg_Trust_EventsSkipped);
-        Assert.DoesNotContain(Strings.Msg_Project_EventsIgnored, output);
         Assert.False(bed.Fs.FileExists(TrustFile(bed)));
 
         Assert.NotNull(await bed.Services.Build.BuildAsync(BuildKind.Rebuild));
@@ -443,9 +442,10 @@ public sealed class TrustPromptTests
         Assert.Equal(before, Snapshot()); // no file added, removed or changed: project, session, settings, UI state
     });
 
-    /// <summary>IDE-TRUST-003: Clean and Check Syntax of an untrusted project never ask.</summary>
+    /// <summary>IDE-TRUST-003, IDE-EVT-022: Clean and Check Syntax of an untrusted project never ask (and run no command).</summary>
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-TRUST-003")]
+    [Trait("Req", "IDE-EVT-022")]
     public Task CleanAndCheckSyntaxNeverPrompt() => TestUiThread.RunAsync(async () =>
     {
         var bed = await StartAsync();

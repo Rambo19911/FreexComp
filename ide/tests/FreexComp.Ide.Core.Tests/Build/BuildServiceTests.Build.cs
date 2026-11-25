@@ -181,31 +181,6 @@ public sealed partial class BuildServiceTests
         Assert.Equal([BuildTarget.Build, BuildTarget.Rebuild, BuildTarget.Clean], bed.Engine.Requests.Select(r => r.Target));
     }
 
-    /// <summary>IDE-P3-036: pre/post-build events of the project are not run; the Output says so once per build.</summary>
-    [Fact(Timeout = 30000)]
-    [Trait("Req", "IDE-P3-036")]
-    public Task BuildEventsAreIgnoredOncePerBuild() => TestUiThread.RunAsync(() => BuildEventsAreIgnoredOncePerBuildOnUiThread());
-
-    private async Task BuildEventsAreIgnoredOncePerBuildOnUiThread()
-    {
-        var bed = new BuildTestBed();
-        await bed.OpenHelloAsync(extra: """, "events": { "preBuild": [ "echo pre" ], "postBuild": [ "echo post" ] }""");
-        // IDE-TRUST-003 (I-267): a project with events is built only after the question; here it is trusted at the first build.
-        bed.Dialogs.Script("TrustProject", prompt => prompt.Buttons.Single(b => b.Id == "TrustProject").PressAsync());
-        await bed.Services.Build.BuildAsync(BuildKind.Build);
-        Assert.Equal(1, bed.OutputText(OutputChannels.Build).Count(l => l == Strings.Msg_Project_EventsIgnored));
-        bed.Services.Settings.Set(SettingsCatalog.OutputClearOnBuild, false);
-        await bed.Services.Build.BuildAsync(BuildKind.Rebuild);
-        Assert.Equal(2, bed.OutputText(OutputChannels.Build).Count(l => l == Strings.Msg_Project_EventsIgnored)); // once more, for the second build
-        Assert.Equal(2, bed.Engine.Requests.Count);
-
-        // A project without events: no line.
-        var plain = new BuildTestBed();
-        await plain.OpenHelloAsync();
-        await plain.Services.Build.BuildAsync(BuildKind.Build);
-        Assert.DoesNotContain(Strings.Msg_Project_EventsIgnored, plain.OutputText(OutputChannels.Build));
-    }
-
     /// <summary>IDE-P3-034: the summary text for each kind of result (state field, Output, Messages summary row).</summary>
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-P3-034")]

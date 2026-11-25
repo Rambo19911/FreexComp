@@ -52,7 +52,7 @@ public sealed record SearchPathRow(string Path, bool IsMissing, string? Origin =
 /// are never touched: the copy is made with <c>with</c> from the definition). Pages: Application, Compiler, Search Paths,
 /// Conditional Defines, Output, Run, Build Events (read-only until P8+).
 /// </summary>
-public sealed class ProjectOptionsViewModel : DialogViewModel<bool>
+public sealed partial class ProjectOptionsViewModel : DialogViewModel<bool>
 {
     public const string DialogName = "ProjectOptions";
 
@@ -98,6 +98,7 @@ public sealed class ProjectOptionsViewModel : DialogViewModel<bool>
             _configs.Add(ConfigState.From(name, _baseline.Configurations[name]));
         _selectedConfiguration = _configs.Any(c => c.Name == _baseline.ActiveConfiguration) ? _baseline.ActiveConfiguration : _configs[0].Name;
         _projectSearchPaths = _baseline.SearchPaths;
+        _projectEvents = new EventsState(_baseline.Events);
         SearchPaths = new ObservableCollection<SearchPathRow>(_projectSearchPaths.Select(p => Row(p)));
         Run = new RunFields(_baseline.Directory, () => RunParametersViewModel.ExecutablePath(Build(), ActiveName), fileSystem, _baseline.Run,
             () => AppType == "library");
@@ -115,7 +116,7 @@ public sealed class ProjectOptionsViewModel : DialogViewModel<bool>
             new("ConditionalDefines", Strings.ProjectOptions_Page_ConditionalDefines, true),
             new("Output", Strings.ProjectOptions_Page_Output, true),
             new("Run", Strings.ProjectOptions_Page_Run, false),
-            new("BuildEvents", Strings.ProjectOptions_Page_BuildEvents, false),
+            new("BuildEvents", Strings.ProjectOptions_Page_BuildEvents, true),
         ];
         _selectedPage = Pages.FirstOrDefault(p => p.Id == layout.GetDialogValue(DialogName, "page")) ?? Pages[0];
 
@@ -186,8 +187,11 @@ public sealed class ProjectOptionsViewModel : DialogViewModel<bool>
 
     public bool ConfigurationBarEnabled => SelectedPage.PerConfiguration;
 
-    /// <summary>The Search Paths page: the selector starts with <c>All configurations</c>, the project-level list.</summary>
-    public bool HasAllConfigurationsChoice => SelectedPage.Id == "SearchPaths";
+    /// <summary>
+    /// The Search Paths and Build Events pages: the selector starts with <c>All configurations</c>, the project-level
+    /// values (UI-DLG-082, IDE-EVT-011).
+    /// </summary>
+    public bool HasAllConfigurationsChoice => SelectedPage.Id is "SearchPaths" or "BuildEvents";
 
     /// <summary>The page shows the values of <see cref="SelectedConfiguration"/>: <c>New…</c> and <c>Delete</c> apply.</summary>
     public bool ConfigurationSelected => ConfigurationBarEnabled && !(HasAllConfigurationsChoice && SearchPathsAllConfigurations);
@@ -385,6 +389,7 @@ public sealed class ProjectOptionsViewModel : DialogViewModel<bool>
             foreach (var name in (string[])[nameof(InheritedSearchPaths), nameof(SearchPathsDoNotInherit), nameof(CanSearchPathsDoNotInherit),
                          nameof(ConfigurationSelected), nameof(CanDeleteConfiguration)])
                 OnPropertyChanged(name);
+            OnEventsChanged();
             Validate();
         }
     }
@@ -604,10 +609,6 @@ public sealed class ProjectOptionsViewModel : DialogViewModel<bool>
             Run.WorkingDir = RunFields.StoredFolder(_baseline.Directory, picked);
     }
 
-    public string PreBuild => string.Join(Environment.NewLine, _baseline.Events.PreBuild);
-
-    public string PostBuild => string.Join(Environment.NewLine, _baseline.Events.PostBuild);
-
     /// <summary>UI-DLG-086: no page holds an invalid field.</summary>
     public bool IsValid => Pages.All(p => !p.HasError);
 
@@ -631,6 +632,7 @@ public sealed class ProjectOptionsViewModel : DialogViewModel<bool>
                 Defines = SameOr(template.Defines, defines),
                 SearchPaths = SameOr(template.SearchPaths, c.ResetSearchPaths ? c.SearchPaths.Insert(0, ResetMarker) : c.SearchPaths),
                 OutputDir = outputDir,
+                Events = c.Events?.Value,
             };
         }
 
@@ -647,6 +649,7 @@ public sealed class ProjectOptionsViewModel : DialogViewModel<bool>
                     : configurations.ToImmutable(),
             ActiveConfiguration = ActiveName,
             Run = Run.ToSettings() == _baseline.Run ? _baseline.Run : Run.ToSettings(),
+            Events = _projectEvents.Value,
         };
     }
 
@@ -664,8 +667,15 @@ public sealed class ProjectOptionsViewModel : DialogViewModel<bool>
             if (!await _projects.ApplyOptionsAsync(Build()))
                 return; // reported by the save
             _baseline = _projects.Definition ?? _baseline;
+            // The lists are the stored ones again: what was typed is now what the file holds (IDE-EVT-012).
             for (var i = 0; i < _configs.Count; i++)
-                _configs[i] = _configs[i] with { Original = _configs[i].Name };
+            {
+                var stored = _baseline.Configurations.TryGetValue(_configs[i].Name, out var saved) ? saved.Events : null;
+                _configs[i] = _configs[i] with { Original = _configs[i].Name, Events = stored is null ? null : new EventsState(stored) };
+            }
+
+            _projectEvents = new EventsState(_baseline.Events);
+            OnEventsChanged();
             _changed = false;
             Apply.IsEnabled = false;
         }
@@ -690,6 +700,7 @@ public sealed class ProjectOptionsViewModel : DialogViewModel<bool>
                      nameof(InheritedDefines), nameof(OutputDirWarning), nameof(CanDeleteConfiguration), nameof(DeleteConfigurationToolTip),
                      nameof(InheritedSearchPaths), nameof(SearchPathsDoNotInherit)])
             OnPropertyChanged(name);
+        OnEventsChanged();
         Validate();
         Run.Refresh();
     }
@@ -754,8 +765,9 @@ public sealed class ProjectOptionsViewModel : DialogViewModel<bool>
         Pages[3].HasError = ProjectDefinesError is not null || _configs.Any(c => DefineError(c.DefinesText, allowReset: true) is not null);
         Pages[4].HasError = _configs.Any(c => OutputDirMessage(c.OutputDir) is not null);
         Pages[5].HasError = !Run.IsValid;
+        Pages[6].HasError = EventsHaveError();
         foreach (var property in (string[])[nameof(ProjectNameError), nameof(SearchPathsError), nameof(ProjectDefinesError), nameof(ConfigDefinesError),
-                     nameof(OutputDirError), nameof(OutputDirWarning), nameof(IsValid)])
+                     nameof(OutputDirError), nameof(OutputDirWarning), nameof(PreBuildError), nameof(PostBuildError), nameof(IsValid)])
             OnPropertyChanged(property);
         Ok.IsEnabled = IsValid;
         Apply.IsEnabled = _changed && IsValid;
@@ -838,6 +850,9 @@ public sealed class ProjectOptionsViewModel : DialogViewModel<bool>
         /// <summary>The own list starts with the reset marker: nothing is inherited (CMP-1153).</summary>
         public bool ResetSearchPaths { get; init; }
 
+        /// <summary>The configuration's own <c>events</c>; null = it has no such key and is built with inherited commands.</summary>
+        public EventsState? Events { get; init; }
+
         public static ConfigState From(string name, ProjectConfiguration c)
         {
             var reset = c.SearchPaths is [ResetMarker, ..];
@@ -846,6 +861,7 @@ public sealed class ProjectOptionsViewModel : DialogViewModel<bool>
             {
                 SearchPaths = reset ? c.SearchPaths.RemoveAt(0) : c.SearchPaths,
                 ResetSearchPaths = reset,
+                Events = c.Events is { } events ? new EventsState(events) : null,
             };
         }
     }

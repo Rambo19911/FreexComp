@@ -341,9 +341,7 @@ public sealed partial class VisualSnapshotTests
                     h.Build.Enqueue(FakeBuildEngine.Failure(BuildScenario.ProjectPath(h), [.. Enumerable.Range(0, 40).Select(i =>
                         FakeBuildEngine.Diag("E2003", FreexComp.Compiler.DiagnosticSeverity.Error, $"Undeclared identifier 'Foo{i}'",
                             BuildScenario.UnitPath(h), i == 0 ? 123456 : i + 1, i == 0 ? 1024 : 3, 3))]));
-                    h.Press("Ctrl+Shift+B");
-                    await h.WaitForAsync(() => h.Services.State.Current.State == Core.Models.IdeState.Idle && h.Services.Build.ResultText is not null,
-                        "build finished");
+                    await BuildScenario.BuildByShortcutAsync(h);
                     Dispatcher.UIThread.RunJobs();
                 }
 

@@ -17,7 +17,7 @@ namespace FreexComp.Ide.Tests.Views;
 /// <summary>The dialog <c>TrustProject</c> as the user sees it (dialogs.md §29, UI-DLG-290…296; card F09-008).</summary>
 [Trait("Phase", "8")]
 [Trait("Kind", "Ui")]
-public sealed class TrustDialogTests
+public sealed partial class TrustDialogTests
 {
     internal const string HelloEvents = """, "events": { "preBuild": [ "tools\\gen.exe --out src\\Generated.pas" ], "postBuild": [ "copy /y bin\\Debug\\Hello.exe ..\\deploy\\" ] }""";
 
@@ -235,7 +235,9 @@ public sealed class TrustDialogTests
         var scroller = list.GetVisualDescendants().OfType<ScrollViewer>().First();
         Assert.True(scroller.Extent.Width > scroller.Viewport.Width, "the tree scrolls horizontally instead of cutting the command");
         var cells = row.GetVisualDescendants().OfType<TextBlock>().ToList();
-        Assert.Equal(("After build", 96d), (cells[0].Text, cells[0].Width));
+        // UI-DLG-298 (replaces "fixed width 96"): at least 96 and never narrower than the name needs.
+        Assert.Equal("After build", cells[0].Text);
+        Assert.True(cells[0].Width >= Math.Max(96, cells[0].TextLayout.WidthIncludingTrailingWhitespace), $"name cell width {cells[0].Width}");
 
         // Control characters are glyphs in text.disabled; nothing of the command is on a second line.
         var twoLineRuns = dlg.Find<ListBoxItem>("Command.1.1").GetVisualDescendants().OfType<TextBlock>().Last().Inlines!.OfType<Run>().ToList();

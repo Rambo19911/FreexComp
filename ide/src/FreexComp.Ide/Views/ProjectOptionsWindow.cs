@@ -659,21 +659,220 @@ public sealed class ProjectOptionsWindow : DialogWindow
             DialogFieldBuilder.Row(DialogFieldBuilder.Label(Strings.ProjectOptions_ObjDir, null), objDir));
     }
 
+    /// <summary>Line height of <c>type.code</c> (design-tokens.md): the unit of the list fields' least height.</summary>
+    private const double CodeLineHeight = 18;
+
+    /// <summary>UI-DLG-299: a list field never gets lower than three rows (plus its padding, 4 above and below, and its border).</summary>
+    private const double EventListMinHeight = (3 * CodeLineHeight) + 10;
+
+    /// <summary>
+    /// The page <c>Build Events</c> (dialogs.md §8.7, UI-DLG-299…305): the hint, for a configuration the check box
+    /// <c>OwnEvents</c> and the line <c>Inherited</c>, the two list fields — one command per line, sharing the free height —
+    /// the row <c>PostBuildWhen</c> + <c>InsertMacro</c> and the trust hint. Built for one choice of the configuration bar.
+    /// </summary>
     private static Control BuildEventsPage(DialogFieldBuilder f, ProjectOptionsViewModel model)
     {
-        TextBox Events(string id, string text)
+        var alive = true;
+        var syncing = false;
+
+        TextBlock Hint(string id, string text)
         {
-            var box = new TextBox { Text = text, IsReadOnly = true, IsEnabled = false, AcceptsReturn = true, Height = 100 };
+            var block = new TextBlock { Text = text, TextWrapping = TextWrapping.Wrap };
+            block.Bind(TextBlock.ForegroundProperty, block.GetResourceObservable("FxcTextSecondaryBrush"));
+            AutomationProperties.SetAutomationId(block, f.Id(id));
+            return block;
+        }
+
+        // IDE-EVT-020: Enter adds a line (the box takes the key, so the default button is not activated), Tab leaves the
+        // field; a command is one line, so the text does not wrap and scrolls in both directions when needed.
+        TextBox List(string id, EventsField field, Func<string> get, Action<string> set)
+        {
+            var box = new TextBox { Text = get(), AcceptsReturn = true, AcceptsTab = false, TextWrapping = TextWrapping.NoWrap, FontSize = 13, LineHeight = CodeLineHeight, Padding = new Thickness(8, 4) };
             box.Classes.Add("code");
+            box.Bind(Avalonia.Controls.Primitives.TemplatedControl.FontFamilyProperty, box.GetResourceObservable("FxcFontMono"));
+            ScrollViewer.SetHorizontalScrollBarVisibility(box, Avalonia.Controls.Primitives.ScrollBarVisibility.Auto);
+            ScrollViewer.SetVerticalScrollBarVisibility(box, Avalonia.Controls.Primitives.ScrollBarVisibility.Auto);
             AutomationProperties.SetAutomationId(box, f.Id(id));
+            box.TextChanged += (_, _) =>
+            {
+                if (alive && !syncing)
+                    set(box.Text ?? "");
+            };
+            box.GotFocus += (_, _) =>
+            {
+                if (alive)
+                    model.LastFocusedEventsField = field;
+            };
             return box;
         }
 
-        var pre = Events("PreBuild", model.PreBuild);
-        var post = Events("PostBuild", model.PostBuild);
-        var notice = new TextBlock { Text = Strings.Msg_ProjectOptions_EventsNotSupported, TextWrapping = TextWrapping.Wrap };
-        notice.Bind(TextBlock.ForegroundProperty, notice.GetResourceObservable("FxcTextSecondaryBrush"));
-        AutomationProperties.SetAutomationId(notice, f.Id("Notice"));
-        return Page(DialogFieldBuilder.Label(Strings.ProjectOptions_PreBuild, pre), pre, DialogFieldBuilder.Label(Strings.ProjectOptions_PostBuild, post), post, notice);
+        var hint = Hint("Hint", Strings.Msg_ProjectOptions_EventsHint);
+        var trustHint = Hint("TrustHint", Strings.Msg_ProjectOptions_EventsTrustHint);
+        var own = new CheckBox { Content = Strings.ProjectOptions_OwnEvents };
+        AutomationProperties.SetAutomationId(own, f.Id("OwnEvents"));
+        own.IsCheckedChanged += (_, _) =>
+        {
+            if (alive && !syncing)
+                model.OwnEvents = own.IsChecked == true;
+        };
+        var inherited = Hint("Inherited", "");
+
+        var pre = List("PreBuild", EventsField.PreBuild, () => model.PreBuild, v => model.PreBuild = v);
+        var post = List("PostBuild", EventsField.PostBuild, () => model.PostBuild, v => model.PostBuild = v);
+        // UI-DLG-303: at most one line under a field — the error, else the warning of a list that cannot be edited here.
+        TextBlock Message(string id, TextBox box, Func<string?> error, Func<string?> warning)
+        {
+            var line = f.Message(id, model, () => error() ?? (warning() is { } text ? "⚠ " + text : null), () => error() is not null, box);
+            line.Margin = new Thickness(0, 2, 0, 0);
+            return line;
+        }
+
+        var preMessage = Message("PreBuild", pre, () => model.PreBuildError, () => model.PreBuildWarning);
+        var postMessage = Message("PostBuild", post, () => model.PostBuildError, () => model.PostBuildWarning);
+
+        var when = new ComboBox
+        {
+            ItemsSource = new[] { Strings.ProjectOptions_PostBuildWhen_Success, Strings.ProjectOptions_PostBuildWhen_Always },
+            HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Center,
+            MinWidth = 0,
+        };
+        AutomationProperties.SetAutomationId(when, f.Id("PostBuildWhen"));
+        when.SelectionChanged += (_, _) =>
+        {
+            if (alive && !syncing && when.SelectedIndex >= 0)
+                model.PostBuildWhen = when.SelectedIndex == 1 ? FreexComp.Build.PostBuildWhen.Always : FreexComp.Build.PostBuildWhen.Success;
+        };
+
+        // UI-DLG-302: the menu button; its menu opens below it and names every macro of the engine.
+        var insert = new Button { Content = Strings.ProjectOptions_InsertMacro + " ▾", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) };
+        AutomationProperties.SetAutomationId(insert, f.Id("InsertMacro"));
+        AutomationProperties.SetName(insert, Strings.ProjectOptions_InsertMacro.Replace("_", "", StringComparison.Ordinal));
+        var menu = new MenuFlyout { Placement = PlacementMode.Bottom };
+        insert.Flyout = menu;
+        {
+            foreach (var macro in model.EventMacroItems)
+            {
+                var text = new TextBlock { Text = macro.Text, FontSize = 13, MinWidth = 120, VerticalAlignment = VerticalAlignment.Center };
+                text.Bind(TextBlock.FontFamilyProperty, text.GetResourceObservable("FxcFontMono"));
+                var description = new TextBlock { Text = macro.Description, Margin = new Thickness(12, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+                description.Bind(TextBlock.ForegroundProperty, description.GetResourceObservable("FxcTextSecondaryBrush"));
+                var item = new MenuItem { Header = new StackPanel { Orientation = Orientation.Horizontal, Children = { text, description } } };
+                AutomationProperties.SetAutomationId(item, f.Id("InsertMacro." + macro.Name));
+                AutomationProperties.SetName(item, macro.Text + " " + macro.Description);
+                item.Click += (_, _) =>
+                {
+                    var target = model.LastFocusedEventsField == EventsField.PreBuild ? pre : post;
+                    if (!alive || model.InsertMacro(macro.Name, target.SelectionStart, target.SelectionEnd) is not { } caret)
+                        return;
+                    // The focus returns to the list, the caret stands after the inserted text.
+                    target.Focus();
+                    target.SelectionStart = target.SelectionEnd = target.CaretIndex = caret;
+                };
+                menu.Items.Add(item);
+            }
+        }
+
+        void SyncList(TextBox box, string text, bool readOnly, bool controlCharacters)
+        {
+            if ((box.Text ?? "") != text)
+                box.Text = text;
+            box.IsReadOnly = readOnly;
+            // UI-DLG-301, 303: read-only text is text.secondary (a list shown with glyphs: text.disabled) and has no caret.
+            box.Bind(Avalonia.Controls.Primitives.TemplatedControl.ForegroundProperty,
+                box.GetResourceObservable(!readOnly ? "FxcTextPrimaryBrush" : controlCharacters ? "FxcTextDisabledBrush" : "FxcTextSecondaryBrush"));
+            if (readOnly)
+                box.CaretBrush = Brushes.Transparent;
+            else
+                box.ClearValue(TextBox.CaretBrushProperty);
+        }
+
+        void Sync()
+        {
+            if (!alive)
+                return;
+            syncing = true;
+            own.IsVisible = model.ShowOwnEvents;
+            own.IsChecked = model.OwnEvents;
+            inherited.IsVisible = model.EventsInheritedText is not null;
+            inherited.Text = model.EventsInheritedText is { } source ? "ⓘ " + source : "";
+            SyncList(pre, model.PreBuild, model.PreBuildReadOnly, model.PreBuildWarning is not null);
+            SyncList(post, model.PostBuild, model.PostBuildReadOnly, model.PostBuildWarning is not null);
+            when.SelectedIndex = model.PostBuildWhen == FreexComp.Build.PostBuildWhen.Always ? 1 : 0;
+            when.IsEnabled = model.PostBuildWhenEnabled;
+            insert.IsEnabled = model.CanInsertMacro;
+            syncing = false;
+        }
+
+        model.PropertyChanged += (_, _) => Sync();
+        Sync();
+
+        // UI-DLG-085: the label suffix "(Release)" while a configuration is selected. A long suffix moves to the next
+        // line, and one that is longer than the page is shortened — nothing of the row leaves the page.
+        var note = model.ShowOwnEvents ? model.ConfigurationNote : null;
+        WrapPanel Labelled(string text, Control target)
+        {
+            var panel = new WrapPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+            panel.Children.Add(DialogFieldBuilder.Label(text, target));
+            if (note is not null)
+            {
+                var suffix = new TextBlock { Text = note, Margin = new Thickness(4, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
+                suffix.Bind(TextBlock.ForegroundProperty, suffix.GetResourceObservable("FxcTextTertiaryBrush"));
+                ToolTip.SetTip(suffix, note);
+                panel.Children.Add(suffix);
+            }
+
+            return panel;
+        }
+
+        // The label, its suffix and the combo flow in the room left of the menu button, which keeps the right end.
+        var whenCell = Labelled(Strings.ProjectOptions_PostBuildWhen, when);
+        when.Margin = new Thickness(8, 0, 0, 0);
+        whenCell.Children.Add(when);
+        var whenRow = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
+        Grid.SetColumn(insert, 1);
+        whenRow.Children.Add(whenCell);
+        whenRow.Children.Add(insert);
+
+        // UI-DLG-299: top to bottom; the two list fields share the free height equally (rows 4 and 7).
+        Control[] rows =
+        [
+            hint, own, inherited,
+            Labelled(Strings.ProjectOptions_PreBuild, pre), new ListHeight { Child = pre }, preMessage,
+            Labelled(Strings.ProjectOptions_PostBuild, post), new ListHeight { Child = post }, postMessage,
+            whenRow, trustHint,
+        ];
+        var page = new Grid { RowDefinitions = new RowDefinitions("Auto,Auto,Auto,Auto,*,Auto,Auto,*,Auto,Auto,Auto") };
+        for (var i = 0; i < rows.Length; i++)
+        {
+            // 8 between the parts; a label stands 4 above its field, a message line directly under it, the trust hint 4
+            // under the row above. The check box brings its own room above and below (it is 32 high).
+            var top = i switch { 0 or 2 => 0, 1 => 2, 5 or 8 => rows[i].Margin.Top, 4 or 7 or 10 => 4, _ => 8 };
+            rows[i].Margin = new Thickness(rows[i].Margin.Left, top, rows[i].Margin.Right, 0);
+            Grid.SetRow(rows[i], i);
+            page.Children.Add(rows[i]);
+        }
+
+        page.DetachedFromVisualTree += (_, _) => alive = false;
+        return page;
+    }
+
+    /// <summary>
+    /// Holds a list field of the Build Events page: it asks for the least height only, whatever the text needs, so that the
+    /// two fields get equal shares of the page's free height and scroll inside (UI-DLG-299).
+    /// </summary>
+    private sealed class ListHeight : Decorator
+    {
+        protected override Size MeasureOverride(Size availableSize)
+        {
+            Child?.Measure(new Size(availableSize.Width, double.IsInfinity(availableSize.Height) ? EventListMinHeight : Math.Max(EventListMinHeight, availableSize.Height)));
+            return new Size(Math.Min(Child?.DesiredSize.Width ?? 0, double.IsInfinity(availableSize.Width) ? double.MaxValue : availableSize.Width), EventListMinHeight);
+        }
+
+        protected override Size ArrangeOverride(Size finalSize)
+        {
+            Child?.Arrange(new Rect(finalSize));
+            return finalSize;
+        }
     }
 }

@@ -343,8 +343,6 @@ public sealed class BuildService : IBuildService
         _internalError = false;
         ShowBuildOutput?.Invoke();
         _eventsSkipped = events == EventsPolicy.Skip;
-        if (!_eventsSkipped && _projects.Definition is { Events: var listed } && (listed.PreBuild.Length > 0 || listed.PostBuild.Length > 0))
-            _output.Append(OutputChannels.Build, Strings.Msg_Project_EventsIgnored, OutputKind.Ide); // IDE-P3-036; not after IDE-TRUST-007
 
         var paths = _toolchain.Resolve();
         var request = new BuildRequest
