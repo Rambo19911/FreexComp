@@ -46,6 +46,16 @@ public sealed class GeneratedTextDocumentViewModel : DocumentViewModel
     /// </summary>
     public TextDocumentViewModel Content { get; }
 
+    /// <summary>
+    /// A help document (UI-MENU-032): the kind of every line of <see cref="Text"/>, by which its view styles headings
+    /// and table lines; null for every other generated document.
+    /// </summary>
+    public IReadOnlyList<HelpLineKind>? HelpLines
+    {
+        get;
+        internal set => SetProperty(ref field, value);
+    }
+
     public string Text
     {
         get => Content.Buffer.Text;

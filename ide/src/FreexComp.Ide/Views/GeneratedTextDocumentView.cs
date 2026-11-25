@@ -2,6 +2,7 @@ using System.ComponentModel;
 using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Input.Platform;
 using AvaloniaEdit;
 using AvaloniaEdit.Editing;
@@ -12,7 +13,6 @@ using FreexComp.Ide.Core.Services;
 using FreexComp.Ide.Core.Text;
 using FreexComp.Ide.Core.ViewModels;
 using FreexComp.Ide.Editor;
-using FreexComp.Ide.Icons;
 using FreexComp.Ide.Input;
 using FreexComp.Ide.Text;
 
@@ -24,6 +24,8 @@ namespace FreexComp.Ide.Views;
 /// <c>Editor</c> command scope; the view is the target of <c>edit.copy</c> (selection) and <c>edit.selectAll</c>.
 /// The editor shows the buffer of <see cref="GeneratedTextDocumentViewModel.Content"/> and mirrors caret and selection
 /// into it, so the find panel (find mode only, the text is read-only) and its highlights work here too (I-058).
+/// A help document (UI-MENU-032; kind <c>help.&lt;id&gt;</c>, so <c>Document.Help.&lt;id&gt;</c>) is shown in the body font
+/// with word wrap and no horizontal scroll bar, its lines styled by <see cref="HelpPageColorizer"/>.
 /// </summary>
 public sealed class GeneratedTextDocumentView : Decorator, ICommandTarget
 {
@@ -35,14 +37,14 @@ public sealed class GeneratedTextDocumentView : Decorator, ICommandTarget
     private GeneratedTextDocumentViewModel? _document;
     private FindSession? _find;
     private bool _applying;
+    private IDisposable? _fontFamily;
+    private IDisposable? _fontSize;
 
     public GeneratedTextDocumentView()
     {
         CommandRouting.SetScope(this, CommandScope.Editor);
         Bind(TextEditor.BackgroundProperty, "FxcBgEditorBrush");
         Bind(TextEditor.ForegroundProperty, "FxcSyntaxTextBrush");
-        Bind(TextEditor.FontFamilyProperty, "FxcFontMono");
-        Bind(TextEditor.FontSizeProperty, "FxcTypeCodeSize");
         _editor.TextArea.Bind(AvaloniaEdit.Editing.TextArea.SelectionBrushProperty, _editor.TextArea.GetResourceObservable("FxcEditorSelectionBgBrush"));
         // I-257: the text keeps space.4 free at the left; at x = 0 the first glyph of every line was cut by the tab's edge.
         var padding = new Border();
@@ -111,12 +113,22 @@ public sealed class GeneratedTextDocumentView : Decorator, ICommandTarget
         AutomationProperties.SetAutomationId(_editor, id);
         AutomationProperties.SetName(_editor, _document.Title);
         var transformers = _editor.TextArea.TextView.LineTransformers;
-        foreach (var headings in transformers.OfType<HelpHeadingColorizer>().ToList())
-            transformers.Remove(headings);
-        if (_document.Kind.StartsWith(HelpPage.KindPrefix, StringComparison.Ordinal)) // I-257: a help page, Markdown as text
+        foreach (var styles in transformers.OfType<HelpPageColorizer>().ToList())
+            transformers.Remove(styles);
+        var help = _document.Kind.StartsWith(HelpPage.KindPrefix, StringComparison.Ordinal); // UI-MENU-032
+        _fontFamily?.Dispose();
+        _fontSize?.Dispose();
+        _fontFamily = Bind(TextEditor.FontFamilyProperty, help ? "FxcFontUi" : "FxcFontMono");
+        _fontSize = Bind(TextEditor.FontSizeProperty, help ? "FxcTypeBodySize" : "FxcTypeCodeSize");
+        _editor.WordWrap = help;
+        _editor.HorizontalScrollBarVisibility = help ? ScrollBarVisibility.Disabled : ScrollBarVisibility.Auto;
+        if (help)
         {
-            transformers.Add(new HelpHeadingColorizer(() =>
-                this.TryFindResource(IconCatalog.BrushKey("syntax.keyword"), ActualThemeVariant, out var value) ? value as IBrush : null));
+            transformers.Add(new HelpPageColorizer(
+                () => _document?.HelpLines,
+                () => this.TryFindResource("FxcTextPrimaryBrush", ActualThemeVariant, out var value) ? value as IBrush : null,
+                () => this.TryFindResource("FxcFontMono", ActualThemeVariant, out var value) ? value as FontFamily : null,
+                () => this.TryFindResource("FxcTypeCodeSize", ActualThemeVariant, out var value) && value is double size ? size : _editor.FontSize));
         }
 
         if (content.Buffer is AvaloniaEditTextBuffer buffer)
@@ -127,8 +139,9 @@ public sealed class GeneratedTextDocumentView : Decorator, ICommandTarget
         {
             _editor.Document = new AvaloniaEdit.Document.TextDocument();
             _editor.Text = _document.Text;
-            _document.PropertyChanged += OnDocumentChanged;
         }
+
+        _document.PropertyChanged += OnDocumentChanged;
 
         ApplySelection();
         content.ViewState.PropertyChanged += OnViewStateChanged;
@@ -156,8 +169,12 @@ public sealed class GeneratedTextDocumentView : Decorator, ICommandTarget
 
     private void OnDocumentChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(GeneratedTextDocumentViewModel.Text) && _document is not null)
+        if (_document is null)
+            return;
+        if (e.PropertyName == nameof(GeneratedTextDocumentViewModel.Text) && _document.Content.Buffer is not AvaloniaEditTextBuffer)
             _editor.Text = _document.Text;
+        else if (e.PropertyName == nameof(GeneratedTextDocumentViewModel.HelpLines))
+            _editor.TextArea.TextView.Redraw();
     }
 
     private void OnFindChanged(object? sender, EventArgs e) => _editor.TextArea.TextView.InvalidateLayer(AvaloniaEdit.Rendering.KnownLayer.Selection);
@@ -213,5 +230,5 @@ public sealed class GeneratedTextDocumentView : Decorator, ICommandTarget
         }
     }
 
-    private void Bind(AvaloniaProperty property, string resourceKey) => _editor.Bind(property, _editor.GetResourceObservable(resourceKey));
+    private IDisposable Bind(AvaloniaProperty property, string resourceKey) => _editor.Bind(property, _editor.GetResourceObservable(resourceKey));
 }

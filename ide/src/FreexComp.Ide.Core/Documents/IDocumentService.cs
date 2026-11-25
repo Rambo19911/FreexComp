@@ -76,8 +76,9 @@ public interface IDocumentService
     /// <summary>
     /// Shows a read-only generated document (UI-MENU-030): the open one of the same <paramref name="kind"/> gets the new
     /// <paramref name="text"/> and is activated, else a new tab opens. Never part of a session.
+    /// <paramref name="helpLines"/>: for a help document (UI-MENU-032), the kind of every line of the text.
     /// </summary>
-    GeneratedTextDocumentViewModel ShowGenerated(string kind, string title, string text);
+    GeneratedTextDocumentViewModel ShowGenerated(string kind, string title, string text, IReadOnlyList<Services.HelpLineKind>? helpLines = null);
 
     void Activate(DocumentViewModel document);
 

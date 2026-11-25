@@ -1,0 +1,58 @@
+<Project>
+  <!--
+    UI-MENU-033: the deployed help\ folder holds exactly the pages of the repository's help folder. The copy step of a
+    build or publish brings new and changed pages (the Content items of FreexComp.Ide.csproj); these targets remove
+    what it leaves behind: every file below the deployed help\ that has no source page of the same relative path (a
+    page removed or renamed in the source), and the subfolders that hold no file any more. They run in every build,
+    also an incremental one. Imported by the IDE project and by every project whose output the IDE runs from.
+  -->
+  <PropertyGroup>
+    <HelpPagesSourceDir Condition="'$(HelpPagesSourceDir)' == ''">$(MSBuildThisFileDirectory)..\..\..\help\</HelpPagesSourceDir>
+  </PropertyGroup>
+
+  <Target Name="RemoveStaleHelpPages" AfterTargets="CopyFilesToOutputDirectory" Condition="'$(OutDir)' != '' and Exists('$(OutDir)help')">
+    <PropertyGroup>
+      <_HelpPagesDeployDir>$([MSBuild]::EnsureTrailingSlash($([System.IO.Path]::GetFullPath('$(OutDir)help'))))</_HelpPagesDeployDir>
+    </PropertyGroup>
+    <ItemGroup>
+      <_HelpPageSource Include="$(HelpPagesSourceDir)**\*.md" />
+      <_HelpPageDeployed Include="$(_HelpPagesDeployDir)**\*" />
+      <_HelpPageStale Include="@(_HelpPageDeployed)" Exclude="@(_HelpPageSource->'$(_HelpPagesDeployDir)%(RecursiveDir)%(Filename)%(Extension)')" />
+    </ItemGroup>
+    <Delete Files="@(_HelpPageStale)" />
+    <ItemGroup>
+      <_HelpPageDir Include="$([System.IO.Directory]::GetDirectories('$(_HelpPagesDeployDir)', '*', System.IO.SearchOption.AllDirectories))" />
+    </ItemGroup>
+    <RemoveDir Directories="%(_HelpPageDir.Identity)"
+               Condition="'@(_HelpPageDir)' != '' and Exists('%(_HelpPageDir.Identity)') and $([System.IO.Directory]::GetFiles('%(_HelpPageDir.Identity)', '*', System.IO.SearchOption.AllDirectories).Length) == 0" />
+    <ItemGroup>
+      <_HelpPageSource Remove="@(_HelpPageSource)" />
+      <_HelpPageDeployed Remove="@(_HelpPageDeployed)" />
+      <_HelpPageStale Remove="@(_HelpPageStale)" />
+      <_HelpPageDir Remove="@(_HelpPageDir)" />
+    </ItemGroup>
+  </Target>
+
+  <Target Name="RemoveStalePublishedHelpPages" AfterTargets="CopyFilesToPublishDirectory" Condition="'$(PublishDir)' != '' and Exists('$(PublishDir)help')">
+    <PropertyGroup>
+      <_HelpPagesDeployDir>$([MSBuild]::EnsureTrailingSlash($([System.IO.Path]::GetFullPath('$(PublishDir)help'))))</_HelpPagesDeployDir>
+    </PropertyGroup>
+    <ItemGroup>
+      <_HelpPageSource Include="$(HelpPagesSourceDir)**\*.md" />
+      <_HelpPageDeployed Include="$(_HelpPagesDeployDir)**\*" />
+      <_HelpPageStale Include="@(_HelpPageDeployed)" Exclude="@(_HelpPageSource->'$(_HelpPagesDeployDir)%(RecursiveDir)%(Filename)%(Extension)')" />
+    </ItemGroup>
+    <Delete Files="@(_HelpPageStale)" />
+    <ItemGroup>
+      <_HelpPageDir Include="$([System.IO.Directory]::GetDirectories('$(_HelpPagesDeployDir)', '*', System.IO.SearchOption.AllDirectories))" />
+    </ItemGroup>
+    <RemoveDir Directories="%(_HelpPageDir.Identity)"
+               Condition="'@(_HelpPageDir)' != '' and Exists('%(_HelpPageDir.Identity)') and $([System.IO.Directory]::GetFiles('%(_HelpPageDir.Identity)', '*', System.IO.SearchOption.AllDirectories).Length) == 0" />
+    <ItemGroup>
+      <_HelpPageSource Remove="@(_HelpPageSource)" />
+      <_HelpPageDeployed Remove="@(_HelpPageDeployed)" />
+      <_HelpPageStale Remove="@(_HelpPageStale)" />
+      <_HelpPageDir Remove="@(_HelpPageDir)" />
+    </ItemGroup>
+  </Target>
+</Project>

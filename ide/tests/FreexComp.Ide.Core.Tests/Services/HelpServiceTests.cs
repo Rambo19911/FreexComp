@@ -53,35 +53,77 @@ public sealed class HelpServiceTests
     private static string Heading(string file) => File.ReadLines(file).First(l => l.StartsWith("# ", StringComparison.Ordinal))[2..].Trim();
 
     /// <summary>A composition whose IDE directory holds the repository's help pages below <c>help</c> (as the build deploys them).</summary>
-    private static Composition.IdeServices BuildWithHelp(FakeDialogService dialogs, FakeShellService? shell = null)
+    private static Composition.IdeServices BuildWithHelp(FakeDialogService dialogs, FakeShellService? shell = null) =>
+        BuildWithPages(dialogs, shell, [.. RepositoryPages().Select(p => (p.Id, File.ReadAllBytes(p.File)))]).Services;
+
+    /// <summary>A composition whose IDE directory holds these pages (id, bytes) below <c>help</c>; also its file system and that folder.</summary>
+    private static (Composition.IdeServices Services, InMemoryFileSystem Files, string HelpDir) BuildWithPages(
+        FakeDialogService dialogs, FakeShellService? shell, params (string Id, byte[] Content)[] pages)
     {
         var files = new InMemoryFileSystem();
         var ide = Path.Combine(Path.GetTempPath(), "FreexComp.Tests", Guid.NewGuid().ToString("N"), "ide");
-        foreach (var (id, file) in RepositoryPages())
+        foreach (var (id, content) in pages)
         {
             var path = Path.Combine(ide, "help", id.Replace('/', '\\') + ".md");
             files.CreateDirectory(Path.GetDirectoryName(path)!);
-            files.WriteAllBytes(path, File.ReadAllBytes(file));
+            files.WriteAllBytes(path, content);
         }
 
-        return TestComposition.Build(o =>
+        return (TestComposition.Build(o =>
         {
             o.Dialogs = dialogs;
             o.Shell = shell;
             o.FileSystem = files;
             o.ToolchainEnvironment = new ToolchainEnvironment(null, ide, []);
-        });
+        }), files, Path.Combine(ide, "help"));
     }
+
+    /// <summary>
+    /// UI-DLG-280: a page's row text is its first <c># </c> heading, else its id; its id is the path below <c>help</c>
+    /// without the extension, <c>/</c>-separated; the pages are sorted by title, then id, both ordinal and
+    /// case-insensitive; the folder is read every time the pages are asked for.
+    /// </summary>
+    [Fact(Timeout = 30000)]
+    [Trait("Phase", "8")]
+    [Trait("Req", "UI-DLG-280")]
+    public Task PagesAreSortedByTitleThenId() => TestUiThread.RunAsync(() =>
+    {
+        static byte[] Page(string text) => System.Text.Encoding.UTF8.GetBytes(text);
+        var (services, files, helpDir) = BuildWithPages(new FakeDialogService(), null,
+            ("zeta", Page("# alpha\n")),                               // the same title but for its case: ordered by id
+            ("Beta", Page("# Alpha\n")),
+            ("sub/dir/alpha", Page("intro\n\n# Alpha\n# Second\n")), // the first "# " heading, wherever it is
+            ("no-heading", Page("## Only a second-level heading\n#NoSpace\n")),
+            ("b-page", Page("\uFEFF# _Underscore\n")),                 // a byte-order mark is not part of the title
+            ("a-page", Page("#  Émile  \n")));                         // ordinal: after every ASCII title
+        Assert.Equal(
+        [
+            ("Beta", "Alpha"),
+            ("sub/dir/alpha", "Alpha"),
+            ("zeta", "alpha"),
+            ("no-heading", "no-heading"),
+            ("b-page", "_Underscore"),
+            ("a-page", "Émile"),
+        ], services.Help.Pages.Select(p => (p.Id, p.Title)));
+
+        // Read from the disk on every call: a page added later is listed.
+        files.WriteAllBytes(Path.Combine(helpDir, "added.md"), Page("# Added\n"));
+        Assert.Equal("added", services.Help.Pages[0].Id);
+        Assert.Equal(7, services.Help.Pages.Count);
+        return Task.CompletedTask;
+    });
 
     [Fact(Timeout = 30000)]
     [Trait("Phase", "8")]
     [Trait("Req", "UI-MENU-031")]
+    [Trait("Req", "UI-DLG-280")]
+    [Trait("Req", "UI-DLG-282")]
     public Task ContentsListsEveryPage() => TestUiThread.RunAsync(() => ContentsListsEveryPageOnUiThread()); // I-257
 
     private async Task ContentsListsEveryPageOnUiThread()
     {
         var expected = RepositoryPages().Select(p => (p.Id, Title: Heading(p.File)))
-            .OrderBy(p => p.Title, StringComparer.CurrentCultureIgnoreCase).ToList();
+            .OrderBy(p => p.Title, StringComparer.OrdinalIgnoreCase).ThenBy(p => p.Id, StringComparer.OrdinalIgnoreCase).ToList();
         Assert.True(expected.Count >= 3, "the repository has help pages");
         var dialogs = new FakeDialogService();
         var services = BuildWithHelp(dialogs);
@@ -119,6 +161,8 @@ public sealed class HelpServiceTests
     [Fact(Timeout = 30000)]
     [Trait("Phase", "8")]
     [Trait("Req", "UI-MENU-031")]
+    [Trait("Req", "UI-MENU-032")]
+    [Trait("Req", "UI-DLG-281")]
     public Task OpenPageIsReadOnly() => TestUiThread.RunAsync(() => OpenPageIsReadOnlyOnUiThread()); // I-257
 
     private async Task OpenPageIsReadOnlyOnUiThread()
@@ -139,7 +183,13 @@ public sealed class HelpServiceTests
         Assert.Equal((Heading(file), null, false, true), (page.Title, page.FilePath, page.IsModified, page.IsReadOnly));
         Assert.Equal("help." + id, page.Kind);
         Assert.True(page.Content.Buffer.IsReadOnly);
-        Assert.Equal(File.ReadAllText(file).ReplaceLineEndings("\r\n"), page.Text);
+        // UI-MENU-032: the text shown is derived from the page (its tables aligned, no delimiter row), line by line.
+        var shown = HelpPageFormatter.Format(File.ReadAllText(file));
+        Assert.Equal(shown.Text, page.Text);
+        Assert.Equal(shown.Lines, page.HelpLines);
+        Assert.Contains(HelpLineKind.TableHeader, page.HelpLines!);
+        Assert.DoesNotContain("|---", page.Text, StringComparison.Ordinal);
+        Assert.StartsWith("# Library source\r\n", page.Text, StringComparison.Ordinal);
         Assert.False(services.Commands.CanExecute("file.save")); // not a file document: nothing to save, nothing to overwrite
         Assert.False(services.Commands.CanExecute("file.saveAs"));
 

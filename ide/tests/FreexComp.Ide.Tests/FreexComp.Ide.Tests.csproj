@@ -29,4 +29,6 @@
     <!-- I-146: scenario files of the scripted debug adapter (testing.md §5.4). -->
     <None Include="..\TestData\debug-scenarios\**\*" LinkBase="TestData\debug-scenarios" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
+  <!-- UI-MENU-033: this output gets the help pages of the IDE it references; stale ones leave it the same way. -->
+  <Import Project="..\..\src\FreexComp.Ide\HelpPages.targets" />
 </Project>

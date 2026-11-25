@@ -17,7 +17,7 @@ public sealed partial class VisualSnapshotTests
     /// (800 × 600) with one row per deployed page; <c>help-page</c> — the main window at 800 × 500 and 1920 × 1040 with
     /// the page "Library source" open as a read-only document. Rules: the list, every row and the buttons are drawn
     /// completely inside the dialog; the page's tab and text are drawn completely inside the window, the text is the
-    /// deployed file, and its heading lines (only they) carry the heading style.
+    /// one derived from the deployed file (UI-MENU-032), and its heading lines (only they) are heading lines.
     /// </summary>
     [AvaloniaFact(Timeout = 30000)]
     [Trait("Phase", "8")]
@@ -107,7 +107,9 @@ public sealed partial class VisualSnapshotTests
             Dispatcher.UIThread.RunJobs();
             var document = Assert.IsType<GeneratedTextDocumentViewModel>(h.Services.Documents.ActiveDocument);
             Assert.Equal(("Library source", null, true), (document.Title, document.FilePath, document.IsReadOnly));
-            Assert.Equal(File.ReadAllText(deployed).ReplaceLineEndings("\r\n"), document.Text);
+            var shown = Core.Services.HelpPageFormatter.Format(File.ReadAllText(deployed));
+            Assert.Equal(shown.Text, document.Text);
+            Assert.Equal(shown.Lines, document.HelpLines);
             foreach (var size in windowSizes)
             {
                 VisualSnapshot.Arrange(h.Window, size, 1.0);
@@ -130,10 +132,10 @@ public sealed partial class VisualSnapshotTests
                     defects.Add((variant, $"the text starts {textLeft} px from the left edge"));
 
                 // Heading lines are styled by the help colorizer; body lines are not.
-                Assert.Single(editor.TextArea.TextView.LineTransformers.OfType<HelpHeadingColorizer>());
+                Assert.Single(editor.TextArea.TextView.LineTransformers.OfType<HelpPageColorizer>());
                 Assert.StartsWith("# ", editor.Document.GetText(editor.Document.GetLineByNumber(1)), StringComparison.Ordinal);
-                Assert.True(HelpHeadingColorizer.IsHeading(editor.Document.GetText(editor.Document.GetLineByNumber(1))));
-                Assert.False(HelpHeadingColorizer.IsHeading(editor.Document.GetText(editor.Document.GetLineByNumber(3))));
+                Assert.Equal(Core.Services.HelpLineKind.Heading, document.HelpLines![0]);
+                Assert.Equal(Core.Services.HelpLineKind.Text, document.HelpLines[2]);
                 if (VisualSnapshot.DistinctColors(h.Window, editor) < 3)
                     defects.Add((variant, "the page text is not drawn"));
                 defects.AddRange(VisualSnapshot.LayoutDefects(tab).Select(d => (variant, d)));
@@ -143,7 +145,7 @@ public sealed partial class VisualSnapshotTests
             // Another generated document keeps its plain text: no heading style there.
             await h.ExecuteAsync("help.keyboardShortcuts");
             Dispatcher.UIThread.RunJobs();
-            Assert.Empty(h.Find<TextEditor>("Document.KeyboardShortcuts").TextArea.TextView.LineTransformers.OfType<HelpHeadingColorizer>());
+            Assert.Empty(h.Find<TextEditor>("Document.KeyboardShortcuts").TextArea.TextView.LineTransformers.OfType<HelpPageColorizer>());
         }
 
         AssertSnapshots(files, subjects, 4, defects);

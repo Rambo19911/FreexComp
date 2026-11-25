@@ -317,16 +317,17 @@ public sealed class DocumentService : IDocumentService
         return page;
     }
 
-    public GeneratedTextDocumentViewModel ShowGenerated(string kind, string title, string text)
+    public GeneratedTextDocumentViewModel ShowGenerated(string kind, string title, string text, IReadOnlyList<HelpLineKind>? helpLines = null)
     {
         if (_documents.OfType<GeneratedTextDocumentViewModel>().FirstOrDefault(d => d.Kind == kind) is { } open)
         {
             open.Text = text;
+            open.HelpLines = helpLines;
             Activate(open);
             return open;
         }
 
-        var document = new GeneratedTextDocumentViewModel(kind, title, text, _buffers);
+        var document = new GeneratedTextDocumentViewModel(kind, title, text, _buffers) { HelpLines = helpLines };
         Add(document);
         return document;
     }

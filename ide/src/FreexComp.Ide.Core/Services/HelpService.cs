@@ -25,7 +25,8 @@ public interface IHelpService
     void ShowKeyboardShortcuts();
 
     /// <summary>
-    /// The installed help pages: every <c>*.md</c> below <c>help</c> in the IDE's directory, sorted by title (then id).
+    /// The installed help pages (UI-DLG-280): every <c>*.md</c> below <c>help</c> in the IDE's directory, sorted by title,
+    /// then id (both ordinal, case-insensitive).
     /// Read from the disk on every call; empty when the folder is missing.
     /// </summary>
     IReadOnlyList<HelpPage> Pages { get; }
@@ -34,8 +35,9 @@ public interface IHelpService
     Task ShowContentsAsync();
 
     /// <summary>
-    /// Shows a page as the active document: a read-only generated document (its Markdown text, kind
-    /// <see cref="HelpPage.Kind"/>, titled with the page title); the page's tab is reused when it is already open.
+    /// Shows a page as the active document (UI-MENU-032): a read-only generated document (the text
+    /// <see cref="HelpPageFormatter"/> derives from its Markdown, kind <see cref="HelpPage.Kind"/>, titled with the page
+    /// title); the page's tab is reused when it is already open. The file is only read.
     /// </summary>
     void OpenPage(HelpPage page);
 }
@@ -78,7 +80,7 @@ public sealed class HelpService(
             var pages = new List<HelpPage>();
             if (fileSystem.DirectoryExists(helpDirectory))
                 Collect(helpDirectory, pages);
-            return [.. pages.OrderBy(p => p.Title, StringComparer.CurrentCultureIgnoreCase).ThenBy(p => p.Id, StringComparer.Ordinal)];
+            return [.. pages.OrderBy(p => p.Title, StringComparer.OrdinalIgnoreCase).ThenBy(p => p.Id, StringComparer.OrdinalIgnoreCase)];
         }
     }
 
@@ -91,7 +93,8 @@ public sealed class HelpService(
     public void OpenPage(HelpPage page)
     {
         ArgumentNullException.ThrowIfNull(page);
-        documents.ShowGenerated(page.Kind, page.Title, ReadText(page.Path));
+        var shown = HelpPageFormatter.Format(ReadText(page.Path));
+        documents.ShowGenerated(page.Kind, page.Title, shown.Text, shown.Lines);
     }
 
     private void Collect(string directory, List<HelpPage> pages)
