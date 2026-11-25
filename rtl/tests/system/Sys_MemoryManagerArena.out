@@ -1,0 +1,22 @@
+# GetMem, AllocMem, ReallocMem, New
+ok GetMem
+ok ReallocMem growing keeps the bytes
+ok ReallocMem shrinking keeps the bytes
+ok AllocMem
+ok New
+# strings and dynamic arrays
+ok a string
+ok a concatenation
+ok SetLength of a string
+ok a dynamic array
+ok SetLength of a dynamic array again
+# objects, interfaces, exceptions, Classes
+ok an object
+ok an interface-counted object
+ok a raised and handled exception
+ok a string list
+# the default manager
+ok the arena served the requests
+ok the arena is the current manager
+ok the default manager handed out and took back nothing since the kit ran
+# passed 17 failed 0

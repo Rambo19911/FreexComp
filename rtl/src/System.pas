@@ -127,12 +127,23 @@ type
   TCustomAttribute = class(TObject)
   end;
 
-  { RTL-062: the pluggable memory manager; FreeMem returns 0 on success }
+  { RTL-1061: what GetHeapUsage reports }
+  THeapUsage = record
+    BlockCount: NativeUInt;        { blocks handed out and not yet released }
+    AllocatedBytes: NativeUInt;    { bytes requested for those blocks; 0 when the manager does not track bytes }
+  end;
+
+  { RTL-062, RTL-1060: the pluggable memory manager; FreeMem returns 0 on success. The last three fields are
+    optional: nil means "not supported". A record a program fills itself starts from GetMemoryManager or from a
+    zeroed variable }
   TMemoryManager = record
     GetMem: function(Size: NativeInt): Pointer;
     FreeMem: function(P: Pointer): Integer;
     ReallocMem: function(P: Pointer; Size: NativeInt): Pointer;
     AllocMem: function(Size: NativeInt): Pointer;
+    RegisterExpectedMemoryLeak: function(P: Pointer): Boolean;
+    UnregisterExpectedMemoryLeak: function(P: Pointer): Boolean;
+    GetHeapUsage: procedure(var Usage: THeapUsage);
   end;
 
 const
@@ -226,6 +237,10 @@ var
   IsConsole: Boolean;
   IsLibrary: Boolean;
   ReportMemoryLeaksOnShutdown: Boolean;  { RTL-064, ABI-104 step 3 }
+  { RTL-1069: in a debug build (System compiled with DEBUG) SetMemoryManager is runtime error 204 while blocks handed
+    out through the current manager are live. A program that installs a manager which forwards every request to the
+    one it replaced sets this to False around its SetMemoryManager calls. Not read in other builds. }
+  CheckMemoryManagerSwitch: Boolean = True;
   HInstance: THandle;
   MainThreadID: Cardinal;
   CmdLine: PChar;
@@ -318,6 +333,13 @@ function AllocMem(Size: NativeInt): Pointer;
 procedure GetMemoryManager(var M: TMemoryManager);
 procedure SetMemoryManager(const M: TMemoryManager);
 function IsMemoryManagerSet: Boolean;
+{ RTL-1061 ... RTL-1063: a block the program leaves allocated on purpose is taken out of the leak report. The default
+  manager only counts: it keeps no list of blocks, does not check that P is a live block, and a block registered
+  twice counts twice. False when the current manager does not support it or P is nil. }
+function RegisterExpectedMemoryLeak(P: Pointer): Boolean;
+function UnregisterExpectedMemoryLeak(P: Pointer): Boolean;
+{ the current manager's count of live blocks (the default manager: includes the runtime's own blocks; no bytes) }
+function GetHeapUsage: THeapUsage;
 
 { UnicodeString helpers (rtl-abi.md section 3, 9.3; system.md section 8). A string value is nil ('') or points at the
   first element of a block with the TStrRec header in front; RefCount -1 marks a static literal block. Every helper
@@ -631,6 +653,10 @@ var
   MemMgr: TMemoryManager;              { the current manager; DefaultMemMgr from _Startup on }
   DefaultMemMgr: TMemoryManager;
 
+{ default memory manager: begin }
+var
+  ExpectedLeaks: NativeInt;            { RTL-1062 }
+
 function SysGetMem(Size: NativeInt): Pointer;
 begin
   Result := HeapAlloc(ProcessHeap, 0, Size);
@@ -660,32 +686,102 @@ begin
     AtomicIncrement(BlocksAllocated);
 end;
 
+function SysRegisterExpectedLeak(P: Pointer): Boolean;
+begin
+  AtomicIncrement(ExpectedLeaks);
+  Result := True;
+end;
+
+function SysUnregisterExpectedLeak(P: Pointer): Boolean;
+var
+  Seen: NativeInt;
+begin
+  repeat
+    Seen := ExpectedLeaks;
+    if Seen <= 0 then
+      Exit(False);
+  until AtomicCmpExchange(ExpectedLeaks, Seen - 1, Seen) = Seen;
+  Result := True;
+end;
+
+procedure SysGetHeapUsage(var Usage: THeapUsage);
+begin
+  Usage.BlockCount := NativeUInt(BlocksAllocated - BlocksFreed);
+  Usage.AllocatedBytes := 0;           { not tracked: it would cost one more system call per release }
+end;
+
 procedure InitMemoryManager;
 begin
+  ProcessHeap := GetProcessHeap;
   DefaultMemMgr.GetMem := SysGetMem;
   DefaultMemMgr.FreeMem := SysFreeMem;
   DefaultMemMgr.ReallocMem := SysReallocMem;
   DefaultMemMgr.AllocMem := SysAllocMem;
+  DefaultMemMgr.RegisterExpectedMemoryLeak := SysRegisterExpectedLeak;
+  DefaultMemMgr.UnregisterExpectedMemoryLeak := SysUnregisterExpectedLeak;
+  DefaultMemMgr.GetHeapUsage := SysGetHeapUsage;
   MemMgr := DefaultMemMgr;
 end;
+{ default memory manager: end }
 
 procedure GetMemoryManager(var M: TMemoryManager);
 begin
   M := MemMgr;
 end;
 
+procedure RunErrorAt(Code: Integer; Addr: Pointer); forward;
+
+{$IFDEF DEBUG}
+var
+  ManagerLive: NativeInt;              { RTL-1067: blocks handed out through the current manager and not released }
+
+function SameManager(const A, B: TMemoryManager): Boolean;
+begin
+  Result := (A.GetMem = B.GetMem) and (A.FreeMem = B.FreeMem) and (A.ReallocMem = B.ReallocMem)
+    and (A.AllocMem = B.AllocMem) and (A.RegisterExpectedMemoryLeak = B.RegisterExpectedMemoryLeak)
+    and (A.UnregisterExpectedMemoryLeak = B.UnregisterExpectedMemoryLeak) and (A.GetHeapUsage = B.GetHeapUsage);
+end;
+{$ENDIF}
+
 procedure SetMemoryManager(const M: TMemoryManager);
 begin
+{$IFDEF DEBUG}
+  { RTL-1068: the same manager is no switch; a switch with live blocks is an invalid pointer operation }
+  if SameManager(M, MemMgr) then
+    Exit;
+  if (ManagerLive <> 0) and CheckMemoryManagerSwitch then
+    RunErrorAt(204, _ReturnAddress);
+  ManagerLive := 0;
+{$ENDIF}
   MemMgr := M;
 end;
 
 function IsMemoryManagerSet: Boolean;
 begin
   Result := (MemMgr.GetMem <> DefaultMemMgr.GetMem) or (MemMgr.FreeMem <> DefaultMemMgr.FreeMem)
-    or (MemMgr.ReallocMem <> DefaultMemMgr.ReallocMem) or (MemMgr.AllocMem <> DefaultMemMgr.AllocMem);
+    or (MemMgr.ReallocMem <> DefaultMemMgr.ReallocMem) or (MemMgr.AllocMem <> DefaultMemMgr.AllocMem)
+    or (MemMgr.RegisterExpectedMemoryLeak <> DefaultMemMgr.RegisterExpectedMemoryLeak)
+    or (MemMgr.UnregisterExpectedMemoryLeak <> DefaultMemMgr.UnregisterExpectedMemoryLeak)
+    or (MemMgr.GetHeapUsage <> DefaultMemMgr.GetHeapUsage);
 end;
 
-procedure RunErrorAt(Code: Integer; Addr: Pointer); forward;
+function RegisterExpectedMemoryLeak(P: Pointer): Boolean;
+begin
+  Result := (P <> nil) and Assigned(MemMgr.RegisterExpectedMemoryLeak) and MemMgr.RegisterExpectedMemoryLeak(P);
+end;
+
+function UnregisterExpectedMemoryLeak(P: Pointer): Boolean;
+begin
+  Result := (P <> nil) and Assigned(MemMgr.UnregisterExpectedMemoryLeak) and MemMgr.UnregisterExpectedMemoryLeak(P);
+end;
+
+function GetHeapUsage: THeapUsage;
+begin
+  Result.BlockCount := 0;
+  Result.AllocatedBytes := 0;
+  if Assigned(MemMgr.GetHeapUsage) then
+    MemMgr.GetHeapUsage(Result);
+end;
 
 { R-208: the routines below take the address an error is reported at - the user's call site, captured by the entry
   point the compiled code calls (_GetMem, _AllocZero, AllocMem, _FreeMem, _ReallocMem, _DynArraySetLen, ...) }
@@ -697,6 +793,9 @@ begin
   Result := MemMgr.GetMem(Size);
   if Result = nil then
     RunErrorAt(203, Addr);
+{$IFDEF DEBUG}
+  AtomicIncrement(ManagerLive);
+{$ENDIF}
 end;
 
 function AllocZeroAt(Size: NativeInt; Addr: Pointer): Pointer;
@@ -707,6 +806,9 @@ begin
   Result := MemMgr.AllocMem(Size);
   if Result = nil then
     RunErrorAt(203, Addr);
+{$IFDEF DEBUG}
+  AtomicIncrement(ManagerLive);
+{$ENDIF}
 end;
 
 procedure FreeMemAt(P: Pointer; Addr: Pointer);
@@ -715,6 +817,9 @@ begin
     Exit;
   if MemMgr.FreeMem(P) <> 0 then
     RunErrorAt(204, Addr);
+{$IFDEF DEBUG}
+  AtomicDecrement(ManagerLive);
+{$ENDIF}
 end;
 
 function ReallocMemAt(P: Pointer; Size: NativeInt; Addr: Pointer): Pointer;
@@ -2587,13 +2692,22 @@ begin
     Result := skBytes;
 end;
 
-{ the state of a freshly opened file; the buffer is allocated }
+{ the state of a freshly opened file; the buffer is allocated. The buffer of a standard file is a block of the
+  runtime: it comes from the default manager's own routine, whatever manager is installed (RTL-1065), and CloseText
+  and ReleaseStandardBuffer give it back the same way }
 procedure StartText(var R: TTextRec; H: THandle; Kind: TTextKind; Mode: TTextMode; Std: Boolean);
 begin
   R.Handle := H;
   R.Kind := Kind;
   R.Std := Std;
-  R.Buffer := _GetMem(TextBufSize);
+  if Std then
+  begin
+    R.Buffer := SysGetMem(TextBufSize);
+    if R.Buffer = nil then
+      RunErrorAt(203, _ReturnAddress);
+  end
+  else
+    R.Buffer := _GetMem(TextBufSize);
   R.BufPos := 0;
   R.BufEnd := 0;
   R.PendingHigh := #0;
@@ -2634,7 +2748,6 @@ procedure _Startup(UnitTable: Pointer; UnitCount: NativeInt);
 begin
   Units := UnitTable;
   Entries := UnitCount;
-  ProcessHeap := GetProcessHeap;
   InitMemoryManager;
   MainBlock := ThreadBlock;            { counted from the start, so program code sees no change (RTL-064) }
   if MainBlock = @FallbackBlock then
@@ -2789,7 +2902,6 @@ const
   per-thread blocks: each block goes with its thread (ABI-194) or at unload (ABI-192 step 4). }
 procedure LibraryStartup(HInst: THandle; UnitTable: Pointer; UnitCount: NativeInt);
 begin
-  ProcessHeap := GetProcessHeap;
   InitMemoryManager;
   IsLibrary := True;
   HInstance := HInst;
@@ -2990,6 +3102,12 @@ begin
   Value := _LiveAllocCount - StdBufferCount - HeldBlocks(MainBlock);
   if OwnThreadBlock <> MainBlock then
     Value := Value - HeldBlocks(OwnThreadBlock);   { _Halt on a BeginThread thread (unhandled exception) }
+  if ExpectedLeaks > 0 then
+  begin
+    Value := Value - ExpectedLeaks;    { RTL-1063 }
+    if Value < 1 then
+      Exit;
+  end;
   if Value = 0 then
     Exit;
   N := 0;
@@ -5382,7 +5500,10 @@ begin
     FinishRec(R);
   if not R.Std then
     CloseHandle(R.Handle);
-  _FreeMem(R.Buffer);
+  if not R.Std then
+    _FreeMem(R.Buffer)
+  else if R.Buffer <> nil then
+    SysFreeMem(R.Buffer);
   R.Buffer := nil;
   R.Handle := 0;
   R.Mode := tmClosed;

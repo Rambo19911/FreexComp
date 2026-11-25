@@ -1,0 +1,13 @@
+SizeOf(TMemoryManager) 56
+SizeOf(THeapUsage) 16
+set at start FALSE
+allocation fields assigned TRUE
+optional fields assigned TRUE
+default: register nil FALSE, unregister nil FALSE
+default: register TRUE, unregister TRUE
+default: usage counts blocks TRUE, bytes 0
+set with one optional field changed TRUE, usage 0 0
+set after restoring FALSE
+without optional fields: set TRUE, register FALSE, unregister FALSE, usage 0 0
+Get returns the seven fields TRUE
+set after restoring FALSE

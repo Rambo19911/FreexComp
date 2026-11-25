@@ -1,0 +1,4 @@
+block count is the live count TRUE
+after GetMem 1
+after FreeMem -1
+bytes 0 0 0

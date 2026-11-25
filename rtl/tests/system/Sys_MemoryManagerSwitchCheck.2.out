@@ -1,0 +1,4 @@
+check is on by default TRUE
+switch with no live block TRUE
+switch back after a block was allocated and released TRUE
+main done

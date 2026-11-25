@@ -1,0 +1,5 @@
+register TRUE
+unregister TRUE
+unregister again FALSE
+main done
+show: [Memory leak detected: 2 block(s) not freed]
