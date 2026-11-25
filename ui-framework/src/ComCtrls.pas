@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 { ComCtrls - common controls (controls-standard.md sections 20 ... 24: page control, status bar, tool bar,
-  progress bar, track bar). }
+  progress bar, track bar) and the rich text editor (rich-edit.md). }
 unit ComCtrls;
 
 interface
 
 uses
-  Windows, Messages, Types, SysUtils, Classes, Graphics, Controls, Forms, ImgList, CommCtrl, Menus, ActnList, UIConsts;
+  Windows, Messages, Types, SysUtils, Classes, Graphics, Controls, Forms, StdCtrls, ImgList, CommCtrl, Menus, ActnList,
+  UIConsts;
 
 type
   TTabPosition = (tpTop, tpBottom, tpLeft, tpRight);
@@ -1025,10 +1026,227 @@ type
     property OnMouseUp;
   end;
 
+  { ---------------------------------------------------------------- rich text editor (rich-edit.md) }
+
+  TCustomRichEdit = class;
+
+  TAttributeType = (atSelected, atDefaultText);
+  TConsistentAttribute = (caBold, caColor, caFace, caItalic, caSize, caStrikeOut, caUnderline, caProtected);
+  TConsistentAttributes = set of TConsistentAttribute;
+
+  { rich-edit.md section 3 (UIF-1320 ... 1323): the character format of the selection or the default one }
+  TTextAttributes = class(TPersistent)
+  private
+    FRichEdit: TCustomRichEdit;
+    FType: TAttributeType;
+    function GetColor: TColor;
+    procedure SetColor(Value: TColor);
+    function GetConsistentAttributes: TConsistentAttributes;
+    function GetName: string;
+    procedure SetName(const Value: string);
+    function GetProtected: Boolean;
+    procedure SetProtected(Value: Boolean);
+    function GetSize: Integer;
+    procedure SetSize(Value: Integer);
+    function GetStyle: TFontStyles;
+    procedure SetStyle(Value: TFontStyles);
+  protected
+    procedure AssignTo(Dest: TPersistent); override;         { a TFont }
+  public
+    constructor Create(AOwner: TCustomRichEdit; AttributeType: TAttributeType);
+    procedure Assign(Source: TPersistent); override;         { TTextAttributes or TFont }
+    property Color: TColor read GetColor write SetColor;
+    property ConsistentAttributes: TConsistentAttributes read GetConsistentAttributes;
+    property Name: string read GetName write SetName;
+    property Protected: Boolean read GetProtected write SetProtected;
+    property Size: Integer read GetSize write SetSize;       { points }
+    property Style: TFontStyles read GetStyle write SetStyle;
+  end;
+
+  TNumberingStyle = (nsNone, nsBullet);
+
+  { rich-edit.md section 4 (UIF-1324): the format of the paragraphs touched by the selection; lengths in points }
+  TParaAttributes = class(TPersistent)
+  private
+    FRichEdit: TCustomRichEdit;
+    function GetAlignment: TAlignment;
+    procedure SetAlignment(Value: TAlignment);
+    function GetFirstIndent: Integer;
+    procedure SetFirstIndent(Value: Integer);
+    function GetLeftIndent: Integer;
+    procedure SetLeftIndent(Value: Integer);
+    function GetNumbering: TNumberingStyle;
+    procedure SetNumbering(Value: TNumberingStyle);
+    function GetRightIndent: Integer;
+    procedure SetRightIndent(Value: Integer);
+    function GetTab(Index: Byte): Integer;
+    procedure SetTab(Index: Byte; Value: Integer);
+    function GetTabCount: Integer;
+    procedure SetTabCount(Value: Integer);
+  public
+    constructor Create(AOwner: TCustomRichEdit);
+    procedure Assign(Source: TPersistent); override;         { TParaAttributes }
+    property Alignment: TAlignment read GetAlignment write SetAlignment;
+    property FirstIndent: Integer read GetFirstIndent write SetFirstIndent;
+    property LeftIndent: Integer read GetLeftIndent write SetLeftIndent;
+    property Numbering: TNumberingStyle read GetNumbering write SetNumbering;
+    property RightIndent: Integer read GetRightIndent write SetRightIndent;
+    property Tab[Index: Byte]: Integer read GetTab write SetTab;
+    property TabCount: Integer read GetTabCount write SetTabCount;
+  end;
+
+  TSearchType = (stWholeWord, stMatchCase);
+  TSearchTypes = set of TSearchType;
+  TRichEditLinkClickEvent = procedure(Sender: TObject; const URL: string) of object;
+  TRichEditProtectChangeEvent = procedure(Sender: TObject; StartPos, EndPos: Integer;
+    var AllowChange: Boolean) of object;
+
+  { UIF-1306: the paragraphs of a rich edit as TStrings; UIF-1325 ... 1330: loading and saving }
+  TRichEditStrings = class(TStrings)
+  private
+    FRichEdit: TCustomRichEdit;
+    FList: TStringList;                                      { the lines while the control has no handle }
+    FSyncing: Boolean;
+    procedure Synchronize;
+    procedure Replace(AStart, ALength: Integer; const S: string);
+  protected
+    function Get(Index: Integer): string; override;
+    function GetCount: Integer; override;
+    procedure Put(Index: Integer; const S: string); override;
+    function GetTextStr: string; override;
+    procedure SetTextStr(const Value: string); override;
+  public
+    destructor Destroy; override;
+    procedure Clear; override;
+    procedure Delete(Index: Integer); override;
+    procedure Insert(Index: Integer; const S: string); override;
+    { PlainText decides: RTF through the engine's stream messages, or the inherited text path; the TEncoding
+      overloads are inherited and always text }
+    procedure LoadFromFile(const FileName: string); overload; override;
+    procedure LoadFromStream(Stream: TStream); overload; override;
+    procedure SaveToFile(const FileName: string); overload; override;
+    procedure SaveToStream(Stream: TStream); overload; override;
+  end;
+
+  { rich-edit.md section 2: a multi-line editor on the rich edit engine of the system (window class RICHEDIT50W) }
+  TCustomRichEdit = class(TCustomMemo)
+  private
+    FAutoURLDetect: Boolean;
+    FPlainText: Boolean;
+    FZoom: Integer;
+    FSavedContent: TMemoryStream;                            { UIF-1304: the RTF of a window that went }
+    FUpdating: Integer;                                      { > 0: the control changes its own content }
+    FInTextChanged: Boolean;
+    FSelAttributes: TTextAttributes;
+    FDefAttributes: TTextAttributes;
+    FParagraph: TParaAttributes;
+    FOnLinkClick: TRichEditLinkClickEvent;
+    FOnProtectChange: TRichEditProtectChangeEvent;
+    FOnSelectionChange: TNotifyEvent;
+    procedure SetAutoURLDetect(Value: Boolean);
+    function GetZoom: Integer;
+    procedure SetZoom(Value: Integer);
+    procedure SetSelAttributes(Value: TTextAttributes);
+    procedure SetDefAttributes(Value: TTextAttributes);
+    procedure SetParagraph(Value: TParaAttributes);
+    function GetCanRedo: Boolean;
+    function EngineText(UseCRLF: Boolean): string;
+    procedure SetEngineText(const S: string);
+    procedure ApplyFont;
+    procedure ApplyZoom;
+    procedure TransferContent(Msg: Cardinal; Format: NativeUInt; Stream: TStream; const FailMessage: string);
+    function LoadRichText(Stream: TStream): Boolean;
+    procedure SaveRichText(Stream: TStream);
+    function ProtectChange(Msg: Cardinal; StartPos, EndPos: Integer): Boolean;
+    procedure LinkClick(Msg: Cardinal; StartPos, EndPos: Integer);
+  protected
+    { UIF-1301: the name the engine library is loaded by (empty = Msftedit.dll); a seam for the load failure test }
+    class var FLibraryName: string;
+  protected
+    function CreateLines: TStrings; override;
+    procedure CreateParams(var Params: TCreateParams); override;
+    { UIF-1300, UIF-1303, UIF-1304: library, then limit, event mask, colour, default format, URL detection, zoom,
+      content, selection and Modified }
+    procedure CreateWnd; override;
+    { UIF-1304: content (RTF unless PlainText) and zoom saved }
+    procedure DestroyWnd; override;
+    { CN_NOTIFY: EN_SELCHANGE, EN_PROTECTED, EN_LINK; colour and font changes; WM_SETFONT never reaches the engine }
+    procedure WndProc(var Message: TMessage); override;
+    procedure Change; override;
+    { UIF-1333: called exactly when OnSelectionChange fires; the base fires it }
+    procedure SelectionChange; virtual;
+    { UIF-1305: engine character positions }
+    function GetSelStart: Integer; override;
+    function GetSelLength: Integer; override;
+    function GetSelText: string; override;
+    procedure SetSelection(AStart, ALength: Integer); override;
+    procedure ApplyHideSelection; override;
+    procedure ApplyMaxLength; override;
+    function GetCaretPos: TPoint; override;
+    procedure SetCaretPos(const Value: TPoint); override;
+    property AutoURLDetect: Boolean read FAutoURLDetect write SetAutoURLDetect default False;
+    property PlainText: Boolean read FPlainText write FPlainText default False;
+    property Zoom: Integer read GetZoom write SetZoom default 100;
+    property OnLinkClick: TRichEditLinkClickEvent read FOnLinkClick write FOnLinkClick;
+    property OnProtectChange: TRichEditProtectChangeEvent read FOnProtectChange write FOnProtectChange;
+    property OnSelectionChange: TNotifyEvent read FOnSelectionChange write FOnSelectionChange;
+  public
+    constructor Create(AOwner: TComponent); override;
+    destructor Destroy; override;
+    { UIF-1335: the position of the first match in StartPos .. StartPos + Length, -1 when there is none }
+    function FindText(const SearchStr: string; StartPos, Length: Integer; Options: TSearchTypes): Integer;
+    procedure Redo;
+    procedure ClearUndo;
+    property CanRedo: Boolean read GetCanRedo;
+    property DefAttributes: TTextAttributes read FDefAttributes write SetDefAttributes;
+    property Paragraph: TParaAttributes read FParagraph write SetParagraph;
+    property SelAttributes: TTextAttributes read FSelAttributes write SetSelAttributes;
+  end;
+
+  TRichEdit = class(TCustomRichEdit)
+  published
+    property Alignment;
+    property AutoURLDetect;
+    property BorderStyle;
+    property Color default clWindow;
+    property Font;
+    property HideSelection;
+    property Lines;
+    property MaxLength;
+    property ParentColor default False;
+    property ParentFont;
+    property PlainText;
+    property ReadOnly;
+    property ScrollBars;
+    property TabOrder;
+    property TabStop default True;
+    property WantReturns;
+    property WantTabs;
+    property WordWrap;
+    property Zoom;
+    property OnChange;
+    property OnClick;
+    property OnContextPopup;
+    property OnDblClick;
+    property OnEnter;
+    property OnExit;
+    property OnKeyDown;
+    property OnKeyPress;
+    property OnKeyUp;
+    property OnLinkClick;
+    property OnMouseDown;
+    property OnMouseEnter;
+    property OnMouseLeave;
+    property OnMouseMove;
+    property OnMouseUp;
+    property OnProtectChange;
+    property OnSelectionChange;
+  end;
+
 implementation
 
 uses
-  RTLConsts;
+  RTLConsts, RichEdit;
 
 type
   TFormAccess = class(TCustomForm);
@@ -4635,7 +4853,1411 @@ begin
   end;
 end;
 
+{ ---------------------------------------------------------------- rich text editor (rich-edit.md) }
+
+const
+  CodePageUtf16 = 1200;
+  NoTextLimit = $7FFFFFF0;                                   { UIF-1310 }
+  RichEditEvents = ENM_CHANGE or ENM_SELCHANGE or ENM_LINK or ENM_PROTECTED;
+  CharStyleMasks: array[TFontStyle] of DWORD = (CFM_BOLD, CFM_ITALIC, CFM_UNDERLINE, CFM_STRIKEOUT);
+
+type
+  { what the stream callbacks of one EM_STREAMIN / EM_STREAMOUT share with their caller (UIF-1329) }
+  PStreamCookie = ^TStreamCookie;
+  TStreamCookie = record
+    Stream: TStream;
+    Failure: TObject;                                        { the exception a callback caught }
+  end;
+
+var
+  RichEditLibrary: HMODULE;                                  { UIF-1300: loaded once, released in the finalization }
+  RichEditWindows: Integer;                                  { windows of the engine that exist }
+
+{ UIF-1300, UIF-1301 }
+procedure LoadRichEditLibrary(const Name: string);
+var
+  Code: DWORD;
+  E: EOSError;
+begin
+  if RichEditLibrary <> 0 then
+    Exit;
+  RichEditLibrary := LoadLibraryExW(PChar(Name), 0, LOAD_LIBRARY_SEARCH_SYSTEM32);
+  if RichEditLibrary = 0 then
+  begin
+    Code := GetLastError;
+    E := EOSError.Create(SRichEditLibrary + ': ' + SysErrorMessage(Code));
+    E.ErrorCode := Code;
+    raise E;
+  end;
+end;
+
+{ UIF-1329: an exception never crosses the system call }
+function StreamReadCallback(dwCookie: NativeUInt; pbBuff: PByte; cb: Longint; var pcb: Longint): DWORD; stdcall;
+var
+  C: PStreamCookie;
+begin
+  C := PStreamCookie(dwCookie);
+  Result := 0;
+  pcb := 0;
+  try
+    pcb := C^.Stream.Read(pbBuff^, cb);
+  except
+    C^.Failure := TObject(AcquireExceptionObject);
+    Result := 1;
+  end;
+end;
+
+function StreamWriteCallback(dwCookie: NativeUInt; pbBuff: PByte; cb: Longint; var pcb: Longint): DWORD; stdcall;
+var
+  C: PStreamCookie;
+begin
+  C := PStreamCookie(dwCookie);
+  Result := 0;
+  pcb := 0;
+  try
+    pcb := C^.Stream.Write(pbBuff^, cb);
+  except
+    C^.Failure := TObject(AcquireExceptionObject);
+    Result := 1;
+  end;
+end;
+
+{ the text of TStrings for a control text: a trailing line break added (RTL-420) }
+function RichLinesText(const S: string): string;
+begin
+  if S = '' then
+    Result := ''
+  else
+    Result := S + #13#10;
+end;
+
+{ paragraphs of an engine text (separated by one CR): the empty text has none }
+function ParagraphCount(const S: string): Integer;
+var
+  I: Integer;
+begin
+  if S = '' then
+  begin
+    Result := 0;
+    Exit;
+  end;
+  Result := 1;
+  for I := 1 to Length(S) do
+    if S[I] = #13 then
+      Inc(Result);
+end;
+
+{ engine position of the first character of paragraph Index (0 <= Index < ParagraphCount(S)) }
+function ParagraphStart(const S: string; Index: Integer): Integer;
+var
+  I: Integer;
+begin
+  Result := 0;
+  I := 1;
+  while (Index > 0) and (I <= Length(S)) do
+  begin
+    if S[I] = #13 then
+    begin
+      Dec(Index);
+      Result := I;
+    end;
+    Inc(I);
+  end;
+end;
+
+{ engine position just after the last character of paragraph Index (before its CR) }
+function ParagraphEnd(const S: string; Index: Integer): Integer;
+var
+  I: Integer;
+begin
+  I := ParagraphStart(S, Index) + 1;
+  while (I <= Length(S)) and (S[I] <> #13) do
+    Inc(I);
+  Result := I - 1;
+end;
+
+{ ---------------------------------------------------------------- TTextAttributes }
+
+{ the character format of the attribute's scope; False without a window (Format is then empty). UIF-1322: for a
+  mixed selection the engine reports the values at the end of the selection, so the values are read again from
+  the first character; dwMask stays the one of the whole selection }
+function ReadCharFormat(A: TTextAttributes; var Format: TCharFormat2W): Boolean;
+const
+  Members = CFM_BOLD or CFM_ITALIC or CFM_UNDERLINE or CFM_STRIKEOUT or CFM_PROTECTED or CFM_SIZE or CFM_COLOR
+    or CFM_FACE;
+var
+  H: HWND;
+  Sel, First: TCharRange;
+  Mask: DWORD;
+begin
+  FillChar(Format, SizeOf(Format), 0);
+  Format.cbSize := SizeOf(Format);
+  Result := A.FRichEdit.HandleAllocated;
+  if not Result then
+    Exit;
+  H := A.FRichEdit.Handle;
+  if A.FType = atDefaultText then
+  begin
+    SendMessageW(H, EM_GETCHARFORMAT, SCF_DEFAULT, LPARAM(@Format));
+    Exit;
+  end;
+  SendMessageW(H, EM_GETCHARFORMAT, SCF_SELECTION, LPARAM(@Format));
+  if (Format.dwMask and Members) = Members then
+    Exit;
+  Mask := Format.dwMask;
+  SendMessageW(H, EM_EXGETSEL, 0, LPARAM(@Sel));
+  First.cpMin := Sel.cpMin;
+  First.cpMax := Sel.cpMin + 1;
+  Inc(A.FRichEdit.FUpdating);                                { no OnSelectionChange for the two moves }
+  try
+    SendMessageW(H, EM_EXSETSEL, 0, LPARAM(@First));
+    SendMessageW(H, EM_GETCHARFORMAT, SCF_SELECTION, LPARAM(@Format));
+    SendMessageW(H, EM_EXSETSEL, 0, LPARAM(@Sel));
+  finally
+    Dec(A.FRichEdit.FUpdating);
+  end;
+  Format.dwMask := Mask;
+end;
+
+{ sends the members named by Mask; never called without a window }
+procedure WriteCharFormat(A: TTextAttributes; var Format: TCharFormat2W; Mask: DWORD);
+begin
+  Format.cbSize := SizeOf(Format);
+  Format.dwMask := Mask;
+  if A.FType = atSelected then
+    SendMessageW(A.FRichEdit.Handle, EM_SETCHARFORMAT, SCF_SELECTION, LPARAM(@Format))
+  else
+    SendMessageW(A.FRichEdit.Handle, EM_SETCHARFORMAT, SCF_DEFAULT, LPARAM(@Format));
+end;
+
+{ UIF-1321: the members of a character format that a TFont carries; returns their mask }
+function FontToCharFormat(Font: TFont; var Format: TCharFormat2W): DWORD;
+var
+  S: string;
+  I: Integer;
+  St: TFontStyle;
+begin
+  FillChar(Format, SizeOf(Format), 0);
+  Format.cbSize := SizeOf(Format);
+  S := Font.Name;
+  if Length(S) > LF_FACESIZE - 1 then
+    SetLength(S, LF_FACESIZE - 1);
+  for I := 1 to Length(S) do
+    Format.szFaceName[I - 1] := S[I];
+  Format.yHeight := Font.Size * 20;
+  for St := Low(TFontStyle) to High(TFontStyle) do
+    if St in Font.Style then
+      Format.dwEffects := Format.dwEffects or CharStyleMasks[St];
+  if (Font.Color = clWindowText) or (Font.Color = clDefault) then
+    Format.dwEffects := Format.dwEffects or CFE_AUTOCOLOR
+  else
+    Format.crTextColor := COLORREF(ColorToRGB(Font.Color));
+  Result := CFM_FACE or CFM_SIZE or CFM_BOLD or CFM_ITALIC or CFM_UNDERLINE or CFM_STRIKEOUT or CFM_COLOR;
+end;
+
+constructor TTextAttributes.Create(AOwner: TCustomRichEdit; AttributeType: TAttributeType);
+begin
+  inherited Create;
+  FRichEdit := AOwner;
+  FType := AttributeType;
+end;
+
+function TTextAttributes.GetColor: TColor;
+var
+  F: TCharFormat2W;
+begin
+  if not ReadCharFormat(Self, F) then
+    Result := FRichEdit.Font.Color
+  else if (F.dwEffects and CFE_AUTOCOLOR) <> 0 then
+    Result := clWindowText
+  else
+    Result := TColor(F.crTextColor);
+end;
+
+procedure TTextAttributes.SetColor(Value: TColor);
+var
+  F: TCharFormat2W;
+begin
+  if not FRichEdit.HandleAllocated then
+  begin
+    if FType = atDefaultText then
+      FRichEdit.Font.Color := Value;
+    Exit;
+  end;
+  FillChar(F, SizeOf(F), 0);
+  if (Value = clWindowText) or (Value = clDefault) then
+    F.dwEffects := CFE_AUTOCOLOR
+  else
+    F.crTextColor := COLORREF(ColorToRGB(Value));
+  WriteCharFormat(Self, F, CFM_COLOR);
+end;
+
+{ UIF-1322 }
+function TTextAttributes.GetConsistentAttributes: TConsistentAttributes;
+var
+  F: TCharFormat2W;
+begin
+  Result := [caBold, caColor, caFace, caItalic, caSize, caStrikeOut, caUnderline, caProtected];
+  if (FType = atDefaultText) or not ReadCharFormat(Self, F) then
+    Exit;
+  Result := [];
+  if (F.dwMask and CFM_BOLD) <> 0 then
+    Include(Result, caBold);
+  if (F.dwMask and CFM_COLOR) <> 0 then
+    Include(Result, caColor);
+  if (F.dwMask and CFM_FACE) <> 0 then
+    Include(Result, caFace);
+  if (F.dwMask and CFM_ITALIC) <> 0 then
+    Include(Result, caItalic);
+  if (F.dwMask and CFM_SIZE) <> 0 then
+    Include(Result, caSize);
+  if (F.dwMask and CFM_STRIKEOUT) <> 0 then
+    Include(Result, caStrikeOut);
+  if (F.dwMask and CFM_UNDERLINE) <> 0 then
+    Include(Result, caUnderline);
+  if (F.dwMask and CFM_PROTECTED) <> 0 then
+    Include(Result, caProtected);
+end;
+
+function TTextAttributes.GetName: string;
+var
+  F: TCharFormat2W;
+begin
+  if ReadCharFormat(Self, F) then
+    Result := PChar(@F.szFaceName[0])
+  else
+    Result := FRichEdit.Font.Name;
+end;
+
+procedure TTextAttributes.SetName(const Value: string);
+var
+  F: TCharFormat2W;
+  I, N: Integer;
+begin
+  if not FRichEdit.HandleAllocated then
+  begin
+    if FType = atDefaultText then
+      FRichEdit.Font.Name := Value;
+    Exit;
+  end;
+  FillChar(F, SizeOf(F), 0);
+  N := Length(Value);
+  if N > LF_FACESIZE - 1 then
+    N := LF_FACESIZE - 1;
+  for I := 1 to N do
+    F.szFaceName[I - 1] := Value[I];
+  WriteCharFormat(Self, F, CFM_FACE);
+end;
+
+function TTextAttributes.GetProtected: Boolean;
+var
+  F: TCharFormat2W;
+begin
+  Result := ReadCharFormat(Self, F) and ((F.dwEffects and CFE_PROTECTED) <> 0);
+end;
+
+procedure TTextAttributes.SetProtected(Value: Boolean);
+var
+  F: TCharFormat2W;
+begin
+  if not FRichEdit.HandleAllocated then
+    Exit;
+  FillChar(F, SizeOf(F), 0);
+  if Value then
+    F.dwEffects := CFE_PROTECTED;
+  WriteCharFormat(Self, F, CFM_PROTECTED);
+end;
+
+function TTextAttributes.GetSize: Integer;
+var
+  F: TCharFormat2W;
+begin
+  if ReadCharFormat(Self, F) then
+    Result := (F.yHeight + 10) div 20
+  else
+    Result := FRichEdit.Font.Size;
+end;
+
+procedure TTextAttributes.SetSize(Value: Integer);
+var
+  F: TCharFormat2W;
+begin
+  if not FRichEdit.HandleAllocated then
+  begin
+    if FType = atDefaultText then
+      FRichEdit.Font.Size := Value;
+    Exit;
+  end;
+  FillChar(F, SizeOf(F), 0);
+  F.yHeight := Value * 20;
+  WriteCharFormat(Self, F, CFM_SIZE);
+end;
+
+function TTextAttributes.GetStyle: TFontStyles;
+var
+  F: TCharFormat2W;
+  St: TFontStyle;
+begin
+  if not ReadCharFormat(Self, F) then
+  begin
+    Result := FRichEdit.Font.Style;
+    Exit;
+  end;
+  Result := [];
+  for St := Low(TFontStyle) to High(TFontStyle) do
+    if (F.dwEffects and CharStyleMasks[St]) <> 0 then
+      Include(Result, St);
+end;
+
+procedure TTextAttributes.SetStyle(Value: TFontStyles);
+var
+  F: TCharFormat2W;
+  St: TFontStyle;
+begin
+  if not FRichEdit.HandleAllocated then
+  begin
+    if FType = atDefaultText then
+      FRichEdit.Font.Style := Value;
+    Exit;
+  end;
+  FillChar(F, SizeOf(F), 0);
+  for St := Low(TFontStyle) to High(TFontStyle) do
+    if St in Value then
+      F.dwEffects := F.dwEffects or CharStyleMasks[St];
+  WriteCharFormat(Self, F, CFM_BOLD or CFM_ITALIC or CFM_UNDERLINE or CFM_STRIKEOUT);
+end;
+
+procedure TTextAttributes.Assign(Source: TPersistent);
+var
+  F: TCharFormat2W;
+  Mask: DWORD;
+begin
+  if Source is TTextAttributes then
+  begin
+    Color := TTextAttributes(Source).Color;
+    Name := TTextAttributes(Source).Name;
+    Size := TTextAttributes(Source).Size;
+    Style := TTextAttributes(Source).Style;
+    Protected := TTextAttributes(Source).Protected;
+  end
+  else if Source is TFont then
+  begin
+    if FRichEdit.HandleAllocated then
+    begin
+      Mask := FontToCharFormat(TFont(Source), F);
+      WriteCharFormat(Self, F, Mask);
+    end
+    else if (FType = atDefaultText) and (Source <> FRichEdit.Font) then
+      FRichEdit.Font.Assign(Source);
+  end
+  else
+    inherited Assign(Source);
+end;
+
+procedure TTextAttributes.AssignTo(Dest: TPersistent);
+begin
+  if Dest is TFont then
+  begin
+    TFont(Dest).Color := Color;
+    TFont(Dest).Name := Name;
+    TFont(Dest).Size := Size;
+    TFont(Dest).Style := Style;
+  end
+  else
+    inherited AssignTo(Dest);
+end;
+
+{ ---------------------------------------------------------------- TParaAttributes }
+
+{ the paragraph format of the selection; False without a window (Format is then empty) }
+function ReadParaFormat(A: TParaAttributes; var Format: TParaFormat2): Boolean;
+begin
+  FillChar(Format, SizeOf(Format), 0);
+  Format.cbSize := SizeOf(Format);
+  Result := A.FRichEdit.HandleAllocated;
+  if Result then
+    SendMessageW(A.FRichEdit.Handle, EM_GETPARAFORMAT, 0, LPARAM(@Format));
+end;
+
+{ sends the members named by Mask; never called without a window }
+procedure WriteParaFormat(A: TParaAttributes; var Format: TParaFormat2; Mask: DWORD);
+begin
+  Format.cbSize := SizeOf(Format);
+  Format.dwMask := Mask;
+  SendMessageW(A.FRichEdit.Handle, EM_SETPARAFORMAT, 0, LPARAM(@Format));
+end;
+
+constructor TParaAttributes.Create(AOwner: TCustomRichEdit);
+begin
+  inherited Create;
+  FRichEdit := AOwner;
+end;
+
+function TParaAttributes.GetAlignment: TAlignment;
+var
+  F: TParaFormat2;
+begin
+  Result := taLeftJustify;
+  if ReadParaFormat(Self, F) then
+    case F.wAlignment of
+      PFA_RIGHT: Result := taRightJustify;
+      PFA_CENTER: Result := taCenter;
+    end;
+end;
+
+procedure TParaAttributes.SetAlignment(Value: TAlignment);
+const
+  Alignments: array[TAlignment] of Word = (PFA_LEFT, PFA_RIGHT, PFA_CENTER);
+var
+  F: TParaFormat2;
+begin
+  if not FRichEdit.HandleAllocated then
+    Exit;
+  FillChar(F, SizeOf(F), 0);
+  F.wAlignment := Alignments[Value];
+  WriteParaFormat(Self, F, PFM_ALIGNMENT);
+end;
+
+function TParaAttributes.GetFirstIndent: Integer;
+var
+  F: TParaFormat2;
+begin
+  ReadParaFormat(Self, F);
+  Result := F.dxStartIndent div 20;
+end;
+
+procedure TParaAttributes.SetFirstIndent(Value: Integer);
+var
+  F: TParaFormat2;
+begin
+  if not FRichEdit.HandleAllocated then
+    Exit;
+  FillChar(F, SizeOf(F), 0);
+  F.dxStartIndent := Value * 20;
+  WriteParaFormat(Self, F, PFM_STARTINDENT);
+end;
+
+function TParaAttributes.GetLeftIndent: Integer;
+var
+  F: TParaFormat2;
+begin
+  ReadParaFormat(Self, F);
+  Result := F.dxOffset div 20;
+end;
+
+procedure TParaAttributes.SetLeftIndent(Value: Integer);
+var
+  F: TParaFormat2;
+begin
+  if not FRichEdit.HandleAllocated then
+    Exit;
+  FillChar(F, SizeOf(F), 0);
+  F.dxOffset := Value * 20;
+  WriteParaFormat(Self, F, PFM_OFFSET);
+end;
+
+function TParaAttributes.GetNumbering: TNumberingStyle;
+var
+  F: TParaFormat2;
+begin
+  ReadParaFormat(Self, F);
+  if F.wNumbering = 0 then
+    Result := nsNone
+  else
+    Result := nsBullet;
+end;
+
+procedure TParaAttributes.SetNumbering(Value: TNumberingStyle);
+var
+  F: TParaFormat2;
+begin
+  if not FRichEdit.HandleAllocated then
+    Exit;
+  FillChar(F, SizeOf(F), 0);
+  if Value = nsBullet then
+    F.wNumbering := PFN_BULLET;
+  WriteParaFormat(Self, F, PFM_NUMBERING);
+end;
+
+function TParaAttributes.GetRightIndent: Integer;
+var
+  F: TParaFormat2;
+begin
+  ReadParaFormat(Self, F);
+  Result := F.dxRightIndent div 20;
+end;
+
+procedure TParaAttributes.SetRightIndent(Value: Integer);
+var
+  F: TParaFormat2;
+begin
+  if not FRichEdit.HandleAllocated then
+    Exit;
+  FillChar(F, SizeOf(F), 0);
+  F.dxRightIndent := Value * 20;
+  WriteParaFormat(Self, F, PFM_RIGHTINDENT);
+end;
+
+{ the low 24 bits of a tab entry are its position; the rest is alignment and leader }
+function TParaAttributes.GetTab(Index: Byte): Integer;
+var
+  F: TParaFormat2;
+begin
+  ReadParaFormat(Self, F);
+  if Index < F.cTabCount then
+    Result := (F.rgxTabs[Index] and $FFFFFF) div 20
+  else
+    Result := 0;
+end;
+
+procedure TParaAttributes.SetTab(Index: Byte; Value: Integer);
+var
+  F: TParaFormat2;
+begin
+  if (Index >= MAX_TAB_STOPS) or not ReadParaFormat(Self, F) then
+    Exit;
+  F.rgxTabs[Index] := Value * 20;
+  if F.cTabCount < Index + 1 then
+    F.cTabCount := Index + 1;
+  WriteParaFormat(Self, F, PFM_TABSTOPS);
+end;
+
+function TParaAttributes.GetTabCount: Integer;
+var
+  F: TParaFormat2;
+begin
+  ReadParaFormat(Self, F);
+  Result := F.cTabCount;
+end;
+
+procedure TParaAttributes.SetTabCount(Value: Integer);
+var
+  F: TParaFormat2;
+begin
+  if not ReadParaFormat(Self, F) then
+    Exit;
+  if Value < 0 then
+    Value := 0;
+  if Value > MAX_TAB_STOPS then
+    Value := MAX_TAB_STOPS;
+  F.cTabCount := SmallInt(Value);
+  WriteParaFormat(Self, F, PFM_TABSTOPS);
+end;
+
+procedure TParaAttributes.Assign(Source: TPersistent);
+var
+  S: TParaAttributes;
+  I: Integer;
+begin
+  if Source is TParaAttributes then
+  begin
+    S := TParaAttributes(Source);
+    Alignment := S.Alignment;
+    FirstIndent := S.FirstIndent;
+    LeftIndent := S.LeftIndent;
+    RightIndent := S.RightIndent;
+    Numbering := S.Numbering;
+    TabCount := 0;
+    for I := 0 to S.TabCount - 1 do
+      Tab[Byte(I)] := S.Tab[Byte(I)];
+  end
+  else
+    inherited Assign(Source);
+end;
+
+{ ---------------------------------------------------------------- TRichEditStrings }
+
+destructor TRichEditStrings.Destroy;
+begin
+  FList.Free;
+  inherited Destroy;
+end;
+
+{ the handle-less list became the control's text }
+procedure TRichEditStrings.Synchronize;
+var
+  S: string;
+begin
+  S := FList.Text;
+  if (Length(S) >= 2) and (Copy(S, Length(S) - 1, 2) = #13#10) then
+    SetLength(S, Length(S) - 2);
+  FSyncing := True;
+  try
+    FRichEdit.Text := S;
+  finally
+    FSyncing := False;
+  end;
+end;
+
+{ handle: EM_EXSETSEL + EM_REPLACESEL (engine positions); never called without one }
+procedure TRichEditStrings.Replace(AStart, ALength: Integer; const S: string);
+begin
+  FRichEdit.SetSelection(AStart, ALength);
+  SendMessageW(FRichEdit.Handle, EM_REPLACESEL, 0, LPARAM(PChar(S)));
+end;
+
+function TRichEditStrings.Get(Index: Integer): string;
+var
+  S: string;
+begin
+  if not FRichEdit.HandleAllocated then
+  begin
+    Result := FList[Index];
+    Exit;
+  end;
+  S := FRichEdit.EngineText(False);
+  if (Index < 0) or (Index >= ParagraphCount(S)) then
+    Error(SListIndexError, Index);
+  Result := Copy(S, ParagraphStart(S, Index) + 1, ParagraphEnd(S, Index) - ParagraphStart(S, Index));
+end;
+
+function TRichEditStrings.GetCount: Integer;
+begin
+  if FRichEdit.HandleAllocated then
+    Result := ParagraphCount(FRichEdit.EngineText(False))
+  else
+    Result := FList.Count;
+end;
+
+procedure TRichEditStrings.Put(Index: Integer; const S: string);
+var
+  T: string;
+begin
+  if not FRichEdit.HandleAllocated then
+  begin
+    FList[Index] := S;
+    Synchronize;
+    Exit;
+  end;
+  T := FRichEdit.EngineText(False);
+  if (Index < 0) or (Index >= ParagraphCount(T)) then
+    Error(SListIndexError, Index);
+  Replace(ParagraphStart(T, Index), ParagraphEnd(T, Index) - ParagraphStart(T, Index), S);
+end;
+
+procedure TRichEditStrings.Insert(Index: Integer; const S: string);
+var
+  T: string;
+  N: Integer;
+begin
+  if not FRichEdit.HandleAllocated then
+  begin
+    FList.Insert(Index, S);
+    Synchronize;
+    Exit;
+  end;
+  T := FRichEdit.EngineText(False);
+  N := ParagraphCount(T);
+  if (Index < 0) or (Index > N) then
+    Error(SListIndexError, Index);
+  if N = 0 then
+    Replace(0, 0, S)
+  else if Index < N then
+    Replace(ParagraphStart(T, Index), 0, S + #13)
+  else
+    Replace(Length(T), 0, #13 + S);
+end;
+
+procedure TRichEditStrings.Delete(Index: Integer);
+var
+  T: string;
+  N, A: Integer;
+begin
+  if not FRichEdit.HandleAllocated then
+  begin
+    FList.Delete(Index);
+    Synchronize;
+    Exit;
+  end;
+  T := FRichEdit.EngineText(False);
+  N := ParagraphCount(T);
+  if (Index < 0) or (Index >= N) then
+    Error(SListIndexError, Index);
+  if N = 1 then
+    Replace(0, Length(T), '')
+  else if Index < N - 1 then
+  begin
+    A := ParagraphStart(T, Index);
+    Replace(A, ParagraphStart(T, Index + 1) - A, '');
+  end
+  else
+  begin
+    A := ParagraphEnd(T, Index - 1);
+    Replace(A, Length(T) - A, '');
+  end;
+end;
+
+procedure TRichEditStrings.Clear;
+begin
+  if not FRichEdit.HandleAllocated then
+  begin
+    FList.Clear;
+    Synchronize;
+  end
+  else
+    FRichEdit.SetEngineText('');
+end;
+
+{ one EM_GETTEXTEX with GT_USECRLF }
+function TRichEditStrings.GetTextStr: string;
+begin
+  if FRichEdit.HandleAllocated then
+    Result := RichLinesText(FRichEdit.EngineText(True))
+  else
+    Result := FList.Text;
+end;
+
+{ one EM_SETTEXTEX; a trailing line break is removed (RTL-420) }
+procedure TRichEditStrings.SetTextStr(const Value: string);
+var
+  S: string;
+begin
+  if not FRichEdit.HandleAllocated then
+  begin
+    FList.Text := Value;
+    Synchronize;
+    Exit;
+  end;
+  S := Value;
+  if (Length(S) >= 2) and (S[Length(S) - 1] = #13) and (S[Length(S)] = #10) then
+    SetLength(S, Length(S) - 2);
+  FRichEdit.SetEngineText(S);
+end;
+
+procedure TRichEditStrings.LoadFromFile(const FileName: string);
+var
+  S: TFileStream;
+begin
+  S := TFileStream.Create(FileName, fmOpenRead or fmShareDenyWrite);
+  try
+    LoadFromStream(S);
+  finally
+    S.Free;
+  end;
+end;
+
+{ UIF-1325, UIF-1326, UIF-1328 }
+procedure TRichEditStrings.LoadFromStream(Stream: TStream);
+begin
+  if FRichEdit.FPlainText or not FRichEdit.LoadRichText(Stream) then
+    inherited LoadFromStream(Stream);
+end;
+
+procedure TRichEditStrings.SaveToFile(const FileName: string);
+var
+  S: TFileStream;
+begin
+  S := TFileStream.Create(FileName, fmCreate);
+  try
+    SaveToStream(S);
+  finally
+    S.Free;
+  end;
+end;
+
+{ UIF-1325, UIF-1327, UIF-1328 }
+procedure TRichEditStrings.SaveToStream(Stream: TStream);
+begin
+  if FRichEdit.FPlainText then
+    inherited SaveToStream(Stream)
+  else
+    FRichEdit.SaveRichText(Stream);
+end;
+
+{ ---------------------------------------------------------------- TCustomRichEdit }
+
+constructor TCustomRichEdit.Create(AOwner: TComponent);
+begin
+  inherited Create(AOwner);
+  FZoom := 100;
+  AutoSelect := False;
+  FSelAttributes := TTextAttributes.Create(Self, atSelected);
+  FDefAttributes := TTextAttributes.Create(Self, atDefaultText);
+  FParagraph := TParaAttributes.Create(Self);
+end;
+
+destructor TCustomRichEdit.Destroy;
+begin
+  inherited Destroy;
+  FSavedContent.Free;
+  FParagraph.Free;
+  FDefAttributes.Free;
+  FSelAttributes.Free;
+end;
+
+function TCustomRichEdit.CreateLines: TStrings;
+var
+  L: TRichEditStrings;
+begin
+  L := TRichEditStrings.Create;
+  L.FRichEdit := Self;
+  L.FList := TStringList.Create;
+  Result := L;
+end;
+
+{ the styles of the multi-line edit apply unchanged; the content is pushed by CreateWnd, not as the window text }
+procedure TCustomRichEdit.CreateParams(var Params: TCreateParams);
+begin
+  inherited CreateParams(Params);
+  Params.SubclassOf := MSFTEDIT_CLASS;
+  Params.Caption := nil;
+end;
+
+procedure TCustomRichEdit.CreateWnd;
+var
+  Plain: string;
+  S, L, Z: Integer;
+  M: Boolean;
+begin
+  if FLibraryName = '' then
+    LoadRichEditLibrary(MSFTEDIT_DLL)
+  else
+    LoadRichEditLibrary(FLibraryName);
+  Plain := Text;
+  S := SelStart;
+  L := SelLength;
+  M := Modified;
+  Z := FZoom;
+  inherited CreateWnd;
+  Inc(RichEditWindows);
+  ApplyMaxLength;
+  SendMessageW(Handle, EM_SETEVENTMASK, 0, RichEditEvents);
+  SendMessageW(Handle, EM_SETBKGNDCOLOR, 0, LPARAM(ColorToRGB(Color)));
+  ApplyFont;
+  SendMessageW(Handle, EM_AUTOURLDETECT, WPARAM(Ord(FAutoURLDetect)), 0);
+  if FSavedContent <> nil then
+    try
+      FSavedContent.Position := 0;
+      TransferContent(EM_STREAMIN, SF_RTF, FSavedContent, SRichEditLoadFail);
+    finally
+      FreeAndNil(FSavedContent);
+    end
+  else if Plain <> '' then
+    SetEngineText(Plain);
+  TRichEditStrings(Lines).FList.Clear;
+  { after the content: the engine drops its zoom when the whole text is replaced }
+  FZoom := Z;
+  ApplyZoom;
+  SetSelection(S, L);
+  SendMessageW(Handle, EM_SETMODIFY, WPARAM(Ord(M)), 0);
+  SendMessageW(Handle, EM_EMPTYUNDOBUFFER, 0, 0);
+end;
+
+procedure TCustomRichEdit.DestroyWnd;
+begin
+  FZoom := GetZoom;
+  FreeAndNil(FSavedContent);
+  if not FPlainText and not (csDestroying in ComponentState) then
+  begin
+    FSavedContent := TMemoryStream.Create;
+    TransferContent(EM_STREAMOUT, SF_RTF, FSavedContent, SRichEditSaveFail);
+  end;
+  inherited DestroyWnd;
+  Dec(RichEditWindows);
+  TRichEditStrings(Lines).FList.Text := RichLinesText(Text);
+end;
+
+procedure TCustomRichEdit.WndProc(var Message: TMessage);
+var
+  Protect: PENProtected;
+  Link: PENLink;
+begin
+  case Message.Msg of
+    CN_NOTIFY:
+      case PNMHdr(Message.LParam)^.code of
+        EN_SELCHANGE:
+          begin
+            SelectionChange;
+            Message.Result := 0;
+          end;
+        EN_PROTECTED:
+          begin
+            Protect := PENProtected(Message.LParam);
+            Message.Result := Ord(not ProtectChange(Protect^.msg, Protect^.chrg.cpMin, Protect^.chrg.cpMax));
+          end;
+        EN_LINK:
+          begin
+            Link := PENLink(Message.LParam);
+            LinkClick(Link^.msg, Link^.chrg.cpMin, Link^.chrg.cpMax);
+            Message.Result := 0;
+          end;
+      else
+        inherited WndProc(Message);
+      end;
+    { UIF-1321: the font reaches the engine as its default character format only }
+    WM_SETFONT:
+      Message.Result := 0;
+    { UIF-1334: the engine drops its zoom when the whole content is replaced; the control keeps it }
+    WM_SETTEXT, EM_SETTEXTEX, EM_STREAMIN:
+      if HandleAllocated and not (csCreating in ControlState) then
+      begin
+        GetZoom;
+        inherited WndProc(Message);
+        if FZoom <> 100 then
+          ApplyZoom;
+      end
+      else
+        inherited WndProc(Message);
+    CM_FONTCHANGED:
+      begin
+        inherited WndProc(Message);
+        if HandleAllocated then
+          ApplyFont;
+      end;
+    { UIF-1311: the engine does not ask for its colours }
+    CM_COLORCHANGED:
+      begin
+        inherited WndProc(Message);
+        if HandleAllocated then
+          SendMessageW(Handle, EM_SETBKGNDCOLOR, 0, LPARAM(ColorToRGB(Color)));
+      end;
+    CM_TEXTCHANGED:
+      begin
+        if not HandleAllocated then
+        begin
+          { UIF-1304: text assigned without a window replaces what the last window left }
+          FreeAndNil(FSavedContent);
+          if not TRichEditStrings(Lines).FSyncing then
+            TRichEditStrings(Lines).FList.Text := RichLinesText(Text);
+        end;
+        { with a window the engine has reported the change (EN_CHANGE) }
+        FInTextChanged := True;
+        try
+          inherited WndProc(Message);
+        finally
+          FInTextChanged := False;
+        end;
+      end;
+  else
+    inherited WndProc(Message);
+  end;
+end;
+
+procedure TCustomRichEdit.Change;
+begin
+  if (FUpdating > 0) or (FInTextChanged and HandleAllocated) then
+    Exit;
+  inherited Change;
+end;
+
+{ UIF-1333 }
+procedure TCustomRichEdit.SelectionChange;
+begin
+  if (FUpdating > 0) or (csLoading in ComponentState) or (csCreating in ControlState) then
+    Exit;
+  if Assigned(FOnSelectionChange) then
+    FOnSelectionChange(Self);
+end;
+
+{ UIF-1333: True = the change is carried out. The control's own whole-content operations and format changes
+  (they change no text) are never refused }
+function TCustomRichEdit.ProtectChange(Msg: Cardinal; StartPos, EndPos: Integer): Boolean;
+begin
+  Result := (FUpdating > 0) or (csLoading in ComponentState) or (csCreating in ControlState)
+    or (Msg = EM_SETCHARFORMAT) or (Msg = EM_SETPARAFORMAT) or (Msg = WM_COPY);
+  if not Result and Assigned(FOnProtectChange) then
+    FOnProtectChange(Self, StartPos, EndPos, Result);
+end;
+
+{ UIF-1332 }
+procedure TCustomRichEdit.LinkClick(Msg: Cardinal; StartPos, EndPos: Integer);
+var
+  Range: TTextRangeW;
+  URL: string;
+  N: Integer;
+begin
+  if (Msg <> WM_LBUTTONUP) or (EndPos <= StartPos) or not Assigned(FOnLinkClick)
+    or (csLoading in ComponentState) or (csCreating in ControlState) then
+    Exit;
+  SetLength(URL, EndPos - StartPos + 1);
+  Range.chrg.cpMin := StartPos;
+  Range.chrg.cpMax := EndPos;
+  Range.lpstrText := PChar(URL);
+  N := Integer(SendMessageW(Handle, EM_GETTEXTRANGE, 0, LPARAM(@Range)));
+  SetLength(URL, N);
+  FOnLinkClick(Self, URL);
+end;
+
+{ the whole text: paragraphs separated by CR LF, or by the single CR of the engine's positions }
+function TCustomRichEdit.EngineText(UseCRLF: Boolean): string;
+var
+  LenEx: TGetTextLengthEx;
+  GetEx: TGetTextEx;
+  N: Integer;
+begin
+  LenEx.flags := GTL_NUMCHARS;
+  if UseCRLF then
+    LenEx.flags := LenEx.flags or GTL_USECRLF;
+  LenEx.codepage := CodePageUtf16;
+  N := Integer(SendMessageW(Handle, EM_GETTEXTLENGTHEX, WPARAM(@LenEx), 0));
+  if N <= 0 then
+  begin
+    Result := '';
+    Exit;
+  end;
+  SetLength(Result, N);
+  FillChar(GetEx, SizeOf(GetEx), 0);
+  GetEx.cb := DWORD((N + 1) * SizeOf(Char));
+  if UseCRLF then
+    GetEx.flags := GT_USECRLF
+  else
+    GetEx.flags := GT_DEFAULT;
+  GetEx.codepage := CodePageUtf16;
+  N := Integer(SendMessageW(Handle, EM_GETTEXTEX, WPARAM(@GetEx), LPARAM(PChar(Result))));
+  SetLength(Result, N);
+end;
+
+{ UIF-1306: one EM_SETTEXTEX replaces the whole content (UTF-16). The engine would read a text that starts like
+  an RTF document as RTF, also in UTF-16; such a text goes through WM_SETTEXT, which never does (UIF-1309) }
+procedure TCustomRichEdit.SetEngineText(const S: string);
+var
+  SetEx: TSetTextEx;
+begin
+  if (Length(S) >= 2) and (S[1] = '{') and (S[2] = '\') then
+    SendMessageW(Handle, WM_SETTEXT, 0, LPARAM(PChar(S)))
+  else
+  begin
+    SetEx.flags := ST_DEFAULT;
+    SetEx.codepage := CodePageUtf16;
+    SendMessageW(Handle, EM_SETTEXTEX, WPARAM(@SetEx), LPARAM(PChar(S)));
+  end;
+end;
+
+{ UIF-1321: the control's font is the default character format; with PlainText it is the format of all text }
+procedure TCustomRichEdit.ApplyFont;
+var
+  F: TCharFormat2W;
+begin
+  F.dwMask := FontToCharFormat(Font, F);
+  SendMessageW(Handle, EM_SETCHARFORMAT, SCF_DEFAULT, LPARAM(@F));
+  if FPlainText then
+    SendMessageW(Handle, EM_SETCHARFORMAT, SCF_ALL, LPARAM(@F));
+end;
+
+{ UIF-1334 }
+procedure TCustomRichEdit.ApplyZoom;
+begin
+  if FZoom = 100 then
+    SendMessageW(Handle, EM_SETZOOM, 0, 0)
+  else
+    SendMessageW(Handle, EM_SETZOOM, WPARAM(FZoom), 100);
+end;
+
+{ UIF-1329: EM_STREAMIN / EM_STREAMOUT with the callbacks; a caught exception is raised again here }
+procedure TCustomRichEdit.TransferContent(Msg: Cardinal; Format: NativeUInt; Stream: TStream;
+  const FailMessage: string);
+var
+  ES: TEditStream;
+  Cookie: TStreamCookie;
+begin
+  Cookie.Stream := Stream;
+  Cookie.Failure := nil;
+  ES.dwCookie := DWORD_PTR(@Cookie);
+  ES.dwError := 0;
+  if Msg = EM_STREAMIN then
+    ES.pfnCallback := @StreamReadCallback
+  else
+    ES.pfnCallback := @StreamWriteCallback;
+  Inc(FUpdating);
+  try
+    SendMessageW(Handle, Msg, WPARAM(Format), LPARAM(@ES));
+  finally
+    Dec(FUpdating);
+  end;
+  if Cookie.Failure <> nil then
+    raise Exception(Cookie.Failure);
+  if ES.dwError <> 0 then
+    raise EStreamError.Create(FailMessage);
+end;
+
+{ UIF-1326: False = the stream does not start with the RTF signature and nothing was done }
+function TCustomRichEdit.LoadRichText(Stream: TStream): Boolean;
+const
+  Signature: array[0..4] of Byte = (Ord('{'), Ord('\'), Ord('r'), Ord('t'), Ord('f'));
+var
+  Head: array[0..4] of Byte;
+  Start: Int64;
+  I, N: Integer;
+begin
+  HandleNeeded;
+  Inc(FUpdating);
+  try
+    try
+      Start := Stream.Position;
+      N := Stream.Read(Head, 5);
+      Stream.Position := Start;
+      Result := N = 5;
+      for I := 0 to 4 do
+        Result := Result and (Head[I] = Signature[I]);
+      if Result then
+        TransferContent(EM_STREAMIN, SF_RTF, Stream, SRichEditLoadFail);
+    except
+      SetEngineText('');
+      raise;
+    end;
+    if Result then
+    begin
+      SetSelection(0, 0);
+      SendMessageW(Handle, EM_SETMODIFY, 0, 0);
+      SendMessageW(Handle, EM_EMPTYUNDOBUFFER, 0, 0);
+    end;
+  finally
+    Dec(FUpdating);
+  end;
+  if Result then
+    Change;
+end;
+
+{ UIF-1327 }
+procedure TCustomRichEdit.SaveRichText(Stream: TStream);
+begin
+  HandleNeeded;
+  TransferContent(EM_STREAMOUT, SF_RTF, Stream, SRichEditSaveFail);
+end;
+
+function TCustomRichEdit.GetSelStart: Integer;
+var
+  R: TCharRange;
+begin
+  if not HandleAllocated then
+  begin
+    Result := inherited GetSelStart;
+    Exit;
+  end;
+  R.cpMin := 0;
+  R.cpMax := 0;
+  SendMessageW(Handle, EM_EXGETSEL, 0, LPARAM(@R));
+  Result := R.cpMin;
+end;
+
+function TCustomRichEdit.GetSelLength: Integer;
+var
+  R: TCharRange;
+begin
+  if not HandleAllocated then
+  begin
+    Result := inherited GetSelLength;
+    Exit;
+  end;
+  R.cpMin := 0;
+  R.cpMax := 0;
+  SendMessageW(Handle, EM_EXGETSEL, 0, LPARAM(@R));
+  Result := R.cpMax - R.cpMin;
+end;
+
+{ EM_GETSELTEXT; paragraph breaks as CR LF, as in Text }
+function TCustomRichEdit.GetSelText: string;
+var
+  S: string;
+  N: Integer;
+begin
+  if not HandleAllocated then
+  begin
+    Result := inherited GetSelText;
+    Exit;
+  end;
+  SetLength(S, GetSelLength + 1);
+  N := Integer(SendMessageW(Handle, EM_GETSELTEXT, 0, LPARAM(PChar(S))));
+  SetLength(S, N);
+  Result := StringReplace(S, #13, #13#10, [rfReplaceAll]);
+end;
+
+procedure TCustomRichEdit.SetSelection(AStart, ALength: Integer);
+var
+  R: TCharRange;
+begin
+  if not HandleAllocated then
+  begin
+    inherited SetSelection(AStart, ALength);
+    Exit;
+  end;
+  if AStart < 0 then
+    AStart := 0;
+  if ALength < 0 then
+    ALength := 0;
+  R.cpMin := AStart;
+  R.cpMax := AStart + ALength;
+  SendMessageW(Handle, EM_EXSETSEL, 0, LPARAM(@R));
+end;
+
+procedure TCustomRichEdit.ApplyHideSelection;
+begin
+  if HandleAllocated then
+    SendMessageW(Handle, EM_HIDESELECTION, WPARAM(Ord(HideSelection)), 0);
+end;
+
+{ UIF-1310 }
+procedure TCustomRichEdit.ApplyMaxLength;
+begin
+  if not HandleAllocated then
+    Exit;
+  if MaxLength <= 0 then
+    SendMessageW(Handle, EM_EXLIMITTEXT, 0, NoTextLimit)
+  else
+    SendMessageW(Handle, EM_EXLIMITTEXT, 0, LPARAM(MaxLength));
+end;
+
+{ (column, paragraph) of the start of the selection, in engine positions }
+function TCustomRichEdit.GetCaretPos: TPoint;
+var
+  S: string;
+  P, I: Integer;
+begin
+  if not HandleAllocated then
+  begin
+    Result := inherited GetCaretPos;
+    Exit;
+  end;
+  S := EngineText(False);
+  P := GetSelStart;
+  Result.X := 0;
+  Result.Y := 0;
+  for I := 1 to P do
+    if (I <= Length(S)) and (S[I] = #13) then
+    begin
+      Inc(Result.Y);
+      Result.X := 0;
+    end
+    else
+      Inc(Result.X);
+end;
+
+procedure TCustomRichEdit.SetCaretPos(const Value: TPoint);
+var
+  S: string;
+  N, A, E: Integer;
+begin
+  if not HandleAllocated then
+  begin
+    inherited SetCaretPos(Value);
+    Exit;
+  end;
+  S := EngineText(False);
+  N := ParagraphCount(S);
+  if N = 0 then
+    SetSelection(0, 0)
+  else if Value.Y >= N then
+    SetSelection(Length(S), 0)
+  else
+  begin
+    A := ParagraphStart(S, Value.Y);
+    E := ParagraphEnd(S, Value.Y);
+    if A + Value.X < E then
+      E := A + Value.X;
+    SetSelection(E, 0);
+  end;
+end;
+
+{ UIF-1331: the event mask is set again so that the engine scans the existing text }
+procedure TCustomRichEdit.SetAutoURLDetect(Value: Boolean);
+begin
+  if FAutoURLDetect <> Value then
+  begin
+    FAutoURLDetect := Value;
+    if HandleAllocated then
+    begin
+      SendMessageW(Handle, EM_SETEVENTMASK, 0, RichEditEvents);
+      SendMessageW(Handle, EM_AUTOURLDETECT, WPARAM(Ord(Value)), 0);
+    end;
+  end;
+end;
+
+{ UIF-1334: a zoom changed by the user is read back }
+function TCustomRichEdit.GetZoom: Integer;
+var
+  Num, Den: Integer;
+begin
+  if HandleAllocated then
+  begin
+    Num := 0;
+    Den := 0;
+    SendMessageW(Handle, EM_GETZOOM, WPARAM(@Num), LPARAM(@Den));
+    if (Num > 0) and (Den > 0) then
+      FZoom := MulDiv(Num, 100, Den)
+    else
+      FZoom := 100;
+  end;
+  Result := FZoom;
+end;
+
+procedure TCustomRichEdit.SetZoom(Value: Integer);
+begin
+  if Value < 10 then
+    Value := 10;
+  if Value > 500 then
+    Value := 500;
+  FZoom := Value;
+  if HandleAllocated then
+    ApplyZoom;
+end;
+
+procedure TCustomRichEdit.SetSelAttributes(Value: TTextAttributes);
+begin
+  FSelAttributes.Assign(Value);
+end;
+
+procedure TCustomRichEdit.SetDefAttributes(Value: TTextAttributes);
+begin
+  FDefAttributes.Assign(Value);
+end;
+
+procedure TCustomRichEdit.SetParagraph(Value: TParaAttributes);
+begin
+  FParagraph.Assign(Value);
+end;
+
+{ UIF-1335 }
+function TCustomRichEdit.FindText(const SearchStr: string; StartPos, Length: Integer; Options: TSearchTypes): Integer;
+var
+  Find: TFindTextExW;
+  Flags: WPARAM;
+begin
+  Result := -1;
+  if (SearchStr = '') or not HandleAllocated then
+    Exit;
+  if StartPos < 0 then
+    StartPos := 0;
+  Find.chrg.cpMin := StartPos;
+  if (Length < 0) or (Length > MaxInt - StartPos) then
+    Find.chrg.cpMax := -1
+  else
+    Find.chrg.cpMax := StartPos + Length;
+  Find.lpstrText := PChar(SearchStr);
+  Find.chrgText.cpMin := -1;
+  Find.chrgText.cpMax := -1;
+  Flags := FR_DOWN;
+  if stWholeWord in Options then
+    Flags := Flags or FR_WHOLEWORD;
+  if stMatchCase in Options then
+    Flags := Flags or FR_MATCHCASE;
+  Result := Integer(SendMessageW(Handle, EM_FINDTEXTEXW, Flags, LPARAM(@Find)));
+end;
+
+{ UIF-1336 }
+procedure TCustomRichEdit.Redo;
+begin
+  if HandleAllocated then
+    SendMessageW(Handle, EM_REDO, 0, 0);
+end;
+
+function TCustomRichEdit.GetCanRedo: Boolean;
+begin
+  Result := HandleAllocated and (SendMessageW(Handle, EM_CANREDO, 0, 0) <> 0);
+end;
+
+procedure TCustomRichEdit.ClearUndo;
+begin
+  if HandleAllocated then
+    SendMessageW(Handle, EM_EMPTYUNDOBUFFER, 0, 0);
+end;
+
 initialization
-  RegisterClasses([TPageControl, TTabSheet, TStatusBar, TToolBar, TToolButton, TProgressBar, TTrackBar, TListView, TTreeView]);
+  RegisterClasses([TPageControl, TTabSheet, TStatusBar, TToolBar, TToolButton, TProgressBar, TTrackBar, TListView, TTreeView,
+    TRichEdit]);
+
+finalization
+  { a window that outlives this unit (a form freed by a later finalization) still runs the engine's code }
+  if (RichEditLibrary <> 0) and (RichEditWindows = 0) then
+    FreeLibrary(RichEditLibrary);
 
 end.

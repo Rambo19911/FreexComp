@@ -43,6 +43,19 @@ public sealed class PascalTheory
         return RunAsync(id);
     }
 
+    public static IEnumerable<TheoryDataRow<string>> Phase8Desktop() => UiCorpus.Rows(8, desktop: true);
+
+    /// <summary>Phase 8 programs (<c>// phase: 8</c>, UIF-1209): the controls of the backlog cards (first: the rich text editor).</summary>
+    [Theory]
+    [Trait("Phase", "8")]
+    [Trait("Category", "Foreground")]
+    [MemberData(nameof(Phase8Desktop))]
+    public Task Pascal_Phase8_Desktop(string id)
+    {
+        Harness.RequireDesktop();
+        return RunAsync(id);
+    }
+
     private static async Task RunAsync(string id)
     {
         var failure = await UiCorpus.RunAsync(id, TestContext.Current.CancellationToken);

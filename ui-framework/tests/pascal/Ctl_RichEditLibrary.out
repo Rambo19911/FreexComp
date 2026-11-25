@@ -1,0 +1,16 @@
+# the library is missing (UIF-1301)
+ok the engine is not loaded before the first window
+ok CreateWnd raises EOSError
+ok the message starts with SRichEditLibrary
+ok ErrorCode is the system error
+ok followed by the system error text
+ok the control has no handle
+ok the control keeps its state
+ok nothing was loaded
+ok a second attempt fails the same way
+# recovery with the real library
+ok the same control gets its window
+ok the engine is loaded
+ok with its text
+ok the library stays loaded: the name is not used again
+# passed 13 failed 0

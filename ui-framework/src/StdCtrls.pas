@@ -103,11 +103,8 @@ type
     procedure SetPasswordChar(Value: Char);
     procedure SetReadOnly(Value: Boolean);
     procedure SetTextHint(const Value: string);
-    function GetSelStart: Integer;
     procedure SetSelStart(Value: Integer);
-    function GetSelLength: Integer;
     procedure SetSelLength(Value: Integer);
-    function GetSelText: string;
     procedure SetSelText(const Value: string);
     function GetModified: Boolean;
     procedure SetModified(Value: Boolean);
@@ -138,7 +135,14 @@ type
     { UIF-882: set by EditCanModify to refuse without the beep; False again before every question }
     property RejectSilently: Boolean read FRejectSilently write FRejectSilently;
     { selects AStart .. AStart + ALength (handle: EM_SETSEL; else the fields) }
-    procedure SetSelection(AStart, ALength: Integer);
+    procedure SetSelection(AStart, ALength: Integer); virtual;
+    { virtual for a descendant whose native control uses other messages (rich-edit.md UIF-1305, UIF-1310):
+      the selection, and how a changed HideSelection / MaxLength reaches the window }
+    function GetSelStart: Integer; virtual;
+    function GetSelLength: Integer; virtual;
+    function GetSelText: string; virtual;
+    procedure ApplyHideSelection; virtual;
+    procedure ApplyMaxLength; virtual;
     property Alignment: TAlignment read FAlignment write SetAlignment default taLeftJustify;
     property AutoSelect: Boolean read FAutoSelect write FAutoSelect default True;
     property AutoSize default True;
@@ -223,6 +227,7 @@ type
     function GetTextStr: string; override;
     procedure SetTextStr(const Value: string); override;
   public
+    destructor Destroy; override;
     procedure Clear; override;
     procedure Delete(Index: Integer); override;
     procedure Insert(Index: Integer; const S: string); override;
@@ -240,9 +245,12 @@ type
     procedure SetScrollBars(Value: TScrollStyle);
     procedure SetWantReturns(Value: Boolean);
     procedure SetWordWrap(Value: Boolean);
-    function GetCaretPos: TPoint;
-    procedure SetCaretPos(const Value: TPoint);
   protected
+    { rich-edit.md UIF-1302: the TStrings behind Lines, created once by the constructor; the base returns the
+      TMemoStrings of UIF-630 }
+    function CreateLines: TStrings; virtual;
+    function GetCaretPos: TPoint; virtual;
+    procedure SetCaretPos(const Value: TPoint); virtual;
     procedure CreateParams(var Params: TCreateParams); override;
     procedure DestroyWnd; override;
     { CM_WANTSPECIALKEY (WantReturns, WantTabs), WM_GETDLGCODE without DLGC_WANTALLKEYS, Escape (UIF-632) }
@@ -1395,8 +1403,13 @@ begin
   if FHideSelection <> Value then
   begin
     FHideSelection := Value;
-    RecreateWnd;
+    ApplyHideSelection;
   end;
+end;
+
+procedure TCustomEdit.ApplyHideSelection;
+begin
+  RecreateWnd;
 end;
 
 procedure TCustomEdit.SetMaxLength(Value: Integer);
@@ -1404,9 +1417,14 @@ begin
   if FMaxLength <> Value then
   begin
     FMaxLength := Value;
-    if HandleAllocated then
-      SendMessageW(Handle, EM_LIMITTEXT, WPARAM(Value), 0);
+    ApplyMaxLength;
   end;
+end;
+
+procedure TCustomEdit.ApplyMaxLength;
+begin
+  if HandleAllocated then
+    SendMessageW(Handle, EM_LIMITTEXT, WPARAM(FMaxLength), 0);
 end;
 
 procedure TCustomEdit.SetNumbersOnly(Value: Boolean);
@@ -1673,6 +1691,12 @@ end;
 
 { ---------------------------------------------------------------- TMemoStrings }
 
+destructor TMemoStrings.Destroy;
+begin
+  FList.Free;
+  inherited Destroy;
+end;
+
 { handle: EM_SETSEL + EM_REPLACESEL; never called without one }
 procedure TMemoStrings.Replace(AStart, ALength: Integer; const S: string);
 begin
@@ -1828,9 +1852,7 @@ end;
 constructor TCustomMemo.Create(AOwner: TComponent);
 begin
   inherited Create(AOwner);
-  FLines := TMemoStrings.Create;
-  TMemoStrings(FLines).FMemo := Self;
-  TMemoStrings(FLines).FList := TStringList.Create;
+  FLines := CreateLines;
   FWantReturns := True;
   FWordWrap := True;
   AutoSize := False;
@@ -1840,8 +1862,17 @@ end;
 destructor TCustomMemo.Destroy;
 begin
   inherited Destroy;
-  TMemoStrings(FLines).FList.Free;
   FLines.Free;
+end;
+
+function TCustomMemo.CreateLines: TStrings;
+var
+  L: TMemoStrings;
+begin
+  L := TMemoStrings.Create;
+  L.FMemo := Self;
+  L.FList := TStringList.Create;
+  Result := L;
 end;
 
 procedure TCustomMemo.CreateParams(var Params: TCreateParams);
@@ -1859,7 +1890,8 @@ end;
 procedure TCustomMemo.DestroyWnd;
 begin
   inherited DestroyWnd;
-  TMemoStrings(FLines).FList.Text := LinesTextOf(Text);
+  if FLines is TMemoStrings then
+    TMemoStrings(FLines).FList.Text := LinesTextOf(Text);
 end;
 
 procedure TCustomMemo.WndProc(var Message: TMessage);
@@ -1883,7 +1915,7 @@ begin
       end;
     CM_TEXTCHANGED:
       begin
-        if not HandleAllocated and not TMemoStrings(FLines).FSyncing then
+        if not HandleAllocated and (FLines is TMemoStrings) and not TMemoStrings(FLines).FSyncing then
           TMemoStrings(FLines).FList.Text := LinesTextOf(Text);
         inherited WndProc(Message);
         { UIF-620: a multi-line edit sends no EN_CHANGE for WM_SETTEXT, so a Text assignment that changed the text

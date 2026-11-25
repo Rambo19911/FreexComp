@@ -51,6 +51,9 @@ resourcestring
   SGridRowsFixed = 'Cannot insert or delete rows';
   SCommonDialogError = 'Common dialog error 0x%.4x';
   SMenuInsert = 'Menu item "%s" cannot be inserted here';
+  SRichEditLibrary = 'The rich edit library Msftedit.dll could not be loaded';
+  SRichEditLoadFail = 'Failed to load the text into the rich edit control';
+  SRichEditSaveFail = 'Failed to save the text of the rich edit control';
 
 implementation
 

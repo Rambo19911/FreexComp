@@ -37,7 +37,8 @@
       { "name": "Alignment", "type": "TAlignment", "default": "taLeftJustify" },
       { "name": "Caption", "type": "string", "default": "", "localizable": true },
       { "name": "Width", "type": "Integer", "default": 50 }
-    ] }
+    ] },
+    "TScrollStyle": { "kind": "enum", "values": ["ssNone", "ssHorizontal", "ssVertical", "ssBoth"] }
   },
   "components": [
     {
@@ -437,6 +438,67 @@
         { "name": "OnMouseMove", "signature": "TMouseMoveEvent" },
         { "name": "OnMouseUp", "signature": "TMouseEvent" }
       ]
+    },
+    {
+      "class": "TCustomRichEdit",
+      "ancestor": "TCustomMemo",
+      "abstract": true,
+      "kind": "wincontrol",
+      "acceptsChildren": false,
+      "renderer": "generic",
+      "properties": [],
+      "events": []
+    },
+    {
+      "class": "TRichEdit",
+      "ancestor": "TCustomRichEdit",
+      "abstract": false,
+      "palette": { "page": "Win32", "order": 90, "icon": "icons/TRichEdit.svg" },
+      "kind": "wincontrol",
+      "defaultSize": { "width": 185, "height": 89 },
+      "namePrefix": "RichEdit",
+      "acceptsChildren": false,
+      "renderer": "memo",
+      "properties": [
+        { "name": "Alignment", "type": "TAlignment", "default": "taLeftJustify", "category": "Appearance" },
+        { "name": "AutoURLDetect", "type": "Boolean", "default": false, "category": "Behavior" },
+        { "name": "BorderStyle", "type": "TBorderStyle", "default": "bsSingle", "category": "Appearance", "affectsLayout": true },
+        { "name": "Color", "type": "TColor", "default": "clWindow", "category": "Appearance", "editor": "color" },
+        { "name": "Font", "type": "TFont", "kind": "object", "category": "Appearance", "editor": "font" },
+        { "name": "HideSelection", "type": "Boolean", "default": true, "category": "Behavior" },
+        { "name": "Lines", "type": "TStrings", "category": "Data", "editor": "strings", "localizable": true },
+        { "name": "MaxLength", "type": "Integer", "default": 0, "category": "Behavior" },
+        { "name": "ParentColor", "type": "Boolean", "default": false, "category": "Appearance" },
+        { "name": "ParentFont", "type": "Boolean", "default": true, "category": "Appearance" },
+        { "name": "PlainText", "type": "Boolean", "default": false, "category": "Behavior" },
+        { "name": "ReadOnly", "type": "Boolean", "default": false, "category": "Behavior" },
+        { "name": "ScrollBars", "type": "TScrollStyle", "default": "ssNone", "category": "Behavior" },
+        { "name": "TabOrder", "type": "Integer", "default": -1, "category": "Behavior", "min": -1, "max": 32767 },
+        { "name": "TabStop", "type": "Boolean", "default": true, "category": "Behavior" },
+        { "name": "WantReturns", "type": "Boolean", "default": true, "category": "Behavior" },
+        { "name": "WantTabs", "type": "Boolean", "default": false, "category": "Behavior" },
+        { "name": "WordWrap", "type": "Boolean", "default": true, "category": "Appearance" },
+        { "name": "Zoom", "type": "Integer", "default": 100, "category": "Behavior", "min": 10, "max": 500 }
+      ],
+      "events": [
+        { "name": "OnChange", "signature": "TNotifyEvent", "default": true },
+        { "name": "OnClick", "signature": "TNotifyEvent" },
+        { "name": "OnContextPopup", "signature": "TContextPopupEvent" },
+        { "name": "OnDblClick", "signature": "TNotifyEvent" },
+        { "name": "OnEnter", "signature": "TNotifyEvent" },
+        { "name": "OnExit", "signature": "TNotifyEvent" },
+        { "name": "OnKeyDown", "signature": "TKeyEvent" },
+        { "name": "OnKeyPress", "signature": "TKeyPressEvent" },
+        { "name": "OnKeyUp", "signature": "TKeyEvent" },
+        { "name": "OnLinkClick", "signature": "TRichEditLinkClickEvent" },
+        { "name": "OnMouseDown", "signature": "TMouseEvent" },
+        { "name": "OnMouseEnter", "signature": "TNotifyEvent" },
+        { "name": "OnMouseLeave", "signature": "TNotifyEvent" },
+        { "name": "OnMouseMove", "signature": "TMouseMoveEvent" },
+        { "name": "OnMouseUp", "signature": "TMouseEvent" },
+        { "name": "OnProtectChange", "signature": "TRichEditProtectChangeEvent" },
+        { "name": "OnSelectionChange", "signature": "TNotifyEvent" }
+      ]
     }
   ],
   "eventSignatures": {
@@ -458,7 +520,9 @@
     "TTVExpandingEvent": "procedure(Sender: TObject; Node: TTreeNode; var AllowExpansion: Boolean)",
     "TTVCollapsingEvent": "procedure(Sender: TObject; Node: TTreeNode; var AllowCollapse: Boolean)",
     "TTVEditedEvent": "procedure(Sender: TObject; Node: TTreeNode; var S: string)",
-    "TTVEditingEvent": "procedure(Sender: TObject; Node: TTreeNode; var AllowEdit: Boolean)"
+    "TTVEditingEvent": "procedure(Sender: TObject; Node: TTreeNode; var AllowEdit: Boolean)",
+    "TRichEditLinkClickEvent": "procedure(Sender: TObject; const URL: string)",
+    "TRichEditProtectChangeEvent": "procedure(Sender: TObject; StartPos, EndPos: Integer; var AllowChange: Boolean)"
   },
   "eventSignatureUnits": {
     "TItemChange": "ComCtrls",

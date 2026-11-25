@@ -1,0 +1,210 @@
+# defaults
+ok Width 185
+ok Height 89
+ok Alignment
+ok AutoURLDetect
+ok BorderStyle
+ok Color clWindow
+ok HideSelection
+ok Lines empty
+ok MaxLength
+ok ParentColor False
+ok ParentFont
+ok PlainText
+ok ReadOnly
+ok ScrollBars ssNone
+ok TabOrder
+ok TabStop True
+ok WantReturns
+ok WantTabs
+ok WordWrap
+ok Zoom 100
+ok registered
+ok a TCustomMemo (UIF-1302)
+ok Lines is the control's own TStrings (UIF-1302)
+ok no intrinsic height (UIF-1308)
+# Lines without a handle (UIF-1306)
+ok no handle: empty control has no lines
+ok no handle: empty Lines.Text
+ok no handle: Add
+ok no handle: Text is the plain text (no trailing break)
+ok no handle: Lines.Text adds the trailing break
+ok no handle: Insert at 0
+ok no handle: Insert at Count
+ok no handle: Delete in the middle
+ok no handle: Delete the last
+ok no handle: Put
+ok no handle: Get
+ok no handle: all deleted
+ok no handle: text empty
+ok no handle: Text assignment splits
+ok no handle: second line
+ok no handle: trailing break in Text: an empty last line
+ok no handle: the empty last line
+ok no handle: Lines.Text removes the trailing break
+ok no handle: two lines
+ok a leading empty line is kept
+ok still no handle
+# window (UIF-1300, UIF-1303)
+ok window class RICHEDIT50W
+ok the engine library comes from the system directory
+ok ES_MULTILINE, ES_AUTOVSCROLL
+ok WordWrap: no ES_AUTOHSCROLL
+ok ES_WANTRETURN
+ok HideSelection: no ES_NOHIDESEL
+ok no ES_READONLY
+ok WS_EX_CLIENTEDGE
+ok lines pushed as the content
+ok event mask
+ok MaxLength 0: no 64 K limit (UIF-1310)
+ok background colour pushed (UIF-1311)
+# recreate keeps text and formatting (UIF-1304)
+ok a bold run
+ok WordWrap recreates
+ok no WordWrap: ES_AUTOHSCROLL
+ok WordWrap: text kept
+ok WordWrap: bold run kept
+ok ScrollBars recreates
+ok ScrollBars: text kept
+ok ScrollBars: bold run kept
+ok ssBoth, short text: no scroll bar yet
+ok ssBoth, tall text: WS_VSCROLL
+ok ssVertical, tall text: WS_VSCROLL only
+ok ssNone, tall text: no scroll bar
+ok ssNone, wide text: no scroll bar
+ok ssHorizontal, wide text: WS_HSCROLL only
+ok WantReturns recreates
+ok WantReturns False: no ES_WANTRETURN
+ok WantReturns: bold run kept
+ok Alignment recreates
+ok ES_CENTER
+ok Alignment: text kept
+ok Alignment: bold run kept
+ok BorderStyle recreates
+ok bsNone
+ok BorderStyle: bold run kept
+ok without the window: the plain text
+ok without the window: the selection
+ok without the window: Modified
+ok selection restored
+ok Modified restored
+ok formatting restored with the window
+ok text assigned without a window replaces the saved content
+ok and is plain
+# no recreate: HideSelection, ReadOnly, MaxLength, Color
+ok ReadOnly: ES_READONLY
+ok ReadOnly off
+ok MaxLength 10
+ok text set by code is not truncated
+ok MaxLength 0 again
+ok Color change reaches the engine
+ok none of them recreates
+ok HideSelection False: ES_NOHIDESEL after a re-creation
+# positions (UIF-1305)
+ok a paragraph break is one position
+ok SelText
+ok SelStart, SelLength
+ok CaretPos (column, line)
+ok CaretPos := (2, 1)
+ok SelText across a paragraph break
+ok nothing to undo after a Text assignment
+ok SelText := replaces the selection
+ok the replacement can be undone
+ok Undo
+ok SelectAll
+# Lines with a handle (UIF-1306)
+ok handle: empty control has no lines
+ok handle: empty Lines.Text
+ok handle: Add
+ok handle: Text is the plain text (no trailing break)
+ok handle: Lines.Text adds the trailing break
+ok handle: Insert at 0
+ok handle: Insert at Count
+ok handle: Delete in the middle
+ok handle: Delete the last
+ok handle: Put
+ok handle: Get
+ok handle: all deleted
+ok handle: text empty
+ok handle: Text assignment splits
+ok handle: second line
+ok handle: trailing break in Text: an empty last line
+ok handle: the empty last line
+ok handle: Lines.Text removes the trailing break
+ok handle: two lines
+ok the window holds the text
+ok word wrap: several display lines
+ok word wrap: one logical line
+ok edits in place
+ok the untouched paragraph keeps its formatting
+ok lines survive the window
+ok third line after the window went
+ok lines pushed again
+ok with their formatting
+# Text (UIF-1307)
+ok Text := gives the default format
+ok Lines.Text := gives the default format
+ok Text has no trailing break
+ok Text is never read as RTF
+ok Lines.Text is never read as RTF
+# native -> object
+ok EM_EXSETSEL -> SelStart, SelLength
+ok EM_REPLACESEL -> Text
+ok EM_REPLACESEL -> Lines
+ok the engine sets Modified
+ok EM_SETMODIFY -> Modified
+ok EM_SETREADONLY sets the style bit
+# events
+ok Lines.Add fires OnChange once
+ok same text: no OnChange
+ok Text := with a window fires OnChange once
+ok Lines.Text := with a window fires OnChange once
+ok SelText := fires OnChange once
+ok no OnChange during the CreateWnd push (UIF-1303)
+ok Text := without a window fires OnChange once
+# special keys (UIF-1308)
+ok WantReturns: wants Return
+ok WantTabs False: Tab not wanted
+ok Escape not wanted
+ok WM_GETDLGCODE without DLGC_WANTALLKEYS
+ok WM_GETDLGCODE without DLGC_WANTTAB
+ok WantTabs: wants Tab
+ok WantTabs: DLGC_WANTTAB
+# handle-less state
+ok content
+ok selection
+ok Modified
+ok limit
+ok colour
+ok ES_READONLY
+ok ES_NOHIDESEL
+ok URL detection
+ok zoom
+ok the content has the font of the control
+# streaming (UIF-1309)
+ok no OnChange while loading
+ok Lines
+ok Lines are plain text, also when they look like RTF
+ok Alignment
+ok AutoURLDetect
+ok BorderStyle
+ok Color
+ok Font.Height
+ok HideSelection
+ok MaxLength
+ok PlainText
+ok ReadOnly
+ok ScrollBars
+ok TabStop False
+ok WantReturns
+ok WantTabs
+ok WordWrap
+ok Zoom
+ok bounds (no intrinsic height)
+ok OnChange bound
+ok no OnChange when the window is created
+ok the window holds the plain lines
+ok OnChange handler of the form
+# leak
+ok GUI objects after 100 instances with handles
+# passed 195 failed 0

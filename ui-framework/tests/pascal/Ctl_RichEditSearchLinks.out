@@ -1,0 +1,97 @@
+# FindText (UIF-1335)
+ok plain: the first match
+ok plain: letter case is ignored
+ok match case
+ok from a start position: inside a longer word
+ok whole word
+ok whole word and match case
+ok a range that contains the match
+ok a range that ends inside the match
+ok a range without a match
+ok a range past the end means to the end of the text
+ok not found after the last match
+ok not found
+ok an empty search string
+ok the last character
+ok the selection is not changed
+ok engine positions: a paragraph break counts once
+ok the match in the third paragraph
+ok without a handle: -1
+# AutoURLDetect (UIF-1331)
+ok off (default): nothing is marked
+ok no link, no OnLinkClick
+ok the engine detects URLs
+ok existing text is scanned when the property becomes True
+ok the text before the URL is no link
+ok text that is set is scanned
+ok the text before the URL
+ok the text after the URL
+# OnLinkClick (UIF-1332)
+ok a left click on the link fires once with the URL
+ok a right click fires nothing
+ok a middle click fires nothing
+ok a left click beside the link fires nothing
+ok a click on the last character of the link
+ok a click without a handler does nothing
+ok detection switched off
+# OnSelectionChange (UIF-1333)
+ok the caret moved by code
+ok the selection changed by code
+ok the selection changed with the engine's message
+ok the caret moved with a key
+ok not during the CreateWnd push
+ok although the selection was restored
+# OnProtectChange (UIF-1333)
+ok no handler: a change of protected text is refused
+ok unprotected text can be changed
+ok the handler gets the range of the attempt and AllowChange = False
+ok refused by the handler
+ok typing asks too
+ok and is refused
+ok asked again, then the change is carried out
+ok allowed by the handler
+ok a format change is not a change of the text: no question
+ok and it is carried out
+ok the window is re-created
+ok not during the CreateWnd push
+ok protected content survives the re-creation
+ok with its protection
+ok loading replaces protected content without a question
+ok the loaded content
+ok a load keeps the zoom (UIF-1334)
+ok Text := on protected content asks (the range includes the final paragraph mark)
+ok and is refused
+ok allowed
+# Undo, Redo, ClearUndo (UIF-1336)
+ok nothing to undo or redo after a Text assignment
+ok two changes
+ok CanUndo, not CanRedo
+ok Undo takes back one change (multi-level)
+ok Undo again
+ok CanRedo after Undo
+ok Redo
+ok Redo again
+ok nothing left to redo
+ok ClearUndo empties both
+ok and leaves the text
+ok without a handle: False, and the methods do nothing
+ok text unchanged
+# Zoom (UIF-1334)
+ok default 100
+ok 100 is zoom off
+ok Zoom 250
+ok EM_SETZOOM(250, 100)
+ok below the range: 10
+ok above the range: 500
+ok the clamped value reaches the engine
+ok 100 switches the zoom off
+ok a zoom set in the engine (as Ctrl + wheel does) is read back
+ok kept when Text is assigned
+ok kept when Lines.Text is assigned
+ok the window is re-created
+ok kept across the re-creation
+ok kept without a window
+ok clamped without a window
+ok pushed to the new window
+ok Zoom never changes a stored size
+# passed 89 failed 0

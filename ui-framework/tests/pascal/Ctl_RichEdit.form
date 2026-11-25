@@ -1,0 +1,34 @@
+object RichForm: TRichForm
+  Caption = 'Rich edits'
+  ClientWidth = 400
+  ClientHeight = 300
+  Scaled = False
+  object Notes: TRichEdit
+    Left = 10
+    Top = 10
+    Width = 200
+    Height = 120
+    Alignment = taRightJustify
+    AutoURLDetect = True
+    BorderStyle = bsNone
+    Color = clYellow
+    Font.Height = -15
+    HideSelection = False
+    Lines = (
+      '{\rtf1 plain}'
+      ''
+      'third'
+    )
+    MaxLength = 100
+    ParentFont = False
+    PlainText = True
+    ReadOnly = True
+    ScrollBars = ssVertical
+    TabStop = False
+    WantReturns = False
+    WantTabs = True
+    WordWrap = False
+    Zoom = 150
+    OnChange = NotesChange
+  end
+end

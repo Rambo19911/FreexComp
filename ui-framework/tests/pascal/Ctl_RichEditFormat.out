@@ -1,0 +1,116 @@
+# SelAttributes round trips (UIF-1320, UIF-1321)
+ok SelAttributes exists
+ok one object for the life of the control
+ok the text has the font of the control
+ok Style [fsBold]
+ok CFE_BOLD in the engine
+ok Style italic, underline, strike-out (bold removed)
+ok the four effect bits
+ok Name
+ok Size
+ok yHeight = Size x 20 twips
+ok Color
+ok crTextColor
+ok no CFE_AUTOCOLOR
+ok all members, each setter left the others alone
+ok the text before the run is unchanged
+ok the text after the run is unchanged
+# automatic colour (UIF-1321)
+ok clWindowText is written as CFE_AUTOCOLOR
+ok an automatic colour reads as clWindowText
+ok clDefault is written as CFE_AUTOCOLOR
+ok a system colour is written as its RGB value
+# name length and size rounding (UIF-1321)
+ok a long name is cut at 31 characters
+ok 250 twips read as 13 points (nearest)
+ok 249 twips read as 12 points
+# Protected (UIF-1321)
+ok not protected
+ok Protected
+ok CFE_PROTECTED in the engine
+ok the other members are unchanged
+ok the protection can be taken away again
+# mixed selection (UIF-1322)
+ok one run: everything is consistent
+ok plain + formatted run: bold, colour, face and size differ
+ok a mixed selection reads the values of its first character
+ok first character inside the run
+ok ConsistentAttributes is still that of the whole selection
+ok reading leaves the selection alone
+# empty selection (UIF-1320)
+ok the caret inside the run has its format
+ok the next character gets the format set at the caret
+ok the characters around it keep theirs
+# DefAttributes (UIF-1320, UIF-1322)
+ok the default format is the font of the control
+ok always the full set
+ok Size reaches the default format of the engine
+ok every member
+ok text set afterwards has the default format
+ok automatic colour as the default
+# Assign (UIF-1320)
+ok Assign from a TFont
+ok Assign to a TFont
+ok SelAttributes := DefAttributes
+ok DefAttributes := SelAttributes
+ok Assign from an attribute object copies Protected too
+# font of the control (UIF-1321)
+ok a font change is assigned to DefAttributes
+ok rich text: a formatted run keeps its face
+ok and its colour
+ok new text has the new font
+ok PlainText alone changes no formatting (UIF-1325)
+ok PlainText: the next font change formats all text
+ok with the font of the control
+ok ParentFont: the font of the parent
+ok a font change of the parent
+# paragraph: alignment and indents (UIF-1324)
+ok Paragraph exists
+ok a new paragraph
+ok Alignment taCenter
+ok PFA_CENTER in the engine
+ok PFA_RIGHT
+ok the three indents in points; each setter sends its own member
+ok dxStartIndent, dxOffset, dxRightIndent in twips
+ok the paragraph before is unchanged
+ok a selection formats every paragraph it touches: the first
+ok and the last
+ok taLeftJustify
+# paragraph: numbering (UIF-1324)
+ok nsNone
+ok nsBullet
+ok PFN_BULLET in the engine
+ok another numbering kind reads as nsBullet
+ok nsNone: wNumbering 0
+ok numbering left alignment and indent alone
+# paragraph: tabs (UIF-1324)
+ok no tab stops
+ok Tab[0] without tab stops
+ok writing Tab[0] extends TabCount to 1
+ok writing Tab[2] extends TabCount to 3
+ok tab positions in points
+ok cTabCount and rgxTabs in twips
+ok an index >= TabCount reads 0
+ok TabCount := 2
+ok the removed tab stop reads 0
+ok MAX_TAB_STOPS tab stops
+ok a larger count is clamped
+ok the last tab stop
+ok a negative count is 0
+ok the tabs left the other members alone
+# paragraph: Assign (UIF-1324)
+ok Paragraph := copies every member
+# without a handle (UIF-1323, UIF-1324)
+ok DefAttributes reads the font
+ok SelAttributes reads the values of DefAttributes
+ok everything is consistent
+ok SelAttributes writes are ignored
+ok DefAttributes writes act on the font
+ok Protected stays False
+ok DefAttributes.Assign(TFont) sets the font
+ok Paragraph reads the defaults
+ok Numbering nsNone
+ok Paragraph writes are ignored
+ok no handle was created
+ok the window starts with that font as its format
+# passed 101 failed 0

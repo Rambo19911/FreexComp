@@ -1,0 +1,65 @@
+# RTF save (UIF-1327)
+ok PlainText False: RTF
+ok the output starts with the RTF signature at the stream's position
+ok the stream stands after the written bytes
+ok content unchanged
+ok selection unchanged
+ok Modified unchanged
+# RTF load into a second control (UIF-1326)
+ok the second control has something to undo
+ok OnChange fires once
+ok the whole content is replaced
+ok the caret is at position 0
+ok Modified is False
+ok the undo buffer is empty
+ok the run is bold and red (card acceptance 2)
+ok the text before it is plain
+ok the text after it is plain
+ok two paragraphs
+# files (UIF-1325)
+ok SaveToFile writes RTF
+ok LoadFromFile reads it
+ok with the formatting
+# text fallback (UIF-1326)
+ok a stream without the RTF signature is loaded as text
+ok in the default format
+ok a stream shorter than the signature is text
+ok an empty stream gives an empty control
+# PlainText (UIF-1325, UIF-1328)
+ok PlainText changes no content
+ok and no formatting
+ok PlainText: the save is the text
+ok PlainText: the load reads text
+ok without formatting
+ok PlainText: RTF source is shown as it is
+ok PlainText: file round trip
+ok a text file given to a rich control shows its text
+# TEncoding overloads (UIF-1328)
+ok UTF-16: two bytes per character
+ok UTF-16 round trip
+ok a rich control: the TEncoding overload still saves text
+ok a rich control: the TEncoding overload still loads text
+ok file round trip with an encoding
+# a failing stream (UIF-1329)
+ok an RTF document to fail on
+ok the exception of Read arrives
+ok it is the same exception object
+ok after the failed load the control is empty
+ok and still usable
+ok a stream that fails on its first read
+ok the control is empty
+ok the exception of Write arrives
+ok it is the same exception object
+ok a failed save leaves the content
+ok and the selection
+ok the control saves again afterwards
+# an error of the engine (UIF-1329)
+ok the engine reports an error without an exception: EStreamError
+ok after the failed load the control is empty
+# without a parent (UIF-1330)
+ok RTF loading needs a window
+ok no handle
+ok text loading works without a handle
+ok into the internal list
+ok text saving works without a handle
+# passed 55 failed 0
