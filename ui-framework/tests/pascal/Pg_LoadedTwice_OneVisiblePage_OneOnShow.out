@@ -1,0 +1,20 @@
+# a frame in code
+ok the frame's ActivePage
+ok one visible page
+ok one OnShow
+# three instances, two with a block for the page control (UIF-771)
+ok each frame shows Page2 once; the switching block hides it and shows Page3 once
+ok Keep: ActivePage
+ok Keep: one visible page
+ok Keep: the block was applied
+ok Switch: ActivePage of the block
+ok Switch: one visible page
+ok Switch: the nested block was applied
+ok Plain: ActivePage
+ok Plain: one visible page
+# switching in code afterwards
+ok Keep: the switch
+ok Keep: one visible page
+ok Switch: the switch leaves from Page3
+ok Switch: one visible page
+# passed 16 failed 0

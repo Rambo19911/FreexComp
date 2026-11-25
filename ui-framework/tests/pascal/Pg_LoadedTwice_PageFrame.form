@@ -1,0 +1,31 @@
+object PageFrame: TPageFrame
+  Left = 0
+  Top = 0
+  Width = 320
+  Height = 180
+  AutoScroll = False
+  BorderStyle = bsNone
+  object PC: TPageControl
+    Left = 0
+    Top = 0
+    Width = 320
+    Height = 180
+    ActivePage = Page2
+    TabOrder = 0
+    object Page1: TTabSheet
+      Caption = 'One'
+      OnHide = PageHide
+      OnShow = PageShow
+    end
+    object Page2: TTabSheet
+      Caption = 'Two'
+      OnHide = PageHide
+      OnShow = PageShow
+    end
+    object Page3: TTabSheet
+      Caption = 'Three'
+      OnHide = PageHide
+      OnShow = PageShow
+    end
+  end
+end

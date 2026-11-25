@@ -1,0 +1,33 @@
+# a frame in code keeps its own geometry
+ok the frame's own bounds
+ok RightA
+ok RightA follows a resize in code
+ok RightB follows a resize in code
+ok Stretch follows a resize in code
+# an instance 80 px wider than its frame (UIF-232 case 4)
+ok the instance has the width of the outer file
+ok RightA (not reached) moves with the right edge
+ok RightB (reached, bounds not set) moves alike
+ok the block of RightB was applied
+ok RightC stays where its block put it
+ok Stretch (reached) stretches with the instance
+ok an instance with the frame's own size
+ok its RightA does not move
+ok its reached RightB does not move
+ok its reached Stretch keeps its width
+# resizing the instance afterwards
+ok RightA
+ok RightB
+ok RightC from the baseline of its block
+ok Stretch
+ok back: RightA
+ok back: RightB
+ok back: RightC
+ok back: Stretch
+# an instance on a form stored at 192 dpi (UIF-300)
+ok the instance: its outer width, scaled
+ok RightA: moved, then scaled
+ok RightB (reached): moved, then scaled
+ok RightC (not reached): moved, then scaled
+ok Stretch (reached): stretched, then scaled
+# passed 28 failed 0

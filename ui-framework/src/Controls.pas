@@ -253,6 +253,8 @@ type
     FBaseBounds: TRect;                                      { anchor baseline (BL, BT, BW, BH) as Left, Top, Right, Bottom }
     FBaseParentWidth: Integer;                               { (BPW, BPH), layout.md UIF-230 }
     FBaseParentHeight: Integer;
+    FLoadedBaseline: Boolean;                                { an earlier Loaded captured the baseline (UIF-232 case 4) }
+    FBoundsReadSinceBaseline: Boolean;                       { bounds stored while loading since the last capture }
     FOnClick: TNotifyEvent;
     FOnDblClick: TNotifyEvent;
     FOnMouseDown: TMouseEvent;
@@ -1194,6 +1196,8 @@ begin
   FWidth := AWidth;
   FHeight := AHeight;
   Loading := csLoading in ComponentState;
+  if Loading then
+    FBoundsReadSinceBaseline := True;
   { step 5 }
   if Explicit and not Loading then
     CaptureBaseline;
@@ -1228,6 +1232,8 @@ begin
   FWidth := R.Right;
   FHeight := R.Bottom;
   Loading := csLoading in ComponentState;
+  if Loading then
+    FBoundsReadSinceBaseline := True;
   if not Loading then
     CaptureBaseline;
   if SizeChanged and (Self is TWinControl) then
@@ -1325,6 +1331,7 @@ procedure TControl.CaptureBaseline;
 var
   Offset: TPoint;
 begin
+  FBoundsReadSinceBaseline := False;
   FBaseBounds := Rect(FLeft, FTop, FWidth, FHeight);
   if FParent <> nil then
   begin
@@ -2186,10 +2193,15 @@ begin
   Result := Message.Result;
 end;
 
+{ UIF-232 case 4: a second Loaded (a component reached by a frame override block, classes.md RTL-1097) keeps the
+  baseline of the first unless the block stored bounds: the instance's lines may have resized the parent since, and
+  the baseline must stay the one the frame's other children have }
 procedure TControl.Loaded;
 begin
   inherited Loaded;
-  CaptureBaseline;                                           { UIF-232 case 4 }
+  if not FLoadedBaseline or FBoundsReadSinceBaseline then
+    CaptureBaseline;
+  FLoadedBaseline := True;
   if (FActionLink <> nil) and (FActionLink.Action <> nil) then
   begin
     FActionLink.RecordValues;                                { UIF-908 }
@@ -2398,7 +2410,9 @@ procedure TWinControl.Loaded;
 begin
   inherited Loaded;
   SortTabList;
-  if (FParent = nil) or not (csLoading in FParent.ComponentState) then
+  { UIF-300 step 5: a frame instance lays out its tree at once: the outer file's lines resized it after its
+    children captured their baselines, and the form's load-time scaling re-captures them (UIF-283) }
+  if (FParent = nil) or not (csLoading in FParent.ComponentState) or (csInline in ComponentState) then
   begin
     Inc(LoadLayoutLevel);
     try

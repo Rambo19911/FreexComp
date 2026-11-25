@@ -1,0 +1,36 @@
+object AnchorFrame: TAnchorFrame
+  Left = 0
+  Top = 0
+  Width = 320
+  Height = 120
+  AutoScroll = False
+  BorderStyle = bsNone
+  object RightA: TPanel
+    Left = 280
+    Top = 0
+    Width = 30
+    Height = 20
+    Anchors = [akTop, akRight]
+  end
+  object RightB: TPanel
+    Left = 280
+    Top = 30
+    Width = 30
+    Height = 20
+    Anchors = [akTop, akRight]
+  end
+  object RightC: TPanel
+    Left = 280
+    Top = 60
+    Width = 30
+    Height = 20
+    Anchors = [akTop, akRight]
+  end
+  object Stretch: TPanel
+    Left = 10
+    Top = 90
+    Width = 300
+    Height = 20
+    Anchors = [akLeft, akTop, akRight]
+  end
+end

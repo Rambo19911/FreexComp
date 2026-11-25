@@ -1809,12 +1809,18 @@ begin
     TTabSheet(FPages[I]).SetBounds(R.Left, R.Top, R.Right - R.Left, R.Bottom - R.Top);
 end;
 
+{ UIF-771: the old page of the switch is the page an earlier Loaded made visible (a page control reached by a frame
+  override block is loaded twice, classes.md RTL-1097): a second Loaded hides it or leaves it, never shows two }
 procedure TPageControl.Loaded;
 var
   P: TTabSheet;
+  I: Integer;
 begin
   P := FActivePage;
   FActivePage := nil;
+  for I := 0 to FPages.Count - 1 do
+    if TTabSheet(FPages[I]).Visible then
+      FActivePage := TTabSheet(FPages[I]);
   if (P = nil) or (P.FPageControl <> Self) or not P.FTabVisible then
     P := SuccessorOf(nil);
   ChangeActivePage(P);
