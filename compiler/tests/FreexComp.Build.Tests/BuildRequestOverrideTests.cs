@@ -77,7 +77,7 @@ public sealed class BuildRequestOverrideTests
     [Trait("Req", "CMP-805")]
     public async Task Platform_Null_IsTheFirstEntryOfTheProjectsPlatforms()
     {
-        // CMP-1019: every listed platform is a registered target id, so the list of this product version is ["win64"]
+        // without an active platform (platform-model.md CMP-1364); the registry of this product version has one target, "win64"
         var w = new BuildWorkspace(projectJson: BuildWorkspace.ProjectJson("Hello", extra: """ "platforms": ["win64"]"""));
 
         var (result, log) = await w.RunAsync(w.Request());

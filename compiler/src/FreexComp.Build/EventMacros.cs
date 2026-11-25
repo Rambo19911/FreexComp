@@ -30,7 +30,7 @@ public static class EventMacros
         ArgumentNullException.ThrowIfNull(project);
         ArgumentNullException.ThrowIfNull(configuration);
         ArgumentNullException.ThrowIfNull(platform);
-        var output = FullPath(ProjectOptions.GetOutputPath(project, configuration));
+        var output = FullPath(ProjectOptions.GetOutputPath(project, configuration, platform));     // CMP-1371: of that platform
         return ImmutableDictionary.CreateRange(StringComparer.OrdinalIgnoreCase,
         [
             KeyValuePair.Create("ProjectDir", FullPath(project.Directory)),

@@ -2,9 +2,27 @@ using System.Collections.Concurrent;
 using System.Collections.Immutable;
 using System.Text;
 using FreexComp.Compiler;
+using FreexComp.Compiler.Targets;
 using FreexComp.Compiler.Toolchain;
 
 namespace FreexComp.Build.Tests;
+
+/// <summary>
+/// The second platform of the multi-platform tests (platform-model.md §7): a descriptor outside the registry, installed through
+/// the engine's test seam (CMP-1380).
+/// </summary>
+internal static class TestPlatforms
+{
+    public static readonly TargetInfo Test32 = TargetInfo.Win64 with
+    {
+        Id = "test32",
+        DisplayName = "Test 32",
+        PredefinedSymbols = ["MSWINDOWS", "WINDOWS", "WIN32", "CPUX86", "CPU32BITS"],
+    };
+
+    /// <summary>The baseline platform and <see cref="Test32"/>.</summary>
+    public static ImmutableArray<TargetInfo> Both { get; } = [TargetInfo.Win64, Test32];
+}
 
 /// <summary>
 /// An in-memory workspace for build-engine tests: the real <c>rtl/src/System.pas</c> (+ include files, alias table) under
@@ -53,6 +71,9 @@ internal sealed class BuildWorkspace
 
     public FakeToolchain Tools { get; }
 
+    /// <summary>The platforms the engines of this workspace have installed (CMP-1380); the registry's by default.</summary>
+    public ImmutableArray<TargetInfo> Installed { get; init; } = TargetRegistry.BuiltIn;
+
     /// <summary>The recording command runner every engine of this workspace gets: no test of the in-memory bed starts a process for a build event.</summary>
     public FakeCommandRunner Commands { get; } = new();
 
@@ -72,7 +93,8 @@ internal sealed class BuildWorkspace
     public async Task<(BuildResult Result, EventLog Log)> RunAsync(BuildRequest request, CancellationToken? ct = null, IFileSystem? fs = null)
     {
         var log = new EventLog();
-        var result = await new BuildEngine(fs ?? Fs, Tools) { CommandRunner = Commands }.RunAsync(request, log, ct ?? TestContext.Current.CancellationToken);
+        var engine = new BuildEngine(fs ?? Fs, Tools) { CommandRunner = Commands, InstalledTargets = Installed };
+        var result = await engine.RunAsync(request, log, ct ?? TestContext.Current.CancellationToken);
         return (result, log);
     }
 }

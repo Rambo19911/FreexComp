@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Collections.Immutable;
 using FreexComp.Compiler;
+using FreexComp.Compiler.Targets;
 using FreexComp.Compiler.Toolchain;
 
 namespace FreexComp.Build.Tests;
@@ -247,6 +248,34 @@ public sealed class IncrementalBuildMatrix
         AssertResourceWork(b, [], link: true);
     }
 
+    /// <summary>
+    /// platform-model.md CMP-1372 (C-340): output and object directories differ per platform, so a build of another platform in
+    /// between leaves the first one up to date. The second platform is the baseline target under another id.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1372")]
+    public async Task OtherPlatform_BuiltInBetween_StillUpToDate()
+    {
+        using var p = await MatrixProject.CreateBuiltAsync();
+        p.Edit("Matrix.pproj", "\"defines\": [],\n", "\"defines\": [],\n  \"platforms\": [\"win64\", \"test64\"],\n");
+        Assert.Empty((await p.BuildAsync()).Processes);                 // listing a platform changes nothing for the baseline platform
+        var exeTime = File.GetLastWriteTimeUtc(p.Exe);
+
+        var other = await p.BuildAsync(platform: "test64");
+
+        other.AssertWork(MatrixProject.AllUnits, link: true);           // nothing of the first platform's cache is taken
+        Assert.Equal(Path.Combine(p.Directory, "bin", "test64", "Debug", "Matrix.exe"), other.Result.OutputPath, ignoreCase: true);
+        Assert.True(File.Exists(Path.Combine(p.Directory, "obj", "test64", "Debug", "Matrix.obj")));
+
+        var b = await p.BuildAsync();
+        Assert.True(b.Result.UpToDate);
+        Assert.Equal(["Matrix: up to date"], b.Log.Info);
+        Assert.Empty(b.Processes);
+        Assert.Equal(exeTime, File.GetLastWriteTimeUtc(p.Exe));
+        Assert.Empty((await p.BuildAsync(platform: "test64")).Processes);
+    }
+
     /// <summary>How the compiler fingerprint starts in a <c>.pcu</c> (<c>"compilerFingerprint":"opc …"</c>).</summary>
     private const string PcuFingerprintPrefix = "\"compilerFingerprint\":\"opc ";
 }
@@ -320,15 +349,21 @@ internal sealed class MatrixProject : IDisposable
         File.WriteAllText(path, text.Replace(oldText, newText, StringComparison.Ordinal));
     }
 
-    public async Task<MatrixBuild> BuildAsync(string? configuration = null)
+    /// <param name="platform">null → the project's effective platform; the engine has <c>win64</c> and <c>test64</c> (the same target under another id) installed.</param>
+    public async Task<MatrixBuild> BuildAsync(string? configuration = null, string? platform = null)
     {
         var runner = new RecordingRunner();
         var log = new EventLog();
-        var result = await new BuildEngine(PhysicalFileSystem.Instance, runner).RunAsync(
+        var engine = new BuildEngine(PhysicalFileSystem.Instance, runner)
+        {
+            InstalledTargets = [TargetInfo.Win64, TargetInfo.Win64 with { Id = "test64", DisplayName = "Test 64" }],
+        };
+        var result = await engine.RunAsync(
             new BuildRequest
             {
                 ProjectPath = Path.Combine(Directory, "Matrix.pproj"),
                 Configuration = configuration,
+                Platform = platform,
                 ToolchainDirectory = Path.Combine(RepoPaths.Root, "third_party", "llvm", "bin"),
                 RtlDirectory = Path.Combine(RepoPaths.Root, "rtl", "src"),
             },

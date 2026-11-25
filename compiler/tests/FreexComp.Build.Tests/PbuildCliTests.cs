@@ -411,7 +411,7 @@ public sealed partial class PbuildCliTests
         var (_, json, _) = Run(other, "Hello.pproj", "--platform", "win32", "--target", "rebuild", "--diagnostics", "json");
         Assert.Equal("""{"event":"started","project":"C:\\p\\Hello.pproj","configuration":"Debug","platform":"win32","target":"rebuild"}""", json[0]);
 
-        // without the option the request's platform is null: the first entry of the project's platforms
+        // without the option the request's platform is null: the project's active platform, else the first entry of its platforms
         var (_, byDefault, _) = Run(new BuildWorkspace(), "Hello.pproj", "--diagnostics", "json");
         Assert.Contains("""
             "platform":"win64"
@@ -422,7 +422,7 @@ public sealed partial class PbuildCliTests
         Assert.Equal(1, missing);
         Assert.Contains("error E0006: Missing argument for option '--platform'", missingOut[0], StringComparison.Ordinal);
         Assert.Contains("[--target build|rebuild|clean|run] [--platform <id>]", PbuildCommand.HelpText, StringComparison.Ordinal);
-        Assert.Contains("  --platform <id>       target id (default: the first entry of the project's platforms)", PbuildCommand.HelpText, StringComparison.Ordinal);
+        Assert.Contains("  --platform <id>       target id (default: the project's active platform)", PbuildCommand.HelpText, StringComparison.Ordinal);   // CMP-1374
     }
 
     /// <summary>Reading any file throws a non-I/O exception: an internal error.</summary>

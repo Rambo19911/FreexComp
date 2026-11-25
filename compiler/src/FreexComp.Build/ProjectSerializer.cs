@@ -36,8 +36,9 @@ public static class ProjectSerializer
 
     /// <summary>Canonical text (CMP-811): UTF-8 without BOM when encoded, LF, 2-space indent, final newline.</summary>
     /// <exception cref="ArgumentException">
-    /// The model holds both forms of the key <c>manifest</c> (CMP-1112), or its <c>Inherits</c> links name a missing configuration
-    /// or form a cycle (CMP-1157).
+    /// The model holds both forms of the key <c>manifest</c> (CMP-1112), its <c>Inherits</c> links name a missing configuration
+    /// or form a cycle (CMP-1157), or its <c>ActivePlatform</c> or a key of its <c>PlatformOptions</c> is not one of its
+    /// <c>Platforms</c> (CMP-1362, CMP-1363).
     /// </exception>
     public static string Save(Project project)
     {
@@ -48,6 +49,17 @@ public static class ProjectSerializer
         }
 
         ProjectConfigurations.RequireValidLinks(project);
+        var platforms = project.Platforms.IsDefault ? [] : project.Platforms;
+        if (project.ActivePlatform is { } active && !platforms.Contains(active, StringComparer.Ordinal))
+        {
+            throw new ArgumentException($"The active platform '{active}' is not listed in 'Platforms'", nameof(project));
+        }
+
+        if (project.PlatformOptions.Keys.Order(StringComparer.Ordinal).FirstOrDefault(id => !platforms.Contains(id, StringComparer.Ordinal)) is { } unlisted)
+        {
+            throw new ArgumentException($"'PlatformOptions' has an entry for '{unlisted}', which is not listed in 'Platforms'", nameof(project));
+        }
+
         return Write(w => WriteProject(w, project));
     }
 
@@ -176,6 +188,22 @@ public static class ProjectSerializer
             }
         }
 
+        var platforms = root.Optional("platforms") is { } platformsNode ? ReadPlatforms(platformsNode) : [TargetRegistry.Default.Id];
+        string? activePlatform = null;
+        if (root.Optional("activePlatform") is { } activeNode)
+        {
+            // CMP-1362: one of the listed platforms
+            activePlatform = activeNode.String();
+            if (!platforms.Contains(activePlatform, StringComparer.Ordinal))
+            {
+                throw ProjectFileException.Invalid(activeNode.Offset, $"active platform '{activePlatform}' is not listed in platforms");
+            }
+        }
+
+        var platformOptions = root.Optional("platformOptions") is { } optionsNode
+            ? ReadPlatformOptions(optionsNode, platforms)
+            : ImmutableDictionary<string, PlatformOptions>.Empty;
+
         var run = new RunSettings("", "");
         if (root.Optional("run") is { } runNode)
         {
@@ -223,7 +251,9 @@ public static class ProjectSerializer
             Manifest = manifest,
             ManifestSettings = manifestSettings,
             Defines = root.Optional("defines")?.Strings() ?? [],
-            Platforms = root.Optional("platforms") is { } platforms ? ReadPlatforms(platforms) : [TargetRegistry.Default.Id],
+            Platforms = platforms,
+            ActivePlatform = activePlatform,
+            PlatformOptions = platformOptions,
             Jobs = root.Optional("jobs") is { } jobs ? ReadJobs(jobs) : 0,
             Configurations = configurations,
             ActiveConfiguration = root.Optional("activeConfiguration")?.String() ?? "Debug",
@@ -360,9 +390,9 @@ public static class ProjectSerializer
 
     /// <summary>
     /// A list of defines or search paths; the reset marker <c>"!"</c> (CMP-1153) is allowed only as the first entry of a
-    /// configuration's list, else E9002 at its token.
+    /// configuration's list or of a platform's list (CMP-1365; <paramref name="owner"/> names which), else E9002 at its token.
     /// </summary>
-    private static ImmutableArray<string> ReadList(Node node, bool path, bool resetAllowed)
+    private static ImmutableArray<string> ReadList(Node node, bool path, bool resetAllowed, string owner = "configuration")
     {
         var index = 0;
         var values = ImmutableArray.CreateBuilder<string>();
@@ -371,7 +401,7 @@ public static class ProjectSerializer
             var value = item.String();
             if (value == ConfigurationResolver.ResetMarker && (index > 0 || !resetAllowed))
             {
-                throw ProjectFileException.Invalid(item.Offset, "'!' is allowed only as the first entry of a configuration's list");
+                throw ProjectFileException.Invalid(item.Offset, $"'!' is allowed only as the first entry of a {owner}'s list");
             }
 
             values.Add(path ? Slashes(value) : value);
@@ -435,10 +465,73 @@ public static class ProjectSerializer
         }
     }
 
-    /// <summary>CMP-1019 rule 1: every entry of <c>platforms</c> is the id of a built-in target, else E9002 at its token.</summary>
-    private static ImmutableArray<string> ReadPlatforms(Node node) =>
-        [.. node.Items().Select(item => item.String() is var id && TargetRegistry.TryGet(id, out _)
-            ? id : throw ProjectFileException.Invalid(item.Offset, $"unknown platform '{id}'"))];
+    /// <summary>
+    /// CMP-1360: every entry of <c>platforms</c> has the form of a target id and stands once, else E9002 at its token. The ids are
+    /// not compared with the registry: a listed platform need not be installed (CMP-1361).
+    /// </summary>
+    private static ImmutableArray<string> ReadPlatforms(Node node)
+    {
+        var ids = ImmutableArray.CreateBuilder<string>();
+        foreach (var item in node.Items())
+        {
+            var id = item.String();
+            if (!IsPlatformId(id))
+            {
+                throw ProjectFileException.Invalid(item.Offset, $"invalid platform id '{id}'");
+            }
+
+            if (ids.Contains(id, StringComparer.Ordinal))
+            {
+                throw ProjectFileException.Invalid(item.Offset, $"platform '{id}' is listed twice");
+            }
+
+            ids.Add(id);
+        }
+
+        return ids.ToImmutable();
+    }
+
+    /// <summary>The form of a target id (targets.md §2): <c>^[a-z][a-z0-9]{1,15}$</c>.</summary>
+    private static bool IsPlatformId(string id) =>
+        id.Length is >= 2 and <= 16 && char.IsAsciiLetterLower(id[0]) && id.All(c => char.IsAsciiLetterLower(c) || char.IsAsciiDigit(c));
+
+    /// <summary>
+    /// CMP-1363: the object <c>platformOptions</c>. Each key is a listed platform, else E9002 at the key; each value an object with
+    /// the optional keys <c>defines</c>, <c>searchPaths</c>, <c>libraryPaths</c> and <c>outputDir</c> (CMP-1366: no macro other
+    /// than <c>$(Config)</c> and <c>$(Platform)</c>). Other keys are kept by the writer and ignored here.
+    /// </summary>
+    private static ImmutableDictionary<string, PlatformOptions> ReadPlatformOptions(Node node, ImmutableArray<string> platforms)
+    {
+        var result = ImmutableDictionary.CreateBuilder<string, PlatformOptions>(StringComparer.Ordinal);
+        foreach (var (id, entry) in node.Properties())
+        {
+            if (!platforms.Contains(id, StringComparer.Ordinal))
+            {
+                throw ProjectFileException.Invalid(entry.KeyOffset, $"platform options for '{id}', which is not listed in platforms");
+            }
+
+            entry.RequireObject();
+            ImmutableArray<string> List(string key, bool path) =>
+                entry.Optional(key) is { } list ? ReadList(list, path, resetAllowed: true, owner: "platform") : [];
+
+            var defines = List("defines", path: false);
+            var searchPaths = List("searchPaths", path: true);
+            var libraryPaths = List("libraryPaths", path: true);
+            string? outputDir = null;
+            if (entry.Optional("outputDir") is { } directory)
+            {
+                outputDir = Slashes(directory.String());
+                if (!ProjectOptions.IsPlatformOutputDir(outputDir))
+                {
+                    throw ProjectFileException.Invalid(directory.Offset, $"'{directory.Display}' may use only the macros $(Config) and $(Platform)");
+                }
+            }
+
+            result.Add(id, new PlatformOptions(defines, searchPaths, libraryPaths, outputDir));
+        }
+
+        return result.ToImmutable();
+    }
 
     private static ProjectGroup ReadGroup(Node root, string path)
     {
@@ -505,6 +598,8 @@ public static class ProjectSerializer
                     : null),
             ("defines", w => WriteStrings(w, p.Defines)),
             ("platforms", w => WriteStrings(w, p.Platforms)),
+            ("activePlatform", p.ActivePlatform is { } activePlatform ? w => w.WriteStringValue(activePlatform) : null),     // CMP-1362
+            ("platformOptions", PlatformOptionsWriter(p, Child(source, "platformOptions"))),
             ("jobs", Has(source, "jobs") || p.Jobs != 0 ? w => w.WriteNumberValue(p.Jobs) : null),
             ("configurations", w => WriteConfigurations(w, p, Child(source, "configurations"))),
             ("activeConfiguration", w => w.WriteStringValue(p.ActiveConfiguration)),
@@ -519,6 +614,51 @@ public static class ProjectSerializer
             ("events", w => WriteEvents(w, p.Events, Child(source, "events"), always: true)),
             ("dependencies", w => WriteStrings(w, p.Dependencies, path: true)),
         ]);
+    }
+
+    /// <summary>
+    /// CMP-1363: the entries in the order of <c>platforms</c>, the keys of an entry in the order <c>defines</c>,
+    /// <c>searchPaths</c>, <c>libraryPaths</c>, <c>outputDir</c>; a list is written when it is non-empty or present in the loaded
+    /// file. An entry without any key (known or unknown) is not written; null = no entry is written, so the key is not either.
+    /// </summary>
+    private static Action<Utf8JsonWriter>? PlatformOptionsWriter(Project p, JsonElement? source)
+    {
+        var entries = new List<(string Key, Action<Utf8JsonWriter>? Write)>();
+        foreach (var id in p.Platforms.IsDefault ? [] : p.Platforms)
+        {
+            if (!p.PlatformOptions.TryGetValue(id, out var options))
+            {
+                continue;
+            }
+
+            var entry = Child(source, id);
+            Action<Utf8JsonWriter>? List(string key, ImmutableArray<string> values, bool path) =>
+                !values.IsDefaultOrEmpty || Has(entry, key) ? w => WriteStrings(w, values, path) : null;
+
+            (string Key, Action<Utf8JsonWriter>? Write)[] keys =
+            [
+                ("defines", List("defines", options.Defines, path: false)),
+                ("searchPaths", List("searchPaths", options.SearchPaths, path: true)),
+                ("libraryPaths", List("libraryPaths", options.LibraryPaths, path: true)),
+                ("outputDir", options.OutputDir is { } outputDir ? w => w.WriteStringValue(Slashes(outputDir)) : null),
+            ];
+            var hasUnknownKeys = entry is { ValueKind: JsonValueKind.Object } e && e.EnumerateObject().Any(m => keys.All(k => k.Key != m.Name));
+            if (hasUnknownKeys || keys.Any(k => k.Write is not null))
+            {
+                entries.Add((id, w => WriteObject(w, entry, keys)));
+            }
+        }
+
+        if (entries.Count == 0)
+        {
+            return null;
+        }
+
+        // Entries that are not written (empty, or of a platform that left the model) must not survive as "unknown" keys.
+        var dropped = (source is { ValueKind: JsonValueKind.Object } s ? s.EnumerateObject().Select(m => m.Name) : [])
+            .Except(entries.Select(entry => entry.Key), StringComparer.Ordinal)
+            .Select(name => (name, (Action<Utf8JsonWriter>?)null));
+        return w => WriteObject(w, source, [.. entries, .. dropped]);
     }
 
     /// <summary>File entries keep their unknown keys by path (ordinal ignore-case), so reordering is safe.</summary>
@@ -680,6 +820,9 @@ public static class ProjectSerializer
     private readonly record struct Node(JsonElement Element, string Pointer, string Display, StrictJson Json)
     {
         public int Offset => Json.OffsetOf(Pointer);
+
+        /// <summary>The offset of the property name this value belongs to (0 for the root and for array items).</summary>
+        public int KeyOffset => Json.KeyOffsetOf(Pointer);
 
         public Node? Optional(string key) =>
             Element.TryGetProperty(key, out var child)

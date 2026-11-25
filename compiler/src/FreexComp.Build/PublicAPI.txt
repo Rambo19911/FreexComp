@@ -257,6 +257,20 @@ enum FreexComp.Build.OutputSource
   ProgramStdErr = 2
   ProgramStdOut = 1
   Tool = 0
+sealed record FreexComp.Build.PlatformOptions : System.IEquatable<FreexComp.Build.PlatformOptions>
+  public FreexComp.Build.PlatformOptions <Clone>$()
+  public System.Boolean Equals(FreexComp.Build.PlatformOptions other)
+  public System.Collections.Immutable.ImmutableArray<System.String> Defines { get; init; }
+  public System.Collections.Immutable.ImmutableArray<System.String> LibraryPaths { get; init; }
+  public System.Collections.Immutable.ImmutableArray<System.String> SearchPaths { get; init; }
+  public System.String OutputDir { get; init; }
+  public System.Void Deconstruct(out System.Collections.Immutable.ImmutableArray<System.String> Defines, out System.Collections.Immutable.ImmutableArray<System.String> SearchPaths, out System.Collections.Immutable.ImmutableArray<System.String> LibraryPaths, out System.String OutputDir)
+  public ctor(System.Collections.Immutable.ImmutableArray<System.String> Defines, System.Collections.Immutable.ImmutableArray<System.String> SearchPaths, System.Collections.Immutable.ImmutableArray<System.String> LibraryPaths, System.String OutputDir)
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public static System.Boolean op_Equality(FreexComp.Build.PlatformOptions left, FreexComp.Build.PlatformOptions right)
+  public static System.Boolean op_Inequality(FreexComp.Build.PlatformOptions left, FreexComp.Build.PlatformOptions right)
 enum FreexComp.Build.PostBuildWhen
   Always = 1
   Success = 0
@@ -274,10 +288,12 @@ sealed record FreexComp.Build.Project : System.IEquatable<FreexComp.Build.Projec
   public System.Collections.Immutable.ImmutableArray<System.String> Platforms { get; init; }
   public System.Collections.Immutable.ImmutableArray<System.String> SearchPaths { get; init; }
   public System.Collections.Immutable.ImmutableArray<System.String> UnitScopeNames { get; init; }
+  public System.Collections.Immutable.ImmutableDictionary<System.String, FreexComp.Build.PlatformOptions> PlatformOptions { get; init; }
   public System.Collections.Immutable.ImmutableDictionary<System.String, FreexComp.Build.ProjectConfiguration> Configurations { get; init; }
   public System.Int32 FormatVersion { get; init; }
   public System.Int32 Jobs { get; init; }
   public System.String ActiveConfiguration { get; init; }
+  public System.String ActivePlatform { get; init; }
   public System.String AppType { get; init; }
   public System.String Directory { get; }
   public System.String FilePath { get; init; }
@@ -380,8 +396,11 @@ static class FreexComp.Build.ProjectOptions
   public static FreexComp.Build.ProjectEvents GetEffectiveEvents(FreexComp.Build.Project project, System.String configuration)
   public static FreexComp.Compiler.CompilationOptions ToCompilationOptions(FreexComp.Build.Project project, System.String configuration)
   public static FreexComp.Compiler.CompilationOptions ToCompilationOptions(FreexComp.Build.Project project, System.String configuration, FreexComp.Compiler.Targets.TargetInfo target)
+  public static System.String GetEffectivePlatform(FreexComp.Build.Project project, System.String requested = null)
   public static System.String GetHostApplicationPath(FreexComp.Build.Project project)
+  public static System.String GetOutputDirectory(FreexComp.Build.Project project, System.String configuration, System.String platformId)
   public static System.String GetOutputPath(FreexComp.Build.Project project, System.String configuration)
+  public static System.String GetOutputPath(FreexComp.Build.Project project, System.String configuration, System.String platformId)
 static class FreexComp.Build.ProjectSerializer
   public const System.Int32 SupportedFormatVersion = 1
   public static FreexComp.Build.LoadResult<FreexComp.Build.Project> LoadProject(System.String path, FreexComp.Compiler.IFileSystem fs)

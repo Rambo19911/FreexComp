@@ -30,8 +30,14 @@ public sealed class BuildEngine : IBuildEngine
     internal TimeProvider? ToolTimeProvider { get; init; }
 
     /// <summary>
-    /// A test seam (CMP-1004: a descriptor outside the registry cannot be named in a project): maps the registered target of the
-    /// effective platform to the descriptor the build uses; null = the registered one.
+    /// A test seam (platform-model.md CMP-1380): the installed platforms — the descriptors a build can use, found by their id. The
+    /// product has those of the registry (<see cref="TargetRegistry.BuiltIn"/>); no product code path installs another one.
+    /// </summary>
+    internal ImmutableArray<TargetInfo> InstalledTargets { get; init; } = TargetRegistry.BuiltIn;
+
+    /// <summary>
+    /// A test seam (CMP-1004: a descriptor outside the registry cannot be named in a project): maps the installed target of the
+    /// effective platform to the descriptor the build uses; null = the installed one.
     /// </summary>
     internal Func<TargetInfo, TargetInfo>? TargetOverride { get; init; }
 
@@ -142,7 +148,9 @@ public sealed class BuildEngine : IBuildEngine
         var project = load.Value;
         var requested = request.Configuration ?? project?.ActiveConfiguration ?? "Debug";
         var configuration = project?.ConfigurationNames.FirstOrDefault(n => string.Equals(n, requested, StringComparison.OrdinalIgnoreCase));
-        var platform = request.Platform ?? (project is { Platforms.IsEmpty: false } ? project.Platforms[0] : TargetRegistry.Default.Id);
+        var platform = project is null                                                          // CMP-1364: request, active, first listed, baseline
+            ? request.Platform ?? TargetRegistry.Default.Id
+            : ProjectOptions.GetEffectivePlatform(project, request.Platform);
         sink.Report(new BuildEvent.Started(DateTime.UtcNow, path, configuration ?? requested, platform, target));
         if (request.Verbose && skippedBecause is null && project is not null && configuration is not null && !HasErrors(load.Diagnostics)
             && ConfigurationResolver.Resolve(project, configuration).Chain is { Length: > 1 } chain)
@@ -188,13 +196,15 @@ public sealed class BuildEngine : IBuildEngine
                 // CMP-1019 rule 2: the effective platform must be one the project lists
                 diagnostics.Add(Diagnostic.Create("E9012", location, platform, project.Name, string.Join(", ", project.Platforms)));
             }
-            else if (!TargetRegistry.TryGet(platform, out var registered))
+            else if (InstalledTargets.FirstOrDefault(t => string.Equals(t.Id, platform, StringComparison.Ordinal)) is not { } installed)
             {
-                diagnostics.Add(Diagnostic.Create("E9002", location, $"unknown platform '{platform}'"));        // CMP-1019 rule 1 (a model not made by the loader)
+                // CMP-1370: listed, but not installed — nothing is built for the project
+                diagnostics.Add(Diagnostic.Create("E9016", location, platform, string.Join(", ", InstalledTargets.Select(t => t.Id))));
             }
             else
             {
-                var run = new ProjectRun(this, project, configuration, TargetOverride?.Invoke(registered) ?? registered, request, sink, diagnostics, location)
+                // CMP-1371: the options, the directories and the macros of the build are those of this descriptor's id
+                var run = new ProjectRun(this, project, configuration, TargetOverride?.Invoke(installed) ?? installed, request, sink, diagnostics, location)
                 {
                     LibraryDependencies = libraryDependencies.IsDefault ? [] : libraryDependencies,
                 };
@@ -504,7 +514,7 @@ public sealed class BuildEngine : IBuildEngine
                 return false;
             }
 
-            var exe = ProjectOptions.GetOutputPath(project, configuration);
+            var exe = ProjectOptions.GetOutputPath(project, configuration, target.Id);
             var deployed = ReadDeployed(objectDirectory).Select(name => Path.Combine(Path.GetDirectoryName(exe)!, name)).ToList();
             try
             {
@@ -578,7 +588,7 @@ public sealed class BuildEngine : IBuildEngine
             }
 
             _reachedCompile = true;
-            var output = ProjectOptions.GetOutputPath(project, configuration);
+            var output = ProjectOptions.GetOutputPath(project, configuration, target.Id);      // CMP-1371
             _exe = output;
             _exeTimeBefore = _fs.FileExists(output) ? _fs.GetLastWriteTimeUtc(output) : null;
             _objectDirectory = options.ObjectDirectory;

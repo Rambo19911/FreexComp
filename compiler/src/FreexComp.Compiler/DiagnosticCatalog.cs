@@ -269,6 +269,7 @@ public static class DiagnosticCatalog
         new("E9012", null, DiagnosticSeverity.Error, "Platform '%s' is not available for project '%s' (available: %s)"),
         new("E9014", null, DiagnosticSeverity.Error, "Cannot run library project '%s': no host application is set"),
         new("E9015", null, DiagnosticSeverity.Error, "Circular configuration inheritance: %s"),
+        new("E9016", null, DiagnosticSeverity.Error, "Platform '%s' is not installed (installed: %s)"),
         new("E9020", null, DiagnosticSeverity.Error, "Build event failed: %s command %d ended with exit code %d: %s"),
         new("E9021", null, DiagnosticSeverity.Error, "Project '%s' has build event commands and is not trusted (pbuild: --trust-events runs them, --no-events builds without them)"),
         new("E9022", null, DiagnosticSeverity.Error, "Unknown macro '$(%s)' in %s command %d (known: ProjectDir, ProjectName, Config, Platform, OutputDir, OutputPath)"),

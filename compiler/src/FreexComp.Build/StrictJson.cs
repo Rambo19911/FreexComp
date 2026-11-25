@@ -20,7 +20,8 @@ internal sealed class ProjectFileException(string code, int offset, params objec
 
 /// <summary>
 /// Strict JSON (no comments, no trailing commas, no duplicate keys) with the UTF-16 offset of every value,
-/// keyed by a pointer of the form "", "/files", "/files/0", "/files/0/path".
+/// keyed by a pointer of the form "", "/files", "/files/0", "/files/0/path", and of every property name, keyed by the pointer of
+/// its value.
 /// </summary>
 internal sealed class StrictJson
 {
@@ -31,6 +32,7 @@ internal sealed class StrictJson
     };
 
     private readonly Dictionary<string, int> _offsets = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, int> _keyOffsets = new(StringComparer.Ordinal);
     private readonly byte[] _bytes;
 
     private StrictJson(string text)
@@ -55,6 +57,9 @@ internal sealed class StrictJson
 
     public int OffsetOf(string pointer) => _offsets.TryGetValue(pointer, out var offset) ? offset : 0;
 
+    /// <summary>The offset of the property name whose value <paramref name="pointer"/> names.</summary>
+    public int KeyOffsetOf(string pointer) => _keyOffsets.TryGetValue(pointer, out var offset) ? offset : 0;
+
     private int CharOffset(long byteOffset) =>
         Encoding.UTF8.GetCharCount(_bytes, 0, (int)Math.Clamp(byteOffset, 0, _bytes.Length));
 
@@ -78,6 +83,7 @@ internal sealed class StrictJson
                             throw ProjectFileException.Invalid(CharOffset(reader.TokenStartIndex), $"duplicate key '{top.Name}'");
                         }
 
+                        _keyOffsets[top.Path + "/" + top.Name] = CharOffset(reader.TokenStartIndex);
                         break;
                     case JsonTokenType.StartObject:
                     case JsonTokenType.StartArray:

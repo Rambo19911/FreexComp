@@ -3,44 +3,89 @@ using FreexComp.Compiler.Targets;
 
 namespace FreexComp.Build.Tests;
 
-/// <summary>targets.md CMP-1019, CMP-1020 (task C-283): platform validation and the object directory per target.</summary>
+/// <summary>
+/// targets.md CMP-1019, CMP-1020 (task C-283): platform validation and the object directory per target; platform-model.md
+/// CMP-1370 (task C-339): a listed platform that is not installed.
+/// </summary>
 public sealed partial class BuildEngineTests
 {
+    /// <summary>
+    /// Card F03-003 acceptance 4. With <c>ProjectSerializerTests.Platforms_SyntaxRules_E9002</c> (an id of wrong form, such as
+    /// <c>Win64</c>, stays E9002 at its token) and <c>Platforms_ListedButNotInstalled_Loads</c> this replaces
+    /// <c>Platform_UnknownInProject_E9002</c>: the loader no longer compares the ids with the registry (CMP-1361).
+    /// </summary>
     [Fact]
     [Trait("Phase", "8")]
-    [Trait("Req", "CMP-1019")]
-    public async Task Platform_UnknownInProject_E9002()
+    [Trait("Req", "CMP-1361")]
+    [Trait("Req", "CMP-1370")]
+    public async Task Platform_NotInstalled_E9016_ListsInstalled()
     {
         const string Json = """
             {
               "formatVersion": 1,
               "name": "Hello",
               "mainSource": "Hello.pas",
-              "platforms": ["win64", "amiga"]
+              "platforms": ["win64", "amiga"],
+              "activePlatform": "amiga"
             }
             """;
         var w = new BuildWorkspace(projectJson: Json.ReplaceLineEndings("\n"));
 
-        var (result, log) = await w.RunAsync(w.Request());
-
-        // rule 1: every entry must be a registered id — reported by the loader at the JSON token of the entry (line 5, column 26)
-        Assert.False(result.Success);
-        Assert.Equal(@"C:\p\Hello.pproj(5,26): error E9002: Invalid project file: unknown platform 'amiga'",
-            log.Events.OfType<BuildEvent.Diagnostic>().Single().Value.ToText());
-        Assert.Empty(w.Tools.Calls);
-
-        // the loader reports it on its own too (the IDE opens projects through it); ids are case-sensitive
+        // the project loads: the loader checks the form of an id only (the IDE opens projects through it)
         var load = ProjectSerializer.LoadProject(BuildWorkspace.ProjectPath, w.Fs);
-        Assert.Null(load.Value);
-        Assert.Equal("E9002", Assert.Single(load.Diagnostics).Code);
-        w.Fs.Add(BuildWorkspace.ProjectPath, BuildWorkspace.ProjectJson("Hello", extra: """ "platforms": ["Win64"]"""));
-        Assert.Equal("Invalid project file: unknown platform 'Win64'", Assert.Single(ProjectSerializer.LoadProject(BuildWorkspace.ProjectPath, w.Fs).Diagnostics).Message);
+        Assert.Empty(load.Diagnostics);
+        Assert.Equal(["win64", "amiga"], load.Value!.Platforms);
 
-        // every registered id is accepted; without the key the project has the baseline target
-        w.Fs.Add(BuildWorkspace.ProjectPath, BuildWorkspace.ProjectJson("Hello", extra: """ "platforms": ["win64"]"""));
-        Assert.Equal(["win64"], ProjectSerializer.LoadProject(BuildWorkspace.ProjectPath, w.Fs).Value!.Platforms);
-        w.Fs.Add(BuildWorkspace.ProjectPath, BuildWorkspace.ProjectJson("Hello"));
-        Assert.Equal([TargetRegistry.Default.Id], ProjectSerializer.LoadProject(BuildWorkspace.ProjectPath, w.Fs).Value!.Platforms);
+        // building the active platform, which is not installed: at (0,0) of the project file, Success = false, nothing built
+        var (result, log) = await w.RunAsync(w.Request());
+        Assert.False(result.Success);
+        Assert.Equal("started Hello.pproj Debug amiga Build", log.Lines[0]);
+        Assert.Equal(@"C:\p\Hello.pproj(0,0): error E9016: Platform 'amiga' is not installed (installed: win64)",
+            log.Events.OfType<BuildEvent.Diagnostic>().Single().Value.ToText());
+        Assert.Equal(1, result.Errors);
+        Assert.Null(result.OutputPath);
+        Assert.Empty(w.Tools.Calls);
+        Assert.Empty(w.Fs.EnumerateDirectories(@"C:\p"));                                    // no bin, no obj
+
+        // the same when the platform is named in the request, for every target
+        foreach (var target in new[] { BuildTarget.Build, BuildTarget.Rebuild, BuildTarget.Clean, BuildTarget.Run })
+        {
+            var (named, namedLog) = await w.RunAsync(w.Request(target) with { Platform = "amiga" });
+            Assert.False(named.Success);
+            Assert.Equal("E9016", namedLog.Events.OfType<BuildEvent.Diagnostic>().Single().Value.Code);
+        }
+
+        Assert.Empty(w.Tools.Calls);
+        Assert.Empty(w.Fs.EnumerateDirectories(@"C:\p"));
+
+        // with the installed platform named, the same project builds — into the directories it always had
+        var (built, builtLog) = await w.RunAsync(w.Request() with { Platform = "win64" });
+        Assert.True(built.Success, string.Join("\n", builtLog.Lines));
+        Assert.Equal("started Hello.pproj Debug win64 Build", builtLog.Lines[0]);
+        Assert.Equal(BuildWorkspace.Exe, built.OutputPath);
+        Assert.True(w.Fs.FileExists(BuildWorkspace.Exe));
+        Assert.Equal([@"C:\p\obj\Debug"], w.Fs.EnumerateDirectories(@"C:\p\obj"));
+
+        // listed comes before installed: a platform the project does not list is E9012 (unchanged), whatever is installed
+        var (unlisted, unlistedLog) = await w.RunAsync(w.Request() with { Platform = "atari" });
+        Assert.False(unlisted.Success);
+        Assert.Equal(@"C:\p\Hello.pproj(0,0): error E9012: Platform 'atari' is not available for project 'Hello' (available: win64, amiga)",
+            unlistedLog.Events.OfType<BuildEvent.Diagnostic>().Single().Value.ToText());
+
+        // a group: the project that fails the check counts as failed (CMP-821)
+        w.Fs.Add(@"C:\p\All.pgroup", """{ "formatVersion": 1, "projects": ["Hello.pproj"] }""");
+        var (group, groupLog) = await w.RunAsync(w.Request(path: @"C:\p\All.pgroup"));
+        Assert.False(group.Success);
+        Assert.Equal("E9016", groupLog.Events.OfType<BuildEvent.Diagnostic>().Single().Value.Code);
+        Assert.False(Assert.Single(group.Projects).Success);
+
+        // an empty list (unchanged): the effective platform is the baseline one (CMP-1364), which such a project does not list
+        var empty = new BuildWorkspace(projectJson: BuildWorkspace.ProjectJson("Hello", extra: "\"platforms\": []"));
+        var (none, noneLog) = await empty.RunAsync(empty.Request());
+        Assert.False(none.Success);
+        Assert.Equal("started Hello.pproj Debug win64 Build", noneLog.Lines[0]);
+        Assert.Equal(@"C:\p\Hello.pproj(0,0): error E9012: Platform 'win64' is not available for project 'Hello' (available: )",
+            noneLog.Events.OfType<BuildEvent.Diagnostic>().Single().Value.ToText());
     }
 
     [Fact]

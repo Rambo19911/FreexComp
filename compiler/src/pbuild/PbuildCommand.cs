@@ -43,7 +43,7 @@ public static class PbuildCommand
           --config <name>       any configuration of the project, matched case-insensitively (default: the project's
                                 activeConfiguration)
           --target <target>     build (default), rebuild, clean or run (build, then run the program)
-          --platform <id>       target id (default: the first entry of the project's platforms)
+          --platform <id>       target id (default: the project's active platform)
           --diagnostics text|json   output form (default text)
           --rtl <dir>           RTL root (default: $FREEXCOMP_HOME/rtl/src, else relative to pbuild.exe)
           --toolchain <dir>     LLVM bin dir (default: third_party/llvm/bin, else PATH)

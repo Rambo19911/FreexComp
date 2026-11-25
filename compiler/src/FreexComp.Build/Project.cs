@@ -51,7 +51,23 @@ public sealed record Project
 
     public ImmutableArray<string> Defines { get; init; } = [];
 
+    /// <summary>
+    /// The listed platforms (platform-model.md CMP-1360): target ids, checked for their form only — a listed platform need not be
+    /// installed (CMP-1361).
+    /// </summary>
     public ImmutableArray<string> Platforms { get; init; } = [TargetRegistry.Default.Id];
+
+    /// <summary>
+    /// Optional key <c>activePlatform</c> (CMP-1362): one of <see cref="Platforms"/>; null = key absent. The platform a build uses
+    /// comes from <see cref="ProjectOptions.GetEffectivePlatform"/>.
+    /// </summary>
+    public string? ActivePlatform { get; init; }
+
+    /// <summary>
+    /// Optional key <c>platformOptions</c> (CMP-1363): platform id → its options; every key is one of <see cref="Platforms"/>.
+    /// Written in the order of <see cref="Platforms"/>; an entry that holds nothing is not written.
+    /// </summary>
+    public ImmutableDictionary<string, PlatformOptions> PlatformOptions { get; init; } = ImmutableDictionary<string, PlatformOptions>.Empty;
 
     /// <summary>
     /// Optional key <c>jobs</c> (CMP-1133): the project-wide default number of parallel compile jobs, 0…256; 0 = automatic (also
@@ -156,6 +172,20 @@ public sealed record ProjectConfiguration(int Optimization, bool DebugInfo, Immu
     /// </summary>
     public ProjectEvents? Events { get; init; }
 }
+
+/// <summary>
+/// One entry of <c>platformOptions</c> (platform-model.md CMP-1363, CMP-1365, CMP-1366): what a platform adds to the values of the
+/// project and of the configuration being built.
+/// </summary>
+/// <param name="Defines">Appended after the configuration chain; a leading <c>"!"</c> discards what came before.</param>
+/// <param name="SearchPaths">As <paramref name="Defines"/>, for the unit search directories.</param>
+/// <param name="LibraryPaths">As <paramref name="Defines"/>, for the directories of import libraries.</param>
+/// <param name="OutputDir">
+/// The output directory of this platform for every configuration, with the macros <c>$(Config)</c> and <c>$(Platform)</c>; null =
+/// the rule of <see cref="ProjectOptions.GetOutputDirectory"/>.
+/// </param>
+public sealed record PlatformOptions(
+    ImmutableArray<string> Defines, ImmutableArray<string> SearchPaths, ImmutableArray<string> LibraryPaths, string? OutputDir);
 
 public sealed record RunSettings(string Arguments, string WorkingDir)
 {
