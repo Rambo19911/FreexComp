@@ -17,13 +17,6 @@ public sealed partial class ChildPipeReadsTests
     /// <summary>Open sites, by repository-relative path (forward slashes) → task that removes them.</summary>
     private static readonly Dictionary<string, string> Open = new(StringComparer.OrdinalIgnoreCase)
     {
-        ["compiler/src/FreexComp.Compiler/Toolchain/ProcessRunner.cs"] = "C-319",
-        ["compiler/tests/Shared/NativeRun.cs"] = "C-319",
-        ["compiler/tests/Shared/DllScenario.cs"] = "C-319",
-        ["compiler/tests/FreexComp.Compiler.GoldenTests/GoldenHarness.cs"] = "C-319",
-        ["compiler/tests/FreexComp.Compiler.GoldenTests/OpcProcessTests.cs"] = "C-319",
-        ["compiler/tests/FreexComp.Compiler.GoldenTests/StackProbeImportTests.cs"] = "C-319",
-        ["compiler/tests/FreexComp.Compiler.Tests/Emit/DeterminismTests.cs"] = "C-319",
     };
 
     /// <summary>The area guard tests: they hold the forbidden calls as samples.</summary>
