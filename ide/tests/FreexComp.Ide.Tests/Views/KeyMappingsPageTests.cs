@@ -77,7 +77,7 @@ public sealed class KeyMappingsPageTests
 
         // Grid: "<Category>: <Title>", gestures joined with ", ", scope; category order of commands.md, then title.
         SetText(dlg, "KeyMappings.Filter", "file: save");
-        Assert.Equal(["file.save", "file.saveAll", "file.saveAs", "file.saveProjectAs"], Rows(dlg));
+        Assert.Equal(["file.save", "file.saveAll", "file.saveAs", "file.saveProjectAs", "file.saveGroupAs"], Rows(dlg)); // file.saveGroupAs: I-275
         Assert.Equal(["File: Save", "Ctrl+S", "Global"], Cells(dlg, "file.save"));
         SetText(dlg, "KeyMappings.Filter", "edit.redo"); // the command id matches too
         Assert.Equal(["edit.redo"], Rows(dlg));

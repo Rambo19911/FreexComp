@@ -29,8 +29,11 @@ public sealed class ProjectManagerView : UserControl
     private readonly TreeView _tree;
     private readonly StackPanel _barHost = new(); // the missing-files bar above the unlisted-files bar (UI-TW-123)
     private readonly Control _empty;
+    private readonly TextBlock _emptyHeading = new() { Text = Strings.Msg_Project_NoProject, Classes = { "body" }, HorizontalAlignment = HorizontalAlignment.Center, TextWrapping = TextWrapping.Wrap };
+    private readonly TextBlock _emptySecondary = new() { Text = Strings.ProjectManager_NoProject_Secondary, Classes = { "caption" }, HorizontalAlignment = HorizontalAlignment.Center, TextWrapping = TextWrapping.Wrap };
     private readonly Canvas _dragLayer = new() { IsHitTestVisible = false };
     private Border? _dragAdorner;
+    private Border? _insertionLine;
     private ProjectNodeViewModel? _pressed;
     private Point _pressedAt;
     private bool _dragging;
@@ -155,7 +158,7 @@ public sealed class ProjectManagerView : UserControl
     private void OnModelChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName is nameof(ProjectManagerViewModel.HasProject) or nameof(ProjectManagerViewModel.MissingFilesBar)
-            or nameof(ProjectManagerViewModel.UnlistedFilesBar))
+            or nameof(ProjectManagerViewModel.UnlistedFilesBar) or nameof(ProjectManagerViewModel.IsEmptyGroup))
             UpdateState();
     }
 
@@ -164,6 +167,16 @@ public sealed class ProjectManagerView : UserControl
         var hasProject = _model?.HasProject == true;
         _tree.IsVisible = hasProject;
         _empty.IsVisible = !hasProject;
+        // IDE-PM-154: a project group without projects says so, with its own links.
+        var emptyGroup = _model?.IsEmptyGroup == true;
+        if (_emptySecondary.IsVisible == emptyGroup)
+        {
+            _emptyHeading.Text = emptyGroup ? Strings.Msg_Group_Empty : Strings.Msg_Project_NoProject;
+            _emptySecondary.IsVisible = !emptyGroup;
+            if (_model is not null)
+                BuildEmptyLinks();
+        }
+
         InfoBarViewModel?[] bars = [_model?.MissingFilesBar, _model?.UnlistedFilesBar];
         var shown = bars.OfType<InfoBarViewModel>().ToList();
         if (!shown.SequenceEqual(_barHost.Children.Select(c => c.DataContext)))
@@ -354,9 +367,62 @@ public sealed class ProjectManagerView : UserControl
         Canvas.SetLeft(_dragAdorner, onLayer.X + 12);
         Canvas.SetTop(_dragAdorner, onLayer.Y + 16);
         var inside = new Rect(_tree.Bounds.Size).Contains(point);
+        if (_model.IsRootDrag)
+        {
+            UpdateInsertionLine(inside ? point : null);
+            return;
+        }
+
         var over = inside ? (_tree.InputHitTest(point) as Visual)?.FindAncestorOfType<TreeViewItem>(includeSelf: true)?.DataContext as ProjectNodeViewModel : null;
         var target = _model.DragOver(over);
         _tree.Cursor = new Cursor(target is null ? StandardCursorType.No : StandardCursorType.DragMove);
+    }
+
+    /// <summary>
+    /// UI-TW-127: while a root row is dragged the 2 px <c>accent</c> insertion line lies across the tree at the gap between
+    /// root rows nearest to the pointer; the "not allowed" cursor outside the tree.
+    /// </summary>
+    private void UpdateInsertionLine(Point? point)
+    {
+        if (_model is null)
+            return;
+        // The gaps: above each root row and below the last one, in tree coordinates.
+        var gaps = new List<double>();
+        for (var i = 0; i < _model.Roots.Count; i++)
+        {
+            if (_tree.ContainerFromIndex(i) is not { } row || row.TranslatePoint(default, _tree) is not { } top)
+                continue;
+            gaps.Add(top.Y);
+            if (i == _model.Roots.Count - 1)
+                gaps.Add(top.Y + row.Bounds.Height);
+        }
+
+        int? gap = point is { } p && gaps.Count == _model.Roots.Count + 1
+            ? Enumerable.Range(0, gaps.Count).MinBy(i => Math.Abs(gaps[i] - p.Y))
+            : null;
+        _model.DragOverGap(gap);
+        _tree.Cursor = new Cursor(_model.InsertionGap is null ? StandardCursorType.No : StandardCursorType.DragMove);
+        if (_model.InsertionGap is not { } at)
+        {
+            if (_insertionLine is not null)
+                _dragLayer.Children.Remove(_insertionLine);
+            _insertionLine = null;
+            return;
+        }
+
+        if (_insertionLine is null)
+        {
+            _insertionLine = new Border { Height = 2 };
+            _insertionLine.Bind(Border.BackgroundProperty, _insertionLine.GetResourceObservable("FxcAccentDefaultBrush"));
+            AutomationProperties.SetAutomationId(_insertionLine, "Tool.ProjectManager.InsertionLine");
+            _dragLayer.Children.Add(_insertionLine);
+        }
+
+        AutomationProperties.SetName(_insertionLine, _model.InsertionName);
+        _insertionLine.Width = _tree.Bounds.Width;
+        var onLayer = _tree.TranslatePoint(new Point(0, gaps[at]), _dragLayer) ?? new Point(0, gaps[at]);
+        Canvas.SetLeft(_insertionLine, onLayer.X);
+        Canvas.SetTop(_insertionLine, Math.Clamp(onLayer.Y - 1, 0, Math.Max(0, _dragLayer.Bounds.Height - 2)));
     }
 
     private void ShowDragAdorner(ProjectNodeViewModel pressed, int count)
@@ -442,6 +508,7 @@ public sealed class ProjectManagerView : UserControl
         _edgeScroll = null;
         _dragLayer.Children.Clear();
         _dragAdorner = null;
+        _insertionLine = null;
         _tree.ClearValue(CursorProperty);
         _tree.ClearValue(ToolTip.ServiceEnabledProperty);
     }
@@ -462,9 +529,9 @@ public sealed class ProjectManagerView : UserControl
     /// <summary>UI-TW-013 empty state: <c>Msg.Project.NoProject</c>, its secondary line and the two links.</summary>
     private Control CreateEmptyState()
     {
-        var heading = new TextBlock { Text = Strings.Msg_Project_NoProject, Classes = { "body" }, HorizontalAlignment = HorizontalAlignment.Center, TextWrapping = TextWrapping.Wrap };
+        var heading = _emptyHeading;
         heading.Bind(TextBlock.ForegroundProperty, heading.GetResourceObservable("FxcTextSecondaryBrush"));
-        var secondary = new TextBlock { Text = Strings.ProjectManager_NoProject_Secondary, Classes = { "caption" }, HorizontalAlignment = HorizontalAlignment.Center, TextWrapping = TextWrapping.Wrap };
+        var secondary = _emptySecondary;
         secondary.Bind(TextBlock.ForegroundProperty, secondary.GetResourceObservable("FxcTextTertiaryBrush"));
         var block = new StackPanel { Spacing = 4, Children = { heading, secondary, _links } };
         Grid.SetRow(block, 1);

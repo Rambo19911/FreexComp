@@ -1,5 +1,4 @@
 using FreexComp.Ide.Core.Logging;
-using FreexComp.Ide.Core.Resources;
 using FreexComp.Ide.Core.Services;
 using FreexComp.Ide.Core.Settings;
 
@@ -43,7 +42,8 @@ public static class StartupSequence
 
     /// <summary>
     /// IDE-P1-010 (command line) and IDE-P1-031 (files dropped onto the main window): the first project opens as the
-    /// project, groups are refused, other files open as documents, in the given order; problems are reported per path.
+    /// project, a project group opens as the group (IDE-PM-154), other files open as documents, in the given order;
+    /// problems are reported per path.
     /// </summary>
     public static async Task OpenPathsAsync(IdeServices services, IReadOnlyList<string> paths)
     {
@@ -59,7 +59,7 @@ public static class StartupSequence
             }
             else if (extension.Equals(".pgroup", StringComparison.OrdinalIgnoreCase))
             {
-                await services.Dialogs.ShowMessageAsync(new MessageRequest("Msg.Project.OpenFailed", [path, Strings.Reason_GroupsNotSupported]));
+                await services.Projects.OpenAsync(path); // a failure is reported there (Msg.Project.OpenFailed)
             }
             else if (extension.Equals(".pproj", StringComparison.OrdinalIgnoreCase))
             {

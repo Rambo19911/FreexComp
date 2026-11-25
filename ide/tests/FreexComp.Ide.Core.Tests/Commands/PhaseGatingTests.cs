@@ -284,7 +284,9 @@ public sealed class PhaseGatingTests
 
     private static async Task UndeliveredPhase8CommandStaysStubOnUiThread()
     {
-        Assert.DoesNotContain("project.setActive", Phase8Features.Delivered);
+        // A catalogued phase-8 command that no card has delivered (project.setActive was the example until I-274 delivered it).
+        const string Undelivered = "file.saveProjectAs";
+        Assert.DoesNotContain(Undelivered, Phase8Features.Delivered);
         var services = BuildWithProject();
         var commands = services.Commands;
         var phase = services.ImplementedPhase;
@@ -293,23 +295,23 @@ public sealed class PhaseGatingTests
         var projectManager = services.ProjectManager;
         projectManager.Select(projectManager.Roots[0]);
 
-        Assert.True(commands.IsHandled("project.setActive"));
-        Assert.False(commands.CanExecute("project.setActive"));
-        await commands.ExecuteAsync("project.setActive"); // a no-op
+        Assert.True(commands.IsHandled(Undelivered));
+        Assert.False(commands.CanExecute(Undelivered));
+        await commands.ExecuteAsync(Undelivered); // a no-op
 
         Assert.True(PaletteLists(commands, services.Layout, ProjectManagerFocus, phase, "project.addNewUnit")); // the control
-        Assert.False(PaletteLists(commands, services.Layout, ProjectManagerFocus, phase, "project.setActive"));
+        Assert.False(PaletteLists(commands, services.Layout, ProjectManagerFocus, phase, Undelivered));
 
         var menu = projectManager.ContextMenu();
         Assert.Contains(menu, i => i.CommandId == "project.addNewUnit");
-        Assert.DoesNotContain(menu, i => i.CommandId == "project.setActive");
+        Assert.DoesNotContain(menu, i => i.CommandId == Undelivered);
         Assert.All(menu.Where(i => i.Command is not null),
             i => Assert.True(Phase8Features.IsAvailable(i.CommandId!, i.Command!.Definition.Phase, phase), i.CommandId));
         Assert.All(EditorContextMenu.Build(commands, phase, hasForm: true).Where(i => i.Command is not null),
             i => Assert.True(Phase8Features.IsAvailable(i.CommandId!, i.Command!.Definition.Phase, phase), i.CommandId));
 
         var keys = new KeyMappingsPageViewModel(services.Keymap, services.Settings, services.Dialogs, phase);
-        Assert.True(keys.Rows.Single(r => r.Command.Id == "project.setActive").IsLaterPhase);
+        Assert.True(keys.Rows.Single(r => r.Command.Id == Undelivered).IsLaterPhase);
     }
 
     /// <summary>
@@ -324,6 +326,8 @@ public sealed class PhaseGatingTests
     private static Task DeliveredCommandWithoutHandlerFailsVerificationOnUiThread()
     {
         const int Phase = ServiceGraph.ImplementedPhase;
+        // A catalogued phase-8 command without a product handler (project.setActive was the example until I-274 delivered it).
+        const string Undelivered = "file.saveProjectAs";
         var services = BuildWithProject();
         // Every command the product treats as implemented: the earlier phases and the delivered phase-8 ones (F09-054 on).
         (string, ICommandHandler)[] implemented = [.. CommandCatalog.All.Where(c => Phase8Features.IsAvailable(c.Id, c.Phase, Phase))
@@ -333,21 +337,21 @@ public sealed class PhaseGatingTests
         var stubbed = StandaloneCommands(services, Phase, implemented);
         stubbed.VerifyAllHandled();
 
-        using (Phase8Features.WithDelivered("project.setActive"))
+        using (Phase8Features.WithDelivered(Undelivered))
         {
             // Delivered after the stubs were registered: the command sits on the stub handler.
             var onStub = Assert.Throws<InvalidOperationException>(stubbed.VerifyAllHandled);
-            Assert.Contains("project.setActive", onStub.Message, StringComparison.Ordinal);
+            Assert.Contains(Undelivered, onStub.Message, StringComparison.Ordinal);
 
             // Delivered without a handler: no stub is given, the check names the command.
             var missing = StandaloneCommands(services, Phase, implemented);
-            Assert.False(missing.IsHandled("project.setActive"));
+            Assert.False(missing.IsHandled(Undelivered));
             Assert.True(missing.IsHandled("project.newFolder")); // phase 8, not delivered: the stub
             var noHandler = Assert.Throws<InvalidOperationException>(missing.VerifyAllHandled);
-            Assert.Contains("project.setActive", noHandler.Message, StringComparison.Ordinal);
+            Assert.Contains(Undelivered, noHandler.Message, StringComparison.Ordinal);
 
             // With its handler the check passes; the composition refuses to start without it.
-            StandaloneCommands(services, Phase, [.. implemented, ("project.setActive", new RecordingHandler())]).VerifyAllHandled();
+            StandaloneCommands(services, Phase, [.. implemented, (Undelivered, new RecordingHandler())]).VerifyAllHandled();
             Assert.Throws<InvalidOperationException>(() => BuildWithProject());
         }
 

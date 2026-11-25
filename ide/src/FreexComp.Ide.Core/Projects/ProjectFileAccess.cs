@@ -41,12 +41,21 @@ public static class ProjectFileAccess
             return new(null, OperationResult.Fail("Msg.Project.NewerFormat", args), diagnostic, PositionOf(diagnostic));
         }
 
+        return new(null, OpenFailed(diagnostic), diagnostic, diagnostic.Code is "E9003" or "E0003" ? null : PositionOf(diagnostic));
+    }
+
+    /// <summary>
+    /// <c>Msg.Project.OpenFailed</c> for a serializer diagnostic of a project or group file: the path and, as the reason,
+    /// the parser's message with its position in the diagnostic format of compiler-cli.md §2, or the OS reason.
+    /// </summary>
+    public static OperationResult OpenFailed(Diagnostic diagnostic)
+    {
+        ArgumentNullException.ThrowIfNull(diagnostic);
         var position = diagnostic.Code is "E9003" or "E0003" ? ((int, int)?)null : PositionOf(diagnostic);
-        // Reason = the parser's message with its position in the diagnostic format of compiler-cli.md §2, or the OS reason.
         var reason = position is var (line, column)
             ? string.Create(CultureInfo.InvariantCulture, $"{Path.GetFileName(diagnostic.Location.Path)}({line},{column}): {diagnostic.Message}")
             : diagnostic.Message;
-        return new(null, OperationResult.Fail("Msg.Project.OpenFailed", diagnostic.Location.Path, reason), diagnostic, position);
+        return OperationResult.Fail("Msg.Project.OpenFailed", diagnostic.Location.Path, reason);
     }
 
     /// <summary>Canonical text (UTF-8 without BOM, LF) written atomically; failure → <c>Msg.File.SaveFailed</c>.</summary>

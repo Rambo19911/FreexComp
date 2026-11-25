@@ -95,7 +95,7 @@ public sealed class FileDialogTests
         Assert.Null(await Prompts.OpenProjectAsync());
         var project = Pickers.Requests[^1];
         Assert.Equal(("openProject", "Open Project", false), (project.PromptId, project.Title, project.AllowMultiple));
-        Assert.Equal(["FreexComp projects (*.pproj)", "All files (*.*)"], Labels(project));
+        Assert.Equal(["FreexComp projects and groups (*.pproj;*.pgroup)", "All files (*.*)"], Labels(project)); // IDE-PM-154
         Assert.Equal(@"C:\Work", project.InitialFolder);
         _services.Layout.Save();
         var uistate = JsonNode.Parse(_fs.ReadAllBytes(Path.Combine(_services.UserPaths.RoamingDirectory, "uistate.json")))!;

@@ -54,6 +54,9 @@ public sealed record IdeServices
     public required IFileChangeService FileChanges { get; init; }
     public required IRecoveryService Recovery { get; init; }
     public required IProjectService Projects { get; init; }
+
+    /// <summary>The project group around the loaded project (IDE-PM-151).</summary>
+    public required IProjectGroupService Groups { get; init; }
     public required ISessionService Session { get; init; }
     public required IRecentItemsService RecentItems { get; init; }
     public required IFindService Find { get; init; }

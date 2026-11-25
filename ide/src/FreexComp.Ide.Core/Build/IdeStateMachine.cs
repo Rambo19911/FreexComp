@@ -117,6 +117,12 @@ public static class IdeCommandAvailability
         ["project.options"] = IdleOnly,
         ["project.setConfiguration"] = IdleOnly,
         ["project.configurationManager"] = IdleOnly,
+        ["project.setActive"] = IdleOnly, // IDE-PM-160
+        ["project.addExistingProject"] = IdleOnly, // IDE-PM-164…168
+        ["project.addNewProject"] = IdleOnly,
+        ["project.removeFromGroup"] = IdleOnly,
+        ["project.moveProjectUp"] = IdleOnly,
+        ["project.moveProjectDown"] = IdleOnly,
         ["run.parameters"] = IdleOnly,
         ["project.cancelBuild"] = [IdeState.Building],
         // IDE-P3-004: available while Running too, where they ask Msg.Run.AlreadyRunning (Restart = run.restart).

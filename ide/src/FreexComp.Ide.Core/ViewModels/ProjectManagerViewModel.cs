@@ -47,6 +47,7 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel, ICommandTarge
         "project.build", "project.rebuild", "project.clean", null, "run.start", "run.startWithoutDebugging", null,
         "project.addNewUnit", "project.addNewForm", "project.addNewFile", "project.addExistingFile", "project.newFolder", null,
         "project.viewSource", "file.showInExplorer", "file.openInTerminal", "project.openOutputFolder", "file.copyPath", null,
+        "project.addExistingProject", "project.addNewProject", "project.removeFromGroup", "project.moveProjectUp", "project.moveProjectDown", null, // UI-TW-129
         "file.closeProject", null, "project.options",
     ];
 
@@ -66,7 +67,27 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel, ICommandTarge
         ["projectManager.open", null, "project.moveFile", "project.removeFile", "project.deleteFile"];
 
     private static readonly string?[] EmptyAreaMenu =
-        ["project.addNewUnit", "project.addNewForm", "project.addExistingFile", null, "projectManager.collapseAll"];
+    [
+        "project.addNewUnit", "project.addNewForm", "project.addExistingFile", null, "projectManager.collapseAll", null,
+        "project.addExistingProject", "project.addNewProject", // UI-TW-129
+    ];
+
+    // UI-TW-129: rows of the other members of a project group. Build / Rebuild / Clean of a listed root arrive with the
+    // group build (IDE-PM-170), Dependencies with its dialog (IDE-PM-175).
+    private static readonly string?[] ListedRootMenu =
+    [
+        "project.setActive", null, "project.removeFromGroup", "project.moveProjectUp", "project.moveProjectDown", null,
+        "file.showInExplorer", "file.openInTerminal", "file.copyPath",
+    ];
+
+    private static readonly string?[] UnavailableRootMenu = ["project.removeFromGroup", null, "file.showInExplorer", "file.copyPath"];
+
+    private static readonly string?[] ListedFileMenu =
+        ["projectManager.open", null, "file.showInExplorer", "file.openInTerminal", "file.copyPath"];
+
+    private static readonly string?[] ListedFolderMenu = ["file.showInExplorer", "file.openInTerminal", "file.copyPath"];
+
+    private static readonly string?[] ListedFilesMenu = ["projectManager.open"];
 
     private readonly IProjectService _projects;
     private readonly IDocumentService _documents;
@@ -88,6 +109,7 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel, ICommandTarge
     private IReadOnlyList<string> _unlisted = [];
     private InfoBarViewModel? _unlistedFilesBar;
     private string? _stateProject;
+    private IProjectGroupService? _group;
 
     public ProjectManagerViewModel(IProjectService projects, IDocumentService documents, IFileSystem fileSystem, IDialogService dialogs,
         ICommandService commands, ILog log, int implementedPhase)
@@ -126,13 +148,45 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel, ICommandTarge
 
     public override bool HasFilter => true;
 
-    /// <summary>The project roots (one in P1–P7, UI-TW-100); empty without a project.</summary>
+    /// <summary>
+    /// The project group (IDE-PM-151; set by the service graph): one root per member (UI-TW-125). Without it the tree has
+    /// the open project's root only.
+    /// </summary>
+    public IProjectGroupService? Group
+    {
+        get => _group;
+        set
+        {
+            _group = value;
+            if (value is not null)
+                value.Changed += (_, _) => Rebuild();
+        }
+    }
+
+    /// <summary>The project roots, one per member of the group (UI-TW-100, UI-TW-125); empty without a project.</summary>
     public ObservableCollection<ProjectNodeViewModel> Roots { get; } = [];
+
+    /// <summary>A saved group without any member is open: the empty state says <c>Msg.Group.Empty</c> (IDE-PM-154).</summary>
+    public bool IsEmptyGroup => _group is { IsOpen: true, Members.Count: 0 };
+
+    /// <summary>The root of the loaded project; null without one.</summary>
+    private ProjectNodeViewModel? ActiveRoot => Roots.FirstOrDefault(r => !r.IsListed);
+
+    /// <summary>The rows of the loaded project (rows of listed members are shown only, IDE-PM-163).</summary>
+    private IEnumerable<ProjectNodeViewModel> ActiveNodes() => ActiveRoot?.SelfAndDescendants() ?? [];
+
+    /// <summary>IDE-PM-160: the project file of the member whose root row is the single selection; null otherwise.</summary>
+    public string? SelectedMemberPath => _selection is [{ Kind: ProjectNodeKind.Project } root] ? root.FullPath : null;
+
+    /// <summary>IDE-PM-163: the selection has a row of a listed or unavailable member.</summary>
+    public bool IsListedSelection => _selection.Any(n => n.IsListed);
 
     public bool HasProject => Roots.Count > 0;
 
     /// <summary>The empty state's links (UI-TW-013): New Project, Open Project.</summary>
-    public IReadOnlyList<IdeCommand> EmptyLinks => [_commands.Get("file.newProject"), _commands.Get("file.openProject")];
+    public IReadOnlyList<IdeCommand> EmptyLinks => IsEmptyGroup
+        ? [.. new[] { "project.addExistingProject", "project.addNewProject" }.Where(FileOperationsDelivered).Select(_commands.Get)] // Msg.Group.Empty
+        : [_commands.Get("file.newProject"), _commands.Get("file.openProject")];
 
     /// <summary>Selected rows in selection order (UI-TW-109).</summary>
     public IReadOnlyList<ProjectNodeViewModel> Selection => _selection;
@@ -281,7 +335,8 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel, ICommandTarge
     }
 
     /// <summary>The folder of the selected row when exactly one folder inside the project is selected (IDE-PM-040).</summary>
-    public string? SelectedFolderPath => _selection is [{ Kind: ProjectNodeKind.Folder } folder] && folder.Key != ExternalKey ? folder.FullPath : null;
+    public string? SelectedFolderPath =>
+        _selection is [{ Kind: ProjectNodeKind.Folder, IsListed: false } folder] && folder.Key != ExternalKey ? folder.FullPath : null;
 
     /// <summary>The in-place rename of a file row ended (committed or canceled); the view puts focus back on the tree.</summary>
     public event EventHandler? RenameEnded;
@@ -318,8 +373,8 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel, ICommandTarge
     /// <summary>IDE-PM-110: the directory and key prefix a new folder goes into; null when the selection allows none.</summary>
     private (string Directory, string KeyPrefix)? NewFolderTarget() => _selection switch
     {
-        [{ Kind: ProjectNodeKind.Project }] when _projects.Project is { } project => (project.Directory, ""),
-        [{ Kind: ProjectNodeKind.Folder } folder] when folder.Key != ExternalKey => (folder.FullPath, folder.Key),
+        [{ Kind: ProjectNodeKind.Project, IsListed: false }] when _projects.Project is { } project => (project.Directory, ""),
+        [{ Kind: ProjectNodeKind.Folder, IsListed: false } folder] when folder.Key != ExternalKey => (folder.FullPath, folder.Key),
         _ => null,
     };
 
@@ -424,7 +479,8 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel, ICommandTarge
 
     /// <summary>IDE-PM-115: one folder row inside the project with no project file in it or below it is selected.</summary>
     public bool CanRemoveSelectedFolder =>
-        _selection is [{ Kind: ProjectNodeKind.Folder } folder] && folder.Key != ExternalKey && !folder.SelfAndDescendants().Any(n => n.IsFile);
+        _selection is [{ Kind: ProjectNodeKind.Folder, IsListed: false } folder] && folder.Key != ExternalKey
+        && !folder.SelfAndDescendants().Any(n => n.IsFile);
 
     /// <summary>
     /// IDE-PM-115 (<c>project.removeFile</c> on a folder row): forgets the folder and its sub-folders and deletes each of
@@ -482,7 +538,7 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel, ICommandTarge
 
     /// <summary>IDE-PM-120: a file row inside the project directory that exists on disk (not a form child, not under External).</summary>
     private static bool IsMovable(ProjectNodeViewModel node) =>
-        node is { Kind: ProjectNodeKind.File, IsMissing: false } && node.Parent?.Key != ExternalKey;
+        node is { Kind: ProjectNodeKind.File, IsMissing: false, IsListed: false } && node.Parent?.Key != ExternalKey;
 
     /// <summary>
     /// IDE-PM-120 / UI-TW-119: a drag can start on <paramref name="node"/> — a movable file row, while the IDE is Idle,
@@ -491,7 +547,11 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel, ICommandTarge
     public bool CanStartDrag(ProjectNodeViewModel node)
     {
         ArgumentNullException.ThrowIfNull(node);
-        return IsMovable(node) && FileOperationsDelivered("project.moveFile") && FilterText.Length == 0 && _appliedFilter.Length == 0
+        // UI-TW-127: a root row of a group with several members is dragged to change the order.
+        var movable = node.Kind == ProjectNodeKind.Project
+            ? _group is { Members.Count: > 1 } && FileOperationsDelivered("project.moveProjectUp")
+            : IsMovable(node) && FileOperationsDelivered("project.moveFile");
+        return movable && FilterText.Length == 0 && _appliedFilter.Length == 0
             && IsIdle?.Invoke() != false && _projects.PendingRename is null
             && !Roots.SelectMany(r => r.SelfAndDescendants()).Any(n => n.Rename is not null);
     }
@@ -500,7 +560,7 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel, ICommandTarge
     public IReadOnlyList<ProjectNodeViewModel> DragRows(ProjectNodeViewModel pressed)
     {
         ArgumentNullException.ThrowIfNull(pressed);
-        return _selection.Contains(pressed) ? [.. _selection.Where(IsMovable)] : [pressed];
+        return pressed.Kind != ProjectNodeKind.Project && _selection.Contains(pressed) ? [.. _selection.Where(IsMovable)] : [pressed];
     }
 
     /// <summary>
@@ -509,7 +569,7 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel, ICommandTarge
     /// </summary>
     public ProjectNodeViewModel? DropTargetFor(ProjectNodeViewModel? over) => over switch
     {
-        null or { Key: ExternalKey } => null,
+        null or { Key: ExternalKey } or { IsListed: true } => null, // UI-TW-127: nothing is dropped on another project
         { Kind: ProjectNodeKind.Project or ProjectNodeKind.Folder } => over,
         _ => DropTargetFor(over.Parent),
     };
@@ -558,8 +618,8 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel, ICommandTarge
     /// </summary>
     public ProjectNodeViewModel? DragOver(ProjectNodeViewModel? over)
     {
-        if (_dragged.Count == 0)
-            return null;
+        if (_dragged.Count == 0 || IsRootDrag)
+            return null; // UI-TW-127: rows are no target while a root is dragged
         DropTarget = DropTargetFor(over);
         var hovered = over is { Kind: ProjectNodeKind.Folder, IsExpanded: false, Children.Count: > 0 } && over.Key != ExternalKey ? over : null;
         if (hovered != _hovered)
@@ -584,17 +644,45 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel, ICommandTarge
         _hoverTimer = null;
         _hovered = null;
         DropTarget = null;
+        InsertionGap = null;
         foreach (var row in _dragged)
             row.IsDragged = false;
         _dragged = [];
     }
+
+    /// <summary>UI-TW-127: the drag in progress moves a root row (the order of the group).</summary>
+    public bool IsRootDrag => _dragged is [{ Kind: ProjectNodeKind.Project }];
+
+    /// <summary>
+    /// UI-TW-127: the gap between root rows that takes the dragged root — 0 before the first root … <c>Roots.Count</c>
+    /// after the last one; null while no root is dragged or the pointer is outside the tree.
+    /// </summary>
+    public int? InsertionGap { get; private set; }
+
+    /// <summary>The automation name of the insertion line: "before &lt;project&gt;" / "after &lt;project&gt;"; null without a gap.</summary>
+    public string? InsertionName => InsertionGap is not { } gap || Roots.Count == 0 ? null
+        : gap < Roots.Count ? string.Format(CultureInfo.CurrentCulture, Strings.ProjectManager_InsertBefore, Roots[gap].Name)
+        : string.Format(CultureInfo.CurrentCulture, Strings.ProjectManager_InsertAfter, Roots[^1].Name);
+
+    /// <summary>UI-TW-127: the pointer of a root drag is nearest to <paramref name="gap"/> (null: outside the tree).</summary>
+    public void DragOverGap(int? gap) => InsertionGap = IsRootDrag && gap is >= 0 && gap <= Roots.Count ? gap : null;
 
     /// <summary>The pointer was released: the dragged rows move into the marked target, if any (IDE-PM-121). True when moved.</summary>
     public async Task<bool> DropAsync()
     {
         var rows = _dragged;
         var target = DropTarget;
+        var gap = InsertionGap;
+        var rootDrag = IsRootDrag;
         EndDrag();
+        if (rootDrag)
+        {
+            // IDE-PM-168: the root takes the place at the gap; its own position (the gap above or below it) does nothing.
+            var from = Roots.IndexOf(rows[0]);
+            return _group is not null && gap is { } at && from >= 0 && at != from && at != from + 1
+                && await _group.MoveToAsync(rows[0].FullPath, at > from ? at - 1 : at);
+        }
+
         return rows.Count > 0 && target is not null && await MoveAsync(rows, target);
     }
 
@@ -642,10 +730,10 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel, ICommandTarge
     public void ShowMoveToFolder()
     {
         var rows = MoveCandidates();
-        if (rows.Count == 0 || Roots.Count == 0)
+        if (rows.Count == 0 || ActiveRoot is not { } activeRoot)
             return;
         var common = rows.Select(r => r.Parent).Distinct().ToList() is [var only] ? only : null;
-        var targets = Roots[0].SelfAndDescendants()
+        var targets = activeRoot.SelfAndDescendants()
             .Where(n => n.Kind is ProjectNodeKind.Project or ProjectNodeKind.Folder && n.Key != ExternalKey && n != common)
             .Select(n => (n.Key, Label: n.Kind == ProjectNodeKind.Project ? n.Name : n.Key.TrimEnd('/')))
             .ToList();
@@ -653,7 +741,7 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel, ICommandTarge
     }
 
     /// <summary>The project paths (row keys) of the selected file and form rows (IDE-PM-060).</summary>
-    public IReadOnlyList<string> SelectedFilePaths => [.. _selection.Where(n => n.IsFile).Select(n => n.Key)];
+    public IReadOnlyList<string> SelectedFilePaths => [.. _selection.Where(n => n.IsFile && !n.IsListed).Select(n => n.Key)];
 
     /// <summary>
     /// tool-windows.md §2: the full paths of the selected rows (root = project file, folder = directory, file or form =
@@ -690,6 +778,11 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel, ICommandTarge
         var ids = _selection switch
         {
             [] => EmptyAreaMenu,
+            [{ Kind: ProjectNodeKind.Project, IsUnavailable: true }] => UnavailableRootMenu,
+            [{ Kind: ProjectNodeKind.Project, IsListed: true }] => ListedRootMenu,
+            [{ Kind: ProjectNodeKind.Folder, IsListed: true }] => ListedFolderMenu,
+            [{ IsListed: true }] => ListedFileMenu,
+            _ when IsListedSelection => ListedFilesMenu,
             [{ Kind: ProjectNodeKind.Project }] => RootMenu,
             [{ Kind: ProjectNodeKind.Folder }] => FolderMenu,
             [_] => FileMenu,
@@ -727,6 +820,13 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel, ICommandTarge
     /// </summary>
     public async Task OpenSelectionAsync()
     {
+        // IDE-PM-160: the default action of a listed root activates that project (an unavailable one does nothing).
+        if (_selection is [{ Kind: ProjectNodeKind.Project, IsListed: true } listed])
+        {
+            await _commands.ExecuteAsync("project.setActive", listed.FullPath);
+            return;
+        }
+
         // IDE-PM-102 / I-109: from P3 Enter on the root row opens Project Options.
         if (_selection is [{ Kind: ProjectNodeKind.Project }] && _implementedPhase >= 3)
         {
@@ -743,8 +843,9 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel, ICommandTarge
         var opened = false;
         foreach (var node in _selection.Where(n => n.IsFile).ToList())
         {
-            // UI-TW-108: from P5 a newly opened unit with a form shows the view of designer.defaultView.
-            var result = await _documents.OpenInDefaultViewAsync(node.FullPath);
+            // UI-TW-108: from P5 a newly opened unit with a form shows the view of designer.defaultView. The file of a
+            // listed member opens as a document outside the project (IDE-PM-163: a unit with a form opens as code).
+            var result = node.IsListed ? await _documents.OpenAsync(node.FullPath) : await _documents.OpenInDefaultViewAsync(node.FullPath);
             if (result.Success)
                 opened = true;
             else if (result.NeedsMessage)
@@ -758,8 +859,8 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel, ICommandTarge
     /// <summary>The form of the single selected row: a <c>.form</c> row, or the form child of a unit row; else null.</summary>
     private string? SelectedFormPath() => _selection switch
     {
-        [{ Kind: ProjectNodeKind.Form } form] => form.FullPath,
-        [{ Kind: ProjectNodeKind.File } file] => file.Children.FirstOrDefault(c => c.Kind == ProjectNodeKind.Form)?.FullPath,
+        [{ Kind: ProjectNodeKind.Form, IsListed: false } form] => form.FullPath,
+        [{ Kind: ProjectNodeKind.File, IsListed: false } file] => file.Children.FirstOrDefault(c => c.Kind == ProjectNodeKind.Form)?.FullPath,
         _ => null,
     };
 
@@ -794,6 +895,7 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel, ICommandTarge
     /// <summary>Main-window activation re-checks the files on disk (UI-TW-107).</summary>
     public void OnWindowActivated()
     {
+        _group?.Refresh(); // IDE-PM-152: the listed members are read again
         if (HasProject)
             _ = CheckMissingFilesAsync();
     }
@@ -815,7 +917,7 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel, ICommandTarge
     private async Task CheckMissingFilesCoreAsync()
     {
         var check = ++_missingCheck;
-        var files = Roots.SelectMany(r => r.SelfAndDescendants()).Where(n => n.IsFile).ToList();
+        var files = ActiveNodes().Where(n => n.IsFile).ToList();
         var scan = FileOperationsDelivered("project.newFolder") ? UnlistedScan.For(_projects, files, _emptyFolders, _ignoredFiles) : null;
         IsCheckingMissingFiles = true;
         bool[] exists;
@@ -1026,7 +1128,7 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel, ICommandTarge
     public IReadOnlyList<string> ExpandedKeys()
     {
         var state = _expansionBeforeFilter ?? ExpansionState();
-        return [.. Roots.SelectMany(r => r.SelfAndDescendants())
+        return [.. ActiveNodes()
             .Where(n => n.Children.Count > 0 && state.TryGetValue(n.Key, out var expanded) && expanded)
             .Select(n => n.Key)];
     }
@@ -1039,7 +1141,7 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel, ICommandTarge
     {
         ArgumentNullException.ThrowIfNull(expandedKeys);
         var expanded = expandedKeys.ToHashSet(StringComparer.Ordinal);
-        foreach (var node in Roots.SelectMany(r => r.SelfAndDescendants()).Where(n => n.Children.Count > 0))
+        foreach (var node in ActiveNodes().Where(n => n.Children.Count > 0))
             node.IsExpanded = expanded.Contains(node.Key);
         if (selectedKey is not null && Find(selectedKey) is { } selected)
             Select(selected);
@@ -1113,12 +1215,30 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel, ICommandTarge
             UnlistedFilesBar = null;
         }
 
+        var members = _group?.Members ?? [];
         if (_projects.Project is { } project)
-        {
             PruneEmptyFolders(project);
-            var root = BuildTree(project);
-            RestoreExpansionInto(root, expansion);
-            Roots.Add(root);
+        if (_projects.Project is { } open && !members.Any(m => IsLoaded(m, open)))
+            AddRoot(BuildTree(open, announceActive: false), expansion); // no group, or one that does not list the project yet
+
+        // UI-TW-125: one root per member, in group order.
+        var keyNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var member in members)
+        {
+            if (_projects.Project is { } loaded && IsLoaded(member, loaded))
+            {
+                AddRoot(BuildTree(loaded, announceActive: members.Count > 1), expansion);
+                continue;
+            }
+
+            // UI-TW-128: the key name is the project name; a later member of the same name gets its position appended.
+            var keyName = keyNames.Add(member.Name) ? member.Name : $"{member.Name}#{Roots.Count + 1}";
+            keyNames.Add(keyName);
+            AddRoot(BuildListedTree(member, keyName), expansion);
+        }
+
+        if (Roots.Count > 0)
+        {
             ApplyFilter();
             _selection.AddRange(selected.Select(Find).OfType<ProjectNodeViewModel>());
         }
@@ -1128,10 +1248,20 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel, ICommandTarge
         }
 
         OnPropertyChanged(nameof(HasProject));
+        OnPropertyChanged(nameof(IsEmptyGroup));
         UpdateDocumentMarkers();
         OnSelectionChanged();
         if (HasProject)
             _ = CheckMissingFilesAsync();
+    }
+
+    private static bool IsLoaded(ProjectGroupMember member, ProjectModel project) =>
+        string.Equals(member.FilePath, project.FilePath, StringComparison.OrdinalIgnoreCase);
+
+    private void AddRoot(ProjectNodeViewModel root, Dictionary<string, bool> expansion)
+    {
+        RestoreExpansionInto(root, expansion);
+        Roots.Add(root);
     }
 
     private static void RestoreExpansionInto(ProjectNodeViewModel root, Dictionary<string, bool> state)
@@ -1144,7 +1274,7 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel, ICommandTarge
     }
 
     /// <summary>UI-TW-100…103: folders from path segments, files outside the project under External (last).</summary>
-    private ProjectNodeViewModel BuildTree(ProjectModel project)
+    private ProjectNodeViewModel BuildTree(ProjectModel project, bool announceActive)
     {
         var badge = $"{project.ActiveConfiguration} · {project.Platforms.FirstOrDefault() ?? "win64"}";
         var library = project.AppType == "library";
@@ -1156,7 +1286,56 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel, ICommandTarge
                 : null!,
             Badge = badge,
             IsExpanded = true,
+            AnnounceActive = announceActive,
         };
+        AddFileRows(root, project.Directory, [.. project.Files.Select(f => (f.Path, f.Form))], project.MainSource, "", _emptyFolders);
+        return root;
+    }
+
+    /// <summary>
+    /// UI-TW-125, 126, 128: the root of a listed member (collapsed, its own badge, its files below it with the key prefix
+    /// <c>&lt;name&gt;:</c>) or of an unavailable one (no badge, no rows, the reason in the tooltip).
+    /// </summary>
+    private static ProjectNodeViewModel BuildListedTree(ProjectGroupMember member, string keyName)
+    {
+        var root = new ProjectNodeViewModel(ProjectNodeKind.Project, RootKey + ":" + keyName, member.Name, member.FilePath, null)
+        {
+            IsListed = true,
+            IsUnavailable = !member.IsAvailable,
+            IsLibrary = member.Definition?.AppType == "library",
+            ToolTipText = member.IsAvailable ? null! : member.FilePath + "\n" + member.Reason,
+            Badge = member.IsAvailable ? $"{member.Configuration} · {member.Platform}" : null,
+        };
+        if (member.Definition is not { } definition)
+            return root;
+
+        // As the loaded project's model (IDE-PM-012): the main source is listed, empty and repeated entries are not.
+        var directory = Path.GetDirectoryName(member.FilePath)!;
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var files = new List<(string Path, string? Form)>();
+        foreach (var (path, form) in member.Files.Select(f => (f.Path, f.Form)).Prepend((definition.MainSource, null)))
+        {
+            if (string.IsNullOrEmpty(path))
+                continue;
+            var index = files.FindIndex(f => string.Equals(ResolveIn(directory, f.Path), ResolveIn(directory, path), StringComparison.OrdinalIgnoreCase));
+            if (index < 0 && seen.Add(ResolveIn(directory, path)))
+                files.Add((path, form));
+            else if (index >= 0 && form is not null)
+                files[index] = (files[index].Path, form); // the files entry of the main source carries its form
+        }
+
+        AddFileRows(root, directory, files, definition.MainSource, keyName + ":", []);
+        return root;
+    }
+
+    private static string ResolveIn(string directory, string projectPath) =>
+        Path.GetFullPath(Path.Combine(directory, projectPath.Replace('/', Path.DirectorySeparatorChar)));
+
+    /// <summary>The folder, file and form rows below <paramref name="root"/>; every key starts with <paramref name="keyPrefix"/>.</summary>
+    private static void AddFileRows(ProjectNodeViewModel root, string directory, IReadOnlyList<(string Path, string? Form)> files,
+        string mainSource, string keyPrefix, IReadOnlyList<string> emptyFolders)
+    {
+        var listed = root.IsListed;
         var folders = new Dictionary<string, ProjectNodeViewModel>(StringComparer.OrdinalIgnoreCase);
         ProjectNodeViewModel? external = null;
 
@@ -1169,25 +1348,26 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel, ICommandTarge
             var cut = relativeDirectory.LastIndexOf('/', relativeDirectory.Length - 2);
             var parent = FolderFor(cut < 0 ? "" : relativeDirectory[..(cut + 1)]);
             var name = relativeDirectory[(cut + 1)..^1];
-            var folder = new ProjectNodeViewModel(ProjectNodeKind.Folder, relativeDirectory, name,
-                Path.Combine(project.Directory, relativeDirectory.TrimEnd('/').Replace('/', Path.DirectorySeparatorChar)), parent)
+            var folder = new ProjectNodeViewModel(ProjectNodeKind.Folder, keyPrefix + relativeDirectory, name,
+                Path.Combine(directory, relativeDirectory.TrimEnd('/').Replace('/', Path.DirectorySeparatorChar)), parent)
             {
                 IsExpanded = true,
+                IsListed = listed,
             };
             folders[relativeDirectory] = folder;
             parent.Children.Add(folder);
             return folder;
         }
 
-        foreach (var file in project.Files)
+        foreach (var file in files)
         {
             var path = file.Path.Replace('\\', '/');
-            var fullPath = _projects.ResolvePath(file.Path)!;
+            var fullPath = ResolveIn(directory, file.Path);
             ProjectNodeViewModel parent;
             if (path.StartsWith("../", StringComparison.Ordinal) || Path.IsPathRooted(file.Path))
             {
-                external ??= new ProjectNodeViewModel(ProjectNodeKind.Folder, ExternalKey, Strings.ProjectManager_External,
-                    project.Directory, root) { IsExpanded = true };
+                external ??= new ProjectNodeViewModel(ProjectNodeKind.Folder, keyPrefix + ExternalKey, Strings.ProjectManager_External,
+                    directory, root) { IsExpanded = true, IsListed = listed };
                 parent = external;
             }
             else
@@ -1196,21 +1376,22 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel, ICommandTarge
                 parent = FolderFor(slash < 0 ? "" : path[..(slash + 1)]);
             }
 
-            var node = new ProjectNodeViewModel(ProjectNodeKind.File, file.Path, Path.GetFileName(fullPath), fullPath, parent)
+            var node = new ProjectNodeViewModel(ProjectNodeKind.File, keyPrefix + file.Path, Path.GetFileName(fullPath), fullPath, parent)
             {
-                IsMainSource = string.Equals(file.Path, project.MainSource, StringComparison.OrdinalIgnoreCase),
+                IsMainSource = string.Equals(file.Path, mainSource, StringComparison.OrdinalIgnoreCase),
+                IsListed = listed,
             };
             if (file.Form is { } form)
             {
-                var formPath = _projects.ResolvePath(form)!;
-                node.Children.Add(new ProjectNodeViewModel(ProjectNodeKind.Form, form, Path.GetFileName(formPath), formPath, node));
+                var formPath = ResolveIn(directory, form);
+                node.Children.Add(new ProjectNodeViewModel(ProjectNodeKind.Form, keyPrefix + form, Path.GetFileName(formPath), formPath, node) { IsListed = listed });
             }
 
             parent.Children.Add(node);
         }
 
         // IDE-PM-114: the remembered empty folders with every ancestor.
-        foreach (var key in _emptyFolders)
+        foreach (var key in emptyFolders)
             FolderFor(key);
 
         Sort(root);
@@ -1219,8 +1400,6 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel, ICommandTarge
             Sort(external);
             root.Children.Add(external);
         }
-
-        return root;
     }
 
     /// <summary>UI-TW-102: folders first, then files, by name ignoring case; the main source first under the root.</summary>
@@ -1257,9 +1436,10 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel, ICommandTarge
         var active = _documents.ActiveDocument?.FilePath is { } activePath ? Path.GetFullPath(activePath) : null;
         foreach (var node in Roots.SelectMany(r => r.SelfAndDescendants()))
         {
-            node.IsModified = modified.Contains(node.FullPath)
-                || (node.Kind == ProjectNodeKind.Project && _projects.Project?.IsModified == true);
-            node.IsActiveDocument = node.IsFile && string.Equals(node.FullPath, active, StringComparison.OrdinalIgnoreCase);
+            // Rows of listed members carry no document marker (project-groups.md §8.1).
+            node.IsModified = !node.IsListed && (modified.Contains(node.FullPath)
+                || (node.Kind == ProjectNodeKind.Project && _projects.Project?.IsModified == true));
+            node.IsActiveDocument = node.IsFile && !node.IsListed && string.Equals(node.FullPath, active, StringComparison.OrdinalIgnoreCase);
         }
     }
 

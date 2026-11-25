@@ -51,10 +51,29 @@ public sealed class FilePrompts
             ],
             activeDocumentPath is null ? null : Path.GetDirectoryName(activeDocumentPath));
 
-    /// <summary><c>file.openProject</c>: single file, no stated folder.</summary>
+    /// <summary><c>file.openProject</c>: single file, no stated folder; projects and project groups (IDE-PM-154).</summary>
     public async Task<string?> OpenProjectAsync() =>
         (await OpenAsync("openProject", Strings.FilePrompt_Title_openProject, multiple: false,
-            [new FileFilter(Strings.FilePrompt_Filter_Projects, ["*.pproj"]), AllFiles], stated: null)).FirstOrDefault();
+            [new FileFilter(Strings.Filter_ProjectsAndGroups, ["*.pproj", "*.pgroup"]), AllFiles], stated: null)).FirstOrDefault();
+
+    /// <summary><c>project.addExistingProject</c> (IDE-PM-164): several <c>*.pproj</c> files; stated folder = <paramref name="folder"/>.</summary>
+    public Task<IReadOnlyList<string>> AddExistingProjectAsync(string? folder) =>
+        OpenAsync("addExistingProject", Strings.FilePrompt_Title_addExistingProject, multiple: true,
+            [new FileFilter(Strings.FilePrompt_Filter_Projects, ["*.pproj"]), AllFiles], folder);
+
+    /// <summary>
+    /// <c>file.saveGroupAs</c> (IDE-PM-167): the save picker for <c>*.pgroup</c> in <paramref name="folder"/> with
+    /// <paramref name="suggestedName"/>; null when canceled.
+    /// </summary>
+    public async Task<string?> SaveGroupAsAsync(string? folder, string suggestedName)
+    {
+        var request = new FilePickerRequest("saveGroupAs", Strings.FilePrompt_Title_saveGroupAs,
+            [new FileFilter(Strings.FilePrompt_Filter_ProjectGroups, ["*.pgroup"])], InitialFolder("saveGroupAs", folder),
+            SuggestedName: suggestedName, DefaultExtension: "pgroup");
+        var chosen = await _pickers.PickSaveFileAsync(request);
+        Remember("saveGroupAs", chosen is null ? null : Path.GetDirectoryName(chosen));
+        return chosen;
+    }
 
     /// <summary><c>project.addExistingFile</c>: multi-select; stated folder = the project directory.</summary>
     public Task<IReadOnlyList<string>> AddExistingAsync() =>

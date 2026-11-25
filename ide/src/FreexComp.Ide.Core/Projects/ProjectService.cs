@@ -78,6 +78,17 @@ public sealed class ProjectService : IProjectService
     /// <summary>IDE-P1-086: marks the service's own writes of the project file so the watcher ignores them (set by the service graph).</summary>
     public Func<string, IDisposable>? WriteGuard { get; set; }
 
+    /// <summary>The project group around the loaded project (IDE-PM-151; set by <see cref="ProjectGroupService"/>).</summary>
+    internal ProjectGroupService? Group { get; set; }
+
+    /// <summary>
+    /// IDE-PM-163: true while the selection of the focused Project Manager is in a listed member of the group — the
+    /// commands that change the open project's file list are disabled there (set by the service graph).
+    /// </summary>
+    public Func<bool>? ListedMemberSelected { get; set; }
+
+    private bool OnOpenProject => Project is not null && ListedMemberSelected?.Invoke() != true;
+
     public event EventHandler? ProjectChanged;
 
     public void RegisterCommands(ICommandService commands)
@@ -86,14 +97,16 @@ public sealed class ProjectService : IProjectService
         _commands = commands;
         commands.RegisterHandler("file.newProject", new Handler(_ => Templates.Count > 0, _ => NewProjectAsync()));
         commands.RegisterHandler("file.openProject", new Handler(_ => true, _ => PickAndOpenAsync()));
-        commands.RegisterHandler("file.closeProject", new Handler(_ => Project is not null, _ => CloseAsync()));
+        // IDE-PM-158: the whole group; a saved group without an available member is open without a project.
+        commands.RegisterHandler("file.closeProject", new Handler(_ => Project is not null || Group?.IsOpen == true,
+            _ => Group is { } group ? group.CloseAsync() : CloseAsync()));
         commands.RegisterHandler("project.viewSource", new Handler(_ => Project is not null, _ => ViewSourceAsync()));
-        commands.RegisterHandler("project.addNewUnit", new Handler(_ => Project is not null, _ => AddNewUnitAsync()));
-        commands.RegisterHandler("project.addNewForm", new Handler(_ => Project is not null, _ => AddNewFormAsync()));
+        commands.RegisterHandler("project.addNewUnit", new Handler(_ => OnOpenProject, _ => AddNewUnitAsync()));
+        commands.RegisterHandler("project.addNewForm", new Handler(_ => OnOpenProject, _ => AddNewFormAsync()));
         commands.RegisterHandler("file.newForm", new Handler(_ => Project is not null, _ => AddNewFormAsync())); // menus.md: needs a project
         commands.RegisterHandler("file.newFile", new Handler(_ => true, _ => NewFileAsync()));
-        commands.RegisterHandler("project.addExistingFile", new Handler(_ => Project is not null, _ => PickAndAddExistingAsync()));
-        commands.RegisterHandler("project.addNewFile", new Handler(_ => Project is not null, _ => AddNewFileAsync()));
+        commands.RegisterHandler("project.addExistingFile", new Handler(_ => OnOpenProject, _ => PickAndAddExistingAsync()));
+        commands.RegisterHandler("project.addNewFile", new Handler(_ => OnOpenProject, _ => AddNewFileAsync()));
         // IDE-PM-115: on a folder row without project files the command removes the (empty) folder.
         commands.RegisterHandler("project.removeFile", new Handler(
             _ => PendingRename is null && (RemovableFolder?.Invoke() is not null || CanOperateOnFiles()),
@@ -157,9 +170,21 @@ public sealed class ProjectService : IProjectService
             await AddExistingFilesAsync(picked);
     }
 
-    public async Task<bool> OpenAsync(string path)
+    public Task<bool> OpenAsync(string path)
     {
         ArgumentNullException.ThrowIfNull(path);
+        // IDE-PM-154: every way of opening a project also opens a project group.
+        return Group is { } group && Path.GetExtension(path).Equals(".pgroup", StringComparison.OrdinalIgnoreCase)
+            ? group.OpenAsync(path)
+            : OpenMemberAsync(path, recordRecent: true);
+    }
+
+    /// <summary>
+    /// <see cref="OpenAsync"/> for a <c>.pproj</c>; without <paramref name="recordRecent"/> for the member of a saved
+    /// group, whose group file is the recent entry (IDE-PM-157).
+    /// </summary>
+    internal async Task<bool> OpenMemberAsync(string path, bool recordRecent)
+    {
         var fullPath = Path.GetFullPath(path);
         if (_project is not null && string.Equals(_project.FilePath, fullPath, StringComparison.OrdinalIgnoreCase))
             return true;
@@ -199,8 +224,12 @@ public sealed class ProjectService : IProjectService
                 _log.Warning(LogCategory, $"{project.FilePath}: main source not opened ({main.MessageId})");
         }
 
-        RecentItems?.Add(RecentKind.Project, fullPath); // step 5 (IDE-P1-130)
-        RecentItems?.SetOpenAtExit(fullPath, true); // IDE-P1-016: until the user closes it
+        if (recordRecent)
+        {
+            RecentItems?.Add(RecentKind.Project, fullPath); // step 5 (IDE-P1-130)
+            RecentItems?.SetOpenAtExit(fullPath, true); // IDE-P1-016: until the user closes it
+        }
+
         return true;
     }
 
@@ -211,6 +240,8 @@ public sealed class ProjectService : IProjectService
     {
         if (_project is null)
             return true;
+        if (Group is { } group && !await group.ConfirmCloseAsync()) // IDE-PM-156: the unsaved group comes first
+            return false;
         if (BeforeClose is { } beforeClose && !await beforeClose())
             return false;
 
@@ -1457,23 +1488,34 @@ public sealed class ProjectService : IProjectService
         if (!await CloseAsync()) // UI-DLG-031: the unsaved-changes flow of the current project first
             return NewProjectOutcome.Canceled;
 
+        if (await CreateProjectFilesAsync(request, template) is not { } projectFile)
+            return NewProjectOutcome.Failed;
+        if (!await OpenAsync(projectFile))
+            return NewProjectOutcome.Failed; // reported by the open
+        if (_documents.ActiveDocument is TextDocumentViewModel main && IsMainSource(main.FilePath))
+            main.ViewState.Caret = CaretAfterBegin(main.Buffer);
+        return NewProjectOutcome.Created;
+    }
+
+    /// <summary>
+    /// IDE-PM-023 without opening anything (also <c>project.addNewProject</c>, IDE-PM-165): re-validates, creates
+    /// <c>&lt;Location&gt;\&lt;Name&gt;\</c> from the template and returns the new project file; a failure removes everything
+    /// this call created, shows <c>Msg.Project.CreateFailed</c> and returns null.
+    /// </summary>
+    internal async Task<string?> CreateProjectFilesAsync(NewProjectRequest request, ProjectTemplate? template = null)
+    {
+        template ??= Templates.FirstOrDefault(t => t.Id == request.TemplateId)
+            ?? throw new ArgumentException($"Unknown template '{request.TemplateId}'.", nameof(request));
         var target = Path.Combine(NewProjectValidation.NormalizeLocation(request.Location) ?? request.Location.Trim(), request.Name);
         var check = NewProjectValidation.ValidateName(request.Name);
         if (check.Success)
             check = NewProjectValidation.ValidateLocation(request.Location, request.Name, template, _fileSystem);
         string? projectFile = null;
         var reason = check.Success ? CreateFiles(template, request.Name, target, out projectFile) : NewProjectValidation.MessageText(check);
-        if (reason is not null)
-        {
-            await _dialogs.ShowMessageAsync(new MessageRequest("Msg.Project.CreateFailed", [target, reason]));
-            return NewProjectOutcome.Failed;
-        }
-
-        if (!await OpenAsync(projectFile!))
-            return NewProjectOutcome.Failed; // reported by the open
-        if (_documents.ActiveDocument is TextDocumentViewModel main && IsMainSource(main.FilePath))
-            main.ViewState.Caret = CaretAfterBegin(main.Buffer);
-        return NewProjectOutcome.Created;
+        if (reason is null)
+            return projectFile;
+        await _dialogs.ShowMessageAsync(new MessageRequest("Msg.Project.CreateFailed", [target, reason]));
+        return null;
     }
 
     /// <summary>
@@ -1564,7 +1606,13 @@ public sealed class ProjectService : IProjectService
     /// dialog opens again with the same values (UI-DLG-031). The location used is remembered
     /// (<c>dialogs.NewProject.lastLocation</c>).
     /// </summary>
-    private async Task NewProjectAsync()
+    private Task NewProjectAsync() => RunNewProjectDialogAsync(CreateProjectAsync);
+
+    /// <summary>
+    /// The New Project dialog (dialogs.md §3) with <paramref name="create"/> run on its result; after a failure the dialog
+    /// opens again with the same values. Also behind <c>project.addNewProject</c> (IDE-PM-165).
+    /// </summary>
+    internal async Task RunNewProjectDialogAsync(Func<NewProjectRequest, Task<NewProjectOutcome>> create)
     {
         NewProjectRequest? previous = null;
         while (true)
@@ -1575,7 +1623,7 @@ public sealed class ProjectService : IProjectService
             if (await _dialogs.ShowAsync(dialog) is not { } request)
                 return;
             _layout.SetDialogValue(NewProjectViewModel.DialogName, "lastLocation", request.Location);
-            if (await CreateProjectAsync(request) != NewProjectOutcome.Failed)
+            if (await create(request) != NewProjectOutcome.Failed)
                 return;
             previous = request;
         }
@@ -1588,7 +1636,7 @@ public sealed class ProjectService : IProjectService
     }
 
     /// <summary>IDE-PM-012 beyond the serializer's checks.</summary>
-    private static OperationResult Validate(Project project)
+    internal static OperationResult Validate(Project project)
     {
         if (!IsIdentifier(project.Name))
             return OperationResult.Fail("Msg.Project.OpenFailed", project.FilePath, Strings.Msg_Project_NameInvalid);

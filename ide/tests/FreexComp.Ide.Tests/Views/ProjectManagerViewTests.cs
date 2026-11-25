@@ -405,6 +405,7 @@ public sealed partial class ProjectManagerViewTests
         Assert.Equal(["project.build", "project.rebuild", "project.clean", "-", "run.start", "run.startWithoutDebugging", "-",
             "project.addNewUnit", "project.addNewForm", "project.addNewFile", "project.addExistingFile", "project.newFolder", "-",
             "project.viewSource", "file.showInExplorer", "file.openInTerminal", "project.openOutputFolder", "file.copyPath", "-",
+            "project.addExistingProject", "project.addNewProject", "project.removeFromGroup", "project.moveProjectUp", "project.moveProjectDown", "-", // UI-TW-129 (I-275)
             "file.closeProject", "-", "project.options"], Ids(pm.ContextMenu()));
         pm.Select(pm.Find("lib/")!);
         Assert.Equal(["project.addNewUnit", "project.addNewForm", "project.addNewFile", "project.addExistingFile", "project.newFolder", "-",
@@ -420,7 +421,8 @@ public sealed partial class ProjectManagerViewTests
         pm.Select(pm.Find("notes.md")!, ProjectSelectMode.Toggle);
         Assert.Equal(["projectManager.open", "-", "project.moveFile", "project.removeFile", "project.deleteFile"], Ids(pm.ContextMenu()));
         pm.ClearSelection();
-        Assert.Equal(["project.addNewUnit", "project.addNewForm", "project.addExistingFile", "-", "projectManager.collapseAll"],
+        Assert.Equal(["project.addNewUnit", "project.addNewForm", "project.addExistingFile", "-", "projectManager.collapseAll", "-",
+            "project.addExistingProject", "project.addNewProject"], // UI-TW-129 (I-275)
             Ids(pm.ContextMenu()));
 
         h.RightClick(Row + "notes.md");

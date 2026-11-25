@@ -935,9 +935,6 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   <data name="Msg_Designer_HandlersRemovedMany" xml:space="preserve">
     <value>Removed {0} empty event handlers that are no longer used</value>
   </data>
-  <data name="Reason_GroupsNotSupported" xml:space="preserve">
-    <value>Project groups are not supported yet.</value>
-  </data>
   <data name="Reason_OpenInAnotherTab" xml:space="preserve">
     <value>The target file is open in another tab.</value>
   </data>
@@ -5555,5 +5552,89 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   </data>
   <data name="Msg_Options_TrustUnreadable" xml:space="preserve">
     <value>The list of trusted locations cannot be read ({0}). No project is trusted.</value>
+  </data>
+  <data name="Filter_ProjectsAndGroups" xml:space="preserve">
+    <value>FreexComp projects and groups</value>
+    <comment>IDE-PM-154: the file.openProject picker filter (*.pproj;*.pgroup)</comment>
+  </data>
+  <data name="Msg_Group_Empty" xml:space="preserve">
+    <value>This project group has no projects.</value>
+  </data>
+  <data name="Msg_Group_SaveFailed" xml:space="preserve">
+    <value>The project group {0} could not be saved.
+{1}</value>
+  </data>
+  <data name="ProjectManager_ActiveProjectSuffix" xml:space="preserve">
+    <value>, active project</value>
+    <comment>UI-TW-125: appended to the screen-reader name of the active project's root row</comment>
+  </data>
+  <data name="Menu_project_setActive" xml:space="preserve">
+    <value>Set as &amp;Active Project</value>
+    <comment>Project Manager context menu of a listed root (UI-TW-129)</comment>
+  </data>
+  <data name="Msg_Group_SaveQuestion" xml:space="preserve">
+    <value>These projects are open together but not saved as a project group. Save the group?</value>
+  </data>
+  <data name="Msg_Group_AlreadyMember" xml:space="preserve">
+    <value>{0} is already in the group.</value>
+  </data>
+  <data name="Cmd_file_saveGroupAs" xml:space="preserve">
+    <value>Save Project Group As…</value>
+  </data>
+  <data name="Cmd_project_addExistingProject" xml:space="preserve">
+    <value>Add Existing Project…</value>
+  </data>
+  <data name="Cmd_project_addNewProject" xml:space="preserve">
+    <value>Add New Project…</value>
+  </data>
+  <data name="Cmd_project_removeFromGroup" xml:space="preserve">
+    <value>Remove from Group</value>
+  </data>
+  <data name="Cmd_project_moveProjectUp" xml:space="preserve">
+    <value>Move Project Up</value>
+  </data>
+  <data name="Cmd_project_moveProjectDown" xml:space="preserve">
+    <value>Move Project Down</value>
+  </data>
+  <data name="Menu_file_saveGroupAs" xml:space="preserve">
+    <value>Save Project &amp;Group As…</value>
+  </data>
+  <data name="Menu_project_addExistingProject" xml:space="preserve">
+    <value>Add E&amp;xisting Project…</value>
+  </data>
+  <data name="Menu_project_addNewProject" xml:space="preserve">
+    <value>Add Ne&amp;w Project…</value>
+  </data>
+  <data name="Menu_project_removeFromGroup" xml:space="preserve">
+    <value>&amp;Remove from Group</value>
+    <comment>Project Manager context menus of root rows (UI-TW-129)</comment>
+  </data>
+  <data name="Menu_project_moveProjectUp" xml:space="preserve">
+    <value>Move Project &amp;Up</value>
+    <comment>Project Manager context menus of root rows (UI-TW-129)</comment>
+  </data>
+  <data name="Menu_project_moveProjectDown" xml:space="preserve">
+    <value>Move Project &amp;Down</value>
+    <comment>Project Manager context menus of root rows (UI-TW-129)</comment>
+  </data>
+  <data name="FilePrompt_Title_addExistingProject" xml:space="preserve">
+    <value>Add Existing Project</value>
+    <comment>IDE-PM-164: the picker of project.addExistingProject</comment>
+  </data>
+  <data name="FilePrompt_Title_saveGroupAs" xml:space="preserve">
+    <value>Save Project Group As</value>
+    <comment>IDE-PM-167: the picker of file.saveGroupAs</comment>
+  </data>
+  <data name="FilePrompt_Filter_ProjectGroups" xml:space="preserve">
+    <value>FreexComp project groups</value>
+    <comment>IDE-PM-167: the filter of the file.saveGroupAs picker (*.pgroup)</comment>
+  </data>
+  <data name="ProjectManager_InsertBefore" xml:space="preserve">
+    <value>before {0}</value>
+    <comment>UI-TW-127: automation name of the insertion line while a root row is dragged</comment>
+  </data>
+  <data name="ProjectManager_InsertAfter" xml:space="preserve">
+    <value>after {0}</value>
+    <comment>UI-TW-127: automation name of the insertion line while a root row is dragged</comment>
   </data>
 </root>

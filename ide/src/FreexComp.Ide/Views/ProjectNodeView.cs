@@ -17,7 +17,7 @@ using Avalonia.VisualTree;
 namespace FreexComp.Ide.Views;
 
 /// <summary>
-/// One row (UI-TW-100…107): icon with the main-source / missing overlays, the name (bold for the root and the active
+/// One row (UI-TW-100…107, UI-TW-125, 126): icon with the main-source / missing overlays, the name (bold for the root of the loaded project and the active
 /// document, filter match highlighted, disabled colour when missing), and the badge or the modified dot on the right.
 /// While <see cref="ProjectNodeViewModel.Rename"/> is set the name is an input (<c>.Editor</c>, UI-TW-112) with its
 /// validation message in a popup under it (<c>.Error</c>).
@@ -188,13 +188,14 @@ public sealed class ProjectNodeView : DockPanel
 
         _icon.IconName = Node.IconName;
         _icon.IsEnabled = !Node.IsMissing;
+        var absent = Node.IsMissing || Node.IsUnavailable; // UI-TW-126: an unavailable member looks like a missing file
         Opacity = Node.IsDragged ? 0.5 : 1; // UI-TW-120
         this.FindAncestorOfType<TreeViewItem>()?.Classes.Set(DropTargetClass, Node.IsDropTarget); // UI-TW-121
-        _missing.IsVisible = Node.IsMissing;
+        _missing.IsVisible = absent;
         _name.Classes.Set("body", !Strong);
         _name.Classes.Set("bodyStrong", Strong);
         _name.Bind(TextBlock.ForegroundProperty, _name.GetResourceObservable(
-            Node.BusyName is not null ? "FxcTextSecondaryBrush" : Node.IsMissing ? "FxcTextDisabledBrush" : "FxcTextPrimaryBrush"));
+            Node.BusyName is not null ? "FxcTextSecondaryBrush" : absent ? "FxcTextDisabledBrush" : "FxcTextPrimaryBrush"));
         _name.Inlines!.Clear();
         if (Node.BusyName is { } typed)
         {
@@ -236,5 +237,6 @@ public sealed class ProjectNodeView : DockPanel
         }
     }
 
-    private bool Strong => Node.Kind == ProjectNodeKind.Project || Node.IsActiveDocument;
+    /// <summary>UI-TW-125: the active project's root is strong; roots of listed members are not.</summary>
+    private bool Strong => (Node.Kind == ProjectNodeKind.Project && !Node.IsListed) || Node.IsActiveDocument;
 }

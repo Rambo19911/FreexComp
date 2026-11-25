@@ -2,7 +2,6 @@ using System.Text;
 using System.Text.Json;
 using Avalonia.Headless.XUnit;
 using FreexComp.Ide.Core.Designer;
-using FreexComp.Ide.Core.Resources;
 using FreexComp.Ide.Core.Settings;
 using FreexComp.Ide.Core.ViewModels;
 using FreexComp.Ide.Tests.Infrastructure;
@@ -103,7 +102,37 @@ public sealed class StartupTests
                 ("Msg.Project.OpenFailed", Path.Combine(h.TempDir, "All.pgroup")),
             ],
             h.Messages.Requests.Select(r => (r.MessageId, r.Args[0])));
-        Assert.Equal(Strings.Reason_GroupsNotSupported, h.Messages.Requests[1].Args[1]);
+        // IDE-PM-154: a group file that cannot be read is refused with the parser's reason; the project stays open.
+        Assert.StartsWith("All.pgroup(1,", h.Messages.Requests[1].Args[1], StringComparison.Ordinal);
+        Assert.Contains("missing required key", h.Messages.Requests[1].Args[1], StringComparison.Ordinal);
+    }
+
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Phase", "8")]
+    [Trait("Req", "IDE-PM-154")]
+    [Trait("Req", "IDE-P1-010")]
+    public async Task CommandLineGroupOpensWithItsActiveProject()
+    {
+        await using var h = await HeadlessHarness.StartAsync(o =>
+        {
+            AddProject(o, "Hello");
+            AddProject(o, "Other");
+            o.InitialFiles["notes.txt"] = "notes";
+            o.InitialFiles["All.pgroup"] = """{ "formatVersion": 1, "projects": ["Hello/Hello.pproj", "Other/Other.pproj"], "activeProject": "Other/Other.pproj" }""";
+            o.Settings.Remove(WelcomeSetting);
+            o.CommandLineArgs.AddRange(["All.pgroup", "notes.txt"]);
+        });
+        await h.Startup;
+
+        // The group opens with its active project loaded; the other member is listed; further files open as documents.
+        Assert.Equal(Path.Combine(h.TempDir, "All.pgroup"), h.Services.Groups.FilePath);
+        Assert.Equal(["Hello", "Other"], h.Services.Groups.Members.Select(m => m.Name));
+        Assert.Equal("Other", h.Services.Groups.ActiveMember?.Name);
+        Assert.Equal(Path.Combine(h.TempDir, "Other", "Other.pproj"), h.Services.Projects.Project?.FilePath);
+        Assert.Equal(["Other/Other.pas", "notes.txt"], OpenFiles(h));
+        Assert.Empty(h.Messages.Requests);
+        Assert.False(HasWelcome(h));
+        Assert.Equal(["$project:Hello", "$project"], h.Services.ProjectManager.Roots.Select(r => r.Key));
     }
 
     [AvaloniaFact(Timeout = 30000)]

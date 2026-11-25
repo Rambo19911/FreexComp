@@ -16,7 +16,8 @@ public enum ProjectNodeKind
 
 /// <summary>
 /// One row of the Project Manager tree. <see cref="Key"/> is the UI-TW-114 row key (<c>$project</c>, <c>lib/</c>, the
-/// stored file path, the form path; the virtual External folder is <c>$external/</c>).
+/// stored file path, the form path; the virtual External folder is <c>$external/</c>). In a project group the root of a
+/// listed or unavailable member is <c>$project:&lt;name&gt;</c> and the rows below it are prefixed <c>&lt;name&gt;:</c> (UI-TW-128).
 /// </summary>
 public sealed class ProjectNodeViewModel : ObservableObject
 {
@@ -60,6 +61,18 @@ public sealed class ProjectNodeViewModel : ObservableObject
 
     /// <summary>IDE-TGT-017: the root of a library project (icon variant <c>project.library</c>).</summary>
     public bool IsLibrary { get; init; }
+
+    /// <summary>
+    /// The row belongs to a listed or unavailable member of the project group (IDE-PM-152): it is shown only — no
+    /// modified marker, no file-management command (IDE-PM-163).
+    /// </summary>
+    public bool IsListed { get; init; }
+
+    /// <summary>The root of an unavailable member (UI-TW-126): disabled text, warning overlay, no badge, no children.</summary>
+    public bool IsUnavailable { get; init; }
+
+    /// <summary>The root of the active project of a group with further members: its screen-reader name says so (UI-TW-125).</summary>
+    public bool AnnounceActive { get; init; }
 
     /// <summary>The row's tooltip: the full path (UI-TW-111); for the root of a library project the DLL path (IDE-TGT-017).</summary>
     public string ToolTipText
@@ -185,6 +198,7 @@ public sealed class ProjectNodeViewModel : ObservableObject
     /// <summary>UI-TW-105 / UI-A11Y-021: the automation name carries ", missing" (status icon) and ", modified".</summary>
     public string AutomationName =>
         Name + (IsMissing ? Resources.Strings.ProjectManager_MissingSuffix : "") + (IsModified ? Resources.Strings.ProjectManager_ModifiedSuffix : "")
+        + (AnnounceActive ? Resources.Strings.ProjectManager_ActiveProjectSuffix : "") // UI-TW-125
         + (IsDropTarget ? Resources.Strings.ProjectManager_DropTargetSuffix : ""); // UI-TW-122
 
     internal void SetMatch(int start, int length)

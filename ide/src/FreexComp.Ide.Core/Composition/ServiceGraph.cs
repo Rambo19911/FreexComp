@@ -119,6 +119,12 @@ public static class ServiceGraph
                 && (t.AppType != "library" || (toolWindowPhase ?? ImplementedPhase) >= 7))],
             layout, platform.Clock, platform.Shell);
         projects.RegisterCommands(commands);
+        var groups = new ProjectGroupService(projects, platform.FileSystem, documents, platform.Dialogs, status, platform.Log)
+        {
+            RecentItems = recent,
+            Prompts = prompts,
+        }; // IDE-PM-151
+        groups.RegisterCommands(commands);
         projects.FileChanges = fileChanges; // IDE-P1-117
         projects.WriteGuard = fileChanges.BeginOwnWrite;
         documents.ProjectOpener = path => projects.OpenAsync(path);
@@ -131,7 +137,13 @@ public static class ServiceGraph
         documents.LibraryCopyAction = libraryCopy.CreateBarAction; // IDE-LIB-037
         var projectManager = new ViewModels.ProjectManagerViewModel(projects, documents, platform.FileSystem, platform.Dialogs, commands,
             platform.Log, toolWindowPhase ?? ImplementedPhase);
+        projectManager.Group = groups;
         projectManager.RegisterCommands();
+        groups.SelectedRoot = () => focus.Current.ToolWindowName == ViewModels.ProjectManagerViewModel.ToolName
+            ? projectManager.SelectedMemberPath
+            : null;
+        projects.ListedMemberSelected = () => focus.Current.ToolWindowName == ViewModels.ProjectManagerViewModel.ToolName
+            && projectManager.IsListedSelection;
         projects.SelectedFolder = () => projectManager.SelectedFolderPath;
         projects.SelectedFiles = () => focus.Current.ToolWindowName == ViewModels.ProjectManagerViewModel.ToolName
             ? projectManager.SelectedFilePaths
@@ -188,6 +200,7 @@ public static class ServiceGraph
         {
             OpenToolchainOptions = () => commands.ExecuteAsync("tools.options", OptionsViewModel.ToolchainPathsPage),
         };
+        build.BuildFinished += (_, _) => groups.Refresh(); // IDE-PM-152: a build may have changed what the listed members show
         var codeModel = new CodeModel.CodeModelService(projects, documents, toolchain, platform.FileSystem); // I-110
         build.CheckSyntax = codeModel.GetProjectDiagnosticsAsync;
         build.DeployDatabaseLibrary = new DatabaseLibraryDeployer(platform.FileSystem, toolchain, codeModel.GetProjectUnitNamesAsync).DeployAsync; // I-225
@@ -284,7 +297,9 @@ public static class ServiceGraph
         var application = new ApplicationService(documents, projects, session, recovery, settings, keymap, platform.Dialogs, platform.Clock,
             platform.Log);
         application.RegisterCommands(commands);
-        application.BeforeExit = async () => (debug is null || await debug.ConfirmStopAsync(exiting: true)) && await run.ConfirmStopAsync(exiting: true); // IDE-P3-093
+        // IDE-P3-093, then IDE-PM-156: the unsaved group is asked about before the unsaved documents.
+        application.BeforeExit = async () => (debug is null || await debug.ConfirmStopAsync(exiting: true)) && await run.ConfirmStopAsync(exiting: true)
+            && await groups.ConfirmCloseAsync();
         application.AfterSavePrompt = build.CancelForExitAsync; // file.exit while Building (phase3-build-run.md §2)
         Designer.DesignerShell? designerShell = null; // Phase 5 on (below); the palette lists its verbs
         var quickPick = new Popups.QuickPickHost(); // I-125, I-126 (Phase 3 commands: available from the implemented phase 3)
@@ -398,6 +413,7 @@ public static class ServiceGraph
             FileChanges = fileChanges,
             Recovery = recovery,
             Projects = projects,
+            Groups = groups,
             Session = session,
             RecentItems = recent,
             Find = find,
