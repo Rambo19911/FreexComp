@@ -32,6 +32,7 @@
     "Vcl.Grids": "Grids",
     "Vcl.ImgList": "ImgList",
     "Vcl.Menus": "Menus",
+    "Vcl.StdActns": "StdActns",
     "Vcl.StdCtrls": "StdCtrls",
     "Vcl.UIConsts": "UIConsts",
     "Winapi.ActiveX": "ActiveX",
