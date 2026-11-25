@@ -1,0 +1,12 @@
+# current thread
+ok GetThreadTimes
+ok creation time is set
+ok creation time is not later than the present
+# processor time
+ok kernel + user time does not decrease
+ok kernel + user time grows with work
+ok work was done
+# invalid handle
+ok a null handle is refused
+ok ERROR_INVALID_HANDLE
+# passed 8 failed 0

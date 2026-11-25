@@ -58,6 +58,7 @@ GetSystemInfo
 GetSystemTime
 GetSystemTimeAsFileTime
 GetTempPathW
+GetThreadTimes
 GetTickCount
 GetTickCount64
 GetTimeZoneInformation

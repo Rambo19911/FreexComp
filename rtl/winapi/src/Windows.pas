@@ -2277,6 +2277,8 @@ function GetCurrentThreadId: DWORD; stdcall; external kernel32 name 'GetCurrentT
 function GetCurrentThread: THandle; stdcall; external kernel32 name 'GetCurrentThread';
 function ResumeThread(hThread: THandle): DWORD; stdcall; external kernel32 name 'ResumeThread';
 function GetExitCodeThread(hThread: THandle; var lpExitCode: DWORD): BOOL; stdcall; external kernel32 name 'GetExitCodeThread';
+function GetThreadTimes(hThread: THandle; var lpCreationTime, lpExitTime, lpKernelTime, lpUserTime: TFileTime): BOOL;
+  stdcall; external kernel32 name 'GetThreadTimes';
 function SwitchToThread: BOOL; stdcall; external kernel32 name 'SwitchToThread';
 function WaitForSingleObject(hHandle: THandle; dwMilliseconds: DWORD): DWORD; stdcall;
   external kernel32 name 'WaitForSingleObject';
