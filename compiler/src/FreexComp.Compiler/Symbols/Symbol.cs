@@ -66,16 +66,43 @@ public abstract class Symbol
     /// <summary>Doc comment text (LANG-142); filled when the unit is bound (C-243) or read from its <c>.pcu</c>.</summary>
     public string? Documentation { get; internal set; }
 
-    public bool IsDeprecated { get; init; }
+    public bool IsDeprecated { get => _isDeprecated; init => _isDeprecated = value; }
+
+    private bool _isDeprecated;
 
     /// <summary>LANG-472 (C-127): the text of <c>deprecated 'text'</c>, if any.</summary>
-    internal string? DeprecationMessage { get; init; }
+    internal string? DeprecationMessage { get; set; }
 
     /// <summary>LANG-472 (C-127): the <c>platform</c> hint directive.</summary>
-    internal bool IsPlatform { get; init; }
+    internal bool IsPlatform { get; set; }
 
     /// <summary>LANG-472 (C-127): the <c>experimental</c> hint directive.</summary>
-    internal bool IsExperimental { get; init; }
+    internal bool IsExperimental { get; set; }
+
+    /// <summary>LANG-472 (C-232): the hint directives of the declaration; null when it has none.</summary>
+    internal SymbolHints? Hints
+    {
+        get => IsDeprecated || IsPlatform || IsExperimental ? new SymbolHints(IsDeprecated, DeprecationMessage, IsPlatform, IsExperimental) : null;
+        set => (_isDeprecated, DeprecationMessage, IsPlatform, IsExperimental) =
+            (value?.IsDeprecated == true, value?.DeprecationMessage, value?.IsPlatform == true, value?.IsExperimental == true);
+    }
+
+    /// <summary>The unit that declares the symbol (through its containers); null for a built-in.</summary>
+    internal UnitSymbol? DeclaringUnit
+    {
+        get
+        {
+            for (var symbol = this; symbol is not null; symbol = symbol.ContainingSymbol)
+            {
+                if (symbol is UnitSymbol unit)
+                {
+                    return unit;
+                }
+            }
+
+            return null;
+        }
+    }
 
     /// <summary>"Unit1.TFoo.Bar"; the bare name for symbols without a container.</summary>
     public string QualifiedName => QualifiedNameOverride ?? (ContainingSymbol is null ? Name : ContainingSymbol.QualifiedName + "." + Name);
@@ -150,3 +177,10 @@ public sealed class UnitSymbol : Symbol
 /// for an alias of an earlier alias of the same unit, that alias (<see cref="Of"/>).
 /// </summary>
 internal sealed record TypeAlias(string Name, Types.TypeSymbol Target, TypeAlias? Of, Location Location);
+
+/// <summary>
+/// LANG-472: the hint directives of a declaration — <c>deprecated ['text']</c>, <c>platform</c>, <c>experimental</c>. Variables,
+/// constants, routines and methods carry them on their symbol; a type carries them on its declared name (<see cref="Scope.SetHints"/>),
+/// because <c>type TOld = TNew deprecated</c> declares no symbol of its own (LANG-205).
+/// </summary>
+internal sealed record SymbolHints(bool IsDeprecated, string? DeprecationMessage, bool IsPlatform, bool IsExperimental);

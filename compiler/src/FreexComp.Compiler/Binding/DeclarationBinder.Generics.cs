@@ -212,6 +212,11 @@ internal sealed partial class DeclarationBinder
             return _types.Error;
         }
 
+        if (_types.HasTypeHints && _scope.ImportedTypeHints(generic.ScopeName) is { } hints)
+        {
+            _diagnostics.ReportHints(name, generic.Name, hints);                                   // LANG-472 (C-232)
+        }
+
         var bound = ImmutableArray.CreateBuilder<TypeSymbol>(arguments.Count);
         foreach (var argument in arguments)
         {

@@ -145,6 +145,12 @@ internal static class PcuReader
                     throw new PcuFormatException($"'{name}' is declared twice");
                 }
 
+                if (symbol is TypeSymbol && Hints(entry!) is { } hints)
+                {
+                    scope.SetHints(name, hints);                                // LANG-472 (C-232): a type's hints belong to its name
+                    types.HasTypeHints = true;
+                }
+
                 if (!members.Contains(symbol))
                 {
                     members.Add(symbol);
@@ -241,14 +247,15 @@ internal static class PcuReader
         }
 
         /// <summary>
-        /// C-227: the generic methods of a plain class, their declarations taken from the stored class declaration (bound per instance
-        /// like those of a class in source), their implementations bound with the generics' (<see cref="ImportGenericSupport"/>).
+        /// C-227, C-232: the generic methods of a plain class or record, their declarations taken from the stored type declaration
+        /// (bound per instance like those of a type in source), their implementations bound with the generics'
+        /// (<see cref="ImportGenericSupport"/>). Empty when the type has none.
         /// </summary>
-        private void GenericMethods(ClassTypeSymbol type, JsonObject entry)
+        private ImmutableArray<GenericMethodSymbol> GenericMethods(TypeSymbol type, JsonNode entry)
         {
             if (entry["genericMethods"] is not JsonArray methods || entry["genericBody"] is not JsonValue index || !index.TryGetValue<int>(out var body))
             {
-                return;
+                return [];
             }
 
             var (declaration, implementations) = Body(body);
@@ -270,8 +277,8 @@ internal static class PcuReader
                 });
             }
 
-            type.GenericMethods = generics.ToImmutable();
             _generics.Add(implementations);
+            return generics.ToImmutable();
         }
 
         private Symbol Symbol(JsonNode entry, string name)
@@ -285,13 +292,13 @@ internal static class PcuReader
                     var type = Type(entry, "type");
                     var storage = new VariableSymbol(name, type, isGlobal: true, _unit, locations) { IsReadOnly = true };
                     storage.ExplicitLinkName = Explicit(Text(entry, "linkName"), Emit.Mangler.GlobalVariable(storage).Text);
-                    return new ConstantSymbol(name, type, value: null, isTyped: true, _unit, locations) { Storage = storage, Documentation = Doc(entry) };
+                    return new ConstantSymbol(name, type, value: null, isTyped: true, _unit, locations) { Storage = storage, Documentation = Doc(entry), Hints = Hints(entry) };
                 }
 
                 case "const":
                 {
                     var type = Type(entry, "type");
-                    return new ConstantSymbol(name, type, Value(entry["value"], type), isTyped: false, _unit, locations) { Documentation = Doc(entry) };
+                    return new ConstantSymbol(name, type, Value(entry["value"], type), isTyped: false, _unit, locations) { Documentation = Doc(entry), Hints = Hints(entry) };
                 }
 
                 case "var":
@@ -300,6 +307,7 @@ internal static class PcuReader
                     {
                         Documentation = Doc(entry),
                         ThreadVarOffset = entry["threadVarOffset"]?.GetValue<long>(),          // C-165
+                        Hints = Hints(entry),                                                  // LANG-472 (C-232)
                     };
                     variable.ExplicitLinkName = Explicit(Text(entry, "linkName"), Emit.Mangler.GlobalVariable(variable).Text);
                     return variable;
@@ -335,15 +343,20 @@ internal static class PcuReader
             }
         }
 
+        /// <summary>LANG-472 (C-127, C-232): the hint directives of a symbol or member entry; null when it has none.</summary>
+        private static SymbolHints? Hints(JsonNode entry)
+        {
+            var hints = new SymbolHints(entry["deprecated"]?.GetValue<bool>() == true, entry["deprecatedText"]?.GetValue<string>(),
+                entry["platform"]?.GetValue<bool>() == true, entry["experimental"]?.GetValue<bool>() == true);
+            return hints.IsDeprecated || hints.IsPlatform || hints.IsExperimental ? hints : null;
+        }
+
         private RoutineSymbol Routine(JsonNode entry, string name, ImmutableArray<Location> locations)
         {
             var routine = new RoutineSymbol(name, _unit, locations)
             {
                 Documentation = Doc(entry),
-                IsDeprecated = entry["deprecated"]?.GetValue<bool>() == true,                // LANG-472 (C-127)
-                DeprecationMessage = entry["deprecatedText"]?.GetValue<string>(),
-                IsPlatform = entry["platform"]?.GetValue<bool>() == true,
-                IsExperimental = entry["experimental"]?.GetValue<bool>() == true,
+                Hints = Hints(entry),                                                        // LANG-472 (C-127)
             };
             routine.Parameters = Parameters(entry, routine);
             routine.ReturnType = entry["result"] is null ? null : Type(entry, "result");
@@ -523,6 +536,7 @@ internal static class PcuReader
                     record.Fields = [.. Array(entry, "fields").Select(f => new FieldSymbol(Text(f, "name"), Type(f!, "type"), f!["offset"]!.GetValue<long>(), record, []))];
                     record.ClassVariables = ClassVars(record, entry);                                       // C-219
                     record.Methods = [.. (entry["methods"] as JsonArray ?? []).Select(m => StaticMethod(record, m!))];
+                    record.GenericMethods = GenericMethods(record, entry);                                  // C-232
                     record.Properties = [.. (entry["properties"] as JsonArray ?? []).Select(p => Property(record, p!))];
                     return record;
                 }
@@ -646,7 +660,7 @@ internal static class PcuReader
             }
 
             type.Properties = [.. Array(entry, "properties").Select(p => Property(type, p!))];
-            GenericMethods(type, entry);
+            type.GenericMethods = GenericMethods(type, entry);
             // C-205: the listed interfaces with their hidden field offsets; the implementing methods matter only to the declaring
             // unit (its IMTs and thunks), so an imported class carries none
             type.Interfaces = [.. Array(entry, "interfaces").Select(i => new ImplementedInterface(
@@ -689,6 +703,7 @@ internal static class PcuReader
                 method.VmtSlot = m["slot"]!.GetValue<int>();
                 method.DispId = m["dispid"] is JsonValue dispId ? dispId.GetValue<int>() : null;
                 method.DispatchFlags = type.IsDispatchInterface ? 1 : 0;                  // LANG-697: a method call
+                method.Hints = Hints(m);                                                  // LANG-472 (C-232)
                 method.SelfParameter = new ParameterSymbol("Self", type, ParameterMode.Value, -1, method, []);
                 return method;
             })];
@@ -740,6 +755,7 @@ internal static class PcuReader
             method.CallingConvention = CallConv(flags);
             method.VmtSlot = entry["slot"]!.GetValue<int>();
             method.MessageId = entry["msgId"]?.GetValue<int>();                       // C-113
+            method.Hints = Hints(entry);                                              // LANG-472 (C-232)
             var inherited = method.VmtSlot >= 0 && method.VmtSlot < parentSlots.Length;   // the slot of an ancestor's method
             method.IsAbstract = binding == "abstract";
             method.IsFinal = binding == "final";
@@ -795,6 +811,7 @@ internal static class PcuReader
             };
             method.Parameters = Parameters(entry, method);
             method.ReturnType = entry["result"] is null ? null : Type(entry, "result");
+            method.Hints = Hints(entry);                                              // LANG-472 (C-232)
             method.IsOverload = flags.Contains("overload");
             method.IsInline = flags.Contains("inline");
             method.IsNoReturn = flags.Contains("noreturn");

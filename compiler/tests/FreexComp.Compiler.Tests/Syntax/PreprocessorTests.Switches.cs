@@ -263,6 +263,45 @@ public sealed partial class PreprocessorTests
         Assert.Equal(["b"], Active("{$ALIGN 1}{$IFOPT A+} a {$ELSE} b {$ENDIF}"));
     }
 
+    /// <summary>
+    /// C-232 (directives.md §4, LANG-543): <c>{$APPTYPE}</c> is W1003 in a unit or library file also when it stands before the heading
+    /// (the file's kind is known only at its first token); a program file takes it silently, and <c>{$WARN}</c> in force at the directive
+    /// still controls it.
+    /// </summary>
+    [Theory]
+    [InlineData("{$APPTYPE GUI} unit U; interface implementation end.", "W1003@0+14")]
+    [InlineData("// first\n{$APPTYPE CONSOLE}\n{$APPTYPE GUI}\nunit U; interface implementation end.", "W1003@9+18,W1003@28+14")]
+    [InlineData("{$APPTYPE GUI} library L; end.", "W1003@0+14")]
+    [InlineData("{$APPTYPE GUI} program P; begin end.", "")]
+    [InlineData("{$APPTYPE GUI} begin end.", "")]
+    [InlineData("{$WARN W1003 OFF}{$APPTYPE GUI}{$WARN W1003 ON} unit U; interface implementation end.", "")]
+    [InlineData("unit U; {$APPTYPE GUI} interface implementation end.", "W1003@8+14")]
+    public void Switches_AppType_OutsideTheProgramFile_IsW1003_AlsoBeforeTheHeading(string text, string expected) =>
+        Assert.Equal(expected, string.Join(",", Preprocess(text).Diagnostics.Select(d => $"{d.Code}@{d.Location.Span.Start}+{d.Location.Span.Length}")));
+
+    /// <summary>The token texts of a whole file run through the preprocessor (which learns the file's kind from its first token).</summary>
+    private static string[] Preprocessed(string text, params string[] defines) =>
+        [.. Preprocess(text, defines).Tokens.SkipLast(1).Select(t => t.Text)];
+
+    private static Preprocessor Preprocess(string text, params string[] defines)
+    {
+        var preprocessor = new Preprocessor(SourceText.From(Path, text), new ParseOptions([.. defines]), null);
+        while (preprocessor.Lex().Kind != SyntaxKind.EndOfFileToken)
+        {
+        }
+
+        return preprocessor;
+    }
+
+    /// <summary>C-232 (LANG-543): <c>{$APPTYPE}</c> before the <c>library</c> heading has no effect either — CONSOLE is as it was.</summary>
+    [Fact]
+    [Trait("Req", "LANG-543")]
+    public void Switches_AppType_BeforeTheLibraryHeading_HasNoEffect()
+    {
+        Assert.Equal(["library", "L", ";", "a"], Preprocessed("{$APPTYPE GUI} library L; {$IFDEF CONSOLE} a {$ELSE} b {$ENDIF}", "CONSOLE"));
+        Assert.Equal(["library", "L", ";", "b"], Preprocessed("{$APPTYPE CONSOLE} library L; {$IFDEF CONSOLE} a {$ELSE} b {$ENDIF}"));
+    }
+
     [Fact]
     public void Switches_AppType_DefinesOrUndefinesConsole()
     {

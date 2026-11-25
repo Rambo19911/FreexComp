@@ -149,6 +149,10 @@ internal sealed class ConstantFolder
         {
             _diagnostics.ReportUndeclared(name, text);
         }
+        else
+        {
+            HintChecks.CheckName(_diagnostics, _types, _scope, name, text, symbol);                // LANG-472 (C-232)
+        }
 
         return symbol;
     }

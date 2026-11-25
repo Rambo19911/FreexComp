@@ -252,6 +252,7 @@ internal sealed partial class ExpressionBinder
             self = ClassOf(syntax, self);
         }
 
+        CheckHintDirectives(method, syntax);                                    // LANG-472 (C-232): a method reference
         return new BoundMethodPointerExpression(syntax, method, self, method.IsDispatched, type);
     }
 
@@ -270,6 +271,7 @@ internal sealed partial class ExpressionBinder
 
         if (candidates.Cast<MethodSymbol>().FirstOrDefault(m => Signatures.Compatible(m, type.Signature)) is { } method)
         {
+            CheckHintDirectives(method, syntax);                                // LANG-472 (C-232)
             return new BoundMethodPointerExpression(syntax, method, receiver, isVirtual: true, type);
         }
 
@@ -376,6 +378,7 @@ internal sealed partial class ExpressionBinder
             return Error(syntax);
         }
 
+        CheckHintDirectives(routine, name);                                     // LANG-472 (C-232): a procedural reference
         return new BoundAddressOfExpression(syntax, operand: null, routine, type);
     }
 
@@ -739,6 +742,7 @@ internal sealed partial class ExpressionBinder
                 return Error(syntax);
             }
 
+            CheckHintDirectives(routine, name);                                 // LANG-472 (C-232): @Routine
             return new BoundAddressOfExpression(syntax, operand: null, routine, _types.Pointer);
         }
 
@@ -1063,35 +1067,24 @@ internal sealed partial class ExpressionBinder
         {
             _diagnostics.ReportUndeclared(name, text);
         }
+        else
+        {
+            HintChecks.CheckName(_diagnostics, _types, _scope, name, text, symbol);                // LANG-472 (C-232)
+        }
 
         return symbol;
     }
 
     /// <summary>
-    /// LANG-472 (C-127): a call of a routine declared <c>deprecated</c> / <c>platform</c> / <c>experimental</c> outside its own unit is
-    /// W1050 / W1051 / W1052 (the deprecation text follows as <c>: text</c>), at the call.
+    /// LANG-472 (C-127, C-232): a use outside its own unit of a symbol declared <c>deprecated</c> / <c>platform</c> /
+    /// <c>experimental</c> — a call of a routine or method, a routine or method taken as a procedural value (<c>P := R</c>,
+    /// <c>@R</c>), a variable or constant named — is W1050 / W1051 / W1052 at the symbol's name in <paramref name="at"/>.
     /// </summary>
     private void CheckHintDirectives(Symbol symbol, SyntaxNode at)
     {
-        if (symbol is not RoutineSymbol { ContainingSymbol: UnitSymbol owner } routine || ReferenceEquals(owner, CurrentUnit)
-            || !(routine.IsDeprecated || routine.IsPlatform || routine.IsExperimental))
+        if (symbol.Hints is { } hints && !ReferenceEquals(symbol.DeclaringUnit, CurrentUnit))
         {
-            return;
-        }
-
-        if (routine.IsDeprecated)
-        {
-            _diagnostics.Report(at, "W1050", routine.Name, routine.DeprecationMessage is { } text ? ": " + text : "");
-        }
-
-        if (routine.IsPlatform)
-        {
-            _diagnostics.Report(at, "W1051", routine.Name);
-        }
-
-        if (routine.IsExperimental)
-        {
-            _diagnostics.Report(at, "W1052", routine.Name);
+            _diagnostics.ReportHints(HintChecks.NameIn(at), symbol.Name, hints);
         }
     }
 
@@ -1769,6 +1762,7 @@ internal sealed partial class ExpressionBinder
         if (_scope.Unqualified(syntax) is IdentifierNameSyntax { Identifier: { IsMissing: false } token } name
             && _scope.For(name).Lookup(token.Value as string ?? token.Text) is TypeSymbol type)
         {
+            HintChecks.CheckName(_diagnostics, _types, _scope, name, token.Value as string ?? token.Text, type);    // LANG-472 (C-232)
             return (type, null);
         }
 

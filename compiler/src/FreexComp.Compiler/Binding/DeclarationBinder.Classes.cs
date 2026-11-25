@@ -421,6 +421,7 @@ internal sealed partial class DeclarationBinder
     private void BindMethodDirectives(MethodSymbol method, SyntaxList<DirectiveSyntax> directives, bool isClass)
     {
         method.CallingConvention = CallConvOf(directives.Select(d => d.Keyword));                          // CMP-1011
+        method.Hints = BindHints(directives);                                                              // LANG-472 (C-232)
         if (method.IsSafecall && (method.MethodKind is MethodKind.Constructor or MethodKind.Destructor || method.IsRecordConstructor || method.OperatorName is not null))
         {
             // LANG-685 (C-301)
@@ -544,6 +545,7 @@ internal sealed partial class DeclarationBinder
     /// <summary>LANG-622: identical parameter modes and types and the same result type (kind included).</summary>
     private static bool SameSignature(MethodSymbol a, MethodSymbol b) =>
         a.MethodKind == b.MethodKind && SameParameterTypes(a, b) && a.IsSafecall == b.IsSafecall        // LANG-689 (C-301)
+        && SameRefParameters(a, b)                                                                      // LANG-763 (C-232)
         && (a.MethodKind == MethodKind.Constructor || ReferenceEquals(a.ReturnType, b.ReturnType));
 
     // ------------------------------------------------------------------ method implementations (LANG-620, C-081)
@@ -606,7 +608,8 @@ internal sealed partial class DeclarationBinder
             var probe = new RoutineSymbol(name, _container, [], declaration);
             NestedNamesBinder(type).BindSignature(probe, heading, identifier, report: false);
             method = candidates.FirstOrDefault(m => SameParameterTypes(m, probe) && (m.OperatorName is null || ReferenceEquals(m.ReturnType, probe.ReturnType)));
-            if (method is not null && !method.Parameters.Select(p => p.Name).SequenceEqual(probe.Parameters.Select(p => p.Name), IdentifierComparer.Instance))
+            if (method is not null && (!method.Parameters.Select(p => p.Name).SequenceEqual(probe.Parameters.Select(p => p.Name), IdentifierComparer.Instance)
+                || !SameRefParameters(method, probe)))                                                  // LANG-763 (C-232)
             {
                 _diagnostics.Report(identifier, "E2101", name);
             }

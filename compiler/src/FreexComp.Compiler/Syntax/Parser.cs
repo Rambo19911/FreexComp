@@ -1552,7 +1552,10 @@ internal sealed class Parser
         return new ParameterListSyntax(open, parameters, Expect(SyntaxKind.CloseParenToken));
     }
 
-    /// <summary><c>[ const | var | out ] identList [ : paramType [ = constExpr ] ]</c></summary>
+    /// <summary>
+    /// <c>[ attributeList ] [ const | var | out ] [ attributeList ] identList [ : paramType [ = constExpr ] ]</c> — the attribute
+    /// list may also follow the modifier (<c>const [Ref] X</c>, C-232).
+    /// </summary>
     private ParameterSyntax ParseParameter()
     {
         var attributes = ParseAttributeLists();
@@ -1561,26 +1564,27 @@ internal sealed class Parser
         {
             modifier = Take();
         }
-        else if (IsContextual(Current, SyntaxKind.OutKeyword) && Peek(1).Kind == SyntaxKind.IdentifierToken)
+        else if (IsContextual(Current, SyntaxKind.OutKeyword) && Peek(1).Kind is SyntaxKind.IdentifierToken or SyntaxKind.OpenBracketToken)
         {
             modifier = TakeContextual();
         }
 
+        var modifierAttributes = modifier is null ? default : ParseAttributeLists();
         var identifiers = ParseSeparated(ParseDeclaredName, SyntaxKind.CommaToken);
         if (CurrentKind != SyntaxKind.ColonToken)
         {
-            return new ParameterSyntax(attributes, modifier, identifiers, null, null, null, null);
+            return new ParameterSyntax(attributes, modifier, modifierAttributes, identifiers, null, null, null, null);
         }
 
         var colon = Take();
         var type = ParseType();
         if (CurrentKind != SyntaxKind.EqualsToken)
         {
-            return new ParameterSyntax(attributes, modifier, identifiers, colon, type, null, null);
+            return new ParameterSyntax(attributes, modifier, modifierAttributes, identifiers, colon, type, null, null);
         }
 
         var equals = Take();
-        return new ParameterSyntax(attributes, modifier, identifiers, colon, type, equals, ParseExpression());
+        return new ParameterSyntax(attributes, modifier, modifierAttributes, identifiers, colon, type, equals, ParseExpression());
     }
     // ------------------------------------------------------------------ grammar.md §7: expressions
 

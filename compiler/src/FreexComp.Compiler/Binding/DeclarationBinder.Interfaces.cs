@@ -310,6 +310,7 @@ internal sealed partial class DeclarationBinder
         {
             IsOverload = syntax.Directives.Any(d => d.Keyword.ContextualKind == SyntaxKind.OverloadKeyword),
             CallingConvention = CallConvOf(syntax.Directives.Select(d => d.Keyword)),
+            Hints = BindHints(syntax.Directives),                                                           // LANG-472 (C-232)
         };
         BindSignature(method, heading, identifier, report: true);
         method.SelfParameter = new ParameterSymbol("Self", type, ParameterMode.Value, -1, method, []);     // ABI-092: the interface reference
@@ -378,7 +379,8 @@ internal sealed partial class DeclarationBinder
     internal static MethodSymbol? FindImplementation(ClassTypeSymbol type, string name, MethodSymbol method) =>
         type.SelfAndAncestors().SelectMany(c => c.Methods)
             .FirstOrDefault(m => m.MethodKind == MethodKind.Ordinary && IdentifierComparer.Instance.Equals(m.Name, name) && SameParameterTypes(m, method)
-                && ReferenceEquals(m.ReturnType, method.ReturnType) && m.IsSafecall == method.IsSafecall);      // LANG-689 (C-301)
+                && ReferenceEquals(m.ReturnType, method.ReturnType) && m.IsSafecall == method.IsSafecall         // LANG-689 (C-301)
+                && SameRefParameters(m, method));                                                               // LANG-763 (C-232)
 
     /// <summary>
     /// As <see cref="FindImplementation"/> for the method's own name, where a class of the chain that delegates the method
@@ -392,7 +394,8 @@ internal sealed partial class DeclarationBinder
             var inherited = delegating is null ? null : owner.Methods.FirstOrDefault(m => string.Equals(m.Name, delegating, StringComparison.OrdinalIgnoreCase)
                 && SameParameterTypes(m, method) && ReferenceEquals(m.ReturnType, method.ReturnType));
             var found = inherited ?? owner.Methods.FirstOrDefault(m => m.MethodKind == MethodKind.Ordinary && IdentifierComparer.Instance.Equals(m.Name, method.Name)
-                && SameParameterTypes(m, method) && ReferenceEquals(m.ReturnType, method.ReturnType) && m.IsSafecall == method.IsSafecall);
+                && SameParameterTypes(m, method) && ReferenceEquals(m.ReturnType, method.ReturnType) && m.IsSafecall == method.IsSafecall
+                && SameRefParameters(m, method));                                                               // LANG-763 (C-232)
             if (found is not null)
             {
                 return found;

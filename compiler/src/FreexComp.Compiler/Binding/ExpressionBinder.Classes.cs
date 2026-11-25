@@ -782,8 +782,17 @@ internal sealed partial class ExpressionBinder
         return RecordMember(syntax, receiver);
     }
 
-    private TypeSymbol? TypeNamedBy(ExpressionSyntax expression) =>
-        expression is GenericNameSyntax generic ? GenericType(generic) : NestedNames.TypeNamedBy(_scope, expression);
+    private TypeSymbol? TypeNamedBy(ExpressionSyntax expression)
+    {
+        var type = expression is GenericNameSyntax generic ? GenericType(generic) : NestedNames.TypeNamedBy(_scope, expression);
+        if (type is not null && _types.HasTypeHints
+            && _scope.Unqualified(Unparenthesized(expression)) is IdentifierNameSyntax { Identifier: { IsMissing: false } token } name)
+        {
+            HintChecks.CheckName(_diagnostics, _types, _scope, name, token.Value as string ?? token.Text, type);    // LANG-472 (C-232)
+        }
+
+        return type;
+    }
 
     /// <summary>
     /// C-117 (LANG-701, 714): the instance of the generic method <c>syntax.Name</c> of <paramref name="type"/> (or an ancestor) — for the

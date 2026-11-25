@@ -15,6 +15,9 @@ public sealed class BuiltInTypes
     /// <summary>Some unit of the compilation declares a helper (C-124): member lookups then look for active helpers (LANG-752).</summary>
     internal bool HasHelpers { get; set; }
 
+    /// <summary>Some unit of the compilation declares a type with a hint directive (C-232): type names are then checked for W1050…W1052.</summary>
+    internal bool HasTypeHints { get; set; }
+
     /// <summary>C-116: generic instances are made under this lock (units are bound in parallel; LANG-710 identity across units).</summary>
     internal object GenericGate { get; } = new();
 

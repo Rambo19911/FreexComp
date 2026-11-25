@@ -220,6 +220,7 @@ internal sealed partial class DeclarationBinder
                 symbol = Constant(identifier, value?.Type ?? _types.Error, value, isTyped: false);
             }
 
+            symbol.Hints = BindHints(declaration.HintDirectives);                                 // LANG-472 (C-232)
             Declare(identifier, symbol, declared);
         }
     }
@@ -242,6 +243,14 @@ internal sealed partial class DeclarationBinder
             if (identifier.IsMissing)
             {
                 continue;
+            }
+
+            if (BindHints(declaration.HintDirectives) is { } hints)
+            {
+                // LANG-472 (C-232): on the declared name — an alias has no symbol of its own; a generic is declared under its arity key
+                _scope.SetHints(declaration.TypeParameterList is { } list
+                    ? GenericTypeSymbol.KeyOf(NameOf(identifier), list.Parameters.SelectMany(p => p.Identifiers).Count()) : NameOf(identifier), hints);
+                _types.HasTypeHints = true;
             }
 
             if (declaration.TypeParameterList is { } genericParameters)
@@ -936,6 +945,7 @@ internal sealed partial class DeclarationBinder
                     {
                         ExplicitLinkName = linkName,
                         ThreadVarOffset = isThreadVar ? NextThreadVarOffset(type) : null,
+                        Hints = BindHints(declaration.HintDirectives),                            // LANG-472 (C-232)
                     }, declared);
                 }
             }
@@ -1412,6 +1422,48 @@ internal sealed partial class DeclarationBinder
         };
     }
 
+    /// <summary>LANG-472: the hint directives after a constant, type or variable declaration; null when there are none.</summary>
+    private static SymbolHints? BindHints(SyntaxList<HintDirectiveSyntax> directives)
+    {
+        if (directives.Count == 0)
+        {
+            return null;
+        }
+
+        var hints = new SymbolHints(false, null, false, false);
+        foreach (var directive in directives)
+        {
+            hints = directive.Keyword.ContextualKind switch
+            {
+                SyntaxKind.DeprecatedKeyword => hints with { IsDeprecated = true, DeprecationMessage = directive.Message?.Value as string },
+                SyntaxKind.PlatformKeyword => hints with { IsPlatform = true },
+                SyntaxKind.ExperimentalKeyword => hints with { IsExperimental = true },
+                _ => hints,
+            };
+        }
+
+        return hints;
+    }
+
+    /// <summary>LANG-472 (C-232): the hint directives among a method's directives; null when there are none.</summary>
+    private SymbolHints? BindHints(SyntaxList<DirectiveSyntax> directives)
+    {
+        SymbolHints? hints = null;
+        foreach (var directive in directives)
+        {
+            var current = hints ?? new SymbolHints(false, null, false, false);
+            hints = directive.Keyword.ContextualKind switch
+            {
+                SyntaxKind.DeprecatedKeyword => current with { IsDeprecated = true, DeprecationMessage = directive.Value is { } text ? FoldString(text) : null },
+                SyntaxKind.PlatformKeyword => current with { IsPlatform = true },
+                SyntaxKind.ExperimentalKeyword => current with { IsExperimental = true },
+                _ => hints,
+            };
+        }
+
+        return hints;
+    }
+
     /// <summary>A constant string expression (library and link names); E2010 for another constant.</summary>
     private string? FoldString(ExpressionSyntax expression)
     {
@@ -1654,7 +1706,7 @@ internal sealed partial class DeclarationBinder
 
     /// <summary>LANG-763: <c>[Ref]</c> among the parameter's attributes (checked by <see cref="AttributeBinder"/>).</summary>
     private static bool HasRefAttribute(ParameterSyntax parameter) =>
-        parameter.Attributes.SelectMany(l => l.Attributes)
+        parameter.Attributes.Concat(parameter.ModifierAttributes).SelectMany(l => l.Attributes)               // C-232: also const [Ref] X
             .Any(a => a.Name is IdentifierNameSyntax { Identifier: var token } && IdentifierComparer.Instance.Equals(token.Value as string ?? token.Text, "Ref"));
 
     /// <summary>
@@ -1698,7 +1750,7 @@ internal sealed partial class DeclarationBinder
         }
 
         var sameNames = match.Parameters.Select(p => p.Name).SequenceEqual(probe.Parameters.Select(p => p.Name), IdentifierComparer.Instance);
-        if (!sameNames || !ReferenceEquals(match.ReturnType, probe.ReturnType))
+        if (!sameNames || !ReferenceEquals(match.ReturnType, probe.ReturnType) || !SameRefParameters(match, probe))
         {
             _diagnostics.Report(identifier, "E2101", NameOf(identifier));
         }
@@ -1730,6 +1782,13 @@ internal sealed partial class DeclarationBinder
     private static bool SameParameterTypes(RoutineSymbol a, RoutineSymbol b) =>
         a.Parameters.Length == b.Parameters.Length
         && a.Parameters.Zip(b.Parameters).All(p => p.First.Mode == p.Second.Mode && ReferenceEquals(p.First.Type, p.Second.Type));
+
+    /// <summary>
+    /// LANG-763 (C-232): the parameters agree on <c>[Ref]</c> — a <c>[Ref] const</c> parameter is passed as an address, so a declaration
+    /// and its implementation, a method and its override or interface method must not differ in it. Overloads are not told apart by it.
+    /// </summary>
+    internal static bool SameRefParameters(RoutineSymbol a, RoutineSymbol b) =>
+        a.Parameters.Length == b.Parameters.Length && a.Parameters.Zip(b.Parameters).All(p => p.First.IsRef == p.Second.IsRef);
 
     /// <summary>LANG-440: a name shared only by routines that all carry <c>overload</c> and differ in their parameters.</summary>
     private bool DeclareRoutine(SyntaxToken identifier, RoutineSymbol routine, ImmutableArray<RoutineSymbol> existing)
@@ -1906,6 +1965,7 @@ internal sealed partial class DeclarationBinder
                 _diagnostics.Report(name, "E2751", helper.Name);                // LANG-754 (C-124)
                 return _types.Error;
             case TypeSymbol type:
+                HintChecks.CheckName(_diagnostics, _types, _scope, name, text, type);              // LANG-472 (C-232)
                 return type;
             default:
                 _diagnostics.Report(name, "E2002", text);

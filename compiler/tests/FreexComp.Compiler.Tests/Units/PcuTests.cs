@@ -914,6 +914,57 @@ public sealed partial class PcuTests
             """);
 
     /// <summary>
+    /// C-232: generic methods of a record (static and instance, one constrained) are written to the <c>.pcu</c> and instantiated
+    /// from it, like those of a plain class (C-227).
+    /// </summary>
+    [Fact]
+    [Trait("Req", "CMP-162")]
+    [Trait("Req", "LANG-716")]
+    public void GenericMethodOfRecordFromPcu() =>
+        PcuImportTests.AssertSameIrAgainstPcu("""
+            unit U;
+            interface
+            type
+              TPair = record
+                Left, Right: Integer;
+                class function Pick<T>(First: Boolean; const A, B: T): T; static;
+                function Scale<T>(const Factor: T): Integer;
+                function Plain: Integer;
+              end;
+            implementation
+            class function TPair.Pick<T>(First: Boolean; const A, B: T): T;
+            begin
+              if First then
+                Result := A
+              else
+                Result := B;
+            end;
+            function TPair.Scale<T>(const Factor: T): Integer;
+            begin
+              Result := (Left + Right) * SizeOf(Factor);
+            end;
+            function TPair.Plain: Integer;
+            begin
+              Result := Left - Right;
+            end;
+            end.
+            """, """
+            program P;
+            uses U;
+            var
+              Pair: TPair;
+            begin
+              Pair.Left := 3;
+              Pair.Right := 4;
+              Writeln(TPair.Pick<Integer>(True, 1, 2));
+              Writeln(TPair.Pick<string>(False, 'a', 'b'));
+              Writeln(Pair.Scale<Byte>(1));
+              Writeln(Pair.Scale<Int64>(1));
+              Writeln(Pair.Plain);
+            end.
+            """);
+
+    /// <summary>
     /// C-227: a generic body naming an implementation-only type and variable and an enumeration of a unit used only by the
     /// implementation part compiles from the <c>.pcu</c>.
     /// </summary>

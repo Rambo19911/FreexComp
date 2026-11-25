@@ -942,6 +942,7 @@ sealed class FreexComp.Compiler.Syntax.ParameterSyntax : FreexComp.Compiler.Synt
   public FreexComp.Compiler.Syntax.ExpressionSyntax DefaultValue { get; }
   public FreexComp.Compiler.Syntax.SeparatedSyntaxList<FreexComp.Compiler.Syntax.IdentifierNameSyntax> Identifiers { get; }
   public FreexComp.Compiler.Syntax.SyntaxList<FreexComp.Compiler.Syntax.AttributeListSyntax> Attributes { get; }
+  public FreexComp.Compiler.Syntax.SyntaxList<FreexComp.Compiler.Syntax.AttributeListSyntax> ModifierAttributes { get; }
   public FreexComp.Compiler.Syntax.TypeSyntax Type { get; }
   public System.Nullable<FreexComp.Compiler.Syntax.SyntaxToken> ColonToken { get; }
   public System.Nullable<FreexComp.Compiler.Syntax.SyntaxToken> EqualsToken { get; }

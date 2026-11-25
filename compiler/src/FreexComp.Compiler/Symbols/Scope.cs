@@ -17,12 +17,16 @@ internal sealed class Scope
     private readonly List<(string Name, Symbol Symbol)> _ordered;
     private readonly Dictionary<string, List<(RoutineSymbol Routine, int Index)>> _overloads;
 
+    /// <summary>LANG-472 (C-232): the hint directives of the type names this scope declares (shared with its views).</summary>
+    private readonly Dictionary<string, SymbolHints> _hints;
+
     /// <summary>A view: the same declarations as <paramref name="source"/> (also those added later) under another parent.</summary>
     private Scope(Scope source, ScopeKind kind, Scope? parent, ImmutableArray<string> qualifiers)
     {
         _symbols = source._symbols;
         _ordered = source._ordered;
         _overloads = source._overloads;
+        _hints = source._hints;
         Kind = kind;
         Parent = parent;
         Owner = source.Owner;
@@ -140,6 +144,7 @@ internal sealed class Scope
         _symbols = new(IdentifierComparer.Instance);
         _ordered = [];
         _overloads = new(IdentifierComparer.Instance);
+        _hints = new(IdentifierComparer.Instance);
         Kind = kind;
         Parent = parent;
         Owner = owner;
@@ -168,6 +173,19 @@ internal sealed class Scope
     public IEnumerable<Symbol> Symbols => _ordered.Select(e => e.Symbol);
 
     public bool TryDeclare(Symbol symbol, out Symbol? existing) => TryDeclare(symbol.Name, symbol, out existing);
+
+    /// <summary>LANG-472 (C-232): records the hint directives of the type declared here as <paramref name="name"/>.</summary>
+    public void SetHints(string name, SymbolHints hints) => _hints[name] = hints;
+
+    /// <summary>The hint directives of the type name <paramref name="name"/> declared in this scope; null when it has none.</summary>
+    public SymbolHints? HintsOf(string name) => _hints.GetValueOrDefault(name);
+
+    /// <summary>
+    /// LANG-472 (C-232): the hint directives of the type name <paramref name="name"/> when the scope that declares it visibly is a
+    /// used unit's interface — a use outside the declaring unit; null otherwise.
+    /// </summary>
+    public SymbolHints? ImportedTypeHints(string name) =>
+        DeclaringScope(name) is { Kind: ScopeKind.Uses } declaring ? declaring.HintsOf(name) : null;
 
     /// <summary>Declares <paramref name="symbol"/> as <paramref name="name"/>; false (and the earlier symbol) if this scope already has the name.</summary>
     public bool TryDeclare(string name, Symbol symbol, out Symbol? existing)

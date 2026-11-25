@@ -317,9 +317,10 @@ internal sealed class PcuWriter(PcuContext context)
         }
 
         /// <summary>
-        /// C-227: the generic methods of a plain class — <c>genericMethods</c> (name, visibility, and <c>member</c>: the index of the
-        /// method declaration among those of the stored class declaration) and <c>genericBody</c>, a <c>genericBodies</c> entry with
-        /// the class declaration and the methods' implementations. Only when there are any (other files keep their exact form).
+        /// C-227, C-232: the generic methods of a plain class or record — <c>genericMethods</c> (name, visibility, and <c>member</c>:
+        /// the index of the method declaration among those of the stored type declaration) and <c>genericBody</c>, a
+        /// <c>genericBodies</c> entry with the type declaration and the methods' implementations. Only when there are any (other
+        /// files keep their exact form).
         /// </summary>
         private void GenericMethods(JsonObject entry, ImmutableArray<GenericMethodSymbol> methods)
         {
@@ -370,6 +371,11 @@ internal sealed class PcuWriter(PcuContext context)
             {
                 if (Symbol(symbols.Count, name, symbol) is { } entry)
                 {
+                    if (symbol is TypeSymbol)
+                    {
+                        Hints(entry, scope.HintsOf(name));                      // LANG-472 (C-232): a type's hints belong to its name
+                    }
+
                     symbols.Add(entry);
                 }
             }
@@ -445,26 +451,41 @@ internal sealed class PcuWriter(PcuContext context)
                 entry["doc"] = doc;
             }
 
-            if (symbol.IsDeprecated)
+            Hints(entry, symbol.Hints);
+        }
+
+        /// <summary>
+        /// LANG-472 (C-127, C-232): <c>deprecated</c>, <c>deprecatedText</c>, <c>platform</c>, <c>experimental</c> of a symbol or member
+        /// entry — only those present (other files keep their exact form).
+        /// </summary>
+        private static JsonObject Hints(JsonObject entry, SymbolHints? hints)
+        {
+            if (hints is null)
+            {
+                return entry;
+            }
+
+            if (hints.IsDeprecated)
             {
                 entry["deprecated"] = true;
             }
 
-            // LANG-472 (C-127): the other hint directives and the deprecation text, only when present
-            if (symbol.DeprecationMessage is { } deprecation)
+            if (hints.DeprecationMessage is { } deprecation)
             {
                 entry["deprecatedText"] = deprecation;
             }
 
-            if (symbol.IsPlatform)
+            if (hints.IsPlatform)
             {
                 entry["platform"] = true;
             }
 
-            if (symbol.IsExperimental)
+            if (hints.IsExperimental)
             {
                 entry["experimental"] = true;
             }
+
+            return entry;
         }
 
         /// <summary>Prefix of the flag that records a calling-convention directive (CMP-1011).</summary>
@@ -716,6 +737,7 @@ internal sealed class PcuWriter(PcuContext context)
                     })]);
                     // C-122 (LANG-730), imported since C-219
                     entry["methods"] = StaticMethods(record.Methods);
+                    GenericMethods(entry, record.GenericMethods);                      // C-232: as for a plain class (C-227)
                     entry["properties"] = MemberProperties(record.Properties);
                     if (!record.ClassVariables.IsEmpty)
                     {
@@ -790,7 +812,7 @@ internal sealed class PcuWriter(PcuContext context)
                         ["classVar"] = true,
                         ["linkName"] = Emit.Mangler.GlobalVariable(v).Text,          // CMP-370 (C-086)
                     })]);
-                    entry["methods"] = new JsonArray([.. @class.Methods.Select(m => (JsonNode?)new JsonObject
+                    entry["methods"] = new JsonArray([.. @class.Methods.Select(m => (JsonNode?)Hints(new JsonObject
                     {
                         ["name"] = m.Name,
                         ["linkName"] = m.LinkName,
@@ -802,7 +824,7 @@ internal sealed class PcuWriter(PcuContext context)
                         ["binding"] = Binding(m),
                         ["slot"] = m.VmtSlot,
                         ["msgId"] = m.MessageId,                                       // C-113
-                    })]);
+                    }, m.Hints))]);
                     GenericMethods(entry, @class.GenericMethods);                      // C-227
                     entry["properties"] = new JsonArray([.. @class.Properties.Select(p => (JsonNode?)new JsonObject
                     {
@@ -854,7 +876,7 @@ internal sealed class PcuWriter(PcuContext context)
                             method["dispid"] = dispId;
                         }
 
-                        return (JsonNode?)method;
+                        return (JsonNode?)Hints(method, m.Hints);
                     })]);
                     // C-205: accessors are interface methods, named by their IMT slot's method name (they have no link name); a
                     // dispatch property has none (the reader makes its hidden get and put members again)
@@ -914,7 +936,7 @@ internal sealed class PcuWriter(PcuContext context)
         /// constructor) and <c>operator</c> (a LANG-731 <c>class operator</c>, named by its operator name).
         /// </summary>
         private JsonArray StaticMethods(ImmutableArray<MethodSymbol> methods) =>
-            new([.. methods.Select(m => (JsonNode?)new JsonObject
+            new([.. methods.Select(m => (JsonNode?)Hints(new JsonObject
             {
                 ["name"] = m.Name,
                 ["linkName"] = m.LinkName,
@@ -923,7 +945,7 @@ internal sealed class PcuWriter(PcuContext context)
                 ["flags"] = Strings([.. Flags(m), .. m.IsClassMethod ? ["class"] : Array.Empty<string>(),
                     .. m.IsRecordConstructor ? ["constructor"] : Array.Empty<string>(), .. m.OperatorName is not null ? ["operator"] : Array.Empty<string>()]),
                 ["visibility"] = VisibilityName(m.Visibility),
-            })]);
+            }, m.Hints))]);
 
         private JsonArray MemberProperties(ImmutableArray<PropertySymbol> properties) =>
             new([.. properties.Select(p => (JsonNode?)new JsonObject

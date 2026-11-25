@@ -120,6 +120,140 @@ public sealed class UnitBindingTests
             end.
             """)));
 
+    /// <summary>The unit of <see cref="HintDirectives_AllSymbolKinds"/>: every kind of hinted symbol, each used silently by its own unit.</summary>
+    internal const string HintedUnit = """
+        unit H;
+        interface
+        type
+          TNew = Integer;
+          TOld = Integer deprecated 'use TNew';
+          TRec = record X: Integer; end platform;
+          TObj = class
+            procedure M; deprecated 'use N';
+            class function CF: Integer; experimental;
+          end;
+          TDep = class
+            class function Make: Integer;
+          end deprecated;
+        const
+          COld = 1 deprecated;
+          CTyped: Integer = 2 platform;
+        var
+          VOld: Integer experimental;
+        procedure R; deprecated;
+        function F(N: Integer): Integer; platform;
+        implementation
+        type TOwnProc = procedure;
+        var Own: TOld; OwnRec: TRec; OwnProc: TOwnProc; OwnPtr: Pointer;
+        procedure TObj.M; begin end;
+        class function TObj.CF: Integer; begin Result := COld + CTyped + VOld end;
+        class function TDep.Make: Integer; begin Result := TOld(1) end;
+        procedure R; begin end;
+        function F(N: Integer): Integer; var O: TObj; begin O := nil; O.M; Result := TObj.CF + N end;
+        initialization
+          OwnProc := R;
+          OwnPtr := @R;
+          Own := SizeOf(OwnRec) + TDep.Make;
+        end.
+        """;
+
+    /// <summary>The program of <see cref="HintDirectives_AllSymbolKinds"/>: one use of every hinted symbol of <see cref="HintedUnit"/>.</summary>
+    internal const string HintedProgram = """
+        program P;
+        uses H;
+        type TProc = procedure; TFn = function(N: Integer): Integer;
+        var A: TOld; B: TRec; Pr: TProc; Pt: Pointer; Fn: TFn; O: TObj; N: TNew;
+        begin
+          A := COld + CTyped;
+          VOld := 1;
+          O.M;
+          A := TObj.CF;
+          Pr := R;
+          Pt := @R;
+          Fn := F;
+          Pr := H.R;
+          A := SizeOf(TRec);
+          N := H.COld;
+          A := TOld(1);
+          A := TDep.Make;
+        end.
+        """;
+
+    /// <summary>The warnings of <see cref="HintedProgram"/>, in source order.</summary>
+    internal static readonly string[] HintedProgramWarnings =
+    [
+        "P.pas(4,8): W1050 Symbol 'TOld' is deprecated: use TNew",
+        "P.pas(4,17): W1051 Symbol 'TRec' is specific to a platform",
+        "P.pas(6,8): W1050 Symbol 'COld' is deprecated",
+        "P.pas(6,15): W1051 Symbol 'CTyped' is specific to a platform",
+        "P.pas(7,3): W1052 Symbol 'VOld' is experimental",
+        "P.pas(8,5): W1050 Symbol 'M' is deprecated: use N",
+        "P.pas(9,13): W1052 Symbol 'CF' is experimental",
+        "P.pas(10,9): W1050 Symbol 'R' is deprecated",
+        "P.pas(11,10): W1050 Symbol 'R' is deprecated",
+        "P.pas(12,9): W1051 Symbol 'F' is specific to a platform",
+        "P.pas(13,11): W1050 Symbol 'R' is deprecated",
+        "P.pas(14,15): W1051 Symbol 'TRec' is specific to a platform",
+        "P.pas(15,10): W1050 Symbol 'COld' is deprecated",
+        "P.pas(16,8): W1050 Symbol 'TOld' is deprecated: use TNew",
+        "P.pas(17,8): W1050 Symbol 'TDep' is deprecated",
+    ];
+
+    /// <summary>
+    /// C-232 (LANG-472): a hint directive on a type (also an alias; named in a declaration, a cast, <c>SizeOf</c> or as a qualifier), a
+    /// constant (true and typed), a variable, a method and a routine used as a procedural value (<c>P := R</c>, <c>@R</c>,
+    /// unit-qualified) is W1050 / W1051 / W1052 at every use outside the declaring unit — once per use — and silent inside it.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "LANG-472")]
+    public void HintDirectives_AllSymbolKinds() =>
+        Assert.Equal(HintedProgramWarnings, Check(HintedProgram, ("H.pas", HintedUnit)).Order(HintOrder));
+
+    /// <summary>
+    /// C-232 (LANG-472): a generic type's hint directive is reported where an instance is named outside the declaring unit; a
+    /// suppressed warning (<c>{$WARN SYMBOL_DEPRECATED OFF}</c>) stays silent, and an alias without a hint of a hinted type is silent.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "LANG-472")]
+    public void HintDirectives_GenericTypeAndAlias() =>
+        Assert.Equal(
+        [
+            "P.pas(4,6): W1050 Symbol 'TBox' is deprecated: use TCell",
+            "P.pas(8,8): W1050 Symbol 'TBox' is deprecated: use TCell",
+        ], Check("""
+            program P;
+            uses G;
+            var
+              B: TBox<Integer>;
+              {$WARN SYMBOL_DEPRECATED OFF} C: TBox<Byte>; {$WARN SYMBOL_DEPRECATED ON}
+              K: TKept;
+            begin
+              B := TBox<Integer>.Make(1);
+              K := B;
+            end.
+            """, ("G.pas", """
+            unit G;
+            interface
+            type
+              TBox<T> = record
+                V: T;
+                class function Make(const A: T): TBox<T>; static;
+              end deprecated 'use TCell';
+              TKept = TBox<Integer>;
+            implementation
+            class function TBox<T>.Make(const A: T): TBox<T>; begin Result.V := A end;
+            end.
+            """)).Order(HintOrder));
+
+    /// <summary>By line, then column (the declaration binder reports before the body binder).</summary>
+    internal static readonly Comparer<string> HintOrder = Comparer<string>.Create((a, b) => Position(a).CompareTo(Position(b)));
+
+    private static (int Line, int Column) Position(string diagnostic)
+    {
+        var numbers = diagnostic[(diagnostic.IndexOf('(') + 1)..diagnostic.IndexOf(')')].Split(',');
+        return (int.Parse(numbers[0], System.Globalization.CultureInfo.InvariantCulture), int.Parse(numbers[1], System.Globalization.CultureInfo.InvariantCulture));
+    }
+
     [Fact]
     [Trait("Req", "LANG-515")]
     public void ImplementationSymbols_ArePrivate() =>

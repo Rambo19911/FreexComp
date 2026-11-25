@@ -24,6 +24,47 @@ internal sealed class PreprocessorContext
     /// <summary>LANG-543: the main file starts with <c>library</c>: <c>{$APPTYPE}</c> there is W1003 and has no effect.</summary>
     public bool IsLibraryFile { get; set; }
 
+    /// <summary>C-232: the main file's first token has been read, so <see cref="IsUnitFile"/> and <see cref="IsLibraryFile"/> are known.</summary>
+    public bool HeadingSeen { get; private set; }
+
+    /// <summary>C-232: the W1003 reports of the <c>{$APPTYPE}</c> directives met before the first token, run when the file is a unit or library.</summary>
+    public List<Action> AppTypesBeforeHeading { get; } = [];
+
+    /// <summary>C-232: whether CONSOLE was defined before the first <c>{$APPTYPE}</c> ahead of the heading (restored in a library file, LANG-543).</summary>
+    public bool? ConsoleBeforeHeading { get; set; }
+
+    /// <summary>
+    /// The main file's first token is <paramref name="first"/>: <c>unit</c> and <c>library</c> files report the <c>{$APPTYPE}</c>
+    /// directives written before it (W1003); in a library file they also lose their effect.
+    /// </summary>
+    public void SeeHeading(SyntaxKind first)
+    {
+        IsUnitFile = first == SyntaxKind.UnitKeyword;
+        IsLibraryFile = first == SyntaxKind.LibraryKeyword;
+        HeadingSeen = true;
+        if (IsUnitFile || IsLibraryFile)
+        {
+            foreach (var report in AppTypesBeforeHeading)
+            {
+                report();
+            }
+        }
+
+        if (IsLibraryFile && ConsoleBeforeHeading is { } console)
+        {
+            if (console)
+            {
+                Defines.Add("CONSOLE");
+            }
+            else
+            {
+                Defines.Remove("CONSOLE");
+            }
+        }
+
+        AppTypesBeforeHeading.Clear();
+    }
+
     public PreprocessorContext(ParseOptions? options)
     {
         Options = options;
@@ -526,6 +567,15 @@ internal sealed class DirectiveProcessor
             Report("W1003", directive.Span);                                    // C-127: only the program file sets the application type
         }
 
+        if (!_context.HeadingSeen)
+        {
+            // C-232: before the heading the file's kind is not known yet; W1003 follows at the first token, under the
+            // warning control in force here
+            var state = State;
+            _context.ConsoleBeforeHeading ??= _context.Defines.Contains("CONSOLE");
+            _context.AppTypesBeforeHeading.Add(() => Report(state, "W1003", directive.Span));
+        }
+
         switch (directive.Argument.ToUpperInvariant())
         {
             case "CONSOLE": _context.Defines.Add("CONSOLE"); break;
@@ -624,12 +674,15 @@ internal sealed class DirectiveProcessor
 
     // ------------------------------------------------------------------ reporting with warning control (CMP-505)
 
-    private void Report(string code, TextSpan span, params object[] args)
+    private void Report(string code, TextSpan span, params object[] args) => Report(State, code, span, args);
+
+    /// <summary>Reports under the warning control of <paramref name="state"/> (the state at the reported directive).</summary>
+    private void Report(DirectiveState state, string code, TextSpan span, params object[] args)
     {
         var severity = DiagnosticCatalog.Get(code).DefaultSeverity;
         if (severity != DiagnosticSeverity.Error)
         {
-            if (State.WarnOverrides.TryGetValue(code, out var setting))
+            if (state.WarnOverrides.TryGetValue(code, out var setting))
             {
                 if (setting == WarnSetting.Off)
                 {
@@ -638,7 +691,7 @@ internal sealed class DirectiveProcessor
 
                 severity = setting == WarnSetting.Error ? DiagnosticSeverity.Error : severity;
             }
-            else if ((severity == DiagnosticSeverity.Warning && !State.WarningsOn) || (severity == DiagnosticSeverity.Hint && !State.HintsOn))
+            else if ((severity == DiagnosticSeverity.Warning && !state.WarningsOn) || (severity == DiagnosticSeverity.Hint && !state.HintsOn))
             {
                 return;
             }

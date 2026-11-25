@@ -9,6 +9,7 @@ internal sealed class DiagnosticBag
 {
     private readonly List<Diagnostic> _diagnostics = [];
     private readonly HashSet<string> _undeclared = new(IdentifierComparer.Instance);
+    private readonly HashSet<(string Path, int Start, string Name)> _hinted = [];
 
     public int Count => _diagnostics.Count;
 
@@ -86,6 +87,34 @@ internal sealed class DiagnosticBag
         if (_undeclared.Add(name))
         {
             Report(node, "E2003", name);
+        }
+    }
+
+    /// <summary>
+    /// LANG-472: W1050 / W1051 / W1052 for a use at <paramref name="node"/> of the symbol <paramref name="name"/> declared with
+    /// <paramref name="hints"/> (the deprecation text follows as <c>: text</c>) — once per place, however often the name is bound.
+    /// </summary>
+    public void ReportHints(SyntaxNode node, string name, Symbols.SymbolHints hints)
+    {
+        var location = LocationOf(node);
+        if (!_hinted.Add((location.Path, location.Span.Start, name)))
+        {
+            return;
+        }
+
+        if (hints.IsDeprecated)
+        {
+            Report(node, "W1050", name, hints.DeprecationMessage is { } text ? ": " + text : "");
+        }
+
+        if (hints.IsPlatform)
+        {
+            Report(node, "W1051", name);
+        }
+
+        if (hints.IsExperimental)
+        {
+            Report(node, "W1052", name);
         }
     }
 

@@ -27,12 +27,14 @@ public sealed class ParameterListSyntax : SyntaxNode
 public sealed class ParameterSyntax : SyntaxNode
 {
     internal ParameterSyntax(SyntaxList<AttributeListSyntax> attributes,
-                             SyntaxToken? modifier, SeparatedSyntaxList<IdentifierNameSyntax> identifiers, SyntaxToken? colonToken,
+                             SyntaxToken? modifier, SyntaxList<AttributeListSyntax> modifierAttributes,
+                             SeparatedSyntaxList<IdentifierNameSyntax> identifiers, SyntaxToken? colonToken,
                              TypeSyntax? type, SyntaxToken? equalsToken, ExpressionSyntax? defaultValue)
         : base(SyntaxKind.Parameter)
     {
         Attributes = Add(attributes);
         Modifier = Add(modifier);
+        ModifierAttributes = Add(modifierAttributes);
         Identifiers = Add(identifiers);
         ColonToken = Add(colonToken);
         Type = AddOptional(type);
@@ -45,6 +47,9 @@ public sealed class ParameterSyntax : SyntaxNode
 
     /// <summary><c>const</c>, <c>var</c>, or an identifier with contextual kind <see cref="SyntaxKind.OutKeyword"/>.</summary>
     public SyntaxToken? Modifier { get; }
+
+    /// <summary>Attribute lists between the modifier and the names (<c>const [Ref] X</c>, LANG-763); they mean what <see cref="Attributes"/> mean.</summary>
+    public SyntaxList<AttributeListSyntax> ModifierAttributes { get; }
 
     public SeparatedSyntaxList<IdentifierNameSyntax> Identifiers { get; }
 

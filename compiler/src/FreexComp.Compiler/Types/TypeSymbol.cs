@@ -731,7 +731,8 @@ internal static class Signatures
         && (a.ReturnType is null) == (b.ReturnType is null)
         && (a.ReturnType is null || Pointers.SameType(a.ReturnType, b.ReturnType!))
         && a.Parameters.Length == b.Parameters.Length
-        && a.Parameters.Zip(b.Parameters).All(p => p.First.Mode == p.Second.Mode && Pointers.SameType(p.First.Type, p.Second.Type));
+        && a.Parameters.Zip(b.Parameters).All(p => p.First.Mode == p.Second.Mode && Pointers.SameType(p.First.Type, p.Second.Type)
+            && p.First.IsRef == p.Second.IsRef);                                // LANG-763 (C-232): [Ref] const is passed as an address
 
     /// <summary>A routine as an E2010 operand: <c>procedure(var Integer)</c>, <c>function(Integer): Integer</c>.</summary>
     public static string Display(RoutineSymbol routine)

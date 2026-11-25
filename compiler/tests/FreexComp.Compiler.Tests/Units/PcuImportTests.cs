@@ -423,6 +423,29 @@ public sealed class PcuImportTests
         AssertSameIrAgainstPcu(Unit, Program);
     }
 
+    /// <summary>
+    /// C-232 (LANG-472): the hint directives of every symbol kind survive the <c>.pcu</c> — a program against the <c>.pcu</c>-only unit
+    /// gets the warnings it gets against the source.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "LANG-472")]
+    [Trait("Req", "CMP-152")]
+    public void HintDirectivesFromPcu()
+    {
+        var unit = UnitBindingTests.HintedUnit.Replace("unit H;", "unit U;", StringComparison.Ordinal);
+        var program = UnitBindingTests.HintedProgram.Replace("uses H;", "uses U;", StringComparison.Ordinal).Replace("H.", "U.", StringComparison.Ordinal);
+        var pcus = PcuTests.Pcus(PcuTests.Files(u: unit, program: program));
+        var fs = new InMemoryFileSystem().Add(@"C:\p\P.pas", program).AddSystem()
+            .Add(Path.Combine(Lib, "U.pcu"), pcus["U"]).Add(Path.Combine(Lib, "U.obj"), "");
+
+        var result = Emit(fs, PcuTests.Options() with { SearchPaths = [Lib] }, EmitStage.Ll);
+
+        Assert.Equal(["P", "System"], result.CompiledUnits);
+        Assert.Equal(UnitBindingTests.HintedProgramWarnings,
+            result.Diagnostics.Select(d => $"{Path.GetFileName(d.Location.Path)}({d.Location.LineSpan.Start.Line + 1},{d.Location.LineSpan.Start.Column + 1}): {d.Code} {d.Message}")
+                .Order(UnitBindingTests.HintOrder));
+    }
+
     /// <summary>The program compiled against <c>.pcu</c>-only U and V gives the IR it gets against their sources.</summary>
     internal static void AssertSameIrAgainstPcu(string unit, string program)
     {
