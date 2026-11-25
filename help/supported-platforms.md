@@ -9,6 +9,13 @@ FreexComp and the programs it builds run on these systems:
 | Windows Server | — | Not supported yet |
 | 32-bit Windows programs | — | Not supported yet |
 
+## Platforms of a project
+
+A project lists the platforms it is built for under the key `platforms` of its project file, and one of them
+is its active platform. Today 64-bit Windows (`win64`) is the only installed platform. A project may already
+list `win32` for 32-bit Windows: it opens and its 64-bit platform builds, but building `win32` stops with
+the error `E9016` until that platform is installed. See *Platforms*.
+
 ## What a built program declares
 
 Every program gets an application manifest, generated at build time and embedded in the executable file.

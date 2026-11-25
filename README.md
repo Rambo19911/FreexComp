@@ -110,6 +110,9 @@ RAD Studio is a trademark of its respective owner and is named here only to desc
 | Debugger | Breakpoints, stepping, locals and call stack |
 | Data access | SQLite with data-aware controls |
 | Build | Build configurations, pre-build and post-build commands with macros; commands of a project run only after you have trusted it |
+| Actions | Action lists that drive menus, buttons and tool buttons, shortcuts and secondary shortcuts, ready-made edit and file actions, and an Action List Editor with categories |
+| Project groups | Several projects in one group file with one active project; Build All with dependencies first, stop or continue after a failing project, and circular dependencies refused; the same from `pbuild` |
+| Platforms | Several target platforms per project with an active platform, per-platform options and output folders; 64-bit Windows is the installed platform today |
 | Help | Offline help pages shipped next to the IDE, opened from Help > Contents (F1) |
 
 <!-- Extend this table as backlog features land. -->
