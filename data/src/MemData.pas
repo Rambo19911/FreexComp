@@ -186,66 +186,11 @@ begin
   B.Append('"');
 end;
 
-{ The shortest decimal text that reads back to the same Double: plain digits for a decimal exponent of -7
-  to 20, else the form 1.5e-7 / 1e+30. False for a NaN or an infinity. }
+{ The shortest decimal text that reads back to the same Double (RTL-246): plain digits or the form
+  1.5e-7 / 1e+30, always with '.'. False for a NaN or an infinity. }
 function FloatText(Value: Double; out Text: string): Boolean;
-var
-  R: TFloatDigits;
-  I, N: Integer;
-  S: string;
 begin
-  _FloatDigitsShortest(Value, False, R);
-  Result := not (R.IsNaN or R.IsInfinite);
-  if not Result then
-    Exit;
-  if R.Count = 0 then
-    S := '0'
-  else
-  begin
-    S := '';
-    N := R.Exponent;                       { the value is 0.d1d2... x 10^N }
-    if (N >= R.Count) and (N <= 21) then
-    begin
-      for I := 0 to R.Count - 1 do
-        S := S + Chr(Ord('0') + R.Digits[I]);
-      for I := R.Count + 1 to N do
-        S := S + '0';
-    end
-    else if (N > 0) and (N <= 21) then
-    begin
-      for I := 0 to R.Count - 1 do
-      begin
-        if I = N then
-          S := S + '.';
-        S := S + Chr(Ord('0') + R.Digits[I]);
-      end;
-    end
-    else if (N > -6) and (N <= 0) then
-    begin
-      S := '0.';
-      for I := 1 to -N do
-        S := S + '0';
-      for I := 0 to R.Count - 1 do
-        S := S + Chr(Ord('0') + R.Digits[I]);
-    end
-    else
-    begin
-      S := Chr(Ord('0') + R.Digits[0]);
-      if R.Count > 1 then
-      begin
-        S := S + '.';
-        for I := 1 to R.Count - 1 do
-          S := S + Chr(Ord('0') + R.Digits[I]);
-      end;
-      if N - 1 < 0 then
-        S := S + 'e-' + IntToStr(1 - N)
-      else
-        S := S + 'e+' + IntToStr(N - 1);
-    end;
-  end;
-  if R.Negative then
-    S := '-' + S;
-  Text := S;
+  Result := TryFloatToStrShortest(Value, Text);
 end;
 
 { The day number and the milliseconds of the day of a date-time value; the time of day is the absolute
