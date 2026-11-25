@@ -106,9 +106,10 @@ RAD Studio is a trademark of its respective owner and is named here only to desc
 | Code editor | Syntax highlighting, code completion, navigation, folding, error markers |
 | Compiler | Object Pascal for Windows x64: console and GUI programs, units, DLLs, generics, interfaces, COM support |
 | Form designer | Visual design with Object Inspector; the saved form compiles to the same layout at run time |
-| UI framework | Native Windows controls written in Object Pascal on top of Win32 |
+| UI framework | Native Windows controls written in Object Pascal on top of Win32, including a rich text editor control |
 | Debugger | Breakpoints, stepping, locals and call stack |
 | Data access | SQLite with data-aware controls |
+| Build | Build configurations, pre-build and post-build commands with macros; commands of a project run only after you have trusted it |
 | Help | Offline help pages shipped next to the IDE, opened from Help > Contents (F1) |
 
 <!-- Extend this table as backlog features land. -->
@@ -235,6 +236,10 @@ More topics:
     - [x] Offline help pages in the IDE
     - [x] Hardware faults (access violation, division by zero) caught by `try` … `except`
     - [x] `deprecated`, `platform` and `experimental` warnings for every kind of symbol
+    - [x] Build events with a trust question before project commands run
+    - [x] Rich text editor control
+    - [x] Copy a library unit into a project to change it for that project only
+    - [x] Licence checks: runtime sources, everything that reaches a built program, all dependencies
     - [ ] Windows x86 target
 - [ ] First public release with installer
 
