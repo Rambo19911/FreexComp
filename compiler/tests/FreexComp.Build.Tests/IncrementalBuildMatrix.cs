@@ -339,7 +339,10 @@ internal sealed class MatrixProject : IDisposable
 
     public void Dispose() => TempDirectories.Delete(Directory);          // C-292: a scanner may still hold a file
 
-    /// <summary>Real processes, recording each start (<c>clang.exe --version</c> for the version check).</summary>
+    /// <summary>
+    /// Real processes, recording each start (<c>clang.exe --version</c> for the version check). The removal of environment
+    /// variables is passed on to the real runner (C-336).
+    /// </summary>
     private sealed class RecordingRunner : IProcessRunner
     {
         private readonly ConcurrentQueue<string> _started = new();
@@ -347,10 +350,20 @@ internal sealed class MatrixProject : IDisposable
         public ImmutableArray<string> Started => [.. _started];
 
         public Task<int> RunAsync(
-            string fileName, IReadOnlyList<string> arguments, string workingDirectory, Action<string> onStdOut, Action<string> onStdErr, CancellationToken ct)
+            string fileName, IReadOnlyList<string> arguments, string workingDirectory, Action<string> onStdOut, Action<string> onStdErr, CancellationToken ct) =>
+            RunAsync(fileName, arguments, workingDirectory, [], onStdOut, onStdErr, ct);
+
+        public Task<int> RunAsync(
+            string fileName,
+            IReadOnlyList<string> arguments,
+            string workingDirectory,
+            IReadOnlyList<string> removedEnvironment,
+            Action<string> onStdOut,
+            Action<string> onStdErr,
+            CancellationToken ct)
         {
             _started.Enqueue(Path.GetFileName(fileName) + (arguments is ["--version"] ? " --version" : ""));
-            return ProcessRunner.Instance.RunAsync(fileName, arguments, workingDirectory, onStdOut, onStdErr, ct);
+            return ProcessRunner.Instance.RunAsync(fileName, arguments, workingDirectory, removedEnvironment, onStdOut, onStdErr, ct);
         }
     }
 }

@@ -30,7 +30,15 @@ internal sealed class ToolRunner(IProcessRunner processRunner, ToolRunOptions op
 {
     public ToolRunOptions Options => options;
 
-    /// <param name="removedEnvironment">Environment variables the tool must not see (C-335); null → the environment as it is.</param>
+    /// <summary>
+    /// C-336: no tool of the toolchain sees these environment variables, so the machine's environment cannot change a build
+    /// (EnvironmentIndependenceFactsTests proves each on the pinned tools). The compiler driver takes extra options from
+    /// <c>CCC_OVERRIDE_OPTIONS</c>; the linker takes extra options from <c>LINK</c> and <c>_LINK_</c> and library directories
+    /// from <c>LIB</c> (every library of a link is named by its full path, so none is needed).
+    /// </summary>
+    internal static readonly ImmutableArray<string> RemovedEnvironment = ["CCC_OVERRIDE_OPTIONS", "LINK", "_LINK_", "LIB"];
+
+    /// <param name="removedEnvironment">More environment variables this start must not see (C-335), besides <see cref="RemovedEnvironment"/>.</param>
     public async Task<ToolResult> RunAsync(
         string toolPath, IReadOnlyList<string> arguments, string workingDirectory, CancellationToken ct, IReadOnlyList<string>? removedEnvironment = null)
     {
@@ -52,9 +60,8 @@ internal sealed class ToolRunner(IProcessRunner processRunner, ToolRunOptions op
         int exitCode;
         try
         {
-            exitCode = await (removedEnvironment is null
-                ? processRunner.RunAsync(toolPath, arguments, workingDirectory, OnLine, OnLine, timeout.Token)
-                : processRunner.RunAsync(toolPath, arguments, workingDirectory, removedEnvironment, OnLine, OnLine, timeout.Token)).ConfigureAwait(false);
+            IReadOnlyList<string> removed = removedEnvironment is null ? RemovedEnvironment : [.. RemovedEnvironment, .. removedEnvironment];
+            exitCode = await processRunner.RunAsync(toolPath, arguments, workingDirectory, removed, OnLine, OnLine, timeout.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {

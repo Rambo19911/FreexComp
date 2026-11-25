@@ -354,10 +354,13 @@ public sealed partial class NetworkPolicyTests
 
         public IReadOnlyList<(string Tool, IReadOnlyList<string> Arguments)> Started => [.. _started];
 
-        public Task<int> RunAsync(string fileName, IReadOnlyList<string> arguments, string workingDirectory, Action<string> onStdOut, Action<string> onStdErr, CancellationToken ct)
+        public Task<int> RunAsync(string fileName, IReadOnlyList<string> arguments, string workingDirectory, Action<string> onStdOut, Action<string> onStdErr, CancellationToken ct) =>
+            RunAsync(fileName, arguments, workingDirectory, [], onStdOut, onStdErr, ct);
+
+        public Task<int> RunAsync(string fileName, IReadOnlyList<string> arguments, string workingDirectory, IReadOnlyList<string> removedEnvironment, Action<string> onStdOut, Action<string> onStdErr, CancellationToken ct)
         {
             _started.Enqueue((fileName, [.. arguments]));
-            return ProcessRunner.Instance.RunAsync(fileName, arguments, workingDirectory, onStdOut, onStdErr, ct);
+            return ProcessRunner.Instance.RunAsync(fileName, arguments, workingDirectory, removedEnvironment, onStdOut, onStdErr, ct);
         }
     }
 
