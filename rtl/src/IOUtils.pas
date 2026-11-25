@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 { IOUtils - paths, files and directories as static record members (docs: rtl/other-units.md section 10, RTL-690).
   Thin layers over SysUtils and Classes, with kernel32 called directly where SysUtils has no routine.
   Errors: a missing file raises EFileNotFoundException, a missing directory EDirectoryNotFoundException, every other

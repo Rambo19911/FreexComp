@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 { ComObj - the behaviour of the COM support (rtl/com-support.md section 3; tasks R-230, R-231): the OLE exception
   classes, OleCheck / OleError, the error-information side of safecall methods (HandleSafeCallException), the handler
   this unit installs as System.SafeCallErrorProc and the dispatch call it installs as System.DispCallProc. Needs oleaut32 only; COM is not initialised here (RTL-1015). }

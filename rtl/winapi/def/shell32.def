@@ -1,3 +1,4 @@
+; SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 ; shell32.def - exports used by the FreexComp RTL. Source: learn.microsoft.com (function reference pages).
 ; Content: the ShellAPI unit (winapi.md 5.7).
 LIBRARY shell32.dll

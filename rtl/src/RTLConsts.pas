@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 { RTLConsts - the message texts of the RTL (other-units.md section 6, RTL-650): the SysUtils catalogue
   (sysutils.md section 11), the Classes/TypInfo catalogue (classes.md section 12, form reader texts of RTL-500) and
   the per-unit additions of other-units.md section 6. Strings only, no code. }

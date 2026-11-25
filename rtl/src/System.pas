@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 { System - the implicit unit of every FreexComp program (docs: rtl/system.md, interfaces/rtl-abi.md).
   Win32 imports are declared privately here (RTL-801); their names are listed in rtl/winapi/def/kernel32.def.
   Win32 reference: learn.microsoft.com pages of the imported functions and of the PE format (optional header). }

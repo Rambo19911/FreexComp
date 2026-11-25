@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 { Types - geometry records, dynamic-array types and value relations (other-units.md section 1, RTL-600).
   TPoint, TRect and TSize have the layout of the Win32 POINT, RECT and SIZE structures. Uses only System.
   TRect is declared without its TopLeft/BottomRight variant until variant records exist (M2.5). }

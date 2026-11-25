@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 { ActiveX - declarations of the OLE automation layer: OLE strings, the variant, dispatch-parameter and
   exception-information records, type and dispatch constants, result codes, the error-information interfaces and
   the oleaut32 / ole32 / shlwapi imports the RTL uses (rtl/com-support.md section 2; task R-230). Uses Windows.

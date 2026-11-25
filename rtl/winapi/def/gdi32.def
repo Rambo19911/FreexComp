@@ -1,3 +1,4 @@
+; SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 ; gdi32.def - exports used by the FreexComp RTL. Source: learn.microsoft.com (function reference pages).
 ; Content: the gdi32 part of the Windows unit (winapi.md 5.4).
 LIBRARY gdi32.dll

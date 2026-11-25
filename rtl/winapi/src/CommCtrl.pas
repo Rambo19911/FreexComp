@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 { CommCtrl - comctl32 bindings: InitCommonControlsEx, image lists, and the class names, styles, messages, notification
   codes and records of the tab, status bar, tool bar, progress, track bar, list view, tree view, tooltip, up-down and
   header controls (rtl/winapi.md sections 1 and 5.5; task R-112). Uses Windows and Messages (WM_USER).

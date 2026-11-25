@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 { CommDlg - comdlg32 bindings: open/save, colour and font common dialogs (rtl/winapi.md sections 1 and 5.6; task
   R-113). Uses Windows.
   Written by hand from the Win32 reference on learn.microsoft.com (RTL-800): the reference pages of

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 { DateUtils - date and time arithmetic (docs: rtl/other-units.md section 4). RTL-630: all arithmetic works on integer
   milliseconds (date part * 86 400 000 + time-of-day milliseconds per RTL-240 / RTL-242) and converts back, so a
   negative TDateTime (day toward zero, absolute fraction = time of day) is handled like any other instant. Weeks

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 { SysUtils - exceptions, conversions, Format, floats, date/time, files and string routines (docs: rtl/sysutils.md).
   Locale-independent unless a routine says otherwise (RTL-200); FormatSettings starts invariant (RTL-205). Message
   texts live in RTLConsts (RTL-201). Win32 reference: learn.microsoft.com pages of the functions used. }

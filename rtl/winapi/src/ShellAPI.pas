@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 { ShellAPI - shell32 bindings: ShellExecuteW and drag-and-drop of files (rtl/winapi.md sections 1 and 5.7; task
   R-113). Uses Windows.
   Written by hand from the Win32 reference on learn.microsoft.com (RTL-800): the reference pages of ShellExecuteW,

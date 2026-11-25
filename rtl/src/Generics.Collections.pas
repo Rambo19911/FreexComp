@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 { Generics.Collections - generic lists, dictionaries, queues, stacks and array routines
   (docs: rtl/other-units.md section 8.2, RTL-672). Element moves are element-wise assignments, so managed element
   types are reference-counted correctly. Default comparers are created on first use, so a list of a type without a

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 { StrUtils - string helpers (docs: rtl/other-units.md section 3). Every function is ordinal and locale-independent;
   the "Text" forms compare ASCII case-insensitively (RTL-200). The Ansi* names are aliases of the plain functions
   with the same ordinal behaviour (RTL-620: deliberately not based on the OS collation). }

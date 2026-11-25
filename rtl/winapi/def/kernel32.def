@@ -1,3 +1,4 @@
+; SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 ; kernel32.def - exports used by the FreexComp RTL. Source: learn.microsoft.com (function reference pages).
 ; Content: the private kernel32 imports of System (RTL-801) and the kernel32 part of the Windows unit (winapi.md 5.1).
 LIBRARY kernel32.dll

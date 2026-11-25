@@ -1,3 +1,4 @@
+; SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 ; comdlg32.def - exports used by the FreexComp RTL. Source: learn.microsoft.com (function reference pages).
 ; Content: the CommDlg unit (winapi.md 5.6).
 LIBRARY comdlg32.dll

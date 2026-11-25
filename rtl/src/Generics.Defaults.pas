@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 { Generics.Defaults - comparer and equality-comparer interfaces and their default implementations
   (docs: rtl/other-units.md section 8.1, RTL-671). The default comparers are chosen from TypeInfo(T) once, when
   Default is called; comparing and hashing are done by the non-generic routines of the implementation section. }

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 { The private records through which System reads the layouts shared with the compiler (RTL-029). This file is the
   only declaration: System includes it in its implementation and the test Abi_LayoutRecords includes it to assert
   sizes and field offsets against rtl-abi.md. TVarRec is public (System interface, RTL-013); the same test checks

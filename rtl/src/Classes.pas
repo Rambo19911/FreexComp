@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 { Classes - persistent objects, lists, strings, streams, components and form streaming (docs: rtl/classes.md). }
 unit Classes;
 

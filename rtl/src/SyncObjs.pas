@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 { SyncObjs - synchronisation objects over the Win32 kernel objects (docs: rtl/other-units.md section 7). }
 unit SyncObjs;
 

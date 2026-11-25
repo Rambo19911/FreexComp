@@ -233,15 +233,21 @@ public sealed partial class RtlUnitRulesTests
         Assert.True(problems.Count == 0, string.Join("\n", problems));
     }
 
-    /// <summary>RTL-800: each binding unit starts with a comment naming the reference pages it was written from.</summary>
+    /// <summary>
+    /// RTL-800: each binding unit starts with a comment naming the reference pages it was written from. The comment follows
+    /// the licence line, which is line 1 of every runtime source file (LIC-050).
+    /// </summary>
     [Fact]
     [Trait("Req", "RTL-800")]
     public void Bindings_NameTheirReferencePages()
     {
         foreach (var path in Directory.GetFiles(WinApiDirectory, "*.pas"))
         {
-            var text = File.ReadAllText(path).TrimStart('﻿');
-            Assert.True(text.StartsWith('{'), Path.GetFileName(path) + " does not start with a comment");
+            const string licence = "// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception\n";
+            var text = File.ReadAllText(path).TrimStart('\uFEFF').Replace("\r\n", "\n");
+            Assert.True(text.StartsWith(licence, StringComparison.Ordinal), Path.GetFileName(path) + ": line 1 is not the licence line");
+            text = text[licence.Length..];
+            Assert.True(text.StartsWith('{'), Path.GetFileName(path) + ": line 2 does not start the descriptive comment");
             var header = text[..(text.IndexOf('}') + 1)];
             Assert.True(header.Contains("learn.microsoft.com", StringComparison.Ordinal), Path.GetFileName(path) + ": the header names no reference");
             Assert.True(header.Contains("reference page", StringComparison.Ordinal) || header.Contains("pages", StringComparison.Ordinal),

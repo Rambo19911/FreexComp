@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 { TypInfo - access to the published RTTI the compiler emits (docs: rtl/classes.md section 1, interfaces/rtl-abi.md
   section 10). This unit holds the only Pascal declarations of the RTTI layout; everything that is specified as
   "published" considers only entries with Visibility 3 (ABI-144), so results do not depend on the RTTI scope. }

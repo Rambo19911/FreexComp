@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 { Messages - window message numbers, notification codes and message-parameter values, TMessage and the cracked
   message records (rtl/winapi.md section 6, RTL-850/851; task R-111). Uses only Windows (RTL dependency graph).
   Written by hand from the Win32 reference on learn.microsoft.com (RTL-800): the "Window Notifications",

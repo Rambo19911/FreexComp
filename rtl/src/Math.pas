@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 { Math - floating-point and integer helpers on top of System (docs: rtl/other-units.md section 2, RTL-610).
   Domain errors raise EInvalidOp ('Invalid floating point operation') unless stated; arguments and results are Double
   unless stated. The transcendental functions reuse the kernels of System (FloatKernels.inc). }

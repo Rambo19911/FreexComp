@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 { ---------------------------------------------------------------- transcendental functions (system.md RTL-041)
   Own implementation from standard numerical methods; the polynomial coefficients are minimax fits computed for
   this RTL (Remez exchange on the reduced intervals named below). Every routine works on Double with the

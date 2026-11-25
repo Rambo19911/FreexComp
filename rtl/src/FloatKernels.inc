@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 { ------------------------------------------------- floating-point kernels shared by System and Math (FloatMath.inc)
   The constants, bit helpers, Payne-Hanek reduction (ReducePiO2) and the sin/cos kernels of the transcendental
   functions; the method is described in FloatMath.inc. The including unit declares FracMask, SignMask, PUInt64 and

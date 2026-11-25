@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 { IniFiles - ini files read and rewritten by our own parser, comments and order preserved (docs: rtl/other-units.md
   section 9). }
 unit IniFiles;

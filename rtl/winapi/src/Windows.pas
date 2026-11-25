@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 { Windows - Win32 bindings: base types, macros, kernel32, ntdll, user32 and gdi32 functions, constants and records
   (rtl/winapi.md; kernel32 part of Phase 2, task R-034; user32 part R-109; gdi32 part R-110).
   Written by hand from the Win32 reference on learn.microsoft.com (RTL-800):
