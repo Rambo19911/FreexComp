@@ -6,10 +6,13 @@ using Avalonia.Input.Platform;
 using AvaloniaEdit;
 using AvaloniaEdit.Editing;
 using FreexComp.Ide.Core.Commands;
+using Avalonia.Media;
 using FreexComp.Ide.Core.Editing;
+using FreexComp.Ide.Core.Services;
 using FreexComp.Ide.Core.Text;
 using FreexComp.Ide.Core.ViewModels;
 using FreexComp.Ide.Editor;
+using FreexComp.Ide.Icons;
 using FreexComp.Ide.Input;
 using FreexComp.Ide.Text;
 
@@ -103,6 +106,15 @@ public sealed class GeneratedTextDocumentView : Decorator, ICommandTarget
         var id = "Document." + char.ToUpperInvariant(_document.Kind[0]) + _document.Kind[1..];
         AutomationProperties.SetAutomationId(_editor, id);
         AutomationProperties.SetName(_editor, _document.Title);
+        var transformers = _editor.TextArea.TextView.LineTransformers;
+        foreach (var headings in transformers.OfType<HelpHeadingColorizer>().ToList())
+            transformers.Remove(headings);
+        if (_document.Kind.StartsWith(HelpPage.KindPrefix, StringComparison.Ordinal)) // I-257: a help page, Markdown as text
+        {
+            transformers.Add(new HelpHeadingColorizer(() =>
+                this.TryFindResource(IconCatalog.BrushKey("syntax.keyword"), ActualThemeVariant, out var value) ? value as IBrush : null));
+        }
+
         if (content.Buffer is AvaloniaEditTextBuffer buffer)
         {
             _editor.Document = buffer.Document;

@@ -49,7 +49,9 @@ public sealed partial class MenuTests
     {
         await using var h = await HeadlessHarness.StartAsync();
         var items = AllItems(h).ToList();
-        var later = items.Where(i => Definition(i)?.Phase > Core.Composition.ServiceGraph.ImplementedPhase).ToList(); // UI-CMD-004
+        // UI-CMD-004; a delivered phase-8 command (IDE-P8-003, e.g. help.contents, I-257) is not a later-phase item.
+        var later = items.Where(i => Definition(i) is { } d
+            && !Core.Composition.Phase8Features.IsAvailable(d.Id, d.Phase, Core.Composition.ServiceGraph.ImplementedPhase)).ToList();
 
         Assert.NotEmpty(later);
         Assert.All(later, i =>

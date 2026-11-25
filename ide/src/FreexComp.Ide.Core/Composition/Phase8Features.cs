@@ -19,6 +19,7 @@ public static class Phase8Features
     [
         "file.editLibrarySource", // F02-004
         "file.openInTerminal", // F09-054
+        "help.contents", // I-257
         "options:Environment.General.BuildJobs", // F01-010
         "project.addNewFile", // F09-054
         "project.configurationManager", // F09-004

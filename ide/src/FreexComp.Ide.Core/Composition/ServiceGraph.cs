@@ -95,7 +95,8 @@ public static class ServiceGraph
         documents.Clipboard = platform.Clipboard;
         documents.Shell = platform.Shell;
         documents.RegisterCommands(commands);
-        var help = new HelpService(platform.Dialogs, platform.UserPaths, platform.Clipboard, layout, documents, keymap);
+        var help = new HelpService(platform.Dialogs, platform.UserPaths, platform.Clipboard, layout, documents, keymap, platform.FileSystem,
+            Path.Combine(platform.ToolchainEnvironment.IdeDirectory, "help")); // I-257: the pages shipped next to the IDE
         help.RegisterCommands(commands);
         help.ToolchainText = () => toolchain.Resolve().LlvmBinDir is { } llvm
             && ToolchainLocator.ValidateFolder(platform.FileSystem, llvm, ToolchainLocator.LlvmFiles).Valid

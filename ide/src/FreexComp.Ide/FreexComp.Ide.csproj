@@ -18,6 +18,10 @@
     <AvaloniaResource Include="Assets\SymbolIcons\*.svg" />
   </ItemGroup>
   <ItemGroup>
+    <!-- I-257: the user help pages of the repository's help folder, shipped as help\**\*.md next to the IDE (build and publish). -->
+    <Content Include="..\..\..\help\**\*.md" Link="help\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\FreexComp.Ide.Core\FreexComp.Ide.Core.csproj" />
     <ProjectReference Include="..\FreexComp.Designer\FreexComp.Designer.csproj" />
   </ItemGroup>

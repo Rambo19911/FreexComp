@@ -66,4 +66,27 @@ public sealed class HelpTests
         Assert.DoesNotContain(Rows(doc.Text), r => r[1] == "Save As…");
         Assert.Equal(doc.Text, h.Find<TextEditor>("Document.KeyboardShortcuts").Text);
     }
+
+    /// <summary>
+    /// I-257: Help Contents without an installed page (the IDE of a test runs from an empty directory) shows the
+    /// empty text in place of the list, Open is disabled and Cancel opens nothing.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Phase", "8")]
+    [Trait("Req", "UI-MENU-031")]
+    public async Task ContentsDialogWithoutPagesShowsEmptyText()
+    {
+        await using var h = await HeadlessHarness.StartAsync();
+        Assert.True(h.Services.Commands.CanExecute("help.contents"));
+
+        var running = h.Services.Commands.ExecuteAsync("help.contents");
+        var dlg = await h.WaitForDialogAsync("HelpContents");
+        Assert.Equal("Help Contents", dlg.Window.Title);
+        Assert.Equal("No help pages are installed.", dlg.Find<Avalonia.Controls.TextBlock>("Empty").Text);
+        Assert.Empty(dlg.FindAll("Dialog.HelpContents.Page."));
+        Assert.False((dlg.TryFind<Avalonia.Controls.Button>("Open") ?? dlg.Find<Avalonia.Controls.Button>("Button.Open")).IsEffectivelyEnabled);
+        dlg.Click("Cancel");
+        await running;
+        Assert.Empty(h.Services.Documents.Documents.OfType<GeneratedTextDocumentViewModel>());
+    }
 }

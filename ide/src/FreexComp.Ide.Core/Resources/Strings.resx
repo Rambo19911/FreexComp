@@ -1790,7 +1790,7 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
     <value>Reset Layout</value>
   </data>
   <data name="Cmd_help_contents" xml:space="preserve">
-    <value>Help Contents</value>
+    <value>Help Contents…</value>
   </data>
   <data name="Cmd_help_keyboardShortcuts" xml:space="preserve">
     <value>Keyboard Shortcuts</value>
@@ -2656,7 +2656,7 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
     <value>&amp;Reset Layout</value>
   </data>
   <data name="Menu_help_contents" xml:space="preserve">
-    <value>Help &amp;Contents</value>
+    <value>Help &amp;Contents…</value>
   </data>
   <data name="Menu_help_keyboardShortcuts" xml:space="preserve">
     <value>&amp;Keyboard Shortcuts</value>
@@ -5326,5 +5326,17 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   <data name="ProjectManager_DropTargetSuffix" xml:space="preserve">
     <value>, drop target</value>
     <comment>UI-TW-122 automation name state suffix</comment>
+  </data>
+  <data name="HelpContents_Title" xml:space="preserve">
+    <value>Help Contents</value>
+    <comment>I-257: Help Contents dialog title</comment>
+  </data>
+  <data name="HelpContents_Pages" xml:space="preserve">
+    <value>Pages</value>
+    <comment>I-257: Help Contents list automation name</comment>
+  </data>
+  <data name="HelpContents_Empty" xml:space="preserve">
+    <value>No help pages are installed.</value>
+    <comment>I-257: Help Contents dialog, shown in place of the list when the help folder holds no page</comment>
   </data>
 </root>
