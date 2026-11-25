@@ -21,8 +21,11 @@ namespace FreexComp.Ide.Views;
 /// where it was (the commands act on the editor); the bar is one stop of the <c>F6</c> cycle, arrow keys move between
 /// its buttons and Escape returns to the document.
 /// </summary>
-public sealed class StatusBarView : DockPanel
+public sealed class StatusBarView : Panel
 {
+    private readonly Border _left;
+    private readonly StackPanel _right;
+    private readonly Border _messageCell;
     private readonly Button _state;
     private readonly Button _diagnostics;
     private readonly Button _configuration;
@@ -50,7 +53,6 @@ public sealed class StatusBarView : DockPanel
         AutomationProperties.SetAutomationId(this, AutomationIds.StatusBar);
         Height = Metric("FxcMetricStatusBarHeight");
         _backgroundBinding = Bind(BackgroundProperty, this.GetResourceObservable("FxcStatusbarIdleBgBrush"));
-        LastChildFill = true;
 
         _state = FieldButton("State", m => m.StateCommand);
         _caret = FieldButton("CaretPosition", m => m.CaretCommand);
@@ -66,11 +68,7 @@ public sealed class StatusBarView : DockPanel
         ((TextBlock)_state.Content!).MaxWidth = 360;
         AutomationProperties.SetLiveSetting(_state, AutomationLiveSetting.Polite); // UI-A11Y-023
 
-        // L1 is measured with the room the right group leaves (I-296): a long state text shrinks with its ellipsis
-        // before a field of the right group is cut.
         var left = Field(_state, lineBefore: false);
-        SetDock(left, Avalonia.Controls.Dock.Left);
-
         var right = new StackPanel { Orientation = Orientation.Horizontal };
         _diagnosticsCell = Field(_diagnostics, lineBefore: true);
         right.Children.Add(_diagnosticsCell);
@@ -88,15 +86,51 @@ public sealed class StatusBarView : DockPanel
 
         _configurationCell = Field(_configuration, lineBefore: true);
         right.Children.Add(_configurationCell);
-        SetDock(right, Avalonia.Controls.Dock.Right);
         var message = Field(_message, lineBefore: true);
-        Children.Add(right);
+
+        // The children in their visual order — L1, L3, the right group — which is the order screen readers and UI
+        // Automation read them in (I-299); the layout below sizes the right group first (UI-WIN-045).
+        (_left, _messageCell, _right) = (left, message, right);
         Children.Add(left);
         Children.Add(message);
+        Children.Add(right);
 
         AddHandler(KeyDownEvent, OnKeyDown, RoutingStrategies.Tunnel);
         AddHandler(LostFocusEvent, (_, _) => Dispatcher.UIThread.Post(LeaveIfFocusOutside), RoutingStrategies.Bubble, handledEventsToo: true);
     }
+
+    /// <summary>
+    /// UI-WIN-045 (I-296): the right group gets the width its fields need and is never cut; L1 gets the room the right
+    /// group leaves (at most its own 360) and shrinks with its ellipsis first; L3 takes what is left, possibly nothing.
+    /// </summary>
+    protected override Size MeasureOverride(Size availableSize)
+    {
+        _right.Measure(new Size(double.PositiveInfinity, availableSize.Height));
+        var room = Math.Max(0, availableSize.Width - _right.DesiredSize.Width);
+        _left.Measure(new Size(room, availableSize.Height));
+        var messageRoom = new Size(Math.Max(0, room - _left.DesiredSize.Width), availableSize.Height);
+        _messageCell.Measure(messageRoom);
+        foreach (var other in Others())
+            other.Measure(messageRoom);
+        return new Size(_left.DesiredSize.Width + _messageCell.DesiredSize.Width + _right.DesiredSize.Width,
+            Math.Max(_left.DesiredSize.Height, Math.Max(_messageCell.DesiredSize.Height, _right.DesiredSize.Height)));
+    }
+
+    protected override Size ArrangeOverride(Size finalSize)
+    {
+        var rightWidth = Math.Min(_right.DesiredSize.Width, finalSize.Width);
+        var leftWidth = Math.Min(_left.DesiredSize.Width, Math.Max(0, finalSize.Width - rightWidth));
+        _left.Arrange(new Rect(0, 0, leftWidth, finalSize.Height));
+        var message = new Rect(leftWidth, 0, Math.Max(0, finalSize.Width - rightWidth - leftWidth), finalSize.Height);
+        _messageCell.Arrange(message);
+        foreach (var other in Others())
+            other.Arrange(message);
+        _right.Arrange(new Rect(finalSize.Width - rightWidth, 0, rightWidth, finalSize.Height));
+        return finalSize;
+    }
+
+    /// <summary>Children added from outside (none in the product; tests add focusable controls): laid out in the L3 slot.</summary>
+    private IEnumerable<Control> Others() => Children.Where(c => c != _left && c != _messageCell && c != _right);
 
     /// <summary>Escape in the status bar: focus goes back to the document.</summary>
     public event EventHandler? EscapeRequested;

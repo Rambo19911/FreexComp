@@ -5,6 +5,7 @@ using Avalonia.Controls;
 using Avalonia.Media;
 using Avalonia.Headless.XUnit;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using FreexComp.Compiler;
 using FreexComp.Ide.Core.Models;
 using FreexComp.Ide.Core.Resources;
@@ -61,6 +62,45 @@ public sealed partial class StatusBarTests
     /// long name, as a group-build result can be) shrinks with an ellipsis before the right group is cut: every shown
     /// field of the right group, R9 Configuration last, is drawn completely inside the status bar.
     /// </summary>
+    /// <summary>
+    /// I-299, UI-WIN-045, UI-WIN-042: screen readers and UI Automation reach the status-bar fields in their visual order —
+    /// L1 first, then L3, then the right group from left to right — also while the right group is laid out first so that
+    /// it is never cut.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-WIN-045")]
+    [Trait("Req", "UI-WIN-042")]
+    public async Task AutomationOrderIsTheVisualOrder()
+    {
+        await using var h = await BuildScenario.StartAsync();
+        Assert.True((await h.Services.Documents.OpenAsync(BuildScenario.UnitPath(h))).Success);
+        VisualSnapshot.Arrange(h.Window, new Size(800, 600), 1.0);
+        var bar = h.Find<Control>("StatusBar");
+
+        // The fields as the automation tree gives them, depth first.
+        var inTree = new List<string>();
+        void Walk(AutomationPeer peer)
+        {
+            if (peer.GetAutomationId() is { } id && id.StartsWith("StatusBar.", StringComparison.Ordinal) && !inTree.Contains(id))
+                inTree.Add(id);
+            foreach (var child in peer.GetChildren())
+                Walk(child);
+        }
+
+        Walk(ControlAutomationPeer.CreatePeerForElement(bar));
+
+        // The shown fields from left to right.
+        var shown = bar.GetVisualDescendants().OfType<Control>()
+            .Where(c => c.IsEffectivelyVisible && AutomationProperties.GetAutomationId(c) is { } id && id.StartsWith("StatusBar.", StringComparison.Ordinal))
+            .Where(c => c is not TextBlock || c.Parent is not Button) // a field button's own text has no id; ids are on the fields
+            .OrderBy(c => c.TranslatePoint(default, bar)!.Value.X)
+            .Select(c => AutomationProperties.GetAutomationId(c)!)
+            .ToList();
+        Assert.Equal("StatusBar.State", inTree[0]);
+        Assert.Contains("StatusBar.Configuration", shown);
+        Assert.Equal(shown, inTree.Where(shown.Contains));
+    }
+
     [AvaloniaFact(Timeout = 30000)]
     [Trait("Req", "UI-WIN-045")]
     public async Task LongStateText_ShrinksBeforeTheRightGroupIsCut()
