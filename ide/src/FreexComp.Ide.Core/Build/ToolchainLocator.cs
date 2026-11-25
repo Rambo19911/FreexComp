@@ -7,8 +7,10 @@ namespace FreexComp.Ide.Core.Build;
 /// <summary>
 /// Resolved toolchain directories; null = not found (IDE-P3-010). <paramref name="DataDir"/> is the data-access library's
 /// directory (P7): its <c>src</c> holds the units, its <c>design</c> the component metadata.
+/// <paramref name="DatabaseLibraryDir"/> is the folder that holds the database engine library (I-225).
 /// </summary>
-public sealed record ToolchainPaths(string? LlvmBinDir, string? RtlDir, string? FrameworkDir, string? DataDir = null);
+public sealed record ToolchainPaths(string? LlvmBinDir, string? RtlDir, string? FrameworkDir, string? DataDir = null,
+    string? DatabaseLibraryDir = null);
 
 /// <summary>Where the automatic search looks (IDE-SET-050): <c>FREEXCOMP_HOME</c>, the IDE's directory and <c>PATH</c>.</summary>
 public sealed record ToolchainEnvironment(string? FreexCompHome, string IdeDirectory, IReadOnlyList<string> PathDirectories)
@@ -49,6 +51,9 @@ public sealed class ToolchainLocator(ISettingsService settings, IFileSystem file
     /// <summary>The LLVM folder of the repository layout, searched in the IDE directory's ancestors (IDE-SET-050).</summary>
     public const string RepositoryLlvmDir = @"third_party\llvm\bin";
 
+    /// <summary>The database engine library's folder of the repository layout, searched like <see cref="RepositoryLlvmDir"/> (I-225).</summary>
+    public const string RepositoryDatabaseLibraryDir = @"third_party\sqlite";
+
     public ToolchainPaths Resolve()
     {
         var automatic = ResolveAutomatic();
@@ -56,7 +61,8 @@ public sealed class ToolchainLocator(ISettingsService settings, IFileSystem file
             Explicit(SettingsCatalog.ToolchainLlvmBinDir) ?? automatic.LlvmBinDir,
             Explicit(SettingsCatalog.ToolchainRtlDir) ?? automatic.RtlDir,
             Explicit(SettingsCatalog.ToolchainFrameworkDir) ?? automatic.FrameworkDir,
-            DataDirOfDesignDir(Explicit(SettingsCatalog.ToolchainDataDesignDir)) ?? automatic.DataDir);
+            DataDirOfDesignDir(Explicit(SettingsCatalog.ToolchainDataDesignDir)) ?? automatic.DataDir,
+            automatic.DatabaseLibraryDir);
     }
 
     public ToolchainPaths ResolveAutomatic()
@@ -66,7 +72,8 @@ public sealed class ToolchainLocator(ISettingsService settings, IFileSystem file
         var rtl = First(Candidates(@"rtl\src", @"rtl\src"), "System.pas");
         var framework = First(Candidates("ui-framework", "ui-framework"), @"design\index.json");
         var data = First(Candidates("data", "data"), @"design\index.json");
-        return new ToolchainPaths(llvm, rtl, framework, data);
+        var database = First(Candidates("sqlite", RepositoryDatabaseLibraryDir), DatabaseLibraryDeployer.FileName); // I-225
+        return new ToolchainPaths(llvm, rtl, framework, data, database);
     }
 
     public OperationResult CheckForBuild(bool needsLlvm)

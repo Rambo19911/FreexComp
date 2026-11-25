@@ -185,6 +185,7 @@ public static class ServiceGraph
         };
         var codeModel = new CodeModel.CodeModelService(projects, documents, toolchain, platform.FileSystem); // I-110
         build.CheckSyntax = codeModel.GetProjectDiagnosticsAsync;
+        build.DeployDatabaseLibrary = new DatabaseLibraryDeployer(platform.FileSystem, toolchain, codeModel.GetProjectUnitNamesAsync).DeployAsync; // I-225
         projects.UnitRename = new CodeModel.UnitRenameAnalyzer(codeModel, toolchain, librarySource); // I-236
         _ = new CodeModel.LiveDiagnosticsService(documents, codeModel, settings, platform.Clock, platform.Dispatcher); // I-111
         var semanticHighlights = new CodeModel.SemanticHighlightService(documents, codeModel, settings, platform.Clock, platform.Dispatcher); // I-112

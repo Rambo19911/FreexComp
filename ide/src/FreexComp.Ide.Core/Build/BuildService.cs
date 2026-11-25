@@ -391,11 +391,56 @@ public sealed class BuildService : IBuildService
             return null;
         }
 
+        if (result is { Success: true, Canceled: false, OutputPath: { } built } && kind != BuildKind.Clean)
+            await DeployDatabaseLibraryAsync(built);
         Finish(_internalError && !result!.Success ? Strings.Msg_Build_InternalError : Summary(result!, kind, project.Name),
             success: result!.Success);
         if (result.Errors > 0 && !result.Canceled && _settings.Get(SettingsCatalog.MessagesAutoShowOnError))
             ShowMessages?.Invoke();
         return result;
+    }
+
+    /// <summary>Puts the database engine library beside a built program that needs it (I-225; set by the service graph).</summary>
+    public Func<string, Task<LibraryDeployResult>>? DeployDatabaseLibrary { get; set; }
+
+    /// <summary>
+    /// I-225: after a successful Build or Rebuild, before the summary. A copy is one Output line; a library that was not
+    /// found or could not be copied is an Output line and a warning row (the program builds, but cannot open a database).
+    /// </summary>
+    private async Task DeployDatabaseLibraryAsync(string outputPath)
+    {
+        if (DeployDatabaseLibrary is not { } deploy)
+            return;
+        LibraryDeployResult outcome;
+        try
+        {
+            outcome = await deploy(outputPath);
+        }
+        catch (Exception e)
+        {
+            _log.Error(Category, "The database engine library could not be deployed.", e);
+            outcome = new LibraryDeployResult(LibraryDeployStatus.Failed, e.Message);
+        }
+
+        const string Name = DatabaseLibraryDeployer.FileName;
+        switch (outcome.Status)
+        {
+            case LibraryDeployStatus.Copied:
+                _output.Append(OutputChannels.Build, Format(Strings.Msg_Build_DatabaseLibraryCopied, Name), OutputKind.Ide);
+                break;
+            case LibraryDeployStatus.Missing:
+                Warn(Format(Strings.Msg_Build_DatabaseLibraryMissing, Name));
+                break;
+            case LibraryDeployStatus.Failed:
+                Warn(Format(Strings.Msg_Build_DatabaseLibraryCopyFailed, Name, outcome.Detail ?? ""));
+                break;
+        }
+
+        void Warn(string text)
+        {
+            _output.Append(OutputChannels.Build, text, OutputKind.Error);
+            _messages.AddWarning(text);
+        }
     }
 
     private void Deliver(IReadOnlyList<BuildEvent> batch)

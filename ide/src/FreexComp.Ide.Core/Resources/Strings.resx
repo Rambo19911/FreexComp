@@ -194,6 +194,15 @@
   <data name="Msg_Project_ChangedOnDisk" xml:space="preserve">
     <value>The project file was changed outside FreexComp. Reload the project?</value>
   </data>
+  <data name="Msg_Build_DatabaseLibraryCopied" xml:space="preserve">
+    <value>Copied {0} to the output folder</value>
+  </data>
+  <data name="Msg_Build_DatabaseLibraryMissing" xml:space="preserve">
+    <value>{0} was not found and was not copied to the output folder. The program cannot open a database without it.</value>
+  </data>
+  <data name="Msg_Build_DatabaseLibraryCopyFailed" xml:space="preserve">
+    <value>{0} could not be copied to the output folder: {1}</value>
+  </data>
   <data name="Msg_Project_EventsIgnored" xml:space="preserve">
     <value>Pre-build and post-build events are not supported yet and were ignored.</value>
   </data>

@@ -95,6 +95,17 @@ public sealed class CodeModelService
         return Worker.RunAsync("projectDiagnostics", token => compilation.GetDiagnostics(null, token), ct);
     }
 
+    /// <summary>
+    /// I-225: the canonical names of every unit of the program (the resolved unit list, library units included); empty
+    /// without a project or when the front end could not start.
+    /// </summary>
+    public Task<ImmutableArray<string>> GetProjectUnitNamesAsync(CancellationToken ct)
+    {
+        if (Synchronize() is not { } compilation)
+            return Task.FromResult(ImmutableArray<string>.Empty);
+        return Worker.RunAsync("projectUnits", _ => compilation.Units.Select(u => u.Name).ToImmutableArray(), ct);
+    }
+
     private static bool IsPascal(string path) =>
         Path.GetExtension(path) is var ext && (ext.Equals(".pas", StringComparison.OrdinalIgnoreCase) || ext.Equals(".inc", StringComparison.OrdinalIgnoreCase));
 }

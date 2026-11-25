@@ -188,6 +188,14 @@ public sealed partial class MessagesService : IMessagesService
         Changed?.Invoke(this, EventArgs.Empty);
     }
 
+    /// <summary>A warning row without position and code (I-225: the database engine library was not deployed).</summary>
+    public void AddWarning(string text)
+    {
+        _items.List.Add(new MessageItem(_items.Count, MessageSeverity.Warning, "", text, null, [], false));
+        WarningCount++;
+        Changed?.Invoke(this, EventArgs.Empty);
+    }
+
     /// <summary>The summary row, always last (IDE-P3-034); not counted (IDE-P3-063).</summary>
     public void AddSummary(string text, MessageSeverity severity)
     {
