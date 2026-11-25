@@ -1,0 +1,141 @@
+# a new image (UIF-1340)
+ok Empty
+ok Width
+ok Height
+ok ImageFormat
+ok HasAlpha
+ok AutoOrient
+ok Modified
+ok the class is registered for streaming (UIF-1351)
+ok the imaging component is not loaded before the first operation (UIF-1351)
+# alpha.png (UIF-1342)
+ok from the file: OnChange fires once
+ok from the file: not empty
+ok from the file: Modified
+ok from the file: Width
+ok from the file: Height
+ok from the file: ImageFormat
+ok from the file: HasAlpha
+ok from the file: top left block
+ok from the file: top right block
+ok from the file: bottom left block
+ok from the file: bottom right block
+ok emptied
+ok from the stream: OnChange fires once
+ok from the stream: the position is at the end
+ok from the stream: Width
+ok from the stream: Height
+ok from the stream: ImageFormat
+ok from the stream: HasAlpha
+ok from the stream: top left block
+ok from the stream: top right block
+ok from the stream: bottom left block
+ok from the stream: bottom right block
+# plain.bmp (UIF-1342)
+ok from the file: OnChange fires once
+ok from the file: not empty
+ok from the file: Modified
+ok from the file: Width
+ok from the file: Height
+ok from the file: ImageFormat
+ok from the file: HasAlpha
+ok from the file: top left block
+ok from the file: top right block
+ok from the file: bottom left block
+ok from the file: bottom right block
+ok emptied
+ok from the stream: OnChange fires once
+ok from the stream: the position is at the end
+ok from the stream: Width
+ok from the stream: Height
+ok from the stream: ImageFormat
+ok from the stream: HasAlpha
+ok from the stream: top left block
+ok from the stream: top right block
+ok from the stream: bottom left block
+ok from the stream: bottom right block
+# blocks.gif (UIF-1342)
+ok from the file: OnChange fires once
+ok from the file: not empty
+ok from the file: Modified
+ok from the file: Width
+ok from the file: Height
+ok from the file: ImageFormat
+ok from the file: HasAlpha
+ok from the file: top left block
+ok from the file: top right block
+ok from the file: bottom left block
+ok from the file: bottom right block
+ok emptied
+ok from the stream: OnChange fires once
+ok from the stream: the position is at the end
+ok from the stream: Width
+ok from the stream: Height
+ok from the stream: ImageFormat
+ok from the stream: HasAlpha
+ok from the stream: top left block
+ok from the stream: top right block
+ok from the stream: bottom left block
+ok from the stream: bottom right block
+# baseline.jpg (UIF-1342)
+ok from the file: OnChange fires once
+ok from the file: not empty
+ok from the file: Modified
+ok from the file: Width
+ok from the file: Height
+ok from the file: ImageFormat
+ok from the file: HasAlpha
+ok from the file: top left block
+ok from the file: top right block
+ok from the file: bottom left block
+ok from the file: bottom right block
+ok emptied
+ok from the stream: OnChange fires once
+ok from the stream: the position is at the end
+ok from the stream: Width
+ok from the stream: Height
+ok from the stream: ImageFormat
+ok from the stream: HasAlpha
+ok from the stream: top left block
+ok from the stream: top right block
+ok from the stream: bottom left block
+ok from the stream: bottom right block
+# progressive.jpg (UIF-1342)
+ok from the file: OnChange fires once
+ok from the file: not empty
+ok from the file: Modified
+ok from the file: Width
+ok from the file: Height
+ok from the file: ImageFormat
+ok from the file: HasAlpha
+ok from the file: top left block
+ok from the file: top right block
+ok from the file: bottom left block
+ok from the file: bottom right block
+ok emptied
+ok from the stream: OnChange fires once
+ok from the stream: the position is at the end
+ok from the stream: Width
+ok from the stream: Height
+ok from the stream: ImageFormat
+ok from the stream: HasAlpha
+ok from the stream: top left block
+ok from the stream: top right block
+ok from the stream: bottom left block
+ok from the stream: bottom right block
+# the load starts at the position of the stream (UIF-1342)
+ok the image after five other bytes loads
+ok the position is at the end
+# a file of two frames (UIF-1344)
+ok Width
+ok Height
+ok ImageFormat
+ok the pixel is the one of frame 0
+# the size cannot be set (UIF-1345)
+ok Width raises
+ok Height raises
+ok SetSize raises, also with the size the image has
+ok Width unchanged
+ok Height unchanged
+ok no OnChange
+# passed 131 failed 0

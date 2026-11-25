@@ -1,0 +1,69 @@
+# the image with alpha over white (UIF-1346)
+ok the opaque red block
+ok the opaque green block
+ok the half-transparent block is blended
+ok the transparent block leaves the background
+ok the first pixel of the image
+ok left of the image
+ok above the image
+ok the last pixel of the first row
+ok right of the image
+ok the last row
+ok below the image
+ok Transparent = True: the red block
+ok Transparent = True: the blend is the same
+ok Transparent = True: the transparent block
+ok stretched: the red block
+ok stretched: the green block
+ok stretched: the half-transparent block
+ok stretched: the transparent block
+ok stretched: the first pixel of the rectangle
+ok stretched: the last pixel of the first row
+ok stretched: the last row
+ok stretched: left of the rectangle
+ok stretched: right of the rectangle
+ok stretched: above the rectangle
+ok stretched: below the rectangle
+# the image with alpha over black (UIF-1346)
+ok the opaque red block
+ok the opaque green block
+ok the half-transparent block is blended
+ok the transparent block leaves the background
+ok the first pixel of the image
+ok left of the image
+ok above the image
+ok the last pixel of the first row
+ok right of the image
+ok the last row
+ok below the image
+ok Transparent = True: the red block
+ok Transparent = True: the blend is the same
+ok Transparent = True: the transparent block
+ok stretched: the red block
+ok stretched: the green block
+ok stretched: the half-transparent block
+ok stretched: the transparent block
+ok stretched: the first pixel of the rectangle
+ok stretched: the last pixel of the first row
+ok stretched: the last row
+ok stretched: left of the rectangle
+ok stretched: right of the rectangle
+ok stretched: above the rectangle
+ok stretched: below the rectangle
+# an image without alpha is copied like a bitmap (UIF-1346)
+ok HasAlpha
+ok the red block
+ok the green block
+ok the blue block
+ok the yellow block
+ok outside the image
+ok stretched: the first pixel
+ok stretched: the last pixel of the first row
+ok stretched: the first pixel of the last row
+ok stretched: the last pixel
+ok stretched: outside the rectangle
+ok the canvas' CopyMode applies: red is inverted
+ok the canvas' CopyMode applies: yellow is inverted
+# an empty image and an empty rectangle draw nothing (UIF-1346)
+ok no pixel of the destination changed
+# passed 64 failed 0

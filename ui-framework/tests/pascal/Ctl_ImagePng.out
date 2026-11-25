@@ -1,0 +1,23 @@
+# the form loads (UIF-1356)
+ok the picture is a TWICImage
+ok Width
+ok Height
+ok ImageFormat
+ok HasAlpha
+ok the control keeps its stored width
+ok the control keeps its stored height
+# the control paints the image with its alpha over the form colour
+ok the opaque red block
+ok the opaque green block
+ok the half-transparent block is blended
+ok the transparent block shows the form
+ok the form beside the control
+ok a second capture has the same checksum
+checksum 24A94195
+# the picture written back
+ok the length byte, the class name and the bytes of the image
+ok the length of the class name
+ok the bytes after the class name are those of the image file
+# a form with a damaged image
+ok loading raises
+# passed 17 failed 0

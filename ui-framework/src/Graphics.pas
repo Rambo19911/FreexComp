@@ -5,7 +5,7 @@ unit Graphics;
 interface
 
 uses
-  Windows, Types, SysUtils, Classes, UIConsts;
+  Windows, ActiveX, Wincodec, Types, SysUtils, Classes, UIConsts;
 
 { ---------------------------------------------------------------- section 1: TColor }
 
@@ -388,6 +388,40 @@ type
     procedure SaveToStream(Stream: TStream); override;
     function ReleaseHandle: HICON;
     property Handle: HICON read FHandle write SetHandle;
+  end;
+
+  TWICImageFormat = (wifUnknown, wifBmp, wifPng, wifJpeg, wifGif, wifTiff, wifOther);
+
+  { UIF-1340: an image decoded by the imaging component of the operating system (wic-image.md): 32-bit
+    premultiplied pixels, the encoded bytes it was loaded from, the container format }
+  TWICImage = class(TGraphic)
+  private
+    FBitmap: TBitmap;                                        { nil when empty; pf32bit, premultiplied }
+    FData: TMemoryStream;                                    { the encoded bytes; nil when there are none }
+    FImageFormat: TWICImageFormat;
+    FHasAlpha: Boolean;
+    FAutoOrient: Boolean;
+    procedure SetState(ABitmap: TBitmap; AData: TMemoryStream; AFormat: TWICImageFormat; AAlpha: Boolean);
+    procedure SetAutoOrient(Value: Boolean);
+  protected
+    procedure AssignTo(Dest: TPersistent); override;
+    procedure Draw(ACanvas: TCanvas; const Rect: TRect); override;
+    function GetEmpty: Boolean; override;
+    function GetHeight: Integer; override;
+    function GetWidth: Integer; override;
+    procedure SetHeight(Value: Integer); override;
+    procedure SetWidth(Value: Integer); override;
+  public
+    constructor Create; override;
+    destructor Destroy; override;
+    procedure Assign(Source: TPersistent); override;
+    procedure LoadFromStream(Stream: TStream); override;
+    procedure SaveToStream(Stream: TStream); override;
+    procedure SetSize(AWidth, AHeight: Integer); override;
+    procedure ScaleInto(Dest: TBitmap; AWidth, AHeight: Integer);
+    property AutoOrient: Boolean read FAutoOrient write SetAutoOrient;
+    property HasAlpha: Boolean read FHasAlpha;
+    property ImageFormat: TWICImageFormat read FImageFormat;
   end;
 
   TPicture = class(TPersistent)
@@ -2205,6 +2239,589 @@ begin
   raise EInvalidGraphicOperation.Create(SIconStreaming);
 end;
 
+{ ---------------------------------------------------------------- section 4.4: TWICImage (wic-image.md) }
+
+const
+  WicPaletteUnavailable = HResult($88982F45);              { the result of CopyPalette of a source without a palette }
+  WicBandBytes = 4 * 1024 * 1024;                          { pixels are fetched in bands of about this size }
+  VariantWord = 18;                                        { the type number of a 16-bit unsigned PROPVARIANT value }
+
+type
+  { the pixels of a 32-bit bitmap as a source the imaging component reads (ScaleInto, UIF-1358) }
+  TWicPixelSource = class(TInterfacedObject, IWICBitmapSource)
+  private
+    FBitmap: TBitmap;
+  public
+    function GetSize(out puiWidth, puiHeight: UINT): HResult; stdcall;
+    function GetPixelFormat(out pPixelFormat: TGUID): HResult; stdcall;
+    function GetResolution(out pDpiX, pDpiY: Double): HResult; stdcall;
+    function CopyPalette(pIPalette: Pointer): HResult; stdcall;
+    function CopyPixels(prc: PWICRect; cbStride, cbBufferSize: UINT; pbBuffer: PByte): HResult; stdcall;
+  end;
+
+function TWicPixelSource.GetSize(out puiWidth, puiHeight: UINT): HResult;
+begin
+  puiWidth := UINT(FBitmap.Width);
+  puiHeight := UINT(FBitmap.Height);
+  Result := S_OK;
+end;
+
+function TWicPixelSource.GetPixelFormat(out pPixelFormat: TGUID): HResult;
+begin
+  pPixelFormat := GUID_WICPixelFormat32bppPBGRA;
+  Result := S_OK;
+end;
+
+function TWicPixelSource.GetResolution(out pDpiX, pDpiY: Double): HResult;
+begin
+  pDpiX := 96.0;
+  pDpiY := 96.0;
+  Result := S_OK;
+end;
+
+function TWicPixelSource.CopyPalette(pIPalette: Pointer): HResult;
+begin
+  Result := WicPaletteUnavailable;
+end;
+
+function TWicPixelSource.CopyPixels(prc: PWICRect; cbStride, cbBufferSize: UINT; pbBuffer: PByte): HResult;
+var
+  R: TWICRect;
+  Y: Integer;
+  P, Q: PByte;
+begin
+  Result := E_INVALIDARG;
+  R.X := 0;
+  R.Y := 0;
+  R.Width := FBitmap.Width;
+  R.Height := FBitmap.Height;
+  if prc <> nil then
+    R := prc^;
+  if (pbBuffer = nil) or (R.X < 0) or (R.Y < 0) or (R.Width < 1) or (R.Height < 1) or
+    (R.X + R.Width > FBitmap.Width) or (R.Y + R.Height > FBitmap.Height) or
+    (Int64(cbStride) < Int64(R.Width) * 4) or
+    (Int64(cbBufferSize) < Int64(cbStride) * (R.Height - 1) + Int64(R.Width) * 4) then
+    Exit;
+  Q := pbBuffer;
+  for Y := 0 to R.Height - 1 do
+  begin
+    P := PByte(FBitmap.ScanLine[R.Y + Y]);
+    Inc(P, R.X * 4);
+    Move(P^, Q^, R.Width * 4);
+    Inc(Q, cbStride);
+  end;
+  Result := S_OK;
+end;
+
+procedure WicUnavailable;
+begin
+  raise EInvalidGraphic.Create(SWICUnavailable);
+end;
+
+procedure WicInvalid;
+begin
+  raise EInvalidGraphic.Create(SWICImageInvalid);
+end;
+
+{ UIF-1341: the start of an operation that uses the imaging component. True when the caller owes CoUninitialize
+  (the call succeeded); a thread that already uses the other threading model is accepted as it is. }
+function WicEnter: Boolean;
+var
+  HR: HResult;
+begin
+  HR := CoInitializeEx(nil, COINIT_APARTMENTTHREADED);
+  Result := Succeeded(HR);
+  if not Result and (HR <> RPC_E_CHANGED_MODE) then
+    WicUnavailable;
+end;
+
+procedure WicCreateFactory(out Factory: IWICImagingFactory);
+begin
+  Factory := nil;
+  if Failed(CoCreateInstance(CLSID_WICImagingFactory, nil, CLSCTX_INPROC_SERVER, IWICImagingFactory, Factory)) or
+    (Factory = nil) then
+    WicUnavailable;
+end;
+
+{ UIF-1342: a new 32-bit bitmap with the pixels of Source, which delivers premultiplied 32-bit pixels. The rows
+  are fetched in bands and stored row by row through ScanLine. Alpha becomes True when a pixel is not opaque. }
+function WicToBitmap(const Source: IWICBitmapSource; out Alpha: Boolean): TBitmap;
+var
+  W, H: UINT;
+  R: TWICRect;
+  Buf, P: PByte;
+  Stride, BandRows, Y, I, X: Integer;
+begin
+  Alpha := False;
+  if Failed(Source.GetSize(W, H)) or (W = 0) or (H = 0) then
+    WicInvalid;
+  if Int64(W) * Int64(H) * 4 > Int64($7FFFFFFF) then
+    raise EInvalidGraphic.Create(SWICImageTooLarge);
+  Stride := Integer(W) * 4;
+  BandRows := WicBandBytes div Stride;
+  if BandRows < 1 then
+    BandRows := 1;
+  if BandRows > Integer(H) then
+    BandRows := Integer(H);
+  Result := TBitmap.Create;
+  try
+    Result.PixelFormat := pf32bit;
+    Result.SetSize(Integer(W), Integer(H));
+    GetMem(Buf, BandRows * Stride);
+    try
+      Y := 0;
+      while Y < Integer(H) do
+      begin
+        R.X := 0;
+        R.Y := Y;
+        R.Width := Integer(W);
+        R.Height := BandRows;
+        if R.Height > Integer(H) - Y then
+          R.Height := Integer(H) - Y;
+        if Failed(Source.CopyPixels(@R, UINT(Stride), UINT(R.Height * Stride), Buf)) then
+          WicInvalid;
+        P := Buf;
+        for I := 0 to R.Height - 1 do
+        begin
+          Move(P^, Result.ScanLine[Y + I]^, Stride);
+          if not Alpha then
+            for X := 0 to Integer(W) - 1 do
+            begin
+              Inc(P, 3);
+              if P^ <> 255 then
+                Alpha := True;
+              Inc(P);
+            end
+          else
+            Inc(P, Stride);
+        end;
+        Inc(Y, R.Height);
+      end;
+    finally
+      FreeMem(Buf);
+    end;
+  except
+    Result.Free;
+    raise;
+  end;
+end;
+
+{ UIF-1357: the transform of the flip-rotator for the orientation value of the frame's metadata (1 to 8); 0 when
+  there is no such value. With both options the rotator mirrors first and turns clockwise afterwards (checked for
+  all eight values by Gfx_WicImageOrient). }
+function WicOrientation(const Frame: IWICBitmapFrameDecode): Integer;
+const
+  Queries: array[0..1] of PWideChar = ('/app1/ifd/{ushort=274}', '/ifd/{ushort=274}');
+var
+  Reader: IWICMetadataQueryReader;
+  V: TPropVariant;
+  I, Value: Integer;
+begin
+  Result := WICBitmapTransformRotate0;
+  if Failed(Frame.GetMetadataQueryReader(Reader)) or (Reader = nil) then
+    Exit;
+  Value := 0;
+  for I := 0 to 1 do
+    if Value = 0 then
+    begin
+      FillChar(V, SizeOf(V), 0);
+      if Succeeded(Reader.GetMetadataByName(Queries[I], V)) then
+      begin
+        if V.vt = VariantWord then
+          Value := V.uiVal;
+        PropVariantClear(V);
+      end;
+    end;
+  case Value of
+    2: Result := WICBitmapTransformFlipHorizontal;
+    3: Result := WICBitmapTransformRotate180;
+    4: Result := WICBitmapTransformFlipVertical;
+    5: Result := WICBitmapTransformRotate270 or WICBitmapTransformFlipHorizontal;
+    6: Result := WICBitmapTransformRotate90;
+    7: Result := WICBitmapTransformRotate90 or WICBitmapTransformFlipHorizontal;
+    8: Result := WICBitmapTransformRotate270;
+  end;
+end;
+
+{ the part of a load between the brackets: every interface reference is released when it returns or raises }
+procedure WicDecodeBytes(Data: PByte; Size: Integer; Orient: Boolean; out Bitmap: TBitmap;
+  out Format: TWICImageFormat; out Alpha: Boolean);
+var
+  Factory: IWICImagingFactory;
+  Stream: IStream;
+  Raw: Pointer;
+  Decoder: IWICBitmapDecoder;
+  Frame: IWICBitmapFrameDecode;
+  Rotator: IWICBitmapFlipRotator;
+  Converter: IWICFormatConverter;
+  Source: IWICBitmapSource;
+  Container: TGUID;
+  Transform: Integer;
+begin
+  Bitmap := nil;
+  Format := wifUnknown;
+  Alpha := False;
+  WicCreateFactory(Factory);
+  Raw := SHCreateMemStream(Data, UINT(Size));
+  if Raw = nil then
+    WicUnavailable;
+  Stream := IStream(Raw);
+  Stream._Release;                                         { the variable takes over the creator's reference }
+  if Failed(Factory.CreateDecoderFromStream(Stream, nil, WICDecodeMetadataCacheOnDemand, Decoder)) or
+    (Decoder = nil) then
+    WicInvalid;
+  if Failed(Decoder.GetContainerFormat(Container)) then
+    WicInvalid;
+  if Container = GUID_ContainerFormatBmp then
+    Format := wifBmp
+  else if Container = GUID_ContainerFormatPng then
+    Format := wifPng
+  else if Container = GUID_ContainerFormatJpeg then
+    Format := wifJpeg
+  else if Container = GUID_ContainerFormatGif then
+    Format := wifGif
+  else if Container = GUID_ContainerFormatTiff then
+    Format := wifTiff
+  else
+    Format := wifOther;
+  if Failed(Decoder.GetFrame(0, Frame)) or (Frame = nil) then          { UIF-1344: frame 0 is the image }
+    WicInvalid;
+  Source := Frame;
+  if Orient then
+  begin
+    Transform := WicOrientation(Frame);
+    if Transform <> WICBitmapTransformRotate0 then
+    begin
+      if Failed(Factory.CreateBitmapFlipRotator(Rotator)) or (Rotator = nil) then
+        WicUnavailable;
+      if Failed(Rotator.Initialize(Frame, Transform)) then
+        WicInvalid;
+      Source := Rotator;
+    end;
+  end;
+  if Failed(Factory.CreateFormatConverter(Converter)) or (Converter = nil) then
+    WicUnavailable;
+  if Failed(Converter.Initialize(Source, GUID_WICPixelFormat32bppPBGRA, WICBitmapDitherTypeNone, nil, 0.0,
+    WICBitmapPaletteTypeCustom)) then
+    WicInvalid;
+  Bitmap := WicToBitmap(Converter, Alpha);
+end;
+
+{ UIF-1341, UIF-1342: decodes Size bytes at Data into a new bitmap; raises EInvalidGraphic and returns nothing
+  when that is not possible }
+procedure WicDecode(Data: PByte; Size: Int64; Orient: Boolean; out Bitmap: TBitmap; out Format: TWICImageFormat;
+  out Alpha: Boolean);
+var
+  Owed: Boolean;
+begin
+  Bitmap := nil;
+  if (Data = nil) or (Size <= 0) then
+    WicInvalid;
+  if Size > Int64($7FFFFFFF) then
+    raise EInvalidGraphic.Create(SWICImageTooLarge);
+  Owed := WicEnter;
+  try
+    WicDecodeBytes(Data, Integer(Size), Orient, Bitmap, Format, Alpha);
+  finally
+    if Owed then
+      CoUninitialize;
+  end;
+end;
+
+{ the part of ScaleInto between the brackets }
+function WicScaleBitmap(Pixels: TBitmap; AWidth, AHeight: Integer): TBitmap;
+var
+  Factory: IWICImagingFactory;
+  Wrapper: TWicPixelSource;
+  Source: IWICBitmapSource;
+  Scaler: IWICBitmapScaler;
+  Alpha: Boolean;
+begin
+  WicCreateFactory(Factory);
+  Wrapper := TWicPixelSource.Create;
+  Wrapper.FBitmap := Pixels;
+  Source := Wrapper;
+  if Failed(Factory.CreateBitmapScaler(Scaler)) or (Scaler = nil) then
+    WicUnavailable;
+  if Failed(Scaler.Initialize(Source, UINT(AWidth), UINT(AHeight), WICBitmapInterpolationModeFant)) then
+    WicInvalid;
+  Result := WicToBitmap(Scaler, Alpha);
+end;
+
+constructor TWICImage.Create;
+begin
+  inherited Create;
+end;
+
+destructor TWICImage.Destroy;
+begin
+  FBitmap.Free;
+  FData.Free;
+  inherited Destroy;
+end;
+
+{ takes ownership of ABitmap and AData (either may be nil) }
+procedure TWICImage.SetState(ABitmap: TBitmap; AData: TMemoryStream; AFormat: TWICImageFormat; AAlpha: Boolean);
+begin
+  FBitmap.Free;
+  FBitmap := ABitmap;
+  FData.Free;
+  FData := AData;
+  FImageFormat := AFormat;
+  FHasAlpha := AAlpha;
+end;
+
+function TWICImage.GetEmpty: Boolean;
+begin
+  Result := FBitmap = nil;
+end;
+
+function TWICImage.GetWidth: Integer;
+begin
+  if FBitmap = nil then
+    Result := 0
+  else
+    Result := FBitmap.Width;
+end;
+
+function TWICImage.GetHeight: Integer;
+begin
+  if FBitmap = nil then
+    Result := 0
+  else
+    Result := FBitmap.Height;
+end;
+
+{ UIF-1345: the class has no canvas and does not resample in place }
+procedure TWICImage.SetWidth(Value: Integer);
+begin
+  raise EInvalidGraphicOperation.Create(SWICImageResize);
+end;
+
+procedure TWICImage.SetHeight(Value: Integer);
+begin
+  raise EInvalidGraphicOperation.Create(SWICImageResize);
+end;
+
+procedure TWICImage.SetSize(AWidth, AHeight: Integer);
+begin
+  raise EInvalidGraphicOperation.Create(SWICImageResize);
+end;
+
+{ UIF-1342, UIF-1343: the new state replaces the old one only when the bytes were decoded }
+procedure TWICImage.LoadFromStream(Stream: TStream);
+var
+  Data: TMemoryStream;
+  Bitmap: TBitmap;
+  Format: TWICImageFormat;
+  Alpha: Boolean;
+  Count: Int64;
+begin
+  Data := TMemoryStream.Create;
+  try
+    Count := Stream.Size - Stream.Position;
+    if Count > Int64($7FFFFFFF) then
+      raise EInvalidGraphic.Create(SWICImageTooLarge);
+    if Count > 0 then
+    begin
+      Data.Size := Count;
+      Stream.ReadBuffer(Data.Memory^, Integer(Count));
+    end;
+    WicDecode(PByte(Data.Memory), Data.Size, FAutoOrient, Bitmap, Format, Alpha);
+  except
+    Data.Free;
+    raise;
+  end;
+  SetState(Bitmap, Data, Format, Alpha);
+  FModified := False;
+  if Assigned(FOnChange) then
+    FOnChange(Self);
+end;
+
+{ UIF-1349: the bytes the image was loaded from, unchanged }
+procedure TWICImage.SaveToStream(Stream: TStream);
+begin
+  if FBitmap = nil then
+    raise EInvalidGraphicOperation.Create(SWICImageEmpty);
+  if FData = nil then
+    raise EInvalidGraphicOperation.Create(SWICImageNoData);
+  Stream.WriteBuffer(FData.Memory^, FData.Size);
+end;
+
+{ UIF-1346: per-pixel alpha when the image has any, else a copy like an opaque bitmap }
+procedure TWICImage.Draw(ACanvas: TCanvas; const Rect: TRect);
+var
+  Src, Dest: HDC;
+  Blend: TBlendFunction;
+begin
+  if (FBitmap = nil) or (Rect.Right <= Rect.Left) or (Rect.Bottom <= Rect.Top) then
+    Exit;
+  Src := FBitmap.Canvas.Handle;
+  ACanvas.Changing;
+  Dest := ACanvas.Handle;
+  if not FHasAlpha then
+    Blit(Dest, Rect, Src, FBitmap.Width, FBitmap.Height, DWORD(ACanvas.CopyMode))
+  else
+  begin
+    Blend.BlendOp := AC_SRC_OVER;
+    Blend.BlendFlags := 0;
+    Blend.SourceConstantAlpha := 255;
+    Blend.AlphaFormat := AC_SRC_ALPHA;
+    GdiAlphaBlend(Dest, Rect.Left, Rect.Top, Rect.Right - Rect.Left, Rect.Bottom - Rect.Top, Src, 0, 0,
+      FBitmap.Width, FBitmap.Height, Blend);
+  end;
+  ACanvas.Changed;
+end;
+
+{ UIF-1347 }
+procedure TWICImage.Assign(Source: TPersistent);
+var
+  Image: TWICImage;
+  Bitmap: TBitmap;
+  Data: TMemoryStream;
+  X, Y, Step: Integer;
+  P, Q: PByte;
+begin
+  if Source = nil then
+  begin
+    SetState(nil, nil, wifUnknown, False);
+    Changed(Self);
+  end
+  else if Source is TWICImage then
+  begin
+    Image := TWICImage(Source);
+    if Image = Self then
+      Exit;
+    Bitmap := nil;
+    Data := nil;
+    try
+      if Image.FBitmap <> nil then
+      begin
+        Bitmap := TBitmap.Create;
+        Bitmap.Assign(Image.FBitmap);
+      end;
+      if Image.FData <> nil then
+      begin
+        Data := TMemoryStream.Create;
+        Data.Size := Image.FData.Size;
+        Move(Image.FData.Memory^, Data.Memory^, Image.FData.Size);
+      end;
+    except
+      Bitmap.Free;
+      Data.Free;
+      raise;
+    end;
+    SetState(Bitmap, Data, Image.FImageFormat, Image.FHasAlpha);
+    FAutoOrient := Image.FAutoOrient;
+    FTransparent := Image.FTransparent;
+    Changed(Self);
+  end
+  else if Source is TBitmap then
+  begin
+    Bitmap := nil;
+    if not TBitmap(Source).Empty then
+    begin
+      Bitmap := TBitmap.Create;
+      try
+        Bitmap.PixelFormat := pf32bit;
+        Bitmap.SetSize(TBitmap(Source).Width, TBitmap(Source).Height);
+        Step := 4;
+        if TBitmap(Source).PixelFormat = pf24bit then
+          Step := 3;
+        for Y := 0 to Bitmap.Height - 1 do
+        begin
+          P := PByte(TBitmap(Source).ScanLine[Y]);
+          Q := PByte(Bitmap.ScanLine[Y]);
+          for X := 0 to Bitmap.Width - 1 do
+          begin
+            Move(P^, Q^, 3);
+            Inc(P, Step);
+            Inc(Q, 3);
+            Q^ := 255;                                     { opaque whatever the bitmap's fourth byte holds }
+            Inc(Q);
+          end;
+        end;
+      except
+        Bitmap.Free;
+        raise;
+      end;
+    end;
+    SetState(Bitmap, nil, wifUnknown, False);
+    Changed(Self);
+  end
+  else
+    inherited Assign(Source);
+end;
+
+{ UIF-1348: a bitmap receives the premultiplied pixels with their alpha bytes }
+procedure TWICImage.AssignTo(Dest: TPersistent);
+begin
+  if Dest is TBitmap then
+  begin
+    if FBitmap = nil then
+      TBitmap(Dest).Assign(nil)
+    else
+      TBitmap(Dest).Assign(FBitmap);
+  end
+  else
+    inherited AssignTo(Dest);
+end;
+
+{ UIF-1357: an image that has its encoded bytes is decoded again with or without the orientation }
+procedure TWICImage.SetAutoOrient(Value: Boolean);
+var
+  Bitmap: TBitmap;
+  Format: TWICImageFormat;
+  Alpha: Boolean;
+begin
+  if Value = FAutoOrient then
+    Exit;
+  if FData <> nil then
+  begin
+    WicDecode(PByte(FData.Memory), FData.Size, Value, Bitmap, Format, Alpha);
+    FBitmap.Free;
+    FBitmap := Bitmap;
+    FImageFormat := Format;
+    FHasAlpha := Alpha;
+    FAutoOrient := Value;
+    Changed(Self);
+  end
+  else
+    FAutoOrient := Value;
+end;
+
+{ UIF-1358: Dest receives the image resampled by the system's scaler in its high-quality mode }
+procedure TWICImage.ScaleInto(Dest: TBitmap; AWidth, AHeight: Integer);
+var
+  Scaled: TBitmap;
+  Owed: Boolean;
+begin
+  if (AWidth < 1) or (AHeight < 1) then
+    raise EInvalidGraphicOperation.Create(SInvalidBitmapSize);
+  if FBitmap = nil then
+    raise EInvalidGraphicOperation.Create(SWICImageEmpty);
+  if (AWidth = FBitmap.Width) and (AHeight = FBitmap.Height) then
+  begin
+    Dest.Assign(FBitmap);
+    Exit;
+  end;
+  if Int64(AWidth) * Int64(AHeight) * 4 > Int64($7FFFFFFF) then
+    raise EInvalidGraphic.Create(SWICImageTooLarge);
+  Scaled := nil;
+  Owed := WicEnter;
+  try
+    Scaled := WicScaleBitmap(FBitmap, AWidth, AHeight);
+  finally
+    if Owed then
+      CoUninitialize;
+  end;
+  try
+    Dest.Assign(Scaled);
+  finally
+    Scaled.Free;
+  end;
+end;
+
 { ---------------------------------------------------------------- section 4.3: TPicture }
 
 type
@@ -2295,10 +2912,24 @@ begin
   ReplaceGraphic(Copy);
 end;
 
+{ UIF-1355: an image of the imaging class is converted (its pixels with their alpha), anything else replaced
+  by an empty bitmap }
 function TPicture.GetBitmap: TBitmap;
+var
+  B: TBitmap;
 begin
   if not (FGraphic is TBitmap) then
-    ReplaceGraphic(TBitmap.Create);
+  begin
+    B := TBitmap.Create;
+    if FGraphic is TWICImage then
+      try
+        B.Assign(FGraphic);
+      except
+        B.Free;
+        raise;
+      end;
+    ReplaceGraphic(B);
+  end;
   Result := TBitmap(FGraphic);
 end;
 
@@ -2347,16 +2978,71 @@ begin
     inherited Assign(Source);
 end;
 
+{ UIF-1353: the registered extension of the format whose signature the first Count bytes of a file are; ''
+  for any other content. The values are those of the format specifications: the two-character bitmap file mark,
+  the icon file header (reserved word 0, type word 1), the eight-byte PNG signature, the three-byte JPEG start
+  marker sequence and the two six-character GIF version marks. }
+function SignatureFormat(const Sig: array of Byte; Count: Integer): string;
+const
+  Png: array[0..7] of Byte = ($89, $50, $4E, $47, $0D, $0A, $1A, $0A);
+var
+  I: Integer;
+  IsPng: Boolean;
+begin
+  Result := '';
+  if (Count >= 2) and (Sig[0] = Ord('B')) and (Sig[1] = Ord('M')) then
+    Result := 'bmp'
+  else if (Count >= 4) and (Sig[0] = 0) and (Sig[1] = 0) and (Sig[2] = 1) and (Sig[3] = 0) then
+    Result := 'ico'
+  else if (Count >= 3) and (Sig[0] = $FF) and (Sig[1] = $D8) and (Sig[2] = $FF) then
+    Result := 'jpg'
+  else if (Count >= 6) and (Sig[0] = Ord('G')) and (Sig[1] = Ord('I')) and (Sig[2] = Ord('F')) and
+    (Sig[3] = Ord('8')) and ((Sig[4] = Ord('7')) or (Sig[4] = Ord('9'))) and (Sig[5] = Ord('a')) then
+    Result := 'gif'
+  else if Count >= 8 then
+  begin
+    IsPng := True;
+    for I := 0 to 7 do
+      if Sig[I] <> Png[I] then
+        IsPng := False;
+    if IsPng then
+      Result := 'png';
+  end;
+end;
+
+{ UIF-1353, UIF-1354: the content of the file decides the class, then its extension. The class of a recognised
+  content is the one registered for the extension of that format, so a later registration still wins. A file
+  that cannot be opened here is left to the extension rule: the class of the extension reports the error. }
 procedure TPicture.LoadFromFile(const FileName: string);
 var
-  Ext: string;
+  Ext, Format: string;
   GraphicClass: TGraphicClass;
   G: TGraphic;
+  F: TFileStream;
+  Sig: array[0..7] of Byte;
+  Count: Integer;
 begin
+  Count := 0;
+  try
+    F := TFileStream.Create(FileName, fmOpenRead or fmShareDenyWrite);
+    try
+      Count := F.Read(Sig, SizeOf(Sig));
+    finally
+      F.Free;
+    end;
+  except
+    on Exception do
+      Count := 0;
+  end;
+  GraphicClass := nil;
+  Format := SignatureFormat(Sig, Count);
+  if Format <> '' then
+    GraphicClass := FindFileFormat(Format);
   Ext := ExtractFileExt(FileName);
   if (Ext <> '') and (Ext[1] = '.') then
     Delete(Ext, 1, 1);
-  GraphicClass := FindFileFormat(Ext);
+  if GraphicClass = nil then
+    GraphicClass := FindFileFormat(Ext);
   if GraphicClass = nil then
     raise EInvalidGraphic.CreateFmt(SUnknownExtension, [Ext]);
   G := GraphicClass.Create;
@@ -2437,7 +3123,11 @@ end;
 
 initialization
   RegisterIntegerConsts(TypeInfo(TColor), IdentToColor, ColorToIdent);
-  RegisterClasses([TBitmap, TIcon]);                       { UIF-002 }
+  RegisterClasses([TBitmap, TIcon, TWICImage]);            { UIF-002, UIF-1351 }
   TPicture.RegisterFileFormat('bmp', 'Bitmaps', TBitmap);
   TPicture.RegisterFileFormat('ico', 'Icons', TIcon);
+  TPicture.RegisterFileFormat('png', 'PNG images', TWICImage);          { UIF-1352 }
+  TPicture.RegisterFileFormat('jpg', 'JPEG images', TWICImage);
+  TPicture.RegisterFileFormat('jpeg', 'JPEG images', TWICImage);
+  TPicture.RegisterFileFormat('gif', 'GIF images', TWICImage);
 end.

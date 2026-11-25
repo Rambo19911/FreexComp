@@ -1,0 +1,104 @@
+# a failed load changes nothing (UIF-1343)
+ok broken.png from the file raises
+ok broken.png from the file: no OnChange
+ok broken.png from the file: not empty
+ok broken.png from the file: Width
+ok broken.png from the file: Height
+ok broken.png from the file: ImageFormat
+ok broken.png from the file: HasAlpha
+ok broken.png from the file: Modified
+ok broken.png from the file: top left block
+ok broken.png from the file: top right block
+ok broken.png from the file: bottom left block
+ok broken.png from the file: bottom right block
+ok broken.png from the file: the stored bytes are those of the first load
+ok broken.png from a stream raises
+ok broken.png from a stream: no OnChange
+ok broken.png from a stream: not empty
+ok broken.png from a stream: Width
+ok broken.png from a stream: Height
+ok broken.png from a stream: ImageFormat
+ok broken.png from a stream: HasAlpha
+ok broken.png from a stream: Modified
+ok broken.png from a stream: top left block
+ok broken.png from a stream: top right block
+ok broken.png from a stream: bottom left block
+ok broken.png from a stream: bottom right block
+ok broken.png from a stream: the stored bytes are those of the first load
+ok not-an-image.png from the file raises
+ok not-an-image.png from the file: no OnChange
+ok not-an-image.png from the file: not empty
+ok not-an-image.png from the file: Width
+ok not-an-image.png from the file: Height
+ok not-an-image.png from the file: ImageFormat
+ok not-an-image.png from the file: HasAlpha
+ok not-an-image.png from the file: Modified
+ok not-an-image.png from the file: top left block
+ok not-an-image.png from the file: top right block
+ok not-an-image.png from the file: bottom left block
+ok not-an-image.png from the file: bottom right block
+ok not-an-image.png from the file: the stored bytes are those of the first load
+ok not-an-image.png from a stream raises
+ok not-an-image.png from a stream: no OnChange
+ok not-an-image.png from a stream: not empty
+ok not-an-image.png from a stream: Width
+ok not-an-image.png from a stream: Height
+ok not-an-image.png from a stream: ImageFormat
+ok not-an-image.png from a stream: HasAlpha
+ok not-an-image.png from a stream: Modified
+ok not-an-image.png from a stream: top left block
+ok not-an-image.png from a stream: top right block
+ok not-an-image.png from a stream: bottom left block
+ok not-an-image.png from a stream: bottom right block
+ok not-an-image.png from a stream: the stored bytes are those of the first load
+ok an empty stream raises
+ok an empty stream: no OnChange
+ok an empty stream: not empty
+ok an empty stream: Width
+ok an empty stream: Height
+ok an empty stream: ImageFormat
+ok an empty stream: HasAlpha
+ok an empty stream: Modified
+ok an empty stream: top left block
+ok an empty stream: top right block
+ok an empty stream: bottom left block
+ok an empty stream: bottom right block
+ok an empty stream: the stored bytes are those of the first load
+ok a stream at its end raises
+ok a stream at its end: no OnChange
+ok a stream at its end: not empty
+ok a stream at its end: Width
+ok a stream at its end: Height
+ok a stream at its end: ImageFormat
+ok a stream at its end: HasAlpha
+ok a stream at its end: Modified
+ok a stream at its end: top left block
+ok a stream at its end: top right block
+ok a stream at its end: bottom left block
+ok a stream at its end: bottom right block
+ok a stream at its end: the stored bytes are those of the first load
+ok an empty image: the failed load raises
+ok an empty image stays empty
+ok an empty image keeps wifUnknown
+ok an empty image: no OnChange
+ok a good load after the failures fires OnChange
+ok and replaces the image
+# the bracket on the main thread, which did not initialise COM (UIF-1341)
+ok after loads and failed loads the thread is still not initialised
+ok loading works while the thread uses the multithreaded model
+ok the thread's own initialisation was the only one
+# a thread that did not initialise COM (UIF-1341)
+ok the thread ended without an exception
+ok the thread's own initialisation
+ok the image loads
+ok after the load the thread is not initialised
+ok the damaged image raises
+ok after the failed load the thread is not initialised
+# a thread that uses the multithreaded model (UIF-1341)
+ok the thread ended without an exception
+ok the thread's own initialisation
+ok the image loads
+ok after the load the thread is not initialised
+ok the damaged image raises
+ok after the failed load the thread is not initialised
+# passed 99 failed 0

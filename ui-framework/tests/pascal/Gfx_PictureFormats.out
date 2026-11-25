@@ -1,0 +1,68 @@
+# each fixture gives its class (UIF-1352, UIF-1353)
+ok alpha.png
+ok alpha.png: Width
+ok alpha.png: Height
+ok alpha.png: ImageFormat
+ok plain.bmp
+ok plain.bmp: loaded by the framework's own reader
+ok blocks.gif
+ok blocks.gif: ImageFormat
+ok baseline.jpg
+ok baseline.jpg: ImageFormat
+ok progressive.jpg
+ok rotated.jpg
+ok rotated.jpg: Width as stored
+ok an icon file
+# the content decides whatever the extension is (UIF-1353, UIF-1354)
+ok a PNG named .bmp
+ok a PNG named .bmp: Width
+ok a PNG named .dat
+ok a PNG without an extension
+ok a bitmap named .png
+ok a bitmap named .png: pixels
+ok a bitmap named .xyz
+ok a GIF named .jpg
+ok a GIF named .jpg: ImageFormat
+ok a JPEG named .ico
+ok a JPEG named .JPEG
+ok an icon named .png
+ok a GIF of the older version mark named .dat
+ok a GIF of the older version mark: Width
+# unknown content: the extension decides (UIF-1352, UIF-1354)
+ok text named .png goes to the image class
+ok text named .jpg goes to the image class
+ok text named .jpeg goes to the image class
+ok text named .gif goes to the image class
+ok a cut PNG goes to the image class
+ok a file without bytes named .png goes to the image class
+ok text named .bmp goes to the bitmap class
+ok text named .dat: unknown in both ways
+ok one byte named .dat: unknown in both ways
+ok a missing file with an unknown extension
+ok text without an extension
+ok a missing file with a known extension raises the error of the file stream
+ok no failed load fires OnChange
+ok the picture keeps its graphic
+ok and its size
+# a later registration still wins (graphics.md section 4.3)
+ok a PNG after a later registration of png
+ok also when the content decides
+ok another format is not concerned
+ok registered back
+# Picture.Bitmap converts an image (UIF-1355)
+ok the picture holds the bitmap
+ok it is a TBitmap
+ok OnChange fires once
+ok the bitmap is 32-bit
+ok Width
+ok Height
+ok the red block
+ok the green block
+ok the half-transparent block with its alpha
+ok the transparent block
+ok asking again returns the same bitmap
+ok without another change
+ok an icon picture still gives an empty bitmap
+ok an empty picture still gives an empty bitmap
+ok an empty image gives an empty bitmap
+# passed 62 failed 0

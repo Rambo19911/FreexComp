@@ -1,0 +1,136 @@
+# the fixture with the orientation value 6 (UIF-1357)
+ok AutoOrient is False by default
+ok as stored: Width
+ok as stored: Height
+ok as stored: top left block
+ok as stored: top right block
+ok as stored: bottom left block
+ok as stored: bottom right block
+ok setting AutoOrient on a loaded image fires OnChange once
+ok AutoOrient
+ok upright: Width
+ok upright: Height
+ok upright: top left block
+ok upright: top right block
+ok upright: bottom left block
+ok upright: bottom right block
+ok ImageFormat
+ok the saved bytes are those of the file, the value included
+ok setting the value it has does nothing
+ok Assign copies the property
+ok the copy is upright
+ok the copy: top left block
+ok the copy: top right block
+ok the copy: bottom left block
+ok the copy: bottom right block
+ok setting it back fires OnChange once
+ok as stored again: Width
+ok as stored again: Height
+ok as stored again: top left block
+ok as stored again: top right block
+ok as stored again: bottom left block
+ok as stored again: bottom right block
+ok a load with AutoOrient fires OnChange once
+ok a load with AutoOrient: Width
+ok a load with AutoOrient: Height
+ok a load with AutoOrient: top left block
+ok a load with AutoOrient: top right block
+ok a load with AutoOrient: bottom left block
+ok a load with AutoOrient: bottom right block
+ok an image without stored bytes: no OnChange
+ok an image without stored bytes: the value is stored
+ok an image without stored bytes: unchanged
+# every orientation value (UIF-1357)
+ok value 1: the entry is in the file
+ok value 1: Width
+ok value 1: Height
+ok value 1: top left block
+ok value 1: top right block
+ok value 1: bottom left block
+ok value 1: bottom right block
+ok value 2: the entry is in the file
+ok value 2: Width
+ok value 2: Height
+ok value 2: top left block
+ok value 2: top right block
+ok value 2: bottom left block
+ok value 2: bottom right block
+ok value 3: the entry is in the file
+ok value 3: Width
+ok value 3: Height
+ok value 3: top left block
+ok value 3: top right block
+ok value 3: bottom left block
+ok value 3: bottom right block
+ok value 4: the entry is in the file
+ok value 4: Width
+ok value 4: Height
+ok value 4: top left block
+ok value 4: top right block
+ok value 4: bottom left block
+ok value 4: bottom right block
+ok value 5: the entry is in the file
+ok value 5: Width
+ok value 5: Height
+ok value 5: top left block
+ok value 5: top right block
+ok value 5: bottom left block
+ok value 5: bottom right block
+ok value 6: the entry is in the file
+ok value 6: Width
+ok value 6: Height
+ok value 6: top left block
+ok value 6: top right block
+ok value 6: bottom left block
+ok value 6: bottom right block
+ok value 7: the entry is in the file
+ok value 7: Width
+ok value 7: Height
+ok value 7: top left block
+ok value 7: top right block
+ok value 7: bottom left block
+ok value 7: bottom right block
+ok value 8: the entry is in the file
+ok value 8: Width
+ok value 8: Height
+ok value 8: top left block
+ok value 8: top right block
+ok value 8: bottom left block
+ok value 8: bottom right block
+ok value 0: the entry is in the file
+ok value 0: Width
+ok value 0: Height
+ok value 0: top left block
+ok value 0: top right block
+ok value 0: bottom left block
+ok value 0: bottom right block
+ok value 9: the entry is in the file
+ok value 9: Width
+ok value 9: Height
+ok value 9: top left block
+ok value 9: top right block
+ok value 9: bottom left block
+ok value 9: bottom right block
+# images without the value are unchanged (UIF-1357)
+ok baseline.jpg: decoded again
+ok baseline.jpg: Width
+ok baseline.jpg: Height
+ok baseline.jpg: top left block
+ok baseline.jpg: top right block
+ok baseline.jpg: bottom left block
+ok baseline.jpg: bottom right block
+ok alpha.png: decoded again
+ok alpha.png: Width
+ok alpha.png: Height
+ok alpha.png: top left block
+ok alpha.png: top right block
+ok alpha.png: bottom left block
+ok alpha.png: bottom right block
+ok blocks.gif: decoded again
+ok blocks.gif: Width
+ok blocks.gif: Height
+ok blocks.gif: top left block
+ok blocks.gif: top right block
+ok blocks.gif: bottom left block
+ok blocks.gif: bottom right block
+# passed 132 failed 0

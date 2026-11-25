@@ -14,6 +14,12 @@ Bitmap image is not valid
 Unknown picture file extension (.%s)
 Icon streaming is not supported
 Invalid ImageList Index
+The imaging component of Windows is not available
+The image is damaged or its format is not supported
+The image is too large
+An image of this class cannot be resized
+The image is empty
+The image has no encoded data to save
 Cannot make a visible window modal
 Cannot make a disabled window modal
 MDI forms are not supported

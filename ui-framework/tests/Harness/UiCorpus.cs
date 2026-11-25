@@ -26,6 +26,11 @@ public static class UiCorpus
 
     public static string SourceDirectory => Path.Combine(AreaDirectory, "src");
 
+    public static string TestsDirectory => Path.Combine(AreaDirectory, "tests");
+
+    /// <summary>The environment variable through which a program finds <c>ui-framework/tests</c> (its <c>fixtures/</c> folder).</summary>
+    public const string TestsDirectoryVariable = "FXC_UI_TESTS_DIR";
+
     public static string PascalDirectory => Path.Combine(AreaDirectory, "tests", "pascal");
 
     public static string LayoutCorpusDirectory => Path.Combine(RtlSetup.RepositoryRoot, "tests", "layout-corpus");
@@ -112,6 +117,7 @@ public static class UiCorpus
     {
         var @case = DiscoverPascal().Single(c => c.Id == id);
         Environment.SetEnvironmentVariable("FXC_UI_NONINTERACTIVE", "1");          // inherited by every program run
+        Environment.SetEnvironmentVariable(TestsDirectoryVariable, TestsDirectory);  // where a program finds fixtures/ (wic-image.md §10)
         return await GoldenRunner.RunAsync(@case, Setup, ct).ConfigureAwait(false);
     }
 }

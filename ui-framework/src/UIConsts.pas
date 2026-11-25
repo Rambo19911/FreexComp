@@ -26,6 +26,13 @@ resourcestring
   SUnknownExtension = 'Unknown picture file extension (.%s)';
   SIconStreaming = 'Icon streaming is not supported';
   SInvalidImageListIndex = 'Invalid ImageList Index';
+  { the image class over the imaging component of the operating system (wic-image.md section 8) }
+  SWICUnavailable = 'The imaging component of Windows is not available';
+  SWICImageInvalid = 'The image is damaged or its format is not supported';
+  SWICImageTooLarge = 'The image is too large';
+  SWICImageResize = 'An image of this class cannot be resized';
+  SWICImageEmpty = 'The image is empty';
+  SWICImageNoData = 'The image has no encoded data to save';
 
   { ---------------------------------------------------------------- forms (application-forms.md section 10) }
   SVisibleModal = 'Cannot make a visible window modal';

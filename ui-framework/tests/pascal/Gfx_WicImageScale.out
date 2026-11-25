@@ -1,0 +1,46 @@
+# scaling (UIF-1358)
+ok four times: the destination is 32-bit
+ok four times: Width
+ok four times: Height
+ok four times: top left block
+ok four times: top right block
+ok four times: bottom left block
+ok four times: bottom right block
+ok four times: the first pixel
+ok four times: the last pixel
+ok half: Width
+ok half: Height
+ok half: top left block
+ok half: top right block
+ok half: bottom left block
+ok half: bottom right block
+ok another shape: Width
+ok another shape: Height
+ok another shape: top left block
+ok another shape: top right block
+ok another shape: bottom left block
+ok another shape: bottom right block
+ok the same size: Width
+ok the same size: Height
+ok the same size: every pixel is identical
+ok the image fires no OnChange
+ok the image keeps its width
+ok the image keeps its height
+ok the image keeps its pixels: top left block
+ok the image keeps its pixels: top right block
+ok the image keeps its pixels: bottom left block
+ok the image keeps its pixels: bottom right block
+ok after scaling the thread is not initialised (UIF-1341)
+ok an image assigned from a bitmap: Width
+ok an image assigned from a bitmap: the left half
+ok an image assigned from a bitmap: the right half
+# errors (UIF-1358)
+ok an empty image raises
+ok a width of 0 raises
+ok a height of 0 raises
+ok a negative width raises
+ok a negative height raises
+ok the size is checked before the image
+ok the destination keeps its width
+ok the destination keeps its height
+# passed 43 failed 0

@@ -1,0 +1,17 @@
+object BrokenForm: TBrokenForm
+  Caption = 'PNG image'
+  ClientWidth = 60
+  ClientHeight = 40
+  Color = 12615744
+  Scaled = False
+  object Photo: TImage
+    Left = 10
+    Top = 10
+    Width = 16
+    Height = 12
+    Picture.Data = {
+      0954574943496D61676589504E470D0A1A0A0000000D49484452000000100000
+      000C08060000006BE73D8100000001735247
+    }
+  end
+end

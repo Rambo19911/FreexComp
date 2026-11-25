@@ -1,0 +1,87 @@
+# Assign from a bitmap (UIF-1347)
+ok 24-bit: OnChange fires once
+ok 24-bit: not empty
+ok 24-bit: Width
+ok 24-bit: Height
+ok 24-bit: HasAlpha
+ok 24-bit: ImageFormat is wifUnknown
+ok 24-bit: a pixel
+ok 24-bit: the last pixel
+ok 24-bit: an untouched pixel is opaque white
+ok 32-bit: OnChange fires once
+ok 32-bit: HasAlpha
+ok 32-bit: a pixel drawn with GDI is opaque
+ok 32-bit: the fourth byte of the bitmap is not taken
+ok 32-bit: the source bitmap is unchanged
+ok over a loaded image: ImageFormat is wifUnknown
+ok over a loaded image: HasAlpha
+ok over a loaded image: Width
+ok an empty bitmap: OnChange fires once
+ok an empty bitmap gives an empty image
+ok nil: OnChange fires once
+ok nil: empty
+ok nil: Width
+ok nil: ImageFormat
+ok nil: HasAlpha
+ok an object the class cannot convert raises
+ok and changes nothing
+ok the image is still there
+# a bitmap assigned from an image (UIF-1348)
+ok the bitmap is 32-bit
+ok Width
+ok Height
+ok an opaque pixel
+ok the half-transparent pixel: premultiplied, alpha 128
+ok the transparent pixel: alpha 0
+ok the bitmap is a copy: the image is unchanged
+ok an empty image gives an empty bitmap
+ok another destination raises
+# Assign from an image (UIF-1347)
+ok OnChange fires once
+ok size, properties and pixels are equal
+ok ImageFormat
+ok HasAlpha
+ok the copy is independent of the source
+ok the copy keeps its pixels
+ok the copy has the stored bytes
+ok assigning an image to itself does nothing
+ok and keeps it
+ok an empty image gives an empty image
+# save and reload: alpha.png (UIF-1349, UIF-1350)
+ok the saved bytes are the bytes of the file
+ok the image loaded from them is equal
+ok and saves the same bytes again
+ok the bytes are written at the position of the stream
+ok what was before is kept
+ok SaveToFile writes the same bytes, whatever the extension
+# save and reload: plain.bmp (UIF-1349, UIF-1350)
+ok the saved bytes are the bytes of the file
+ok the image loaded from them is equal
+ok and saves the same bytes again
+ok the bytes are written at the position of the stream
+ok what was before is kept
+ok SaveToFile writes the same bytes, whatever the extension
+# save and reload: blocks.gif (UIF-1349, UIF-1350)
+ok the saved bytes are the bytes of the file
+ok the image loaded from them is equal
+ok and saves the same bytes again
+ok the bytes are written at the position of the stream
+ok what was before is kept
+ok SaveToFile writes the same bytes, whatever the extension
+# save and reload: baseline.jpg (UIF-1349, UIF-1350)
+ok the saved bytes are the bytes of the file
+ok the image loaded from them is equal
+ok and saves the same bytes again
+ok the bytes are written at the position of the stream
+ok what was before is kept
+ok SaveToFile writes the same bytes, whatever the extension
+# images that cannot be saved (UIF-1349, UIF-1350)
+ok an empty image raises
+ok nothing is written
+ok an image assigned from a bitmap raises
+ok nothing is written
+ok SaveToFile raises too
+ok such an image is saved through a bitmap
+ok a picture holds a copy of the image
+ok writing the picture raises
+# passed 78 failed 0

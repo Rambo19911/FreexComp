@@ -22,6 +22,12 @@ begin
   Writeln(SUnknownExtension);
   Writeln(SIconStreaming);
   Writeln(SInvalidImageListIndex);
+  Writeln(SWICUnavailable);
+  Writeln(SWICImageInvalid);
+  Writeln(SWICImageTooLarge);
+  Writeln(SWICImageResize);
+  Writeln(SWICImageEmpty);
+  Writeln(SWICImageNoData);
   Writeln(SVisibleModal);
   Writeln(SDisabledModal);
   Writeln(SMDINotSupported);
