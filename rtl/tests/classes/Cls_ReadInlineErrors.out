@@ -1,0 +1,64 @@
+ok the kept component
+# F0109 (RTL-1095)
+ok unknown name
+ok unknown name: only the kept component in the owner
+ok unknown name: nothing leaked
+ok unknown name: root flags cleared
+ok wrong class
+ok wrong class: only the kept component in the owner
+ok wrong class: nothing leaked
+ok wrong class: root flags cleared
+ok a component of the root is not part of the frame
+ok root component: only the kept component in the owner
+ok root component: nothing leaked
+ok root component: root flags cleared
+# F0110 (RTL-1094)
+ok inside an instance
+ok inside an instance: only the kept component in the owner
+ok inside an instance: nothing leaked
+ok inside an instance: root flags cleared
+ok inside an override block
+ok inside an override block: only the kept component in the owner
+ok inside an override block: nothing leaked
+ok inside an override block: root flags cleared
+ok an instance inside an instance
+ok instance inside an instance: only the kept component in the owner
+ok instance inside an instance: nothing leaked
+ok instance inside an instance: root flags cleared
+# OnError cannot skip them
+ok F0109
+ok F0110
+ok F0111
+ok OnError not consulted
+ok with a handler: only the kept component in the owner
+ok with a handler: nothing leaked
+ok with a handler: root flags cleared
+# F0111 (RTL-1096)
+ok a frame whose resource holds an instance of itself
+ok self: nothing leaked
+ok the same frame as an instance
+ok self as an instance: only the kept component in the owner
+ok self as an instance: nothing leaked
+ok self as an instance: root flags cleared
+ok a two-frame cycle
+ok cycle: nothing leaked
+ok the cycle entered from the other frame
+ok the cycle as an instance
+ok cycle as an instance: only the kept component in the owner
+ok cycle as an instance: nothing leaked
+ok cycle as an instance: root flags cleared
+# a valid read after the failures
+ok read
+ok instance created
+ok override applied
+ok csInline
+ok freed
+# F0107 stays
+ok inherited outside an instance
+ok inherited inside an ordinary object
+ok F0107: only the kept component in the owner
+ok F0107: nothing leaked
+ok F0107: root flags cleared
+ok inline root
+ok nothing leaked at the end
+# passed 57 failed 0

@@ -1,0 +1,6 @@
+object CycleB: TCycleB
+  object Pad: TPart
+  end
+  inline A1: TCycleA
+  end
+end

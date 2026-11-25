@@ -9,7 +9,7 @@ ok F0105
 ok F0106 duplicate
 ok F0106 against an existing component
 ok F0107 inherited
-ok F0107 inline
+ok F0107 inherited at the top level, keyword in capitals
 ok EClassNotFound is an EReadError
 ok EMethodNotFound is an EReadError
 # inline root

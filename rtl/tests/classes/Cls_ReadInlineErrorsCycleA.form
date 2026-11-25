@@ -1,0 +1,4 @@
+object CycleA: TCycleA
+  inline B1: TCycleB
+  end
+end

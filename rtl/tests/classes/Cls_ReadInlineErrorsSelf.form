@@ -1,0 +1,6 @@
+object SelfFrame: TSelfFrame
+  object Pad: TPart
+  end
+  inline Again: TSelfFrame
+  end
+end

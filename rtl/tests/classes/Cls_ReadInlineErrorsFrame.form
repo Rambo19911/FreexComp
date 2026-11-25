@@ -1,0 +1,7 @@
+object TestFrame: TTestFrame
+  object Title: TPart
+    Caption = 'title'
+  end
+  object Box: TPart
+  end
+end

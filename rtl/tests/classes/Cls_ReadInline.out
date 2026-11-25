@@ -1,0 +1,35 @@
+# a frame created without an owner takes its root name (RTL-1099)
+TestFrame: TTestFrame owner=nil parent=nil caption='' size=5 buddy=nil loaded=1
+  Title: TPart owner=TestFrame parent=TestFrame caption='title' size=1 buddy=nil loaded=1
+  Box: TPart owner=TestFrame parent=TestFrame caption='box' size=0 buddy=nil loaded=1
+  Inner: TPart owner=TestFrame parent=Box caption='inner' size=0 buddy=TestFrame.Title loaded=1
+# two instances of one frame (RTL-1090, 1091)
+Main: TMainRoot owner=nil
+  Inner: TPart owner=Main parent=Main caption='root inner' size=0 buddy=nil loaded=1
+  F1: TTestFrame owner=Main parent=Main caption='' size=42 buddy=nil loaded=1 inline
+    Title: TPart owner=F1 parent=F1 caption='title' size=1 buddy=F1.Inner loaded=2
+    Box: TPart owner=F1 parent=F1 caption='box' size=0 buddy=Main.Later loaded=2
+    Inner: TPart owner=F1 parent=Box caption='overridden' size=0 buddy=F1.Title loaded=2
+  F2: TTestFrame owner=Main parent=Main caption='' size=5 buddy=nil loaded=1 inline
+    Title: TPart owner=F2 parent=F2 caption='title' size=1 buddy=nil loaded=1
+    Box: TPart owner=F2 parent=F2 caption='box' size=0 buddy=nil loaded=1
+    Inner: TPart owner=F2 parent=Box caption='inner' size=0 buddy=F2.Title loaded=1
+  Later: TPart owner=Main parent=Main caption='' size=0 buddy=nil loaded=1
+ok field F1 bound
+ok field F2 bound
+ok an override block keeps the parent the frame gave
+ok the frame field still names its child
+# lines inside a scope (RTL-1093)
+ok reference resolved inside the instance before the root
+ok forward reference resolved by a fix-up in the root
+ok the event is bound to the file's root
+ok the other instance has no handler
+PingHandler of TMainRoot for F1.Inner
+# frames created in code with an owner (RTL-1099)
+ok first frame has an empty name
+ok second frame has an empty name
+ok both owned by the root
+ok both streamed
+ok Loaded once
+ok not an instance
+# passed 14 failed 0

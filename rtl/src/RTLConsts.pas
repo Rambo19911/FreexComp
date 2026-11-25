@@ -107,6 +107,9 @@ resourcestring
   SFormComponentNotFound = 'Component %s not found';        { F0105 }
   SFormDuplicateName = 'A component named %s already exists'; { F0106 }
   SFormObjectsNotSupported = '"%s" objects are not supported'; { F0107 }
+  SFormFrameChildNotFound = 'Component %s: %s is not part of %s'; { F0109 }
+  SFormFrameNoNewChildren = 'Components cannot be added to frame instance %s'; { F0110 }
+  SFormFrameRecursive = 'Frame %s contains itself';         { F0111 }
 
   { ---------------------------------------------------------------- other units (other-units.md section 6) }
   SInvalidArgument = 'Invalid argument';

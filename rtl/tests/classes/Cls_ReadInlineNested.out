@@ -1,0 +1,21 @@
+# a frame with a frame instance, created in code
+<TOuterFrame>: TOuterFrame owner=<TMainRoot> parent=nil caption='' size=0 loaded=1
+  Pad: TPart owner=<TOuterFrame> parent=<TOuterFrame> caption='pad' size=0 loaded=1
+  Sub: TInnerFrame owner=<TOuterFrame> parent=<TOuterFrame> caption='' size=7 loaded=1 inline
+    Lbl: TPart owner=Sub parent=Sub caption='set by the outer frame' size=0 loaded=2
+# nested override blocks (RTL-1092)
+Main: TMainRoot owner=nil
+  Outer1: TOuterFrame owner=Main parent=Main caption='' size=0 loaded=1 inline
+    Pad: TPart owner=Outer1 parent=Outer1 caption='pad' size=0 loaded=1
+    Sub: TInnerFrame owner=Outer1 parent=Outer1 caption='' size=9 loaded=2 inline
+      Lbl: TPart owner=Sub parent=Sub caption='set by the form' size=0 loaded=3
+  Outer2: TOuterFrame owner=Main parent=Main caption='' size=0 loaded=1 inline
+    Pad: TPart owner=Outer2 parent=Outer2 caption='pad' size=0 loaded=1
+    Sub: TInnerFrame owner=Outer2 parent=Outer2 caption='' size=7 loaded=1 inline
+      Lbl: TPart owner=Sub parent=Sub caption='set by the outer frame' size=0 loaded=2
+ok the inner child keeps its parent
+ok the inner instance keeps its parent
+# the innermost scope only
+ok a component of the outer frame is not part of the inner instance
+ok nothing left in the owner
+# passed 4 failed 0

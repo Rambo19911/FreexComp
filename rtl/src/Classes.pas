@@ -663,6 +663,9 @@ type
     FMatchName: string;
     FMatched: Boolean;
     FRootCreated: Boolean;
+    FScope: TComponent;
+    FApplyRootName: Boolean;
+    FDeferRootLoaded: Boolean;
     FOnFindMethod: TFindMethodEvent;
     FOnSetName: TSetNameEvent;
     FOnError: TReaderError;
@@ -699,10 +702,11 @@ type
     procedure ApplyValue(Instance: TPersistent; PropInfo: PPropInfo; const Path: string);
     function ReadOrdinalValue(PropInfo: PPropInfo): Int64;
     procedure ReadReference(Instance: TPersistent; PropInfo: PPropInfo);
-    function ResolveReference(const Name: string): TComponent;
+    function ResolveReference(const Name: string; Scope: TComponent): TComponent;
     procedure ResolveFixups;
     procedure ReadStringsValue(Strings: TStrings);
     procedure ReadComponentObject;
+    procedure ReadOverrideBlock;
     procedure ReadItemProperties(Item: TPersistent);
     procedure Cleanup;
   public
@@ -815,7 +819,7 @@ function IdentToInt(const Ident: string; var Int: Integer; const Map: array of T
 function IntToIdent(Int: Integer; var Ident: string; const Map: array of TIdentMapEntry): Boolean;
 
 { section 10.2: embedded forms }
-function InitInheritedComponent(Instance: TComponent; RootAncestor: TClass): Boolean;
+function InitInheritedComponent(Instance: TComponent; RootAncestor: TClass; ApplyRootName: Boolean = True): Boolean;
 function InitComponentRes(const ResName: string; Instance: TComponent): Boolean;
 function ReadComponentFromText(const Text: string; Instance: TComponent; const SourceName: string = ''): TComponent;
 
@@ -3755,11 +3759,27 @@ type
     Name: string;
     Path: string;
     Line, Col: Integer;
+    Scope: TComponent;
   end;
 
   { raised after OnError handled a reader error: the property line is skipped (RTL-500) }
   ESkipProperty = class(Exception);
 
+  { RTL-1096: one class whose resources InitInheritedComponent is reading on this thread }
+  PFrameReadEntry = ^TFrameReadEntry;
+  TFrameReadEntry = record
+    Cls: TClass;
+    Next: PFrameReadEntry;
+  end;
+
+threadvar
+  { the classes being read, innermost first }
+  FrameReadChain: PFrameReadEntry;
+  { set by a reader while the constructor of an "inline" object runs: the reader and the object's keyword }
+  PendingInlineReader: TReader;
+  PendingInlineLine, PendingInlineCol: Integer;
+
+type
   { a read-only stream over the bytes of an embedded form }
   TPointerStream = class(TCustomMemoryStream)
   public
@@ -3793,6 +3813,7 @@ begin
   FLoaded := TList.Create;
   FCreated := TList.Create;
   FFixups := TList.Create;
+  FApplyRootName := True;
   FLex.Line := 1;
   FLex.Col := 1;
   FLex.Pos := 1;
@@ -3831,7 +3852,8 @@ var
   Handled: Boolean;
 begin
   Msg := FSourceName + '(' + IntToStr(Line) + ',' + IntToStr(Col) + '): error ' + Code + ': ' + Text;
-  if (Code <> 'F0001') and (Code <> 'F0101') and (Code <> 'F0106') and (Code <> 'F0107') and Assigned(FOnError) then
+  if (Code <> 'F0001') and (Code <> 'F0101') and (Code <> 'F0106') and (Code <> 'F0107') and (Code <> 'F0109') and
+    (Code <> 'F0110') and Assigned(FOnError) then
   begin
     Handled := False;
     FOnError(Self, Msg, Handled);
@@ -4663,13 +4685,23 @@ begin
   ExpectLineEnd;
 end;
 
-function TReader.ResolveReference(const Name: string): TComponent;
+{ RTL-1093: a plain name is looked up in the innermost frame instance first (the instance itself included) }
+function TReader.ResolveReference(const Name: string; Scope: TComponent): TComponent;
 var
   P: Integer;
   Container: TComponent;
 begin
   Result := nil;
   P := Pos('.', Name);
+  if (P = 0) and (Scope <> nil) then
+  begin
+    if CompareText(Scope.Name, Name) = 0 then
+      Result := Scope
+    else
+      Result := Scope.FindComponent(Name);
+    if Result <> nil then
+      Exit;
+  end;
   if P = 0 then
   begin
     if FLookupRoot = nil then
@@ -4700,7 +4732,7 @@ begin
   Name := ReadQualIdent;
   if Assigned(FOnReferenceName) then
     FOnReferenceName(Self, Name);
-  C := ResolveReference(Name);
+  C := ResolveReference(Name, FScope);
   if C = nil then
   begin
     F := TFixup.Create;
@@ -4710,6 +4742,7 @@ begin
     F.Path := FPropName;
     F.Line := RefLine;
     F.Col := RefCol;
+    F.Scope := FScope;
     FFixups.Add(Pointer(F));
   end
   else if not C.InheritsFrom(GetObjectPropClass(PropInfo)) then
@@ -4729,7 +4762,7 @@ begin
   begin
     F := TFixup(FFixups[I]);
     try
-      C := ResolveReference(F.Name);
+      C := ResolveReference(F.Name, F.Scope);
       if C = nil then
         Error('F0105', Format(SFormComponentNotFound, [F.Name]), F.Line, F.Col)
       else if not C.InheritsFrom(GetObjectPropClass(F.PropInfo)) then
@@ -4953,17 +4986,31 @@ begin
   ExpectLineEnd;
 end;
 
-{ RTL-497 }
+{ RTL-497; an "inline" object is a frame instance (RTL-1090), an "inherited" one an override block (RTL-1091);
+  inside an instance nothing can be added (F0110, RTL-1094) }
 procedure TReader.ReadComponentObject;
 var
-  NameLine, NameCol, TypeLine, TypeCol: Integer;
+  KeyLine, KeyCol, NameLine, NameCol, TypeLine, TypeCol: Integer;
   Name, TypeName, Msg: string;
   Cls: TPersistentClass;
   CompClass: TComponentClass;
-  C: TComponent;
+  C, OldScope: TComponent;
+  IsInline: Boolean;
+  OldPending: TReader;
+  OldLine, OldCol: Integer;
 begin
-  if IsKeyword('inherited') or IsKeyword('inline') then
-    Error('F0107', Format(SFormObjectsNotSupported, [LowerCase(FLex.TokText)]), FLex.TokLine, FLex.TokCol);
+  if IsKeyword('inherited') then
+  begin
+    if FScope = nil then
+      Error('F0107', Format(SFormObjectsNotSupported, [LowerCase(FLex.TokText)]), FLex.TokLine, FLex.TokCol);
+    ReadOverrideBlock;
+    Exit;
+  end;
+  if FScope <> nil then
+    Error('F0110', Format(SFormFrameNoNewChildren, [FScope.Name]), FLex.TokLine, FLex.TokCol);
+  IsInline := IsKeyword('inline');
+  KeyLine := FLex.TokLine;
+  KeyCol := FLex.TokCol;
   NextToken;
   NameLine := FLex.TokLine;
   NameCol := FLex.TokCol;
@@ -4982,11 +5029,30 @@ begin
   if CompClass = nil then
     Error('F0101', Format(SFormClassNotFound, [TypeName]), TypeLine, TypeCol);
   C := nil;
-  if Assigned(FOnCreateComponent) then
-    FOnCreateComponent(Self, CompClass, C);
-  if C = nil then
-    C := CompClass.Create(FOwner);
+  OldPending := PendingInlineReader;
+  OldLine := PendingInlineLine;
+  OldCol := PendingInlineCol;
+  if IsInline then
+  begin
+    PendingInlineReader := Self;
+    PendingInlineLine := KeyLine;
+    PendingInlineCol := KeyCol;
+  end
+  else
+    PendingInlineReader := nil;
+  try
+    if Assigned(FOnCreateComponent) then
+      FOnCreateComponent(Self, CompClass, C);
+    if C = nil then
+      C := CompClass.Create(FOwner);
+  finally
+    PendingInlineReader := OldPending;
+    PendingInlineLine := OldLine;
+    PendingInlineCol := OldCol;
+  end;
   FCreated.Add(Pointer(C));
+  if IsInline then
+    Include(C.FComponentState, csInline);
   Include(C.FComponentState, csLoading);
   Include(C.FComponentState, csReading);
   FLoaded.Add(Pointer(C));
@@ -5018,7 +5084,46 @@ begin
     on E: ESkipProperty do
       ;
   end;
-  C.ReadState(Self);
+  OldScope := FScope;
+  if csInline in C.FComponentState then
+    FScope := C;
+  try
+    C.ReadState(Self);
+  finally
+    FScope := OldScope;
+  end;
+end;
+
+{ RTL-1091: "inherited Name: TypeName" inside a frame instance names a component the frame created; its lines are
+  applied, nothing is created, named or re-parented; a nested instance is the scope of its own blocks (RTL-1092) }
+procedure TReader.ReadOverrideBlock;
+var
+  NameLine, NameCol: Integer;
+  Name, TypeName: string;
+  C, OldScope: TComponent;
+begin
+  NextToken;
+  NameLine := FLex.TokLine;
+  NameCol := FLex.TokCol;
+  Name := ReadIdentToken;
+  Expect(':');
+  TypeName := ReadIdentToken;
+  ExpectLineEnd;
+  C := FScope.FindComponent(Name);
+  if (C = nil) or (CompareText(C.ClassName, TypeName) <> 0) then
+    Error('F0109', Format(SFormFrameChildNotFound, [Name, TypeName, FScope.ClassName]), NameLine, NameCol);
+  Include(C.FComponentState, csLoading);
+  Include(C.FComponentState, csReading);
+  if FLoaded.IndexOf(Pointer(C)) < 0 then
+    FLoaded.Add(Pointer(C));
+  OldScope := FScope;
+  if csInline in C.FComponentState then
+    FScope := C;
+  try
+    C.ReadState(Self);
+  finally
+    FScope := OldScope;
+  end;
 end;
 
 { RTL-495 step 7 }
@@ -5026,6 +5131,13 @@ procedure TReader.Cleanup;
 var
   I: Integer;
 begin
+  { RTL-1098: components reached through override blocks are not destroyed here; their flags are cleared }
+  for I := 0 to FLoaded.Count - 1 do
+    if FCreated.IndexOf(FLoaded[I]) < 0 then
+    begin
+      Exclude(TComponent(FLoaded[I]).FComponentState, csLoading);
+      Exclude(TComponent(FLoaded[I]).FComponentState, csReading);
+    end;
   for I := FCreated.Count - 1 downto 0 do
     TComponent(FCreated[I]).Free;
   FCreated.Clear;
@@ -5078,12 +5190,14 @@ begin
     FLookupRoot := Root;
     FOwner := Root;
     FParent := nil;
+    FScope := nil;
     Include(Root.FComponentState, csLoading);
     Include(Root.FComponentState, csReading);
     FLoaded.Add(Pointer(Root));
-    if Assigned(FOnSetName) then
+    { RTL-1099: a frame read with an owner keeps the name its instance gives it }
+    if FApplyRootName and Assigned(FOnSetName) then
       FOnSetName(Self, Root, Name);
-    if Name <> '' then
+    if FApplyRootName and (Name <> '') then
     begin
       Msg := '';
       try
@@ -5102,8 +5216,10 @@ begin
     ResolveFixups;
     for I := FLoaded.Count - 1 downto 0 do
       Exclude(TComponent(FLoaded[I]).FComponentState, csReading);
+    { RTL-1097: the root of a frame constructed for an instance gets its Loaded from the reader of the instance }
     for I := FLoaded.Count - 1 downto 0 do
-      TComponent(FLoaded[I]).Loaded;
+      if not FDeferRootLoaded or (TComponent(FLoaded[I]) <> Root) then
+        TComponent(FLoaded[I]).Loaded;
     FLoaded.Clear;
     FCreated.Clear;
   except
@@ -5130,7 +5246,8 @@ end;
 
 { ---------------------------------------------------------------- embedded forms (section 10.2) }
 
-function ReadFormData(Data: Pointer; Size: NativeInt; Instance: TComponent; const SourceName: string): TComponent;
+function ReadFormData(Data: Pointer; Size: NativeInt; Instance: TComponent; const SourceName: string;
+  ApplyRootName, DeferRootLoaded: Boolean): TComponent;
 var
   S: TPointerStream;
   R: TReader;
@@ -5140,6 +5257,8 @@ begin
     R := TReader.Create(S, 4096);
     try
       R.SourceName := SourceName;
+      R.FApplyRootName := ApplyRootName;
+      R.FDeferRootLoaded := DeferRootLoaded;
       Result := R.ReadRootComponent(Instance);
     finally
       R.Free;
@@ -5169,7 +5288,8 @@ begin
 end;
 
 { RTL-483: from the base-most class below RootAncestor to the most derived one }
-function InitInheritedComponent(Instance: TComponent; RootAncestor: TClass): Boolean;
+function ReadInheritedResources(Instance: TComponent; RootAncestor: TClass;
+  ApplyRootName, DeferRootLoaded: Boolean): Boolean;
 var
   Chain: array of TClass;
   N, I: Integer;
@@ -5190,9 +5310,47 @@ begin
   for I := N - 1 downto 0 do
     if FindResourceData(Chain[I].ClassName, Data, Size) then
     begin
-      ReadFormData(Data, Size, Instance, Chain[I].ClassName + '.form');
+      ReadFormData(Data, Size, Instance, Chain[I].ClassName + '.form', ApplyRootName, DeferRootLoaded);
       Result := True;
     end;
+end;
+
+{ RTL-483; RTL-1096: a class whose resources are already being read on this thread is F0111 at the "inline" object
+  that started the nested construction; a frame constructed for an instance leaves its root's Loaded to the reader of
+  the instance (RTL-1097); RTL-1099: ApplyRootName }
+function InitInheritedComponent(Instance: TComponent; RootAncestor: TClass; ApplyRootName: Boolean = True): Boolean;
+var
+  Pending: TReader;
+  Line, Col: Integer;
+  P: PFrameReadEntry;
+  Entry: TFrameReadEntry;
+  Where: string;
+begin
+  Pending := PendingInlineReader;
+  Line := PendingInlineLine;
+  Col := PendingInlineCol;
+  PendingInlineReader := nil;
+  P := FrameReadChain;
+  while P <> nil do
+  begin
+    if P^.Cls = Instance.ClassType then
+    begin
+      if Pending <> nil then
+        Where := Pending.FSourceName + '(' + IntToStr(Line) + ',' + IntToStr(Col) + ')'
+      else
+        Where := Instance.ClassName + '.form(1,1)';
+      raise EReadError.Create(Where + ': error F0111: ' + Format(SFormFrameRecursive, [Instance.ClassName]));
+    end;
+    P := P^.Next;
+  end;
+  Entry.Cls := Instance.ClassType;
+  Entry.Next := FrameReadChain;
+  FrameReadChain := @Entry;
+  try
+    Result := ReadInheritedResources(Instance, RootAncestor, ApplyRootName, Pending <> nil);
+  finally
+    FrameReadChain := Entry.Next;
+  end;
 end;
 
 function InitComponentRes(const ResName: string; Instance: TComponent): Boolean;
@@ -5202,7 +5360,7 @@ var
 begin
   Result := FindResourceData(ResName, Data, Size);
   if Result then
-    ReadFormData(Data, Size, Instance, ResName + '.form');
+    ReadFormData(Data, Size, Instance, ResName + '.form', True, False);
 end;
 
 { ---------------------------------------------------------------- TThread (section 11) }

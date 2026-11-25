@@ -1,0 +1,6 @@
+object InnerFrame: TInnerFrame
+  Size = 3
+  object Lbl: TPart
+    Caption = 'inner frame'
+  end
+end

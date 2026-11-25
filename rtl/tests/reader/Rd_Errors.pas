@@ -4,7 +4,7 @@ program Rd_Errors;
 { Reader errors (classes.md RTL-500): every code with its exception class (all EReadError), exact message
   "<SourceName>(<line>,<col>): error <code>: <text>" and position; on failure every component the reader created is
   destroyed, components the root already owned stay, the root's csLoading/csReading are cleared (RTL-495 step 7);
-  nested inherited/inline objects and an inline root are F0107 (RTL-497); OnError may skip a property line for
+  nested inherited objects outside a frame instance and an inline root are F0107 (RTL-497, RTL-1092); OnError may skip a property line for
   F0102 ... F0105 (the whole value, also a multi-line one) but is not consulted for F0001, F0101, F0106, F0107. }
 uses
   SysUtils, Classes, TestKit;
@@ -114,8 +114,8 @@ begin
     Err('  object Kept: TCounted'#10'  end'#10), 'F0106 against an existing component');
   CheckEqS('EReadError: Err.form(3,3): error F0107: "inherited" objects are not supported',
     Err('  object A: TCounted'#10'  inherited B: TCounted'#10'  end'#10'  end'#10), 'F0107 inherited');
-  CheckEqS('EReadError: Err.form(2,3): error F0107: "inline" objects are not supported',
-    Err('  INLINE B: TCounted'#10'  end'#10), 'F0107 inline');
+  CheckEqS('EReadError: Err.form(2,3): error F0107: "inherited" objects are not supported',
+    Err('  INHERITED B: TCounted'#10'  end'#10), 'F0107 inherited at the top level, keyword in capitals');
   Check(EClassNotFound.InheritsFrom(EReadError), 'EClassNotFound is an EReadError');
   Check(EMethodNotFound.InheritsFrom(EReadError), 'EMethodNotFound is an EReadError');
 
@@ -170,8 +170,8 @@ begin
     'F0001 is not skippable');
   CheckEqS('EReadError: Err.form(2,10): error F0106: A component named Kept already exists',
     Load('  object Kept: TCounted'#10'  end'#10, True), 'F0106 is not skippable');
-  CheckEqS('EReadError: Err.form(2,3): error F0107: "inline" objects are not supported',
-    Load('  inline B: TCounted'#10'  end'#10, True), 'F0107 is not skippable');
+  CheckEqS('EReadError: Err.form(2,3): error F0107: "inherited" objects are not supported',
+    Load('  inherited B: TCounted'#10'  end'#10, True), 'F0107 is not skippable');
   CheckEqS('', Log, 'OnError not consulted for them');
   Root.Free;
   H.Free;

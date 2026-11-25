@@ -1,0 +1,14 @@
+object TestFrame: TTestFrame
+  Size = 5
+  object Title: TPart
+    Caption = 'title'
+    Size = 1
+  end
+  object Box: TPart
+    Caption = 'box'
+    object Inner: TPart
+      Caption = 'inner'
+      Buddy = Title
+    end
+  end
+end
