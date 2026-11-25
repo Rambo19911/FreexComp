@@ -288,6 +288,100 @@ public sealed class ChildListEditorViewTests
         Assert.NotEqual(secondaryColors[0], secondaryColors[1]); // the tokens of both themes resolved
     }
 
+    /// <summary>
+    /// I-297, UI-DLG-306 (I-286 for labels): a child row shows its caption as plain text — the mnemonic marker
+    /// <c>&amp;</c> is not drawn and <c>&amp;&amp;</c> is one ampersand — in a flat and in a grouped list. When the
+    /// keyboard moves to the first child of a group, the group's header row is scrolled into view with it, whole.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-DLG-306")]
+    [Trait("Req", "DSG-SUR-218")]
+    public async Task ChildRowsShowPlainCaptions_AndTheHeaderOfAGroupScrollsIntoViewWithItsFirstChild()
+    {
+        static string Action(string name, string caption, string? category) =>
+            $"    object {name}: TAction\r\n      Caption = '{caption}'\r\n" + (category is null ? "" : $"      Category = '{category}'\r\n") + "    end\r\n";
+        (string Name, string Caption, string? Category)[] actions =
+        [
+            ("Action1", "&Run && Stop", null), ("Action2", "Two", null), ("Action3", "Three", null),
+            ("EditA1", "&Copy", "Edit"), ("EditA2", "&Paste", "Edit"), ("EditA3", "Cu&t", "Edit"), ("EditA4", "&Undo", "Edit"),
+            ("FileA1", "&Open", "File"), ("FileA2", "&Save", "File"), ("FileA3", "E&xit", "File"),
+        ];
+        await using var h = await HeadlessHarness.StartAsync(o =>
+        {
+            DesignerViewTests.EditorFiles(o);
+            const string list = "  object ActionList1: TActionList\r\n    DesignLeft = 88\r\n    DesignTop = 8\r\n";
+            var form = o.InitialFiles["MainForm.form"];
+            Assert.Contains(list, form, StringComparison.Ordinal);
+            o.InitialFiles["MainForm.form"] = form.Replace(list, list + string.Concat(actions.Select(a => Action(a.Name, a.Caption, a.Category))), StringComparison.Ordinal);
+            o.InitialFiles["MainForm.pas"] = o.InitialFiles["MainForm.pas"].Replace(
+                "ActionList1: TActionList;", "ActionList1: TActionList;" + string.Concat(actions.Select(a => $"\r\n    {a.Name}: TAction;")), StringComparison.Ordinal);
+        });
+        var document = await DesignerViewTests.OpenFormAsync(h);
+        h.Click(AutomationIds.DocumentViewTab("MainForm.pas", "Design"));
+        var model = document.Designer.Model!;
+        Assert.Equal(actions.Select(a => a.Name), model.FindByName("ActionList1")!.Children.Select(c => c.Name));
+        document.Designer.Surface!.Selection.Select(model.FindByName("ActionList1")!);
+        Dispatcher.UIThread.RunJobs();
+
+        var running = h.Services.Commands.ExecuteAsync("designer.editComponent");
+        var dlg = await h.WaitForDialogAsync("ChildListEditor");
+        try
+        {
+            var list = dlg.Find<ListBox>("Items");
+            List<ListBoxItem> Rows() => [.. list.Items.OfType<ListBoxItem>()];
+            ListBoxItem Row(string id) => Rows().Single(r => AutomationIds.Get(r) == Prefix + id);
+            string Shown(ListBoxItem row) => Assert.IsType<TextBlock>(row.Content).Text!;
+
+            // Grouped: the captions without their marker; the screen-reader names as well.
+            Assert.Equal("Action1 – Run & Stop", Shown(Row("Item.Action1")));
+            Assert.Equal("EditA1 – Copy", Shown(Row("Item.EditA1")));
+            Assert.Equal("EditA3 – Cut", Shown(Row("Item.EditA3")));
+            Assert.Equal("FileA3 – Exit", Shown(Row("Item.FileA3")));
+            Assert.Equal("Edit, EditA1 – Copy", AutomationProperties.GetName(Row("Item.EditA1")));
+            Assert.DoesNotContain(list.GetVisualDescendants().OfType<TextBlock>(), t => t.IsEffectivelyVisible && t.Text is { } x && x.Replace("Run & Stop", "", StringComparison.Ordinal).Contains('&'));
+
+            // The keyboard from the last child up to the first one: each first child of a group brings its header along.
+            var port = list.GetVisualDescendants().OfType<Avalonia.Controls.Presenters.ScrollContentPresenter>().Single();
+            Assert.True(port.Extent.Height > port.Viewport.Height, "the list scrolls");
+            var last = Row("Item.FileA3");
+            list.ScrollIntoView(last);
+            Dispatcher.UIThread.RunJobs();
+            last.Focus(NavigationMethod.Tab);
+            Dispatcher.UIThread.RunJobs();
+            foreach (var (child, header) in new[] { ("FileA1", "Group.File"), ("EditA1", "Group.Edit"), ("Action1", "Group.(none)") })
+            {
+                while (dlg.FocusedAutomationId != Prefix + "Item." + child)
+                    dlg.Press("Up");
+                var top = port.TranslatePoint(default, dlg.Window)!.Value.Y;
+                var headerRow = Row(header);
+                var at = headerRow.TranslatePoint(default, dlg.Window);
+                Assert.True(at is { } p && p.Y >= top - 0.5 && p.Y + headerRow.Bounds.Height <= top + port.Bounds.Height + 0.5,
+                    $"{header} at {at} (height {headerRow.Bounds.Height}) is not whole in the list's view port from {top} (height {port.Bounds.Height}) when {child} has the focus");
+            }
+
+            // Flat (no child has a category any more): the row text without the marker too.
+            foreach (var child in model.FindByName("ActionList1")!.Children.Where(c => c.Name != "Action1").ToList())
+            {
+                list.SelectedItems!.Clear();
+                list.SelectedItems.Add(Row("Item." + child.Name));
+                Dispatcher.UIThread.RunJobs();
+                var editor = Assert.IsType<FreexComp.Ide.Core.Dialogs.ChildListEditorViewModel>(dlg.Window.Model);
+                editor.Delete();
+                Dispatcher.UIThread.RunJobs();
+            }
+
+            Assert.Equal([Prefix + "Item.Action1"], Rows().Select(AutomationIds.Get));
+            Assert.Equal("Action1 – Run & Stop", Rows()[0].Content is TextBlock t ? t.Text : Rows()[0].Content);
+            Assert.Equal("Action1 – Run & Stop", AutomationProperties.GetName(Rows()[0]));
+        }
+        finally
+        {
+            dlg.Window.Close();
+            Dispatcher.UIThread.RunJobs();
+            await running;
+        }
+    }
+
     /// <summary>A character typed while the highlighted class row of the open picker has the keyboard.</summary>
     private static void TypeAhead(IReadOnlyList<MenuItem> entries, string text)
     {

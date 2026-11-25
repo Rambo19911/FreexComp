@@ -66,8 +66,9 @@ public sealed class StatusBarView : DockPanel
         ((TextBlock)_state.Content!).MaxWidth = 360;
         AutomationProperties.SetLiveSetting(_state, AutomationLiveSetting.Polite); // UI-A11Y-023
 
-        var left = new StackPanel { Orientation = Orientation.Horizontal };
-        left.Children.Add(Field(_state, lineBefore: false));
+        // L1 is measured with the room the right group leaves (I-296): a long state text shrinks with its ellipsis
+        // before a field of the right group is cut.
+        var left = Field(_state, lineBefore: false);
         SetDock(left, Avalonia.Controls.Dock.Left);
 
         var right = new StackPanel { Orientation = Orientation.Horizontal };
@@ -89,8 +90,8 @@ public sealed class StatusBarView : DockPanel
         right.Children.Add(_configurationCell);
         SetDock(right, Avalonia.Controls.Dock.Right);
         var message = Field(_message, lineBefore: true);
-        Children.Add(left);
         Children.Add(right);
+        Children.Add(left);
         Children.Add(message);
 
         AddHandler(KeyDownEvent, OnKeyDown, RoutingStrategies.Tunnel);

@@ -8,6 +8,7 @@ using Avalonia.VisualTree;
 using FreexComp.Ide.Core.Models;
 using FreexComp.Ide.Tests.Infrastructure;
 using FreexComp.Ide.TestSupport;
+using FreexComp.Ide.Views;
 
 namespace FreexComp.Ide.Tests.Views;
 
@@ -215,5 +216,52 @@ public sealed class ToolBarViewTests
         Assert.Null(combo.SelectedItem);
         Assert.Null(ToolTip.GetTip(combo));
         Assert.Equal(88, combo.Bounds.Width);
+    }
+
+    /// <summary>
+    /// I-293, UI-TB-006, UI-WIN-061: at the 800 px minimum width, a tool bar of the row is never cut — also after the
+    /// platform combo grew to its longest label (<c>Win32 (not installed)</c> active) once the row was laid out: the
+    /// tool bars that no longer fit move, whole and from the right, into the overflow.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-TB-006")]
+    [Trait("Req", "UI-WIN-061")]
+    public async Task MinimumWidth_AGrownPlatformComboMovesToolbarsIntoTheOverflow()
+    {
+        await using var h = await BuildScenario.StartAsync(o => o.PlatformCatalog = new TestPlatformCatalog(), projectExtra: """
+            , "platforms": ["win64", "test32"], "activePlatform": "win64"
+            """);
+        VisualSnapshot.Arrange(h.Window, new Size(800, 600), 1.0);
+        var row = h.Find<Panel>("ToolBar.Standard").FindAncestorOfType<ToolBarRow>()!;
+        var combo = h.Find<ComboBox>("ToolBar.Build.Platform");
+        AssertNoToolbarCut(row);
+        var width = combo.Bounds.Width;
+
+        var definition = h.Services.Projects.Definition!;
+        Assert.True(await h.Services.Projects.ApplyOptionsAsync(definition with { Platforms = ["win64", "win32"], ActivePlatform = "win32" }));
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(NotInstalled, combo.SelectedItem);
+        Assert.True(combo.Bounds.Width > width, "the combo grew with its widest item");
+        AssertNoToolbarCut(row);
+        Assert.NotEmpty(row.InOverflow);
+
+        // Back to the short labels: the tool bars come back into the row as far as they fit.
+        definition = h.Services.Projects.Definition!;
+        Assert.True(await h.Services.Projects.ApplyOptionsAsync(definition with { Platforms = ["win64"], ActivePlatform = null }));
+        Dispatcher.UIThread.RunJobs();
+        AssertNoToolbarCut(row);
+    }
+
+    /// <summary>Every tool bar in the row ends before the overflow button (when shown) and inside the row.</summary>
+    private static void AssertNoToolbarCut(ToolBarRow row)
+    {
+        Dispatcher.UIThread.RunJobs();
+        var overflow = row.GetVisualDescendants().OfType<Button>().Single(b => AutomationIds.Get(b) == "ToolBar.Overflow");
+        var end = overflow.IsVisible ? overflow.TranslatePoint(default, row)!.Value.X : row.Bounds.Width;
+        foreach (var toolbar in row.InRow)
+        {
+            var right = toolbar.TranslatePoint(new Point(toolbar.Bounds.Width, 0), row)!.Value.X;
+            Assert.True(right <= end + 0.5, $"{AutomationIds.Get(toolbar)} ends at {right}, the row has room up to {end} (in the overflow: {string.Join(", ", row.InOverflow.Select(AutomationIds.Get))})");
+        }
     }
 }

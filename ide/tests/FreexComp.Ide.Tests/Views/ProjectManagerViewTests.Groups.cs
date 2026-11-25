@@ -162,6 +162,78 @@ public sealed partial class ProjectManagerViewTests
         Assert.StartsWith("CoreLib", h.Window.Title, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// I-298, UI-TW-125, 126 (project-groups.md §8 state 1): a listed member is collapsed when it becomes available —
+    /// also when its root was expanded before its file went away; while unavailable it remembers no expansion.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Phase", "8")]
+    [Trait("Req", "UI-TW-125")]
+    [Trait("Req", "UI-TW-126")]
+    public async Task Group_AMemberThatBecomesAvailableAgainIsCollapsed()
+    {
+        await using var h = await HeadlessHarness.StartAsync(o => AppGroup(o));
+        var pm = await OpenGroupAsync(h);
+        var file = Path.Combine(h.TempDir, "CoreLib", "CoreLib.pproj");
+        pm.Find("$project:CoreLib")!.IsExpanded = true;
+        Dispatcher.UIThread.RunJobs();
+
+        // The file goes away (renamed outside the IDE): the root is unavailable.
+        File.Move(file, file + ".away");
+        h.Services.Groups.Refresh();
+        await h.WaitForAsync(() => !pm.IsCheckingMissingFiles, "missing-file check done");
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(pm.Find("$project:CoreLib")!.IsUnavailable);
+
+        // … and comes back: the root is available again and collapsed, its rows not shown.
+        File.Move(file + ".away", file);
+        h.Services.Groups.Refresh();
+        await h.WaitForAsync(() => !pm.IsCheckingMissingFiles, "missing-file check done");
+        Dispatcher.UIThread.RunJobs();
+        var root = pm.Find("$project:CoreLib")!;
+        Assert.False(root.IsUnavailable);
+        Assert.NotEmpty(root.Children);
+        Assert.False(root.IsExpanded);
+        Assert.DoesNotContain("CoreLib:CoreLib.pas", VisibleKeys(pm));
+        Assert.False(h.Find<TreeViewItem>(Row + "$project:CoreLib").IsExpanded);
+    }
+
+    /// <summary>
+    /// I-295, IDE-PM-160: after a listed root is activated by a double-click — here through the unsaved-changes prompt of
+    /// the outgoing project — the activated root is the selected and focused row of the Project Manager, not the root of
+    /// the outgoing project; so the Project menu's Add items act on the active project and are enabled.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Phase", "8")]
+    [Trait("Req", "IDE-PM-160")]
+    public async Task Group_ActivatedRootIsSelectedAndFocused_AfterTheUnsavedPrompt()
+    {
+        await using var h = await HeadlessHarness.StartAsync(o => AppGroup(o));
+        var pm = await OpenGroupAsync(h);
+        var coreLib = Path.Combine(h.TempDir, "CoreLib", "CoreLib.pproj");
+        Assert.True((await h.Services.Documents.OpenAsync(Path.Combine(h.TempDir, "App", "App.pas"))).Success);
+        var app = Assert.IsAssignableFrom<TextDocumentViewModel>(h.Services.Documents.ActiveDocument);
+        app.Buffer.ApplyEdits([new FreexComp.Ide.Core.Text.TextEdit(0, 0, "{ changed }")]);
+        Dispatcher.UIThread.RunJobs();
+
+        h.Click(Row + "$project:CoreLib");
+        Assert.Equal(Row + "$project:CoreLib", h.FocusedAutomationId);
+        h.DoubleClick(Row + "$project:CoreLib");
+        var prompt = await h.WaitForDialogAsync("Message");
+        prompt.Click("DontSave");
+        await h.WaitForAsync(() => h.Services.Projects.Project?.FilePath == coreLib && h.Services.Groups.ActiveMember?.Name == "CoreLib",
+            "CoreLib activated");
+        await h.WaitForAsync(() => !pm.IsCheckingMissingFiles, "missing-file check done");
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Equal(["$project"], pm.Selection.Select(n => n.Key));
+        Assert.Equal("CoreLib", pm.Selection[0].Name);
+        Assert.Equal(Row + "$project", h.FocusedAutomationId);
+        Assert.False(pm.IsListedSelection);
+        Assert.True(h.Services.Commands.CanExecute("project.addNewUnit"));
+        Assert.True(h.Services.Commands.CanExecute("project.addExistingFile"));
+    }
+
     private const string InsertionLine = "Tool.ProjectManager.InsertionLine";
 
     private static string[] GroupProjects(HeadlessHarness h)

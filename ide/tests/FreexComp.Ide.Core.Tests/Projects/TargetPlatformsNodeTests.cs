@@ -245,6 +245,27 @@ public sealed class TargetPlatformsNodeTests
         Assert.False(commands.CanExecute("project.addPlatform"));
     }
 
+    /// <summary>
+    /// I-298, IDE-PLAT-014: the question names a platform that is not installed by its name alone — the suffix
+    /// <c>(not installed)</c> of the tree row and the combo does not stand in the middle of the sentence.
+    /// </summary>
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "IDE-PLAT-014")]
+    public Task RemovePlatform_TheQuestionNamesANotInstalledPlatformWithoutTheSuffix() => TestUiThread.RunAsync(async () =>
+    {
+        var bed = Bed();
+        await bed.OpenHelloAsync(extra: """
+            , "platforms": ["win64", "win32"], "platformOptions": { "win32": { "defines": ["LEGACY"] } }
+            """);
+        var pm = Pm(bed);
+        pm.Select(PlatformRow(bed, "win32"));
+        bed.Dialogs.Enqueue("Msg.Platform.RemoveConfirm", "Cancel");
+        await bed.Services.Commands.ExecuteAsync("project.removePlatform");
+        var request = Assert.Single(bed.Dialogs.Requests);
+        Assert.Equal(("Msg.Platform.RemoveConfirm", "Win32"), (request.MessageId, Assert.Single(request.Args)));
+        Assert.Equal(["win64", "win32"], bed.Services.Projects.Project!.Platforms);
+    });
+
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-PLAT-014")]
     public Task RemovePlatform_LastIsDisabled_OptionsEntryAskedAndRemoved_ActiveMovesToFirst_NoFileDeleted() => TestUiThread.RunAsync(RemoveOnUiThread);

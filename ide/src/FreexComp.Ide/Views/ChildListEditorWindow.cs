@@ -126,9 +126,12 @@ public sealed class ChildListEditorWindow : DialogWindow
             {
                 p.Shown = rows;
                 p.List.Items.Clear();
-                foreach (var row in rows)
+                for (var i = 0; i < rows.Count; i++)
                 {
-                    p.List.Items.Add(row.IsHeader ? HeaderItem(row) : ChildItem(row));
+                    var item = rows[i].IsHeader ? HeaderItem(rows[i]) : ChildItem(rows[i]);
+                    if (!rows[i].IsHeader && i > 0 && rows[i - 1].IsHeader)
+                        item.AddHandler(RequestBringIntoViewEvent, BringHeaderAlong);
+                    p.List.Items.Add(item);
                 }
             }
 
@@ -240,23 +243,35 @@ public sealed class ChildListEditorWindow : DialogWindow
     public const int PickerVisibleRows = 12;
 
     /// <summary>
+    /// I-297: the first child of a group is brought into view together with the header row above it — as high as a
+    /// child row (UI-DLG-306) — so that the header is never half hidden above the row the keyboard moved to.
+    /// </summary>
+    private static void BringHeaderAlong(object? sender, RequestBringIntoViewEventArgs e)
+    {
+        if (sender is ListBoxItem item && ReferenceEquals(e.TargetObject, item))
+            e.TargetRect = new Rect(e.TargetRect.X, e.TargetRect.Y - item.Bounds.Height, e.TargetRect.Width, e.TargetRect.Height + item.Bounds.Height);
+    }
+
+    /// <summary>
     /// UI-DLG-306: a child row — in a grouped list indented by <c>space.4</c>, its screen-reader name prefixed with the
     /// category; in a flat list exactly the row of before.
     /// </summary>
     private static ListBoxItem ChildItem(ChildListRow row)
     {
+        // I-297: the caption without its mnemonic marker (I-286), as text — a row has no access key of its own.
         var item = new ListBoxItem { Tag = row.Item };
+        var text = MnemonicLabel.ToPlainText(row.Text);
         if (row.Category is null)
         {
-            item.Content = row.Text;
+            item.Content = text;
         }
         else
         {
-            item.Content = new TextBlock { Text = row.Text, Margin = new Thickness(Metric("FxcSpace4"), 0, 0, 0) };
+            item.Content = new TextBlock { Text = text, Margin = new Thickness(Metric("FxcSpace4"), 0, 0, 0) };
         }
 
         AutomationProperties.SetAutomationId(item, Id("Item." + row.Name));
-        AutomationProperties.SetName(item, row.AccessibleName);
+        AutomationProperties.SetName(item, row.Category is null ? text : row.AccessibleName);
         return item;
     }
 

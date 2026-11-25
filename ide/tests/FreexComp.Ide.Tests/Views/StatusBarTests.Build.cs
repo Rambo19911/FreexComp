@@ -1,3 +1,4 @@
+using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Automation.Peers;
 using Avalonia.Controls;
@@ -53,6 +54,48 @@ public sealed partial class StatusBarTests
         Assert.Equal(StatusBarState.Running, ((StatusBarViewModel)view.DataContext!).StateKind);
         await h.ExecuteAsync("run.stop");
         await h.WaitForAsync(() => h.Services.State.Current.State == IdeState.Idle, "stopped");
+    }
+
+    /// <summary>
+    /// I-296, main-window.md §5 UI-WIN-045: at the 800 px minimum width a long L1 text (here the Building text of a project with a
+    /// long name, as a group-build result can be) shrinks with an ellipsis before the right group is cut: every shown
+    /// field of the right group, R9 Configuration last, is drawn completely inside the status bar.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-WIN-045")]
+    public async Task LongStateText_ShrinksBeforeTheRightGroupIsCut()
+    {
+        const string LongName = "AnApplicationWithAVeryLongProjectNameThatFillsTheStateField";
+        await using var h = await BuildScenario.StartAsync(o => o.InitialFiles[@"Hello\Hello.pproj"] = $$"""
+            { "formatVersion": 1, "name": "{{LongName}}", "appType": "console", "mainSource": "Hello.pas",
+              "configurations": { "Debug": { "optimization": 0, "debugInfo": true, "defines": [], "outputDir": "bin/Debug" } },
+              "files": [ { "path": "Hello.pas" }, { "path": "Unit1.pas" } ] }
+            """);
+        Assert.True((await h.Services.Documents.OpenAsync(BuildScenario.UnitPath(h))).Success);
+        VisualSnapshot.Arrange(h.Window, new Avalonia.Size(800, 600), 1.0);
+        var held = h.Build.Enqueue(FakeBuildEngine.Success(BuildScenario.ProjectPath(h), BuildScenario.ExePath(h)).Held());
+        h.Press("Ctrl+Shift+B");
+        await h.WaitForAsync(() => held.Request is not null, "build started");
+        Dispatcher.UIThread.RunJobs();
+        Assert.Contains(LongName, h.Status.State, StringComparison.Ordinal);
+
+        var bar = h.Find<Control>("StatusBar");
+        var state = Assert.IsType<TextBlock>(h.Find<Button>("StatusBar.State").Content);
+        Assert.True(state.TextLayout.TextLines[0].HasCollapsed, "the long state text ends in an ellipsis");
+        string[] right = ["Diagnostics", "CaretPosition", "Selection", "InsertMode", "Indent", "LineEnding", "Encoding", "Language", "Configuration"];
+        Assert.True(h.Find<Control>("StatusBar.Configuration").IsEffectivelyVisible, "R9 is shown");
+        foreach (var name in right)
+        {
+            if (h.TryFind<Control>("StatusBar." + name) is not { IsEffectivelyVisible: true } field)
+                continue;
+            var box = new Avalonia.Rect(field.TranslatePoint(default, bar)!.Value, field.Bounds.Size);
+            Assert.True(box.Right <= bar.Bounds.Width + 0.5 && box.X >= state.TranslatePoint(new Avalonia.Point(state.Bounds.Width, 0), bar)!.Value.X,
+                $"StatusBar.{name} {box} is cut (status bar {bar.Bounds.Width} wide, L1 {state.Bounds.Width} wide)");
+            Assert.Null(VisualSnapshot.HiddenPart(field, h.Window));
+        }
+
+        held.Release();
+        await h.WaitForAsync(() => h.Services.State.Current.State == IdeState.Idle, "build finished");
     }
 
     /// <summary>

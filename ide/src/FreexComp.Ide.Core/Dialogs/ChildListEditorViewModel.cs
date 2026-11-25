@@ -350,9 +350,13 @@ public sealed class ChildListEditorViewModel : DialogViewModel<bool>
             : new ChildListRow(item, item.Name, text)
             {
                 Category = category,
-                AccessibleName = categoryText + ", " + text.Replace("&", "", StringComparison.Ordinal),
+                AccessibleName = categoryText + ", " + PlainText(text),
             };
     }
+
+    /// <summary>A caption without its mnemonic marker: <c>&amp;</c> goes, <c>&amp;&amp;</c> is one ampersand (I-297).</summary>
+    private static string PlainText(string text) =>
+        text.Replace("&&", "\0", StringComparison.Ordinal).Replace("&", "", StringComparison.Ordinal).Replace("\0", "&", StringComparison.Ordinal);
 
     private int IndexOf(FormObject child)
     {

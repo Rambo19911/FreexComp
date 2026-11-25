@@ -47,6 +47,45 @@ public sealed partial class BuildServiceTests
     }
 
     /// <summary>
+    /// I-298, main-window.md §5 L1 (UI-WIN-046): the build result is the result of the loaded project — it goes when that
+    /// project is closed or another one is opened; a change inside the same project (another configuration) keeps it.
+    /// </summary>
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "IDE-P3-005")]
+    [Trait("Req", "UI-WIN-046")]
+    public Task ResultTextClearsWhenTheProjectChanges() => TestUiThread.RunAsync(async () =>
+    {
+        var bed = new BuildTestBed();
+        await bed.OpenHelloAsync(extra: """
+            , "configurations": { "Debug": { "outputDir": "bin/Debug" }, "Release": { "outputDir": "bin/Release" } }
+            """);
+        var bar = new StatusBarViewModel(bed.Services.Status, bed.Services.Commands, bed.Services.Settings, bed.Services.Documents,
+            bed.Services.State, bed.Services.Projects, bed.Services.Build, bed.Services.Messages);
+
+        // Another configuration of the same project: the result stays.
+        Assert.NotNull(await bed.Services.Build.BuildAsync(BuildKind.Build));
+        var result = bed.Services.Build.ResultText!;
+        Assert.Equal(result, bar.StateText);
+        await bed.Services.Commands.ExecuteAsync("project.setConfiguration", "Release");
+        Assert.Equal("Release", bed.Services.Projects.Project!.ActiveConfiguration);
+        Assert.Equal(result, bar.StateText);
+
+        // The project is closed: the idle text.
+        Assert.True(await bed.Services.Projects.CloseAsync());
+        Assert.Equal(Strings.Msg_State_Idle, bar.StateText);
+
+        // Built again, then another project is opened: the idle text.
+        await bed.OpenHelloAsync();
+        Assert.NotNull(await bed.Services.Build.BuildAsync(BuildKind.Build));
+        Assert.Equal(bed.Services.Build.ResultText, bar.StateText);
+        var other = bed.File(@"C:\p\Other\Other.pproj", """{ "formatVersion": 1, "name": "Other", "mainSource": "Other.pas", "files": [ { "path": "Other.pas" } ] }""");
+        bed.File(@"C:\p\Other\Other.pas", "program Other;\nbegin\nend.\n");
+        Assert.True(await bed.Services.Projects.OpenAsync(other));
+        Assert.Equal("Other", bed.Services.Projects.Project!.Name);
+        Assert.Equal(Strings.Msg_State_Idle, bar.StateText);
+    });
+
+    /// <summary>
     /// IDE-P3-003 (footnote of the availability table): <c>file.exit</c> while Building cancels the build after the
     /// unsaved-changes prompt and waits at most 5 s for the cancellation before closing.
     /// </summary>

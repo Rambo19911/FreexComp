@@ -55,7 +55,16 @@ public sealed class QuickPickView : Border
             if (_model is not null && !_syncing && _list.SelectedIndex >= 0)
                 _model.SelectedIndex = _list.SelectedIndex;
         };
-        _list.DoubleTapped += (_, _) => _ = _model?.CommitAsync();
+        _list.Tapped += (_, e) =>
+        {
+            // I-297: a click on a row picks it, as Enter does; a click beside the rows does nothing.
+            if (_model is { } model && (e.Source as Visual)?.FindAncestorOfType<ListBoxItem>(includeSelf: true) is { } row
+                && _list.IndexFromContainer(row) is var index and >= 0)
+            {
+                model.SelectedIndex = index;
+                _ = model.CommitAsync();
+            }
+        };
         _list.Focusable = false;
         _noMatch.Bind(TextBlock.ForegroundProperty, _noMatch.GetResourceObservable("FxcTextDisabledBrush"));
         _input.TextChanged += (_, _) =>

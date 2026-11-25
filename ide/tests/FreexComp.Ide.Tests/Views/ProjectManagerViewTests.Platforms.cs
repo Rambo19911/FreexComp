@@ -24,6 +24,38 @@ public sealed partial class ProjectManagerViewTests
     }
 
     /// <summary>
+    /// I-297, IDE-PLAT-013: a single click on a row of the Add Platform quick pick picks it — the platform is added and
+    /// the popup closes, as Enter does — instead of only highlighting it until a double-click.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Phase", "8")]
+    [Trait("Req", "IDE-PLAT-013")]
+    public async Task AddPlatformQuickPick_ASingleClickPicksTheRow()
+    {
+        await using var h = await HeadlessHarness.StartAsync(o =>
+        {
+            o.PlatformCatalog = new TestPlatformCatalog();
+            o.InitialFiles[@"Hello\Hello.pproj"] = """
+                { "formatVersion": 1, "name": "Hello", "mainSource": "Hello.pas",
+                  "platforms": ["win64"], "files": [ { "path": "Hello.pas" } ] }
+                """;
+            o.InitialFiles[@"Hello\Hello.pas"] = "program Hello;\nbegin\nend.\n";
+        });
+        await OpenHelloAsync(h);
+        await h.ExecuteAsync("view.projectManager");
+        Dispatcher.UIThread.RunJobs();
+        await h.ExecuteAsync("project.addPlatform");
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(["Test 32-bit (Test32)"], h.Services.QuickPick.Current!.Items.Select(i => i.Text));
+
+        h.Click("QuickPick.Item." + h.Services.QuickPick.Current.Items[0].Id);
+        await h.WaitForAsync(() => h.Services.Projects.Project!.Platforms.Count == 2, "platform added by a single click");
+        Dispatcher.UIThread.RunJobs();
+        Assert.Null(h.Services.QuickPick.Current);
+        Assert.Equal(["win64", "test32"], h.Services.Projects.Project!.Platforms);
+    }
+
+    /// <summary>
     /// UI-TW-131…135 in the light and the dark theme: the node <c>Target Platforms</c> is the last row of the loaded
     /// project (icon <c>platforms</c>, <c>type.body</c>, no badge, no modified marker); its rows show the display name
     /// and the label (icon <c>platform</c>), the active one in <c>type.bodyStrong</c> with ", active platform" in its

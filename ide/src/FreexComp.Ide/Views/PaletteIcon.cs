@@ -40,11 +40,54 @@ public sealed class PaletteIcon : Control
         IsGeneric = shapes is null;
         _shapes = shapes ?? Generic;
         ActualThemeVariantChanged += (_, _) => InvalidateVisual();
-        foreach (var shape in _shapes)
+        _geometry.AddRange(Geometries(_shapes));
+    }
+
+    /// <summary>
+    /// D-121: the drawable shapes of the SVG file at <paramref name="path"/> (read and parsed once per path), or null when
+    /// it is not a usable icon — the design surface's tray tile then draws its generic glyph.
+    /// </summary>
+    internal static IReadOnlyList<(Geometry Geometry, Shape Shape)>? Load(string path)
+    {
+        ArgumentNullException.ThrowIfNull(path);
+        lock (LoadedIcons)
         {
-            _geometry.Add((Geometry.Parse(shape.Data), shape));
+            if (LoadedIcons.TryGetValue(path, out var known))
+                return known;
+        }
+
+        IReadOnlyList<(Geometry, Shape)>? shapes = null;
+        try
+        {
+            if (path.EndsWith(".svg", StringComparison.OrdinalIgnoreCase) && File.Exists(path) && TryParse(File.ReadAllBytes(path)) is { } parsed)
+                shapes = Geometries(parsed);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            shapes = null;
+        }
+
+        lock (LoadedIcons)
+            LoadedIcons[path] = shapes;
+        return shapes;
+    }
+
+    /// <summary>Draws <paramref name="shapes"/> (24 × 24 view box) scaled into <paramref name="bounds"/> in <paramref name="brush"/>.</summary>
+    internal static void Draw(DrawingContext context, IReadOnlyList<(Geometry Geometry, Shape Shape)> shapes, IBrush? brush, Rect bounds)
+    {
+        using (context.PushTransform(Matrix.CreateScale(bounds.Width / ViewBox, bounds.Height / ViewBox) * Matrix.CreateTranslation(bounds.X, bounds.Y)))
+        {
+            foreach (var (geometry, shape) in shapes)
+            {
+                context.DrawGeometry(shape.Filled ? brush : null,
+                    shape.Stroked ? new Pen(brush, shape.StrokeWidth, lineCap: PenLineCap.Round, lineJoin: PenLineJoin.Round) : null, geometry);
+            }
         }
     }
+
+    private static readonly Dictionary<string, IReadOnlyList<(Geometry, Shape)>?> LoadedIcons = new(StringComparer.OrdinalIgnoreCase);
+
+    private static List<(Geometry, Shape)> Geometries(IEnumerable<Shape> shapes) => [.. shapes.Select(s => (Geometry.Parse(s.Data), s))];
 
     static PaletteIcon()
     {
@@ -66,14 +109,7 @@ public sealed class PaletteIcon : Control
         var brush = this.TryFindResource(IconCatalog.BrushKey(IsEffectivelyEnabled ? IconCatalog.DefaultToken : DisabledToken), ActualThemeVariant, out var value)
             ? value as IBrush
             : null;
-        using (context.PushTransform(Matrix.CreateScale(Bounds.Width / ViewBox, Bounds.Height / ViewBox)))
-        {
-            foreach (var (geometry, shape) in _geometry)
-            {
-                context.DrawGeometry(shape.Filled ? brush : null,
-                    shape.Stroked ? new Pen(brush, shape.StrokeWidth, lineCap: PenLineCap.Round, lineJoin: PenLineJoin.Round) : null, geometry);
-            }
-        }
+        Draw(context, _geometry, brush, new Rect(Bounds.Size));
     }
 
     /// <summary>The shapes of the SVG as path data (rectangles and circles converted); null when the file is not usable.</summary>
@@ -155,5 +191,5 @@ public sealed class PaletteIcon : Control
         return $"M{F(cx - rx)} {F(cy)}A{F(rx)} {F(ry)} 0 1 0 {F(cx + rx)} {F(cy)}A{F(rx)} {F(ry)} 0 1 0 {F(cx - rx)} {F(cy)}Z";
     }
 
-    private sealed record Shape(string Data, bool Filled, bool Stroked, double StrokeWidth);
+    internal sealed record Shape(string Data, bool Filled, bool Stroked, double StrokeWidth);
 }

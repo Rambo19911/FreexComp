@@ -1291,6 +1291,18 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel, ICommandTarge
     {
         var expansion = _expansionBeforeFilter ?? ExpansionState();
         var selected = _selection.Select(n => n.Key).ToList();
+
+        // I-295: a selected listed root whose project is now the loaded one (it was activated) stays selected as the
+        // active root, whose key it takes.
+        if (_projects.Project?.FilePath is { } loadedPath)
+        {
+            foreach (var node in _selection)
+            {
+                if (node is { Kind: ProjectNodeKind.Project, IsListed: true } && string.Equals(node.FullPath, loadedPath, StringComparison.OrdinalIgnoreCase))
+                    selected[selected.IndexOf(node.Key)] = RootKey;
+            }
+        }
+
         Roots.Clear();
         _selection.Clear();
         _missingCheck++;
@@ -1353,6 +1365,8 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel, ICommandTarge
     private void AddRoot(ProjectNodeViewModel root, Dictionary<string, bool> expansion)
     {
         RestoreExpansionInto(root, expansion);
+        if (root.IsUnavailable)
+            root.IsExpanded = false; // I-298: it remembers no expansion, so it comes back collapsed (UI-TW-125)
         Roots.Add(root);
     }
 

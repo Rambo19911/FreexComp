@@ -35,6 +35,7 @@ public sealed class StatusBarViewModel : ObservableObject
     private readonly IProjectService? _projects;
     private readonly IMessagesService? _messages;
     private string? _result;
+    private string? _projectPath;
 
     public StatusBarViewModel(IStatusService status, ICommandService commands, ISettingsService settings, IDocumentService? documents = null,
         IIdeState? state = null, IProjectService? projects = null, IBuildService? build = null, IMessagesService? messages = null)
@@ -76,8 +77,21 @@ public sealed class StatusBarViewModel : ObservableObject
             OnPropertyChanged(nameof(DiagnosticsText));
             OnPropertyChanged(nameof(HasDiagnostics));
         };
+        _projectPath = projects?.Project?.FilePath;
         projects?.ProjectChanged += (_, _) =>
         {
+            // I-298 (UI-WIN-046): the result is that of the loaded project; it goes when the project is closed or
+            // another one is opened (a change inside the same project keeps it).
+            if (!string.Equals(projects.Project?.FilePath, _projectPath, StringComparison.OrdinalIgnoreCase))
+            {
+                _projectPath = projects.Project?.FilePath;
+                if (_result is not null)
+                {
+                    _result = null;
+                    OnPropertyChanged(nameof(StateText));
+                }
+            }
+
             OnPropertyChanged(nameof(ConfigurationText));
             OnPropertyChanged(nameof(HasProject));
         };

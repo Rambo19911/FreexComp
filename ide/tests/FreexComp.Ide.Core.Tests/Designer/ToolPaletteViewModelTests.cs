@@ -108,6 +108,65 @@ public sealed class ToolPaletteViewModelTests
         Assert.False(palette.Pages[0].IsExpanded);
     }
 
+    /// <summary>
+    /// I-294, design-surface.md <c>Msg.Designer.PlacementArmed</c> "sticky while armed", UI-WIN-043: the placement
+    /// message stays while the item is armed (also after the 5 s of a plain status message) and goes as soon as nothing is
+    /// armed any more — after a single-shot placement, Escape, a second click on the item, or a right-click that ends a
+    /// sticky arming. The status field then shows its idle text again.
+    /// </summary>
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "DSG-TP-040")]
+    [Trait("Req", "DSG-TP-041")]
+    [Trait("Req", "UI-WIN-043")]
+    public Task PlacementMessage_StaysWhileArmedAndGoesWithTheArming() => TestUiThread.RunAsync(async () =>
+    {
+        var clock = new ManualClock();
+        var f = new DesignerFixture(o => o.Clock = clock);
+        var document = await f.OpenAsync();
+        var designer = document.Designer;
+        var palette = new ToolPaletteViewModel(CodeSyncTests.Catalog);
+        palette.Bind(designer);
+        var surface = designer.Surface!;
+        var client = surface.Geometry.FormClientRect;
+        void ClickSurface(int x, int y)
+        {
+            surface.OnPointer(new PointerInput(PointerKind.Down, client.Left + x, client.Top + y, PointerButton.Left, InputModifiers.None));
+            surface.OnPointer(new PointerInput(PointerKind.Up, client.Left + x, client.Top + y, PointerButton.Left, InputModifiers.None));
+        }
+
+        string Armed(string className) => string.Format(CultureInfo.CurrentCulture, Strings.Msg_Designer_PlacementArmed, className);
+
+        // Single-shot: shown while armed, also after 5 s; gone after the placement.
+        palette.Click("TEdit");
+        Assert.Equal(Armed("TEdit"), f.Services.Status.Message);
+        clock.Advance(TimeSpan.FromSeconds(6));
+        Assert.Equal(Armed("TEdit"), f.Services.Status.Message);
+        ClickSurface(300, 200);
+        Assert.NotNull(designer.Model!.FindByName("Edit1"));
+        Assert.Null(palette.ArmedClass);
+        Assert.Null(f.Services.Status.Message);
+
+        // Another item replaces the message; Escape and a second click on the armed item take it away.
+        palette.Click("TButton");
+        palette.Click("TLabel");
+        Assert.Equal(Armed("TLabel"), f.Services.Status.Message);
+        Assert.True(palette.Escape());
+        Assert.Null(f.Services.Status.Message);
+        palette.Click("TButton");
+        palette.Click("TButton");
+        Assert.Null(f.Services.Status.Message);
+
+        // Sticky: stays over several placements; the right-click that disarms takes it away.
+        palette.Click("TLabel", shift: true);
+        ClickSurface(300, 240);
+        ClickSurface(300, 270);
+        Assert.Equal("TLabel", palette.ArmedClass);
+        Assert.Equal(Armed("TLabel"), f.Services.Status.Message);
+        surface.OnPointer(new PointerInput(PointerKind.Down, client.Left + 5, client.Top + 5, PointerButton.Right, InputModifiers.None));
+        Assert.Null(palette.ArmedClass);
+        Assert.Null(f.Services.Status.Message);
+    });
+
     [Fact(Timeout = 30000)]
     [Trait("Req", "DSG-TP-040")]
     [Trait("Req", "DSG-TP-041")]

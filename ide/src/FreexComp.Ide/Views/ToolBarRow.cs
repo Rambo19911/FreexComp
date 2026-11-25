@@ -186,17 +186,27 @@ public sealed class ToolBarRow : DockPanel
         _overflow.IsVisible = fitting < visible.Count;
     }
 
-    /// <summary>Toolbar widths never change with state (UI-TB-010), so each is measured once.</summary>
+    /// <summary>
+    /// The width a toolbar needs. State never changes it (UI-TB-010), but the items of the platform combo do (I-287:
+    /// as wide as its widest item), so a toolbar is measured again whenever it is shown; a toolbar in the closed overflow
+    /// popup (no template, no theme) keeps the width it was last shown with (I-293).
+    /// </summary>
     private double MeasuredWidth(StackPanel toolbar)
     {
-        if (!_widths.TryGetValue(toolbar, out var width))
+        if (TopLevel.GetTopLevel(toolbar) is not null || !_widths.ContainsKey(toolbar))
         {
             toolbar.Measure(Size.Infinity);
-            width = toolbar.DesiredSize.Width;
-            _widths[toolbar] = width;
+            _widths[toolbar] = toolbar.DesiredSize.Width;
         }
 
-        return width;
+        return _widths[toolbar];
+    }
+
+    /// <summary>A shown toolbar that changed its width (a combo got a longer widest item) is fitted again (I-293).</summary>
+    private void OnToolBarSizeChanged(object? sender, SizeChangedEventArgs e)
+    {
+        if (e.WidthChanged)
+            Dispatcher.UIThread.Post(Relayout);
     }
 
     private double SeparatorWidth => 1 + (2 * Metric("FxcSpace4"));
@@ -211,6 +221,7 @@ public sealed class ToolBarRow : DockPanel
     {
         var bar = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
         AutomationProperties.SetAutomationId(bar, "ToolBar." + model.Name);
+        bar.SizeChanged += OnToolBarSizeChanged;
         object? previous = null;
         foreach (var item in model.Items)
         {

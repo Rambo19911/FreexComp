@@ -133,7 +133,17 @@ public sealed class AvaloniaDesignCanvas(DrawingContext context, Func<string, IB
 
     public void DrawIcon(string iconKey, DesignRect bounds)
     {
-        var name = iconKey.StartsWith("builtin:", StringComparison.Ordinal) ? iconKey["builtin:".Length..] : iconKey;
+        var builtin = iconKey.StartsWith("builtin:", StringComparison.Ordinal);
+        var name = builtin ? iconKey["builtin:".Length..] : iconKey;
+
+        // D-121 (UI-DSG-062): a metadata icon is the SVG file the component's palette entry names, drawn as the Tool
+        // Palette draws it (DSG-TP-009) in the icon colour; a file that is not usable gives the generic glyph.
+        if (!builtin && Views.PaletteIcon.Load(iconKey) is { } svg)
+        {
+            Views.PaletteIcon.Draw(context, svg, brushForToken(IconCatalog.DefaultToken), ToRect(bounds));
+            return;
+        }
+
         if (!IconCatalog.TryGet(name, out var icon))
         {
             if (brushForToken(GenericIconToken) is { } generic)

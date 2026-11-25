@@ -13,6 +13,7 @@ namespace FreexComp.Ide.Core.Designer;
 public sealed class DesignerHost : IDesignerHost
 {
     private readonly FormDesignerViewModel _owner;
+    private IDisposable? _armedMessage;
 
     internal DesignerHost(FormDesignerViewModel owner) => _owner = owner;
 
@@ -48,12 +49,17 @@ public sealed class DesignerHost : IDesignerHost
 
     public void EditComponent(FreexComp.Designer.Model.FormObject component) => _owner.EditComponent(component);
 
-    /// <summary>DSG-TP-040, 041: arms <paramref name="className"/> (single-shot, or sticky).</summary>
+    /// <summary>
+    /// DSG-TP-040, 041: arms <paramref name="className"/> (single-shot, or sticky). The status field shows
+    /// <c>Msg.Designer.PlacementArmed</c> sticky while armed (I-294).
+    /// </summary>
     public void Arm(string className, bool sticky)
     {
         ArgumentNullException.ThrowIfNull(className);
+        _armedMessage?.Dispose();
         ArmedPaletteClass = className;
         ArmedSticky = sticky;
+        _armedMessage = _owner.ShowStickyStatus("Msg.Designer.PlacementArmed", [className]);
         ArmedChanged?.Invoke(this, EventArgs.Empty);
     }
 
@@ -66,6 +72,8 @@ public sealed class DesignerHost : IDesignerHost
 
         ArmedPaletteClass = null;
         ArmedSticky = false;
+        _armedMessage?.Dispose(); // the placement message goes with the arming (unless a newer message replaced it)
+        _armedMessage = null;
         ArmedChanged?.Invoke(this, EventArgs.Empty);
     }
 }

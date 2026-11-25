@@ -451,8 +451,7 @@ public sealed class ToolPaletteViewModel : ToolWindowViewModel
             return;
         }
 
-        host.Arm(className, shift);
-        host.SetStatus("Msg.Designer.PlacementArmed", className);
+        host.Arm(className, shift); // shows Msg.Designer.PlacementArmed while armed (I-294)
     }
 
     /// <summary>Escape in the palette: disarms; false when nothing was armed.</summary>

@@ -486,6 +486,9 @@ public sealed class FormDesignerViewModel
     /// <summary>Shows a designer status message (<c>states-and-messages.md</c> id and arguments).</summary>
     internal void ShowStatus(string messageId, object[] args) => Status?.ShowMessage(DesignerMessages.Format(messageId, args), StatusDuration);
 
+    /// <summary>A sticky status message (UI-WIN-043): it stays until the returned handle is disposed or a newer message replaces it.</summary>
+    internal IDisposable? ShowStickyStatus(string messageId, object[] args) => Status?.ShowStickyMessage(DesignerMessages.Format(messageId, args));
+
     /// <summary>
     /// An error dialog of the catalog (<c>Msg.Designer.CodeSyncConflict</c>, DSG-CS-004) through <see cref="Dialogs"/>; it
     /// becomes the <see cref="PendingEditor"/> a running command awaits. Without dialogs (no IDE) it goes to the status bar.

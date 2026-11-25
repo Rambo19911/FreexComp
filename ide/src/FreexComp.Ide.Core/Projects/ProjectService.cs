@@ -168,8 +168,9 @@ public sealed class ProjectService : IProjectService
         ArgumentNullException.ThrowIfNull(id);
         if (_project is null || _project.Platforms.Length <= 1 || !_project.Platforms.Contains(id))
             return false;
+        // I-298: the question names the platform without the " (not installed)" suffix, which would stand mid-sentence.
         if (_project.PlatformOptions.ContainsKey(id)
-            && await _dialogs.ShowMessageAsync(new MessageRequest("Msg.Platform.RemoveConfirm", [PlatformLabels.Label(id, PlatformCatalog)])) != "Remove")
+            && await _dialogs.ShowMessageAsync(new MessageRequest("Msg.Platform.RemoveConfirm", [PlatformLabels.Short(id)])) != "Remove")
         {
             return false;
         }
