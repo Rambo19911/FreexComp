@@ -23,12 +23,19 @@ public static class FormParser
     /// binds to its own class when the catalog has it, else to this class, else to the first catalog class of kind
     /// <c>form</c>; a root bound by either fallback never raises <c>F0101</c>.
     /// </param>
-    public static FormParseResult Parse(string text, string path, ComponentCatalog catalog, string? rootAncestorClass = null)
+    /// <param name="frames">
+    /// The frames <c>inline</c> objects resolve against (DSG-FD-102, 106): without a catalog every <c>inline</c> object
+    /// is <c>F0107</c> and preserved; with one, a known frame gives a resolved instance and an unknown one <c>F0101</c>.
+    /// The document follows later changes of the catalog (DSG-FD-111).
+    /// </param>
+    public static FormParseResult Parse(string text, string path, ComponentCatalog catalog, string? rootAncestorClass = null,
+        IFrameCatalog? frames = null)
     {
-        var parser = new Parser(text, path, catalog, rootAncestorClass);
+        var parser = new Parser(text, path, catalog, rootAncestorClass, frames);
         try
         {
             var document = parser.ParseFile();
+            document.AttachFrames(frames, catalog);
             FormValidator.Validate(document, catalog); // DSG-FD-070: validation runs after the parse
             return new FormParseResult(document, [.. document.Diagnostics]);
         }
@@ -42,11 +49,14 @@ public static class FormParser
     /// Fragment mode (design-surface.md DSG-SUR-120): a sequence of zero or more complete objects at any indentation, as
     /// the clipboard holds them. Lines whose first non-blank character is <c>;</c> are skipped (DSG-SUR-111). The objects
     /// are bound to the catalog like children of a form (unknown classes: preserved, <c>F0101</c>); they have no parent
-    /// and are not validated. A syntax error gives no objects and exactly one <c>F0001</c>.
+    /// and are not validated. A syntax error gives no objects and exactly one <c>F0001</c>. With <paramref name="frames"/>
+    /// <c>inline</c> objects resolve as in <see cref="Parse"/>; <paramref name="rootClass"/> (the class of the document
+    /// the fragment is meant for) takes part in the <c>F0111</c> check.
     /// </summary>
-    public static FormFragmentResult ParseFragment(string text, string path, ComponentCatalog catalog)
+    public static FormFragmentResult ParseFragment(string text, string path, ComponentCatalog catalog, IFrameCatalog? frames = null,
+        string? rootClass = null)
     {
-        var parser = new Parser(BlankCommentLines(text), path, catalog, null);
+        var parser = new Parser(BlankCommentLines(text), path, catalog, null, frames, rootClass);
         try
         {
             var objects = parser.ParseObjects();
@@ -55,6 +65,25 @@ public static class FormParser
         catch (SyntaxErrorException error)
         {
             return new FormFragmentResult([], [parser.SyntaxDiagnostic(error)]);
+        }
+    }
+
+    /// <summary>
+    /// One instance written by the writer at level 0, parsed again against the current frames (DSG-FD-111), with the
+    /// parser's diagnostics (positions in <paramref name="text"/>); null object on a syntax error.
+    /// </summary>
+    internal static (FormObject? Object, List<ParseDiagnostic> Diagnostics) ParseInstance(string text, string path, ComponentCatalog catalog,
+        IFrameCatalog frames, string rootClass)
+    {
+        var parser = new Parser(text, path, catalog, null, frames, rootClass);
+        try
+        {
+            var objects = parser.ParseObjects();
+            return (objects.Count == 1 ? objects[0] : null, parser.ParseDiagnostics);
+        }
+        catch (SyntaxErrorException)
+        {
+            return (null, []);
         }
     }
 
@@ -82,10 +111,13 @@ public static class FormParser
         public string? ObjectName { get; } = objectName;
     }
 
-    private sealed class Parser(string text, string path, ComponentCatalog catalog, string? rootAncestorClass)
+    private sealed class Parser(string text, string path, ComponentCatalog catalog, string? rootAncestorClass,
+        IFrameCatalog? frames = null, string? rootClass = null)
     {
         private readonly List<ParseDiagnostic> _diagnostics = [];
         private readonly HashSet<string> _names = new(StringComparer.OrdinalIgnoreCase);
+        private readonly List<FormObject> _fileScope = [];
+        private string? _rootClass = rootClass;
         private int _pos;
         private string? _lineEnding;
         private string? _currentObject;
@@ -112,12 +144,14 @@ public static class FormParser
                 throw Error("end of file");
             }
 
-            var document = new FormDocument(root, _lineEnding ?? "\n") { SourcePath = path, Lines = Lines };
+            var document = new FormDocument(root, _lineEnding ?? "\n", _fileScope) { SourcePath = path, Lines = Lines };
             document.ParseDiagnostics.AddRange(_diagnostics);
             return document;
         }
 
         public IEnumerable<FormDiagnostic> Diagnostics => _diagnostics.Select(d => d.Diagnostic);
+
+        public List<ParseDiagnostic> ParseDiagnostics => _diagnostics;
 
         /// <summary>Fragment mode: objects until the end of the text.</summary>
         public List<FormObject> ParseObjects()
@@ -154,10 +188,13 @@ public static class FormParser
             }
         }
 
-        private FormObject ParseObject(bool parentPreserved, bool isRoot)
+        /// <summary>An object header: keyword, name and type with their positions (the line end is not consumed).</summary>
+        private readonly record struct Header(int LineStart, int KeywordStart, string Keyword, FormObjectKind Kind, int NameStart, string Name,
+            int TypeStart, string TypeName, int End);
+
+        private Header ReadHeader()
         {
             var lineStart = _pos;
-            EnterNesting(lineStart);
             SkipSpaces();
             var keywordStart = _pos;
             var keyword = ReadIdentifier("object");
@@ -170,8 +207,30 @@ public static class FormParser
             SkipSpaces();
             var typeStart = _pos;
             var typeName = ReadIdentifier("identifier");
-            var headerEnd = _pos;
+            return new Header(lineStart, keywordStart, keyword, kind, nameStart, name, typeStart, typeName, _pos);
+        }
+
+        private Header PeekHeader()
+        {
+            var save = _pos;
+            var header = ReadHeader();
+            _pos = save;
+            return header;
+        }
+
+        /// <param name="parentPreserved">Inside a preserved object: nothing more is reported.</param>
+        /// <param name="forcePreserved">A block the caller reports (<c>F0109</c>, <c>F0110</c>): preserved, nothing reported here.</param>
+        /// <param name="registerNames">The object and its descendants belong to the file scope (DSG-FD-108).</param>
+        private FormObject ParseObject(bool parentPreserved, bool isRoot, bool forcePreserved = false, bool registerNames = true)
+        {
+            EnterNesting(_pos);
+            var header = ReadHeader();
+            var (lineStart, keywordStart, keyword, kind, nameStart, name, typeStart, typeName, headerEnd) = header;
             ExpectLineEnd();
+            if (isRoot)
+            {
+                _rootClass ??= typeName;
+            }
 
             var info = catalog.Find(typeName);
             if (info is null && isRoot)
@@ -179,6 +238,22 @@ public static class FormParser
                 info = rootAncestorClass is not null
                     ? catalog.Find(rootAncestorClass)
                     : catalog.All.FirstOrDefault(c => c.Kind == ComponentKind.Form);
+            }
+
+            // DSG-FD-106, 107: an `inline` object of a known frame is a resolved instance; an unknown frame is F0101, a frame
+            // that contains itself (or the document's root class) F0111.
+            var asInstance = kind == FormObjectKind.Inline && frames is not null && !isRoot;
+            FrameDefinition? frame = null;
+            string? repeated = null;
+            if (asInstance && !parentPreserved && !forcePreserved)
+            {
+                var definition = frames!.Find(typeName);
+                info = definition?.Document.Root.Info;
+                if (definition is not null && info is not null)
+                {
+                    repeated = FrameInstances.RepeatedClass(frames, definition.ClassName, _rootClass);
+                    frame = repeated is null ? definition : null;
+                }
             }
 
             var parentObject = _currentObject;
@@ -189,17 +264,37 @@ public static class FormParser
                 HeaderSpan = new TextSpan(keywordStart, headerEnd - keywordStart),
             };
 
-            // DSG-FD-026: duplicate names (F0106) are checked everywhere, as names are unique across the whole form.
-            var preserved = parentPreserved;
-            if (!_names.Add(name))
+            // DSG-FD-026, 108: duplicate names (F0106) are checked over the file scope.
+            var preserved = parentPreserved || forcePreserved;
+            if (registerNames)
             {
-                Report("F0106", DiagnosticSeverity.Error, $"A component named {name} already exists", nameStart, name.Length, obj, null);
-                preserved = true;
+                if (!_names.Add(name))
+                {
+                    Report("F0106", DiagnosticSeverity.Error, $"A component named {name} already exists", nameStart, name.Length, obj, null);
+                    preserved = true;
+                }
+                else
+                {
+                    _fileScope.Add(obj);
+                }
             }
 
-            if (!parentPreserved)
+            if (!parentPreserved && !forcePreserved)
             {
-                if (kind != FormObjectKind.Object)
+                if (asInstance && frame is null)
+                {
+                    if (repeated is not null)
+                    {
+                        Report("F0111", DiagnosticSeverity.Warning, $"Frame {repeated} contains itself: shown read-only", keywordStart, keyword.Length, obj, null);
+                    }
+                    else
+                    {
+                        Report("F0101", DiagnosticSeverity.Warning, $"Class {typeName} not found", typeStart, typeName.Length, obj, null);
+                    }
+
+                    preserved = true;
+                }
+                else if (kind != FormObjectKind.Object && !asInstance)
                 {
                     // F0107 is "info"; the shared diagnostics have no such level, so it is a Hint (lead decision 2026-11-20).
                     Report("F0107", DiagnosticSeverity.Hint, $"\"{keyword.ToLowerInvariant()}\" objects are not supported: shown read-only",
@@ -214,16 +309,47 @@ public static class FormParser
             }
 
             obj.IsPreserved = preserved;
+            if (frame is not null && !preserved)
+            {
+                FrameInstances.Merge(obj, frame);
+            }
+
             while (PeekWord() is { } word && !IsKeyword(word))
             {
                 obj.AddProperty(ParseProperty(obj));
             }
 
-            while (PeekWord() is { } word && KeywordKind(word) is not null && IsKeyword(word))
+            if (obj.IsFrameInstance)
             {
-                obj.AddChild(ParseObject(preserved, isRoot: false));
+                ParseScopeBody(obj, obj, []);
+            }
+            else
+            {
+                // DSG-FD-108, form-format.md §2.1: the blocks inside an `inline` object (resolved or not) name components of
+                // the frame; their names belong to no scope of the file.
+                while (PeekWord() is { } word && KeywordKind(word) is not null && IsKeyword(word))
+                {
+                    obj.AddChild(ParseObject(preserved, isRoot: false, registerNames: registerNames && (isRoot || kind != FormObjectKind.Inline)));
+                }
             }
 
+            ParseEnd();
+            _currentObject = parentObject;
+            _depth--;
+            obj.SourceSpan = new TextSpan(lineStart, _pos - lineStart);
+            if (preserved && !parentPreserved)
+            {
+                obj.PreservedText = PreservedLines(lineStart, keywordStart, _endTokenEnd);
+            }
+
+            return obj;
+        }
+
+        private int _endTokenEnd;
+
+        /// <summary>The <c>end</c> of an object and its line end.</summary>
+        private void ParseEnd()
+        {
             SkipSpaces();
             var endStart = _pos;
             var end = PeekIdentifier();
@@ -233,17 +359,76 @@ public static class FormParser
             }
 
             _pos += end.Length;
-            var endTokenEnd = _pos;
+            _endTokenEnd = _pos;
             ExpectLineEnd();
-            _currentObject = parentObject;
-            _depth--;
-            obj.SourceSpan = new TextSpan(lineStart, _pos - lineStart);
-            if (preserved && !parentPreserved)
+        }
+
+        /// <summary>
+        /// The nested blocks of an instance or an override block (DSG-FD-106, 107): each <c>inherited</c> block is matched
+        /// by name in <paramref name="scope"/> and its lines become the overrides of that inherited object; a block that
+        /// matches nothing (or another class) is <c>F0109</c>, an <c>object</c> or <c>inline</c> block <c>F0110</c>; both are
+        /// kept in <paramref name="container"/> as preserved blocks at their position.
+        /// </summary>
+        private void ParseScopeBody(FormObject container, FormObject scope, HashSet<FormObject> matched)
+        {
+            string? after = null;
+            while (PeekWord() is { } word && KeywordKind(word) is { } kind && IsKeyword(word))
             {
-                obj.PreservedText = PreservedLines(lineStart, keywordStart, endTokenEnd);
+                var header = PeekHeader();
+                var target = kind == FormObjectKind.Inherited ? scope.FindInScope(header.Name) : null;
+                if (target is not null && string.Equals(target.TypeName, header.TypeName, StringComparison.OrdinalIgnoreCase) && matched.Add(target))
+                {
+                    ParseOverrideBlock(target, target.IsFrameInstance ? target : scope, target.IsFrameInstance ? [] : matched);
+                    for (var child = target; child.Parent is not null; child = child.Parent)
+                    {
+                        if (ReferenceEquals(child.Parent, container))
+                        {
+                            after = child.Name;
+                            break;
+                        }
+                    }
+
+                    continue;
+                }
+
+                var block = ParseObject(parentPreserved: false, isRoot: false, forcePreserved: true, registerNames: false);
+                if (kind != FormObjectKind.Inherited)
+                {
+                    Report("F0110", DiagnosticSeverity.Warning, $"Components cannot be added to frame instance {scope.Name}: shown read-only",
+                        header.KeywordStart, header.Keyword.Length, block, null);
+                }
+                else if (target is not null && matched.Contains(target))
+                {
+                    Report("F0106", DiagnosticSeverity.Error, $"A component named {header.Name} already exists", header.NameStart, header.Name.Length, block, null);
+                }
+                else
+                {
+                    Report("F0109", DiagnosticSeverity.Warning, $"Component {header.Name}: {header.TypeName} is not part of {scope.TypeName}: shown read-only",
+                        header.NameStart, header.Name.Length, block, null);
+                }
+
+                container.AddPreservedBlock(block, after);
+            }
+        }
+
+        /// <summary>An <c>inherited</c> block matched to <paramref name="target"/>: its lines, then its nested blocks.</summary>
+        private void ParseOverrideBlock(FormObject target, FormObject scope, HashSet<FormObject> matched)
+        {
+            EnterNesting(_pos);
+            var header = ReadHeader();
+            ExpectLineEnd();
+            var parentObject = _currentObject;
+            _currentObject = header.Name;
+            target.HeaderSpan = new TextSpan(header.KeywordStart, header.End - header.KeywordStart);
+            while (PeekWord() is { } word && !IsKeyword(word))
+            {
+                target.AddProperty(ParseProperty(target));
             }
 
-            return obj;
+            ParseScopeBody(target, scope, matched);
+            ParseEnd();
+            _currentObject = parentObject;
+            _depth--;
         }
 
         /// <summary>The source lines of a preserved object, LF, with the header line's indentation removed from each.</summary>

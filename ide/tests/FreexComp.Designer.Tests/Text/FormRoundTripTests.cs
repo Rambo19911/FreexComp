@@ -21,6 +21,7 @@ public sealed class FormRoundTripTests
     [Trait("Phase", "5")]
     [Trait("Req", "DSG-FD-049")]
     [Trait("Req", "DSG-FD-040")]
+    [Trait("Req", "DSG-FD-116")]
     public void CanonicalFilesRoundTripByteIdentical(string file)
     {
         var bytes = File.ReadAllBytes(TestPaths.Combine("forms/canonical/" + file));
@@ -28,7 +29,10 @@ public sealed class FormRoundTripTests
         Assert.DoesNotContain('\r', text);
         Assert.False(bytes is [0xEF, 0xBB, 0xBF, ..]);
 
-        var written = FormWriter.Write(Parse(text, file));
+        // D-118: the frame files of the corpus are frame documents, and the forms resolve their instances against them.
+        var written = FormWriter.Write(FrameFormRoundTripTests.IsFrameFile(file)
+            ? Support.FrameFixtures.ParseFrame(text, FrameFormRoundTripTests.CorpusFrames(), file)
+            : Support.FrameFixtures.ParseForm(text, FrameFormRoundTripTests.CorpusFrames(), file));
 
         Assert.Equal(text, written);
         Assert.Equal(bytes, Encoding.UTF8.GetBytes(written));

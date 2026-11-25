@@ -31,6 +31,20 @@ public sealed class RendererRegistryTests
         Assert.Equal(ids, ids.Select(id => registry.Resolve(id).Id));
     }
 
+    /// <summary>DSG-RND-019: the <c>frame</c> id of the frame class's metadata resolves to its own renderer (before U-154 lands).</summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "DSG-RND-019")]
+    public void FrameRendererRegistered()
+    {
+        var registry = RendererRegistry.CreateDefault();
+
+        Assert.Contains("frame", registry.Ids);
+        Assert.Equal("frame", registry.Resolve("frame").Id);
+        Assert.Equal("frame", registry.Resolve(Support.FrameFixtures.Components.Find("TFrame")!.RendererId).Id);
+        Assert.IsNotType<GenericRenderer>(registry.Resolve("frame"));
+    }
+
     [Fact]
     [Trait("Phase", "5")]
     [Trait("Req", "DSG-RND-008")]

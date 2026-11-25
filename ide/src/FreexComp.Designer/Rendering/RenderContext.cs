@@ -109,8 +109,22 @@ public sealed class RenderContext
     /// <summary>True when the metadata declares the property path.</summary>
     public bool Has(string propertyPath) => FindInfo(Object, Info, propertyPath) is not null;
 
-    /// <summary>True when the form stores the property path.</summary>
-    public bool IsStored(string propertyPath) => Object.FindProperty(propertyPath) is not null;
+    /// <summary>True when the form stores the property path (for an inherited object or an instance: here or in the frame).</summary>
+    public bool IsStored(string propertyPath) => Stored(Object, propertyPath) is not null;
+
+    /// <summary>The stored line of a path: the object's own, else that of the frame object it shows (DSG-FD-106).</summary>
+    private static FormProperty? Stored(FormObject obj, string path)
+    {
+        for (var o = obj; o is not null; o = o.InheritedFrom)
+        {
+            if (o.FindProperty(path) is { } stored)
+            {
+                return stored;
+            }
+        }
+
+        return null;
+    }
 
     /// <summary>The effective value converted to <typeparamref name="T"/>, or <c>default</c> (see the class remarks).</summary>
     public T Get<T>(string propertyPath) => Get(propertyPath, default(T)!);
@@ -179,7 +193,7 @@ public sealed class RenderContext
             return null;
         }
 
-        if (obj.FindProperty(path) is { Value: not RawValue } stored)
+        if (Stored(obj, path) is { Value: not RawValue } stored)
         {
             return stored.Value;
         }
@@ -228,7 +242,7 @@ public sealed class RenderContext
 
         var family = GetOf(obj, info, "Font.Name", "");
         var px = 12.0;
-        if (obj.FindProperty("Font.Size") is { Value: IntegerValue { Value: > 0 and < 10_000 } size })
+        if (Stored(obj, "Font.Size") is { Value: IntegerValue { Value: > 0 and < 10_000 } size })
         {
             px = Math.Round(size.Value * 96.0 / 72.0, MidpointRounding.AwayFromZero);
         }

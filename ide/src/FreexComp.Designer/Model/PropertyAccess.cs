@@ -10,12 +10,18 @@ namespace FreexComp.Designer.Model;
 /// </summary>
 public static class PropertyAccess
 {
-    /// <summary>The stored value, or the metadata default. Throws when the path is unknown or names an object property.</summary>
+    /// <summary>
+    /// The stored value, else for an inherited object or a frame instance the frame definition's effective value
+    /// (DSG-FD-106), else the metadata default. Throws when the path is unknown or names an object property.
+    /// </summary>
     public static FormValue GetEffective(FormObject obj, string path)
     {
-        if (obj.FindProperty(path) is { } stored)
+        for (var o = obj; o is not null; o = o.InheritedFrom)
         {
-            return stored.Value;
+            if (o.FindProperty(path) is { } stored)
+            {
+                return stored.Value;
+            }
         }
 
         var info = Resolve(obj, path);
@@ -43,42 +49,57 @@ public static class PropertyAccess
     public static bool IsDefault(FormObject obj, string path, FormValue value) => IsDefault(obj.Catalog, Resolve(obj, path), value);
 
     /// <summary>The §2.1 default comparison for a known property.</summary>
-    public static bool IsDefault(ComponentCatalog catalog, PropertyInfo info, FormValue value)
+    public static bool IsDefault(ComponentCatalog catalog, PropertyInfo info, FormValue value) =>
+        info.Kind != PropertyKind.Object && SameValue(catalog, info, value, DefaultValue(catalog, info));
+
+    /// <summary>
+    /// True when two values of a property are equal by the comparison of §2.1 (used against the metadata default, and
+    /// against the inherited value of a frame's object, DSG-FD-109).
+    /// </summary>
+    public static bool SameValue(ComponentCatalog catalog, PropertyInfo info, FormValue value, FormValue other)
     {
+        ArgumentNullException.ThrowIfNull(info);
+        ArgumentNullException.ThrowIfNull(value);
+        ArgumentNullException.ThrowIfNull(other);
+        var defaultValue = other;
         switch (info.Kind)
         {
             case PropertyKind.Object:
                 return false; // never stored itself
             case PropertyKind.Component:
-                return value is IdentValue { Name: var n } && n.Equals("nil", StringComparison.OrdinalIgnoreCase);
+                return value is IdentValue a && other is IdentValue b ? a.Name.Equals(b.Name, StringComparison.OrdinalIgnoreCase) : value.Equals(other);
             case PropertyKind.Collection:
-                return value is CollectionValue { Items.Length: 0 };
+                return value.Equals(other);
             case PropertyKind.Enum:
-                return value is IdentValue ident && DefaultValue(catalog, info) is IdentValue d
-                    && ident.Name.Equals(d.Name, StringComparison.OrdinalIgnoreCase);
+                return value is IdentValue ident && other is IdentValue d && ident.Name.Equals(d.Name, StringComparison.OrdinalIgnoreCase);
             case PropertyKind.Set:
-                return value is SetValue set && DefaultValue(catalog, info) is SetValue defaultSet
-                    && set.Elements.ToHashSet(StringComparer.OrdinalIgnoreCase).SetEquals(defaultSet.Elements);
+                return value is SetValue set && other is SetValue otherSet
+                    && set.Elements.ToHashSet(StringComparer.OrdinalIgnoreCase).SetEquals(otherSet.Elements);
         }
 
-        var defaultValue = DefaultValue(catalog, info);
         switch (info.Type.ToLowerInvariant())
         {
             case "integer" or "int64" or "tshortcut":
-                return value is IntegerValue i && i.Value == ((IntegerValue)defaultValue).Value;
+                return value is IntegerValue i && defaultValue is IntegerValue di && i.Value == di.Value;
             case "tcolor" or "tcursor":
                 return SameNamedOrNumeric(info.Type, value, defaultValue);
             case "double":
-                var expected = ((FloatValue)defaultValue).Value;
-                return value is FloatValue f ? f.Value.Equals(expected) : value is IntegerValue iv && ((double)iv.Value).Equals(expected);
+                double? expected = defaultValue is FloatValue df ? df.Value : defaultValue is IntegerValue dl ? dl.Value : null;
+                return expected is { } x && (value is FloatValue f ? f.Value.Equals(x) : value is IntegerValue iv && ((double)iv.Value).Equals(x));
             case "boolean":
-                return value is IdentValue b && b.Name.Equals(((IdentValue)defaultValue).Name, StringComparison.OrdinalIgnoreCase);
+                return value is IdentValue b && defaultValue is IdentValue db && b.Name.Equals(db.Name, StringComparison.OrdinalIgnoreCase);
             case "tstrings":
-                return value is StringListValue list && list.Lines.SequenceEqual(((StringListValue)defaultValue).Lines);
+                return value is StringListValue list && defaultValue is StringListValue dlist && list.Lines.SequenceEqual(dlist.Lines);
             default: // string, Char
-                return value is StringValue s && string.Equals(s.Value, ((StringValue)defaultValue).Value, StringComparison.Ordinal);
+                return value is StringValue s && defaultValue is StringValue ds && string.Equals(s.Value, ds.Value, StringComparison.Ordinal);
         }
     }
+
+    /// <summary>
+    /// DSG-FD-117: the root of a frame document — a root whose class is of kind <c>container</c> — is a visual control
+    /// (bounds <c>Left</c>, <c>Top</c>, <c>Width</c>, <c>Height</c>; no client size).
+    /// </summary>
+    public static bool IsFrameRoot(FormObject obj) => obj.Parent is null && !obj.IsPreserved && obj.Info?.Kind == ComponentKind.Container;
 
     /// <summary>
     /// The effective integer value (Left/Top/Width/Height and similar); a non-integer stored value counts as 0, and so does an
@@ -89,10 +110,17 @@ public static class PropertyAccess
 
     /// <summary>
     /// Left, Top, Width, Height; the root: (0, 0, ClientWidth, ClientHeight), where a root that stores only
-    /// Width/Height shows Width − 16 × Height − 39 (DSG-FD-012).
+    /// Width/Height shows Width − 16 × Height − 39 (DSG-FD-012). A frame root: (0, 0, Width, Height), a size it does not
+    /// store being the class's default size (DSG-FD-117).
     /// </summary>
     public static Rect GetBounds(FormObject obj)
     {
+        if (IsFrameRoot(obj))
+        {
+            var size = obj.Info!.DefaultSize;
+            return new Rect(0, 0, IsStored(obj, "Width") ? GetInt(obj, "Width") : size.Width, IsStored(obj, "Height") ? GetInt(obj, "Height") : size.Height);
+        }
+
         if (obj.Parent is null)
         {
             var width = !IsStored(obj, "ClientWidth") && obj.FindProperty("Width") is { Value: IntegerValue w } ? (int)w.Value - 16 : GetInt(obj, "ClientWidth");

@@ -179,7 +179,10 @@ public sealed partial class FormParserTests
         ], diagnostics.Select(d => d.ToString()));
         var frame = document.FindByName("Frame1")!;
         Assert.Equal((FormObjectKind.Inline, true), (frame.Kind, frame.IsPreserved));
-        Assert.True(document.FindByName("InnerButton")!.IsPreserved); // nothing more is reported inside a preserved subtree
+        // nothing more is reported inside a preserved subtree; D-118 (DSG-FD-108, form-format.md §2.1): the blocks of an
+        // `inline` object name components of the frame, so InnerButton is not a name of the file scope
+        Assert.Null(document.FindByName("InnerButton"));
+        Assert.True(Assert.Single(frame.Children, c => c.Name == "InnerButton").IsPreserved);
         var base1 = document.FindByName("Base1")!;
         Assert.Equal((FormObjectKind.Inherited, true), (base1.Kind, base1.IsPreserved));
         Assert.Same(Catalog.Find("TButton"), base1.Info);

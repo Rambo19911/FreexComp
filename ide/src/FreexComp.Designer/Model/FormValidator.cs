@@ -22,7 +22,7 @@ public static class FormValidator
         {
             if (IsAttached(document, owner) && (property is null || owner.Properties.Contains(property)))
             {
-                results.Add(diagnostic with { ObjectName = owner.Name });
+                results.Add(diagnostic with { ObjectName = owner.QualifiedName });
             }
         }
 
@@ -107,10 +107,16 @@ public static class FormValidator
             }
         }
 
-        /// <summary>DSG-FD-028: a plain name must name a component of the form (the root included) of the property's class.</summary>
+        /// <summary>
+        /// DSG-FD-028: a plain name must name a component of the form (the root included) of the property's class. Lines of
+        /// a frame instance and of its inherited objects look in the innermost frame scope first (rtl classes.md RTL-1093).
+        /// </summary>
         private void Reference(FormObject obj, FormProperty property, string path, PropertyInfo info, string name)
         {
-            if (document.FindByName(name) is not { } target)
+            var scope = obj.IsFrameInstance ? obj : obj.IsInherited ? obj.Scope : null;
+            var inScope = scope is null ? null
+                : string.Equals(scope.Name, name, StringComparison.OrdinalIgnoreCase) ? scope : scope.FindInScope(name);
+            if ((inScope ?? document.FindByName(name)) is not { } target)
             {
                 Warn(property.ValueSpan, obj, path, "F0105", $"Component {name} not found");
             }
@@ -138,7 +144,7 @@ public static class FormValidator
         {
             var (line, col) = document.Lines.LineCol(span.Start);
             var (endLine, endCol) = document.Lines.LineCol(span.End);
-            results.Add(new FormDiagnostic(code, DiagnosticSeverity.Warning, message, document.SourcePath, line, col, endLine, endCol, obj.Name, path));
+            results.Add(new FormDiagnostic(code, DiagnosticSeverity.Warning, message, document.SourcePath, line, col, endLine, endCol, obj.QualifiedName, path));
         }
     }
 }

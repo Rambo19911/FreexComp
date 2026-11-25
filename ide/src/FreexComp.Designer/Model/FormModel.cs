@@ -12,11 +12,18 @@ public enum FormObjectKind { Object, Inherited, Inline }
 [Flags]
 public enum FormChangeFlags { None = 0, Geometry = 1, Appearance = 2, Structure = 4, Name = 8, Events = 16 }
 
-public sealed class FormChangedEventArgs(IReadOnlyList<string> objectNames, FormChangeFlags flags) : EventArgs
+public sealed class FormChangedEventArgs(IReadOnlyList<string> objectNames, FormChangeFlags flags, bool isRemerge = false) : EventArgs
 {
+    /// <summary>The objects affected; inherited objects of frame instances by their qualified names.</summary>
     public IReadOnlyList<string> ObjectNames { get; } = objectNames;
 
     public FormChangeFlags Flags { get; } = flags;
+
+    /// <summary>
+    /// True when frame instances were merged again with changed definitions (DSG-FD-111): the file model is unchanged, so
+    /// the document is not modified and its undo stack stays valid.
+    /// </summary>
+    public bool IsRemerge { get; } = isRemerge;
 }
 
 /// <summary>A parsed <c>.form</c> file (form-document.md §1). Mutated only through the designer's editor (DSG-FD-001).</summary>
@@ -25,11 +32,12 @@ public sealed class FormDocument
     private readonly Dictionary<string, FormObject> _byName = new(StringComparer.OrdinalIgnoreCase);
     private List<FormDiagnostic> _diagnostics = [];
 
-    internal FormDocument(FormObject root, string lineEnding)
+    /// <param name="fileScope">The objects that own their names, in file order (the parser's file scope); null: every object.</param>
+    internal FormDocument(FormObject root, string lineEnding, IEnumerable<FormObject>? fileScope = null)
     {
         Root = root;
         LineEnding = lineEnding;
-        foreach (var obj in AllObjects())
+        foreach (var obj in fileScope ?? AllObjects().Where(o => !o.IsInherited))
         {
             _byName.TryAdd(obj.Name, obj); // DSG-FD-003: the first of duplicate names (F0106) owns the name
         }
@@ -50,8 +58,44 @@ public sealed class FormDocument
     /// <summary>Raised after each applied change.</summary>
     public event EventHandler<FormChangedEventArgs>? Changed;
 
-    /// <summary>The object named <paramref name="name"/> anywhere in the tree (ASCII case-insensitive, O(1)).</summary>
+    /// <summary>
+    /// The object named <paramref name="name"/> in the file scope (ASCII case-insensitive, O(1)): the root, ordinary
+    /// objects and frame instances, not the inherited objects inside instances (DSG-FD-108).
+    /// </summary>
     public FormObject? FindByName(string name) => _byName.GetValueOrDefault(name);
+
+    /// <summary>
+    /// An object by its qualified name (DSG-FD-108): a file-scope name, then one name per frame scope, e.g.
+    /// <c>BillingAddress.StreetEdit</c> or <c>BillingAddress.CityPicker.CityEdit</c>. A plain name is looked up like
+    /// <see cref="FindByName"/>.
+    /// </summary>
+    public FormObject? FindByQualifiedName(string qualifiedName)
+    {
+        ArgumentNullException.ThrowIfNull(qualifiedName);
+        var parts = qualifiedName.Split('.');
+        var obj = FindByName(parts[0]);
+        for (var i = 1; i < parts.Length && obj is not null; i++)
+        {
+            obj = obj.IsFrameInstance ? obj.FindInScope(parts[i]) : null;
+        }
+
+        return obj;
+    }
+
+    /// <summary>The frames instances were resolved with (null: none; <c>inline</c> objects are then <c>F0107</c>).</summary>
+    public IFrameCatalog? Frames { get; private set; }
+
+    /// <summary>The weak link to <see cref="Frames"/>' <c>Changed</c> event (DSG-FD-111).</summary>
+    internal FrameSubscription? FrameLink { get; private set; }
+
+    internal void AttachFrames(IFrameCatalog? frames, ComponentCatalog catalog)
+    {
+        Frames = frames;
+        if (frames is not null)
+        {
+            FrameLink = new FrameSubscription(this, frames, catalog);
+        }
+    }
 
     /// <summary>Every object in pre-order, the root first.</summary>
     public IEnumerable<FormObject> AllObjects()
@@ -94,7 +138,7 @@ public sealed class FormDocument
     /// <summary>Adds the names of a subtree that joins the tree (an existing owner of a name keeps it).</summary>
     internal void Register(FormObject subtree)
     {
-        foreach (var obj in subtree.Subtree())
+        foreach (var obj in subtree.Subtree().Where(o => !o.IsInherited))
         {
             _byName.TryAdd(obj.Name, obj);
         }
@@ -123,6 +167,9 @@ public sealed class FormDocument
         _byName[newName] = obj;
     }
 
+    /// <summary>The object of a plain or qualified name (<see cref="FindByQualifiedName"/>).</summary>
+    internal FormObject? Find(string name) => name.Contains('.', StringComparison.Ordinal) ? FindByQualifiedName(name) : FindByName(name);
+
     internal void RaiseChanged(FormChangedEventArgs args)
     {
         Version++;
@@ -135,6 +182,7 @@ public sealed class FormObject
 {
     private readonly List<FormProperty> _properties = [];
     private readonly List<FormObject> _children = [];
+    private readonly List<(FormObject Block, string? After)> _preservedBlocks = [];
 
     internal FormObject(FormObjectKind kind, string name, string typeName, ComponentInfo? info, TextSpan sourceSpan)
     {
@@ -161,8 +209,148 @@ public sealed class FormObject
     /// <summary>Creation order.</summary>
     public IReadOnlyList<FormObject> Children => _children;
 
-    /// <summary>Null = unknown class (F0101).</summary>
-    public ComponentInfo? Info { get; }
+    /// <summary>Null = unknown class (F0101). A resolved frame instance: the class of the frame's root (DSG-FD-106).</summary>
+    public ComponentInfo? Info { get; internal set; }
+
+    /// <summary>The frame definition of a resolved instance (an <c>inline</c> object, or a nested instance inside one).</summary>
+    public FrameDefinition? Frame { get; internal set; }
+
+    /// <summary>True for a resolved frame instance: the scope of its inherited objects (DSG-FD-106, 108).</summary>
+    public bool IsFrameInstance => Frame is not null;
+
+    /// <summary>True for a component of a frame shown inside an instance (its override block is written, not the object).</summary>
+    public bool IsInherited { get; internal set; }
+
+    /// <summary>
+    /// The object of the frame definition this one shows (inherited objects), or the definition's root (an instance); the
+    /// source of every value that is not stored here.
+    /// </summary>
+    public FormObject? InheritedFrom { get; internal set; }
+
+    /// <summary>True when this inherited object or instance stores a line for <paramref name="path"/> (an override).</summary>
+    public bool IsOverridden(string path) => InheritedFrom is not null && FindProperty(path) is not null;
+
+    /// <summary>
+    /// The definition's effective value of <paramref name="path"/> (stored there, or the metadata default); for an event the
+    /// definition's handler or null. Null for objects that inherit nothing.
+    /// </summary>
+    public FormValue? InheritedValue(string path)
+    {
+        if (InheritedFrom is not { } definition)
+        {
+            return null;
+        }
+
+        for (var o = definition; o is not null; o = o.InheritedFrom)
+        {
+            if (o.FindProperty(path) is { } stored)
+            {
+                return stored.Value;
+            }
+        }
+
+        if (definition.Info is not { } info || (!path.Contains('.', StringComparison.Ordinal) && info.FindEvent(path) is not null))
+        {
+            return null;
+        }
+
+        return definition.Catalog.FindPropertyPath(info, path) is { Kind: not PropertyKind.Object } property
+            ? PropertyAccess.DefaultValue(definition.Catalog, property)
+            : null;
+    }
+
+    /// <summary>
+    /// The name that reaches this object from the file scope: its own name, or for an inherited object the qualified
+    /// name of its scope instance plus its name (<c>BillingAddress.StreetEdit</c>).
+    /// </summary>
+    public string QualifiedName => IsInherited && Scope is { } scope ? scope.QualifiedName + "." + Name : Name;
+
+    /// <summary>The instance whose scope an inherited object belongs to (the nearest instance above it), else null.</summary>
+    internal FormObject? Scope
+    {
+        get
+        {
+            for (var p = Parent; p is not null; p = p.Parent)
+            {
+                if (p.IsFrameInstance)
+                {
+                    return p;
+                }
+            }
+
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Preserved blocks read inside an instance or an override block (<c>F0109</c>, <c>F0110</c>, DSG-FD-107): kept as
+    /// verbatim text and written back where they were read; they are not children and take no part in layout.
+    /// </summary>
+    public IReadOnlyList<FormObject> PreservedBlocks => [.. _preservedBlocks.Select(b => b.Block)];
+
+    /// <summary>The blocks with the name of the inherited child whose block preceded each in the file (null: first).</summary>
+    internal IReadOnlyList<(FormObject Block, string? After)> PreservedBlockSlots => _preservedBlocks;
+
+    internal void AddPreservedBlock(FormObject block, string? after)
+    {
+        block.Parent = this;
+        _preservedBlocks.Add((block, after));
+    }
+
+    /// <summary>
+    /// The inherited object named <paramref name="name"/> in this instance's scope: its descendants, not looking into
+    /// nested instances (they are scopes of their own) — the components the frame owns.
+    /// </summary>
+    internal FormObject? FindInScope(string name)
+    {
+        var pending = new Stack<FormObject>(_children);
+        while (pending.TryPop(out var obj))
+        {
+            if (string.Equals(obj.Name, name, StringComparison.OrdinalIgnoreCase))
+            {
+                return obj;
+            }
+
+            if (!obj.IsFrameInstance)
+            {
+                foreach (var child in obj._children)
+                {
+                    pending.Push(child);
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>Takes over the contents of <paramref name="other"/> (a re-parsed copy of this instance, DSG-FD-111).</summary>
+    internal void ReplaceContents(FormObject other)
+    {
+        Info = other.Info;
+        Frame = other.Frame;
+        InheritedFrom = other.InheritedFrom;
+        IsPreserved = other.IsPreserved;
+        PreservedText = other.PreservedText;
+        Catalog = other.Catalog;
+        _properties.Clear();
+        _properties.AddRange(other._properties);
+        foreach (var child in _children)
+        {
+            child.Parent = null;
+        }
+
+        _children.Clear();
+        foreach (var child in other._children.ToList())
+        {
+            AddChild(child);
+        }
+
+        _preservedBlocks.Clear();
+        foreach (var (block, after) in other._preservedBlocks)
+        {
+            AddPreservedBlock(block, after);
+        }
+    }
 
     /// <summary>True: unknown class, <see cref="Kind"/> other than <c>Object</c>, or inside a preserved object.</summary>
     public bool IsPreserved { get; internal set; }

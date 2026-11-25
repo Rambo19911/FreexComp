@@ -220,7 +220,7 @@ public sealed class PropertyGridModel(ComponentCatalog catalog)
             return nodes;
         }
 
-        var isRoot = obj.Parent is null && !ItemMode;
+        var isRoot = obj.Parent is null && !ItemMode && !PropertyAccess.IsFrameRoot(obj); // a frame root shows Width/Height (DSG-FD-117)
         foreach (var property in info.Properties)
         {
             if (property.Hidden || (isRoot && property.Name is ("Width" or "Height")))
@@ -321,7 +321,7 @@ public sealed class PropertyGridModel(ComponentCatalog catalog)
     private static long? AlwaysWrittenReference(FormObject obj, string path)
     {
         var size = obj.Info?.DefaultSize ?? default;
-        var isRoot = obj.Parent is null;
+        var isRoot = obj.Parent is null && !PropertyAccess.IsFrameRoot(obj); // DSG-FD-117: a frame root has bounds
         return path.ToLowerInvariant() switch
         {
             "left" or "top" => 0,

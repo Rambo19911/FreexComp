@@ -56,6 +56,11 @@ internal sealed class LayoutReader
         node.Parent = parent;
         parent.Children.Add(node);
         nodes[obj] = node;
+        if (obj.IsPreserved && obj.Kind == FormObjectKind.Inline)
+        {
+            return; // DSG-LAY-066: a preserved instance is a box; its blocks are not controls
+        }
+
         foreach (var child in obj.Children)
         {
             ReadTree(child, node, nodes, overrides);
@@ -113,7 +118,7 @@ internal sealed class LayoutReader
             }
 
             node = Copy(Template(obj.Info), obj);
-            foreach (var property in obj.Properties)
+            foreach (var property in EffectiveLines(obj))
             {
                 Apply(node, property);
             }
@@ -141,6 +146,13 @@ internal sealed class LayoutReader
         node.Loading = true;
         return node;
     }
+
+    /// <summary>
+    /// The lines that set an object's values, in the order the run time applies them (DSG-LAY-065): for an inherited
+    /// object or an instance first those of the frame object it shows (recursively), then its own overrides.
+    /// </summary>
+    private static IEnumerable<FormProperty> EffectiveLines(FormObject obj) =>
+        obj.InheritedFrom is { } definition ? EffectiveLines(definition).Concat(obj.Properties) : obj.Properties;
 
     /// <summary>The defaults of a class: metadata defaults, else the fallbacks of layout-engine.md §3.</summary>
     private LayoutNode Template(ComponentInfo info)
@@ -284,7 +296,7 @@ internal sealed class LayoutReader
     private static void ApplyFont(LayoutNode n, FormObject obj)
     {
         int? height = null, size = null;
-        foreach (var p in obj.Properties)
+        foreach (var p in EffectiveLines(obj))
         {
             if (p.Path.StartsWith("Font.", StringComparison.OrdinalIgnoreCase))
             {
@@ -347,7 +359,7 @@ internal sealed class LayoutReader
     private static bool TryStoredInt(FormObject obj, string path, out int value)
     {
         value = 0;
-        if (obj.FindProperty(path) is not { Value: IntegerValue i })
+        if (EffectiveLines(obj).LastOrDefault(p => string.Equals(p.Path, path, StringComparison.OrdinalIgnoreCase)) is not { Value: IntegerValue i })
         {
             return false;
         }

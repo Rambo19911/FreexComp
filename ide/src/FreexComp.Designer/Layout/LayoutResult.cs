@@ -75,9 +75,9 @@ public sealed class LayoutResult
 
     private Rect StoredBounds(FormObject obj)
     {
-        if (ReferenceEquals(obj, _root))
+        if (ReferenceEquals(obj, _root) || obj.InheritedFrom is not null)
         {
-            return PropertyAccess.GetBounds(obj);
+            return PropertyAccess.GetBounds(obj); // inherited objects and instances: their effective bounds (DSG-LAY-065)
         }
 
         static int? Stored(FormObject o, string path) => o.FindProperty(path) is { Value: IntegerValue i } ? (int)i.Value : null;

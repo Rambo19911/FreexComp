@@ -51,7 +51,10 @@ public sealed class SurfaceGeometry
 
         var root = document.Root;
         var client = layout.HasBounds(root) ? layout.GetBounds(root) : default;
-        FrameRect = new Rect(FrameOrigin, FrameOrigin, client.Width + 2, client.Height + CaptionHeight + 2);
+        IsFrameRoot = PropertyAccess.IsFrameRoot(root);
+        FrameRect = IsFrameRoot
+            ? new Rect(FrameOrigin, FrameOrigin, client.Width, client.Height) // DSG-RND-019: no caption bar, no border
+            : new Rect(FrameOrigin, FrameOrigin, client.Width + 2, client.Height + CaptionHeight + 2);
         var rootClient = ClientOf(root, FrameRect.Left, FrameRect.Top);
         FormClientRect = rootClient;
         _clientRects[root] = rootClient;
@@ -79,8 +82,12 @@ public sealed class SurfaceGeometry
     /// <summary>The form frame (border, caption, client area) in surface coordinates: (ClientWidth + 2) × (ClientHeight + 32).</summary>
     public Rect FrameRect { get; }
 
-    /// <summary>The caption bar inside the frame border.</summary>
-    public Rect CaptionRect => new(FrameRect.Left + 1, FrameRect.Top + 1, Math.Max(0, FrameRect.Width - 2), CaptionHeight);
+    /// <summary>True for a frame document: <see cref="FrameRect"/> is the frame's Width × Height rectangle (DSG-RND-019).</summary>
+    public bool IsFrameRoot { get; }
+
+    /// <summary>The caption bar inside the frame border (empty for a frame document).</summary>
+    public Rect CaptionRect => IsFrameRoot ? new Rect(FrameRect.Left, FrameRect.Top, 0, 0)
+        : new(FrameRect.Left + 1, FrameRect.Top + 1, Math.Max(0, FrameRect.Width - 2), CaptionHeight);
 
     /// <summary>The form's client area in surface coordinates (origin (17, 47)).</summary>
     public Rect FormClientRect { get; }

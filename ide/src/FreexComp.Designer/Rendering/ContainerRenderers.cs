@@ -136,3 +136,16 @@ public sealed class NonVisualRenderer : DesignRenderer
         canvas.DrawIcon(ctx.Info.Palette?.Icon ?? "builtin:component", new Rect(4, 4, 24, 24));
     }
 }
+
+/// <summary>
+/// DSG-RND-019 <c>frame</c>: the effective <c>Color</c> over the bounds, no border and no caption; the children are drawn
+/// by the surface as for any container. As the root of a frame document the surface shows this rectangle instead of the
+/// form frame (<see cref="Surface.SurfaceGeometry.FrameRect"/>).
+/// </summary>
+public sealed class FrameRenderer : DesignRenderer
+{
+    public override string Id => "frame";
+
+    protected override void RenderCore(RenderContext ctx, IDesignCanvas canvas) =>
+        canvas.FillRect(new Rect(0, 0, ctx.Width, ctx.Height), ctx.Fill(ctx.ParentFill));
+}

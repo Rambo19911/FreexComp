@@ -987,14 +987,17 @@ public sealed partial class DesignSurfaceController
         if (formClient is { } client)
         {
             var root = Document.Root;
-            if (client.Width != PropertyAccess.GetInt(root, "ClientWidth"))
+            var frameRoot = PropertyAccess.IsFrameRoot(root); // DSG-FD-117: a frame root stores Width/Height
+            var (widthPath, heightPath) = frameRoot ? ("Width", "Height") : ("ClientWidth", "ClientHeight");
+            var stored = PropertyAccess.GetBounds(root);
+            if (client.Width != (frameRoot ? stored.Width : PropertyAccess.GetInt(root, "ClientWidth")))
             {
-                changes.Add(new SetProperty(root.Name, "ClientWidth", new IntegerValue(client.Width, false)));
+                changes.Add(new SetProperty(root.Name, widthPath, new IntegerValue(client.Width, false)));
             }
 
-            if (client.Height != PropertyAccess.GetInt(root, "ClientHeight"))
+            if (client.Height != (frameRoot ? stored.Height : PropertyAccess.GetInt(root, "ClientHeight")))
             {
-                changes.Add(new SetProperty(root.Name, "ClientHeight", new IntegerValue(client.Height, false)));
+                changes.Add(new SetProperty(root.Name, heightPath, new IntegerValue(client.Height, false)));
             }
         }
 

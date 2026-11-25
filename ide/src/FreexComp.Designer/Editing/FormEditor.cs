@@ -80,6 +80,7 @@ public sealed class FormEditor(FormDocument document, ComponentCatalog catalog)
     private FormChange Add(AddObject change, Effects effects)
     {
         var parent = Editable(change.ParentName);
+        RejectInsideInstance(parent, "added to");
         if (change.Index < 0 || change.Index > parent.Children.Count)
         {
             throw new InvalidFormChangeException($"Index {change.Index} is outside 0..{parent.Children.Count} of {parent.Name}");
@@ -102,6 +103,11 @@ public sealed class FormEditor(FormDocument document, ComponentCatalog catalog)
             throw new InvalidFormChangeException($"A component named {data.Name} already exists");
         }
 
+        if (data.Kind == FormObjectKind.Inline)
+        {
+            return; // DSG-FD-108: the blocks of an instance name components of the frame, not of the file
+        }
+
         foreach (var child in data.Children)
         {
             CheckNewNames(child, names);
@@ -110,7 +116,8 @@ public sealed class FormEditor(FormDocument document, ComponentCatalog catalog)
 
     private FormChange Remove(RemoveObject change, Effects effects)
     {
-        var obj = document.FindByName(change.ObjectName) ?? throw NotFound(change.ObjectName);
+        var obj = document.Find(change.ObjectName) ?? throw NotFound(change.ObjectName);
+        RejectInherited(obj, "removed");
         var parent = MovableParent(obj);
         var data = FormObjectData.Capture(obj) with { Original = obj };
         var index = parent.RemoveChild(obj);
@@ -121,9 +128,11 @@ public sealed class FormEditor(FormDocument document, ComponentCatalog catalog)
 
     private FormChange Move(MoveObject change, Effects effects)
     {
-        var obj = document.FindByName(change.ObjectName) ?? throw NotFound(change.ObjectName);
+        var obj = document.Find(change.ObjectName) ?? throw NotFound(change.ObjectName);
+        RejectInherited(obj, "moved");
         var oldParent = MovableParent(obj);
         var newParent = Editable(change.NewParentName);
+        RejectInsideInstance(newParent, "moved into");
         for (var ancestor = newParent; ancestor is not null; ancestor = ancestor.Parent)
         {
             if (ReferenceEquals(ancestor, obj))
@@ -145,6 +154,27 @@ public sealed class FormEditor(FormDocument document, ComponentCatalog catalog)
         return new MoveObject(obj.Name, oldParent.Name, oldIndex);
     }
 
+    /// <summary>
+    /// DSG-FD-109: the structure inside a frame instance is fixed — inherited objects are not removed, moved, reordered or
+    /// renamed (card F05-006 "Out of scope").
+    /// </summary>
+    private static void RejectInherited(FormObject obj, string what)
+    {
+        if (obj.IsInherited)
+        {
+            throw new InvalidFormChangeException($"{obj.QualifiedName} is part of a frame and cannot be {what}");
+        }
+    }
+
+    /// <summary>DSG-FD-109: nothing is added into a frame instance or into one of its inherited objects (<c>F0110</c>).</summary>
+    private static void RejectInsideInstance(FormObject parent, string what)
+    {
+        if (parent.IsInherited || parent.IsFrameInstance)
+        {
+            throw new InvalidFormChangeException($"Components cannot be {what} frame instance {parent.QualifiedName}");
+        }
+    }
+
     /// <summary>The parent of an object that may be removed or moved: not the root, not inside a preserved object.</summary>
     private static FormObject MovableParent(FormObject obj) =>
         obj.Parent is not { } parent ? throw new InvalidFormChangeException("The root object cannot be removed or moved")
@@ -154,6 +184,7 @@ public sealed class FormEditor(FormDocument document, ComponentCatalog catalog)
     private FormChange Rename(RenameObject change, Effects effects)
     {
         var obj = Editable(change.OldName);
+        RejectInherited(obj, "renamed");
         CheckIdentifier(change.NewName);
         if (document.FindByName(change.NewName) is { } other && !ReferenceEquals(other, obj))
         {
@@ -202,7 +233,7 @@ public sealed class FormEditor(FormDocument document, ComponentCatalog catalog)
         effects.Name(obj.Name);
         foreach (var (owner, _) in before)
         {
-            effects.Name(owner.Name);
+            effects.Name(owner.QualifiedName);
         }
 
         effects.Flags |= FormChangeFlags.Name;
@@ -305,6 +336,7 @@ public sealed class FormEditor(FormDocument document, ComponentCatalog catalog)
 
         var (canonical, propertyInfo, eventInfo) = Resolve(obj, info, path);
         FormProperty? stored = null;
+        // DSG-FD-109, 110: an override equal to the frame's value is removed (events: a handler of the form is always stored).
         if (value is not null && (eventInfo is not null || IsStoredValue(obj, canonical, propertyInfo!, value)))
         {
             stored = new FormProperty(ExistingPath(obj, canonical), value, propertyInfo, eventInfo, null, default);
@@ -337,9 +369,31 @@ public sealed class FormEditor(FormDocument document, ComponentCatalog catalog)
         return Inverse(obj, canonical, before);
     }
 
-    /// <summary>False when the value is not written: equal to the default (except DSG-FD-044) or <c>"stored": false</c>.</summary>
-    private bool IsStoredValue(FormObject obj, string path, PropertyInfo info, FormValue value) =>
-        PropertyAccess.IsStoredPath(obj, path, info) && (IsAlwaysWritten(obj, path) || !PropertyAccess.IsDefault(catalog, info, value));
+    /// <summary>
+    /// False when the value is not written: equal to the default (except DSG-FD-044) or <c>"stored": false</c>. For an
+    /// inherited object the "default" is the inherited value (DSG-FD-109); for a frame instance the value of the frame's
+    /// root, except the bounds (always written) and <c>TabOrder</c> (the metadata default, form-format.md §2.3; DSG-FD-110).
+    /// </summary>
+    private bool IsStoredValue(FormObject obj, string path, PropertyInfo info, FormValue value)
+    {
+        if (!PropertyAccess.IsStoredPath(obj, path, info))
+        {
+            return false;
+        }
+
+        if (IsAlwaysWritten(obj, path))
+        {
+            return true;
+        }
+
+        var ownTabOrder = obj.IsFrameInstance && !obj.IsInherited && Same(path, "TabOrder");
+        if (obj.InheritedFrom is not null && !ownTabOrder && obj.InheritedValue(path) is { } inherited)
+        {
+            return !PropertyAccess.SameValue(catalog, info, value, inherited);
+        }
+
+        return !PropertyAccess.IsDefault(catalog, info, value);
+    }
 
     /// <summary>form-format.md §2.2.4: Font.* / Color / ShowHint and the Parent… flag that governs them.</summary>
     private void PlanPairs(FormObject obj, ComponentInfo info, string path, FormValue? value, List<(string, FormProperty?)> plan)
@@ -395,10 +449,19 @@ public sealed class FormEditor(FormDocument document, ComponentCatalog catalog)
 
     private static bool IsLegacySize(string path) => Same(path, "Width") || Same(path, "Height");
 
-    /// <summary>DSG-FD-044: geometry of controls, the root's frame values, the tray position of a non-visual root child.</summary>
+    /// <summary>
+    /// DSG-FD-044: geometry of controls, the root's frame values, the tray position of a non-visual root child; a frame
+    /// root's bounds (DSG-FD-117); nothing for inherited objects (DSG-FD-114).
+    /// </summary>
     private static bool IsAlwaysWritten(FormObject obj, string path)
     {
-        string[] always = obj.Parent is null ? ["Left", "Top", "ClientWidth", "ClientHeight", "PixelsPerInch"]
+        if (obj.IsInherited)
+        {
+            return false;
+        }
+
+        string[] always = PropertyAccess.IsFrameRoot(obj) ? ["Left", "Top", "Width", "Height"]
+            : obj.Parent is null ? ["Left", "Top", "ClientWidth", "ClientHeight", "PixelsPerInch"]
             : obj.Info!.Kind == ComponentKind.NonVisual ? obj.Parent.Parent is null ? ["DesignLeft", "DesignTop"] : []
             : ["Left", "Top", "Width", "Height"];
         return always.Any(a => Same(a, path));
@@ -438,7 +501,7 @@ public sealed class FormEditor(FormDocument document, ComponentCatalog catalog)
 
     internal FormObject Editable(string objectName)
     {
-        var obj = document.FindByName(objectName) ?? throw NotFound(objectName);
+        var obj = document.Find(objectName) ?? throw NotFound(objectName);
         return obj.IsPreserved || obj.Info is null ? throw new InvalidFormChangeException($"Component {objectName} is preserved and read-only") : obj;
     }
 
@@ -486,8 +549,8 @@ public sealed class FormEditor(FormDocument document, ComponentCatalog catalog)
     /// <summary>The inverse of a property change: <c>SetProperty</c> of the old value when it was stored, else <c>RemoveProperty</c>.</summary>
     private static FormChange Inverse(FormObject obj, string path, ImmutableArray<PropertySlot> before) =>
         before.FirstOrDefault(s => Same(s.Path, path) && s.Property is not null).Property is { } old
-            ? new SetProperty(obj.Name, old.Path, old.Value) { Restore = before }
-            : new RemoveProperty(obj.Name, path) { Restore = before };
+            ? new SetProperty(obj.QualifiedName, old.Path, old.Value) { Restore = before }
+            : new RemoveProperty(obj.QualifiedName, path) { Restore = before };
 
     /// <summary>Replaces every line of <paramref name="path"/> by <paramref name="property"/> (at the first old position), or removes them.</summary>
     private static void Store(FormObject obj, string path, FormProperty? property)
@@ -544,7 +607,7 @@ public sealed class FormEditor(FormDocument document, ComponentCatalog catalog)
         /// <summary>Records property paths of <paramref name="obj"/>: events, layout-affecting values (geometry) or appearance.</summary>
         public void Touch(FormObject obj, IEnumerable<string> paths, ComponentCatalog catalog)
         {
-            Name(obj.Name);
+            Name(obj.QualifiedName);
             foreach (var path in paths)
             {
                 if (obj.Info!.FindEvent(path) is not null && !path.Contains('.', StringComparison.Ordinal))

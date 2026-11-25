@@ -85,13 +85,66 @@ public static class FormWriter
             }
         }
 
-        foreach (var child in obj.Children)
+        if (obj.InheritedFrom is not null)
         {
-            WriteObject(output, child, level + 1);
+            WriteOverrideBlocks(output, obj, level + 1);
+        }
+        else
+        {
+            foreach (var child in obj.Children)
+            {
+                WriteObject(output, child, level + 1);
+            }
         }
 
         output.Append(indent).Append("end\n");
     }
+
+    /// <summary>
+    /// DSG-FD-113…115: inside an instance or an override block, an <c>inherited</c> block for each inherited child (in the
+    /// definition's order) that has overrides or preserved lines in its subtree, and the preserved blocks where they were
+    /// read: those read first, then each after the block (or the place) of the child that preceded it.
+    /// </summary>
+    private static void WriteOverrideBlocks(StringBuilder output, FormObject container, int level)
+    {
+        var slots = container.PreservedBlockSlots;
+        var written = new bool[slots.Count];
+
+        void WriteAfter(string? after)
+        {
+            for (var i = 0; i < slots.Count; i++)
+            {
+                if (!written[i] && string.Equals(slots[i].After, after, StringComparison.OrdinalIgnoreCase))
+                {
+                    written[i] = true;
+                    WriteObject(output, slots[i].Block, level);
+                }
+            }
+        }
+
+        WriteAfter(null);
+        foreach (var child in container.Children)
+        {
+            if (HasOverrides(child))
+            {
+                WriteObject(output, child, level);
+            }
+
+            WriteAfter(child.Name);
+        }
+
+        for (var i = 0; i < slots.Count; i++)
+        {
+            if (!written[i])
+            {
+                WriteObject(output, slots[i].Block, level); // the child it followed is gone: at the end
+            }
+        }
+    }
+
+    /// <summary>An inherited object writes a block when it or an inherited descendant stores a line or a preserved block.</summary>
+    private static bool HasOverrides(FormObject obj) =>
+        obj.Properties.Count > 0 || obj.PreservedBlockSlots.Count > 0 || obj.Children.Any(HasOverrides);
 
     /// <summary>DSG-FD-042…046: the property lines of an object in canonical order.</summary>
     private static List<(string Path, IReadOnlyList<(int Level, string Text)> Lines)> PropertyLines(FormObject obj)
@@ -101,6 +154,10 @@ public static class FormWriter
         var preserved = new List<(string, IReadOnlyList<(int, string)>)>();
         var events = new List<(int Key, string Path, IReadOnlyList<(int, string)> Lines)>();
         var always = AlwaysWritten(obj);
+
+        // DSG-FD-110, 114, 115: an instance's own lines and an inherited object's overrides are compared with the frame's
+        // values by the editor, not with the metadata defaults here: every stored line is written.
+        var inherits = obj.InheritedFrom is not null;
 
         foreach (var property in obj.Properties)
         {
@@ -122,7 +179,7 @@ public static class FormWriter
                     continue; // "stored": false values are never written; a line read from a file is kept (DSG-FD-043)
                 }
 
-                if (!isAlways && stored && PropertyAccess.IsDefault(catalog, info, property.Value))
+                if (!isAlways && !inherits && stored && PropertyAccess.IsDefault(catalog, info, property.Value))
                 {
                     continue; // DSG-FD-043: equal to the default = not written
                 }
@@ -154,9 +211,9 @@ public static class FormWriter
     private static List<(string Path, FormValue Value)> AlwaysWritten(FormObject obj)
     {
         var result = new List<(string, FormValue)>();
-        if (obj.Info is not { } info)
+        if (obj.Info is not { } info || obj.IsInherited)
         {
-            return result;
+            return result; // DSG-FD-114: the geometry of inherited objects appears only as overrides
         }
 
         void Add(string path, long value)
@@ -167,7 +224,15 @@ public static class FormWriter
             }
         }
 
-        if (obj.Parent is null)
+        if (PropertyAccess.IsFrameRoot(obj))
+        {
+            // DSG-FD-117: a frame document's root is a visual control.
+            Add("Left", 0);
+            Add("Top", 0);
+            Add("Width", info.DefaultSize.Width);
+            Add("Height", info.DefaultSize.Height);
+        }
+        else if (obj.Parent is null)
         {
             Add("Left", 200);
             Add("Top", 120);
@@ -197,8 +262,8 @@ public static class FormWriter
             // with and the run-time constructor gives it - not 0, which the run-time layout would use (a separator).
             Add("Left", 0);
             Add("Top", 0);
-            Add("Width", info.DefaultSize.Width);
-            Add("Height", info.DefaultSize.Height);
+            Add("Width", obj.IsFrameInstance ? PropertyAccess.GetInt(obj, "Width") : info.DefaultSize.Width);
+            Add("Height", obj.IsFrameInstance ? PropertyAccess.GetInt(obj, "Height") : info.DefaultSize.Height);
         }
 
         return result;
