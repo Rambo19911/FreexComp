@@ -50,6 +50,8 @@ public static class MessageDefinitions
         new("Msg.File.ConsoleFailed", E, ["OK"]),
         new("Msg.File.EncodingLossy", Q, ["SaveAsUTF8", "Cancel"]),
         new("Msg.File.RevertConfirm", Q, ["Cancel", "Revert"]),
+        new("Msg.File.LibraryCopyExists", Q, ["AddAndOpen", "Cancel"]),
+        new("Msg.File.LibraryCopyFailed", E, ["OK"]),
         new("Msg.Project.CreateFailed", E, ["OK"]),
         new("Msg.Project.OpenFailed", E, ["OK", "OpenAsText"]),
         new("Msg.Project.NewerFormat", E, ["OK"]),

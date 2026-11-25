@@ -511,6 +511,33 @@ public sealed class ProjectService : IProjectService
     }
 
     /// <summary>
+    /// IDE-LIB-032: adds one existing file exactly as <see cref="AddExistingFilesAsync"/> does (by reference, with its
+    /// <c>form</c> member when applicable) but shows no message: the caller reports the failure. A member is a success.
+    /// </summary>
+    public OperationResult AddExistingFileQuietly(string path)
+    {
+        ArgumentNullException.ThrowIfNull(path);
+        if (_project is null)
+            return OperationResult.Fail(OperationResult.CanceledId);
+        path = Path.GetFullPath(path);
+        if (_members.Contains(path))
+            return OperationResult.Ok;
+        var isUnit = Path.GetExtension(path).Equals(".pas", StringComparison.OrdinalIgnoreCase);
+        var unitName = Path.GetFileNameWithoutExtension(path);
+        if (isUnit && UnitNames(_project).Contains(unitName))
+            return OperationResult.Fail("Msg.Project.DuplicateUnitName", unitName); // IDE-PM-031
+        var form = isUnit ? FormCompanion(path) : null;
+        var projectPath = ToProjectPath(path);
+        var changed = _project with { Files = FilesForMutation(_project).Add(new ProjectFile(projectPath, form is null ? null : ToProjectPath(form), null)) };
+        var saved = SaveProjectFile(changed); // IDE-PM-004: on failure the in-memory project stays as it was
+        if (!saved.Success)
+            return saved;
+        SetProject(changed);
+        FilesAdded?.Invoke(this, [projectPath]);
+        return OperationResult.Ok;
+    }
+
+    /// <summary>
     /// IDE-PM-051: the sibling <c>&lt;base&gt;.form</c> when it exists and the unit's text has a <c>{$FORM &lt;base&gt;.form}</c>
     /// directive (directive trivia of the compiler lexer, so a directive inside a comment does not count).
     /// </summary>

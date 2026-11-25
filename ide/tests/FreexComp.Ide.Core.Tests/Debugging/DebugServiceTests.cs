@@ -346,6 +346,43 @@ public sealed class DebugServiceTests
     }
 
     /// <summary>
+    /// F05-099 acceptance 3 (IDE-LIB-040): with library stepping on, the user-code roots of the session contain the
+    /// framework source root and the data-access source root by their paths, so the debugger may stop in their sources.
+    /// </summary>
+    [Fact(Timeout = TestDeadline.DebugTestTimeout)]
+    [Trait("Phase", "8")]
+    [Trait("Req", "IDE-LIB-040")]
+    public Task LibraryStepping_RootsIncludeFrameworkAndDataSource() => TestUiThread.RunAsync(async () =>
+    {
+        using var bed = new DebugTestBed();
+        var rtl = Assert.Single(bed.Services.LibrarySource.Roots);
+        var kit = Path.GetDirectoryName(rtl)!;
+        var framework = Path.Combine(kit, "ui");
+        var data = Path.Combine(kit, "data");
+        Directory.CreateDirectory(Path.Combine(framework, "src"));
+        Directory.CreateDirectory(Path.Combine(data, "design"));
+        bed.Services.Settings.Set(Core.Settings.SettingsCatalog.ToolchainFrameworkDir, framework);
+        bed.Services.Settings.Set(Core.Settings.SettingsCatalog.ToolchainDataDesignDir, Path.Combine(data, "design"));
+        Assert.Equal([rtl, framework, data], bed.Services.LibrarySource.Roots);
+        await bed.OpenHelloAsync();
+        bed.Sessions.UseScenario("{}");
+
+        // Off: neither root.
+        Assert.True(await bed.Debug.StartAsync());
+        Assert.Equal([bed.Dir], bed.Sessions.Requested[^1].UserSourceRoots);
+        await bed.Debug.StopAsync();
+
+        // On: both, by their paths — a source file under <root>\src lies under a user-code root.
+        await bed.Services.Commands.ExecuteAsync("run.toggleLibraryStepping");
+        Assert.True(await bed.Debug.StartAsync());
+        var roots = bed.Sessions.Requested[^1].UserSourceRoots;
+        Assert.Equal([bed.Dir, rtl, framework, data], roots);
+        foreach (var source in (string[])[Path.Combine(framework, "src", "StdCtrls.pas"), Path.Combine(data, "src", "DB.pas")])
+            Assert.Contains(roots, root => source.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase));
+        await bed.Debug.StopAsync();
+    });
+
+    /// <summary>
     /// IDE-LIB-023: a stop whose location is a library file opens that file as a protected document (IDE-LIB-002) with the
     /// execution-line marker — independent of the library-stepping choice (off: a breakpoint stop in the library file;
     /// on: a Step Into that ends in it).

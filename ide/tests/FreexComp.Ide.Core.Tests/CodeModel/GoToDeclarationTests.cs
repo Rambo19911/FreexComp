@@ -116,4 +116,44 @@ public sealed class GoToDeclarationTests
         Assert.True(target.Buffer.IsReadOnly);
         Assert.False(main.IsLibraryProtected);
     });
+
+    /// <summary>
+    /// F05-099 acceptance 2 (IDE-LIB-039): Go to Declaration on a UI-framework symbol — <c>TButton</c> of the real
+    /// framework sources — opens the file of its unit under the framework root of <c>ILibrarySourceService.Roots</c>, as a
+    /// protected document. The file's name is taken from the result.
+    /// </summary>
+    [Fact(Timeout = 120000)]
+    [Trait("Phase", "8")]
+    [Trait("Req", "IDE-LIB-039")]
+    public Task FrameworkSymbolOpensProtectedFileUnderFrameworkRoot() => TestUiThread.RunAsync(async () =>
+    {
+        var bed = new BuildTestBed();
+        var repo = SpecTables.RepoRootPath();
+        foreach (var (from, to) in ((string, string)[])[(@"rtl\src", @"G:\rtl"), (@"rtl\winapi\src", @"G:\winapi\src"), (@"ui-framework\src", @"G:\ui\src")])
+        {
+            foreach (var file in Directory.GetFiles(Path.Combine(repo, from)))
+                bed.File(Path.Combine(to, Path.GetFileName(file)), File.ReadAllText(file));
+        }
+
+        bed.Services.Settings.Set(Core.Settings.SettingsCatalog.ToolchainFrameworkDir, @"G:\ui");
+        await bed.OpenHelloAsync(appType: "gui");
+        Assert.True(await bed.Services.Documents.CloseAllAsync());
+        bed.File(BuildTestBed.MainPath, "program Hello;\nuses Forms, StdCtrls;\nvar\n  B: TButton;\nbegin\n  B := nil;\nend.\n");
+        var main = await bed.OpenDocumentAsync(BuildTestBed.MainPath);
+
+        await GoAsync(bed, main, "TButton");
+
+        var library = bed.Services.LibrarySource;
+        Assert.Equal([@"G:\rtl", @"G:\ui", @"G:\winapi\src"], library.Roots);
+        var target = Assert.IsType<TextDocumentViewModel>(bed.Services.Documents.ActiveDocument);
+        Assert.NotSame(main, target);
+        Assert.StartsWith(@"G:\ui\", target.FilePath!, StringComparison.OrdinalIgnoreCase); // under the framework root
+        Assert.True(library.IsLibrarySource(target.FilePath!));
+        Assert.Equal(File.ReadAllText(Path.Combine(repo, "ui-framework", "src", Path.GetFileName(target.FilePath!))).ReplaceLineEndings("\n"),
+            target.Buffer.Text.ReplaceLineEndings("\n")); // the real source
+        var line = target.Buffer.GetLine(target.ViewState.Caret.Line);
+        Assert.Contains("TButton = class", target.Buffer.Text.Substring(line.Offset, line.Length), StringComparison.Ordinal);
+        Assert.True(target.IsLibraryProtected);
+        Assert.True(target.Buffer.IsReadOnly);
+    });
 }

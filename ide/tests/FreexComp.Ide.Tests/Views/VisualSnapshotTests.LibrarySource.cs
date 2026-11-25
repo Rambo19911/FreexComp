@@ -12,8 +12,8 @@ public sealed partial class VisualSnapshotTests
 {
     /// <summary>
     /// The main window at 800 × 500 and 1920 × 1040, light and dark, with a library source open (UI-ED-144/145):
-    /// <c>editor-library-source</c> — the protected document with the library bar above the text and the lock glyph on
-    /// its tab; <c>editor-library-source-disk-read-only</c> — after Edit Anyway on a file that is read-only on disk
+    /// <c>editor-library-source</c> — the protected document with the library bar above the text (a project is open: its
+    /// actions are Copy to Project, then Edit Anyway — UI-ED-147) and the lock glyph on its tab; <c>editor-library-source-disk-read-only</c> — after Edit Anyway on a file that is read-only on disk
     /// (IDE-LIB-005): the read-only bar with Make Writable has taken its place, the lock glyph stays. Rules: the bar, its
     /// text and its buttons are drawn completely inside the window (nothing clipped, nothing overlapping), the bar is
     /// the first thing below the tab strip, and the glyph is drawn.
@@ -22,6 +22,7 @@ public sealed partial class VisualSnapshotTests
     [Trait("Phase", "8")]
     [Trait("Req", "UI-ED-144")]
     [Trait("Req", "UI-ED-145")]
+    [Trait("Req", "UI-ED-147")]
     [Trait("Req", "IDE-LIB-005")]
     public async Task LibrarySourceDocument_RendersBarAndLock_NoClippingOrOverlap()
     {
@@ -58,7 +59,7 @@ public sealed partial class VisualSnapshotTests
                 {
                     var kind = subject == subjects[0] ? "LibrarySource" : "ReadOnly";
                     string[] parts = subject == subjects[0]
-                        ? ["InfoBar.LibrarySource.Text", "InfoBar.LibrarySource.Action.EditAnyway"]
+                        ? ["InfoBar.LibrarySource.Text", "InfoBar.LibrarySource.Action.CopyToProject", "InfoBar.LibrarySource.Action.EditAnyway"]
                         : ["InfoBar.ReadOnly.Text", "InfoBar.ReadOnly.Action.MakeWritable", "InfoBar.ReadOnly.Dismiss"];
                     if (subject == subjects[1])
                     {
@@ -77,6 +78,15 @@ public sealed partial class VisualSnapshotTests
                         var tab = h.Find<Control>(AutomationIds.DocumentTab("SysUtils.pas"));
                         var editor = h.Find<Control>("Editor.SysUtils.pas");
                         var glyph = LibrarySourceViewTests.LockOf(h, "SysUtils.pas");
+                        if (subject == subjects[0])
+                        {
+                            // UI-ED-147: Copy to Project is left of Edit Anyway, both on the bar's button line.
+                            var copy = h.Find<Control>(parts[1]).TranslatePoint(default, h.Window)!.Value;
+                            var edit = h.Find<Control>(parts[2]).TranslatePoint(default, h.Window)!.Value;
+                            if (copy.X + h.Find<Control>(parts[1]).Bounds.Width > edit.X || Math.Abs(copy.Y - edit.Y) > 0.5)
+                                defects.Add((variant, $"button order: Copy to Project at {copy}, Edit Anyway at {edit}"));
+                        }
+
                         Assert.True(glyph.IsEffectivelyVisible, $"{variant}: no lock glyph");
                         foreach (var control in parts.Select(h.Find<Control>).Append(bar).Append(glyph))
                         {

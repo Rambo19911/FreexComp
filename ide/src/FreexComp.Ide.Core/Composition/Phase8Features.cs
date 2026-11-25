@@ -17,6 +17,7 @@ public static class Phase8Features
     /// </summary>
     internal static readonly IReadOnlyList<string> DeliveredIds =
     [
+        "file.copyLibraryUnitToProject", // F05-099
         "file.editLibrarySource", // F02-004
         "file.openInTerminal", // F09-054
         "help.contents", // I-257

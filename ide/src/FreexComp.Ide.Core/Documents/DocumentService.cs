@@ -111,6 +111,12 @@ public sealed class DocumentService : IDocumentService
     /// </summary>
     public Func<string, bool>? IsProtectedLibrarySource { get; set; }
 
+    /// <summary>
+    /// IDE-LIB-037: makes the <c>Copy to Project</c> action of a protected document's library bar, placed before
+    /// <c>Edit Anyway</c> (the library-copy service; set by the service graph).
+    /// </summary>
+    public Func<TextDocumentViewModel, InfoBarAction>? LibraryCopyAction { get; set; }
+
     /// <summary>The OS shell of <c>file.showInExplorer</c> (set by the service graph).</summary>
     public IShellService? Shell { get; set; }
 
@@ -872,7 +878,10 @@ public sealed class DocumentService : IDocumentService
             document.SetReadOnly(true);
             document.ShowInfoBar(new InfoBarViewModel(TextDocumentViewModel.LibrarySourceInfoBarKind, InfoBarSeverity.Info,
                 Strings.Msg_File_LibrarySource,
-                [new InfoBarAction("EditAnyway", Strings.InfoBar_Action_EditAnyway, () => { EditLibrarySource(document); return Task.CompletedTask; })],
+                [
+                    .. LibraryCopyAction is { } copyAction ? [copyAction(document)] : Array.Empty<InfoBarAction>(),
+                    new InfoBarAction("EditAnyway", Strings.InfoBar_Action_EditAnyway, () => { EditLibrarySource(document); return Task.CompletedTask; }),
+                ],
                 dismiss: null) { IsTopMost = true });
         }
         else if (!writable)

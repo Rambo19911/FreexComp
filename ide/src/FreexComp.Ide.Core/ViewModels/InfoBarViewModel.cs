@@ -14,11 +14,28 @@ public enum InfoBarSeverity
 /// One button of an info bar: <see cref="Name"/> is the AutomationId part (<c>InfoBar.&lt;Kind&gt;.Action.&lt;Name&gt;</c>,
 /// UI-ED-095), <see cref="Label"/> the resource text.
 /// </summary>
-public sealed class InfoBarAction(string name, string label, Func<Task> execute)
+public sealed class InfoBarAction(string name, string label, Func<Task> execute) : ObservableObject
 {
+    private bool _isVisible = true;
+    private bool _isEnabled = true;
+
     public string Name { get; } = name;
 
     public string Label { get; } = label;
+
+    /// <summary>False for an action that is not offered now: its button is absent (UI-ED-147).</summary>
+    public bool IsVisible
+    {
+        get => _isVisible;
+        set => SetProperty(ref _isVisible, value);
+    }
+
+    /// <summary>False for an action that is offered but cannot run now: its button is shown disabled (UI-ED-147).</summary>
+    public bool IsEnabled
+    {
+        get => _isEnabled;
+        set => SetProperty(ref _isEnabled, value);
+    }
 
     public Task ExecuteAsync() => execute();
 }

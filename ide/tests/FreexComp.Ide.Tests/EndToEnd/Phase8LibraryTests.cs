@@ -229,4 +229,94 @@ public sealed class Phase8LibraryTests
     [Trait("Req", "IDE-LIB-022")]
     [Trait("Req", "IDE-LIB-023")]
     public Task E2E_Phase8_StepIntoLibrarySource() => LibrarySteppingScenario.StepIntoSysUtilsAsync();
+
+    /// <summary>
+    /// Card F05-099 acceptance 4 in the IDE (IDE-LIB-026…035) with the real build engine and toolchain: a GUI project →
+    /// Go to Declaration on a framework class opens the protected framework unit → <c>Copy to Project</c> → a visible
+    /// constant (the default width of a button) is edited in the copy → the program built and run with the layout dump
+    /// has the changed value; the framework file on disk is byte-identical to before.
+    /// </summary>
+    [AvaloniaFact(Timeout = 120000)]
+    [Trait("Req", "IDE-LIB-026")]
+    [Trait("Req", "IDE-LIB-034")]
+    [Trait("Req", "IDE-LIB-035")]
+    public async Task E2E_Phase8_LocalCopyOfFrameworkUnitIsCompiled()
+    {
+        const string DefaultBounds = "SetBounds(Left, Top, 75, 25);";
+        const string ChangedBounds = "SetBounds(Left, Top, 91, 25);";
+        await using var h = await Phase5Scenario.StartAsync();
+        var services = h.Services;
+        var frameworkUnit = Path.Combine(services.Toolchain.Resolve().FrameworkDir!, "src", "StdCtrls.pas");
+        var frameworkBytes = File.ReadAllBytes(frameworkUnit);
+
+        // A GUI project whose form has a button without a stored size: its width is the framework's default.
+        Assert.Equal(NewProjectOutcome.Created,
+            await services.Projects.CreateProjectAsync(new NewProjectRequest("gui-pascal", Phase5Scenario.ProjectName, h.TempDir)));
+        Assert.True(await services.Documents.CloseAllAsync());
+        var unitPath = Phase5Scenario.UnitPath(h);
+        var unitText = File.ReadAllText(unitPath);
+        Assert.Contains("Classes, Controls, Forms;", unitText, StringComparison.Ordinal);
+        Assert.Contains("= class(TForm)", unitText, StringComparison.Ordinal);
+        unitText = unitText.Replace("Classes, Controls, Forms;", "Classes, Controls, Forms, StdCtrls;", StringComparison.Ordinal);
+        var classLine = unitText.IndexOf("= class(TForm)", StringComparison.Ordinal) + "= class(TForm)".Length;
+        File.WriteAllText(unitPath, unitText.Insert(classLine, "\r\n    Button1: TButton;"));
+        var formPath = Phase5Scenario.FormPath(h);
+        var formText = File.ReadAllText(formPath).TrimEnd();
+        Assert.EndsWith("end", formText, StringComparison.Ordinal);
+        File.WriteAllText(formPath, formText[..^3] + "  object Button1: TButton\r\n    Left = 16\r\n    Top = 16\r\n    Caption = 'Go'\r\n  end\r\nend\r\n");
+        await services.FileChanges.WhenIdle();
+
+        async Task<int> ButtonWidthAsync()
+        {
+            var exe = await Phase5Scenario.BuildAsync(h);
+            var dump = await LayoutRoundTrip.RunDumpAsync(exe, h.TempDir);
+            return Assert.Single(Assert.Single(dump.Forms).Controls, c => c.Name == "Button1").Width;
+        }
+
+        Assert.Equal(75, await ButtonWidthAsync()); // built from the library unit
+
+        // Go to Declaration on the framework class opens the framework unit, protected.
+        var unit = Assert.IsAssignableFrom<Core.ViewModels.TextDocumentViewModel>((await services.Documents.OpenAsync(unitPath)).Value);
+        Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+        unit.Selection = Core.Text.TextSelection.At(unit.Buffer.Text.IndexOf("TButton", StringComparison.Ordinal) + 1);
+        Assert.True(services.Commands.CanExecute("search.goToDeclaration"));
+        await h.ExecuteAsync("search.goToDeclaration");
+        Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+        var library = Assert.IsType<Core.ViewModels.TextDocumentViewModel>(services.Documents.ActiveDocument);
+        Assert.Equal(frameworkUnit, library.FilePath, ignoreCase: true);
+        Assert.True(library.IsLibraryProtected);
+        var caret = library.ViewState.Caret;
+
+        // Copy to Project on the library bar: the copy is a project file, open at the same position, writable.
+        // The action opens the copy with file reads on a pool thread (IDE-ARCH-081): the wait is for its last step, the
+        // confirmation in the status bar.
+        h.Click("InfoBar.LibrarySource.Action.CopyToProject");
+        await h.WaitForAsync(() => services.Status.Message == "StdCtrls.pas was copied into the project. This project is now built from the copy.",
+            "Copy to Project finished");
+        var target = Path.Combine(Phase5Scenario.ProjectDir(h), "StdCtrls.pas");
+        var copy = Assert.IsType<Core.ViewModels.TextDocumentViewModel>(services.Documents.ActiveDocument);
+        Assert.Equal(target, copy.FilePath);
+        Assert.Equal(frameworkBytes, File.ReadAllBytes(target));
+        Assert.True(services.Projects.IsMember(target));
+        Assert.Equal(caret, copy.ViewState.Caret);
+        Assert.False(copy.IsReadOnly);
+        Assert.Empty(copy.InfoBars);
+        Assert.Empty(h.Messages.Requests);
+
+        // The visible constant is changed in the copy and saved.
+        var offset = copy.Buffer.Text.IndexOf(DefaultBounds, StringComparison.Ordinal);
+        Assert.True(offset >= 0, "the default bounds of a button are not where the test expects them");
+        Assert.Equal(-1, copy.Buffer.Text.IndexOf(DefaultBounds, offset + 1, StringComparison.Ordinal));
+        copy.Buffer.ApplyEdits([new Core.Text.TextEdit(offset, DefaultBounds.Length, ChangedBounds)]);
+        Assert.True(await services.Documents.SaveAsync(copy));
+        await services.FileChanges.WhenIdle();
+
+        // The next build compiles the copy: the running program has the changed value.
+        Assert.Equal(91, await ButtonWidthAsync());
+
+        // The framework file was never written.
+        Assert.Equal(frameworkBytes, File.ReadAllBytes(frameworkUnit));
+        Assert.True(library.IsLibraryProtected);
+        Assert.Empty(h.Messages.Requests);
+    }
 }

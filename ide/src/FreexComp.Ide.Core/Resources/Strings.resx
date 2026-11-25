@@ -66,6 +66,26 @@
   <data name="Msg_File_LibrarySource" xml:space="preserve">
     <value>This file is part of the library source installed with FreexComp. It is protected because a change affects every project that uses it.</value>
   </data>
+  <data name="Msg_File_LibraryCopyCreated" xml:space="preserve">
+    <value>{0} was copied into the project. This project is now built from the copy.</value>
+  </data>
+  <data name="Msg_File_LibraryCopyAlreadyInProject" xml:space="preserve">
+    <value>The project already has its own {0}.</value>
+  </data>
+  <data name="Msg_File_LibraryCopyExists" xml:space="preserve">
+    <value>The project folder already contains {0}. It will not be replaced.
+Add the existing file to the project and open it?</value>
+  </data>
+  <data name="Msg_File_LibraryCopyHasIncludes" xml:space="preserve">
+    <value>{0} cannot be copied into the project because it includes other files.</value>
+  </data>
+  <data name="Msg_File_LibraryCopyUnsaved" xml:space="preserve">
+    <value>Save or revert {0} before copying it into the project.</value>
+  </data>
+  <data name="Msg_File_LibraryCopyFailed" xml:space="preserve">
+    <value>{0} could not be copied into the project.
+{1}</value>
+  </data>
   <data name="Msg_File_ExternalChange" xml:space="preserve">
     <value>This file was changed outside FreexComp.</value>
   </data>
@@ -1158,6 +1178,9 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   </data>
   <data name="Cmd_file_editLibrarySource" xml:space="preserve">
     <value>Edit Library Source Anyway</value>
+  </data>
+  <data name="Cmd_file_copyLibraryUnitToProject" xml:space="preserve">
+    <value>Edit a Copy in the Project</value>
   </data>
   <data name="Cmd_file_print" xml:space="preserve">
     <value>Print…</value>
@@ -2929,6 +2952,14 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   </data>
   <data name="Msg_Project_DeleteFileConfirm_Title" xml:space="preserve">
     <value>Delete File</value>
+    <comment>UI-DLG-023: message-box title</comment>
+  </data>
+  <data name="Msg_File_LibraryCopyExists_Title" xml:space="preserve">
+    <value>Copy to Project</value>
+    <comment>UI-DLG-023: message-box title</comment>
+  </data>
+  <data name="Msg_File_LibraryCopyFailed_Title" xml:space="preserve">
+    <value>Copy to Project</value>
     <comment>UI-DLG-023: message-box title</comment>
   </data>
   <data name="Msg_File_RevertConfirm_Title" xml:space="preserve">
@@ -5326,6 +5357,14 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   <data name="InfoBar_Action_Ignore" xml:space="preserve">
     <value>Ignore</value>
     <comment>Msg.Project.UnlistedFiles* info bar (UI-TW-123)</comment>
+  </data>
+  <data name="InfoBar_Action_CopyToProject" xml:space="preserve">
+    <value>Copy to Project</value>
+    <comment>Msg.File.LibrarySource info-bar action (UI-ED-147)</comment>
+  </data>
+  <data name="Button_AddAndOpen" xml:space="preserve">
+    <value>Add and Open</value>
+    <comment>UI-DLG-024: message-box button</comment>
   </data>
   <data name="InfoBar_Action_EditAnyway" xml:space="preserve">
     <value>Edit Anyway</value>

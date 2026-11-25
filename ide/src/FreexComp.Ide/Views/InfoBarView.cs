@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Controls;
+using Avalonia.Data;
 using Avalonia.Layout;
 using FreexComp.Ide.Core.Resources;
 using FreexComp.Ide.Core.ViewModels;
@@ -43,6 +44,8 @@ public sealed class InfoBarView : Border
             var button = new Button { Content = action.Label };
             AutomationProperties.SetAutomationId(button, id + ".Action." + action.Name);
             AutomationProperties.SetName(button, action.Label);
+            button.Bind(IsVisibleProperty, new Binding(nameof(InfoBarAction.IsVisible)) { Source = action });
+            button.Bind(IsEnabledProperty, new Binding(nameof(InfoBarAction.IsEnabled)) { Source = action });
             button.Click += async (_, _) => await action.ExecuteAsync();
             buttons.Children.Add(button);
         }
@@ -73,14 +76,16 @@ public sealed class InfoBarView : Border
         var text = new TextBlock { Text = model.Text, Classes = { "body" }, TextWrapping = Avalonia.Media.TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center };
         AutomationProperties.SetAutomationId(text, id + ".Text");
         text.Bind(TextBlock.ForegroundProperty, text.GetResourceObservable("FxcTextPrimaryBrush"));
-        return new InfoBarRow(icon, text, buttons) { Margin = new Thickness(8, 4) };
+        // UI-ED-148: in a document the buttons of a wrapped bar stay at the right edge.
+        return new InfoBarRow(icon, text, buttons, stackedButtonsRight: AutomationIdBase == "InfoBar") { Margin = new Thickness(8, 4) };
     }
 
     /// <summary>
     /// The row of an info bar: icon, text, buttons. With room for the text (at least <see cref="MinTextWidth"/>) beside
     /// the buttons, the buttons sit at the right edge and the text fills the middle (the document layout). In a narrow
     /// host — a docked tool window (tool-windows.md §2: the Project Manager's bars) — the buttons go below the text,
-    /// left-aligned with it, wrapping onto further lines, so that no button is cut off.
+    /// left-aligned with it, wrapping onto further lines, so that no button is cut off. In a document the buttons of the
+    /// second line are right-aligned (UI-ED-148).
     /// </summary>
     private sealed class InfoBarRow : Panel
     {
@@ -92,13 +97,15 @@ public sealed class InfoBarView : Border
         private readonly Control _icon;
         private readonly Control _text;
         private readonly Control _buttons;
+        private readonly bool _stackedButtonsRight;
         private bool _stacked;
 
-        public InfoBarRow(Control icon, Control text, Control buttons)
+        public InfoBarRow(Control icon, Control text, Control buttons, bool stackedButtonsRight)
         {
             _icon = icon;
             _text = text;
             _buttons = buttons;
+            _stackedButtonsRight = stackedButtonsRight;
             Children.AddRange([icon, text, buttons]);
         }
 
@@ -140,7 +147,8 @@ public sealed class InfoBarView : Border
             var width = Math.Max(0, finalSize.Width - icon.Width);
             _icon.Arrange(new Rect(0, 0, icon.Width, icon.Height));
             _text.Arrange(new Rect(icon.Width, 0, width, textHeight));
-            _buttons.Arrange(new Rect(icon.Width, textHeight + Gap, width, _buttons.DesiredSize.Height));
+            var buttonsWidth = _stackedButtonsRight ? Math.Min(width, _buttons.DesiredSize.Width) : width;
+            _buttons.Arrange(new Rect(finalSize.Width - buttonsWidth, textHeight + Gap, buttonsWidth, _buttons.DesiredSize.Height));
             return finalSize;
         }
     }

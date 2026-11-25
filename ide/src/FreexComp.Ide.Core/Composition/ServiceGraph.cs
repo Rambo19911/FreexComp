@@ -125,6 +125,10 @@ public static class ServiceGraph
         // IDE-LIB-002, IDE-LIB-006: library source that is not a member of the open project opens protected.
         documents.IsProtectedLibrarySource = path => librarySource.IsLibrarySource(path) && !projects.IsMember(path);
         documents.FormPathOf = projects.FormPathOf; // designer README §3: the project's form entry names the companion
+        var libraryCopy = new LibraryCopyService(platform.FileSystem, documents, projects, librarySource, state, platform.Dialogs, status,
+            platform.Log); // IDE-LIB-026
+        libraryCopy.RegisterCommands(commands);
+        documents.LibraryCopyAction = libraryCopy.CreateBarAction; // IDE-LIB-037
         var projectManager = new ViewModels.ProjectManagerViewModel(projects, documents, platform.FileSystem, platform.Dialogs, commands,
             platform.Log, toolWindowPhase ?? ImplementedPhase);
         projectManager.RegisterCommands();

@@ -180,8 +180,9 @@ public sealed class LibrarySourceTests
         var bar = document.VisibleInfoBars[0];
         Assert.Equal((Bar, InfoBarSeverity.Info, Strings.Msg_File_LibrarySource, false, true),
             (bar.Kind, bar.Severity, bar.Text, bar.CanDismiss, bar.IsTopMost));
-        var action = Assert.Single(bar.Actions);
-        Assert.Equal(("EditAnyway", Strings.InfoBar_Action_EditAnyway), (action.Name, action.Label));
+        // A project is open: Copy to Project comes first (UI-ED-147, IDE-LIB-037); Edit Anyway is the second action.
+        Assert.Equal([("CopyToProject", Strings.InfoBar_Action_CopyToProject), ("EditAnyway", Strings.InfoBar_Action_EditAnyway)],
+            bar.Actions.Select(a => (a.Name, a.Label)));
         Assert.Equal([Bar, TextDocumentViewModel.MixedLineEndingsInfoBarKind], document.VisibleInfoBars.Select(b => b.Kind));
         AssertProtected(document);
 
@@ -242,7 +243,7 @@ public sealed class LibrarySourceTests
         AssertProtected(reopened);
 
         // The bar's action does the same as the command.
-        await Assert.Single(reopened.VisibleInfoBars[0].Actions).ExecuteAsync();
+        await Assert.Single(reopened.VisibleInfoBars[0].Actions, a => a.Name == "EditAnyway").ExecuteAsync();
         AssertWritable(reopened);
         Assert.False(commands.CanExecute(Command));
         Assert.True(bed.Dialogs.Requests.Count == 0, string.Join("; ", bed.Dialogs.Requests.Select(r => r.MessageId + ": " + string.Join(" | ", r.Args))));
