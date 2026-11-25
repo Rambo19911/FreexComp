@@ -35,6 +35,12 @@ foreach ($o in '-O0', '-O2') {
     $r = Run "seh$o.exe"; Check "SEH try/finally/except via __C_specific_handler ($o)" ($r.Code -eq 42 -and ($r.Text -replace '\s+', ' ').Trim() -eq 'filter finally caught')
 }
 
+# 2b. Hardware fault in the routine of the try: asynchronous-exception scopes + module flag eh-asynch (C-312)
+foreach ($o in '-O0', '-O2') {
+    Build (Join-Path $PSScriptRoot 'asynceh.ll') "asynceh$o.exe" @{ clang = @($o); link = @((Join-Path $out 'ntdll.lib')) }
+    $r = Run "asynceh$o.exe"; Check "SEH nil write between two calls caught in the same routine, async scopes ($o)" ($r.Code -eq 42 -and ($r.Text -replace '\s+', ' ').Trim() -eq 'before filter finally caught')
+}
+
 # 3. Compiler-provided __chkstk (module asm), memset, _fltused with a 200 KB stack frame
 foreach ($o in '-O0', '-O2') {
     Build (Join-Path $PSScriptRoot 'stk.ll') "stk$o.exe" @{ clang = @($o) }
