@@ -27,13 +27,15 @@ public sealed partial class ProcessRunnerTests
     {
         var cmd = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "cmd.exe");
         var script = $"for /L %i in (1,1,{Lines}) do @(echo out %i& echo err %i 1>&2)";
-        var threads = new ConcurrentDictionary<(int Child, bool Error, int ThreadId), (bool IsPool, string? Name)>();
+        // C-325: keyed by the Thread object, not its managed id — an id is reused once a pipe thread has ended, so two pipes of
+        // different children can report the same id during one run; the objects stay distinct (and alive in this map)
+        var threads = new ConcurrentDictionary<(int Child, bool Error, Thread Thread), (bool IsPool, string? Name)>();
         var output = Enumerable.Range(0, Children).Select(_ => (Out: new List<string>(), Err: new List<string>())).ToArray();
 
         void Record(int child, bool error, string line)
         {
             var thread = Thread.CurrentThread;
-            threads[(child, error, thread.ManagedThreadId)] = (thread.IsThreadPoolThread, thread.Name);
+            threads[(child, error, thread)] = (thread.IsThreadPoolThread, thread.Name);
             (error ? output[child].Err : output[child].Out).Add(line.TrimEnd());     // one thread per list
         }
 
@@ -49,7 +51,7 @@ public sealed partial class ProcessRunnerTests
         Assert.All(output, o => Assert.Equal(expectedErr, o.Err));
 
         Assert.Equal(2 * Children, threads.Count);                           // one thread per pipe
-        Assert.Equal(2 * Children, threads.Keys.Select(k => k.ThreadId).Distinct().Count());
+        Assert.Equal(2 * Children, threads.Keys.Select(k => k.Thread).Distinct(ReferenceEqualityComparer.Instance).Count());    // no thread reads two pipes
         Assert.All(threads.Values, t => Assert.False(t.IsPool, "a pipe was read on a thread-pool thread"));
         Assert.All(threads.Values, t => Assert.StartsWith("FreexComp pipe ", t.Name, StringComparison.Ordinal));
     }
