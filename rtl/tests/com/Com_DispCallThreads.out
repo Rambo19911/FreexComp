@@ -1,0 +1,13 @@
+# the hooks (RTL-1013, RTL-1016)
+ok DispCallProc is set by ComObj
+ok SafeCallErrorProc is set by ComObj
+# two threads calling at the same time
+ok first thread: every call made
+ok second thread: every call made
+ok first thread: every result its own
+ok second thread: every result its own
+ok the threads see the same DispCallProc
+ok the threads see the same SafeCallErrorProc
+ok DispCallProc unchanged after the calls
+ok SafeCallErrorProc unchanged after the calls
+# passed 10 failed 0

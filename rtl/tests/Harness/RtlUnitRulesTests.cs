@@ -91,6 +91,46 @@ public sealed partial class RtlUnitRulesTests
     }
 
     /// <summary>
+    /// RTL-008: nothing in <c>rtl/</c> refers to the compiler area's throw-away mini RTL (no path, unit search directory
+    /// or project reference names it); the RTL is written from its specification only. This file is the one exception:
+    /// it holds the patterns.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "RTL-008")]
+    public void Rtl_DoesNotReferToTheMiniRtl()
+    {
+        var self = Path.Combine(RtlSetup.TestsDirectory, "Harness", "RtlUnitRulesTests.cs");
+        var root = Path.Combine(RtlSetup.RepositoryRoot, "rtl");
+        var problems = new List<string>();
+        foreach (var file in Directory.EnumerateFiles(root, "*.*", SearchOption.AllDirectories))
+        {
+            var relative = Path.GetRelativePath(root, file);
+            var parts = relative.Split(Path.DirectorySeparatorChar);
+            if (parts.Contains("bin", StringComparer.OrdinalIgnoreCase) || parts.Contains("obj", StringComparer.OrdinalIgnoreCase)
+                || string.Equals(Path.GetFullPath(file), Path.GetFullPath(self), StringComparison.OrdinalIgnoreCase)
+                || !TextExtensions.Contains(Path.GetExtension(file)))
+            {
+                continue;
+            }
+
+            if (MiniRtlName().IsMatch(File.ReadAllText(file)))
+            {
+                problems.Add(relative);
+            }
+        }
+
+        Assert.True(problems.Count == 0, "refers to the mini RTL: " + string.Join(", ", problems));
+        Assert.Matches(MiniRtlName(), "-U compiler/tests/minirtl");
+        Assert.Matches(MiniRtlName(), "the Mini RTL");
+    }
+
+    private static readonly HashSet<string> TextExtensions = new(StringComparer.OrdinalIgnoreCase)
+        { ".pas", ".inc", ".def", ".cs", ".csproj", ".props", ".targets", ".json", ".txt", ".form" };
+
+    [GeneratedRegex(@"mini[-_ ]?rtl", RegexOptions.IgnoreCase)]
+    private static partial Regex MiniRtlName();
+
+    /// <summary>
     /// RTL-002: no RTL unit imports anything outside <c>rtl/</c> (every used unit is an RTL unit). The other half, the
     /// external symbols, is <see cref="DefFileTests.DefFilesMatchDeclarations"/> (every <c>external</c> has an entry in
     /// one of the Win32 <c>.def</c> files, so no C runtime function can be imported).

@@ -4,8 +4,8 @@ namespace FreexComp.Rtl.Tests.Harness;
 
 /// <summary>
 /// RTL-906 (testing.md §1): every requirement of an RTL phase that <c>STATUS.md</c> marks complete is covered by a test.
-/// Requirements are the ids <c>RTL-nnn</c> that start a rule line or the first cell of a table row in
-/// <c>docs/spec/rtl/*.md</c>; an id belongs to the phase named by the nearest enclosing heading (<c>— Phase N</c>), else
+/// Requirements are the ids <c>RTL-nnn</c> (three or more digits) that start a rule line, a list item (<c>- RTL-nnn</c>,
+/// <c>- **RTL-nnn**</c>) or the first cell of a table row in <c>docs/spec/rtl/*.md</c>; an id belongs to the phase named by the nearest enclosing heading (<c>— Phase N</c>), else
 /// by the file's introduction, else Phase 2. A test covers an id through the <c>// covers:</c> header of a golden
 /// <c>.pas</c> or a <c>[Trait("Req", "RTL-nnn")]</c> in <c>rtl/tests/**/*.cs</c>. Ids without a test are listed in
 /// <c>rtl/tests/coverage-exempt.txt</c> with a reason (documentation-only rules); a listed id must be a requirement and
@@ -14,7 +14,8 @@ namespace FreexComp.Rtl.Tests.Harness;
 [Trait("Phase", "2")]
 public sealed partial class RequirementCoverageTests
 {
-    [GeneratedRegex(@"^(?:\|\s*)?(RTL-\d{3})\b")]
+    // ids have three or more digits (RTL-001 ... RTL-999, RTL-1000 and up); a rule may also be a list item (R-244)
+    [GeneratedRegex(@"^(?:\|\s*|[-*]\s+)?(?:\*\*)?(RTL-\d{3,})\b")]
     private static partial Regex Definition();
 
     [GeneratedRegex(@"^(#{1,6})\s")]
@@ -29,10 +30,10 @@ public sealed partial class RequirementCoverageTests
     [GeneratedRegex(@"^\s*//\s*covers:(.*)$", RegexOptions.Multiline)]
     private static partial Regex CoversHeader();
 
-    [GeneratedRegex(@"Trait\(\s*""Req""\s*,\s*""(RTL-\d{3})""\s*\)")]
+    [GeneratedRegex(@"Trait\(\s*""Req""\s*,\s*""(RTL-\d{3,})""\s*\)")]
     private static partial Regex ReqTrait();
 
-    [GeneratedRegex(@"RTL-\d{3}")]
+    [GeneratedRegex(@"RTL-\d{3,}")]
     private static partial Regex AnyId();
 
     public static string SpecDirectory => Path.Combine(RtlSetup.RepositoryRoot, "docs", "spec", "rtl");
@@ -90,16 +91,38 @@ public sealed partial class RequirementCoverageTests
             "See RTL-998 in prose.",
             "## 1. Later — Phase 7, M2.6",
             "RTL-103  phase from the heading",
+            "RTL-1103  a four-digit rule line",
             "### 1.1 Sub",
             "| RTL-104 | phase inherited from the parent heading |",
+            "| RTL-1090 | a four-digit table rule |",
+            "| RTL-10901 | five digits are an id too |",
             "## 2. Back",
             "RTL-105  phase of the introduction again",
+            "- RTL-106  a rule as a list item",
+            "- **RTL-1016** a rule as a list item with a bold id",
+            "* RTL-107 the other list marker",
+            "1. RTL-996 in a numbered step is a reference, not a rule",
+            "- See RTL-995 in a list item's prose.",
         ];
         var found = Requirements(doc).ToList();
         Assert.Equal(
-            new (string, int)[] { ("RTL-101", 3), ("RTL-102", 3), ("RTL-103", 7), ("RTL-104", 7), ("RTL-105", 3) },
+            new (string, int)[]
+            {
+                ("RTL-101", 3), ("RTL-102", 3), ("RTL-103", 7), ("RTL-1103", 7), ("RTL-104", 7), ("RTL-1090", 7),
+                ("RTL-10901", 7), ("RTL-105", 3), ("RTL-106", 3), ("RTL-1016", 3), ("RTL-107", 3),
+            },
             found);
         Assert.Equal(new (string, int)[] { ("RTL-001", 2) }, Requirements(["# no marker", "RTL-001  default phase"]).ToList());
+    }
+
+    [Fact]
+    [Trait("Req", "RTL-906")]
+    public void Req_Coverage_ReadsIdsOfAnyLengthInTests()
+    {
+        Assert.Equal(new[] { "RTL-090", "RTL-1090", "RTL-1103" },
+            CoversHeaderIds("// phase: 8\n// covers: RTL-090, RTL-1090,RTL-1103\nprogram P;\n{ RTL-1104 in a comment }").ToArray());
+        Assert.Equal(new[] { "RTL-482", "RTL-1052" },
+            ReqTraitIds("[Trait(\"Req\", \"RTL-482\")]\n[Trait( \"Req\" , \"RTL-1052\" )]\n// RTL-1053 in prose").ToArray());
     }
 
     [Fact]
@@ -186,19 +209,23 @@ public sealed partial class RequirementCoverageTests
 
             if (file.EndsWith(".pas", StringComparison.OrdinalIgnoreCase))
             {
-                foreach (Match header in CoversHeader().Matches(File.ReadAllText(file)))
-                {
-                    covered.UnionWith(AnyId().Matches(header.Groups[1].Value).Select(m => m.Value));
-                }
+                covered.UnionWith(CoversHeaderIds(File.ReadAllText(file)));
             }
             else if (file.EndsWith(".cs", StringComparison.OrdinalIgnoreCase))
             {
-                covered.UnionWith(ReqTrait().Matches(File.ReadAllText(file)).Select(m => m.Groups[1].Value));
+                covered.UnionWith(ReqTraitIds(File.ReadAllText(file)));
             }
         }
 
         return covered;
     }
+
+    /// <summary>The ids named by the <c>// covers:</c> header lines of a golden <c>.pas</c> text.</summary>
+    public static IEnumerable<string> CoversHeaderIds(string text) =>
+        CoversHeader().Matches(text).SelectMany(header => AnyId().Matches(header.Groups[1].Value).Select(m => m.Value));
+
+    /// <summary>The ids of the <c>[Trait("Req", "RTL-nnn")]</c> attributes of a <c>.cs</c> text.</summary>
+    public static IEnumerable<string> ReqTraitIds(string text) => ReqTrait().Matches(text).Select(m => m.Groups[1].Value);
 
     /// <summary><c>RTL-nnn reason</c> per line; <c>#</c> starts a comment line.</summary>
     public static Dictionary<string, string> ReadExempt(string path)
