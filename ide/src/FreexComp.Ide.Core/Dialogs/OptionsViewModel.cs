@@ -210,6 +210,7 @@ public sealed class OptionsViewModel : DialogViewModel<bool>
             // phase8-build-options.md IDE-TGT-003 (I-227); the other fields of the group join with their own tasks.
             Integer("BuildJobs", SettingsCatalog.BuildJobs, 8, () => Strings.Options_Range_BuildJobs, heading: Strings.Options_Group_Build,
                 hint: Strings.Options_Hint_BuildJobs),
+            Check("ContinueAfterFailure", SettingsCatalog.BuildContinueAfterFailure, 8), // project-manager.md IDE-PM-172 (I-276)
         ]);
         var environmentFiles = Page(EnvironmentFilesPage, 1,
         [

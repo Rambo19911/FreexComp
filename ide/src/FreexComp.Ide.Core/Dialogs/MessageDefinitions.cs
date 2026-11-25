@@ -72,6 +72,7 @@ public static class MessageDefinitions
         new("Msg.Trust.SaveFailed", E, ["OK"]),
         new("Msg.Group.SaveFailed", E, ["OK"]),
         new("Msg.Group.SaveQuestion", Q, ["Save", "DontSave", "Cancel"]),
+        new("Msg.Dependencies.SaveFailed", E, ["OK"]),
         new("Msg.Run.BuildFailedRunPrevious", Q, ["Cancel", "RunLastBuild"]),
         new("Msg.Run.NoExecutable", E, ["OK"]),
         new("Msg.Run.StartFailed", E, ["OK"]),

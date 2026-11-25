@@ -199,6 +199,7 @@ public static class ServiceGraph
             platform.Dispatcher, platform.Dialogs, status, platform.Log, platform.Processes, trust)
         {
             OpenToolchainOptions = () => commands.ExecuteAsync("tools.options", OptionsViewModel.ToolchainPathsPage),
+            Group = groups, // IDE-PM-170, 171
         };
         build.BuildFinished += (_, _) => groups.Refresh(); // IDE-PM-152: a build may have changed what the listed members show
         var codeModel = new CodeModel.CodeModelService(projects, documents, toolchain, platform.FileSystem); // I-110
@@ -282,6 +283,8 @@ public static class ServiceGraph
         }
 
         ProjectDialogCommands.Register(commands, projects, platform.Dialogs, platform.FileDialogs, platform.FileSystem, layout, status); // I-107, I-108, I-248
+        ProjectDependenciesViewModel.RegisterCommand(commands, groups, projects, platform.FileSystem, platform.Dialogs, layout,
+            () => groups.SelectedRoot?.Invoke()); // IDE-PM-175
         projects.BeforeClose = async () => (debug is null || await debug.ConfirmStopAsync(exiting: false)) && await run.ConfirmStopAsync(exiting: false); // IDE-P3-093
         projects.ProjectChanged += (_, _) =>
         {

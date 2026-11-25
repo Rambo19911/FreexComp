@@ -297,19 +297,25 @@ public sealed partial class ProjectManagerViewTests
         pm.Find("$project:CoreLib")!.IsExpanded = true;
         Dispatcher.UIThread.RunJobs();
 
-        // The active root: the existing items with the group commands before file.closeProject. project.dependencies
-        // (after run.startWithoutDebugging) arrives with its dialog (I-277).
+        // The active root: the existing items with project.dependencies after run.startWithoutDebugging (own group) and
+        // the group commands before file.closeProject. Its Build, Rebuild and Clean are the commands as before (no target).
         pm.Select(pm.Find("$project")!);
+        Assert.All(pm.ContextMenu().Where(m => m.Command is not null), m => Assert.Null(m.Argument));
         Assert.Equal(["project.build", "project.rebuild", "project.clean", "-", "run.start", "run.startWithoutDebugging", "-",
+            "project.dependencies", "-",
             "project.addNewUnit", "project.addNewForm", "project.addNewFile", "project.addExistingFile", "project.newFolder", "-",
             "project.viewSource", "file.showInExplorer", "file.openInTerminal", "project.openOutputFolder", "file.copyPath", "-",
             "project.addExistingProject", "project.addNewProject", "project.removeFromGroup", "project.moveProjectUp", "project.moveProjectDown", "-",
             "file.closeProject", "-", "project.options"], Ids(pm.ContextMenu()));
 
-        // A listed root. Build, Rebuild and Clean of a listed root arrive with the group build (I-276), Dependencies with I-277.
+        // A listed root: Build, Rebuild and Clean act on that member (IDE-PM-170: they carry its project file), then Dependencies.
         pm.Select(pm.Find("$project:CoreLib")!);
-        Assert.Equal(["project.setActive", "-", "project.removeFromGroup", "project.moveProjectUp", "project.moveProjectDown", "-",
+        Assert.Equal(["project.setActive", "-", "project.build", "project.rebuild", "project.clean", "-", "project.dependencies", "-",
+            "project.removeFromGroup", "project.moveProjectUp", "project.moveProjectDown", "-",
             "file.showInExplorer", "file.openInTerminal", "file.copyPath"], Ids(pm.ContextMenu()));
+        var coreLib = Path.Combine(h.TempDir, "CoreLib", "CoreLib.pproj");
+        Assert.Equal([null, coreLib, coreLib, coreLib, null, null, null, null, null, null, null],
+            pm.ContextMenu().Where(m => m.Command is not null).Select(m => m.Argument));
 
         // An unavailable root: it can only be removed (and its place shown).
         pm.Select(pm.Find("$project:Tools")!);
@@ -332,10 +338,14 @@ public sealed partial class ProjectManagerViewTests
         var menu = h.Find<TreeViewItem>(Row + "$project:CoreLib").ContextMenu ?? h.Find<TreeView>("Tool.ProjectManager.Tree").ContextMenu;
         Assert.NotNull(menu);
         var items = menu!.Items.OfType<MenuItem>().ToList();
-        Assert.Equal(["Context.project.setActive", "Context.project.removeFromGroup", "Context.project.moveProjectUp", "Context.project.moveProjectDown",
+        Assert.Equal(["Context.project.setActive", "Context.project.build", "Context.project.rebuild", "Context.project.clean",
+            "Context.project.dependencies", "Context.project.removeFromGroup", "Context.project.moveProjectUp", "Context.project.moveProjectDown",
             "Context.file.showInExplorer", "Context.file.openInTerminal", "Context.file.copyPath"], items.Select(AutomationIds.Get));
-        Assert.Equal(["Set as _Active Project", "_Remove from Group", "Move Project _Up", "Move Project _Down"], items.Take(4).Select(i => i.Header));
-        Assert.Equal([true, true, true, true], items.Take(4).Select(i => i.IsEffectivelyEnabled)); // CoreLib is in the middle
+        Assert.Equal("Set as _Active Project", items[0].Header);
+        Assert.Equal(["De_pendencies…", "_Remove from Group", "Move Project _Up", "Move Project _Down"], items.Skip(4).Take(4).Select(i => i.Header));
+        Assert.Equal(Enumerable.Repeat(true, 8), items.Take(8).Select(i => i.IsEffectivelyEnabled)); // CoreLib is in the middle
+        // The three build items keep the ids of their commands and carry the row's project file as the command parameter.
+        Assert.Equal([null, coreLib, coreLib, coreLib, null], items.Take(5).Select(i => i.CommandParameter));
         menu.Close();
 
         // Enabled states follow the row: the unavailable last root cannot move down; the first root cannot move up.

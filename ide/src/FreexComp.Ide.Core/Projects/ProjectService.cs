@@ -150,7 +150,7 @@ public sealed class ProjectService : IProjectService
         return await SaveChangedProjectAsync(_project with { ActiveConfiguration = name });
     }
 
-    public async Task<bool> ApplyOptionsAsync(Project workingCopy)
+    public async Task<bool> ApplyOptionsAsync(Project workingCopy, Func<string, Task>? saveFailed = null)
     {
         ArgumentNullException.ThrowIfNull(workingCopy);
         if (_project is null)
@@ -159,7 +159,19 @@ public sealed class ProjectService : IProjectService
         var copy = workingCopy with { FilePath = _project.FilePath };
         if (!copy.Configurations.ContainsKey(copy.ActiveConfiguration) && copy.ConfigurationNames.Length > 0)
             copy = copy with { ActiveConfiguration = copy.ConfigurationNames[0] };
-        return copy == _project || await SaveChangedProjectAsync(copy);
+        if (copy == _project)
+            return true;
+        if (saveFailed is null)
+            return await SaveChangedProjectAsync(copy);
+        var saved = SaveProjectFile(copy);
+        if (!saved.Success)
+        {
+            await saveFailed(saved.Args[^1]);
+            return false;
+        }
+
+        SetProject(copy);
+        return true;
     }
 
     /// <summary><c>project.addExistingFile</c> (IDE-PM-050): the multi-select picker, then <see cref="AddExistingFilesAsync"/>.</summary>

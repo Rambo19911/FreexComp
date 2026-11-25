@@ -30,7 +30,9 @@ public interface ITrustService
     /// IDE-TRUST-004…009: looks for projects of the build that have commands and are not trusted; none → proceed without
     /// any UI; else the dialog <c>TrustProject</c> decides.
     /// </summary>
-    Task<TrustCheckResult> CheckBeforeBuildAsync(ProjectModel project);
+    /// <param name="projectOrGroupPath">The <c>.pproj</c> or <c>.pgroup</c> of the request (IDE-PM-174).</param>
+    /// <param name="name">The name the question shows for it.</param>
+    Task<TrustCheckResult> CheckBeforeBuildAsync(string projectOrGroupPath, string name);
 }
 
 /// <inheritdoc cref="ITrustService"/>
@@ -61,10 +63,10 @@ public sealed class TrustService : ITrustService
 
     public bool IsPromptOpen { get; private set; }
 
-    public async Task<TrustCheckResult> CheckBeforeBuildAsync(ProjectModel project)
+    public async Task<TrustCheckResult> CheckBeforeBuildAsync(string projectOrGroupPath, string name)
     {
-        ArgumentNullException.ThrowIfNull(project);
-        var path = project.FilePath;
+        ArgumentNullException.ThrowIfNull(projectOrGroupPath);
+        var path = projectOrGroupPath;
         Task<System.Collections.Immutable.ImmutableArray<UntrustedProject>> Find() =>
             Task.Run(() => ProjectTrust.FindUntrusted(_files, path, null, Store));
 
@@ -72,7 +74,7 @@ public sealed class TrustService : ITrustService
         if (untrusted.IsEmpty)
             return new TrustCheckResult(true, EventsPolicy.RequireTrust);
 
-        var prompt = new TrustProjectViewModel(project.Name, untrusted, Store, Find, HashOf, _dialogs, _pickers, _clipboard, _layout);
+        var prompt = new TrustProjectViewModel(name, untrusted, Store, Find, HashOf, _dialogs, _pickers, _clipboard, _layout);
         IsPromptOpen = true;
         TrustPromptOutcome outcome;
         try

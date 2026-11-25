@@ -69,7 +69,7 @@ public static class MenuBarBuilder
 
         if (model.Command is { } command)
         {
-            AutomationProperties.SetAutomationId(item, context ? AutomationIds.Context(command.Id, model.Argument) : AutomationIds.Menu(command.Id, model.Argument));
+            AutomationProperties.SetAutomationId(item, context ? AutomationIds.Context(command.Id, model.ArgumentIsTarget ? null : model.Argument) : AutomationIds.Menu(command.Id, model.Argument));
             item.Command = command;
             item.CommandParameter = model.Argument;
             if (!context)

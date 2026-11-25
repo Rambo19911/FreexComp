@@ -249,6 +249,8 @@ public static class MainMenuDefinition
             Command("project.checkSyntax"),
             Command("project.cancelBuild"),
             Command("project.buildAll"),
+            Command("project.rebuildAll"),
+            Command("project.cleanAll"),
             Separator,
             Submenu("Project.Configuration",
             [
@@ -257,6 +259,7 @@ public static class MainMenuDefinition
             Command("project.configurationManager"),
             Command("project.openOutputFolder"),
             Separator,
+            Command("project.dependencies"),
             Command("project.options"),
         ]),
         Submenu("Run",

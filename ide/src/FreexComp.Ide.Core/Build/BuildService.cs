@@ -24,6 +24,21 @@ public interface IBuildService
     /// </summary>
     Task<BuildResult?> BuildAsync(BuildKind kind, bool continueToRun = false);
 
+    /// <summary>
+    /// IDE-PM-170: build, rebuild or clean of one member of the project group — one request for its <c>.pproj</c>; the
+    /// active project does not change. The path of the loaded project is <see cref="BuildAsync"/>. Null when the build
+    /// did not start (not an available member, or as <see cref="BuildAsync"/>).
+    /// </summary>
+    Task<BuildResult?> BuildMemberAsync(string projectPath, BuildKind kind);
+
+    /// <summary>
+    /// IDE-PM-171 <c>project.buildAll</c>, <c>project.rebuildAll</c>, <c>project.cleanAll</c>: one request for the group
+    /// file (every project with its own active configuration and platform). An unsaved group is saved first through
+    /// <c>file.saveGroupAs</c>; canceled → no build, status <c>Msg.Group.SaveToBuildAll</c>. Null when the build did not
+    /// start (fewer than two members, or as <see cref="BuildAsync"/>).
+    /// </summary>
+    Task<BuildResult?> BuildGroupAsync(BuildKind kind);
+
     /// <summary>IDE-P3-050: requests cancellation of the running build; the state stays Building until the engine returns.</summary>
     void Cancel();
 
@@ -61,6 +76,9 @@ public sealed class BuildService : IBuildService
     private bool _internalError;
     private bool _eventsSkipped;
     private string? _lockedOutput;
+
+    /// <summary>The <c>Finished</c> events of the request in progress, one per planned project (IDE-PM-173).</summary>
+    private readonly List<BuildEvent.Finished> _finished = [];
     private readonly IProcessLauncher _processes;
     private readonly ITrustService _trust;
 
@@ -96,9 +114,71 @@ public sealed class BuildService : IBuildService
     /// <summary>Called when a build starts (UI-TW-501: Output shows the build channel).</summary>
     public Action? ShowBuildOutput { get; set; }
 
-    public async Task<BuildResult?> BuildAsync(BuildKind kind, bool continueToRun = false)
+    /// <summary>The project group (IDE-PM-170, 171; set by the service graph). Null: only the loaded project is built.</summary>
+    public IProjectGroupService? Group { get; set; }
+
+    /// <summary>What a request builds: the loaded project, a listed member of the group, or the group file.</summary>
+    private enum Scope { Active, Member, Group }
+
+    /// <summary>
+    /// The subject of one request. <paramref name="IsOpen"/>: it is still what the IDE has open (asked again after every
+    /// wait); <paramref name="Saves"/>: the file documents that save-before-build covers.
+    /// </summary>
+    private sealed record Subject(string Path, string Name, string? Configuration, string? Platform, Func<bool> IsOpen, Func<string, bool> Saves);
+
+    public Task<BuildResult?> BuildAsync(BuildKind kind, bool continueToRun = false) => BuildAsync(Scope.Active, null, kind, continueToRun);
+
+    public Task<BuildResult?> BuildMemberAsync(string projectPath, BuildKind kind)
     {
-        var result = await BuildOnceAsync(kind, continueToRun);
+        ArgumentNullException.ThrowIfNull(projectPath);
+        return Same(projectPath, _projects.Project?.FilePath) ? BuildAsync(kind) : BuildAsync(Scope.Member, projectPath, kind, false);
+    }
+
+    public Task<BuildResult?> BuildGroupAsync(BuildKind kind) => BuildAsync(Scope.Group, null, kind, false);
+
+    private static bool Same(string? a, string? b) => string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
+
+    private ProjectGroupMember? AvailableMember(string? path) =>
+        path is null ? null : Group?.Members.FirstOrDefault(m => m.IsAvailable && Same(m.FilePath, Path.GetFullPath(path)));
+
+    /// <summary>IDE-PM-171: Build All needs a group of two or more members.</summary>
+    private bool HasGroupToBuild => Group is { Members.Count: >= 2 };
+
+    private bool CanBuild(Scope scope, string? memberPath) => scope switch
+    {
+        Scope.Member => AvailableMember(memberPath) is not null,
+        Scope.Group => HasGroupToBuild,
+        _ => _projects.Project is not null,
+    };
+
+    private Subject? Resolve(Scope scope, string? memberPath)
+    {
+        switch (scope)
+        {
+            case Scope.Member when AvailableMember(memberPath) is { Definition: { } definition } member:
+                // Save-before-build of a listed member: its own files and its project file (as IDE-P3-020 for the loaded project).
+                var directory = Path.GetDirectoryName(member.FilePath)!;
+                var files = member.Files.SelectMany(f => new[] { f.Path, f.Form }).OfType<string>()
+                    .Select(f => Path.GetFullPath(Path.Combine(directory, f.Replace('/', Path.DirectorySeparatorChar))))
+                    .Append(member.FilePath).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                return new Subject(member.FilePath, member.Name, member.Configuration, definition.Platforms.FirstOrDefault(),
+                    () => AvailableMember(member.FilePath) is not null, files.Contains);
+            case Scope.Group when HasGroupToBuild && Group!.FilePath is { } groupPath:
+                // IDE-PM-171: every project uses its own active values; the set of all modified file documents is saved.
+                return new Subject(groupPath, Path.GetFileNameWithoutExtension(groupPath), null, null,
+                    () => HasGroupToBuild && Same(Group?.FilePath, groupPath), _ => true);
+            case Scope.Active when _projects.Project is { } project:
+                return new Subject(project.FilePath, project.Name, project.ActiveConfiguration,
+                    project.Platforms.Count > 0 ? project.Platforms[0] : null, () => Same(_projects.Project?.FilePath, project.FilePath),
+                    _projects.IsMember);
+            default:
+                return null;
+        }
+    }
+
+    private async Task<BuildResult?> BuildAsync(Scope scope, string? memberPath, BuildKind kind, bool continueToRun)
+    {
+        var result = await BuildOnceAsync(scope, memberPath, kind, continueToRun);
         if (result is not { Success: false, Canceled: false } || _lockedOutput is not { } exe)
             return result;
 
@@ -109,15 +189,15 @@ public sealed class BuildService : IBuildService
             return result;
         if (!await _processes.TerminateByPathAsync(exe))
             _log.Error(Category, "The program holding " + exe + " could not be terminated."); // the repeated build reports E4008 again
-        return await BuildAsync(kind, continueToRun);
+        return await BuildAsync(scope, memberPath, kind, continueToRun);
     }
 
-    private async Task<BuildResult?> BuildOnceAsync(BuildKind kind, bool continueToRun)
+    private async Task<BuildResult?> BuildOnceAsync(Scope scope, string? memberPath, BuildKind kind, bool continueToRun)
     {
         _lockedOutput = null;
         if (kind == BuildKind.CheckSyntax)
             throw new ArgumentException("Check Syntax does not use the build engine (IDE-P3-055).", nameof(kind));
-        if (_projects.Project is not { } project || _state.Current.State != IdeState.Idle || _trust.IsPromptOpen)
+        if (!CanBuild(scope, memberPath) || _state.Current.State != IdeState.Idle || _trust.IsPromptOpen)
             return null; // IDE-TRUST-013: the state is still Idle while the question is open; no second build starts behind it
 
         // IDE-P3-012: the toolchain first; nothing is saved when it is missing.
@@ -129,16 +209,25 @@ public sealed class BuildService : IBuildService
             return null;
         }
 
-        if (kind != BuildKind.Clean && !await SaveBeforeBuildAsync())
+        // IDE-PM-171: the engine builds a group from its file, so an unsaved group is saved first (every target).
+        if (scope == Scope.Group && Group is { IsUnsaved: true } unsaved && !await unsaved.SaveAsAsync())
+        {
+            _status.ShowMessage(Strings.Msg_Group_SaveToBuildAll, TimeSpan.FromSeconds(5));
             return null;
-        if (_projects.Project is null || _state.Current.State != IdeState.Idle)
+        }
+
+        if (Resolve(scope, memberPath) is not { } subject)
+            return null;
+        if (kind != BuildKind.Clean && !await SaveBeforeBuildAsync(subject.Saves))
+            return null;
+        if (!subject.IsOpen() || _state.Current.State != IdeState.Idle)
             return null;
 
         // IDE-TRUST-003: after the save (the project file on disk is the one the engine reads), before Building.
         var events = EventsPolicy.RequireTrust;
         if (kind != BuildKind.Clean)
         {
-            var trust = await _trust.CheckBeforeBuildAsync(project);
+            var trust = await _trust.CheckBeforeBuildAsync(subject.Path, subject.Name); // IDE-PM-174: per project of the request
             if (!trust.Proceed)
             {
                 // IDE-TRUST-009: nothing is built or run; Messages and Output keep what they show.
@@ -148,7 +237,7 @@ public sealed class BuildService : IBuildService
             }
 
             events = trust.Events;
-            if (_projects.Project is null || _state.Current.State != IdeState.Idle)
+            if (!subject.IsOpen() || _state.Current.State != IdeState.Idle)
                 return null;
         }
 
@@ -158,7 +247,7 @@ public sealed class BuildService : IBuildService
         var active = BeginActive();
         try
         {
-            result = await RunEngineAsync(project, kind, events);
+            result = await RunEngineAsync(subject, kind, events);
             return result;
         }
         finally
@@ -177,11 +266,19 @@ public sealed class BuildService : IBuildService
     public void RegisterCommands(Commands.ICommandService commands)
     {
         ArgumentNullException.ThrowIfNull(commands);
-        commands.RegisterHandler("project.build", new Handler(() => _projects.Project is not null, () => BuildAsync(BuildKind.Build)));
-        commands.RegisterHandler("project.rebuild", new Handler(() => _projects.Project is not null, () => BuildAsync(BuildKind.Rebuild)));
-        commands.RegisterHandler("project.clean", new Handler(() => _projects.Project is not null, () => BuildAsync(BuildKind.Clean)));
-        commands.RegisterHandler("project.checkSyntax", new Handler(() => _projects.Project is not null && CheckSyntax is not null, CheckSyntaxAsync));
-        commands.RegisterHandler("project.cancelBuild", new Handler(() => _cts is not null && !_state.Current.CancelRequested, () =>
+        // IDE-PM-170: without an argument the loaded project (menu, tool bar, shortcut); the context menu of a root row
+        // gives the member's path.
+        void Register(string id, BuildKind kind) => commands.RegisterHandler(id, new Handler(
+            member => CanBuild(member is null ? Scope.Active : Scope.Member, member),
+            member => member is null ? BuildAsync(kind) : BuildMemberAsync(member, kind)));
+        Register("project.build", BuildKind.Build);
+        Register("project.rebuild", BuildKind.Rebuild);
+        Register("project.clean", BuildKind.Clean);
+        commands.RegisterHandler("project.buildAll", new Handler(_ => HasGroupToBuild, _ => BuildGroupAsync(BuildKind.Build))); // IDE-PM-171
+        commands.RegisterHandler("project.rebuildAll", new Handler(_ => HasGroupToBuild, _ => BuildGroupAsync(BuildKind.Rebuild)));
+        commands.RegisterHandler("project.cleanAll", new Handler(_ => HasGroupToBuild, _ => BuildGroupAsync(BuildKind.Clean)));
+        commands.RegisterHandler("project.checkSyntax", new Handler(_ => _projects.Project is not null && CheckSyntax is not null, _ => CheckSyntaxAsync()));
+        commands.RegisterHandler("project.cancelBuild", new Handler(_ => _cts is not null && !_state.Current.CancelRequested, _ =>
         {
             Cancel();
             return Task.CompletedTask;
@@ -309,13 +406,15 @@ public sealed class BuildService : IBuildService
     }
 
     /// <summary>IDE-P3-020…022: saves the member documents per <c>environment.autoSaveBeforeBuild</c>; false = do not build.</summary>
-    public async Task<bool> SaveBeforeBuildAsync()
+    public Task<bool> SaveBeforeBuildAsync() => SaveBeforeBuildAsync(_projects.IsMember);
+
+    private async Task<bool> SaveBeforeBuildAsync(Func<string, bool> saves)
     {
         var mode = _settings.Get(SettingsCatalog.EnvironmentAutoSaveBeforeBuild);
         if (mode == "none")
             return true;
         var set = _documents.Documents
-            .Where(d => d.IsModified && d.FilePath is { } path && _projects.IsMember(path))
+            .Where(d => d.IsModified && d.FilePath is { } path && saves(path))
             .OrderBy(d => string.Equals(d.FilePath, _projects.Project?.FilePath, StringComparison.OrdinalIgnoreCase) ? 0 : 1)
             .ToList();
         if (set.Count == 0)
@@ -335,8 +434,9 @@ public sealed class BuildService : IBuildService
         return true;
     }
 
-    private async Task<BuildResult?> RunEngineAsync(ProjectModel project, BuildKind kind, EventsPolicy events)
+    private async Task<BuildResult?> RunEngineAsync(Subject subject, BuildKind kind, EventsPolicy events)
     {
+        _finished.Clear();
         if (_settings.Get(SettingsCatalog.OutputClearOnBuild))
             _output.Clear(OutputChannels.Build);
         _messages.BeginBuild();
@@ -347,9 +447,10 @@ public sealed class BuildService : IBuildService
         var paths = _toolchain.Resolve();
         var request = new BuildRequest
         {
-            ProjectPath = project.FilePath,
-            Configuration = project.ActiveConfiguration,
-            Platform = project.Platforms.Count > 0 ? project.Platforms[0] : null,
+            ProjectPath = subject.Path,
+            Configuration = subject.Configuration,
+            Platform = subject.Platform,
+            StopOnFirstFailure = !_settings.Get(SettingsCatalog.BuildContinueAfterFailure), // IDE-PM-172
             Target = kind switch
             {
                 BuildKind.Rebuild => BuildTarget.Rebuild,
@@ -414,10 +515,12 @@ public sealed class BuildService : IBuildService
             return null;
         }
 
-        if (result is { Success: true, Canceled: false, OutputPath: { } built } && kind != BuildKind.Clean)
+        // I-225: the library goes beside the loaded project's program (the deployer reads that project's units).
+        if (result is { Canceled: false } && kind != BuildKind.Clean
+            && result.Projects.LastOrDefault(p => Same(p.ProjectPath, _projects.Project?.FilePath)) is { Success: true, OutputPath: { } built })
             await DeployDatabaseLibraryAsync(built);
-        Finish(_internalError && !result!.Success ? Strings.Msg_Build_InternalError : Summary(result!, kind, project.Name),
-            success: result!.Success);
+        Finish(_internalError && !result!.Success ? Strings.Msg_Build_InternalError
+            : GroupSummary(result!) ?? Summary(result!, kind, subject.Name), success: result!.Success);
         if (result.Errors > 0 && !result.Canceled && _settings.Get(SettingsCatalog.MessagesAutoShowOnError))
             ShowMessages?.Invoke();
         return result;
@@ -499,6 +602,9 @@ public sealed class BuildService : IBuildService
                 case BuildEvent.OutputLine o:
                     _output.Append(OutputChannels.Build, o.Text, o.Source == OutputSource.Info ? OutputKind.Ide : OutputKind.Normal);
                     break;
+                case BuildEvent.Finished f:
+                    _finished.Add(f);
+                    break;
             }
         }
 
@@ -519,6 +625,23 @@ public sealed class BuildService : IBuildService
         _messages.AddSummary(text, success ? MessageSeverity.Info : MessageSeverity.Error);
         ResultText = text;
         BuildFinished?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// IDE-PM-173: the summary of a request that built more than one project of which at least one failed or was skipped —
+    /// the counts and the names of the skipped projects; null for every other request. A skipped project is one that
+    /// finished without success and without an error of its own (CMP-1341).
+    /// </summary>
+    private string? GroupSummary(BuildResult result)
+    {
+        if (result.Canceled || _finished.Count < 2 || _finished.All(f => f.Success))
+            return null;
+        var skipped = _finished.Where(f => f is { Success: false, Errors: 0 }).Select(f => Path.GetFileNameWithoutExtension(f.ProjectPath)).ToList();
+        var succeeded = _finished.Count(f => f.Success);
+        var format = Strings.Msg_Build_GroupSummary;
+        if (skipped.Count == 0 && format.IndexOf(": {3}", StringComparison.Ordinal) is >= 0 and var names)
+            format = format[..names]; // "when {2} = 0 the text ends after '{2} skipped'"
+        return Format(format, succeeded, _finished.Count - succeeded - skipped.Count, skipped.Count, string.Join(", ", skipped));
     }
 
     /// <summary>IDE-P3-034: the summary text of a build result.</summary>
@@ -549,10 +672,10 @@ public sealed class BuildService : IBuildService
 
     private static string Format(string format, params object[] args) => string.Format(CultureInfo.CurrentCulture, format, args);
 
-    private sealed class Handler(Func<bool> canExecute, Func<Task> execute) : Commands.ICommandHandler
+    private sealed class Handler(Func<string?, bool> canExecute, Func<string?, Task> execute) : Commands.ICommandHandler
     {
-        public bool CanExecute(string? argument) => canExecute();
+        public bool CanExecute(string? argument) => canExecute(argument);
 
-        public Task ExecuteAsync(string? argument) => execute();
+        public Task ExecuteAsync(string? argument) => execute(argument);
     }
 }

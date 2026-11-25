@@ -5637,4 +5637,58 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
     <value>after {0}</value>
     <comment>UI-TW-127: automation name of the insertion line while a root row is dragged</comment>
   </data>
+  <data name="Cmd_project_rebuildAll" xml:space="preserve">
+    <value>Rebuild All Projects</value>
+  </data>
+  <data name="Cmd_project_cleanAll" xml:space="preserve">
+    <value>Clean All Projects</value>
+  </data>
+  <data name="Menu_project_rebuildAll" xml:space="preserve">
+    <value>Rebu&amp;ild All Projects</value>
+  </data>
+  <data name="Menu_project_cleanAll" xml:space="preserve">
+    <value>Clean All Pro&amp;jects</value>
+  </data>
+  <data name="Msg_Group_SaveToBuildAll" xml:space="preserve">
+    <value>Save the project group to build all projects.</value>
+    <comment>IDE-PM-171: status when the save of an unsaved group was canceled</comment>
+  </data>
+  <data name="Msg_Build_GroupSummary" xml:space="preserve">
+    <value>{0} succeeded, {1} failed, {2} skipped: {3}</value>
+    <comment>IDE-PM-173: 0…2 = counts of projects, 3 = names of the skipped projects; without a skipped project the text ends after "{2} skipped"</comment>
+  </data>
+  <data name="Options_Field_ContinueAfterFailure" xml:space="preserve">
+    <value>Continue with the other projects when a project _fails</value>
+    <comment>project-manager.md IDE-PM-172 (P8)</comment>
+  </data>
+  <data name="Cmd_project_dependencies" xml:space="preserve">
+    <value>Project Dependencies…</value>
+  </data>
+  <data name="Menu_project_dependencies" xml:space="preserve">
+    <value>De&amp;pendencies…</value>
+  </data>
+  <data name="ProjectDependencies_Title" xml:space="preserve">
+    <value>Dependencies of {0}</value>
+    <comment>UI-DLG-310: title of the dialog ProjectDependencies; 0 = project name</comment>
+  </data>
+  <data name="ProjectDependencies_Projects" xml:space="preserve">
+    <value>_Projects that are built before {0}:</value>
+    <comment>UI-DLG-310: label of the check list; 0 = project name</comment>
+  </data>
+  <data name="Msg_Dependencies_NoOtherProjects" xml:space="preserve">
+    <value>There are no other projects in the group. Add a project to the group to make it a dependency.</value>
+  </data>
+  <data name="Msg_Dependencies_Outside" xml:space="preserve">
+    <value>(not in the group)</value>
+  </data>
+  <data name="Msg_Dependencies_Cycle" xml:space="preserve">
+    <value>This selection creates a circular dependency:
+{0}</value>
+    <comment>IDE-PM-177: 0 = project names joined with " → "</comment>
+  </data>
+  <data name="Msg_Dependencies_SaveFailed" xml:space="preserve">
+    <value>The dependencies of {0} could not be saved.
+{1}</value>
+    <comment>IDE-PM-178: 0 = project name, 1 = system error text</comment>
+  </data>
 </root>

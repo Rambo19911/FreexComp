@@ -170,6 +170,8 @@ public static class CommandCatalog
         new("project.checkSyntax", [Global], 3, []),
         new("project.cancelBuild", [Global], 3, ["Ctrl+Break"]),
         new("project.buildAll", [Global], 8, []),
+        new("project.rebuildAll", [Global], 8, []),
+        new("project.cleanAll", [Global], 8, []),
         new("project.setConfiguration", [Global], 3, [], TakesArgument: true),
         new("project.configurationManager", [Global], 8, []),
         new("project.setActive", [ProjectManager], 8, []),
@@ -178,6 +180,7 @@ public static class CommandCatalog
         new("project.removeFromGroup", [ProjectManager], 8, []),
         new("project.moveProjectUp", [ProjectManager], 8, []),
         new("project.moveProjectDown", [ProjectManager], 8, []),
+        new("project.dependencies", [Global], 8, []),
         new("project.options", [Global], 3, ["Ctrl+Shift+F11"]),
         new("project.openOutputFolder", [Global], 3, []),
 

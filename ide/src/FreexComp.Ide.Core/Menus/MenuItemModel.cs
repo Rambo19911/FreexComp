@@ -89,6 +89,9 @@ public sealed class MenuItemModel : ObservableObject
 
     public string? Argument { get; }
 
+    /// <summary>The argument names what the item acts on, not a variant of the command: it is no part of the element id.</summary>
+    public bool ArgumentIsTarget { get; private init; }
+
     public MenuToggleKind ToggleKind { get; }
 
     public IReadOnlyList<MenuItemModel> Children => _children;
@@ -125,6 +128,13 @@ public sealed class MenuItemModel : ObservableObject
 
     internal static MenuItemModel ForCommand(string label, IdeCommand command, string? argument, MenuToggleKind toggleKind, string? toolTip = null) =>
         new(null, label, command, argument, toggleKind, [], false, false, toolTip);
+
+    /// <summary>
+    /// A context-menu item of the row the menu was opened on (IDE-PM-170): <paramref name="target"/> is the command's
+    /// argument, and the element id is that of the command alone (<see cref="ArgumentIsTarget"/>).
+    /// </summary>
+    internal static MenuItemModel ForCommandOn(string label, IdeCommand command, string target) =>
+        new(null, label, command, target, MenuToggleKind.None, [], false, false) { ArgumentIsTarget = true };
 
     /// <summary>A designer verb (UI-DSG-082): <paramref name="command"/> with the verb's argument under its own element id.</summary>
     internal static MenuItemModel ForVerb(string verbId, string caption, IdeCommand command, string? argument) =>

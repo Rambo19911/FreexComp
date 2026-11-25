@@ -403,6 +403,7 @@ public sealed partial class ProjectManagerViewTests
 
         pm.Select(pm.Find("$project")!);
         Assert.Equal(["project.build", "project.rebuild", "project.clean", "-", "run.start", "run.startWithoutDebugging", "-",
+            "project.dependencies", "-", // UI-TW-129 (I-277)
             "project.addNewUnit", "project.addNewForm", "project.addNewFile", "project.addExistingFile", "project.newFolder", "-",
             "project.viewSource", "file.showInExplorer", "file.openInTerminal", "project.openOutputFolder", "file.copyPath", "-",
             "project.addExistingProject", "project.addNewProject", "project.removeFromGroup", "project.moveProjectUp", "project.moveProjectDown", "-", // UI-TW-129 (I-275)

@@ -45,6 +45,7 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel, ICommandTarge
     private static readonly string?[] RootMenu =
     [
         "project.build", "project.rebuild", "project.clean", null, "run.start", "run.startWithoutDebugging", null,
+        "project.dependencies", null, // UI-TW-129
         "project.addNewUnit", "project.addNewForm", "project.addNewFile", "project.addExistingFile", "project.newFolder", null,
         "project.viewSource", "file.showInExplorer", "file.openInTerminal", "project.openOutputFolder", "file.copyPath", null,
         "project.addExistingProject", "project.addNewProject", "project.removeFromGroup", "project.moveProjectUp", "project.moveProjectDown", null, // UI-TW-129
@@ -72,11 +73,11 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel, ICommandTarge
         "project.addExistingProject", "project.addNewProject", // UI-TW-129
     ];
 
-    // UI-TW-129: rows of the other members of a project group. Build / Rebuild / Clean of a listed root arrive with the
-    // group build (IDE-PM-170), Dependencies with its dialog (IDE-PM-175).
+    // UI-TW-129: rows of the other members of a project group.
     private static readonly string?[] ListedRootMenu =
     [
-        "project.setActive", null, "project.removeFromGroup", "project.moveProjectUp", "project.moveProjectDown", null,
+        "project.setActive", null, "project.build", "project.rebuild", "project.clean", null, "project.dependencies", null,
+        "project.removeFromGroup", "project.moveProjectUp", "project.moveProjectDown", null,
         "file.showInExplorer", "file.openInTerminal", "file.copyPath",
     ];
 
@@ -808,7 +809,10 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel, ICommandTarge
             if (pendingSeparator)
                 items.Add(MenuItemModel.Separator());
             pendingSeparator = false;
-            items.Add(MenuItemModel.ForCommand(MenuLabels.For(new CommandMenuNode(id)), command, null, MenuToggleKind.None));
+            // IDE-PM-170: Build, Rebuild and Clean of a listed root act on that member, not on the loaded project.
+            items.Add(ids == ListedRootMenu && id is "project.build" or "project.rebuild" or "project.clean"
+                ? MenuItemModel.ForCommandOn(MenuLabels.For(new CommandMenuNode(id)), command, _selection[0].FullPath!)
+                : MenuItemModel.ForCommand(MenuLabels.For(new CommandMenuNode(id)), command, null, MenuToggleKind.None));
         }
 
         return items;

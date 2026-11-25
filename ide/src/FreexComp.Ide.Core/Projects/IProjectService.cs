@@ -22,7 +22,10 @@ public interface IProjectService
     /// <paramref name="workingCopy"/> (edited from <see cref="Definition"/> with <c>with</c>, so keys the dialogs do not
     /// show survive) and saves the <c>.pproj</c> (IDE-PM-004). False when the save failed (reported) or no project is open.
     /// </summary>
-    Task<bool> ApplyOptionsAsync(FreexComp.Build.Project workingCopy);
+    /// <param name="saveFailed">
+    /// Reports a failed save in place of <c>Msg.File.SaveFailed</c>; it gets the system's error text (IDE-PM-178).
+    /// </param>
+    Task<bool> ApplyOptionsAsync(FreexComp.Build.Project workingCopy, Func<string, Task>? saveFailed = null);
 
     /// <summary>A project was opened or closed, or the open one changed.</summary>
     event EventHandler? ProjectChanged;

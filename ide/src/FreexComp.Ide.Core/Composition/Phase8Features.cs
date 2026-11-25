@@ -23,15 +23,20 @@ public static class Phase8Features
         "file.saveGroupAs", // F09-009
         "help.contents", // I-257
         "options:Environment.General.BuildJobs", // F01-010
+        "options:Environment.General.ContinueAfterFailure", // F09-009
         "options:Environment.Trust", // F09-008
         "project.addExistingProject", // F09-009
         "project.addNewFile", // F09-054
         "project.addNewProject", // F09-009
+        "project.buildAll", // F09-009
+        "project.cleanAll", // F09-009
         "project.configurationManager", // F09-004
+        "project.dependencies", // F09-010
         "project.moveFile", // F09-054
         "project.moveProjectDown", // F09-009
         "project.moveProjectUp", // F09-009
         "project.newFolder", // F09-054
+        "project.rebuildAll", // F09-009
         "project.removeFromGroup", // F09-009
         "project.setActive", // F09-009
         "run.toggleLibraryStepping", // F02-004

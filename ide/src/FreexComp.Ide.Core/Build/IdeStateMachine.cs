@@ -111,6 +111,8 @@ public static class IdeCommandAvailability
     {
         ["project.build"] = IdleOnly,
         ["project.buildAll"] = IdleOnly,
+        ["project.rebuildAll"] = IdleOnly, // IDE-PM-171
+        ["project.cleanAll"] = IdleOnly,
         ["project.rebuild"] = IdleOnly,
         ["project.clean"] = IdleOnly,
         ["project.checkSyntax"] = IdleOnly,
@@ -118,6 +120,7 @@ public static class IdeCommandAvailability
         ["project.setConfiguration"] = IdleOnly,
         ["project.configurationManager"] = IdleOnly,
         ["project.setActive"] = IdleOnly, // IDE-PM-160
+        ["project.dependencies"] = IdleOnly, // IDE-PM-175
         ["project.addExistingProject"] = IdleOnly, // IDE-PM-164…168
         ["project.addNewProject"] = IdleOnly,
         ["project.removeFromGroup"] = IdleOnly,

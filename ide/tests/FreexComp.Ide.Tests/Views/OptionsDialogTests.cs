@@ -836,9 +836,10 @@ public sealed partial class OptionsDialogTests
         Assert.Equal("0 = automatic (one per processor)", hint.Text);
         Assert.True(hint.IsEffectivelyVisible);
 
-        // The field is the page's last one, under the group heading "Build".
+        // The field opens the group "Build" at the end of the page; the check box of IDE-PM-172 (I-276) follows it.
         var page = model.Pages.Single(p => p.Id == OptionsViewModel.EnvironmentGeneralPage);
-        Assert.Same(model.Field("BuildJobs"), page.Fields[^1]);
+        Assert.Same(model.Field("BuildJobs"), page.Fields[^2]);
+        Assert.Same(model.Field("ContinueAfterFailure"), page.Fields[^1]);
         Assert.Equal("Build", model.Field("BuildJobs").GroupHeading);
         Assert.Single(dlg.Window.GetVisualDescendants().OfType<TextBlock>(), t => t.Text == "Build" && t.IsEffectivelyVisible);
 
@@ -874,6 +875,68 @@ public sealed partial class OptionsDialogTests
         second.Click("Ok");
         await again;
         Assert.Equal(0, settings.Get(SettingsCatalog.BuildJobs));
+    }
+
+    /// <summary>
+    /// IDE-PM-172 (F09-009, I-276): Environment › General, group "Build", has the check box <c>ContinueAfterFailure</c>
+    /// (<c>Continue with the other projects when a project &amp;fails</c>) bound to <c>build.continueAfterFailure</c>
+    /// (default off). It is delivered (<c>options:Environment.General.ContinueAfterFailure</c>): enabled in the product's
+    /// composition, disabled in one pinned below phase 7. OK writes the key; Reset returns to the default.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Phase", "8")]
+    [Trait("Req", "IDE-PM-172")]
+    public async Task ContinueAfterFailureFieldEditsSetting()
+    {
+        (string, string, ISettingKey, bool)[] Field(bool enabled) =>
+            [("ContinueAfterFailure", "Continue with the other projects when a project _fails", SettingsCatalog.BuildContinueAfterFailure, enabled)];
+        Assert.Contains("options:Environment.General.ContinueAfterFailure", Core.Composition.Phase8Features.Delivered);
+
+        await using (var early = await HeadlessHarness.StartAsync(o => o.ImplementedPhase = 5))
+        {
+            var pinned = early.Services.Commands.ExecuteAsync("tools.options", "Environment.General");
+            var disabled = await early.WaitForDialogAsync("Options");
+            CheckFields(disabled, early.Services.Settings, Field(false));
+            disabled.Click("Cancel");
+            await pinned;
+        }
+
+        await using var h = await HeadlessHarness.StartAsync();
+        var settings = h.Services.Settings;
+        Assert.False(settings.Get(SettingsCatalog.BuildContinueAfterFailure));
+        var running = h.Services.Commands.ExecuteAsync("tools.options", "Environment.General");
+        var dlg = await h.WaitForDialogAsync("Options");
+        var model = (OptionsViewModel)dlg.Window.Model;
+
+        CheckFields(dlg, settings, Field(true));
+        Assert.Equal(OptionFieldKind.Check, model.Field("ContinueAfterFailure").Kind);
+        var box = Assert.IsType<CheckBox>(dlg.Find<Control>("ContinueAfterFailure"));
+        Assert.False(box.IsChecked);
+
+        // The last field of the page, in the group "Build" (one heading for the group's two fields).
+        var page = model.Pages.Single(p => p.Id == OptionsViewModel.EnvironmentGeneralPage);
+        Assert.Same(model.Field("ContinueAfterFailure"), page.Fields[^1]);
+        Assert.Null(model.Field("ContinueAfterFailure").GroupHeading);
+        Assert.Single(dlg.Window.GetVisualDescendants().OfType<TextBlock>(), t => t.Text == "Build" && t.IsEffectivelyVisible);
+
+        box.IsChecked = true;
+        Dispatcher.UIThread.RunJobs();
+        Assert.False(settings.Get(SettingsCatalog.BuildContinueAfterFailure)); // pending until OK
+        dlg.Click("Ok");
+        await running;
+        Assert.True(settings.Get(SettingsCatalog.BuildContinueAfterFailure));
+
+        // The stored value is shown the next time; Reset returns to the default.
+        var again = h.Services.Commands.ExecuteAsync("tools.options", "Environment.General");
+        var second = await h.WaitForDialogAsync("Options");
+        CheckFields(second, settings, Field(true));
+        Assert.True(((CheckBox)second.Find<Control>("ContinueAfterFailure")).IsChecked);
+        ((OptionsViewModel)second.Window.Model).Field("ContinueAfterFailure").Reset();
+        Dispatcher.UIThread.RunJobs();
+        Assert.False(((CheckBox)second.Find<Control>("ContinueAfterFailure")).IsChecked);
+        second.Click("Ok");
+        await again;
+        Assert.False(settings.Get(SettingsCatalog.BuildContinueAfterFailure));
     }
 
     /// <summary>
