@@ -128,6 +128,41 @@ type
     property OnResize;
   end;
 
+  { application-forms.md "Frames" (UIF-1390...1395): a borderless windowed container whose descendants read their own
+    .form in the constructor; an inline object of another file is an instance of it (classes.md RTL-1090) }
+  TCustomFrame = class(TScrollingWinControl)
+  public
+    constructor Create(AOwner: TComponent); override;
+  end;
+
+  { UIF-1391: the published set of TScrollBox without BorderStyle }
+  TFrame = class(TCustomFrame)
+  published
+    property AutoScroll default True;
+    property Color default clBtnFace;
+    property Font;
+    property HorzScrollBar;
+    property Padding;
+    property ParentColor default True;
+    property ParentFont;
+    property TabOrder;
+    property TabStop;
+    property VertScrollBar;
+    property OnClick;
+    property OnContextPopup;
+    property OnDblClick;
+    property OnEnter;
+    property OnExit;
+    property OnMouseDown;
+    property OnMouseEnter;
+    property OnMouseLeave;
+    property OnMouseMove;
+    property OnMouseUp;
+    property OnResize;
+  end;
+
+  TFrameClass = class of TFrame;
+
   { application-forms.md section 4 }
   TBorderIcon = (biSystemMenu, biMinimize, biMaximize, biHelp);
   TBorderIcons = set of TBorderIcon;
@@ -1192,6 +1227,23 @@ begin
     Perform(CM_BORDERCHANGED, 0, 0);
     Realign;
   end;
+end;
+
+{ ---------------------------------------------------------------- TCustomFrame }
+
+{ UIF-1391, UIF-1392: no border, 320 x 240; a descendant reads its resources below TFrame; with an owner the header
+  name of the resource is not applied (RTL-1099), so frames of one class can share an owner and an instance keeps
+  the name of its inline object }
+constructor TCustomFrame.Create(AOwner: TComponent);
+begin
+  inherited Create(AOwner);
+  AutoScroll := True;
+  SetBounds(Left, Top, 320, 240);
+  Color := clBtnFace;
+  ParentColor := True;
+  if (ClassType <> TFrame) and (ClassType <> TCustomFrame) then
+    if not InitInheritedComponent(Self, TFrame, AOwner = nil) then
+      raise EResNotFound.CreateFmt(SResNotFound, [ClassName]);
 end;
 
 { ---------------------------------------------------------------- TCustomForm }
@@ -3824,7 +3876,7 @@ initialization
   MouseControlHook := HintMouseControlChanged;
   MenuSelectHook := HintMenuSelect;
   ActionTargetSearch := FormsActionTargetSearch;             { UIF-1363 }
-  RegisterClasses([TForm, TScrollBox]);
+  RegisterClasses([TForm, TScrollBox, TFrame]);               { UIF-1390 }
 
 finalization
   ActionTargetSearch := nil;

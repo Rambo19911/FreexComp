@@ -14,7 +14,8 @@ public sealed record LayoutCase(string Id, string FormPath, string? StepsPath, s
 /// <summary>
 /// Discovery of this area's tests (testing.md §1, UIF-1200): group A programs <c>ui-framework/tests/pascal/*.pas</c>
 /// (row id <c>pascal/&lt;Name&gt;</c>) and the lead-owned layout corpus (row id <c>layout/&lt;Enn-slug&gt;</c>).
-/// Files directly in <c>pascal/</c> whose name ends in <c>Kit</c> are shared units (e.g. <c>UiTestKit.pas</c>), not programs;
+/// Files directly in <c>pascal/</c> whose name ends in <c>Kit</c> are shared units (e.g. <c>UiTestKit.pas</c>), not programs,
+/// and so is every file whose source starts with a <c>unit</c> heading (e.g. the frame unit <c>Frm_AddressFrame.pas</c>, U-154);
 /// <c>LayoutHost.pas</c> is the host of the layout corpus (group B, <see cref="LayoutCasesTheory"/>), not a golden program.
 /// </summary>
 public static class UiCorpus
@@ -50,12 +51,53 @@ public static class UiCorpus
 
         return [.. Directory.EnumerateFiles(directory, "*.pas")
             .Where(p => !Path.GetFileNameWithoutExtension(p).EndsWith("Kit", StringComparison.Ordinal)
-                && !string.Equals(Path.GetFileNameWithoutExtension(p), LayoutHost.ProgramName, StringComparison.Ordinal))
+                && !string.Equals(Path.GetFileNameWithoutExtension(p), LayoutHost.ProgramName, StringComparison.Ordinal)
+                && !IsUnit(File.ReadAllText(p)))
             .Select(p => new RtlCase("pascal/" + Path.GetFileNameWithoutExtension(p), p))
             .OrderBy(c => c.Id, StringComparer.Ordinal)];
     }
 
     public static ImmutableArray<RtlCase> DiscoverPascal() => DiscoverPascal(PascalDirectory);
+
+    /// <summary>True when the first word of <paramref name="text"/> after comments (<c>//</c>, <c>{ }</c>, <c>(* *)</c>) is <c>unit</c>.</summary>
+    public static bool IsUnit(string text)
+    {
+        var i = 0;
+        while (i < text.Length)
+        {
+            if (char.IsWhiteSpace(text[i]) || text[i] == '﻿')
+            {
+                i++;
+            }
+            else if (string.CompareOrdinal(text, i, "//", 0, 2) == 0)
+            {
+                var end = text.IndexOf('\n', i);
+                i = end < 0 ? text.Length : end + 1;
+            }
+            else if (text[i] == '{')
+            {
+                var end = text.IndexOf('}', i);
+                i = end < 0 ? text.Length : end + 1;
+            }
+            else if (string.CompareOrdinal(text, i, "(*", 0, 2) == 0)
+            {
+                var end = text.IndexOf("*)", i + 2, StringComparison.Ordinal);
+                i = end < 0 ? text.Length : end + 2;
+            }
+            else
+            {
+                var start = i;
+                while (i < text.Length && (char.IsLetterOrDigit(text[i]) || text[i] == '_'))
+                {
+                    i++;
+                }
+
+                return string.Equals(text[start..i], "unit", StringComparison.OrdinalIgnoreCase);
+            }
+        }
+
+        return false;
+    }
 
     /// <summary>Every <c>*.form</c> of <paramref name="directory"/>; an absent folder yields no case.</summary>
     public static ImmutableArray<LayoutCase> DiscoverLayout(string directory)

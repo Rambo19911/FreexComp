@@ -1,0 +1,51 @@
+# TFrame (UIF-1390, UIF-1391)
+ok TFrame is registered
+ok TFrame.Create without a resource raises nothing
+ok default size
+ok TabStop default
+ok Color default
+ok ParentColor default
+ok ParentFont default
+ok ParentShowHint default
+ok AutoScroll default
+ok no name
+ok WS_CHILD, WS_CLIPCHILDREN, WS_CLIPSIBLINGS
+ok no caption
+ok no border
+ok no system menu
+ok no sizing frame
+ok no WS_TABSTOP
+ok no client edge
+ok WS_TABSTOP with TabStop
+# a TFrame descendant without a resource (UIF-1392)
+ok EResNotFound
+# the class of an instance is found by its registered name (UIF-1396)
+ok the frame unit registers its class
+ok an unregistered frame class
+# two instances on a form (UIF-1392, UIF-1394)
+BillingAddress: TAddressFrame owner=FrameForm parent=FrameForm bounds=16,8,320,120 inline=yes loading=no
+  TitleLabel: TLabel owner=BillingAddress parent=BillingAddress bounds=8,8,120,15 caption='Billing address'
+  StreetEdit: TEdit owner=BillingAddress parent=BillingAddress bounds=8,32,200,23 text='Street' taborder=0
+  CityEdit: TEdit owner=BillingAddress parent=BillingAddress bounds=8,64,200,23 text='City' taborder=1
+ShippingAddress: TAddressFrame owner=FrameForm parent=FrameForm bounds=344,8,320,120 inline=yes loading=no
+  TitleLabel: TLabel owner=ShippingAddress parent=ShippingAddress bounds=8,8,120,15 caption='Address'
+  StreetEdit: TEdit owner=ShippingAddress parent=ShippingAddress bounds=8,32,200,23 text='Street' taborder=0
+  CityEdit: TEdit owner=ShippingAddress parent=ShippingAddress bounds=8,64,200,23 text='City' taborder=1
+ok the overridden Caption
+ok the other instance keeps the frame's Caption
+ok a value of the frame in the overriding instance
+ok the Left of the first instance
+ok the Left of the second instance
+ok the frame's children are not owned by the form
+ok the instance is owned by the form
+# frames created in code (UIF-1393)
+ok the first has no name
+ok the second has no name
+ok owned by the form
+ok it owns its three children
+ok with the frame's values
+# tab order across the frames (UIF-1394)
+ok ActiveControl inside a frame
+ok forward cycle
+ok backward from the first
+# passed 36 failed 0

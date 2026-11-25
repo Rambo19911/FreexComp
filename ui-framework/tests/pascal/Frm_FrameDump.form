@@ -1,0 +1,30 @@
+object DumpForm: TDumpForm
+  Caption = 'Frame dump'
+  ClientWidth = 680
+  ClientHeight = 200
+  inline BillingAddress: TAddressFrame
+    Left = 16
+    Top = 8
+    TabOrder = 0
+    inherited TitleLabel: TLabel
+      Caption = 'Billing address'
+    end
+    inherited CityEdit: TEdit
+      Width = 150
+    end
+  end
+  inline ShippingAddress: TAddressFrame
+    Left = 344
+    Top = 8
+    Height = 100
+    TabOrder = 1
+  end
+  object OkButton: TButton
+    Left = 16
+    Top = 150
+    Width = 75
+    Height = 25
+    Caption = 'OK'
+    TabOrder = 2
+  end
+end

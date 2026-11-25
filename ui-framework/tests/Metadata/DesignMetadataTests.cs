@@ -37,6 +37,40 @@ public sealed class DesignMetadataTests
         Assert.Equal("TStrings", row.GetProperty("type").GetString());
         Assert.Equal("Action", row.GetProperty("category").GetString());
     }
+    /// <summary>
+    /// U-154 (UIF-1395, frames): <c>TCustomFrame</c> is abstract on <c>TScrollingWinControl</c>; <c>TFrame</c> is a container with the
+    /// renderer <c>frame</c>, 320 x 240 and no palette entry (the designer offers frames itself), and it lists exactly the properties
+    /// and events of <c>TScrollBox</c> without <c>BorderStyle</c> (UIF-1391), with the same rows.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "UIF-1395")]
+    public void FrameEntries()
+    {
+        var root = MetadataRoot.Load(MetadataTests.DesignDirectory);
+        var custom = root.Find("TCustomFrame");
+        var frame = root.Find("TFrame");
+        var box = root.Find("TScrollBox");
+
+        Assert.NotNull(custom);
+        Assert.NotNull(frame);
+        Assert.NotNull(box);
+        Assert.True(custom.Abstract);
+        Assert.Equal("TScrollingWinControl", custom.Ancestor);
+        Assert.Equal("Forms.components.json", custom.File.Name);
+        Assert.False(frame.Abstract);
+        Assert.Equal("TCustomFrame", frame.Ancestor);
+        Assert.Equal("container", frame.Json.GetProperty("kind").GetString());
+        Assert.True(frame.Json.GetProperty("acceptsChildren").GetBoolean());
+        Assert.Equal("frame", frame.Json.GetProperty("renderer").GetString());
+        Assert.Equal(320, frame.Json.GetProperty("defaultSize").GetProperty("width").GetInt32());
+        Assert.Equal(240, frame.Json.GetProperty("defaultSize").GetProperty("height").GetInt32());
+        Assert.False(frame.Json.TryGetProperty("palette", out _));
+        Assert.Equal(
+            box.Properties.Where(p => p.GetProperty("name").GetString() != "BorderStyle").Select(p => p.GetRawText()),
+            frame.Properties.Select(p => p.GetRawText()));
+        Assert.Equal(box.Events.Select(e => e.GetRawText()), frame.Events.Select(e => e.GetRawText()));
+    }
+
     /// <summary>standard-actions.md §6 table: class, caption, shortcut value (0 = none), hint, category.</summary>
     public static readonly TheoryData<string, string, int, string, string> StandardActions = new()
     {

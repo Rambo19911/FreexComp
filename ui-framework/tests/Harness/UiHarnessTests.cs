@@ -19,10 +19,12 @@ public sealed class UiHarnessTests : IDisposable
         File.WriteAllText(Path.Combine(temp, "A_One.pas"), "program A_One; begin end.");
         File.WriteAllText(Path.Combine(temp, "UiTestKit.pas"), "unit UiTestKit; interface implementation end.");
         File.WriteAllText(Path.Combine(temp, "LayoutHost.pas"), "program LayoutHost; begin end.");     // group B host (UIF-331)
+        File.WriteAllText(Path.Combine(temp, "C_Frame.pas"), "﻿// a frame unit (U-154)\n{ comment }\n(* more *)\nUnit C_Frame; interface implementation end.");
+        File.WriteAllText(Path.Combine(temp, "D_Units.pas"), "// a program that names units\nprogram D_Units; uses C_Frame; begin end.");
 
         var ids = UiCorpus.DiscoverPascal(temp).Select(c => c.Id);
 
-        Assert.Equal(["pascal/A_One", "pascal/B_Two"], ids);
+        Assert.Equal(["pascal/A_One", "pascal/B_Two", "pascal/D_Units"], ids);
         Assert.Empty(UiCorpus.DiscoverPascal(Path.Combine(temp, "absent")));
     }
 

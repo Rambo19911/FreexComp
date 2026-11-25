@@ -1,0 +1,107 @@
+{
+  "formatVersion": 1,
+  "dpi": 96,
+  "forms": [
+    {
+      "class": "TDumpForm",
+      "name": "DumpForm",
+      "clientWidth": 680,
+      "clientHeight": 200,
+      "controls": [
+        {
+          "class": "TAddressFrame",
+          "name": "BillingAddress",
+          "left": 16,
+          "top": 8,
+          "width": 320,
+          "height": 120,
+          "visible": true,
+          "controls": [
+            {
+              "class": "TLabel",
+              "name": "TitleLabel",
+              "left": 8,
+              "top": 8,
+              "width": 120,
+              "height": 15,
+              "visible": true,
+              "controls": []
+            },
+            {
+              "class": "TEdit",
+              "name": "StreetEdit",
+              "left": 8,
+              "top": 32,
+              "width": 200,
+              "height": 23,
+              "visible": true,
+              "controls": []
+            },
+            {
+              "class": "TEdit",
+              "name": "CityEdit",
+              "left": 8,
+              "top": 64,
+              "width": 150,
+              "height": 23,
+              "visible": true,
+              "controls": []
+            }
+          ]
+        },
+        {
+          "class": "TAddressFrame",
+          "name": "ShippingAddress",
+          "left": 344,
+          "top": 8,
+          "width": 320,
+          "height": 100,
+          "visible": true,
+          "controls": [
+            {
+              "class": "TLabel",
+              "name": "TitleLabel",
+              "left": 8,
+              "top": 8,
+              "width": 120,
+              "height": 15,
+              "visible": true,
+              "controls": []
+            },
+            {
+              "class": "TEdit",
+              "name": "StreetEdit",
+              "left": 8,
+              "top": 32,
+              "width": 200,
+              "height": 23,
+              "visible": true,
+              "controls": []
+            },
+            {
+              "class": "TEdit",
+              "name": "CityEdit",
+              "left": 8,
+              "top": 64,
+              "width": 200,
+              "height": 23,
+              "visible": true,
+              "controls": []
+            }
+          ]
+        },
+        {
+          "class": "TButton",
+          "name": "OkButton",
+          "left": 16,
+          "top": 150,
+          "width": 75,
+          "height": 25,
+          "visible": true,
+          "controls": []
+        }
+      ]
+    }
+  ]
+}
+exit code 0
