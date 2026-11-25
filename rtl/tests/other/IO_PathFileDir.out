@@ -1,0 +1,136 @@
+# TPath text operations
+ok Combine adds the separator
+ok Combine keeps one separator
+ok Combine accepts a trailing slash
+ok Combine after a drive adds nothing
+ok Combine with an empty first part
+ok Combine with an empty second part
+ok Combine: a rooted second part wins
+ok Combine: a second part from the root wins
+ok GetFileName
+ok GetFileName of a directory path
+ok GetFileNameWithoutExtension
+ok GetFileNameWithoutExtension, two dots
+ok GetExtension
+ok GetExtension: a dot in a directory name
+ok GetDirectoryName
+ok GetDirectoryName keeps a root
+ok GetDirectoryName of a bare name
+ok ChangeExtension
+ok ChangeExtension adds the dot
+ok ChangeExtension removes
+ok ChangeExtension appends
+ok HasExtension
+ok HasExtension: none
+ok HasExtension: a final dot is none
+ok IsPathRooted drive
+ok IsPathRooted drive-relative
+ok IsPathRooted root
+ok IsPathRooted slash
+ok IsPathRooted share
+ok IsPathRooted relative
+ok IsPathRooted empty
+ok DirectorySeparatorChar
+# TPath and the file system
+ok GetFullPath
+ok GetFullPath removes ..
+ok GetTempPath
+ok GetTempPath ends with the separator
+ok GetTempFileName creates the file
+ok the temporary file is empty
+ok GetTempFileName names differ
+ok the temporary file is in the temporary folder
+ok the temporary file has the extension .tmp
+ok temporary files deleted
+ok GetHomePath exists
+ok GetDocumentsPath is rooted
+ok GetHomePath has no trailing separator
+# TFile text
+ok Exists: not yet
+ok Exists
+ok Exists is False for a directory
+ok WriteAllText: UTF-8 without BOM
+ok ReadAllText
+ok WriteAllText with an encoding writes its preamble
+ok ReadAllText skips the UTF-8 BOM
+ok ReadAllText with the encoding skips its BOM
+ok WriteAllText UTF-16
+ok ReadAllText detects UTF-16
+ok WriteAllText of nothing truncates
+ok ReadAllText of an empty file
+ok AppendAllText appends UTF-8
+ok AppendAllText creates; the preamble only into an empty file
+# TFile bytes and lines
+ok WriteAllBytes / ReadAllBytes
+ok GetSize
+ok no bytes
+ok WriteAllLines: CRLF after every line
+ok ReadAllLines
+ok ReadAllLines: LF, CR and CRLF end a line
+ok ReadAllLines of an empty file
+ok WriteAllLines with an encoding
+ok ReadAllLines with an encoding
+# TFile copy, move, delete
+ok Copy onto an existing file: EInOutError, ERROR_FILE_EXISTS
+ok the target is unchanged
+ok Copy with Overwrite
+ok Delete
+ok Delete of a missing file is silent
+ok Copy to a new name
+ok Move
+ok Move onto an existing file: EInOutError, ERROR_ALREADY_EXISTS
+# TFile streams and time
+ok Create truncates
+ok OpenWrite keeps the content
+ok OpenRead
+ok OpenWrite writes from the start
+ok OpenWrite creates a missing file
+ok GetLastWriteTime is the local time of FileAge
+ok GetLastWriteTime is recent
+# TFile errors
+ok ReadAllText
+ok ReadAllBytes
+ok ReadAllLines
+ok Copy
+ok Move
+ok GetSize
+ok GetLastWriteTime
+ok OpenRead
+ok WriteAllText
+ok Create
+ok ReadAllText in a missing directory
+ok Delete of a directory: EInOutError, ERROR_ACCESS_DENIED
+# TDirectory create and enumerate
+ok Exists: not yet
+ok CreateDirectory creates every level
+ok CreateDirectory of an existing directory is silent
+ok Exists is False for a file
+ok GetFiles
+ok GetFiles, trailing separator
+ok GetFiles with a pattern
+ok GetFiles: no match
+ok GetFiles, top directory only
+ok GetFiles, all directories
+ok GetFiles, all files of all directories
+ok GetDirectories
+ok GetDirectories with a pattern
+ok GetDirectories, all directories
+ok GetDirectories: the pattern does not filter the directories searched
+# TDirectory current directory, move, delete
+ok GetCurrentDirectory
+ok SetCurrentDirectory
+ok Move
+ok Delete of an empty directory
+ok Delete of a directory with content: EInOutError, ERROR_DIR_NOT_EMPTY
+ok Delete, not recursive
+ok nothing was deleted
+ok Delete, recursive
+# TDirectory errors
+ok Delete
+ok Delete, recursive
+ok GetFiles
+ok GetDirectories
+ok SetCurrentDirectory
+ok Move
+ok CreateDirectory over a file: EInOutError, ERROR_ALREADY_EXISTS
+# passed 125 failed 0

@@ -58,6 +58,8 @@ resourcestring
   SFileNotOpenForOutput = 'File not open for output';       { 105 }
   SInvalidInput = 'Invalid numeric input';                  { 106 }
   SCannotCreateDir = 'Cannot create directory';
+  SIOFileNotFound = 'File "%s" not found';                 { IOUtils (RTL-690) }
+  SIODirectoryNotFound = 'Directory "%s" not found';
   SUnhandledException = 'Unhandled exception %s: %s';
   SUnhandledExceptionNoMsg = 'Unhandled exception %s';
   SExceptionInModule = 'Exception %s in module %s at %s.';

@@ -13,6 +13,7 @@
     "System.DateUtils": "DateUtils",
     "System.Generics.Collections": "Generics.Collections",
     "System.Generics.Defaults": "Generics.Defaults",
+    "System.IOUtils": "IOUtils",
     "System.IniFiles": "IniFiles",
     "System.Math": "Math",
     "System.RTLConsts": "RTLConsts",
