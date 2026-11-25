@@ -257,6 +257,10 @@ function FloatToStr(Value: Double; const FS: TFormatSettings): string; overload;
 function FloatToStrF(Value: Double; Format: TFloatFormat; Precision, Digits: Integer): string; overload;
 function FloatToStrF(Value: Double; Format: TFloatFormat; Precision, Digits: Integer;
   const FS: TFormatSettings): string; overload;
+{ the shortest decimal text that reads back to exactly Value, independent of FormatSettings ('.' is the decimal
+  separator): plain digits for a scientific exponent of -6 to 20 (0.000001 ... 100000000000000000000), else the
+  form 1.5e-7 / 1e+21; '-0' for the negative zero. False and '' for a NaN or an infinity }
+function TryFloatToStrShortest(Value: Double; out Text: string): Boolean;
 function TryStrToFloat(const S: string; out Value: Double): Boolean; overload;
 function TryStrToFloat(const S: string; out Value: Double; const FS: TFormatSettings): Boolean; overload;
 function StrToFloatDef(const S: string; const Default: Double): Double; overload;
@@ -2554,6 +2558,55 @@ end;
 function FloatToStr(Value: Double): string;
 begin
   Result := FloatToStrF(Value, ffGeneral, 15, 0, FormatSettings);
+end;
+
+function TryFloatToStrShortest(Value: Double; out Text: string): Boolean;
+var
+  R: TFloatDigits;
+  I, N: Integer;
+begin
+  Text := '';
+  _FloatDigitsShortest(Value, False, R);
+  Result := not (R.IsNaN or R.IsInfinite);
+  if not Result then
+    Exit;
+  N := R.Exponent;                               { the value is 0.d0d1... x 10^N }
+  if R.Count = 0 then
+    Text := '0'
+  else if (N >= R.Count) and (N <= 21) then
+  begin                                          { an integer: the digits, then zeros }
+    for I := 0 to N - 1 do
+      Text := Text + DigitAt(R, I);
+  end
+  else if (N > 0) and (N <= 21) then
+  begin
+    for I := 0 to R.Count - 1 do
+    begin
+      if I = N then
+        Text := Text + '.';
+      Text := Text + DigitAt(R, I);
+    end;
+  end
+  else if (N > -6) and (N <= 0) then
+  begin
+    Text := '0.';
+    for I := N to R.Count - 1 do                 { -N zeros, then the digits }
+      Text := Text + DigitAt(R, I);
+  end
+  else
+  begin
+    Text := DigitAt(R, 0);
+    if R.Count > 1 then
+      Text := Text + '.';
+    for I := 1 to R.Count - 1 do
+      Text := Text + DigitAt(R, I);
+    if N < 1 then
+      Text := Text + 'e-' + IntToStr(1 - N)
+    else
+      Text := Text + 'e+' + IntToStr(N - 1);
+  end;
+  if R.Negative then
+    Text := '-' + Text;
 end;
 
 { ----- FormatFloat picture strings (RTL-239) ----- }

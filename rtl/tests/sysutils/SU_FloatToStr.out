@@ -75,4 +75,109 @@ ok FloatToStr 1,5
 ok FloatToStrF 1.234,5
 ok FloatToStrF 1,2345E+03
 ok FloatToStrF 1234,5
-# passed 70 failed 0
+# TryFloatToStrShortest (independent of FormatSettings)
+ok shortest is a number 0
+ok shortest 0
+ok shortest reads back 0
+ok shortest round trip 0
+ok shortest is a number 1
+ok shortest 1
+ok shortest reads back 1
+ok shortest round trip 1
+ok shortest is a number -2.25
+ok shortest -2.25
+ok shortest reads back -2.25
+ok shortest round trip -2.25
+ok shortest is a number 0.1
+ok shortest 0.1
+ok shortest reads back 0.1
+ok shortest round trip 0.1
+ok shortest is a number 0.30000000000000004
+ok shortest 0.30000000000000004
+ok shortest reads back 0.30000000000000004
+ok shortest round trip 0.30000000000000004
+ok shortest is a number 0.3333333333333333
+ok shortest 0.3333333333333333
+ok shortest reads back 0.3333333333333333
+ok shortest round trip 0.3333333333333333
+ok shortest is a number 0.6666666666666666
+ok shortest 0.6666666666666666
+ok shortest reads back 0.6666666666666666
+ok shortest round trip 0.6666666666666666
+ok shortest is a number 100
+ok shortest 100
+ok shortest reads back 100
+ok shortest round trip 100
+ok shortest is a number 12345.678
+ok shortest 12345.678
+ok shortest reads back 12345.678
+ok shortest round trip 12345.678
+ok shortest is a number 9007199254740992
+ok shortest 9007199254740992
+ok shortest reads back 9007199254740992
+ok shortest round trip 9007199254740992
+ok shortest is a number 123456789012345680000
+ok shortest 123456789012345680000
+ok shortest reads back 123456789012345680000
+ok shortest round trip 123456789012345680000
+ok shortest is a number 100000000000000000000
+ok shortest 100000000000000000000
+ok shortest reads back 100000000000000000000
+ok shortest round trip 100000000000000000000
+ok shortest is a number 1e+21
+ok shortest 1e+21
+ok shortest reads back 1e+21
+ok shortest round trip 1e+21
+ok shortest is a number 1.5e+21
+ok shortest 1.5e+21
+ok shortest reads back 1.5e+21
+ok shortest round trip 1.5e+21
+ok shortest is a number 1e+100
+ok shortest 1e+100
+ok shortest reads back 1e+100
+ok shortest round trip 1e+100
+ok shortest is a number 0.000001
+ok shortest 0.000001
+ok shortest reads back 0.000001
+ok shortest round trip 0.000001
+ok shortest is a number 0.0000015
+ok shortest 0.0000015
+ok shortest reads back 0.0000015
+ok shortest round trip 0.0000015
+ok shortest is a number -0.000012345
+ok shortest -0.000012345
+ok shortest reads back -0.000012345
+ok shortest round trip -0.000012345
+ok shortest is a number 1e-7
+ok shortest 1e-7
+ok shortest reads back 1e-7
+ok shortest round trip 1e-7
+ok shortest is a number 1.5e-7
+ok shortest 1.5e-7
+ok shortest reads back 1.5e-7
+ok shortest round trip 1.5e-7
+ok shortest is a number -1e-300
+ok shortest -1e-300
+ok shortest reads back -1e-300
+ok shortest round trip -1e-300
+ok shortest is a number 1.7976931348623157e+308
+ok shortest 1.7976931348623157e+308
+ok shortest reads back 1.7976931348623157e+308
+ok shortest round trip 1.7976931348623157e+308
+ok shortest is a number 2.2250738585072014e-308
+ok shortest 2.2250738585072014e-308
+ok shortest reads back 2.2250738585072014e-308
+ok shortest round trip 2.2250738585072014e-308
+ok shortest is a number 5e-324
+ok shortest 5e-324
+ok shortest reads back 5e-324
+ok shortest round trip 5e-324
+ok shortest is a number -0
+ok shortest -0 keeps the sign
+ok shortest: False for a NaN
+ok shortest: empty text for a NaN
+ok shortest: False for plus infinity
+ok shortest: empty text for plus infinity
+ok shortest: False for minus infinity
+ok shortest: empty text for minus infinity
+# passed 174 failed 0

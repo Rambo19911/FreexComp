@@ -1,4 +1,4 @@
-// covers: RTL-230, RTL-231, RTL-232, RTL-233, RTL-234, RTL-235, RTL-236, RTL-237
+// covers: RTL-230, RTL-231, RTL-232, RTL-233, RTL-234, RTL-235, RTL-236, RTL-237, RTL-246
 program SU_FloatToStr;
 { sysutils.md section 5: FloatToStr and every FloatToStrF format (normative rows of RTL-232 ... 234 and more). }
 uses
@@ -14,8 +14,31 @@ begin
   CheckEqS(E, FloatToStrF(V, Fmt, P, D), 'FloatToStrF ' + E);
 end;
 
+{ the shortest text of V is E, and E reads back to exactly V }
+procedure S(V: Double; const E: string);
+var
+  T: string;
+  Back: Double;
+begin
+  Check(TryFloatToStrShortest(V, T), 'shortest is a number ' + E);
+  CheckEqS(E, T, 'shortest ' + E);
+  Check(TryStrToFloat(T, Back, TFormatSettings.Invariant), 'shortest reads back ' + E);
+  CheckEqF(V, Back, 0, 'shortest round trip ' + E);
+end;
+
+{ no text for a value that is not a number }
+procedure SNone(V: Double; const Name: string);
+var
+  T: string;
+begin
+  T := 'x';
+  CheckEqB(False, TryFloatToStrShortest(V, T), 'shortest: False for ' + Name);
+  CheckEqS('', T, 'shortest: empty text for ' + Name);
+end;
+
 var
   Zero, One, NegZero: Double;
+  Text: string;
 begin
   Zero := 0;
   One := 1;
@@ -111,5 +134,36 @@ begin
   F(1234.5, ffExponent, 5, 2, '1,2345E+03');
   FormatSettings.ThousandSeparator := #0;
   F(1234.5, ffNumber, 17, 1, '1234,5');
+
+  Section('TryFloatToStrShortest (independent of FormatSettings)');
+  S(0.0, '0');
+  S(1.0, '1');
+  S(-2.25, '-2.25');
+  S(0.1, '0.1');
+  S(0.1 + 0.2, '0.30000000000000004');
+  S(One / 3, '0.3333333333333333');
+  S(2.0 / 3, '0.6666666666666666');
+  S(100.0, '100');
+  S(12345.678, '12345.678');
+  S(9007199254740993.0, '9007199254740992');
+  S(123456789012345680000.0, '123456789012345680000');
+  S(1e20, '100000000000000000000');
+  S(1e21, '1e+21');
+  S(1.5e21, '1.5e+21');
+  S(1e100, '1e+100');
+  S(0.000001, '0.000001');
+  S(0.0000015, '0.0000015');
+  S(-0.000012345, '-0.000012345');
+  S(1e-7, '1e-7');
+  S(1.5e-7, '1.5e-7');
+  S(-1e-300, '-1e-300');
+  S(1.7976931348623157e308, '1.7976931348623157e+308');
+  S(2.2250738585072014e-308, '2.2250738585072014e-308');
+  S(4.9406564584124654e-324, '5e-324');
+  CheckEqB(True, TryFloatToStrShortest(NegZero, Text), 'shortest is a number -0');
+  CheckEqS('-0', Text, 'shortest -0 keeps the sign');
+  SNone(Zero / Zero, 'a NaN');
+  SNone(One / Zero, 'plus infinity');
+  SNone(-One / Zero, 'minus infinity');
   Done;
 end.
