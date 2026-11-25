@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Text;
+using FreexComp.Ide.TestSupport;
 
 namespace FreexComp.Ide.Tests.Infrastructure;
 
@@ -43,10 +44,9 @@ public static class SkiaProcess
         try
         {
             var cancel = TestContext.Current.CancellationToken;
-            var output = process.StandardOutput.ReadToEndAsync(cancel);
-            var error = process.StandardError.ReadToEndAsync(cancel);
+            var output = ChildProcessOutput.Read(process); // I-262: dedicated threads, not the pool
             await process.WaitForExitAsync(cancel);
-            var text = await output + await error;
+            var text = await output.StandardOutput.WaitAsync(cancel) + await output.StandardError.WaitAsync(cancel);
             Assert.True(process.ExitCode == 0 && text.Contains("Total: 1, Errors: 0, Failed: 0, Skipped: 0", StringComparison.Ordinal),
                 $"The Skia run of {method} failed (exit code {process.ExitCode}):{Environment.NewLine}{text}");
         }

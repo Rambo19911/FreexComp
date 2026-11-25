@@ -8,6 +8,7 @@ using FreexComp.Build;
 using FreexComp.Compiler;
 using FreexComp.Ide.Core.Build;
 using FreexComp.Ide.Core.Models;
+using FreexComp.Ide.TestSupport;
 using FreexComp.Ide.Tests.Infrastructure;
 
 namespace FreexComp.Ide.Tests.EndToEnd;
@@ -198,8 +199,8 @@ public sealed class IdeAndPbuildParityTests
         using var process = Process.Start(start)!;
         try
         {
-            var stdout = process.StandardOutput.ReadToEndAsync(TestContext.Current.CancellationToken);
-            var stderr = process.StandardError.ReadToEndAsync(TestContext.Current.CancellationToken);
+            var output = ChildProcessOutput.Read(process); // I-262: dedicated threads, not the pool
+            var (stdout, stderr) = (output.StandardOutput, output.StandardError);
             var exit = process.WaitForExitAsync(TestContext.Current.CancellationToken);
             await h.WaitForAsync(() => exit.IsCompleted && stdout.IsCompleted && stderr.IsCompleted, "pbuild finished");
             await exit;

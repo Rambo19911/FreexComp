@@ -115,8 +115,8 @@ internal static class LayoutRoundTrip
         using var process = Process.Start(psi) ?? throw new InvalidOperationException("could not start " + exe);
         try
         {
-            var stderr = process.StandardError.ReadToEndAsync();
-            var stdout = process.StandardOutput.ReadToEndAsync();
+            var output = ChildProcessOutput.Read(process); // I-262: dedicated threads, not the pool
+            var (stdout, stderr) = (output.StandardOutput, output.StandardError);
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(CurrentTest.Deadline.Token);
             timeout.CancelAfter(DumpTimeout < CurrentTest.Deadline.Remaining ? DumpTimeout : CurrentTest.Deadline.Remaining);
             try

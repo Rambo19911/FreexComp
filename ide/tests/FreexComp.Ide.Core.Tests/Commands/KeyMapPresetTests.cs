@@ -15,20 +15,6 @@ public sealed class KeyMapTests
     private static readonly CommandScope[] FocusScopes =
         [CommandScope.Editor, CommandScope.Designer, CommandScope.ProjectManager, CommandScope.ToolList];
 
-    /// <summary>
-    /// The free gestures chosen in I-253 for the commands the table displaces (D3: "chosen in the task and written
-    /// into this table"); <c>run.deleteAllBreakpoints</c> stays unbound. Once the rows are in the spec table they are
-    /// checked as table rows too.
-    /// </summary>
-    private static readonly string[] ChosenForDisplaced =
-    [
-        "Alt+F8 | Global | search.nextMessage",
-        "Shift+Alt+F8 | Global | search.previousMessage",
-        "Alt+F2 | Editor | search.bookmark.toggle",
-        "Alt+F12 | Editor | search.goToDeclaration",
-        "Shift+F5 | Editor | run.toggleBreakpointEnabled",
-    ];
-
     private readonly InMemoryFileSystem _disk = new();
     private readonly ManualClock _clock = new(new DateTimeOffset(2026, 11, 25, 9, 15, 0, TimeSpan.Zero));
     private readonly RecordingLog _log = new();
@@ -42,7 +28,7 @@ public sealed class KeyMapTests
         var classic = KeymapPresets.Bindings(KeymapPresets.Classic).Select(Describe).ToList();
         var keymap = KeymapPresets.Create(KeymapPresets.Classic);
 
-        Assert.Equal(13, table.Count);
+        Assert.Equal(18, table.Count);
         foreach (var row in table)
         {
             Assert.Contains(Describe(row), classic);
@@ -53,10 +39,8 @@ public sealed class KeyMapTests
             Assert.Equal(row.Gesture, keymap.GetGestures(row.CommandId)[0]);
         }
 
-        // What Classic adds to Default is the table and nothing else, except the gestures chosen for displaced commands.
-        var added = classic.Except(defaults, StringComparer.Ordinal).Except(table.Select(Describe), StringComparer.Ordinal).ToList();
-        Assert.Empty(added.Except(ChosenForDisplaced, StringComparer.Ordinal));
-        Assert.All(ChosenForDisplaced, chosen => Assert.Contains(chosen, classic));
+        // What Classic adds to Default is the table and nothing else.
+        Assert.Equal(table.Select(Describe).Order(StringComparer.Ordinal), classic.Except(defaults, StringComparer.Ordinal).Order(StringComparer.Ordinal));
 
         // A listed command gives up its Default function-key gestures; its other gestures stay (Alt+3, Ctrl+Shift+B).
         Assert.Equal(["F9"], Gestures(keymap, "run.start"));
@@ -64,15 +48,13 @@ public sealed class KeyMapTests
         Assert.Equal(["F11", "Alt+3"], Gestures(keymap, "view.objectInspector"));
         Assert.Equal(["Ctrl+F9", "Ctrl+Shift+B"], Gestures(keymap, "project.build"));
 
-        // The displaced commands; D3 also names run.restart, but no row takes its Ctrl+Shift+F5: it keeps it.
+        // Of the commands the table does not list only run.deleteAllBreakpoints changes (unbound); run.restart keeps
+        // Ctrl+Shift+F5, which no row takes.
         var changed = table.Select(r => r.CommandId).ToHashSet(StringComparer.Ordinal);
         var displaced = CommandCatalog.All.Select(c => c.Id)
             .Where(id => !changed.Contains(id) && !Of(classic, id).SequenceEqual(Of(defaults, id)))
             .Order(StringComparer.Ordinal);
-        Assert.Equal(
-            ["run.deleteAllBreakpoints", "run.toggleBreakpointEnabled", "search.bookmark.toggle", "search.goToDeclaration",
-             "search.nextMessage", "search.previousMessage"],
-            displaced);
+        Assert.Equal(["run.deleteAllBreakpoints"], displaced);
         Assert.Empty(keymap.GetGestures("run.deleteAllBreakpoints"));
         Assert.Equal(["Ctrl+Shift+F5"], Gestures(keymap, "run.restart"));
 

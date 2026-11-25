@@ -117,7 +117,7 @@ public sealed class ConsoleHostTests
                        UseShellExecute = false, CreateNoWindow = true, RedirectStandardError = true,
                    })!)
             {
-                var errors = key.StandardError.ReadToEndAsync(token);
+                var errors = ChildProcessOutput.Read(key).StandardError; // I-262: a dedicated thread, not the pool
                 await Step(key.WaitForExitAsync(token), "key helper", deadline);
                 Assert.True(key.ExitCode == 0, $"key helper exit code {key.ExitCode}: {await errors}");
             }

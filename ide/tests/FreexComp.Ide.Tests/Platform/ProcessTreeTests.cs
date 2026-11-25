@@ -197,7 +197,9 @@ public sealed class ProcessTreeTests
                         UseShellExecute = false, CreateNoWindow = true,
                         RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true,
                     };
-                    holders.Add(Process.Start(start)!);
+                    var holder = Process.Start(start)!;
+                    ChildProcessOutput.Read(holder); // I-262: drained, so that a full pipe never blocks the holder
+                    holders.Add(holder);
                 }));
             }
 

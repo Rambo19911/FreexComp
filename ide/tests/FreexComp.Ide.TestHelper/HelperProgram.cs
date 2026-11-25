@@ -17,6 +17,8 @@ namespace FreexComp.Ide.TestHelper;
 /// <item><c>--console-key &lt;pid&gt; &lt;file&gt;</c>: see <see cref="ConsoleKeyHelper"/> (I-138).</item>
 /// <item><c>--peek-handle &lt;value&gt;</c>: prints <see cref="Inherited"/> when handle <c>value</c> is a pipe holding
 /// <see cref="PipeMarker"/>, otherwise <see cref="NotInherited"/> (I-188).</item>
+/// <item><c>--flood &lt;chars&gt;</c>: writes that many <c>o</c> to stdout and, at the same time, that many <c>e</c> to
+/// stderr, then exits with code 0 (I-262).</item>
 /// </list>
 /// Unknown or missing mode: exit code <see cref="UsageError"/>.
 /// </summary>
@@ -28,6 +30,7 @@ public static class HelperProgram
     public const string ExitWith = "--exit-with";
     public const string ConsoleKey = "--console-key";
     public const string PeekHandle = "--peek-handle";
+    public const string Flood = "--flood";
     public const string ChildGreeting = "child says hello";
     public const string PipeMarker = "freexcomp-leak-marker";
     public const string Inherited = "inherited";
@@ -85,6 +88,13 @@ public static class HelperProgram
             case Wait:
                 WaitForever();
                 return 0;
+            case Flood:
+                var chars = int.Parse(rest[0], CultureInfo.InvariantCulture);
+                var errors = new Thread(() => WriteRepeated(Console.OpenStandardError(), (byte)'e', chars));
+                errors.Start();
+                WriteRepeated(Console.OpenStandardOutput(), (byte)'o', chars);
+                errors.Join();
+                return 0;
             case WriteBoth:
                 var stdout = new StreamWriter(Console.OpenStandardOutput(), new UTF8Encoding(false)) { AutoFlush = true };
                 var stderr = new StreamWriter(Console.OpenStandardError(), new UTF8Encoding(false)) { AutoFlush = true };
@@ -97,6 +107,15 @@ public static class HelperProgram
             default:
                 return UsageError;
         }
+    }
+
+    private static void WriteRepeated(Stream stream, byte value, int count)
+    {
+        var chunk = new byte[8192];
+        Array.Fill(chunk, value);
+        for (var left = count; left > 0; left -= chunk.Length)
+            stream.Write(chunk, 0, Math.Min(chunk.Length, left));
+        stream.Flush();
     }
 
     /// <summary>True when <paramref name="value"/> is, in this process, the read end of a pipe holding <see cref="PipeMarker"/>.</summary>
