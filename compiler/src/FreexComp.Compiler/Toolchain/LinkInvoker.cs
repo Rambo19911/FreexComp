@@ -37,6 +37,9 @@ internal sealed record LinkRequest(string OutputPath, string ObjectDirectory, Im
     /// <summary>Objects from <c>{$L x.obj}</c>; sorted by the invoker.</summary>
     public ImmutableArray<string> ExtraObjects { get; init; } = [];
 
+    /// <summary>CMP-1319: compiled resource files, in link order (not sorted).</summary>
+    public ImmutableArray<string> ResourceInputs { get; init; } = [];
+
     /// <summary>Import libraries; sorted by name by the invoker.</summary>
     public ImmutableArray<string> ImportLibraries { get; init; } = [];
 
@@ -140,6 +143,7 @@ internal sealed class LinkInvoker(ToolRunner runner, string lldLinkPath, IFileSy
 
         args.AddRange(request.UnitObjects);
         args.AddRange(SortedByName(request.ExtraObjects));
+        args.AddRange(request.ResourceInputs);                                  // CMP-1319: after the {$L} objects, before the import libraries
         args.AddRange(SortedByName(request.ImportLibraries));
     }
 

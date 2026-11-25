@@ -187,6 +187,11 @@ internal sealed class FakeToolchain(IFileSystem fs) : IProcessRunner
     /// <summary>Every started program that is not a tool: full path, arguments, working directory.</summary>
     public ImmutableArray<(string FileName, IReadOnlyList<string> Arguments, string WorkingDirectory)> Programs => [.. _programs];
 
+    private readonly ConcurrentQueue<(string Tool, ImmutableArray<string> Arguments, string WorkingDirectory)> _resourceCalls = new();
+
+    /// <summary>The preprocessor and resource tool runs of resource scripts (resource-compiler.md §5), in start order.</summary>
+    public ImmutableArray<(string Tool, ImmutableArray<string> Arguments, string WorkingDirectory)> ResourceCalls => [.. _resourceCalls];
+
     /// <summary>lld-link succeeds without writing the exe.</summary>
     public bool LinkWritesNothing { get; set; }
 
@@ -226,8 +231,23 @@ internal sealed class FakeToolchain(IFileSystem fs) : IProcessRunner
             case "clang.exe" when arguments is ["--version"]:
                 onStdOut("clang version " + CompilerInfo.LlvmPin);
                 return 0;
+            case "clang.exe" when arguments[0] == "-E":
+                _resourceCalls.Enqueue((name, [.. arguments], workingDirectory));
+                fs.WriteAllBytes(arguments[IndexOf(arguments, "-o") + 1], Encoding.UTF8.GetBytes(FakeResourceTools.Preprocess(fs, arguments)));
+                return 0;
             case "clang.exe":
                 fs.WriteAllBytes(arguments[IndexOf(arguments, "-o") + 1], Encoding.UTF8.GetBytes("obj"));
+                return 0;
+            case "llvm-rc.exe":
+                _resourceCalls.Enqueue((name, [.. arguments], workingDirectory));
+                var (compiledResources, resourceError) = FakeResourceTools.Compile(fs, arguments, workingDirectory);
+                fs.WriteAllBytes(arguments[IndexOf(arguments, "/fo") + 1], compiledResources);
+                if (resourceError is not null)
+                {
+                    onStdErr(resourceError);
+                    return 1;
+                }
+
                 return 0;
             case "llvm-dlltool.exe":
                 fs.WriteAllBytes(arguments[IndexOf(arguments, "-l") + 1], Encoding.UTF8.GetBytes("lib"));

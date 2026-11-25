@@ -61,6 +61,8 @@ public static class ProjectOptions
             MainFile = Resolve(dir, project.MainSource),
             SearchPaths = [.. searchPaths],
             LibraryPaths = [.. project.LibraryPaths.Select(path => Resolve(dir, path))],          // CMP-1082
+            // CMP-1314: the resource files in file order; a script gets Defines and SearchPaths
+            ResourceFiles = [.. project.Files.Where(f => f.EffectiveKind == "resource").Select(f => Resolve(dir, f.Path))],
             Defines = config.Defines,                                                           // CMP-1160: project level, then the chain
             Optimization = config.Optimization switch
             {

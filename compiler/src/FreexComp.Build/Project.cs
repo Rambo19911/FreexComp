@@ -105,12 +105,13 @@ public sealed record Project
 /// <param name="Kind">As written in the file (null = absent); see <see cref="EffectiveKind"/>.</param>
 public sealed record ProjectFile(string Path, string? Form, string? Kind)
 {
-    /// <summary><see cref="Kind"/>, or the default from the extension: .pas → unit, .form → form, else other.</summary>
+    /// <summary><see cref="Kind"/>, or the default from the extension: .pas → unit, .form → form, .rc and .res → resource (CMP-1313), else other.</summary>
     public string EffectiveKind =>
         Kind ?? System.IO.Path.GetExtension(Path).ToLowerInvariant() switch
         {
             ".pas" => "unit",
             ".form" => "form",
+            ".rc" or ".res" => "resource",
             _ => "other",
         };
 }

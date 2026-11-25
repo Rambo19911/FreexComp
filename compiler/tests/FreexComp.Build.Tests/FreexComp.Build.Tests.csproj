@@ -9,5 +9,6 @@
     <ProjectReference Include="..\..\src\FreexComp.Build\FreexComp.Build.csproj" />
     <ProjectReference Include="..\..\src\opc\opc.csproj" />
     <ProjectReference Include="..\..\src\pbuild\pbuild.csproj" />
+    <ProjectReference Include="..\..\src\prc\prc.csproj" />
   </ItemGroup>
 </Project>

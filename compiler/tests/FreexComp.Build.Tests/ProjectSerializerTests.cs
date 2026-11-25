@@ -133,6 +133,52 @@ public sealed partial class ProjectSerializerTests
         Assert.Equal("form", new ProjectFile("A.form", null, null).EffectiveKind);
         Assert.Equal("other", new ProjectFile("readme.md", null, null).EffectiveKind);
         Assert.Equal("other", new ProjectFile("A.pas", null, "other").EffectiveKind);
+        Assert.Equal("other", new ProjectFile("icon.ico", null, null).EffectiveKind);
+    }
+
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1313")]
+    public void FileKind_ResourceIsAcceptedAndDefaultsFromExtension()
+    {
+        // the default from the extension
+        Assert.Equal("resource", new ProjectFile("app.rc", null, null).EffectiveKind);
+        Assert.Equal("resource", new ProjectFile("res/Version.RES", null, null).EffectiveKind);
+        Assert.Equal("other", new ProjectFile("app.rc", null, "other").EffectiveKind);          // the override keeps it out of the build
+        Assert.Equal("resource", new ProjectFile("notes.txt", null, "resource").EffectiveKind);  // accepted here; E3117 when built
+
+        // the value is accepted and the round trip keeps the bytes (kind is written only where it was present)
+        var text = Lf("""
+            {
+              "formatVersion": 1,
+              "name": "Hello",
+              "mainSource": "Hello.pas",
+              "files": [
+                { "path": "app.rc" },
+                { "path": "version.res", "kind": "resource" },
+                { "path": "draft.rc", "kind": "other" }
+              ]
+            }
+            """) + "\n";
+        var project = Parse(text);
+        Assert.Equal(
+            [new ProjectFile("app.rc", null, null), new ProjectFile("version.res", null, "resource"), new ProjectFile("draft.rc", null, "other")],
+            project.Files);
+        Assert.Equal(["resource", "resource", "other"], project.Files.Select(f => f.EffectiveKind));
+        var saved = ProjectSerializer.Save(project);
+        Assert.Equal(saved, ProjectSerializer.Save(Parse(saved)));
+        Assert.Equal(2, saved.Split("\"kind\"").Length - 1);
+        Assert.Contains("\"kind\": \"resource\"", saved, StringComparison.Ordinal);
+
+        // every other value is still E9002, and the message names the new one
+        var bad = ProjectSerializer.ParseProject(ProjectPath, """{ "formatVersion": 1, "name": "A", "mainSource": "A.pas", "files": [ { "path": "x.rc", "kind": "script" } ] }""");
+        var d = Assert.Single(bad.Diagnostics);
+        Assert.Equal("E9002", d.Code);
+        Assert.EndsWith("must be \"unit\", \"form\", \"resource\" or \"other\"", d.Message, StringComparison.Ordinal);
+
+        // CMP-1314: the resource files reach the compilation in file order, as absolute paths
+        var options = ProjectOptions.ToCompilationOptions(project, "Debug");
+        Assert.Equal([@"C:\p\Hello\app.rc", @"C:\p\Hello\version.res"], options.ResourceFiles);
     }
 
     [Fact]

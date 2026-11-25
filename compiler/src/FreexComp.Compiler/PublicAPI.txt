@@ -112,6 +112,7 @@ sealed record FreexComp.Compiler.CompilationOptions : System.IEquatable<FreexCom
   public System.Boolean UsePcuCache { get; init; }
   public System.Collections.Immutable.ImmutableArray<System.String> Defines { get; init; }
   public System.Collections.Immutable.ImmutableArray<System.String> LibraryPaths { get; init; }
+  public System.Collections.Immutable.ImmutableArray<System.String> ResourceFiles { get; init; }
   public System.Collections.Immutable.ImmutableArray<System.String> SearchPaths { get; init; }
   public System.Collections.Immutable.ImmutableArray<System.String> UnitScopeNames { get; init; }
   public System.Int32 MaxParallelism { get; init; }

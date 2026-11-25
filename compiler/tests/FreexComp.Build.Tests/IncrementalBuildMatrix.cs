@@ -162,6 +162,91 @@ public sealed class IncrementalBuildMatrix
         Assert.True(File.Exists(p.Exe));
     }
 
+    // ---------------------------------------------------------------- resource inputs (resource-compiler.md §5; build-engine.md §5)
+
+    /// <summary>
+    /// The matrix project with two scripts (<c>app.rc</c> includes <c>ids.h</c> and names <c>data.bin</c>; <c>other.rc</c>) and a
+    /// compiled resource file <c>pre.res</c>, built once more: both scripts compiled, relinked.
+    /// </summary>
+    private static async Task<MatrixProject> CreateBuiltWithResourcesAsync()
+    {
+        var p = await MatrixProject.CreateBuiltAsync();
+        p.Edit("Matrix.pproj", "\"defines\": [],\n  \"configurations\"", "\"defines\": [],\n  \"files\": [ { \"path\": \"res/app.rc\" }, { \"path\": \"other.rc\" }, { \"path\": \"pre.res\" } ],\n  \"configurations\"");
+        p.Write(@"res\app.rc", "#include \"ids.h\"\n// the application's data\nID_DATA RCDATA \"data.bin\"\n");
+        p.Write(@"res\ids.h", "#define ID_DATA 7\n");
+        p.Write(@"res\data.bin", "first");
+        p.Write("other.rc", "1 RCDATA BEGIN 1, 2 END\n");
+        File.WriteAllBytes(Path.Combine(p.Directory, "pre.res"), FakeResourceTools.File((10, 99, [1, 2, 3])));
+
+        var b = await p.BuildAsync();
+
+        AssertResourceWork(b, ["app.rc", "other.rc"], link: true);
+        return p;
+    }
+
+    /// <summary>No unit recompiled; exactly <paramref name="scripts"/> compiled (two processes each), linked or not.</summary>
+    private static void AssertResourceWork(MatrixBuild b, string[] scripts, bool link)
+    {
+        Assert.True(b.Result.Success, string.Join("\n", b.Log.Lines));
+        Assert.Equal(
+            [.. scripts.Select(s => "Compiling resources " + s), .. link ? new[] { "Linking Matrix.exe" } : []],
+            b.Log.Info.Where(l => l.StartsWith("Compiling ", StringComparison.Ordinal) || l.StartsWith("Linking ", StringComparison.Ordinal)));
+        Assert.Equal(
+            [.. scripts.SelectMany(_ => new[] { "clang.exe", "llvm-rc.exe" }), .. link ? new[] { "lld-link.exe" } : []],
+            b.Processes.Where(n => n != "clang.exe --version"));
+    }
+
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1317")]
+    [Trait("Req", "CMP-1318")]
+    public async Task Resource_NothingChanged_StartsNoProcess()
+    {
+        using var p = await CreateBuiltWithResourcesAsync();
+
+        var b = await p.BuildAsync();
+
+        Assert.True(b.Result.UpToDate);
+        Assert.Equal(["Matrix: up to date"], b.Log.Info);
+        Assert.Empty(b.Processes);
+    }
+
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1307")]
+    [Trait("Req", "CMP-1317")]
+    public async Task Resource_ScriptIncludeOrDataFileEdited_RecompilesThatScriptAndRelinks()
+    {
+        using var p = await CreateBuiltWithResourcesAsync();
+
+        p.Edit(@"res\app.rc", "ID_DATA RCDATA", "8 RCDATA \"data.bin\"\nID_DATA RCDATA");          // the script
+        AssertResourceWork(await p.BuildAsync(), ["app.rc"], link: true);
+
+        p.Edit(@"res\ids.h", "7", "70");                                                          // a file it includes
+        AssertResourceWork(await p.BuildAsync(), ["app.rc"], link: true);
+
+        p.Edit(@"res\data.bin", "first", "second");                                               // a data file it names
+        AssertResourceWork(await p.BuildAsync(), ["app.rc"], link: true);
+
+        // CMP-1318: compiled again, but the same bytes come out — no link
+        p.Edit(@"res\app.rc", "// the application's data", "// only this comment changed");
+        AssertResourceWork(await p.BuildAsync(), ["app.rc"], link: false);
+        Assert.Empty((await p.BuildAsync()).Processes);
+    }
+
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1318")]
+    public async Task Resource_ResContentChanged_RelinksOnly()
+    {
+        using var p = await CreateBuiltWithResourcesAsync();
+        File.WriteAllBytes(Path.Combine(p.Directory, "pre.res"), FakeResourceTools.File((10, 99, [4, 5, 6])));
+
+        var b = await p.BuildAsync();
+
+        AssertResourceWork(b, [], link: true);
+    }
+
     /// <summary>How the compiler fingerprint starts in a <c>.pcu</c> (<c>"compilerFingerprint":"opc …"</c>).</summary>
     private const string PcuFingerprintPrefix = "\"compilerFingerprint\":\"opc ";
 }

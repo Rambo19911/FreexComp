@@ -34,6 +34,12 @@ public sealed record CompilationOptions
     /// <summary>-D.</summary>
     public ImmutableArray<string> Defines { get; init; } = [];
 
+    /// <summary>
+    /// Absolute <c>.rc</c> / <c>.res</c> paths, compiled and linked in this order (CMP-1314): a resource script is compiled with
+    /// <see cref="Defines"/> and <see cref="SearchPaths"/>, a compiled resource file is passed to the link as it is.
+    /// </summary>
+    public ImmutableArray<string> ResourceFiles { get; init; } = [];
+
     /// <summary>"" → &lt;dir of MainFile&gt;/obj/&lt;Debug|Release&gt;.</summary>
     public string ObjectDirectory { get; init; } = "";
 

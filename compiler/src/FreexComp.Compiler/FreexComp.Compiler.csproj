@@ -8,5 +8,11 @@
     <InternalsVisibleTo Include="FreexComp.LanguageService.Tests" />
     <InternalsVisibleTo Include="FreexComp.Build" />
     <InternalsVisibleTo Include="opc" />
+    <InternalsVisibleTo Include="prc" />
+    <InternalsVisibleTo Include="FreexComp.Build.Tests" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- CMP-1302: the product's own header files for resource scripts -->
+    <EmbeddedResource Include="Toolchain\RcInclude\*.h" LogicalName="rc-include/%(Filename)%(Extension)" />
   </ItemGroup>
 </Project>

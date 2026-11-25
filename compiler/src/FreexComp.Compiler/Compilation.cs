@@ -745,12 +745,27 @@ public sealed class Compilation
         }
 
         // CMP-628 (C-167), CMP-1100…1106: execution level and DPI awareness reach only this file, never a unit's fingerprint
+        // CMP-1315: the resource inputs — after every unit compiled without error, before the manifest is prepared
+        var resources = await ResourceInputsAsync(objectDirectory, runner, toolchain, options.InfoSink, VersionAsync, location, diagnostics, ct).ConfigureAwait(false);
+        if (resources is null)
+        {
+            return Finish(false, null, compiled);
+        }
+
         var manifestPath = ApplicationManifest.Prepare(Options, objectDirectory, FileSystem, out var generatedManifest);
         if (manifestPath is not null && !FileSystem.FileExists(manifestPath))
         {
             diagnostics.Add(Diagnostic.Create("E0002", Location.ForFile(manifestPath), manifestPath));   // CMP-1114: nothing is linked
             return Finish(false, null, compiled);
         }
+
+        if (manifestPath is not null && resources.Value.WithManifest is { } withManifest)
+        {
+            diagnostics.Add(Diagnostic.Create("E3115", location, withManifest));                        // CMP-1320: no silent choice
+            return Finish(false, null, compiled);
+        }
+
+        var resourceLines = resources.Value.Lines;
 
         var request = new LinkRequest(output, objectDirectory,
             [.. linkUnits.Select(u => u.IsPrecompiled ? u.ObjectPath : Path.Combine(objectDirectory, u.Name + ".obj"))])
@@ -764,12 +779,13 @@ public sealed class Compilation
                 ? ApplicationManifest.LevelWord(Options.ManifestExecutionLevel)
                 : null,
             ExtraObjects = [.. linkUnits.SelectMany(u => u.LinkInputs.Objects).Distinct(PathUtil.Comparer)],
+            ResourceInputs = resources.Value.Inputs,
             ImportLibraries = libraries.ToImmutable(),
             ImportDefinitions = definitions.ToImmutableDictionary(StringComparer.Ordinal),
             ExportDefinition = exportDefinition,
             ImportLibraryOutput = isLibrary && !exports.IsEmpty ? LinkInvoker.ImportLibraryPath(output) : null,   // CMP-1063
         };
-        if (compiled.IsEmpty && !regenerated && !exportsChanged && readyMadeHashes.Count == 0 && !options.ForceRebuild && LinkIsUpToDate(request))
+        if (compiled.IsEmpty && !regenerated && !exportsChanged && readyMadeHashes.Count == 0 && !options.ForceRebuild && LinkIsUpToDate(request, resourceLines))
         {
             return Finish(WriteSidecar(output, main.Unit.Name, linkUnits, objectDirectory, location, diagnostics), output, compiled);   // CMP-155
         }
@@ -790,6 +806,17 @@ public sealed class Compilation
 
         if (linked.Success)
         {
+            // CMP-1318: what this link took as resource inputs (no file for a link without any)
+            var linkResources = Path.Combine(objectDirectory, LinkResources);
+            if (resourceLines.Length > 0)
+            {
+                Write(linkResources, resourceLines, location, diagnostics);
+            }
+            else
+            {
+                Delete(linkResources, location, diagnostics);
+            }
+
             foreach (var (path, hash) in readyMadeHashes)
             {
                 Write(path, hash, location, diagnostics);                           // CMP-1071: what this link used
@@ -873,18 +900,146 @@ public sealed class Compilation
     /// <summary>The copy of the manifest the last successful link embedded (CMP-629, CMP-155), in the object directory.</summary>
     private const string LinkedManifest = "link.manifest";
 
+    /// <summary>CMP-1318: one line <c>&lt;SHA-256&gt; &lt;full path&gt;</c> per resource input of the last successful link, in link order.</summary>
+    private const string LinkResources = "link.resources";
+
+    /// <summary>
+    /// CMP-1313…1321: the resource inputs of this link from <see cref="CompilationOptions.ResourceFiles"/> — each path once, a script
+    /// compiled to <c>&lt;objdir&gt;\&lt;base&gt;.res</c> unless its record says it is up to date (CMP-1317), a compiled resource file
+    /// used where it lies; every input is then read (CMP-1321).
+    /// </summary>
+    /// <returns>
+    /// Null after an error (reported; nothing is linked). Otherwise the inputs in link order, the lines of the link check and the
+    /// first input that contains an application manifest.
+    /// </returns>
+    private async Task<(ImmutableArray<string> Inputs, string Lines, string? WithManifest)?> ResourceInputsAsync(
+        string objectDirectory, ToolRunner runner, ToolchainPaths toolchain, Action<string>? info, Func<Task<bool>> versionAsync, Location location,
+        ImmutableArray<Diagnostic>.Builder diagnostics, CancellationToken ct)
+    {
+        var files = Options.ResourceFiles.Select(PathUtil.Normalize).Distinct(PathUtil.Comparer).ToImmutableArray();
+        if (files.IsEmpty)
+        {
+            return ([], "", null);
+        }
+
+        static bool Is(string path, string extension) => string.Equals(Path.GetExtension(path), extension, StringComparison.OrdinalIgnoreCase);
+        var failed = false;
+        foreach (var file in files.Where(f => !Is(f, ".rc") && !Is(f, ".res")))
+        {
+            diagnostics.Add(Diagnostic.Create("E3117", location, file));                                // CMP-1313
+            failed = true;
+        }
+
+        var scripts = files.Where(f => Is(f, ".rc")).ToImmutableArray();
+        for (var i = 0; i < scripts.Length; i++)
+        {
+            if (scripts.Take(i).FirstOrDefault(s => string.Equals(Path.GetFileNameWithoutExtension(s), Path.GetFileNameWithoutExtension(scripts[i]), StringComparison.OrdinalIgnoreCase)) is { } first)
+            {
+                diagnostics.Add(Diagnostic.Create("E3114", location, first, scripts[i]));              // CMP-1316
+                failed = true;
+            }
+        }
+
+        if (failed)
+        {
+            return null;
+        }
+
+        var inputs = ImmutableArray.CreateBuilder<string>();
+        var compiler = new ResourceCompiler(runner, toolchain, FileSystem);
+        foreach (var file in files)
+        {
+            if (Is(file, ".res"))
+            {
+                inputs.Add(file);
+                continue;
+            }
+
+            // CMP-1314: the configuration's defines and search paths reach the script
+            var request = new ResourceCompileRequest(file, Path.Combine(objectDirectory, Path.GetFileNameWithoutExtension(file) + ".res"), objectDirectory)
+            {
+                IncludeDirectories = Options.SearchPaths,
+                Defines = Options.Defines,
+            };
+            inputs.Add(request.OutputPath);
+            if (ResourceBuildRecord.IsUpToDate(FileSystem, PcuWriter.CompilerFingerprint, request))
+            {
+                continue;                                                   // CMP-1317: no process is started for it
+            }
+
+            var record = ResourceBuildRecord.PathFor(request.OutputPath);
+            if (!Delete(record, location, diagnostics) || !await versionAsync().ConfigureAwait(false))
+            {
+                return null;
+            }
+
+            info?.Invoke("Compiling resources " + Path.GetFileName(file));
+            var result = await compiler.CompileAsync(request, ct).ConfigureAwait(false);
+            diagnostics.AddRange(result.Diagnostics);
+            if (!result.Success)
+            {
+                failed = true;
+                continue;
+            }
+
+            // CMP-141: the record after the compiled file
+            if (!Write(record, ResourceBuildRecord.Render(FileSystem, PcuWriter.CompilerFingerprint, request, result.Dependencies), location, diagnostics))
+            {
+                return null;
+            }
+        }
+
+        if (failed)
+        {
+            return null;
+        }
+
+        // CMP-1320, 1321: every input is read before the link
+        var lines = new StringBuilder();
+        string? withManifest = null;
+        foreach (var input in inputs)
+        {
+            try
+            {
+                if (!FileSystem.FileExists(input))
+                {
+                    diagnostics.Add(Diagnostic.Create("E0002", location, input));
+                    failed = true;
+                    continue;
+                }
+
+                var bytes = FileSystem.ReadAllBytes(input);
+                if (ResourceFile.Read(bytes).Any(e => e.Type.Number == ResourceFile.ManifestType))
+                {
+                    withManifest ??= input;
+                }
+
+                lines.Append(ResourceBuildRecord.Hash(bytes)).Append(' ').Append(input).Append('\n');
+            }
+            catch (Exception e) when (e is InvalidDataException or IOException or UnauthorizedAccessException)
+            {
+                diagnostics.Add(Diagnostic.Create("E3116", location, input));
+                failed = true;
+            }
+        }
+
+        return failed ? null : (inputs.ToImmutable(), lines.ToString(), withManifest);
+    }
+
     /// <summary>
     /// CMP-155: the link is skipped when (and only when) the <c>link.rsp</c> it would write is byte-identical to the one in the object
     /// directory, no unit was recompiled (checked by the caller) and the output exe exists. Timestamps are not consulted.
     /// CMP-1065: for a library the DLL and — when it has exports — its import library must exist (the caller checks that the
     /// export definition file did not change in this run).
     /// </summary>
-    private bool LinkIsUpToDate(LinkRequest request)
+    private bool LinkIsUpToDate(LinkRequest request, string resourceLines)
     {
         var rsp = Path.Combine(request.ObjectDirectory, "link.rsp");
+        var linkResources = Path.Combine(request.ObjectDirectory, LinkResources);
         try
         {
             return FileSystem.FileExists(request.OutputPath) && FileSystem.FileExists(rsp)
+                && (FileSystem.FileExists(linkResources) ? FileSystem.ReadAllText(linkResources) : "") == resourceLines   // CMP-1318
                 && (request.ImportLibraryOutput is null || FileSystem.FileExists(request.ImportLibraryOutput))
                 && FileSystem.ReadAllBytes(rsp).AsSpan().SequenceEqual(
                     new UTF8Encoding(encoderShouldEmitUTF8Identifier: false).GetBytes(LinkInvoker.RenderResponseFile(LinkInvoker.BuildArguments(request))))

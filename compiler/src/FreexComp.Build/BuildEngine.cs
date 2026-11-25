@@ -544,13 +544,21 @@ public sealed class BuildEngine : IBuildEngine
                     .. LibraryDependencies.Select(d => Path.GetDirectoryName(d)!).Distinct(PathUtil.Comparer)
                         .Where(p => !projectOptions.LibraryPaths.Contains(p, PathUtil.Comparer))],
             };
+            var missingResources = new List<string>();
             foreach (var file in project.Files)
             {
                 var full = PathUtil.Normalize(Path.Combine(project.Directory, file.Path.Replace('/', '\\')));
                 if (!PathUtil.AreEqual(full, options.MainFile) && !Exists(full))
                 {
                     diagnostics.Add(Diagnostic.Create("W9002", location, full));
+                    missingResources.Add(full);
                 }
+            }
+
+            if (missingResources.Count > 0)
+            {
+                // CMP-1322: a listed resource file that does not exist is left out, like any listed file
+                options = options with { ResourceFiles = [.. options.ResourceFiles.Where(f => !missingResources.Contains(f, PathUtil.Comparer))] };
             }
 
             if (!Exists(options.MainFile))
@@ -586,7 +594,8 @@ public sealed class BuildEngine : IBuildEngine
             // C-269, I-217: awaited on the engine's own thread, no hop to a pool worker (with every worker busy the hop would never
             // run); a caller on a UI thread starts RunAsync with Task.Run (the IDE's build service does)
             var result = await compilation.EmitAsync(emit, ct).ConfigureAwait(false);
-            diagnostics.AddRange(result.Diagnostics);
+            // resource-compiler.md §10: the diagnostics of the project's resource files are located at the project file
+            diagnostics.AddRange(result.Diagnostics.Select(d => d.Code is "E3114" or "E3115" or "E3116" or "E3117" ? d with { Location = location } : d));
             if (!result.Success)
             {
                 return (false, null);

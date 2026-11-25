@@ -287,9 +287,9 @@ public static class ProjectSerializer
     {
         node.RequireObject();
         var kind = node.Optional("kind");
-        if (kind is { } k && k.String() is not ("unit" or "form" or "other"))
+        if (kind is { } k && k.String() is not ("unit" or "form" or "resource" or "other"))
         {
-            throw ProjectFileException.Invalid(k.Offset, $"'{k.Display}' must be \"unit\", \"form\" or \"other\"");
+            throw ProjectFileException.Invalid(k.Offset, $"'{k.Display}' must be \"unit\", \"form\", \"resource\" or \"other\"");
         }
 
         return new ProjectFile(
