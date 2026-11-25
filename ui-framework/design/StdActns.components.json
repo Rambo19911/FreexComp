@@ -1,0 +1,181 @@
+{
+  "formatVersion": 1,
+  "unit": "StdActns",
+  "types": {},
+  "components": [
+    {
+      "class": "TEditAction",
+      "ancestor": "TAction",
+      "abstract": true,
+      "kind": "nonvisual",
+      "acceptsChildren": false,
+      "renderer": "nonvisual",
+      "properties": [
+        { "name": "Control", "type": "TCustomEdit", "kind": "component", "category": "Misc" }
+      ],
+      "events": []
+    },
+    {
+      "class": "TEditCut",
+      "ancestor": "TEditAction",
+      "abstract": false,
+      "kind": "nonvisual",
+      "namePrefix": "EditCut",
+      "acceptsChildren": false,
+      "parentClasses": ["TActionList"],
+      "renderer": "nonvisual",
+      "properties": [
+        { "name": "Caption", "type": "string", "initial": "Cu&t" },
+        { "name": "Category", "type": "string", "initial": "Edit" },
+        { "name": "Hint", "type": "string", "initial": "Cut" },
+        { "name": "ShortCut", "type": "TShortCut", "initial": "16472" }
+      ],
+      "events": []
+    },
+    {
+      "class": "TEditCopy",
+      "ancestor": "TEditAction",
+      "abstract": false,
+      "kind": "nonvisual",
+      "namePrefix": "EditCopy",
+      "acceptsChildren": false,
+      "parentClasses": ["TActionList"],
+      "renderer": "nonvisual",
+      "properties": [
+        { "name": "Caption", "type": "string", "initial": "&Copy" },
+        { "name": "Category", "type": "string", "initial": "Edit" },
+        { "name": "Hint", "type": "string", "initial": "Copy" },
+        { "name": "ShortCut", "type": "TShortCut", "initial": "16451" }
+      ],
+      "events": []
+    },
+    {
+      "class": "TEditPaste",
+      "ancestor": "TEditAction",
+      "abstract": false,
+      "kind": "nonvisual",
+      "namePrefix": "EditPaste",
+      "acceptsChildren": false,
+      "parentClasses": ["TActionList"],
+      "renderer": "nonvisual",
+      "properties": [
+        { "name": "Caption", "type": "string", "initial": "&Paste" },
+        { "name": "Category", "type": "string", "initial": "Edit" },
+        { "name": "Hint", "type": "string", "initial": "Paste" },
+        { "name": "ShortCut", "type": "TShortCut", "initial": "16470" }
+      ],
+      "events": []
+    },
+    {
+      "class": "TEditSelectAll",
+      "ancestor": "TEditAction",
+      "abstract": false,
+      "kind": "nonvisual",
+      "namePrefix": "EditSelectAll",
+      "acceptsChildren": false,
+      "parentClasses": ["TActionList"],
+      "renderer": "nonvisual",
+      "properties": [
+        { "name": "Caption", "type": "string", "initial": "Select &All" },
+        { "name": "Category", "type": "string", "initial": "Edit" },
+        { "name": "Hint", "type": "string", "initial": "Select all" },
+        { "name": "ShortCut", "type": "TShortCut", "initial": "16449" }
+      ],
+      "events": []
+    },
+    {
+      "class": "TEditUndo",
+      "ancestor": "TEditAction",
+      "abstract": false,
+      "kind": "nonvisual",
+      "namePrefix": "EditUndo",
+      "acceptsChildren": false,
+      "parentClasses": ["TActionList"],
+      "renderer": "nonvisual",
+      "properties": [
+        { "name": "Caption", "type": "string", "initial": "&Undo" },
+        { "name": "Category", "type": "string", "initial": "Edit" },
+        { "name": "Hint", "type": "string", "initial": "Undo" },
+        { "name": "ShortCut", "type": "TShortCut", "initial": "16474" }
+      ],
+      "events": []
+    },
+    {
+      "class": "TEditDelete",
+      "ancestor": "TEditAction",
+      "abstract": false,
+      "kind": "nonvisual",
+      "namePrefix": "EditDelete",
+      "acceptsChildren": false,
+      "parentClasses": ["TActionList"],
+      "renderer": "nonvisual",
+      "properties": [
+        { "name": "Caption", "type": "string", "initial": "&Delete" },
+        { "name": "Category", "type": "string", "initial": "Edit" },
+        { "name": "Hint", "type": "string", "initial": "Delete" },
+        { "name": "ShortCut", "type": "TShortCut", "initial": "46" }
+      ],
+      "events": []
+    },
+    {
+      "class": "TFileOpen",
+      "ancestor": "TAction",
+      "abstract": false,
+      "kind": "nonvisual",
+      "namePrefix": "FileOpen",
+      "acceptsChildren": false,
+      "parentClasses": ["TActionList"],
+      "renderer": "nonvisual",
+      "properties": [
+        { "name": "Caption", "type": "string", "initial": "&Open…" },
+        { "name": "Category", "type": "string", "initial": "File" },
+        { "name": "Hint", "type": "string", "initial": "Open a file" },
+        { "name": "ShortCut", "type": "TShortCut", "initial": "16463" }
+      ],
+      "events": [
+        { "name": "BeforeExecute", "signature": "TNotifyEvent" },
+        { "name": "OnAccept", "signature": "TNotifyEvent", "default": true },
+        { "name": "OnCancel", "signature": "TNotifyEvent" }
+      ]
+    },
+    {
+      "class": "TFileSaveAs",
+      "ancestor": "TAction",
+      "abstract": false,
+      "kind": "nonvisual",
+      "namePrefix": "FileSaveAs",
+      "acceptsChildren": false,
+      "parentClasses": ["TActionList"],
+      "renderer": "nonvisual",
+      "properties": [
+        { "name": "Caption", "type": "string", "initial": "Save &As…" },
+        { "name": "Category", "type": "string", "initial": "File" },
+        { "name": "Hint", "type": "string", "initial": "Save under another name" }
+      ],
+      "events": [
+        { "name": "BeforeExecute", "signature": "TNotifyEvent" },
+        { "name": "OnAccept", "signature": "TNotifyEvent", "default": true },
+        { "name": "OnCancel", "signature": "TNotifyEvent" }
+      ]
+    },
+    {
+      "class": "TFileExit",
+      "ancestor": "TAction",
+      "abstract": false,
+      "kind": "nonvisual",
+      "namePrefix": "FileExit",
+      "acceptsChildren": false,
+      "parentClasses": ["TActionList"],
+      "renderer": "nonvisual",
+      "properties": [
+        { "name": "Caption", "type": "string", "initial": "E&xit" },
+        { "name": "Category", "type": "string", "initial": "File" },
+        { "name": "Hint", "type": "string", "initial": "Close the application" }
+      ],
+      "events": []
+    }
+  ],
+  "eventSignatures": {
+    "TNotifyEvent": "procedure(Sender: TObject)"
+  }
+}

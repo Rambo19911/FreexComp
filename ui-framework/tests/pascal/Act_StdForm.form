@@ -1,0 +1,145 @@
+object StdForm: TStdForm
+  Caption = 'Standard actions'
+  ClientWidth = 400
+  ClientHeight = 300
+  Menu = MainMenu1
+  Scaled = False
+  object ToolBar1: TToolBar
+    Left = 0
+    Top = 0
+    Width = 400
+    Height = 29
+    object ToolButton1: TToolButton
+      Action = EditCut1
+    end
+    object ToolButton2: TToolButton
+      Action = EditCopy1
+    end
+    object ToolButton3: TToolButton
+      Action = EditPaste1
+    end
+    object ToolButton4: TToolButton
+      Action = EditSelectAll1
+    end
+    object ToolButton5: TToolButton
+      Action = EditUndo1
+    end
+    object ToolButton6: TToolButton
+      Action = EditDelete1
+    end
+    object ToolButton7: TToolButton
+      Action = FileOpen1
+    end
+    object ToolButton8: TToolButton
+      Action = FileSaveAs1
+    end
+    object ToolButton9: TToolButton
+      Action = FileExit1
+    end
+  end
+  object Memo1: TMemo
+    Left = 8
+    Top = 40
+    Width = 200
+    Height = 100
+    TabOrder = 1
+  end
+  object MainMenu1: TMainMenu
+    DesignLeft = 16
+    DesignTop = 160
+    object FileMenu: TMenuItem
+      Caption = '&File'
+      object FileItem1: TMenuItem
+        Action = FileOpen1
+      end
+      object FileItem2: TMenuItem
+        Action = FileSaveAs1
+      end
+      object FileItem3: TMenuItem
+        Action = FileExit1
+      end
+    end
+    object EditMenu: TMenuItem
+      Caption = '&Edit'
+      object EditItem1: TMenuItem
+        Action = EditCut1
+      end
+      object EditItem2: TMenuItem
+        Action = EditCopy1
+      end
+      object EditItem3: TMenuItem
+        Action = EditPaste1
+      end
+      object EditItem4: TMenuItem
+        Action = EditSelectAll1
+      end
+      object EditItem5: TMenuItem
+        Action = EditUndo1
+      end
+      object EditItem6: TMenuItem
+        Action = EditDelete1
+      end
+    end
+  end
+  object ActionList1: TActionList
+    DesignLeft = 48
+    DesignTop = 160
+    object EditCut1: TEditCut
+      Caption = 'Cu&t'
+      Category = 'Edit'
+      Hint = 'Cut'
+      ShortCut = 16472
+    end
+    object EditCopy1: TEditCopy
+      Caption = '&Copy'
+      Category = 'Edit'
+      Hint = 'Copy'
+      SecondaryShortCuts = (
+        'Ctrl+Ins'
+      )
+      ShortCut = 16451
+    end
+    object EditPaste1: TEditPaste
+      Caption = '&Paste'
+      Category = 'Edit'
+      Hint = 'Paste'
+      ShortCut = 16470
+    end
+    object EditSelectAll1: TEditSelectAll
+      Caption = 'Select &All'
+      Category = 'Edit'
+      Hint = 'Select all'
+      ShortCut = 16449
+      Control = Memo1
+    end
+    object EditUndo1: TEditUndo
+      Caption = '&Undo'
+      Category = 'Edit'
+      Hint = 'Undo'
+      ShortCut = 16474
+    end
+    object EditDelete1: TEditDelete
+      Caption = '&Delete'
+      Category = 'Edit'
+      Hint = 'Delete'
+      ShortCut = 46
+    end
+    object FileOpen1: TFileOpen
+      Caption = '&Open…'
+      Category = 'File'
+      Hint = 'Open a file'
+      ShortCut = 16463
+      OnAccept = FileOpen1Accept
+    end
+    object FileSaveAs1: TFileSaveAs
+      Caption = 'Save &As…'
+      Category = 'File'
+      Hint = 'Save under another name'
+    end
+    object FileExit1: TFileExit
+      Caption = 'E&xit'
+      Category = 'File'
+      Hint = 'Close the application'
+    end
+  end
+end

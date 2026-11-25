@@ -1,0 +1,78 @@
+# after the constructor (UIF-1374)
+ok TFileOpen is a TAction
+ok TFileOpen owns a TOpenDialog
+ok TFileSaveAs owns a TSaveDialog
+ok the owner of the dialog is the action
+ok also for save
+ok every read gives the same dialog
+ok no captions
+ok no hints
+ok no shortcuts
+ok DisableIfNoHandler set by every class
+ok the classes are registered
+# targets (UIF-1375, UIF-1376)
+ok TFileOpen: a form is a target
+ok TFileOpen: the application is a target
+ok TFileSaveAs: any component
+ok TFileExit: the application
+ok no main form
+ok Update: no update handler ran
+ok TFileOpen: enabled by its target
+ok TFileSaveAs: enabled by its target
+ok TFileExit: enabled by its target
+# non-interactive, no hook (UIF-1375, UIF-852)
+ok NonInteractive (FXC_UI_NONINTERACTIVE=1)
+ok TFileOpen.Execute: handled
+ok BeforeExecute, the [Dialog] line, OnCancel
+ok TFileSaveAs.Execute: handled
+ok BeforeExecute, the [Dialog] line, OnCancel
+# the hook accepts (UIF-1375)
+ok TFileOpen.Execute
+ok BeforeExecute, the dialog, OnAccept with Dialog.FileName
+ok the dialog ran once
+ok an open dialog
+ok Dialog.Filter set in code reached the dialog
+ok and Dialog.Title
+ok Dialog.FileName after the action
+ok Dialog.Files
+ok TFileSaveAs.Execute
+ok the same order
+ok a save dialog
+# the hook cancels (UIF-1375)
+ok TFileOpen.Execute: handled also when cancelled
+ok BeforeExecute, the dialog, OnCancel
+ok FileName unchanged
+ok TFileSaveAs.Execute
+ok the same order
+# no events assigned (UIF-1375)
+ok accepted
+ok only the dialog
+ok FileName set
+ok cancelled
+ok only the dialog
+# OnExecute replaces the built-in behaviour (UIF-1377)
+ok TFileOpen.Execute
+ok the handler only: no BeforeExecute, no dialog
+ok the dialog did not run
+ok TEditSelectAll.Execute
+ok the handler ran
+ok nothing selected
+ok without the handler
+ok the text is selected
+# TFileExit without a main form (UIF-1376)
+ok no WM_QUIT is waiting
+ok Execute
+ok Application.Terminate was called
+ok with OnExecute (UIF-1377)
+ok the handler ran
+ok and nothing else
+# TFileExit with a main form (UIF-1376)
+ok the main form
+ok Execute, OnCloseQuery refuses
+ok asked, not closed
+ok the application goes on
+ok Execute, OnCloseQuery agrees
+ok asked and closed
+ok closing the main form terminates the application
+ok the program removed every WM_QUIT
+# passed 68 failed 0

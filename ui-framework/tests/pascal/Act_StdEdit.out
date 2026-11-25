@@ -1,0 +1,134 @@
+# after the constructor (UIF-1371, UIF-1361)
+ok TEditCopy is a TEditAction
+ok and a TAction
+ok Control is nil
+ok no caption
+ok no hint
+ok no shortcut
+ok no image
+ok no category
+ok enabled until the first update
+ok DisableIfNoHandler set by every class
+ok the classes are registered
+# HandlesTarget (UIF-1369)
+ok no Control: an edit
+ok no Control: a memo
+ok no Control: a form is not a target
+ok no Control: another component is not a target
+ok Control set: that control
+ok Control set: no other edit
+# no Control and no active control (UIF-1361)
+ok no form is active
+ok Update
+ok disabled: no target
+ok Execute False
+ok Control set: enabled without the focus (UIF-1370)
+# TEdit: Enabled after Update (UIF-1370, UIF-1371)
+ok Control assigned
+ok Update: no update handler ran
+ok empty text: cut, copy, select all, undo, delete
+ok text without a selection: only select all
+ok a selection: cut, copy, select all, delete
+ok ReadOnly: copy and select all only
+# TEdit: copy and paste (UIF-1371)
+ok Copy.Execute (the selection "ell")
+ok the selection is on the clipboard
+ok copy leaves the text
+ok paste: ReadOnly, disabled
+ok paste: Execute False
+ok nothing pasted
+ok paste: text on the clipboard and not ReadOnly, enabled
+ok Paste.Execute
+ok the copied text pasted at the caret
+# TEdit: undo (UIF-1371)
+ok after the paste: CanUndo, enabled
+ok Undo.Execute
+ok the paste undone
+ok text set by code: nothing to undo
+ok Execute False
+ok a typed character
+ok after an edit: enabled
+# TEdit: cut, delete, select all (UIF-1371)
+ok Cut.Execute (the selection "he")
+ok the selection removed
+ok no selection left
+ok paste again
+ok the cut text was on the clipboard
+ok Delete.Execute (the selection "llo")
+ok the selection removed
+ok no selection left
+ok paste once more
+ok delete left the clipboard alone
+ok SelectAll.Execute
+ok selection starts at 0
+ok the whole text selected
+# TEdit: a disabled action does nothing (UIF-1371, UIF-902)
+ok copy without a selection
+ok cut without a selection
+ok delete without a selection
+ok text unchanged
+ok select all in an empty control
+ok Execute updated the action first
+# TMemo: Enabled after Update (UIF-1370, UIF-1371)
+ok Control assigned
+ok Update: no update handler ran
+ok empty text: cut, copy, select all, undo, delete
+ok text without a selection: only select all
+ok a selection: cut, copy, select all, delete
+ok ReadOnly: copy and select all only
+# TMemo: copy and paste (UIF-1371)
+ok Copy.Execute (the selection "ell")
+ok the selection is on the clipboard
+ok copy leaves the text
+ok paste: ReadOnly, disabled
+ok paste: Execute False
+ok nothing pasted
+ok paste: text on the clipboard and not ReadOnly, enabled
+ok Paste.Execute
+ok the copied text pasted at the caret
+# TMemo: undo (UIF-1371)
+ok after the paste: CanUndo, enabled
+ok Undo.Execute
+ok the paste undone
+ok text set by code: nothing to undo
+ok Execute False
+ok a typed character
+ok after an edit: enabled
+# TMemo: cut, delete, select all (UIF-1371)
+ok Cut.Execute (the selection "he")
+ok the selection removed
+ok no selection left
+ok paste again
+ok the cut text was on the clipboard
+ok Delete.Execute (the selection "llo")
+ok the selection removed
+ok no selection left
+ok paste once more
+ok delete left the clipboard alone
+ok SelectAll.Execute
+ok selection starts at 0
+ok the whole text selected
+# TMemo: a disabled action does nothing (UIF-1371, UIF-902)
+ok copy without a selection
+ok cut without a selection
+ok delete without a selection
+ok text unchanged
+ok select all in an empty control
+ok Execute updated the action first
+# linked clients (UIF-1373)
+ok no selection: the tool button linked to copy is disabled
+ok and the menu item linked to cut
+ok a selection: nothing changes before the update
+ok after UpdateActions: the tool button is enabled
+ok and the menu item
+ok ReadOnly: copy stays enabled
+ok cut is disabled
+ok a click on the tool button copied the selection
+# destroying the control (UIF-1368)
+ok two actions use the control
+ok Control cleared
+ok in every action
+ok another action keeps its control
+ok and the action takes any edit again
+ok an action freed before its control
+# passed 118 failed 0

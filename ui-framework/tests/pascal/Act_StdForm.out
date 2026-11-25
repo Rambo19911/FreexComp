@@ -1,0 +1,164 @@
+# the form
+ok loaded
+ok nine actions
+ok the first action
+ok the last action
+ok the main menu of the form
+ok nine tool buttons
+# EditCut1
+ok class
+ok Caption
+ok Category
+ok Hint
+ok ShortCut
+ok the text of the shortcut
+ok DisableIfNoHandler
+ok the menu item is linked
+ok menu item: Caption
+ok menu item: ShortCut
+ok menu item: Hint
+ok the tool button is linked
+ok tool button: Caption
+ok tool button: Hint
+# EditCopy1
+ok class
+ok Caption
+ok Category
+ok Hint
+ok ShortCut
+ok the text of the shortcut
+ok DisableIfNoHandler
+ok the menu item is linked
+ok menu item: Caption
+ok menu item: ShortCut
+ok menu item: Hint
+ok the tool button is linked
+ok tool button: Caption
+ok tool button: Hint
+# EditPaste1
+ok class
+ok Caption
+ok Category
+ok Hint
+ok ShortCut
+ok the text of the shortcut
+ok DisableIfNoHandler
+ok the menu item is linked
+ok menu item: Caption
+ok menu item: ShortCut
+ok menu item: Hint
+ok the tool button is linked
+ok tool button: Caption
+ok tool button: Hint
+# EditSelectAll1
+ok class
+ok Caption
+ok Category
+ok Hint
+ok ShortCut
+ok the text of the shortcut
+ok DisableIfNoHandler
+ok the menu item is linked
+ok menu item: Caption
+ok menu item: ShortCut
+ok menu item: Hint
+ok the tool button is linked
+ok tool button: Caption
+ok tool button: Hint
+# EditUndo1
+ok class
+ok Caption
+ok Category
+ok Hint
+ok ShortCut
+ok the text of the shortcut
+ok DisableIfNoHandler
+ok the menu item is linked
+ok menu item: Caption
+ok menu item: ShortCut
+ok menu item: Hint
+ok the tool button is linked
+ok tool button: Caption
+ok tool button: Hint
+# EditDelete1
+ok class
+ok Caption
+ok Category
+ok Hint
+ok ShortCut
+ok the text of the shortcut
+ok DisableIfNoHandler
+ok the menu item is linked
+ok menu item: Caption
+ok menu item: ShortCut
+ok menu item: Hint
+ok the tool button is linked
+ok tool button: Caption
+ok tool button: Hint
+# FileOpen1
+ok class
+ok Caption
+ok Category
+ok Hint
+ok ShortCut
+ok the text of the shortcut
+ok DisableIfNoHandler
+ok the menu item is linked
+ok menu item: Caption
+ok menu item: ShortCut
+ok menu item: Hint
+ok the tool button is linked
+ok tool button: Caption
+ok tool button: Hint
+# FileSaveAs1
+ok class
+ok Caption
+ok Category
+ok Hint
+ok ShortCut
+ok the text of the shortcut
+ok DisableIfNoHandler
+ok the menu item is linked
+ok menu item: Caption
+ok menu item: ShortCut
+ok menu item: Hint
+ok the tool button is linked
+ok tool button: Caption
+ok tool button: Hint
+# FileExit1
+ok class
+ok Caption
+ok Category
+ok Hint
+ok ShortCut
+ok the text of the shortcut
+ok DisableIfNoHandler
+ok the menu item is linked
+ok menu item: Caption
+ok menu item: ShortCut
+ok menu item: Hint
+ok the tool button is linked
+ok tool button: Caption
+ok tool button: Hint
+# other stored members (UIF-1365, UIF-1368, UIF-1374)
+ok Control: the component reference
+ok Control not in the form: nil
+ok SecondaryShortCuts of a standard action
+ok its value
+ok OnAccept: the method of the form
+ok BeforeExecute not in the form
+ok no event of the save action
+ok the dialog of the open action exists
+ok with its defaults: it is not in the form
+ok the dialog of the save action exists
+# keys (UIF-1375, UIF-1370)
+ok Ctrl+O is consumed
+ok the open dialog, then the handler of the form
+ok Ctrl+A is consumed
+ok the text of the memo is selected
+ok Ctrl+X: no edit has the focus, not consumed
+ok the cut action is disabled
+ok and its menu item
+ok and its tool button
+ok Ctrl+Q belongs to no action
+# passed 151 failed 0

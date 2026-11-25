@@ -30,6 +30,8 @@ type
     FActionList: TCustomActionList;
     FCategory: string;
     FTargetUpdated: Boolean;
+    { the direct target, else the search of UIF-1362; Execute chooses ExecuteTarget or UpdateTarget }
+    function AskTarget(Execute: Boolean): Boolean;
     function GetIndex: Integer;
     procedure SetIndex(Value: Integer);
     procedure SetActionList(Value: TCustomActionList);
@@ -41,6 +43,9 @@ type
     function DoExecute: Boolean;
     { UIF-1361: the last Update found a target for UpdateTarget }
     function TargetUpdated: Boolean;
+    { standard-actions.md UIF-1370: a component the action uses as its target without asking it and before the
+      search of UIF-1362; nil (the base): none }
+    function DirectTarget: TComponent; virtual;
     procedure SetParentComponent(Value: TComponent); override;
     property Category: string read FCategory write SetCategory;
   public
@@ -472,8 +477,30 @@ begin
     OnExecute(Self);
     Result := True;
   end;
-  if not Result and Assigned(ActionTargetSearch) then        { UIF-1360 }
-    Result := ActionTargetSearch(Self, True);
+  if not Result then                                         { UIF-1360 }
+    Result := AskTarget(True);
+end;
+
+function TContainedAction.DirectTarget: TComponent;
+begin
+  Result := nil;
+end;
+
+function TContainedAction.AskTarget(Execute: Boolean): Boolean;
+var
+  T: TComponent;
+begin
+  T := DirectTarget;
+  if T = nil then
+    Result := Assigned(ActionTargetSearch) and ActionTargetSearch(Self, Execute)
+  else
+  begin
+    Result := True;
+    if Execute then
+      ExecuteTarget(T)
+    else
+      UpdateTarget(T);
+  end;
 end;
 
 function TContainedAction.TargetUpdated: Boolean;
@@ -507,7 +534,7 @@ begin
     Result := True;
   end;
   { UIF-1361: no update handler ran }
-  FTargetUpdated := not Result and Assigned(ActionTargetSearch) and ActionTargetSearch(Self, False);
+  FTargetUpdated := not Result and AskTarget(False);
 end;
 
 { ---------------------------------------------------------------- TCustomAction }

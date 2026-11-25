@@ -1,0 +1,2 @@
+^\[Dialog\] TOpenDialog\.Execute$
+^\[Dialog\] TSaveDialog\.Execute$

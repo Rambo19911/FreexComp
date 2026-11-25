@@ -1,0 +1,33 @@
+ok the menu item has the shortcut of the action
+ok no Control: the target is found by the search
+ok the form is the active form
+# no selection (UIF-1369, UIF-1373)
+ok the first edit has the focus
+ok disabled: the action, the menu item, the button
+# a selection in the focused edit (card acceptance 3)
+ok nothing changes before the idle cycle
+ok one idle cycle: enabled
+ok the selection removed: disabled
+ok selected again: enabled
+# the focused edit is the target (UIF-1369)
+ok the first edit keeps its selection
+ok the focused edit has no selection: disabled
+ok a selection in the second edit: enabled
+# the focus on a button (UIF-1372)
+ok the plain button has the focus
+ok disabled: no edit has the focus
+# Ctrl+C (UIF-1372)
+ok no target: the key is not consumed, the button receives it
+ok the action did not run
+ok the action is still disabled: no idle cycle since the focus moved
+ok the focused edit with a selection: the key is consumed
+ok the action ran once
+ok the selection is on the clipboard
+ok the search for the key updated the action
+ok no selection: the key is not consumed, the edit receives it
+ok the action did not run
+ok and is disabled
+ok the other edit focused: consumed
+ok the action ran once
+ok the text of the focused edit is on the clipboard
+# passed 27 failed 0
