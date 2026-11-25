@@ -104,6 +104,7 @@ InsertMenuItemW
 InvalidateRect
 InvertRect
 IsChild
+IsClipboardFormatAvailable
 IsDialogMessageW
 IsIconic
 IsWindow

@@ -41,6 +41,7 @@ public sealed class ImportTableTests
 
     [Fact]
     [Trait("Req", "RTL-841")]
+    [Trait("Req", "RTL-1082")]
     public async Task ConsoleAppDoesNotImportUser32()
     {
         await WithProgramAsync("ImportCheck", Program, async (exe, work) =>

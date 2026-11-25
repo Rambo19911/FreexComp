@@ -1,0 +1,10 @@
+# CF_* values
+ok CF_TEXT
+ok CF_BITMAP
+ok CF_DIB
+ok CF_UNICODETEXT
+ok CF_HDROP
+# IsClipboardFormatAvailable
+ok the call for CF_UNICODETEXT returns
+ok an unregistered format number is not available
+# passed 7 failed 0

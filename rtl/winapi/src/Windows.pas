@@ -1672,6 +1672,13 @@ const
   GR_GDIOBJECTS_PEAK = 2;
   GR_USEROBJECTS_PEAK = 4;
 
+  { standard clipboard formats (IsClipboardFormatAvailable) }
+  CF_TEXT = 1;
+  CF_BITMAP = 2;
+  CF_DIB = 8;
+  CF_UNICODETEXT = 13;
+  CF_HDROP = 15;
+
   { monitors and DPI }
   MONITOR_DEFAULTTONULL = $00000000;
   MONITOR_DEFAULTTOPRIMARY = $00000001;
@@ -2678,6 +2685,8 @@ function DestroyCursor(hCursor: HCURSOR): BOOL; stdcall; external user32 name 'D
 function GetSystemMetrics(nIndex: Integer): Integer; stdcall; external user32 name 'GetSystemMetrics';
 function GetSystemMetricsForDpi(nIndex: Integer; dpi: UINT): Integer; stdcall; external user32 name 'GetSystemMetricsForDpi';
 function GetGuiResources(hProcess: THandle; uiFlags: DWORD): DWORD; stdcall; external user32 name 'GetGuiResources';
+function IsClipboardFormatAvailable(format: UINT): BOOL; stdcall;
+  external user32 name 'IsClipboardFormatAvailable';
 function SystemParametersInfoW(uiAction, uiParam: UINT; pvParam: Pointer; fWinIni: UINT): BOOL; stdcall;
   external user32 name 'SystemParametersInfoW';
 function SystemParametersInfo(uiAction, uiParam: UINT; pvParam: Pointer; fWinIni: UINT): BOOL; stdcall;
