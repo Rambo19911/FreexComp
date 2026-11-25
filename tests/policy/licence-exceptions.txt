@@ -1,0 +1,17 @@
+# Reviewed exceptions of the dependency licence check (DependencyLicenceTests).
+#
+# A dependency whose licence the check cannot read or does not allow passes only with an entry here.
+# Entries are added by a maintainer only, after reading the licence text itself.
+#
+# One entry per line, five cells separated by " | ":
+#   <kind> | <name> | <version> | <licence> | <justification>
+#   kind           package (name = package id) or toolchain (name = key of scripts/toolchain.json)
+#   version        the exact version in use; an upgrade invalidates the entry and forces a new look
+#   licence        what the reviewer found, as a licence expression where one fits
+#   justification  where the licence was read and why the dependency is acceptable
+#
+# Copyleft licences and licences with use restrictions cannot be excepted. An entry that names no
+# dependency of the tree, or one that would pass without it, is an error.
+
+package | Avalonia.Angle.Windows.Natives | 2.1.27548.20260419 | BSD-3-Clause | The package declares a licence file instead of an expression. The file LICENSE in the local package folder was read on 2026-11-25: it is the three-clause BSD text of the ANGLE project (keep the notice in source, reproduce it with binaries, no endorsement with the authors' names), a permissive licence of the allow-list.
+toolchain | python | 3.13.15 | PSF-2.0 | Unmodified embeddable package, needed only as the runtime of the debugger library. LICENSE.txt of the extracted package and https://docs.python.org/3/license.html were read on 2026-11-25: Python Software Foundation License Version 2, a permissive licence (royalty-free use and redistribution; the licence and copyright notice are kept; no copyleft and no restriction of use).

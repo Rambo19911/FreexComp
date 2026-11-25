@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2013/05/nuspec.xsd">
+  <metadata>
+    <id>Contoso.Dual</id>
+    <version>1.0.0</version>
+    <authors>Fixture</authors>
+    <license type="expression">GPL-2.0-only OR MIT</license>
+    <description>Invented package of the dependency licence check; it exists in no feed.</description>
+  </metadata>
+</package>

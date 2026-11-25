@@ -1,0 +1,80 @@
+{
+  "version": 3,
+  "targets": {
+    "net10.0": {
+      "Contoso.Copyleft/1.0.0": {
+        "type": "package",
+        "dependencies": {
+          "Contoso.Transitive": "2.0.0"
+        }
+      },
+      "Contoso.Dual/1.0.0": {
+        "type": "package"
+      },
+      "Contoso.Fine/1.0.0": {
+        "type": "package"
+      },
+      "Contoso.NoExpression/1.0.0": {
+        "type": "package"
+      },
+      "Contoso.Transitive/2.0.0": {
+        "type": "package"
+      },
+      "Helper/1.0.0": {
+        "type": "project"
+      }
+    }
+  },
+  "libraries": {
+    "Contoso.Copyleft/1.0.0": {
+      "type": "package",
+      "path": "contoso.copyleft/1.0.0",
+      "files": [
+        "contoso.copyleft.nuspec"
+      ]
+    },
+    "Contoso.Dual/1.0.0": {
+      "type": "package",
+      "path": "contoso.dual/1.0.0",
+      "files": [
+        "contoso.dual.nuspec"
+      ]
+    },
+    "Contoso.Fine/1.0.0": {
+      "type": "package",
+      "path": "contoso.fine/1.0.0",
+      "files": [
+        "contoso.fine.nuspec"
+      ]
+    },
+    "Contoso.NoExpression/1.0.0": {
+      "type": "package",
+      "path": "contoso.noexpression/1.0.0",
+      "files": [
+        "contoso.noexpression.nuspec"
+      ]
+    },
+    "Contoso.Transitive/2.0.0": {
+      "type": "package",
+      "path": "contoso.transitive/2.0.0",
+      "files": [
+        "contoso.transitive.nuspec"
+      ]
+    },
+    "Helper/1.0.0": {
+      "type": "project",
+      "path": "../Helper/Helper.csproj"
+    }
+  },
+  "projectFileDependencyGroups": {
+    "net10.0": [
+      "Contoso.Copyleft >= 1.0.0",
+      "Contoso.Dual >= 1.0.0",
+      "Contoso.Fine >= 1.0.0",
+      "Contoso.NoExpression >= 1.0.0"
+    ]
+  },
+  "packageFolders": {
+    "packages": {}
+  }
+}
