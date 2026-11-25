@@ -20,6 +20,12 @@ internal sealed class ProcessRegistry
     /// <summary>How a leaked process is killed (whole tree); a test replaces it to fail the way the system call does.</summary>
     public Action<Process> KillTree { get; init; } = process => process.Kill(entireProcessTree: true);
 
+    /// <summary>
+    /// The system's process list as "process id to parent process id"; a test replaces it. The parent is only a
+    /// number that was valid when the child was created: see <see cref="TrackTree"/>.
+    /// </summary>
+    public Func<IReadOnlyDictionary<int, int>> Parents { get; init; } = ParentsByProcessId;
+
     public bool IsTracked(int processId) => _processes.ContainsKey(processId);
 
     /// <summary>Records a running process; one that has already ended needs no record.</summary>
@@ -39,25 +45,66 @@ internal sealed class ProcessRegistry
         }
     }
 
-    /// <summary>Records a process and everything it has started so far (the adapter, its debug server, the debuggee).</summary>
-    public void TrackTree(int processId, string what, string? owner = null)
+    /// <summary>
+    /// Records a process and everything it has started so far (the adapter, its debug server, the debuggee).
+    /// </summary>
+    /// <remarks>
+    /// A process id identifies a process only together with its start time (G-088): the system gives the id of an
+    /// ended process to a new one, and the parent id in the process list is the bare number the parent had when the
+    /// child was created. So a process counts as a child only when it is not older than its parent, and the root is
+    /// the process with <paramref name="started"/> as start time - which may have ended already, its id then being
+    /// free or in use by a process that has nothing to do with it.
+    /// </remarks>
+    /// <param name="processId">The root of the tree.</param>
+    /// <param name="what">What it is, for the report.</param>
+    /// <param name="owner">The test that started it; null: the test running now.</param>
+    /// <param name="started">
+    /// When the root was started; null: the process that has the id now is the root (nothing is recorded when there
+    /// is none).
+    /// </param>
+    public void TrackTree(int processId, string what, string? owner = null, DateTime? started = null)
     {
         owner ??= ProcessLeakFixture.CurrentTest;
-        Track(processId, what, owner);
-        var parents = ParentsByProcessId();
-        var known = new HashSet<int> { processId };
-        // Children have higher start times, not higher ids: repeat until no new descendant is found.
+        var holder = StartTimeOf(processId);   // of the process that has the id now
+        if ((started ?? holder) is not { } rootStarted)
+            return;
+        // Set when the root has ended and its id was given away: what the new holder started is not the root's.
+        DateTime? reusedAt = null;
+        if (holder == rootStarted)
+            Track(processId, what, owner);
+        else
+            reusedAt = holder;
+
+        var parents = Parents();
+        var known = new Dictionary<int, DateTime> { [processId] = rootStarted };
+        // The list is in no useful order: repeat until no new descendant is found.
         for (var found = true; found;)
         {
             found = false;
             foreach (var (child, parent) in parents)
             {
-                if (known.Contains(parent) && known.Add(child))
-                {
-                    Track(child, "started by " + what, owner);
-                    found = true;
-                }
+                if (known.ContainsKey(child) || !known.TryGetValue(parent, out var parentStarted)
+                    || StartTimeOf(child) is not { } childStarted || childStarted < parentStarted
+                    || (parent == processId && childStarted >= reusedAt))
+                    continue;
+                known.Add(child, childStarted);
+                Track(child, "started by " + what, owner);
+                found = true;
             }
+        }
+    }
+
+    /// <summary>Start time of the running process with this id; null when there is none or it may not be looked at.</summary>
+    private static DateTime? StartTimeOf(int processId)
+    {
+        try
+        {
+            using var process = Process.GetProcessById(processId);
+            return process.StartTime;
+        }
+        catch (Exception e) when (e is ArgumentException or InvalidOperationException or System.ComponentModel.Win32Exception)
+        {
+            return null;
         }
     }
 

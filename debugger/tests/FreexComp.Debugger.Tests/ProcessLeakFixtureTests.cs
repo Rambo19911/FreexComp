@@ -132,6 +132,114 @@ public sealed class ProcessLeakFixtureTests
     }
 
     [Fact]
+    public void Registry_TrackTree_OlderProcessUnderReusedParentId_NotTracked()
+    {
+        // G-088: the parent id in the system's process list is only a number. When the process that started a
+        // long-lived process has ended and its id was given to a new process, the long-lived one looks like a child
+        // of the new one. It is older than its alleged parent, so it is none of the tree.
+        using var stranger = StartWaiting("--wait");
+        using var root = StartWaiting("--wait");
+        try
+        {
+            var registry = new ProcessRegistry
+            {
+                Parents = () => new Dictionary<int, int> { [root.Id] = Environment.ProcessId, [stranger.Id] = root.Id },
+            };
+
+            registry.TrackTree(root.Id, "root", started: root.StartTime);
+
+            Assert.True(registry.IsTracked(root.Id));
+            Assert.False(registry.IsTracked(stranger.Id));
+            Assert.Equal([$"root (FakeAdapter), process id {root.Id}"], registry.KillLeaked());
+            Assert.False(stranger.HasExited);   // the clean-up did not touch it
+        }
+        finally
+        {
+            KillIfRunning(stranger);
+            KillIfRunning(root);
+        }
+    }
+
+    [Fact]
+    public async Task Registry_TrackTree_RootEndedAndItsIdReused_NewOwnerAndItsChildrenNotTracked()
+    {
+        // G-088: the root has ended before the tree is recorded (a session whose program ran to its end has already
+        // stopped its adapter) and its id belongs to another process now. Neither that process nor what it started
+        // belongs to the tree: the root is identified by id and start time.
+        using var reuser = StartWaiting("--spawn-child");
+        try
+        {
+            var child = await ChildOfAsync(reuser);
+            var registry = new ProcessRegistry();
+
+            registry.TrackTree(reuser.Id, "root", started: reuser.StartTime.AddMinutes(-1));
+
+            Assert.False(registry.IsTracked(reuser.Id));
+            Assert.False(registry.IsTracked(child));
+            Assert.Equal(0, registry.Count);
+        }
+        finally
+        {
+            KillIfRunning(reuser);
+        }
+    }
+
+    [Fact]
+    public async Task Registry_TrackTree_RootEnded_ChildLeftBehindStillTracked()
+    {
+        // The check stays as strict as before for what the root really started: a child that outlives the root is
+        // found through the root's id and start time although the root is gone.
+        using var root = StartWaiting("--spawn-child");
+        var child = await ChildOfAsync(root);
+        using var childProcess = Process.GetProcessById(child);
+        try
+        {
+            var started = root.StartTime;
+            root.Kill();   // the root only, not its tree
+            await root.WaitForExitAsync(Ct).WaitAsync(Safety, Ct);
+            var registry = new ProcessRegistry();
+
+            registry.TrackTree(root.Id, "root", started: started);
+
+            Assert.False(registry.IsTracked(root.Id));
+            Assert.True(registry.IsTracked(child));
+            // Reported and killed (together with what the child itself started, its console host).
+            Assert.Contains($"started by root (FakeAdapter), process id {child}", registry.KillLeaked());
+            Assert.True(childProcess.HasExited);
+        }
+        finally
+        {
+            KillIfRunning(childProcess);
+            KillIfRunning(root);
+        }
+    }
+
+    /// <summary>The process id a "--spawn-child" process reports for its child.</summary>
+    private static async Task<int> ChildOfAsync(Process parent)
+    {
+        // A child's pipe only blocks: the line is read on a thread of its own.
+        string? line = null;
+        await DedicatedThread.Run("FreexComp.Tests.ParentStderr", () => line = parent.StandardError.ReadLine()).WaitAsync(Safety, Ct);
+        Assert.NotNull(line);
+        Assert.StartsWith("CHILD-PID ", line, StringComparison.Ordinal);
+        return int.Parse(line["CHILD-PID ".Length..], System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    private static void KillIfRunning(Process process)
+    {
+        try
+        {
+            if (!process.HasExited)
+                process.Kill(entireProcessTree: true);
+            process.WaitForExit(Safety);
+        }
+        catch (Exception e) when (e is InvalidOperationException or System.ComponentModel.Win32Exception or AggregateException)
+        {
+            // Gone in the meantime.
+        }
+    }
+
+    [Fact]
     public async Task SessionHarness_AdapterIsOnTheFixtureList()
     {
         // The assembly fixture's Dispose fails the run for any process on its list that is still alive: every

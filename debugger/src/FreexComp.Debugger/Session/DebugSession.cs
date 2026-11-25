@@ -9,6 +9,12 @@ namespace FreexComp.Debugger.Session;
 internal interface IDebugSessionDiagnostics
 {
     int? AdapterProcessId { get; }
+
+    /// <summary>
+    /// When the adapter process was started; with the process id it identifies the process (the system gives the id
+    /// of an ended process to a new one). Null before the adapter was started or when the time could not be read.
+    /// </summary>
+    DateTime? AdapterStartTime { get; }
     int InternalStopCount { get; }
 }
 
@@ -46,6 +52,7 @@ internal sealed partial class DebugSession : IDebugSession, IDebugSessionDiagnos
     private volatile object? _processId;
     private volatile object? _exitCode;
     private volatile object? _adapterProcessId;
+    private volatile object? _adapterStartTime;
     private volatile bool _hasTypeInfo;
 
     // Session loop only.
@@ -89,6 +96,7 @@ internal sealed partial class DebugSession : IDebugSession, IDebugSessionDiagnos
     public bool HasTypeInfo => _hasTypeInfo;
 
     int? IDebugSessionDiagnostics.AdapterProcessId => (int?)_adapterProcessId;
+    DateTime? IDebugSessionDiagnostics.AdapterStartTime => (DateTime?)_adapterStartTime;
     int IDebugSessionDiagnostics.InternalStopCount => _internalStops;
 
     // ---- events ----

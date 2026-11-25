@@ -234,11 +234,15 @@ internal sealed class SessionRecorder
 
         // Whatever the script did, nothing may survive the session: the adapter, what it started (its debug server,
         // the debuggee) and the debuggee by its process id are put on the lists of the leak checks before disposal.
+        // After a script that waited for the end of the session the adapter is already gone and its process id may
+        // belong to an unrelated process: the tree is that of the process the session started, identified by id and
+        // start time (G-088).
         var started = new ProcessRegistry();
-        if (((IDebugSessionDiagnostics)session).AdapterProcessId is { } adapterId)
+        var diagnostics = (IDebugSessionDiagnostics)session;
+        if (diagnostics.AdapterProcessId is { } adapterId && diagnostics.AdapterStartTime is { } adapterStarted)
         {
-            started.TrackTree(adapterId, "debug adapter of " + _name);
-            ProcessLeakFixture.Registry.TrackTree(adapterId, "debug adapter of " + _name);
+            started.TrackTree(adapterId, "debug adapter of " + _name, started: adapterStarted);
+            ProcessLeakFixture.Registry.TrackTree(adapterId, "debug adapter of " + _name, started: adapterStarted);
         }
 
         if (session.ProcessId is { } debuggeeId)

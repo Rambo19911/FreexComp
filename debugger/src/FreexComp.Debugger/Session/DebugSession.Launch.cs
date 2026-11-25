@@ -104,6 +104,7 @@ internal sealed partial class DebugSession
             _hookSymbols = [.. modules.Select(module => module.Abi.RaiseHookSymbol).Where(symbol => symbol.Length > 0).Distinct(StringComparer.Ordinal)];
 
             _adapter = AdapterProcess.Start(_options.AdapterPath, _options.AdapterArguments, TraceStderr, StderrReaderStarter);
+            _adapterStartTime = _adapter.StartTime;
             _adapterProcessId = _adapter.ProcessId;
             _client = new DapClient(
                 new DapTransport(_adapter.StandardOutput, _adapter.StandardInput),

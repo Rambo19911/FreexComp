@@ -29,6 +29,15 @@ internal sealed class AdapterProcess : IAsyncDisposable
     {
         _process = process;
         ProcessId = process.Id;
+        try
+        {
+            StartTime = process.StartTime;
+        }
+        catch (Exception e) when (e is InvalidOperationException or Win32Exception)
+        {
+            // The process has already ended and the system no longer tells.
+        }
+
         StandardInput = process.StandardInput.BaseStream;
         // Both pipes of the adapter are read by blocking, each on a thread of its own (never on the thread pool):
         // see StreamPump.
@@ -120,6 +129,9 @@ internal sealed class AdapterProcess : IAsyncDisposable
     }
 
     public int ProcessId { get; }
+
+    /// <summary>When the process was started (identifies it together with <see cref="ProcessId"/>); null when unknown.</summary>
+    public DateTime? StartTime { get; }
 
     /// <summary>Bytes to the adapter.</summary>
     public Stream StandardInput { get; }
