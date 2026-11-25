@@ -30,6 +30,12 @@ internal sealed record LoweredBody(RoutineSymbol? Routine, ImmutableArray<LLocal
     /// <c>try … finally … end</c> for a <c>$fin</c> routine); null for a body without source (CMP-421, DBG-114: no debug info).
     /// </summary>
     public Syntax.SyntaxNode? Source { get; init; }
+
+    /// <summary>
+    /// The closure of a unit-level body with anonymous methods (CMP-380); a routine's is on its symbol. Its block frames hold the
+    /// body's captured inline variables (CMP-1183), which the emitter describes for the debugger (C-320).
+    /// </summary>
+    public Binding.ClosureInfo? UnitClosure { get; init; }
 }
 
 /// <summary>

@@ -36,15 +36,15 @@ public static class QuickInfoService
         return new QuickInfo(token.Span, signature, documentation, DeclaredIn(symbol), value);
     }
 
-    /// <summary>The identifier at (or ending at) <paramref name="position"/> and the symbol it declares or refers to.</summary>
+    /// <summary>The identifier (or label number, C-321) at (or ending at) <paramref name="position"/> and the symbol it declares or refers to.</summary>
     internal static (Symbol Symbol, SyntaxToken Token)? SymbolAt(SemanticModel model, int position)
     {
         var tree = model.SyntaxTree;                                        // nodes handed to the model must be its own
         var token = tree.FindToken(Math.Clamp(position, 0, tree.Text.Text.Length));
-        if (token.Kind != SyntaxKind.IdentifierToken || !token.Span.Contains(position))
+        if (!SyntaxFacts.IsNameToken(token) || !token.Span.Contains(position))
         {
             var before = position > 0 ? tree.FindToken(position - 1) : default;
-            if (before.Kind != SyntaxKind.IdentifierToken || before.Span.End != position)
+            if (!SyntaxFacts.IsNameToken(before) || before.Span.End != position)
             {
                 return null;
             }

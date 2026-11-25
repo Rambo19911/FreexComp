@@ -131,4 +131,103 @@ public sealed class LabelNavigationTests
         Assert.StartsWith("Renaming 'Again' to 'Done' changes the meaning", result.Error, StringComparison.Ordinal);
         Assert.Empty(result.Edits);
     }
+
+    // C-321: a numeric label (LANG-380: a decimal integer) is the same kind of symbol
+    private const string Numeric = """
+        program P;
+        procedure Work(N: Integer);
+        label 10, Done;
+        begin
+        10:
+          N := N + 10;
+          if N < 30 then goto 10;
+          goto Done;
+        Done:
+        end;
+        label 10;
+        begin
+        10:
+          Work(10);
+        end.
+        """;
+
+    private static readonly string NText = Numeric.ReplaceLineEndings("\n");
+
+    private static string[] DescribeIn(string text, IEnumerable<ReferenceLocation> references) =>
+        [.. references.Select(r => $"{r.Location.LineSpan.Start.Line}:{r.Kind}:{text.Substring(r.Location.Span.Start, r.Location.Span.Length)}")];
+
+    [Theory]
+    [InlineData("10, Done", 0)]                                 // the declaration
+    [InlineData("10:", 1)]                                      // the definition
+    [InlineData("goto 10", 6)]                                  // a goto
+    public void NumericLabel_FindReferences(string piece, int offset)
+    {
+        var doc = Doc(NText);
+        var position = At(NText, piece) + offset;
+
+        var references = NavigationService.FindReferences(doc, position, TestContext.Current.CancellationToken);
+        var highlights = NavigationService.GetDocumentHighlights(doc, position, TestContext.Current.CancellationToken);
+
+        // not the literals 10 of the statements, not the label 10 of the program block
+        Assert.Equal(["2:Declaration:10", "4:Read:10", "6:Read:10"], DescribeIn(NText, references));
+        Assert.Equal(references.Select(r => r.Location.Span), highlights.Select(h => h.Span));
+        Assert.Equal(["10:Declaration:10", "12:Read:10"],
+            DescribeIn(NText, NavigationService.FindReferences(doc, At(NText, "label 10;") + 6, TestContext.Current.CancellationToken)));
+    }
+
+    [Fact]
+    public void NumericLabel_Hover()
+    {
+        var doc = Doc(NText);
+        foreach (var piece in new[] { "10, Done", "10:\n  N", "10;\n  goto Done" })
+        {
+            var info = QuickInfoService.GetQuickInfo(doc, At(NText, piece) + 1, TestContext.Current.CancellationToken);
+
+            Assert.NotNull(info);
+            Assert.Equal("label 10", info.Signature);
+            Assert.Equal("P", info.DeclaredIn);
+            Assert.Equal(new TextSpan(At(NText, piece), 2), info.Span);
+        }
+    }
+
+    [Theory]
+    [InlineData("20")]                                          // to another number
+    [InlineData("Retry")]                                       // to an identifier
+    public void NumericLabel_Rename(string newName)
+    {
+        var doc = Doc(NText);
+        var position = At(NText, "goto 10") + 5;
+
+        var info = RenameService.GetRenameInfo(doc, position, TestContext.Current.CancellationToken);
+        var result = RenameService.Rename(doc, position, newName, TestContext.Current.CancellationToken);
+
+        Assert.True(info.CanRename, info.Reason);
+        Assert.Equal("10", info.CurrentName);
+        Assert.True(result.Success, result.Error);
+        var builder = new System.Text.StringBuilder(NText);
+        foreach (var change in Assert.Single(result.Edits).Changes.OrderByDescending(c => c.Span.Start))
+        {
+            builder.Remove(change.Span.Start, change.Span.Length).Insert(change.Span.Start, change.NewText);
+        }
+
+        var expected = NText
+            .Replace("label 10, Done;", $"label {newName}, Done;", StringComparison.Ordinal)
+            .Replace("begin\n10:\n  N", $"begin\n{newName}:\n  N", StringComparison.Ordinal)
+            .Replace("then goto 10;", $"then goto {newName};", StringComparison.Ordinal);
+        Assert.Equal(expected, builder.ToString());
+        Assert.Empty(Doc(expected).Compilation.GetDiagnostics(null, TestContext.Current.CancellationToken)
+            .Where(d => d.Severity == DiagnosticSeverity.Error).Select(d => d.ToText()));
+    }
+
+    [Theory]
+    [InlineData("Again:", "10", true)]                          // an identifier label to a number
+    [InlineData("Again:", "1x", false)]
+    [InlineData("Again:", "1.5", false)]
+    [InlineData("N := N + 1", "10", false)]                     // only a label may be a number
+    public void Rename_NumberIsANameOfLabelsOnly(string piece, string newName, bool ok)
+    {
+        var result = RenameService.Rename(Doc(PText), At(PText, piece) + 1, newName, TestContext.Current.CancellationToken);
+
+        Assert.Equal(ok, result.Success);
+    }
 }

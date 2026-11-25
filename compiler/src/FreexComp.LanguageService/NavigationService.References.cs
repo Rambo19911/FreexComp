@@ -157,7 +157,7 @@ public static partial class NavigationService
         var names = related.Select(r => r.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
         foreach (var token in model.SyntaxTree.Root.OwnTokens())
         {
-            if (token.Kind != SyntaxKind.IdentifierToken || token.IsMissing || !names.Contains(token.Value as string ?? token.Text))
+            if (!SyntaxFacts.IsNameToken(token) || token.IsMissing || !names.Contains(SyntaxFacts.NameOf(token)))
             {
                 continue;
             }

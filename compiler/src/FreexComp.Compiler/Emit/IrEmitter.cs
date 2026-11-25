@@ -2068,7 +2068,8 @@ internal sealed class FunctionEmitter
     /// <c>DW_OP_deref</c>; a captured one is described on the frame record (<c>DW_OP_plus_uconst</c>, CMP-422). CMP-1184 (C-309):
     /// an inline variable carries its line range to the sidecar, a later declaration of its name in the routine is <c>Name$2</c>…
     /// (DBG-142), and one captured by an anonymous method is described on the hidden local of its block frame: the instance
-    /// that local points to (<c>DW_OP_deref</c>) plus the offset of its field.
+    /// that local points to (<c>DW_OP_deref</c>) plus the offset of its field. In a unit-level body (C-316, C-320) inline variables
+    /// are internal globals and so is the hidden local of a block frame: each is declared on a slot holding the global's address.
     /// </summary>
     private void DeclareVariables(DebugBody debug, ImmutableArray<IrLocal> values, IrValue? hiddenResult, int argumentBase)
     {
@@ -2080,7 +2081,7 @@ internal sealed class FunctionEmitter
         var bodyEnd = _body.Source is { } bodySource ? BodyTokens(bodySource).End : default;
 
         // CMP-1183: the captured inline variables of the body's block frames, each with the frame's hidden local
-        var blocks = _routine?.Closure?.Blocks ?? [];
+        var blocks = (_routine is null ? _body.UnitClosure : _routine.Closure)?.Blocks ?? [];
         var inFrames = blocks.SelectMany(b => b.Fields.Select(f => (Variable: f.Key as VariableSymbol, Frame: b, Field: f.Value)))
             .Where(f => f.Variable?.InlineScope is not null).OrderBy(f => f.Variable!.InlineScope!.Value.From.Span.Start).ToList();
 
@@ -2171,8 +2172,28 @@ internal sealed class FunctionEmitter
             Declare(variable, variable.Name, arg: null, variable.Type, _module.Globals[variable], slot: null, flags: null, "local");   // a slot holding the global's address
         }
 
+        // C-320: the hidden local of a unit-level body's block frame is an internal global; one slot per frame holds its address
+        var frameGlobals = new Dictionary<Binding.ClosureInfo, IrValue>(ReferenceEqualityComparer.Instance);
         foreach (var (variable, frame, field) in inFrames)
         {
+            if (_routine is null)
+            {
+                if (!_module.Globals.TryGetValue(frame.Local, out var global))
+                {
+                    continue;
+                }
+
+                if (!frameGlobals.TryGetValue(frame, out var reference))
+                {
+                    frameGlobals[frame] = reference = _w.Alloca(Unique(frame.Local.Name + ".ref"), IrType.Ptr, PtrAlign);
+                    _w.Store(global, reference, PtrAlign);
+                }
+
+                // the global (DW_OP_deref), the instance it points to (DW_OP_deref), the variable's field
+                declarations.Add((reference, Node(variable!, variable!.Name, arg: null, variable.Type, flags: null, "local"), Expression("DW_OP_deref", "DW_OP_deref", PlusOffset(field.Offset))));
+                continue;
+            }
+
             // the frame's hidden local: a slot of this body, or a field of its frame record when a nested routine uses it
             var holder = _body.Locals.FirstOrDefault(l => ReferenceEquals(l.Variable, frame.Local));
             var (address, at) = IsCaptured(frame.Local) ? (_frameAddress, PlusOffset(_frame!.OffsetOf(frame.Local)))

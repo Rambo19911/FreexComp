@@ -49,7 +49,14 @@ public static class RenameService
         }
 
         var unit = target.Symbol as UnitSymbol;
-        if (unit is null ? !SyntaxFacts.IsValidIdentifier(newName) : !newName.Split('.').All(SyntaxFacts.IsValidIdentifier))
+        if (target.Symbol is LabelSymbol)
+        {
+            if (!SyntaxFacts.IsValidLabelName(newName))
+            {
+                return Fail($"'{newName}' is not a valid label.");             // LANG-380 (C-321): an identifier or a decimal integer
+            }
+        }
+        else if (unit is null ? !SyntaxFacts.IsValidIdentifier(newName) : !newName.Split('.').All(SyntaxFacts.IsValidIdentifier))
         {
             return Fail(unit is null ? $"'{newName}' is not a valid identifier." : $"'{newName}' is not a valid unit name.");
         }
@@ -74,10 +81,10 @@ public static class RenameService
         var model = doc.SemanticModel;
         var tree = model.SyntaxTree;
         var token = tree.FindToken(Math.Clamp(position, 0, tree.Text.Text.Length));
-        if (token.Kind != SyntaxKind.IdentifierToken || token.IsMissing || !token.Span.Contains(position))
+        if (!SyntaxFacts.IsNameToken(token) || token.IsMissing || !token.Span.Contains(position))
         {
             var before = position > 0 ? tree.FindToken(position - 1) : default;
-            if (before.Kind != SyntaxKind.IdentifierToken || before.IsMissing || before.Span.End != position)
+            if (!SyntaxFacts.IsNameToken(before) || before.IsMissing || before.Span.End != position)
             {
                 return new Target(default, "", null, [], NotAnIdentifier);
             }
@@ -107,7 +114,7 @@ public static class RenameService
             }
         }
 
-        var text = token.Value as string ?? token.Text;
+        var text = SyntaxFacts.NameOf(token);
         if (QuickInfoService.SymbolOf(model, token) is not { } symbol)
         {
             return new Target(token.Span, text, null, [], $"'{text}' does not name a declaration.");
@@ -580,7 +587,7 @@ public static class RenameService
                 var expected = unitNames is null ? null : UnitNames(after, after.Compilation.GetSemanticModel(NewPath(PathUtil.Normalize(renamed[0].Locations[0].Path))).Unit, ct);
                 foreach (var token in before.SyntaxTree.Root.OwnTokens())
                 {
-                    if (token.Kind != SyntaxKind.IdentifierToken || token.IsMissing)
+                    if (!SyntaxFacts.IsNameToken(token) || token.IsMissing)
                     {
                         continue;
                     }
@@ -611,7 +618,7 @@ public static class RenameService
 
                     var edited = edit.Span.Length > 0;
                     var newToken = newTree.FindToken(Map(path, start));
-                    var now = newToken.Kind == SyntaxKind.IdentifierToken && newToken.Span.Start == Map(path, start) ? QuickInfoService.SymbolOf(after, newToken) : null;
+                    var now = SyntaxFacts.IsNameToken(newToken) && newToken.Span.Start == Map(path, start) ? QuickInfoService.SymbolOf(after, newToken) : null;
                     if (now is null || !Same(bound, now) || edited && !IdentifierComparer.Instance.Equals(now.Name, last))
                     {
                         return Conflict(before.SyntaxTree, start, edited ? newName : token.Text);

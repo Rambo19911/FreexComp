@@ -510,3 +510,9 @@ label L; begin L: ; var L := 1; end.
 label L; begin L: ; const l = 1; end.
 === E2004 1,29
 label L; begin L: ; for var L := 1 to 2 do end.
+=== E2004 1,10
+label L, L; begin L: end.
+=== E2004 1,16
+label L; label l; begin L: end.
+=== E2004 1,11
+label 10, 10; begin 10: end.

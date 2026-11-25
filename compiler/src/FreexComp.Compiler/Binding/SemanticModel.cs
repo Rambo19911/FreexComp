@@ -77,6 +77,7 @@ public sealed class SemanticModel
         {
             UsedUnitSyntax used => _findUnit(UnitBinder.NameOf(used.Name)),
             NamedTypeSyntax named => GetSymbolInfo(named.Name, ct).Symbol,
+            LiteralExpressionSyntax literal => SyntaxFacts.IsLabelNumber(literal.FirstToken()) ? Resolve(node, literal.FirstToken()) : null,   // C-321
             _ => NameToken(node) is { Kind: SyntaxKind.IdentifierToken } token ? Resolve(node, token) : null,
         };
         if (symbol is null && node is UsedUnitSyntax or NamedTypeSyntax or NameSyntax or MemberAccessExpressionSyntax or InvocationExpressionSyntax
@@ -141,7 +142,7 @@ public sealed class SemanticModel
     public Symbol? GetDeclaredSymbol(SyntaxToken identifier, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
-        return identifier.Kind == SyntaxKind.IdentifierToken && !identifier.IsMissing && _declared.TryGetValue(identifier.Span.Start, out var symbol)
+        return SyntaxFacts.IsNameToken(identifier) && !identifier.IsMissing && _declared.TryGetValue(identifier.Span.Start, out var symbol)
             ? symbol
             : null;
     }
@@ -525,6 +526,16 @@ public sealed class SemanticModel
         }
     }
 
+    /// <summary>Indexes the label of a labelled statement or <c>goto</c> — an identifier or a number (LANG-380, C-321) — as a reference.</summary>
+    private void ReferenceLabel(ExpressionSyntax label, LabelSymbol symbol)
+    {
+        var token = label.FirstToken();
+        if (SyntaxFacts.IsNameToken(token) && !token.IsMissing && IsOwn(token))
+        {
+            _references.TryAdd(token.Span.Start, symbol);
+        }
+    }
+
     private static PropertySymbol? PropertyNamed(TypeSymbol type, string name) =>
         type is PointerTypeSymbol { PointedType: { } pointed } ? PropertyNamed(pointed, name) : type.GetMembers(name).OfType<PropertySymbol>().FirstOrDefault();
 
@@ -751,12 +762,12 @@ public sealed class SemanticModel
                 break;
             case BoundLabelStatement label:
                 Declare(label.Label.Symbol);                                    // C-318: the label section's name
-                Reference(((LabeledStatementSyntax)label.Syntax).Label, label.Label.Symbol);
+                ReferenceLabel(((LabeledStatementSyntax)label.Syntax).Label, label.Label.Symbol);
                 Walk(label.Statement);
                 break;
             case BoundGotoStatement jump:
                 Declare(jump.Label.Symbol);
-                Reference(((GotoStatementSyntax)jump.Syntax).Label, jump.Label.Symbol);
+                ReferenceLabel(((GotoStatementSyntax)jump.Syntax).Label, jump.Label.Symbol);
                 break;
         }
     }

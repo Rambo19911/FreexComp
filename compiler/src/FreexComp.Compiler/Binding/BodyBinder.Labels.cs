@@ -41,7 +41,7 @@ internal sealed partial class BodyBinder
 
     /// <summary>
     /// Binds the statement list of a block whose <c>label</c> sections are among <paramref name="declarations"/>: a label is
-    /// declared there (E2070), defined once (E2071, E2073) and its <c>goto</c>s obey LANG-380 (E2072) and LANG-571 (E2076).
+    /// declared there (E2070) once (E2004), defined once (E2071, E2073) and its <c>goto</c>s obey LANG-380 (E2072) and LANG-571 (E2076).
     /// </summary>
     public BoundBlock BindBody(SyntaxNode syntax, SeparatedSyntaxList<StatementSyntax> statements, SyntaxList<SyntaxNode> declarations)
     {
@@ -49,10 +49,19 @@ internal sealed partial class BodyBinder
         {
             foreach (var label in section.Labels)
             {
-                if (LabelName(label) is { } name)
+                if (LabelName(label) is not { } name)
                 {
-                    _labels.TryAdd(name, new LabelInfo(new GotoLabel(new LabelSymbol(name, Container, [DiagnosticBag.LocationOf(label)])), label));
+                    continue;
                 }
+
+                if (_labels.TryGetValue(name, out var previous))
+                {
+                    // LANG-380 (C-321): one declaration per label in a block (the first one stays)
+                    _diagnostics.ReportRedeclared(label.FirstToken(), name, DiagnosticBag.LocationOf(previous.Declaration));
+                    continue;
+                }
+
+                _labels.Add(name, new LabelInfo(new GotoLabel(new LabelSymbol(name, Container, [DiagnosticBag.LocationOf(label)])), label));
             }
         }
 

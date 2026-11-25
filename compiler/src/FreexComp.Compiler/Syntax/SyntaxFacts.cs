@@ -117,6 +117,32 @@ public static partial class SyntaxFacts
     /// <summary>Contextual keyword (LANG-116), same comparison as <see cref="IsReservedWord(string)"/>.</summary>
     public static bool IsContextualKeyword(string text) => ContextualByText.ContainsKey(text);
 
+    /// <summary>
+    /// Whether <paramref name="token"/> is the decimal integer that names a label (LANG-380): in a <c>label</c> section, before the
+    /// colon of a labelled statement or after <c>goto</c>.
+    /// </summary>
+    internal static bool IsLabelNumber(SyntaxToken token) =>
+        token is { Kind: SyntaxKind.IntegerLiteralToken, IsMissing: false, Parent: LiteralExpressionSyntax literal }
+        && literal.Parent switch
+        {
+            LabelSectionSyntax or GotoStatementSyntax => true,
+            LabeledStatementSyntax labeled => ReferenceEquals(labeled.Label, literal),
+            _ => false,
+        };
+
+    /// <summary>Whether <paramref name="token"/> can name a symbol: an identifier, or the number of a label (C-321).</summary>
+    internal static bool IsNameToken(SyntaxToken token) => token.Kind == SyntaxKind.IdentifierToken || IsLabelNumber(token);
+
+    /// <summary>The name a name token spells: an identifier without '&amp;', a label number by its value (as the binder names it).</summary>
+    internal static string NameOf(SyntaxToken token) =>
+        token.Value as string ?? (IsLabelNumber(token) ? token.Value?.ToString() : null) ?? token.Text;
+
+    /// <summary>A name a label can take: a LANG-110 identifier, or a decimal integer written without leading zeros (LANG-380).</summary>
+    internal static bool IsValidLabelName(string text) =>
+        IsValidIdentifier(text)
+        || text.Length > 0 && text.All(char.IsAsciiDigit) && (text.Length == 1 || text[0] != '0')
+        && Lexer.Tokenize(SourceText.From(@"C:\label.pas", text)) is [{ Kind: SyntaxKind.IntegerLiteralToken } number, _] && number.Value?.ToString() == text;
+
     /// <summary>A LANG-110 identifier that is not a reserved word (so usable without '&amp;').</summary>
     public static bool IsValidIdentifier(string text)
     {
