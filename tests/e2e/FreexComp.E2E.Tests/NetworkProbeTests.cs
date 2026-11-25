@@ -2,10 +2,11 @@ using System.Net;
 using System.Net.Sockets;
 using FreexComp.Tests.Shared;
 
-namespace FreexComp.Policy.Tests;
+namespace FreexComp.E2E.Tests;
 
-/// <summary>NET-020, NET-021: the network probe is not blind (loopback only, ADR 008 §6).</summary>
+/// <summary>NET-020, NET-021: the network probe is not blind (loopback only, ADR 008 §6). In the end-to-end project: the policy project is the fixture of the endpoint scan (NET-012).</summary>
 [Trait("Phase", "8")]
+[Collection(NetworkProbeCollection.Name)]
 public sealed class NetworkProbeTests
 {
     [Fact]

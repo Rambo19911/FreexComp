@@ -20,6 +20,7 @@ namespace FreexComp.E2E.Tests;
 [Trait("Phase", "8")]
 [Trait("Kind", "E2E")]
 [Trait("Category", "Toolchain")]
+[Collection(NetworkProbeCollection.Name)]
 public sealed class Phase8Tests
 {
     [AvaloniaFact(Timeout = 180000)]
