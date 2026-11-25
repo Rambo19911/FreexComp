@@ -357,7 +357,7 @@ public sealed class CommercialUseTests
         "\n## Your rights\n- You may sell your programs",
         "\n## Why this is so\n",
         "They are published under the Apache License 2.0 with the LLVM exception.",
-        "\n## What you still have to do\n- If you pass on the **library source code itself**",
+        "\n## What you still have to do\n- If you pass on the library source code itself",
         "SQLite is in the public domain",
         "\n## Windows libraries\nYour program calls libraries that are part of Windows.",
         "\n## Where the licence texts are\nThe `licenses` folder of the installation",

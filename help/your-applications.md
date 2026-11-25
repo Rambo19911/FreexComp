@@ -31,7 +31,7 @@ apply to that program.
 The directories are those of the library source below the FreexComp directory; see *Library source*.
 
 ## What you still have to do
-- If you pass on the **library source code itself**, changed or unchanged, keep its licence file with it.
+- If you pass on the library source code itself, changed or unchanged, keep its licence file with it.
 - A program that uses the data-access library is deployed together with the SQLite library file
   (`sqlite3.dll`). SQLite is in the public domain; you may ship it freely.
 
