@@ -53,7 +53,10 @@ internal static class PcuReader
     public static UnitLinkInputs LinkInputs(JsonObject pcu)
     {
         var inputs = Node(pcu, "linkInputs");
-        return new UnitLinkInputs(Strings(inputs, "dlls"), Strings(inputs, "objects"), Strings(inputs, "defs"));
+        return new UnitLinkInputs(Strings(inputs, "dlls"), Strings(inputs, "objects"), Strings(inputs, "defs"))
+        {
+            Resources = inputs["resources"] is null ? [] : Strings(inputs, "resources"),       // CMP-1325: an optional key
+        };
 
         static ImmutableArray<string> Strings(JsonNode owner, string key) => [.. Array(owner, key).Select(v => v!.GetValue<string>())];
     }

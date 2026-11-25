@@ -746,7 +746,9 @@ public sealed class Compilation
 
         // CMP-628 (C-167), CMP-1100…1106: execution level and DPI awareness reach only this file, never a unit's fingerprint
         // CMP-1315: the resource inputs — after every unit compiled without error, before the manifest is prepared
-        var resources = await ResourceInputsAsync(objectDirectory, runner, toolchain, options.InfoSink, VersionAsync, location, diagnostics, ct).ConfigureAwait(false);
+        // then the files named by the {$R} directives of the linked units in unit init order (the main file last)
+        var unitResources = initOrder.Where(u => u != unitBinder.Main).Append(unitBinder.Main!).SelectMany(u => u.LinkInputs.Resources);
+        var resources = await ResourceInputsAsync(unitResources, objectDirectory, runner, toolchain, options.InfoSink, VersionAsync, location, diagnostics, ct).ConfigureAwait(false);
         if (resources is null)
         {
             return Finish(false, null, compiled);
@@ -904,7 +906,8 @@ public sealed class Compilation
     private const string LinkResources = "link.resources";
 
     /// <summary>
-    /// CMP-1313…1321: the resource inputs of this link from <see cref="CompilationOptions.ResourceFiles"/> — each path once, a script
+    /// CMP-1313…1321: the resource inputs of this link — <see cref="CompilationOptions.ResourceFiles"/>, then
+    /// <paramref name="unitResources"/> (the files of the units' <c>{$R}</c> directives, CMP-1315) — each path once, a script
     /// compiled to <c>&lt;objdir&gt;\&lt;base&gt;.res</c> unless its record says it is up to date (CMP-1317), a compiled resource file
     /// used where it lies; every input is then read (CMP-1321).
     /// </summary>
@@ -913,10 +916,10 @@ public sealed class Compilation
     /// first input that contains an application manifest.
     /// </returns>
     private async Task<(ImmutableArray<string> Inputs, string Lines, string? WithManifest)?> ResourceInputsAsync(
-        string objectDirectory, ToolRunner runner, ToolchainPaths toolchain, Action<string>? info, Func<Task<bool>> versionAsync, Location location,
+        IEnumerable<string> unitResources, string objectDirectory, ToolRunner runner, ToolchainPaths toolchain, Action<string>? info, Func<Task<bool>> versionAsync, Location location,
         ImmutableArray<Diagnostic>.Builder diagnostics, CancellationToken ct)
     {
-        var files = Options.ResourceFiles.Select(PathUtil.Normalize).Distinct(PathUtil.Comparer).ToImmutableArray();
+        var files = Options.ResourceFiles.Select(PathUtil.Normalize).Concat(unitResources).Distinct(PathUtil.Comparer).ToImmutableArray();
         if (files.IsEmpty)
         {
             return ([], "", null);

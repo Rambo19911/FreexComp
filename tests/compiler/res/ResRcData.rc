@@ -1,0 +1,7 @@
+// The resources of the golden test ResRcData: a data file and inline data.
+PAYLOAD RCDATA "payload.bin"
+
+7 RCDATA
+BEGIN
+  "ok", 258, 3L
+END

@@ -2,6 +2,7 @@ using System.Text;
 using FreexComp.Compiler.Tests.Emit;
 using FreexComp.Compiler.Text;
 using FreexComp.Compiler.Toolchain;
+using FreexComp.Tests.Shared;
 
 namespace FreexComp.Compiler.Tests.Toolchain;
 
@@ -78,6 +79,87 @@ public sealed class ResourceToolFactsTests
             var (missingFileExit, missingFile) = await RunTool("\n1 ICON \"nothere.ico\"\n");
             Assert.Equal(1, missingFileExit);
             Assert.Equal(["llvm-rc: Error in ICON statement (ID 1): ", "error : file not found : nothere.ico"], missingFile);
+        }
+        finally
+        {
+            TestDirectories.Delete(dir);
+        }
+    }
+
+    /// <summary>
+    /// C-334: the pinned tool looks for a data file in the directories of the <c>INCLUDE</c> environment variable after its
+    /// include directories (shown with the command line of CMP-1305 without <c>/X</c>). The compile step passes <c>/X</c>, so a
+    /// file that is reachable only through the variable is not taken and the environment cannot change a build.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "CMP-1305")]
+    public async Task IncludeVariable_IsSearchedByTheTool_NotByTheCompileStep()
+    {
+        Assert.True(File.Exists(Clang.Path), $"Pinned toolchain missing: {Clang.Path} (run scripts/bootstrap.ps1).");
+        var tool = new ToolchainPaths(Path.GetDirectoryName(Clang.Path)!).ResourceTool;
+        Assert.True(File.Exists(tool), $"Pinned toolchain missing: {tool} (run scripts/bootstrap.ps1).");
+        var dir = PathUtil.Normalize(Path.Combine(Path.GetTempPath(), "FreexComp.Tests", Guid.NewGuid().ToString("N")));
+        var ct = TestContext.Current.CancellationToken;
+        try
+        {
+            string scripts = Path.Combine(dir, "scripts"), inc = Path.Combine(dir, "inc"), fromVariable = Path.Combine(dir, "from variable"), obj = Path.Combine(dir, "obj");
+            void Write(string path, string text) => PhysicalFileSystem.Instance.WriteAllBytes(path, Encoding.UTF8.GetBytes(text));
+            Write(Path.Combine(scripts, "facts.rc"), "the tool reads the preprocessed input, not this file");
+            Write(Path.Combine(inc, "listed.bin"), "22");
+            Write(Path.Combine(fromVariable, "listed.bin"), "4444");                 // an include directory wins over the variable
+            Write(Path.Combine(fromVariable, "only.bin"), "4444");                   // reachable only through the variable
+            var request = new ResourceCompileRequest(Path.Combine(scripts, "facts.rc"), Path.Combine(obj, "facts.res"), obj) { IncludeDirectories = [inc] };
+            Write(ResourceCompiler.ToolInputPath(request), "1 RCDATA \"listed.bin\"\n2 RCDATA \"only.bin\"\n");
+
+            // the tool as the compile step starts it (script directory, arguments of CMP-1305), with the variable set for this process only
+            async Task<(int ExitCode, string[] Output)> RunTool(IEnumerable<string> arguments)
+            {
+                File.Delete(request.OutputPath + ".tmp");
+                var start = new System.Diagnostics.ProcessStartInfo(tool)
+                {
+                    WorkingDirectory = scripts,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                };
+                foreach (var argument in arguments)
+                {
+                    start.ArgumentList.Add(argument);
+                }
+
+                start.Environment["INCLUDE"] = fromVariable;
+                using var process = System.Diagnostics.Process.Start(start)!;
+                try
+                {
+                    var stdout = PipePump.Text(process.StandardOutput, "stdout");           // each pipe on its own thread
+                    var stderr = PipePump.Text(process.StandardError, "stderr");
+                    await process.WaitForExitAsync(ct);
+                    return (process.ExitCode, (await stdout + await stderr).Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+                }
+                finally
+                {
+                    if (!process.HasExited)
+                    {
+                        process.Kill(entireProcessTree: true);
+                    }
+                }
+            }
+
+            var arguments = ResourceCompiler.CompileArguments(request);
+            Assert.Contains("/X", arguments);
+
+            // the fact: without /X the file of the variable's directory is taken (4 bytes), after the include directories (2 bytes)
+            var (searchedExit, searched) = await RunTool(arguments.Remove("/X"));
+            Assert.True(searchedExit == 0, string.Join("\n", searched));
+            Assert.Equal(
+                [new ResourceEntry(10, 1, 0x0409, 2), new ResourceEntry(10, 2, 0x0409, 4)],
+                ResourceFile.Read(File.ReadAllBytes(request.OutputPath + ".tmp")));
+
+            // the compile step: the file reachable only through the variable is not taken
+            var (exit, output) = await RunTool(arguments);
+            Assert.Equal(1, exit);
+            Assert.Equal(["llvm-rc: Error in 10 statement (ID 2):", "error : file not found : only.bin"], output);
         }
         finally
         {

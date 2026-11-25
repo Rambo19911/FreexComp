@@ -35,6 +35,7 @@ W1052  elsewhere UnitBindingTests  a hint directive is reported outside its own 
 W1081  reserved  lead decision 2026-11-14 (C-096): LANG-808 gives no diagnostic for code after raise
 W4002  elsewhere ToolchainTests  toolchain version check
 W4003  reserved  lead decision 2026-11-15 (C-246): CMP-629 variant 3 only; C-167 selected variant 1 (works on the pinned toolchain), so nothing reports it
+H1010  retired  F09-017 (C-333): resource files are linked (resource-compiler.md CMP-1326); never reported
 H1002  elsewhere EmitTests  the driver compares the program heading with the file name
 H2004  Phase3  language service only
 H2005  Phase8  off by default; no milestone implements it yet

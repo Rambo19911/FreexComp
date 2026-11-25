@@ -120,7 +120,7 @@ public sealed class ResourceBuildTests
                 "-isystem", Obj + @"\rc-include", "-o", Obj + @"\app.rc.pp", @"C:\p\app.rc"],
             calls[0].Arguments);
         Assert.Equal(
-            ["/no-preprocess", "/C", "65001", "/I", @"C:\p", "/I", @"C:\p\shared", "/I", @"C:\p\dbg", "/fo", Obj + @"\app.res.tmp", Obj + @"\app.rc.i"],
+            ["/no-preprocess", "/C", "65001", "/X", "/I", @"C:\p", "/I", @"C:\p\shared", "/I", @"C:\p\dbg", "/fo", Obj + @"\app.res.tmp", Obj + @"\app.rc.i"],
             calls[1].Arguments);
         const string DemoObj = @"C:\p\obj\Demo";
         Assert.Equal(
@@ -293,5 +293,166 @@ public sealed class ResourceBuildTests
         Assert.True(next.Success, string.Join("\n", nextLog.Lines));
         Assert.Contains("Compiling resources app.rc", nextLog.Info);
         Assert.Contains("Linking Hello.exe", nextLog.Info);
+    }
+
+    // ------------------------------------------------------------------ {$R} directives of the linked units (C-333, §6)
+
+    private const string DirectiveProgram = "program Hello;\n{$R *.res}\n{$R shared.rc}\nuses A, Pre;\nbegin\n  Writeln('hi')\nend.\n";
+
+    /// <summary>
+    /// A project with two listed resource files and units that name further ones: B (used by A) and A in the project directory, Pre
+    /// in <c>C:\lib</c> (a search path). Init order: B, A, Pre, the program.
+    /// </summary>
+    private static BuildWorkspace DirectiveWorkspace(string files = """{ "path": "proj.res" }, { "path": "shared.rc" }""", string extra = "")
+    {
+        var w = Workspace(files, "\"searchPaths\": [\"../lib\"]" + (extra.Length > 0 ? ", " + extra : ""), DirectiveProgram);
+        w.Fs.Add(@"C:\p\A.pas", "unit A;\n{$R a.rc}\n{$R common.res}\ninterface\nuses B;\nimplementation\nend.\n")
+            .Add(@"C:\p\B.pas", "unit B;\n{$R common.res}\n{$RESOURCE 'b.res'}\ninterface\nimplementation\nend.\n")
+            .Add(@"C:\lib\Pre.pas", "unit Pre;\n{$R pre.res}\ninterface\nimplementation\nend.\n")
+            .Add(@"C:\p\shared.rc", "1 RCDATA BEGIN 1 END\n")
+            .Add(@"C:\p\a.rc", "2 RCDATA BEGIN 2 END\n");
+        foreach (var (path, name) in new[] { (@"C:\p\proj.res", 1), (@"C:\p\common.res", 2), (@"C:\p\b.res", 3), (@"C:\lib\pre.res", 4), (@"C:\p\Hello.res", 5) })
+        {
+            w.Fs.WriteAllBytes(path, FakeResourceTools.File((10, 100 + name, [(byte)name])));
+        }
+
+        return w;
+    }
+
+    private static string[] ResourcesOf(BuildWorkspace w) => [.. Rsp(w).Where(l => l.EndsWith(".res", StringComparison.OrdinalIgnoreCase))];
+
+    [Fact]
+    [Trait("Req", "CMP-1315")]
+    [Trait("Req", "CMP-1325")]
+    public async Task UnitDirectives_FollowProjectFiles_InInitOrder_EachOnce()
+    {
+        var w = DirectiveWorkspace();
+        string[] expected =
+        [
+            @"C:\p\proj.res", Obj + @"\shared.res",     // the project's files, file order
+            @"C:\p\common.res", @"C:\p\b.res",          // B (initialised first), directive order
+            Obj + @"\a.res",                            // A: its script; common.res is already there
+            @"C:\lib\pre.res",                          // Pre
+            @"C:\p\Hello.res",                          // the program last; shared.rc is a project file already
+        ];
+
+        var (result, log) = await w.RunAsync(w.Request());
+
+        Assert.True(result.Success, string.Join("\n", log.Lines));
+        Assert.Equal(expected, ResourcesOf(w));
+        var rsp = Rsp(w);
+        var first = Array.IndexOf(rsp, expected[0]);
+        Assert.EndsWith(".obj", rsp[first - 1], StringComparison.Ordinal);                                      // CMP-1319: after the objects
+        Assert.Equal(expected, rsp[first..(first + expected.Length)]);
+        Assert.All(rsp[(first + expected.Length)..], line => Assert.EndsWith(".lib", line, StringComparison.Ordinal));
+        Assert.Equal(
+            ["Compiling resources shared.rc", "Compiling resources a.rc", "Linking Hello.exe"],
+            log.Info.Where(l => l.StartsWith("Compiling resources ", StringComparison.Ordinal) || l.StartsWith("Linking ", StringComparison.Ordinal)));
+        Assert.Equal(
+            [("clang.exe", @"C:\p\shared.rc"), ("llvm-rc.exe", Obj + @"\shared.rc.i"), ("clang.exe", @"C:\p\a.rc"), ("llvm-rc.exe", Obj + @"\a.rc.i")],
+            w.Tools.ResourceCalls.Select(c => (c.Tool, c.Arguments[^1])));
+        Assert.Equal(
+            string.Concat(expected.Select(p => Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(w.Fs.ReadAllBytes(p))) + " " + p + "\n")),
+            w.Fs.ReadAllText(Obj + @"\link.resources"));
+
+        // CMP-1325: recorded in the unit's .pcu; a unit without the directive of that file does not name it
+        Assert.Contains("\"resources\":[\"C:\\\\lib\\\\pre.res\"]", w.Fs.ReadAllText(Obj + @"\Pre.pcu"), StringComparison.Ordinal);
+        Assert.DoesNotContain("pre.res", w.Fs.ReadAllText(Obj + @"\A.pcu"), StringComparison.Ordinal);
+
+        // nothing changed → no process, up to date
+        var calls = w.Tools.Calls;
+        var (again, againLog) = await w.RunAsync(w.Request());
+        Assert.True(again.Success && again.UpToDate, string.Join("\n", againLog.Lines));
+        Assert.Equal(calls, w.Tools.Calls);
+
+        // a resource file named by a directive changed → relink only (CMP-1318)
+        w.Fs.WriteAllBytes(@"C:\p\b.res", FakeResourceTools.File((10, 103, [9, 9])));
+        var (relinked, relinkLog) = await w.RunAsync(w.Request());
+        Assert.True(relinked.Success, string.Join("\n", relinkLog.Lines));
+        Assert.Equal(["Linking Hello.exe"], relinkLog.Info);
+        Assert.Equal([.. calls, "lld-link.exe"], w.Tools.Calls);
+
+        // Pre as a precompiled unit (its .pcu and .obj beside each other, no source): the same inputs in the same places
+        w.Fs.WriteAllBytes(@"C:\lib\Pre.pcu", w.Fs.ReadAllBytes(Obj + @"\Pre.pcu"));
+        w.Fs.WriteAllBytes(@"C:\lib\Pre.obj", w.Fs.ReadAllBytes(Obj + @"\Pre.obj"));
+        w.Fs.Delete(@"C:\lib\Pre.pas");
+        w.Fs.Delete(Obj + @"\Pre.pcu");
+        w.Fs.Delete(Obj + @"\Pre.obj");
+        var resourceCalls = w.Tools.ResourceCalls.Length;
+        var (precompiled, precompiledLog) = await w.RunAsync(w.Request());
+        Assert.True(precompiled.Success, string.Join("\n", precompiledLog.Lines));
+        Assert.False(w.Fs.FileExists(Obj + @"\Pre.pcu"));                    // it was not compiled here
+        Assert.Contains(@"C:\lib\Pre.obj", Rsp(w));
+        Assert.Equal(expected, ResourcesOf(w));
+        Assert.Equal(resourceCalls, w.Tools.ResourceCalls.Length);          // the scripts are still up to date
+    }
+
+    /// <summary>A unit that is not part of the link contributes nothing (CMP-1325): the directive of a listed but unused unit.</summary>
+    [Fact]
+    [Trait("Req", "CMP-1325")]
+    public async Task UnitDirective_OfAUnitThatIsNotLinked_ContributesNothing()
+    {
+        var w = Workspace("""{ "path": "Unused.pas" }""");
+        w.Fs.Add(@"C:\p\Unused.pas", "unit Unused;\n{$R gone.res}\ninterface\nimplementation\nend.\n");
+
+        var (result, log) = await w.RunAsync(w.Request());
+
+        Assert.True(result.Success, string.Join("\n", log.Lines));
+        Assert.Empty(Diagnostics(log));
+        Assert.Empty(ResourcesOf(w));
+        Assert.False(w.Fs.FileExists(Obj + @"\link.resources"));
+    }
+
+    /// <summary>
+    /// resource-compiler.md §10: a link-time diagnostic of a resource input that a directive names stays at the main source; only
+    /// those of the project's own files are located at the project file.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "CMP-1316")]
+    [Trait("Req", "CMP-1320")]
+    [Trait("Req", "CMP-1321")]
+    public async Task UnitDirective_LinkTimeDiagnostics_AreAtTheMainSource_ProjectOnesAtTheProjectFile()
+    {
+        // E3116: common.res (named by B and A) is not a compiled resource file
+        var invalid = DirectiveWorkspace();
+        invalid.Fs.Add(@"C:\p\common.res", "this is not a compiled resource file, although it is long enough");
+        var (result, log) = await invalid.RunAsync(invalid.Request());
+        Assert.False(result.Success);
+        Assert.Equal([@"C:\p\Hello.pas(0,0): error E3116: 'C:\p\common.res' is not a valid compiled resource file"], Diagnostics(log).Select(d => d.ToText()));
+        Assert.DoesNotContain("lld-link.exe", invalid.Tools.Calls);
+
+        // E3115: the manifest is in a file a directive names
+        var manifest = DirectiveWorkspace();
+        manifest.Fs.WriteAllBytes(@"C:\p\b.res", ManifestRes);
+        (result, log) = await manifest.RunAsync(manifest.Request());
+        Assert.False(result.Success);
+        Assert.Equal(
+            [@"C:\p\Hello.pas(0,0): error E3115: Resource file 'C:\p\b.res' contains an application manifest and the program embeds one too; "
+                + "set the manifest option to none or remove the manifest from the resource file"],
+            Diagnostics(log).Select(d => d.ToText()));
+
+        // ... and with the manifest option none it is the program's manifest
+        var none = DirectiveWorkspace(extra: "\"manifest\": \"none\"");
+        none.Fs.WriteAllBytes(@"C:\p\b.res", ManifestRes);
+        (result, log) = await none.RunAsync(none.Request());
+        Assert.True(result.Success, string.Join("\n", log.Lines));
+        Assert.Contains(@"C:\p\b.res", Rsp(none));
+
+        // E3114: the script of a directive (a.rc of unit A) collides with a script of the project → at the main source
+        var collide = DirectiveWorkspace("""{ "path": "other/A.rc" }""");
+        collide.Fs.Add(@"C:\p\other\A.rc", "3 RCDATA BEGIN 3 END\n");
+        (result, log) = await collide.RunAsync(collide.Request());
+        Assert.False(result.Success);
+        Assert.Equal(
+            [@"C:\p\Hello.pas(0,0): error E3114: Resource scripts 'C:\p\other\A.rc' and 'C:\p\a.rc' have the same name; their compiled files would collide"],
+            Diagnostics(log).Select(d => d.ToText()));
+        Assert.Empty(collide.Tools.ResourceCalls);
+
+        // the same file listed in the project and named by a directive is the project's: its diagnostic is at the project file
+        var both = DirectiveWorkspace("""{ "path": "common.res" }""");
+        both.Fs.Add(@"C:\p\common.res", "this is not a compiled resource file, although it is long enough");
+        (result, log) = await both.RunAsync(both.Request());
+        Assert.False(result.Success);
+        Assert.Equal([@"C:\p\Hello.pproj(0,0): error E3116: 'C:\p\common.res' is not a valid compiled resource file"], Diagnostics(log).Select(d => d.ToText()));
     }
 }

@@ -237,7 +237,7 @@ internal sealed class DirectiveProcessor
                 }
 
                 return;
-            case "RESOURCE": Report("H1010", directive.Span); return;
+            case "RESOURCE": return;            // a resource input (CMP-1323); the name is checked with the link inputs of the unit (CMP-1327)
             case "INCLUDE" or "I" when IsInclude(name, argument):
                 // Expansion is done by the Preprocessor stream (LANG-875); only the argument is checked here.
                 if (IncludeFileName(directive).Length == 0)
@@ -262,8 +262,7 @@ internal sealed class DirectiveProcessor
         switch (name)
         {
             case "R" when argument.Length > 0:
-                Report("H1010", directive.Span);    // {$R file}: resource file
-                return;
+                return;                             // {$R file}: resource input (CMP-1323; H1010 is retired, CMP-1326)
             case "L" when argument.Length > 0:
                 return;                             // {$L file}: link (CMP-625)
         }

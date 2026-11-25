@@ -75,7 +75,7 @@ public sealed class ResourceCompilerTests
         Assert.Equal(Bin + @"\llvm-rc.exe", tools.Calls[1].FileName);
         Assert.Equal(@"C:\p\res", tools.Calls[1].WorkingDirectory);       // the tool searches its working directory first
         Assert.Equal(
-            ["/no-preprocess", "/C", "65001", "/I", @"C:\p\res", "/I", @"C:\inc\one", "/I", @"C:\inc\two", "/fo", Output + ".tmp", Obj + @"\app.rc.i"],
+            ["/no-preprocess", "/C", "65001", "/X", "/I", @"C:\p\res", "/I", @"C:\inc\one", "/I", @"C:\inc\two", "/fo", Output + ".tmp", Obj + @"\app.rc.i"],
             tools.Calls[1].Arguments);
         Assert.Equal(2, echoed.Count);                                      // both echoed before they run
         Assert.StartsWith(Bin + @"\clang.exe -E -x c ", echoed[0], StringComparison.Ordinal);

@@ -10,22 +10,32 @@ namespace FreexComp.Compiler.Units;
 /// The <c>.pcu</c> <c>linkInputs</c> of one unit (architecture.md §6, C-077): the DLLs named by its <c>external '&lt;dll&gt;'</c>
 /// declarations (normalised, sorted, CMP-430) and the files named by its <c>{$L file}</c> / <c>{$LINK file}</c> directives
 /// (directives.md; absolute paths, directive order, each once): <c>.def</c> files go to <see cref="Defs"/> (CMP-620's first
-/// lookup step), everything else to <see cref="Objects"/> (CMP-625's extra objects).
+/// lookup step), everything else to <see cref="Objects"/> (CMP-625's extra objects). The files of its <c>{$R file}</c> /
+/// <c>{$RESOURCE file}</c> directives are its <see cref="Resources"/> (resource-compiler.md §6).
 /// </summary>
 internal sealed record UnitLinkInputs(ImmutableArray<string> Dlls, ImmutableArray<string> Objects, ImmutableArray<string> Defs)
 {
     public static readonly UnitLinkInputs Empty = new([], [], []);
 
     /// <summary>
+    /// CMP-1323…1325: the resource inputs named by the unit's <c>{$R file}</c> / <c>{$RESOURCE file}</c> directives (absolute paths
+    /// of <c>.res</c> and <c>.rc</c> files, directive order, each once).
+    /// </summary>
+    public ImmutableArray<string> Resources { get; init; } = [];
+
+    /// <summary>
     /// Gathers the link inputs of a bound unit. A <c>{$L}</c> name is unquoted, gets <c>.obj</c> when it has no extension and is
     /// resolved against the directory of the file holding the directive (an include file's own directory); a missing file is
-    /// E0002 at the directive.
+    /// E0002 at the directive. A <c>{$R}</c> name (CMP-1323, 1324) is unquoted, <c>*</c> as its base name stands for the base name of
+    /// the file holding the directive, it gets <c>.res</c> when it has no extension and is resolved the same way; an empty name, a
+    /// second name or an extension other than <c>.res</c> / <c>.rc</c> is E1206 at the directive, a missing file E0002.
     /// </summary>
     public static UnitLinkInputs Collect(UnitSymbol unit, SyntaxTree tree, IFileSystem fs, List<Diagnostic> diagnostics)
     {
         ImmutableArray<string> dlls = [.. LinkInputs.Imports([unit]).Select(i => i.DllName).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)];
         var objects = new List<string>();
         var defs = new List<string>();
+        var reported = new List<Diagnostic>();
         foreach (var (file, directive) in LinkDirectives(tree))
         {
             var name = DirectiveProcessor.Unquote(directive.Argument).Replace('/', '\\');
@@ -38,7 +48,7 @@ internal sealed record UnitLinkInputs(ImmutableArray<string> Dlls, ImmutableArra
             if (!fs.FileExists(path))
             {
                 var span = directive.Span;
-                diagnostics.Add(Diagnostic.Create(
+                reported.Add(Diagnostic.Create(
                     "E0002",
                     new Location(file.Path, span, new LinePositionSpan(file.Lines.GetLinePosition(span.Start), file.Lines.GetLinePosition(span.End))),
                     path));
@@ -52,8 +62,50 @@ internal sealed record UnitLinkInputs(ImmutableArray<string> Dlls, ImmutableArra
             }
         }
 
-        return new UnitLinkInputs(dlls, [.. objects], [.. defs]);
+        var resources = new List<string>();
+        foreach (var (file, directive) in ResourceDirectives(tree))
+        {
+            Location At() => new(file.Path, directive.Span, new LinePositionSpan(file.Lines.GetLinePosition(directive.Span.Start), file.Lines.GetLinePosition(directive.Span.End)));
+            var argument = directive.Argument;
+            var name = DirectiveProcessor.Unquote(argument).Replace('/', '\\');
+            var quoted = argument.StartsWith('\'');
+            if (name.Length == 0 || (quoted ? name == argument : name.Any(char.IsWhiteSpace)) || name.IndexOfAny(Path.GetInvalidPathChars()) >= 0)
+            {
+                reported.Add(Diagnostic.Create("E1206", At(), argument));                       // empty, or the two-file form
+                continue;
+            }
+
+            var baseName = Path.GetFileNameWithoutExtension(name) == "*" ? Path.GetFileNameWithoutExtension(file.Path) : Path.GetFileNameWithoutExtension(name);
+            var extension = Path.HasExtension(name) ? Path.GetExtension(name) : ".res";
+            if (!extension.Equals(".res", StringComparison.OrdinalIgnoreCase) && !extension.Equals(".rc", StringComparison.OrdinalIgnoreCase))
+            {
+                reported.Add(Diagnostic.Create("E1206", At(), argument));
+                continue;
+            }
+
+            name = Path.Combine(Path.GetDirectoryName(name) ?? "", baseName + extension);
+            var path = PathUtil.Normalize(Path.IsPathFullyQualified(name) ? name : Path.Combine(Path.GetDirectoryName(file.Path)!, name));
+            if (!fs.FileExists(path))
+            {
+                reported.Add(Diagnostic.Create("E0002", At(), path));
+            }
+            else if (!resources.Contains(path, PathUtil.Comparer))
+            {
+                resources.Add(path);
+            }
+        }
+
+        // in source order: the file, then its includes; by position inside each
+        var files = tree.IncludedTrees.Prepend(tree).Select(t => t.Text.Path).ToList();
+        diagnostics.AddRange(reported.OrderBy(d => files.IndexOf(d.Location.Path)).ThenBy(d => d.Location.Span.Start));
+        return new UnitLinkInputs(dlls, [.. objects], [.. defs]) { Resources = [.. resources] };
     }
+
+    /// <summary><c>{$R file}</c> (an argument not starting with <c>+</c>/<c>-</c>) and <c>{$RESOURCE file}</c> of the file and its includes, in order.</summary>
+    internal static IEnumerable<(SourceText File, DirectiveTriviaInfo Directive)> ResourceDirectives(SyntaxTree tree) =>
+        tree.IncludedTrees.Prepend(tree)
+            .SelectMany(t => t.Directives.Select(d => (t.Text, d)))
+            .Where(p => p.d.Name == "RESOURCE" || (p.d.Name == "R" && p.d.Argument.Length > 0 && p.d.Argument[0] is not ('+' or '-')));
 
     /// <summary><c>{$L file}</c> (argument not starting with <c>+</c>/<c>-</c>) and <c>{$LINK file}</c> of the file and its includes, in order.</summary>
     internal static IEnumerable<(SourceText File, DirectiveTriviaInfo Directive)> LinkDirectives(SyntaxTree tree) =>

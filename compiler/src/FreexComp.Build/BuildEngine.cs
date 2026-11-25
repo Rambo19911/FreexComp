@@ -594,8 +594,14 @@ public sealed class BuildEngine : IBuildEngine
             // C-269, I-217: awaited on the engine's own thread, no hop to a pool worker (with every worker busy the hop would never
             // run); a caller on a UI thread starts RunAsync with Task.Run (the IDE's build service does)
             var result = await compilation.EmitAsync(emit, ct).ConfigureAwait(false);
-            // resource-compiler.md §10: the diagnostics of the project's resource files are located at the project file
-            diagnostics.AddRange(result.Diagnostics.Select(d => d.Code is "E3114" or "E3115" or "E3116" or "E3117" ? d with { Location = location } : d));
+            // resource-compiler.md §10: the diagnostics of the project's resource files are located at the project file; those of a
+            // file named by a {$R} directive stay where the compiler put them (C-333). The file a diagnostic is about is its last
+            // argument: a listed file, or the compiled file of a listed script.
+            var projectResources = options.ResourceFiles
+                .SelectMany(f => new[] { f, Path.Combine(options.ObjectDirectory, Path.GetFileNameWithoutExtension(f) + ".res") })
+                .ToHashSet(PathUtil.Comparer);
+            diagnostics.AddRange(result.Diagnostics.Select(d =>
+                d.Code is "E3114" or "E3115" or "E3116" or "E3117" && d.Arguments is [.., string file] && projectResources.Contains(file) ? d with { Location = location } : d));
             if (!result.Success)
             {
                 return (false, null);

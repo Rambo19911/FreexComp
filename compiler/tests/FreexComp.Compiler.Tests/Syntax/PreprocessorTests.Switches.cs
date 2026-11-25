@@ -160,8 +160,6 @@ public sealed partial class PreprocessorTests
     [InlineData("{$X-}", "W1002", "Directive 'X-' is not supported and was ignored")]
     [InlineData("{$EXTENDEDSYNTAX OFF}", "W1002", "Directive 'EXTENDEDSYNTAX OFF' is not supported and was ignored")]
     [InlineData("{$RTTI EXPLICIT METHODS([])}", "W1002", "Directive 'RTTI EXPLICIT METHODS([])' is not supported and was ignored")]
-    [InlineData("{$R Resources.res}", "H1010", "Resource files are not supported yet; directive ignored")]
-    [InlineData("{$RESOURCE 'My File.res'}", "H1010", "Resource files are not supported yet; directive ignored")]
     [InlineData("{$PUSHOPT}", "W1001", "Unknown directive 'PUSHOPT'")]
     [InlineData("{$POPOPT}", "W1001", "Unknown directive 'POPOPT'")]
     [InlineData("{$NOSUCHTHING 1}", "W1001", "Unknown directive 'NOSUCHTHING'")]
@@ -329,6 +327,20 @@ public sealed partial class PreprocessorTests
         Assert.Equal("W1002", Assert.Single(Diagnose(Text)).Code);
     }
 
+    /// <summary>
+    /// CMP-1326: the directive processor says nothing about a resource directive (H1010 is retired); the name is checked where the
+    /// link inputs of the unit are gathered (CMP-1327).
+    /// </summary>
+    [Theory]
+    [Trait("Req", "CMP-1326")]
+    [InlineData("{$R Resources.res}")]
+    [InlineData("{$RESOURCE 'My File.res'}")]
+    [InlineData("{$R *.res}")]
+    public void Switches_ResourceDirective_IsNotDiagnosedByTheDirectiveProcessor(string directive)
+    {
+        Assert.Empty(Diagnose("x " + directive));
+    }
+
     // ------------------------------------------------------------------ warning control (CMP-505)
 
     [Fact]
@@ -344,8 +356,8 @@ public sealed partial class PreprocessorTests
     [Trait("Req", "CMP-505")]
     public void Switches_HintsOff_SuppressesLaterHints()
     {
-        Assert.Empty(Codes("{$HINTS OFF}{$R x.res}"));
-        Assert.Equal(["H1010"], Codes("{$R x.res}{$HINTS OFF}"));
+        Assert.Empty(Codes("{$HINTS OFF}{$MESSAGE 'note'}"));
+        Assert.Equal(["H1100"], Codes("{$MESSAGE 'note'}{$HINTS OFF}"));
     }
 
     [Theory]
@@ -355,7 +367,10 @@ public sealed partial class PreprocessorTests
     [InlineData("{$warn unknown_directive off}{$NOSUCH}", new string[0])]
     [InlineData("{$WARN W1001 OFF}{$WARN W1001 ON}{$NOSUCH}", new[] { "W1001" })]
     [InlineData("{$WARN W1002 OFF}{$NOSUCH}", new[] { "W1001" })]
-    [InlineData("{$WARN RESOURCE_IGNORED OFF}{$R x.res}", new string[0])]
+    [InlineData("{$WARN RESOURCE_IGNORED OFF}{$R x.res}", new string[0])]           // CMP-1326: the retired name is still accepted
+    [InlineData("{$WARN RESOURCE_IGNORED ON}{$R x.res}", new string[0])]            // ... and has no effect
+    [InlineData("{$WARN USER_MESSAGE OFF}{$MESSAGE 'note'}", new string[0])]        // a live hint switched off by its name
+    [InlineData("{$MESSAGE 'note'}{$WARN USER_MESSAGE OFF}", new[] { "H1100" })]
     public void Switches_Warn_TurnsOneDiagnosticOnOrOff(string text, string[] codes)
     {
         Assert.Equal(codes, Codes(text));

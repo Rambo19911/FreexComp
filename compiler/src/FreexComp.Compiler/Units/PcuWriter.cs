@@ -95,6 +95,12 @@ internal sealed class PcuWriter(PcuContext context)
             ["interface"] = WithDeclarations(unit, sources.Select(s => s.Path).ToImmutableArray()),
             ["genericBodies"] = Interface(unit).Bodies.DeepClone(),                   // CMP-162 (C-119)
         };
+        if (!unit.LinkInputs.Resources.IsEmpty)
+        {
+            // CMP-1325: written only when not empty, so the file of a unit without the directive is unchanged
+            root["linkInputs"]!["resources"] = Strings(unit.LinkInputs.Resources);
+        }
+
         if (unit.IsProgram)
         {
             root["unitOrder"] = Strings(context.InitOrder.Select(u => u.Name));          // CMP-163

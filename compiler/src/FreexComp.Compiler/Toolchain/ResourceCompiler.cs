@@ -57,7 +57,9 @@ internal sealed partial class ResourceCompiler(ToolRunner runner, ToolchainPaths
     public static ImmutableArray<string> CompileArguments(ResourceCompileRequest request)
     {
         var args = ImmutableArray.CreateBuilder<string>();
-        args.AddRange("/no-preprocess", "/C", "65001", "/I", Path.GetDirectoryName(request.ScriptPath)!);
+        // /X (C-334): the tool does not search the directories of the INCLUDE environment variable for data files, so the
+        // environment cannot change a build (ResourceToolFactsTests proves that the pinned tool searches them without it)
+        args.AddRange("/no-preprocess", "/C", "65001", "/X", "/I", Path.GetDirectoryName(request.ScriptPath)!);
         foreach (var directory in request.IncludeDirectories)
         {
             args.AddRange("/I", directory);
