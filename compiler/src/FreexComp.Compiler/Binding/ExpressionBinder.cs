@@ -1807,6 +1807,16 @@ internal sealed partial class ExpressionBinder
             return VariableTypecast(node, target, operand);
         }
 
+        // C-326 (LANG-245, LANG-290): a character constant cast to PChar / PAnsiChar is the static one-character literal,
+        // like a longer string literal — not the character code as an address
+        if (source is CharTypeSymbol && operand.ConstantValue is { } character
+            && (Strings.IsCharPointer(target, wide: true) || Strings.IsCharPointer(target, wide: false)))
+        {
+            return _conversions.ConvertConstant(character, target, node, _diagnostics) is { } data
+                ? new BoundConversionExpression(node, operand, target, ConversionKind.Explicit, isExplicit: true, data)
+                : Error(node, operand);
+        }
+
         if (source is RealTypeSymbol && target is not RealTypeSymbol)
         {
             _diagnostics.Report(node, "E2040", source.Name, target.Name);

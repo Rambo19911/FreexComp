@@ -75,4 +75,40 @@ public sealed class StringBindingTests
     [Trait("Req", "LANG-245")]
     public void Char_ConvertsToString() =>
         Assert.Equal("(block (:= s:string (conv string c:Char)) (:= s:string (conv string a:AnsiChar)) (:= s:string 'x':string))", Body("s := c; s := a; s := 'x'"));
+
+    /// <summary>
+    /// LANG-244 (C-326): a character compared with a string — also the empty literal, on either side, and a longer literal —
+    /// is converted to a one-character string and compared as a string, without a diagnostic; <c>c = ''</c> is thus False
+    /// at run time (golden <c>m8/PCharOfOneCharLiteral</c>). A one-character literal stays a character comparison.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "LANG-244")]
+    public void Comparison_OfACharWithTheEmptyOrALongerLiteral_IsAStringComparison() =>
+        Assert.Equal(
+            "(block (:= f:Boolean (Equal:Boolean (conv string ([] s:string 2:Integer):Char) '':string)) " +
+            "(:= f:Boolean (NotEqual:Boolean '':string (conv string c:Char))) " +
+            "(:= f:Boolean (Less:Boolean (conv string a:AnsiChar) '':string)) " +
+            "(:= f:Boolean (Equal:Boolean (conv string c:Char) 'ab':string)) " +
+            "(:= f:Boolean (Equal:Boolean c:Char 'a':Char)))",
+            BodyWith("f: Boolean;", "f := s[2] = ''; f := '' <> c; f := a < ''; f := c = 'ab'; f := c = 'a'"));
+
+    /// <summary>
+    /// LANG-245 / LANG-290 (C-326): a character constant cast to <c>PChar</c> / <c>PAnsiChar</c> / <c>PWideChar</c> is the static
+    /// one-character literal (a string constant of the pointer type) like a longer literal, never the character code as
+    /// an address; a character variable and an integer stay ordinal → pointer casts.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "LANG-290")]
+    public void Cast_OfACharacterConstantToPChar_IsTheLiteralData()
+    {
+        var (result, _) = Bind(
+            "program T; const K = 'k'; var p: PChar; pa: PAnsiChar; pw: PWideChar; c: Char; " +
+            "begin p := PChar('x'); pa := PAnsiChar('y'); pw := PWideChar('z'); p := PChar(K); p := PChar('xy'); p := PChar(c); p := PChar(120) end.");
+        Assert.Empty(Format(result.Diagnostics));
+        var dump = BoundDump.Of(Assert.Single(result.Bodies));
+        Assert.StartsWith("(block (:= p:PChar 'x':PChar) (:= pa:PAnsiChar 'y':PAnsiChar) (:= pw:PChar 'z':PChar) (:= p:PChar 'k':PChar) (:= p:PChar 'xy':PChar) ", dump, StringComparison.Ordinal);
+        Assert.EndsWith(" (:= p:PChar (cast PChar c:Char)) (:= p:PChar (cast PChar 120:Integer)))", dump, StringComparison.Ordinal);
+    }
 }
