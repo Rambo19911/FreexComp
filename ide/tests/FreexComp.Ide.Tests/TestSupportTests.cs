@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Globalization;
+using Avalonia.Headless.XUnit;
 using FreexComp.Debugger;
 using FreexComp.Ide.Core.Platform;
 using FreexComp.Ide.Core.Tests.Infrastructure;
@@ -210,5 +211,20 @@ public sealed class TestSupportTests
                     process.Kill(entireProcessTree: true);
             }
         }
+    }
+
+    /// <summary>
+    /// I-264: the headless session builds a new application for every UI test (per-test isolation, its default), so the
+    /// application set-up runs before each of them; the warm-up shell is built by the first one only. Two UI tests:
+    /// whichever runs second has seen at least two set-ups.
+    /// </summary>
+    [AvaloniaTheory(Timeout = 30000)]
+    [InlineData(1)]
+    [InlineData(2)]
+    public void WarmUpRunsOncePerProcess(int uiTest)
+    {
+        Assert.InRange(uiTest, 1, 2);
+        Assert.NotNull(Avalonia.Application.Current);
+        Assert.Equal(1, TestAppBuilder.WarmUpRuns);
     }
 }

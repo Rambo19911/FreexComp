@@ -27,13 +27,22 @@ public static class TestAppBuilder
         return builder.AfterSetup(_ => WarmUp());
     }
 
+    private static int _warmUpRuns;
+
+    /// <summary>How many times this process built the warm-up shell.</summary>
+    internal static int WarmUpRuns => Volatile.Read(ref _warmUpRuns);
+
     /// <summary>
     /// I-172: the first shell of a process pays the one-time costs (type loading, JIT, XAML and theme loading, the editor
     /// control) — seconds, and more than the 30 s per-test timeout (IDE-TEST-006) on a fully loaded machine. Session
     /// set-up runs before any test's timeout starts, so the shell is built and closed once here, with in-memory files.
+    /// I-264: the session builds a new application for every UI test (per-test isolation, its default) and calls the
+    /// application set-up each time; those costs are the process's, so only the first set-up builds the shell.
     /// </summary>
     private static void WarmUp()
     {
+        if (Interlocked.CompareExchange(ref _warmUpRuns, 1, 0) != 0)
+            return;
         var services = TestComposition.Build(o =>
         {
             o.Dispatcher = new AvaloniaUiDispatcher();
