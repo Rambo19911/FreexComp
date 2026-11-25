@@ -13,7 +13,11 @@ internal sealed record ProjectPlan(
     ImmutableArray<string> Order,
     IReadOnlyDictionary<string, LoadResult<Project>> Loads,
     IReadOnlyDictionary<string, List<string>> Dependencies,
-    string Last);
+    string Last)
+{
+    /// <summary>The dependency cycle E9006 names (<c>A, B, …, A</c>); null when there is none.</summary>
+    public ImmutableArray<string>? Cycle { get; init; }
+}
 
 /// <summary>Loads a project or group with everything it depends on and orders it; shared by the build engine and <see cref="ProjectTrust"/>.</summary>
 internal static class ProjectGraph
@@ -48,10 +52,20 @@ internal static class ProjectGraph
     }
 
     /// <summary>
-    /// <paramref name="roots"/> and every project they depend on, in topological order; ties by <paramref name="listed"/>, then
-    /// discovery order, <paramref name="last"/> last.
+    /// CMP-1346, CMP-1347: the cycle a build of the project <paramref name="path"/> would report (E9006) if the project had exactly
+    /// <paramref name="dependencies"/> (as written in a project file); the other projects are read from <paramref name="fs"/>.
     /// </summary>
-    private static ProjectPlan Plan(IFileSystem fs, string path, List<string> roots, List<string> listed, string last)
+    /// <param name="path">Normalised absolute path of a <c>.pproj</c>; the file need not exist.</param>
+    public static ImmutableArray<string>? FindCycle(IFileSystem fs, string path, IReadOnlyList<string> dependencies) =>
+        Plan(fs, path, [path], [], path, dependencies).Cycle;
+
+    /// <summary>
+    /// <paramref name="roots"/> and every project they depend on, in topological order; ties by <paramref name="listed"/>, then
+    /// discovery order, <paramref name="last"/> last. <paramref name="replaced"/> non-null = the dependencies of the project
+    /// <paramref name="path"/> instead of those in its file.
+    /// </summary>
+    private static ProjectPlan Plan(
+        IFileSystem fs, string path, List<string> roots, List<string> listed, string last, IReadOnlyList<string>? replaced = null)
     {
         var loads = new Dictionary<string, LoadResult<Project>>(PathUtil.Comparer);
         var dependencies = new Dictionary<string, List<string>>(PathUtil.Comparer);
@@ -67,9 +81,11 @@ internal static class ProjectGraph
             loads[project] = load;
             discovered.Add(project);
             var projectDirectory = Path.GetDirectoryName(project)!;
-            dependencies[project] = load.Value is { } p && !HasErrors(load.Diagnostics)
-                ? [.. p.Dependencies.Select(d => Resolve(projectDirectory, d))]
-                : [];
+            dependencies[project] = replaced is not null && PathUtil.AreEqual(project, path)
+                ? [.. replaced.Select(d => Resolve(projectDirectory, d))]
+                : load.Value is { } p && !HasErrors(load.Diagnostics)
+                    ? [.. p.Dependencies.Select(d => Resolve(projectDirectory, d))]
+                    : [];
             foreach (var dependency in dependencies[project])
             {
                 Visit(dependency);
@@ -96,7 +112,7 @@ internal static class ProjectGraph
         if (remaining.Count > 0)
         {
             var cycle = FindCycle(remaining.OrderBy(Position).First(), dependencies, remaining);
-            return Failed([Diagnostic.Create("E9006", Location.ForFile(path), string.Join(" -> ", cycle))], last);
+            return Failed([Diagnostic.Create("E9006", Location.ForFile(path), string.Join(" -> ", cycle))], last) with { Cycle = [.. cycle] };
         }
 
         return new ProjectPlan(null, [.. order], loads, dependencies, last);
@@ -117,7 +133,7 @@ internal static class ProjectGraph
             var onStack = stack.FindIndex(p => PathUtil.AreEqual(p, node));
             if (onStack >= 0)
             {
-                return [.. stack[onStack..], node];
+                return [.. stack[onStack..], stack[onStack]];                            // first == last, also when the spellings differ in case
             }
 
             if (!done.Add(node))

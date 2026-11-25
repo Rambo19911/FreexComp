@@ -33,6 +33,9 @@ public sealed record BuildRequest
     /// <summary>.pgroup: build only this project (+ dependencies); null → all.</summary>
     public string? ProjectInGroup { get; init; }
 
+    /// <summary>Group / dependency builds: start no further project after the first failed one (CMP-1340); false → only its dependants are skipped.</summary>
+    public bool StopOnFirstFailure { get; init; }
+
     /// <summary>Unsaved editor buffers overriding files on disk.</summary>
     public ImmutableArray<SourceText> OpenFiles { get; init; } = [];
 

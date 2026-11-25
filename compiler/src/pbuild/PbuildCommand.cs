@@ -39,7 +39,7 @@ public static class PbuildCommand
     public const string HelpText = """
         pbuild <project.pproj | group.pgroup> [--config <name>] [--target build|rebuild|clean|run] [--platform <id>]
                [--diagnostics text|json] [--rtl <dir>] [--toolchain <dir>] [--jobs <N>] [--verbose]
-               [--trust-events | --no-events]
+               [--trust-events | --no-events] [--stop-on-failure]
           --config <name>       any configuration of the project, matched case-insensitively (default: the project's
                                 activeConfiguration)
           --target <target>     build (default), rebuild, clean or run (build, then run the program)
@@ -52,6 +52,7 @@ public static class PbuildCommand
           --verbose             echo external commands; names the parents of a derived configuration
           --trust-events          run the project's build event commands without asking the trust list
           --no-events             build without running the project's build event commands
+          --stop-on-failure     stop at the first project that fails (default: build the projects that do not depend on it)
           --version | --help
         """;
 
@@ -70,7 +71,7 @@ public static class PbuildCommand
         var target = BuildTarget.Build;
         var jobs = 0;
         EventsPolicy? events = null;                                                     // CMP-1247
-        bool json = false, verbose = false, help = false, version = false;
+        bool json = false, verbose = false, help = false, version = false, stopOnFailure = false;
         var invalid = new List<string>();
         var errors = new List<Diagnostic>();
 
@@ -107,6 +108,7 @@ public static class PbuildCommand
                 case "--help": help = true; break;
                 case "--version": version = true; break;
                 case "--verbose": verbose = true; break;
+                case "--stop-on-failure": stopOnFailure = true; break;                          // CMP-1345
                 case "--trust-events" or "--no-events":                                        // CMP-1247: both = E0005 for the second
                     if (events is null)
                     {
@@ -218,6 +220,7 @@ public static class PbuildCommand
             Platform = platform,
             Target = target,
             Verbose = verbose,
+            StopOnFirstFailure = stopOnFailure,
             ToolchainDirectory = toolchain ?? env.ToolchainDirectory,
             RtlDirectory = rtl ?? env.RtlDirectory,
             MaxParallelism = jobs,

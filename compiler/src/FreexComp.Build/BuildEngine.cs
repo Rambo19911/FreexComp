@@ -58,7 +58,8 @@ public sealed class BuildEngine : IBuildEngine
 
     /// <summary>
     /// Builds the projects of <paramref name="plan"/> in its order (CMP-821). For <c>Run</c> only the last one runs, the others are
-    /// built. A failed project skips its dependants. Plan-level errors (group file, cycle E9006) are reported in a
+    /// built. A failed project skips its dependants; with <see cref="BuildRequest.StopOnFirstFailure"/> it skips every project
+    /// planned after it (CMP-1341). Plan-level errors (group file, cycle E9006) are reported in a
     /// Started…Finished bracket of <paramref name="path"/> (the group file, or the single requested project) and nothing is built.
     /// </summary>
     private async Task<ImmutableArray<ProjectOutcome>> BuildPlanAsync(
@@ -74,18 +75,26 @@ public sealed class BuildEngine : IBuildEngine
         var outcomes = ImmutableArray.CreateBuilder<ProjectOutcome>();
         var failed = new Dictionary<string, string>(PathUtil.Comparer);                        // project → its name
         var libraries = new Dictionary<string, string>(PathUtil.Comparer);                     // library project → the DLL it built (CMP-1084)
+        string? stoppedAfter = null;                                                           // CMP-1341: the name of the first failed project
         foreach (var project in order)
         {
             var target = request.Target == BuildTarget.Run && !PathUtil.AreEqual(project, last) ? BuildTarget.Build : request.Target;
             var failedDependency = dependencies[project].FirstOrDefault(failed.ContainsKey);
             ImmutableArray<string> libraryDependencies = [.. dependencies[project].Where(libraries.ContainsKey).Select(d => libraries[d]).Distinct(PathUtil.Comparer)];
-            var outcome = await BuildProjectAsync(
-                project, loads[project], target, request, gate, progress, ct, failedDependency is null ? null : failed[failedDependency], libraryDependencies)
+            // CMP-1342: one reason per project; the stop names the first failed project, also for its dependants
+            var skippedBecause = stoppedAfter is not null ? $"the build stopped after {stoppedAfter} failed"
+                : failedDependency is not null ? $"{failed[failedDependency]} failed"
+                : null;
+            var outcome = await BuildProjectAsync(project, loads[project], target, request, gate, progress, ct, skippedBecause, libraryDependencies)
                 .ConfigureAwait(false);
             outcomes.Add(outcome);
             if (!outcome.Result.Success)
             {
                 failed[project] = loads[project].Value?.Name ?? Path.GetFileNameWithoutExtension(project);
+                if (request.StopOnFirstFailure && !outcome.Canceled)
+                {
+                    stoppedAfter ??= failed[project];
+                }
             }
             else if (loads[project].Value is { AppType: "library" } && outcome.Result.OutputPath is { } dll)
             {
@@ -118,8 +127,9 @@ public sealed class BuildEngine : IBuildEngine
 
     /// <summary>
     /// One project: exactly one <c>Started</c>, its events, exactly one <c>Finished</c> (CMP-800). <paramref name="load"/> without a
-    /// value reports its diagnostics only (also used for group-level errors); <paramref name="skippedBecause"/> = the name of a failed
-    /// dependency (CMP-821: no diagnostics of its own, 0 errors, one Info line). <paramref name="libraryDependencies"/> = the DLLs
+    /// value reports its diagnostics only (also used for group-level errors); <paramref name="skippedBecause"/> = why the project is
+    /// not started: <c>&lt;Dependency&gt; failed</c> (CMP-821) or <c>the build stopped after &lt;Failed&gt; failed</c> (CMP-1342) — no
+    /// diagnostics of its own, 0 errors, one Info line. <paramref name="libraryDependencies"/> = the DLLs
     /// built by the direct dependencies that are library projects (CMP-1084).
     /// </summary>
     private async Task<ProjectOutcome> BuildProjectAsync(
@@ -148,7 +158,7 @@ public sealed class BuildEngine : IBuildEngine
         int? runExitCode = null;
         if (skippedBecause is not null)
         {
-            sink.Info($"{project?.Name ?? Path.GetFileNameWithoutExtension(path)}: skipped because {skippedBecause} failed");
+            sink.Info($"{project?.Name ?? Path.GetFileNameWithoutExtension(path)}: skipped because {skippedBecause}");
         }
         else if (project is not null && !HasErrors(diagnostics))
         {

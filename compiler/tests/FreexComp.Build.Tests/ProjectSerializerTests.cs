@@ -717,6 +717,52 @@ public sealed partial class ProjectSerializerTests
         Assert.Equal("{\n  \"formatVersion\": 1,\n  \"x\": 1,\n  \"projects\": [],\n  \"activeProject\": \"\"\n}\n", ProjectSerializer.Save(g));
     }
 
+    /// <summary>C-337 (group-build.md CMP-1350): unknown keys and their positions survive a change of the model; entries are written with '/'.</summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1350")]
+    public void Group_RoundTrip_KeepsUnknownKeys()
+    {
+        const string text = """
+            {
+              "formatVersion": 1,
+              "comment": "kept",
+              "projects": [
+                "App/App.pproj",
+                "Lib/Lib.pproj"
+              ],
+              "layout": {
+                "expanded": [
+                  "App"
+                ],
+                "width": 2.50
+              },
+              "activeProject": "App/App.pproj",
+              "last": null
+            }
+
+            """;
+        const string canonicalPath = @"C:\p\Canonical.pgroup";
+        var fs = new InMemoryFileSystem().Add(GroupPath, Lf(text)).Add(canonicalPath, Lf(CanonicalGroup));
+
+        var load = ProjectSerializer.LoadGroup(GroupPath, fs);
+
+        Assert.Empty(load.Diagnostics);
+        var g = load.Value!;
+        Assert.Equal(Lf(text), ProjectSerializer.Save(g));                               // byte-identical, unknown keys at their positions
+        Assert.Equal(Lf(CanonicalGroup), ProjectSerializer.Save(ProjectSerializer.LoadGroup(canonicalPath, fs).Value!));
+
+        // a changed model: the known keys change, the unknown ones stay where they were; '\' is written as '/'
+        var changed = g with { Projects = [.. g.Projects, @"Tools\Tool.pproj"], ActiveProject = @"Lib\Lib.pproj" };
+        var expected = Lf(text)
+            .Replace("    \"Lib/Lib.pproj\"\n", "    \"Lib/Lib.pproj\",\n    \"Tools/Tool.pproj\"\n", StringComparison.Ordinal)
+            .Replace("\"activeProject\": \"App/App.pproj\"", "\"activeProject\": \"Lib/Lib.pproj\"", StringComparison.Ordinal);
+        var saved = ProjectSerializer.Save(changed);
+        Assert.Equal(expected, saved);
+        fs.Add(GroupPath, saved);
+        Assert.Equal(["App/App.pproj", "Lib/Lib.pproj", "Tools/Tool.pproj"], ProjectSerializer.LoadGroup(GroupPath, fs).Value!.Projects);
+    }
+
     [Theory]
     [InlineData("""{ "formatVersion": 3, "projects": [] }""", "E9001")]
     [InlineData("""{ "formatVersion": 1 }""", "E9002")]

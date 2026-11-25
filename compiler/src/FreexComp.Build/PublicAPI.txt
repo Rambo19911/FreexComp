@@ -113,6 +113,7 @@ sealed record FreexComp.Build.BuildRequest : System.IEquatable<FreexComp.Build.B
   public FreexComp.Build.ITrustStore TrustStore { get; init; }
   public System.Boolean Equals(FreexComp.Build.BuildRequest other)
   public System.Boolean RedirectRunOutput { get; init; }
+  public System.Boolean StopOnFirstFailure { get; init; }
   public System.Boolean Verbose { get; init; }
   public System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.SourceText> OpenFiles { get; init; }
   public System.Collections.Immutable.ImmutableArray<System.String> ExtraSearchPaths { get; init; }
@@ -332,6 +333,8 @@ static class FreexComp.Build.ProjectConfigurations
   public static FreexComp.Build.Project Rename(FreexComp.Build.Project project, System.String oldName, System.String newName)
   public static System.Collections.Immutable.ImmutableArray<System.String> ChildrenOf(FreexComp.Build.Project project, System.String name)
   public static System.Collections.Immutable.ImmutableArray<System.String> DescendantsOf(FreexComp.Build.Project project, System.String name)
+static class FreexComp.Build.ProjectDependencies
+  public static System.Nullable<System.Collections.Immutable.ImmutableArray<System.String>> FindCycle(FreexComp.Compiler.IFileSystem fs, System.String projectPath, System.Collections.Generic.IEnumerable<System.String> dependencies)
 sealed record FreexComp.Build.ProjectEvents : System.IEquatable<FreexComp.Build.ProjectEvents>
   public FreexComp.Build.PostBuildWhen PostBuildWhen { get; init; }
   public FreexComp.Build.ProjectEvents <Clone>$()

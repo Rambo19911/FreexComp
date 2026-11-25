@@ -114,7 +114,7 @@ public sealed class OutputLockedTests
     }
 
     /// <summary>Deleting <paramref name="lockedPath"/> fails as it does for a running exe.</summary>
-    private sealed class LockedFileSystem(IFileSystem inner, string lockedPath) : IFileSystem
+    internal sealed class LockedFileSystem(IFileSystem inner, string lockedPath) : IFileSystem
     {
         public bool FileExists(string path) => inner.FileExists(path);
 

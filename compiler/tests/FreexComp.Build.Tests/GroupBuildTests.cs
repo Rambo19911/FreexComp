@@ -4,7 +4,7 @@ namespace FreexComp.Build.Tests;
 
 /// <summary>C-146: project groups and dependencies (build-engine.md CMP-821, 822; CMP-807 for groups; CMP-833 Run of a group).</summary>
 [Trait("Phase", "3")]
-public sealed class GroupBuildTests
+public sealed partial class GroupBuildTests
 {
     private const string GroupPath = @"C:\g\All.pgroup";
 
