@@ -166,4 +166,61 @@ public sealed class ResourceToolFactsTests
             TestDirectories.Delete(dir);
         }
     }
+
+    /// <summary>
+    /// C-335: the preprocessor of the toolchain adds the directories of the <c>CPATH</c> and <c>C_INCLUDE_PATH</c> environment
+    /// variables to its search, even with <c>-nostdinc</c> (shown with the command line of CMP-1303). The compile step removes
+    /// both variables from the preprocessor's environment, so a header that is reachable only through one of them is not
+    /// found and the environment cannot change a build. The variable is set for the child process only.
+    /// </summary>
+    [Theory]
+    [InlineData("CPATH")]
+    [InlineData("C_INCLUDE_PATH")]
+    [Trait("Req", "CMP-1303")]
+    public async Task IncludePathVariable_IsSearchedByThePreprocessor_NotByTheCompileStep(string variable)
+    {
+        Assert.True(File.Exists(Clang.Path), $"Pinned toolchain missing: {Clang.Path} (run scripts/bootstrap.ps1).");
+        var paths = new ToolchainPaths(Path.GetDirectoryName(Clang.Path)!);
+        Assert.True(File.Exists(paths.ResourceTool), $"Pinned toolchain missing: {paths.ResourceTool} (run scripts/bootstrap.ps1).");
+        var dir = PathUtil.Normalize(Path.Combine(Path.GetTempPath(), "FreexComp.Tests", Guid.NewGuid().ToString("N")));
+        var ct = TestContext.Current.CancellationToken;
+        try
+        {
+            string scripts = Path.Combine(dir, "scripts"), fromVariable = Path.Combine(dir, "from variable"), obj = Path.Combine(dir, "obj");
+            void Write(string path, string text) => PhysicalFileSystem.Instance.WriteAllBytes(path, Encoding.UTF8.GetBytes(text));
+            var script = Path.Combine(scripts, "facts.rc");
+            Write(script, "#include <only.h>\n1 RCDATA\nBEGIN\n  ONLY\nEND\n");
+            Write(Path.Combine(fromVariable, "only.h"), "#define ONLY 7\n");       // the only copy: reachable only through the variable
+            var request = new ResourceCompileRequest(script, Path.Combine(obj, "facts.res"), obj);
+            ResourceHeaders.Write(PhysicalFileSystem.Instance, obj);
+
+            // real processes; the variable exists in the environment of the started process only
+            var processes = new ProcessRunner { Starting = start => start.Environment[variable] = fromVariable };
+
+            // the fact: the preprocessor, started with the command line of CMP-1303 and its environment as it is, finds the header
+            var lines = new List<string>();
+            void Line(string line)
+            {
+                lock (lines)
+                {
+                    lines.Add(line);
+                }
+            }
+
+            var exit = await processes.RunAsync(paths.Clang, ResourceCompiler.PreprocessArguments(request), obj, Line, Line, ct);
+            Assert.True(exit == 0, string.Join("\n", lines));
+
+            // the compile step: the header is not found
+            var compiler = new ResourceCompiler(new ToolRunner(processes, new ToolRunOptions(Location.ForFile(script))), paths, PhysicalFileSystem.Instance);
+            var result = await compiler.CompileAsync(request, ct);
+
+            Assert.False(result.Success, "the header reachable only through " + variable + " was found");
+            Assert.Contains(result.Diagnostics, d => d.Message.Contains("only.h", StringComparison.Ordinal));
+            Assert.False(File.Exists(request.OutputPath));
+        }
+        finally
+        {
+            TestDirectories.Delete(dir);
+        }
+    }
 }

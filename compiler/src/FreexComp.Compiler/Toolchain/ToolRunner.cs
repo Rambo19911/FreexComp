@@ -30,7 +30,9 @@ internal sealed class ToolRunner(IProcessRunner processRunner, ToolRunOptions op
 {
     public ToolRunOptions Options => options;
 
-    public async Task<ToolResult> RunAsync(string toolPath, IReadOnlyList<string> arguments, string workingDirectory, CancellationToken ct)
+    /// <param name="removedEnvironment">Environment variables the tool must not see (C-335); null → the environment as it is.</param>
+    public async Task<ToolResult> RunAsync(
+        string toolPath, IReadOnlyList<string> arguments, string workingDirectory, CancellationToken ct, IReadOnlyList<string>? removedEnvironment = null)
     {
         options.CommandLineSink?.Invoke(RenderCommandLine(toolPath, arguments));
         var output = new List<string>();
@@ -50,7 +52,9 @@ internal sealed class ToolRunner(IProcessRunner processRunner, ToolRunOptions op
         int exitCode;
         try
         {
-            exitCode = await processRunner.RunAsync(toolPath, arguments, workingDirectory, OnLine, OnLine, timeout.Token).ConfigureAwait(false);
+            exitCode = await (removedEnvironment is null
+                ? processRunner.RunAsync(toolPath, arguments, workingDirectory, OnLine, OnLine, timeout.Token)
+                : processRunner.RunAsync(toolPath, arguments, workingDirectory, removedEnvironment, OnLine, OnLine, timeout.Token)).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {

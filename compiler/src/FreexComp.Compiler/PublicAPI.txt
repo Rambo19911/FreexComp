@@ -1890,8 +1890,10 @@ readonly record struct FreexComp.Compiler.Text.TextSpan : System.IEquatable<Free
   public static System.Boolean op_Inequality(FreexComp.Compiler.Text.TextSpan left, FreexComp.Compiler.Text.TextSpan right)
 interface FreexComp.Compiler.Toolchain.IProcessRunner
   public System.Threading.Tasks.Task<System.Int32> RunAsync(System.String fileName, System.Collections.Generic.IReadOnlyList<System.String> arguments, System.String workingDirectory, System.Action<System.String> onStdOut, System.Action<System.String> onStdErr, System.Threading.CancellationToken ct)
+  public default System.Threading.Tasks.Task<System.Int32> RunAsync(System.String fileName, System.Collections.Generic.IReadOnlyList<System.String> arguments, System.String workingDirectory, System.Collections.Generic.IReadOnlyList<System.String> removedEnvironment, System.Action<System.String> onStdOut, System.Action<System.String> onStdErr, System.Threading.CancellationToken ct)
 sealed class FreexComp.Compiler.Toolchain.ProcessRunner : FreexComp.Compiler.Toolchain.IProcessRunner
   public System.Threading.Tasks.Task<System.Int32> RunAsync(System.String fileName, System.Collections.Generic.IReadOnlyList<System.String> arguments, System.String workingDirectory, System.Action<System.String> onStdOut, System.Action<System.String> onStdErr, System.Threading.CancellationToken ct)
+  public System.Threading.Tasks.Task<System.Int32> RunAsync(System.String fileName, System.Collections.Generic.IReadOnlyList<System.String> arguments, System.String workingDirectory, System.Collections.Generic.IReadOnlyList<System.String> removedEnvironment, System.Action<System.String> onStdOut, System.Action<System.String> onStdErr, System.Threading.CancellationToken ct)
   public ctor()
   public static FreexComp.Compiler.Toolchain.ProcessRunner Instance { get; }
 sealed class FreexComp.Compiler.Types.ArrayTypeSymbol : FreexComp.Compiler.Types.TypeSymbol

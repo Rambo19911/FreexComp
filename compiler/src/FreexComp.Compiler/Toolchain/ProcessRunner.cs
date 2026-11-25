@@ -16,6 +16,21 @@ public interface IProcessRunner
         Action<string> onStdOut,
         Action<string> onStdErr,
         CancellationToken ct);
+
+    /// <summary>
+    /// The same with the environment variables named by <paramref name="removedEnvironment"/> removed from the environment of
+    /// the started process (C-335: a tool must not read the machine's settings). A runner that starts no real process has no
+    /// environment and need not implement this: the default ignores the names.
+    /// </summary>
+    Task<int> RunAsync(
+        string fileName,
+        IReadOnlyList<string> arguments,
+        string workingDirectory,
+        IReadOnlyList<string> removedEnvironment,
+        Action<string> onStdOut,
+        Action<string> onStdErr,
+        CancellationToken ct) =>
+        RunAsync(fileName, arguments, workingDirectory, onStdOut, onStdErr, ct);
 }
 
 /// <summary>
@@ -32,10 +47,23 @@ public sealed class ProcessRunner : IProcessRunner
     /// <summary>Test hook: receives the id of each started process.</summary>
     internal Action<int>? ProcessStarted { get; set; }
 
+    /// <summary>Test hook: sees the start information of each process before it starts (a test sets variables of the child only).</summary>
+    internal Action<ProcessStartInfo>? Starting { get; set; }
+
+    public Task<int> RunAsync(
+        string fileName,
+        IReadOnlyList<string> arguments,
+        string workingDirectory,
+        Action<string> onStdOut,
+        Action<string> onStdErr,
+        CancellationToken ct) =>
+        RunAsync(fileName, arguments, workingDirectory, [], onStdOut, onStdErr, ct);
+
     public async Task<int> RunAsync(
         string fileName,
         IReadOnlyList<string> arguments,
         string workingDirectory,
+        IReadOnlyList<string> removedEnvironment,
         Action<string> onStdOut,
         Action<string> onStdErr,
         CancellationToken ct)
@@ -54,6 +82,12 @@ public sealed class ProcessRunner : IProcessRunner
         foreach (var argument in arguments)
         {
             start.ArgumentList.Add(argument);
+        }
+
+        Starting?.Invoke(start);
+        foreach (var variable in removedEnvironment)
+        {
+            start.Environment.Remove(variable);
         }
 
         using var process = new Process { StartInfo = start };

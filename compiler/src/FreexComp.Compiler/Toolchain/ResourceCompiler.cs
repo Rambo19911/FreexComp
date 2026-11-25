@@ -36,6 +36,13 @@ internal sealed partial class ResourceCompiler(ToolRunner runner, ToolchainPaths
 {
     private static readonly UTF8Encoding Utf8 = new(encoderShouldEmitUTF8Identifier: false);
 
+    /// <summary>
+    /// C-335: the preprocessor adds the directories of these environment variables to its include search (even with
+    /// <c>-nostdinc</c>; ResourceToolFactsTests proves it on the pinned tool), so it runs without them: the environment
+    /// cannot change a build.
+    /// </summary>
+    internal static readonly ImmutableArray<string> PreprocessorRemovedEnvironment = ["CPATH", "C_INCLUDE_PATH"];
+
     /// <summary>CMP-1303: the argument list of the preprocessor run.</summary>
     public static ImmutableArray<string> PreprocessArguments(ResourceCompileRequest request)
     {
@@ -134,7 +141,7 @@ internal sealed partial class ResourceCompiler(ToolRunner runner, ToolchainPaths
         // CMP-1303: step 1
         var preprocessed = PreprocessedPath(request);
         fs.Delete(preprocessed);
-        var step1 = await runner.RunAsync(toolchain.Clang, PreprocessArguments(request), request.ObjectDirectory, ct).ConfigureAwait(false);
+        var step1 = await runner.RunAsync(toolchain.Clang, PreprocessArguments(request), request.ObjectDirectory, ct, PreprocessorRemovedEnvironment).ConfigureAwait(false);
         if (step1.Failure is { Code: "E4003" } timeout)
         {
             return Failed(timeout);
