@@ -10,6 +10,9 @@
   <ItemGroup>
     <!-- Child-process pipes read on dedicated threads (L-022). -->
     <Compile Include="..\..\Shared\ChildPipe.cs" Link="Shared\ChildPipe.cs" />
+    <!-- The network probe and the licensing terms of the policy checks (L-012). -->
+    <Compile Include="..\..\Shared\NetworkProbe.cs" Link="Shared\NetworkProbe.cs" />
+    <Compile Include="..\..\policy\FreexComp.Policy.Tests\LicensingTerms.cs" Link="Shared\LicensingTerms.cs" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Avalonia.Headless.XUnit" />

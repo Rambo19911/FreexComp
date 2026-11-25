@@ -7,6 +7,7 @@
     <Compile Include="..\..\..\compiler\tests\Shared\PeManifest.cs" Link="Shared\PeManifest.cs" />
     <!-- Child-process pipes read on dedicated threads (L-022). -->
     <Compile Include="..\..\Shared\ChildPipe.cs" Link="Shared\ChildPipe.cs" />
+    <Compile Include="..\..\Shared\NetworkProbe.cs" Link="Shared\NetworkProbe.cs" />
   </ItemGroup>
   <ItemGroup>
     <!-- Repository-wide policy checks (licence files, notices). The shared helpers come from the IDE test support library. -->
