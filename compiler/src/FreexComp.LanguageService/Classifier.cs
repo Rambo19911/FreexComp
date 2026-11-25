@@ -134,7 +134,7 @@ public static class Classifier
     }
 
     /// <summary>
-    /// The semantic overlay (CMP-710 "semantic" rows, CMP-711): one span per identifier token in <paramref name="range"/> that names a
+    /// The semantic overlay (CMP-710 "semantic" rows, CMP-711): one span per identifier (or label number) token in <paramref name="range"/> that names a
     /// symbol, classified by what it binds to; <see cref="ClassificationKind.UnresolvedIdentifier"/> for a name reported as E2003;
     /// an additional <see cref="ClassificationKind.DeprecatedSymbol"/> span for a deprecated symbol. Identifiers used as
     /// directives and names in attribute lists (<see cref="ClassificationKind.Attribute"/>) are handled syntactically.
@@ -158,7 +158,8 @@ public static class Classifier
             }
 
             ct.ThrowIfCancellationRequested();
-            if (token.Kind != SyntaxKind.IdentifierToken || token.IsMissing || token.ContextualKind != token.Kind || SyntaxFacts.IsReservedWord(token.Text))
+            // A name token: an identifier, or the number of a label (C-322); any other number stays a NumberLiteral.
+            if (!SyntaxFacts.IsNameToken(token) || token.IsMissing || token.ContextualKind != token.Kind || SyntaxFacts.IsReservedWord(token.Text))
             {
                 continue;
             }
