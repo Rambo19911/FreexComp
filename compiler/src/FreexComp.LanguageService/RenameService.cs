@@ -310,7 +310,7 @@ public static class RenameService
 
             var objects = root.Descendants().Prepend(root).ToList();
             var sites = member is FieldSymbol
-                ? objects.Skip(1).Where(o => IdentifierComparer.Instance.Equals(o.Name, member.Name)).Select(o => (o.Line, o.Column, o.Name))
+                ? objects.Skip(1).Where(o => !o.IsOverride && IdentifierComparer.Instance.Equals(o.Name, member.Name)).Select(o => (o.Line, o.Column, o.Name))
                 : objects.SelectMany(o => o.Events).Where(e => IdentifierComparer.Instance.Equals(e.Handler, member.Name)).Select(e => (e.Line, e.Column, Name: e.Handler));
             var starts = LineStarts(text);
             foreach (var (line, column, written) in sites)

@@ -244,6 +244,7 @@ static class FreexComp.Compiler.Forms.FormFileScanner
 sealed record FreexComp.Compiler.Forms.FormObject : System.IEquatable<FreexComp.Compiler.Forms.FormObject>
   public FreexComp.Compiler.Forms.FormObject <Clone>$()
   public System.Boolean Equals(FreexComp.Compiler.Forms.FormObject other)
+  public System.Boolean IsOverride { get; init; }
   public System.Collections.Generic.IEnumerable<FreexComp.Compiler.Forms.FormObject> Descendants()
   public System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Forms.FormEvent> Events { get; init; }
   public System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Forms.FormObject> Children { get; init; }

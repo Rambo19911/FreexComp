@@ -723,6 +723,30 @@ public sealed class RenameTests
         Assert.Equal("The form file 'UMain.form' cannot be read, so its references cannot be updated.", result.Error);
     }
 
+    /// <summary>
+    /// LANG-952 / LANG-953 (C-342): the handlers of a frame instance and of its override blocks are methods of the root, so a method
+    /// rename edits them; the name of an override block is a component of the frame, so a field rename of the root leaves it alone.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "CMP-753")]
+    [Trait("Req", "LANG-953")]
+    public void FormFrameInstance_MethodRenameEditsItsHandlers_FieldRenameLeavesOverrideBlocks()
+    {
+        const string form = "object Form1: TForm1\n  object Button1: TButton\n    OnClick = Clicked\n  end\n  inline Button2: TButton\n    OnClick = Clicked\n"
+            + "    inherited Button1: TButton\n      OnClick = Clicked\n    end\n  end\nend\n";
+        (string Name, string Text)[] files = [FormFixture()[0], FormFixture()[1], ("UMain.form", form)];
+
+        var method = Rename(files, "UMain.pas", "Clicked(Sender: TObject);", "ButtonClick");
+        var field = Rename(files, "UMain.pas", "Button1: TButton", "OkButton");
+
+        Assert.Equal(["UMain.form: 3", "UMain.pas: 3"], Counts(method));
+        Assert.Equal(form.Replace("Clicked", "ButtonClick", StringComparison.Ordinal), TextOf(Applied(files, method), "UMain.form"));
+        Assert.Equal(["UMain.form: 1", "UMain.pas: 2"], Counts(field));
+        Assert.Equal(form.Replace("object Button1", "object OkButton", StringComparison.Ordinal), TextOf(Applied(files, field), "UMain.form"));
+        AssertCompiles(Applied(files, method));
+        AssertCompiles(Applied(files, field));
+    }
+
     // ------------------------------------------------------------------------------------------------ LANG-572 (C-307)
 
     private const string InlineScopes = """

@@ -14,10 +14,11 @@ internal sealed record EmbeddedForm(string Name, byte[] Data, string Path);
 /// LANG-670…672 (C-114): the <c>{$FORM file}</c> directives of a bound unit (the file and its includes, source order). Each file is
 /// read relative to the file holding the directive (missing or unreadable → E3100 at the directive), scanned with
 /// <see cref="FormFileScanner"/> (its F0001 is an error) and checked against the unit's declarations: the root class must be
-/// declared in this unit (E3103) and embedded once (E3104 at the later directive); every non-root object needs a published field
-/// of the root class or an ancestor (E3101), of the object's class or an ancestor of it when that class is visible here (E3102);
-/// every event handler a published method (E3101), compatible with the event property when the component class and its
-/// property are visible (E3102). E3101/E3102/E3103 point into the form file.
+/// declared in this unit (E3103) and embedded once (E3104 at the later directive); every non-root object, frame instances
+/// (<c>inline</c>) included, needs a published field of the root class or an ancestor (E3101), of the object's class or an ancestor
+/// of it when that class is visible here (E3102), except the override blocks of an instance (LANG-952); every event handler, those
+/// of instances and override blocks included (LANG-953), a published method of the root class (E3101), compatible with the event
+/// property when the component class and its property are visible (E3102). E3101/E3102/E3103 point into the form file.
 /// </summary>
 internal static class FormEmbedding
 {
@@ -87,7 +88,7 @@ internal static class FormEmbedding
         return new Location(path, default, new LinePositionSpan(position, position));
     }
 
-    /// <summary>LANG-671; the root class, or null after E3103.</summary>
+    /// <summary>LANG-671, LANG-952…954; the root class, or null after E3103.</summary>
     private static ClassTypeSymbol? Check(BindingResult result, string path, FormObject root, List<Diagnostic> diagnostics)
     {
         var @class = DeclarationBinder.ClassesOf(result.Unit).FirstOrDefault(c => IdentifierComparer.Instance.Equals(c.Name, root.ClassName));
@@ -100,6 +101,12 @@ internal static class FormEmbedding
         CheckEvents(result, path, root, @class, root, diagnostics);
         foreach (var item in root.Descendants())
         {
+            if (item.IsOverride)
+            {
+                CheckEvents(result, path, root, @class, item, diagnostics);  // a component of the frame: no field of the root (LANG-952)
+                continue;
+            }
+
             var field = @class.SelfAndAncestors().SelectMany(c => c.Fields)
                 .FirstOrDefault(f => f.Visibility == Visibility.Published && IdentifierComparer.Instance.Equals(f.Name, item.Name));
             if (field is null)

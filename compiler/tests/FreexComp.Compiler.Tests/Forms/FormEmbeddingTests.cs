@@ -89,6 +89,196 @@ public sealed class FormEmbeddingTests
         Assert.Equal(["A.form(3,15): error E3102: Form 'Form1': declaration of 'Wrong' is not compatible with the form (TNotify expected)"], Errors(result));
     }
 
+    // ------------------------------------------------------------------------------------------------ frames (C-342)
+
+    /// <summary>A frame class with two published children and an event; the form class's fields replace <c>FIELDS</c>.</summary>
+    private const string FrameProgram = """
+        program P;
+        type
+          TNotify = procedure(Sender: TObject) of object;
+          TMove = procedure(Sender: TObject; X: Integer) of object;
+          TButton = class
+          private
+            FOnClick: TNotify;
+          published
+            property OnClick: TNotify read FOnClick write FOnClick;
+          end;
+          TLabel = class
+          private
+            FOnMove: TMove;
+          published
+            property OnMove: TMove read FOnMove write FOnMove;
+          end;
+          TAddressFrame = class
+          private
+            FOnResize: TNotify;
+          published
+            Street: TButton;
+            Town: TLabel;
+            property OnResize: TNotify read FOnResize write FOnResize;
+            procedure FrameOnly(Sender: TObject);
+          end;
+          TForm1 = class
+          published
+            FIELDS
+            procedure Clicked(Sender: TObject);
+            procedure Moved(Sender: TObject; X: Integer);
+          end;
+
+        procedure TAddressFrame.FrameOnly(Sender: TObject); begin end;
+        procedure TForm1.Clicked(Sender: TObject); begin end;
+        procedure TForm1.Moved(Sender: TObject; X: Integer); begin end;
+
+        {$FORM A.form}
+        begin end.
+
+        """;
+
+    private static EmitResult EmitFrame(string fields, string form) =>
+        Emit(FrameProgram.Replace("FIELDS", fields, StringComparison.Ordinal), ("A.form", form.ReplaceLineEndings("\n"))).Result;
+
+    /// <summary>
+    /// Card acceptance 4, LANG-952: an <c>inline</c> object is a component of the root like any <c>object</c>: it needs a published
+    /// field of its frame class or an ancestor of it; missing → E3101 at the instance's name, another type → E3102.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "LANG-952")]
+    public void Inline_MissingFrameField_E3101()
+    {
+        const string form = """
+            object Form1: TForm1
+              inline BillingAddress: TAddressFrame
+                Left = 8
+              end
+            end
+
+            """;
+
+        Assert.Empty(Errors(EmitFrame("BillingAddress: TAddressFrame;", form)));
+        Assert.Equal(["A.form(2,10): error E3101: Form 'Form1': field 'BillingAddress: TAddressFrame' is not declared in class 'TForm1'"],
+            Errors(EmitFrame("Other: TAddressFrame;", form)));
+        Assert.Equal(["A.form(2,10): error E3102: Form 'Form1': declaration of 'BillingAddress' is not compatible with the form (TAddressFrame expected)"],
+            Errors(EmitFrame("BillingAddress: TButton;", form)));
+    }
+
+    /// <summary>
+    /// LANG-952: the <c>inherited</c> override blocks inside an instance (nested ones too) name components of the frame, so the root
+    /// class needs no field for them, not even when it has a field of that name and another type.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "LANG-952")]
+    public void Inline_OverrideBlocks_NeedNoField()
+    {
+        const string form = """
+            object Form1: TForm1
+              inline BillingAddress: TAddressFrame
+                inherited Street: TButton
+                  Caption = 'Billing street'
+                end
+                inherited Town: TLabel
+                  inherited Inner: TButton
+                    Left = 4
+                  end
+                end
+              end
+              inline ShippingAddress: TAddressFrame
+                inherited Town: TLabel
+                  Top = 2
+                end
+              end
+            end
+
+            """;
+
+        var result = EmitFrame("BillingAddress, ShippingAddress: TAddressFrame; Town: TButton;", form);
+
+        Assert.Empty(Errors(result));
+        Assert.True(result.Success);
+    }
+
+    /// <summary>
+    /// LANG-953: the event lines of an instance and of its override blocks are checked against the root class like any event: a
+    /// missing handler is E3101 "method", so is a handler declared only in the frame class (it is no method of the root); a handler
+    /// that does not fit the visible event property of the instance or of the override block's class is E3102.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "LANG-953")]
+    public void Inline_EventsAreCheckedAgainstTheRoot()
+    {
+        const string form = """
+            object Form1: TForm1
+              inline BillingAddress: TAddressFrame
+                OnResize = Clicked
+                inherited Street: TButton
+                  OnClick = Clicked
+                end
+                inherited Town: TLabel
+                  OnMove = Moved
+                  inherited Inner: TButton
+                    OnClick = Clicked
+                  end
+                end
+              end
+            end
+
+            """;
+        const string fields = "BillingAddress: TAddressFrame;";
+
+        Assert.Empty(Errors(EmitFrame(fields, form)));
+        Assert.Equal(
+            [
+                "A.form(3,16): error E3101: Form 'Form1': method 'Missing' is not declared in class 'TForm1'",
+                "A.form(5,17): error E3101: Form 'Form1': method 'Missing' is not declared in class 'TForm1'",
+                "A.form(10,19): error E3101: Form 'Form1': method 'Missing' is not declared in class 'TForm1'",
+            ],
+            Errors(EmitFrame(fields, form.Replace("= Clicked", "= Missing", StringComparison.Ordinal))));
+        Assert.Equal(["A.form(3,16): error E3102: Form 'Form1': declaration of 'Moved' is not compatible with the form (TNotify expected)"],
+            Errors(EmitFrame(fields, form.Replace("OnResize = Clicked", "OnResize = Moved", StringComparison.Ordinal))));
+        Assert.Equal(["A.form(5,17): error E3102: Form 'Form1': declaration of 'Moved' is not compatible with the form (TNotify expected)"],
+            Errors(EmitFrame(fields, form.ReplaceLineEndings("\n").Replace("Street: TButton\n      OnClick = Clicked", "Street: TButton\n      OnClick = Moved", StringComparison.Ordinal))));
+        Assert.Equal(["A.form(8,16): error E3102: Form 'Form1': declaration of 'Clicked' is not compatible with the form (TMove expected)"],
+            Errors(EmitFrame(fields, form.Replace("OnMove = Moved", "OnMove = Clicked", StringComparison.Ordinal))));
+        Assert.Equal(["A.form(3,16): error E3101: Form 'Form1': method 'FrameOnly' is not declared in class 'TForm1'"],
+            Errors(EmitFrame(fields, form.Replace("OnResize = Clicked", "OnResize = FrameOnly", StringComparison.Ordinal))));
+    }
+
+    /// <summary>
+    /// LANG-954: an <c>object</c> (or <c>inline</c>) inside an instance or inside one of its override blocks adds a component to the
+    /// instance; the reader reports that (F0110), the compiler does not: no field and no handler of it is checked.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "LANG-954")]
+    public void Inline_NestedObject_NoCompilerDiagnostic()
+    {
+        const string form = """
+            object Form1: TForm1
+              inline BillingAddress: TAddressFrame
+                inherited Street: TButton
+                  object Added: TButton
+                    OnClick = Missing
+                  end
+                end
+                object Extra: TButton
+                  OnClick = Missing
+                end
+                inline Again: TAddressFrame
+                  OnResize = Missing
+                end
+              end
+            end
+
+            """;
+
+        var result = EmitFrame("BillingAddress: TAddressFrame;", form);
+
+        Assert.Empty(Errors(result));
+        Assert.True(result.Success);
+    }
+
     /// <summary>
     /// CMP-415 / CMP-350 / ABI-150: the blob is a private byte array, the table an internal constant of { upper-cased name, blob, size },
     /// and <c>$init</c> registers it right after the threadvar descriptor; a unit without an initialization section gets an init entry.

@@ -109,9 +109,14 @@ public sealed class FormFileScannerTests
         Assert.Null(FormFileScanner.Decode([0xC3, 0x28]));
     }
 
-    /// <summary>form-format.md §2.6: the children of a nested <c>inherited</c>/<c>inline</c> object are skipped; an inherited root is read.</summary>
+    /// <summary>
+    /// form-format.md §2.6: an object added to a nested <c>inline</c> object is skipped (LANG-954), the instance's own events are kept
+    /// (LANG-953, C-342: they were skipped before); an inherited root is read.
+    /// </summary>
     [Fact]
     [Trait("Req", "LANG-671")]
+    [Trait("Req", "LANG-953")]
+    [Trait("Req", "LANG-954")]
     public void InheritedAndInlineChildren_AreSkipped()
     {
         var root = Root("""
@@ -129,8 +134,51 @@ public sealed class FormFileScannerTests
 
         Assert.Equal("inherited", root.Keyword);
         Assert.Equal(["Frame1", "Own"], root.Descendants().Select(o => o.Name));
-        Assert.Empty(root.Children[0].Events);
+        Assert.Equal("Hidden", Assert.Single(root.Children[0].Events).Handler);
         Assert.Equal("Shown", Assert.Single(root.Children[1].Events).Handler);
+    }
+
+    /// <summary>
+    /// LANG-952…954 (C-342): the override blocks of an instance, nested ones too, are kept with their events and marked
+    /// <see cref="FormObject.IsOverride"/>; an object added inside one is skipped; an <c>inherited</c> object outside an instance keeps
+    /// only itself; a property after a skipped object of an instance is still a syntax error (form-format.md §1).
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "LANG-952")]
+    [Trait("Req", "LANG-953")]
+    [Trait("Req", "LANG-954")]
+    public void InlineOverrideBlocks_AreKeptAndMarked()
+    {
+        var root = Root("""
+            object F: TF
+              inline Frame1: TFrame1
+                inherited Panel: TPanel
+                  OnResize = PanelResized
+                  inherited Street: TEdit
+                    OnChange = StreetChanged
+                    object Added: TButton
+                      OnClick = Hidden
+                    end
+                  end
+                end
+              end
+              object Box: TBox
+                inherited Old: TButton
+                  OnClick = Hidden
+                end
+              end
+            end
+            """);
+
+        Assert.Equal(["Frame1", "Panel", "Street", "Box", "Old"], root.Descendants().Select(o => o.Name));
+        Assert.Equal([false, true, true, false, false], root.Descendants().Select(o => o.IsOverride));
+        Assert.Equal(["PanelResized", "StreetChanged"], root.Descendants().SelectMany(o => o.Events).Select(e => e.Handler));
+        Assert.Equal((6, 20), (root.Descendants().ElementAt(2).Events[0].Line, root.Descendants().ElementAt(2).Events[0].Column));
+
+        var late = FormFileScanner.Scan(@"C:\p\F.form", "object F: TF\n  inline A: TA\n    object B: TB\n    end\n    X = 1\n  end\nend\n");
+        Assert.Equal(("F0001", 5, 5), (Assert.Single(late.Diagnostics).Code, late.Diagnostics[0].Location.LineSpan.Start.Line + 1,
+            late.Diagnostics[0].Location.LineSpan.Start.Column + 1));
     }
 
     [Theory]

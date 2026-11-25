@@ -9,12 +9,17 @@ public sealed record FormEvent(string Property, string Handler, int Line, int Co
 
 /// <summary>
 /// One object of a <c>.form</c> file (form-format.md §1): keyword (<c>object</c> / <c>inherited</c> / <c>inline</c>), name, class
-/// name, the 1-based position of its name, its event properties and its child objects. The children of a nested
-/// <c>inherited</c>/<c>inline</c> object are skipped (form-format.md §2.6), so they are empty.
+/// name, the 1-based position of its name, its event properties and its child objects. The contents of a nested <c>inherited</c>
+/// object outside a frame instance are skipped (form-format.md §2.6), so they are empty. A nested <c>inline</c> object (a frame
+/// instance, LANG-952…954) keeps its events and, as children, its <c>inherited</c> override blocks (<see cref="IsOverride"/>, nested
+/// ones too, each with its events); an <c>object</c> or <c>inline</c> inside an instance is skipped (the reader reports F0110).
 /// </summary>
 public sealed record FormObject(string Keyword, string Name, string ClassName, int Line, int Column,
     ImmutableArray<FormEvent> Events, ImmutableArray<FormObject> Children)
 {
+    /// <summary>An <c>inherited</c> override block inside a frame instance: its name is a component of the frame, not of the root (LANG-952).</summary>
+    public bool IsOverride { get; init; }
+
     /// <summary>The object's descendants, depth first, in file order.</summary>
     public IEnumerable<FormObject> Descendants() => Children.SelectMany(c => c.Descendants().Prepend(c));
 }
@@ -112,7 +117,7 @@ public static class FormFileScanner
         public FormObject File()
         {
             SkipNewLines();
-            var root = Object(nested: false);
+            var root = Object(Contents.Ordinary, isOverride: false);
             SkipNewLines();
             if (Current.Kind != TokenKind.End)
             {
@@ -164,7 +169,15 @@ public static class FormFileScanner
             SkipNewLines();
         }
 
-        private FormObject Object(bool nested)
+        /// <summary>What of an object's block is kept (form-format.md §2.6, LANG-952…954).</summary>
+        private enum Contents
+        {
+            Ordinary,       // events and every child: an object's children are objects, an inline child an instance, an inherited child skipped
+            Instance,       // a frame instance or one of its override blocks: events and the inherited override blocks
+            Skipped,        // nothing: an inherited object outside an instance, an object added to an instance, and what they contain
+        }
+
+        private FormObject Object(Contents contents, bool isOverride)
         {
             if (!(IsKeyword("object") || IsKeyword("inherited") || IsKeyword("inline")))
             {
@@ -177,28 +190,37 @@ public static class FormFileScanner
             ExpectSymbol(":");
             var type = Expect(TokenKind.Identifier, "class name");
             EndOfLine();
-            var skip = nested && keyword is "inherited" or "inline";
             var events = ImmutableArray.CreateBuilder<FormEvent>();
             var children = ImmutableArray.CreateBuilder<FormObject>();
+            var objects = false;
             while (!IsKeyword("end"))
             {
                 if (IsKeyword("object") || IsKeyword("inherited") || IsKeyword("inline"))
                 {
-                    var child = Object(nested: true);
-                    if (!skip)
+                    var (inner, kept) = (contents, Current.Text.ToLowerInvariant()) switch
+                    {
+                        (Contents.Ordinary, "object") => (Contents.Ordinary, true),
+                        (Contents.Ordinary, "inline") => (Contents.Instance, true),
+                        (Contents.Ordinary, _) => (Contents.Skipped, true),
+                        (Contents.Instance, "inherited") => (Contents.Instance, true),
+                        _ => (Contents.Skipped, false),
+                    };
+                    var child = Object(inner, isOverride: contents == Contents.Instance);
+                    if (kept)
                     {
                         children.Add(child);
                     }
 
+                    objects = true;
                     continue;
                 }
 
-                if (children.Count > 0 && !skip)
+                if (objects && contents != Contents.Skipped)
                 {
                     throw Unexpected("'end'");                                      // properties come before child objects
                 }
 
-                if (Property() is { } handler && !skip)
+                if (Property() is { } handler && contents != Contents.Skipped)
                 {
                     events.Add(handler);
                 }
@@ -207,7 +229,7 @@ public static class FormFileScanner
             Next();
             EndOfLine();
             var (line, column) = Position(name.Position);
-            return new FormObject(keyword, name.Text, type.Text, line, column, events.ToImmutable(), children.ToImmutable());
+            return new FormObject(keyword, name.Text, type.Text, line, column, events.ToImmutable(), children.ToImmutable()) { IsOverride = isOverride };
         }
 
         private (int Line, int Column) Position(int offset)
