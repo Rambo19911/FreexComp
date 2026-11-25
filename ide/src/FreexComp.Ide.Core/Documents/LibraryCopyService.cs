@@ -209,6 +209,7 @@ public sealed class LibraryCopyService
             copy.ViewState.Caret = document.ViewState.Caret;
             copy.ViewState.TopLine = document.ViewState.TopLine;
             copy.ViewState.VerticalOffset = document.ViewState.VerticalOffset;
+            copy.RevealCaret(); // I-273: whatever the view has done with the position by now, the caret line is shown
         }
 
         Report(Format(Strings.Msg_File_LibraryCopyCreated, name));

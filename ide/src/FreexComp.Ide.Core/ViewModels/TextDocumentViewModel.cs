@@ -155,6 +155,9 @@ public partial class TextDocumentViewModel : DocumentViewModel, ICommandTarget
     /// </summary>
     internal void RevealCaret(bool third = false)
     {
+        // I-273: a view that cannot scroll yet (it has just been given the document, or none shows it) finds the request
+        // here when it can; a stronger request (one third) is not replaced by a weaker one.
+        _pendingReveal = third || _pendingReveal == true;
         if (third)
             RevealCaretAtThirdRequested?.Invoke(this, EventArgs.Empty);
         else
@@ -163,6 +166,20 @@ public partial class TextDocumentViewModel : DocumentViewModel, ICommandTarget
 
     /// <summary>The view should scroll the caret line to one third of the viewport (UI-DLG-120).</summary>
     public event EventHandler? RevealCaretAtThirdRequested;
+
+    private bool? _pendingReveal;
+
+    /// <summary>
+    /// The request to show the caret that no view has carried out yet, and forgets it: true = the caret line at one third
+    /// of the viewport, false = scrolled just into view, null = none. A view calls this when it scrolls for a request, and
+    /// when it has measured a document it was given (instead of restoring the stored scroll position).
+    /// </summary>
+    public bool? TakePendingReveal()
+    {
+        var pending = _pendingReveal;
+        _pendingReveal = null;
+        return pending;
+    }
 
     /// <summary>
     /// IDE-ED-100 / IDE-ED-072: the caret jumped away from the given position far enough for the navigation history (a

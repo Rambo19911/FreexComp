@@ -364,6 +364,18 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
             if (_editor.GetVisualDescendants().OfType<ScrollViewer>().FirstOrDefault() is { } scroller)
                 scroller.Offset = new Vector(state.HorizontalOffset, y);
             _scrollPending = false;
+            // I-273: the document was opened or activated at a position (navigation, a message, a search result, a
+            // debugger location) while the editor could not scroll yet — the request is carried out now, on top of the
+            // restored position.
+            if (document.TakePendingReveal() is { } third)
+            {
+                _editor.UpdateLayout(); // the extent of the new document, which the scroll range is clamped to
+                if (third)
+                    RevealCaretAtThird();
+                else
+                    ScrollCaretIntoView();
+            }
+
             MirrorScroll();
             TakeFocusFromDocumentArea();
         }, DispatcherPriority.Loaded);
@@ -1133,10 +1145,24 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
     /// Scrolls the template's <see cref="ScrollViewer"/> vertically just enough to show the caret line
     /// (AvaloniaEdit 12's own scrolling does not move it).
     /// </summary>
-    private void OnRevealCaretRequested(object? sender, EventArgs e) => ScrollCaretIntoView();
+    private void OnRevealCaretRequested(object? sender, EventArgs e)
+    {
+        if (_scrollPending)
+            return; // kept by the document until the editor has measured it (BindDocument)
+        _document?.TakePendingReveal();
+        ScrollCaretIntoView();
+    }
 
     /// <summary>UI-DLG-120: the caret line at one third of the viewport (as far as the document allows).</summary>
     private void OnRevealCaretAtThirdRequested(object? sender, EventArgs e)
+    {
+        if (_scrollPending)
+            return; // kept by the document until the editor has measured it (BindDocument)
+        _document?.TakePendingReveal();
+        RevealCaretAtThird();
+    }
+
+    private void RevealCaretAtThird()
     {
         if (_scrollPending || _editor.GetVisualDescendants().OfType<ScrollViewer>().FirstOrDefault() is not { } scroller)
             return;
