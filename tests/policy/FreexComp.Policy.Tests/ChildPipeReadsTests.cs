@@ -36,6 +36,18 @@ public sealed partial class ChildPipeReadsTests
         ["debugger/tests/FreexComp.Debugger.Tests/StreamPumpTests.cs"] = "G-086", // reads the fake adapter's stream; G-086 decides
     };
 
+    /// <summary>The area guard tests: they hold the forbidden calls as samples.</summary>
+    private static readonly HashSet<string> Guards = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "tests/policy/FreexComp.Policy.Tests/ChildPipeReadsTests.cs",
+        "ide/tests/FreexComp.Ide.Tests/TestSupportTests.cs",
+        "compiler/tests/FreexComp.Compiler.Tests/Toolchain/ProcessRunnerTests.cs",
+        "debugger/tests/FreexComp.Debugger.Tests/ChildPipeReadScanTests.cs",
+        "data/tests/FreexComp.Data.Tests/ChildPipeTests.cs",
+        "rtl/tests/Harness/ChildPipeTests.cs",
+        "ui-framework/tests/Harness/PipeCaptureTests.cs",
+    };
+
     [Theory]
     [InlineData("var o = p.StandardOutput.ReadToEndAsync(ct);")]
     [InlineData("var e = process.StandardError.ReadLineAsync();")]
@@ -62,7 +74,7 @@ public sealed partial class ChildPipeReadsTests
             .Order(StringComparer.Ordinal)
             .ToList();
 
-        var unexpected = found.Where(p => !Open.ContainsKey(p) && p != "tests/policy/FreexComp.Policy.Tests/ChildPipeReadsTests.cs").ToList();
+        var unexpected = found.Where(p => !Open.ContainsKey(p) && !Guards.Contains(p)).ToList();
         Assert.True(unexpected.Count == 0, "Asynchronous child-pipe reads (use a dedicated thread): " + string.Join(", ", unexpected));
 
         var fixedSites = Open.Keys.Where(p => !found.Contains(p, StringComparer.OrdinalIgnoreCase)).Order(StringComparer.Ordinal).ToList();
