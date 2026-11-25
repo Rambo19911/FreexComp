@@ -109,6 +109,7 @@ RAD Studio is a trademark of its respective owner and is named here only to desc
 | UI framework | Native Windows controls written in Object Pascal on top of Win32 |
 | Debugger | Breakpoints, stepping, locals and call stack |
 | Data access | SQLite with data-aware controls |
+| Help | Offline help pages shipped next to the IDE, opened from Help > Contents (F1) |
 
 <!-- Extend this table as backlog features land. -->
 
@@ -231,6 +232,9 @@ More topics:
     - [x] Runtime library source included, Step Into library code
     - [x] License texts and third-party notices shipped beside the tools
     - [x] No-network guarantee checked by tests
+    - [x] Offline help pages in the IDE
+    - [x] Hardware faults (access violation, division by zero) caught by `try` … `except`
+    - [x] `deprecated`, `platform` and `experimental` warnings for every kind of symbol
     - [ ] Windows x86 target
 - [ ] First public release with installer
 
