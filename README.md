@@ -238,6 +238,8 @@ More topics:
     - [x] `deprecated`, `platform` and `experimental` warnings for every kind of symbol
     - [x] Build events with a trust question before project commands run
     - [x] Rich text editor control
+    - [x] Resource scripts and compiled resource files (`.rc`, `.res`, `{$R}`), resource compiler tool `prc`
+    - [x] PNG, JPEG and GIF images with transparency
     - [x] Copy a library unit into a project to change it for that project only
     - [x] Licence checks: runtime sources, everything that reaches a built program, all dependencies
     - [ ] Windows x86 target
