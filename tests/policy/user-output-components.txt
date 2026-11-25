@@ -1,0 +1,33 @@
+# Everything that is linked into, generated into or deployed beside a program built with FreexComp.
+# Checked by CommercialUseTests; the help page help/your-applications.md shows the own and third-party entries.
+#
+# <kind> | <name> | <licence> | <how it reaches the program>
+#   own          files or generated code of this product; name = a path of the repository, or "compiler output"
+#   third-party  code of another origin inside or beside the program; name as in THIRD-PARTY-NOTICES.md;
+#                a file deployed beside the program is named between back-quotes in the last cell
+#   system       a library of the operating system that the runtime loads or imports; never redistributed
+# Licences allowed for own and third-party entries: Apache-2.0 WITH LLVM-exception, MIT, BSD-2-Clause,
+# BSD-3-Clause, Zlib, ISC, Public domain.
+
+own | rtl/src | Apache-2.0 WITH LLVM-exception | the runtime library; its units are compiled into every program
+own | rtl/winapi/src | Apache-2.0 WITH LLVM-exception | the declarations of the Windows functions and types; compiled into the programs that use them
+own | rtl/winapi/def | Apache-2.0 WITH LLVM-exception | import libraries are generated from these lists of system function names
+own | ui-framework/src | Apache-2.0 WITH LLVM-exception | the user interface library; compiled into programs that show windows
+own | data/src | Apache-2.0 WITH LLVM-exception | the data-access library; compiled into programs that use databases
+own | compiler output | Apache-2.0 WITH LLVM-exception | start-up code, unit initialisation tables, type information and the application manifest that the compiler generates for the program
+
+third-party | LLVM | Apache-2.0 WITH LLVM-exception | machine code is produced by the code generator; no library of it is linked
+third-party | SQLite | Public domain | `sqlite3.dll` is deployed beside programs that use the data-access library
+
+system | advapi32.dll | — | part of Windows; imported by the runtime library
+system | comctl32.dll | — | part of Windows; imported by the runtime library
+system | comdlg32.dll | — | part of Windows; imported by the runtime library
+system | gdi32.dll | — | part of Windows; imported by the runtime library
+system | kernel32.dll | — | part of Windows; imported by the runtime library
+system | msftedit.dll | — | part of Windows; loaded by programs that use the rich text control
+system | ntdll.dll | — | part of Windows; imported by the runtime library
+system | ole32.dll | — | part of Windows; imported by the runtime library
+system | oleaut32.dll | — | part of Windows; imported by the runtime library
+system | shell32.dll | — | part of Windows; imported by the runtime library
+system | shlwapi.dll | — | part of Windows; imported by the runtime library
+system | user32.dll | — | part of Windows; imported by the runtime library
