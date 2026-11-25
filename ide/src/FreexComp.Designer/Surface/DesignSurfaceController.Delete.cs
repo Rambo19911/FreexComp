@@ -42,15 +42,21 @@ public sealed partial class DesignSurfaceController
             return false;
         }
 
+        if (members.FirstOrDefault(m => m.IsInherited) is { } inherited)
+        {
+            ReportFrameChildFixed(inherited); // DSG-SUR-227
+            return false;
+        }
+
         var removed = new HashSet<FormObject>(ReferenceEqualityComparer.Instance);
         var names = new List<string>();
         foreach (var member in members)
         {
             foreach (var obj in Subtree(member))
             {
-                if (removed.Add(obj))
+                if (removed.Add(obj) && !obj.IsInherited)
                 {
-                    names.Add(obj.Name);
+                    names.Add(obj.Name); // DSG-CS-112: inherited objects have no fields
                 }
             }
         }
@@ -88,7 +94,7 @@ public sealed partial class DesignSurfaceController
             changes.AddRange(TabOrderRules.Renumber(parent, members));
         }
 
-        changes.AddRange(members.Select(m => new RemoveObject(m.Name)));
+        changes.AddRange(members.Select(m => new RemoveObject(m.QualifiedName)));
 
         if (select is null)
         {

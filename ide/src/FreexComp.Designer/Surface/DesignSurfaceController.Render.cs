@@ -155,6 +155,10 @@ public sealed partial class DesignSurfaceController
                 }
 
                 DrawStateOverlays(canvas, child, b);
+                if (child is { IsFrameInstance: true, IsPreserved: false })
+                {
+                    canvas.DrawRect(b, Palette.HandleSecondary, 1, LineStyle.Dash); // UI-DSG-134: below the selection outlines
+                }
             }
         }
     }

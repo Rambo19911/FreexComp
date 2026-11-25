@@ -65,7 +65,9 @@ public static class Reconciler
 
         var issues = new List<ReconcileIssue>();
         var addFields = new List<(string Name, string TypeName)>();
-        var components = form.AllObjects().Where(o => o.Parent is not null).ToList();
+        // DSG-CS-112: every component of the file scope has a field — an instance one of its frame class (checked like any
+        // field type, DSG-CS-116); the components of a frame shown in an instance have none (they are the frame's fields).
+        var components = form.AllObjects().Where(o => o.Parent is not null && !o.IsInherited).ToList();
         foreach (var component in components)
         {
             switch (SyntaxEdits.FindMember(info.Class, component.Name))
@@ -84,7 +86,9 @@ public static class Reconciler
 
         var componentNames = components.Select(c => c.Name).ToHashSet(Names);
         var orphans = info.Fields
-            .Where(f => !componentNames.Contains(f.Name) && catalog.Find(FieldEdits.TypeIdentifier(f.Declaration.Type)) is not null)
+            .Where(f => !componentNames.Contains(f.Name)
+                && (catalog.Find(FieldEdits.TypeIdentifier(f.Declaration.Type)) is not null
+                    || form.Frames?.Find(FieldEdits.TypeIdentifier(f.Declaration.Type)) is not null))
             .Select(f => f.Name)
             .ToList();
         issues.AddRange(orphans.Select(name => new ReconcileIssue(ReconcileIssueKind.OrphanField, name)));

@@ -56,7 +56,7 @@ public sealed record FormObjectData(FormObjectKind Kind, string Name, string Typ
     public static FormObjectData Capture(FormObject obj) =>
         new(obj.Kind, obj.Name, obj.TypeName,
             [.. obj.Properties.Select(p => new FormPropertyData(p.Path, p.Value, p.RawText) { RawLines = p.RawLines })],
-            [.. obj.Children.Select(Capture)])
+            [.. obj.Children.Select(Capture), .. obj.PreservedBlocks.Select(Capture)])
         {
             PreservedText = obj.PreservedText,
         };

@@ -238,6 +238,7 @@ public static class CommandCatalog
         new("designer.toggleSnapToGrid", [CommandScope.Designer], 5, [], IsToggle: true),
         new("designer.toggleGuidelines", [CommandScope.Designer], 5, [], IsToggle: true),
         new("designer.createDefaultHandler", [CommandScope.Designer], 5, ["Enter"]),
+        new("designer.revertToInherited", [CommandScope.Designer], 8, []),
         new("designer.addToPalette", [CommandScope.Designer], 8, []),
         new("designer.newChild", [CommandScope.Designer], 5, [], TakesArgument: true),
         new("designer.deletePage", [CommandScope.Designer], 5, []),

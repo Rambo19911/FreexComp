@@ -31,7 +31,7 @@ public static class LayoutCommit
             {
                 if (PropertyAccess.GetInt(obj, Paths[i]) != values[i] || !PropertyAccess.IsStored(obj, Paths[i]))
                 {
-                    changes.Add(new SetProperty(obj.Name, Paths[i], new IntegerValue(values[i], false)));
+                    changes.Add(new SetProperty(obj.QualifiedName, Paths[i], new IntegerValue(values[i], false)));
                 }
             }
         }

@@ -257,7 +257,7 @@ public sealed class PropertyGridModel(ComponentCatalog catalog)
     private bool IsReadOnly(Node node) => node.Source switch
     {
         PropertyRowSource.Metadata => node.Info!.ReadOnly || (ItemMode && node.Info.Kind == PropertyKind.Collection),
-        PropertyRowSource.Name => IsMulti,
+        PropertyRowSource.Name => IsMulti || _selection.Any(o => o.IsInherited), // DSG-OI-119
         _ => true,
     };
 
@@ -297,7 +297,7 @@ public sealed class PropertyGridModel(ComponentCatalog catalog)
         if (node.SetMember is { } member)
         {
             var parent = ParentPath(node.Path);
-            return Contains(Effective(obj, parent, info), member) != Contains(PropertyAccess.DefaultValue(catalog, info), member);
+            return Contains(Effective(obj, parent, info), member) != Contains(Reference(obj, parent, info), member);
         }
 
         if (info.Kind == PropertyKind.Object)
@@ -306,9 +306,21 @@ public sealed class PropertyGridModel(ComponentCatalog catalog)
             return obj.Properties.Any(p => p.Path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
         }
 
+        // DSG-OI-117: an inherited object's value is bold iff it is overridden, its geometry included.
+        if (obj.IsInherited)
+        {
+            return obj.IsOverridden(node.Path);
+        }
+
         if (!ItemMode && AlwaysWrittenReference(obj, node.Path) is { } reference)
         {
             return Effective(obj, node.Path, info) is not IntegerValue { Value: var v } || v != reference;
+        }
+
+        // DSG-OI-117: an instance's own rows compare with the definition root's value.
+        if (obj.InheritedFrom is not null && obj.FindProperty(node.Path) is { } stored && obj.InheritedValue(node.Path) is { } inherited)
+        {
+            return !PropertyAccess.SameValue(catalog, info, stored.Value, inherited);
         }
 
         return PropertyAccess.IsStored(obj, node.Path);
@@ -351,8 +363,12 @@ public sealed class PropertyGridModel(ComponentCatalog catalog)
             }
         }
 
-        return obj.FindProperty(path)?.Value ?? PropertyAccess.DefaultValue(catalog, info);
+        return obj.FindProperty(path)?.Value ?? Reference(obj, path, info);
     }
+
+    /// <summary>The value a row shows when <paramref name="obj"/> stores none: the inherited one (DSG-FD-109), else the default.</summary>
+    private FormValue Reference(FormObject obj, string path, PropertyInfo info) =>
+        obj.InheritedValue(path) ?? PropertyAccess.DefaultValue(catalog, info);
 
     private static bool Contains(FormValue set, string member) =>
         set is SetValue s && s.Elements.Contains(member, StringComparer.OrdinalIgnoreCase);

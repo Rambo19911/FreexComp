@@ -67,7 +67,7 @@ public sealed partial class DesignSurfaceController
             return;
         }
 
-        var preview = _layout.ComputeWithResizes(Document, changed.Select(t => (t.Object.Name, t.Bounds)).ToList());
+        var preview = _layout.ComputeWithResizes(Document, changed.Select(t => (t.Object.QualifiedName, t.Bounds)).ToList());
         var selection = Selection.ToSnapshot();
         var (redo, undo) = ApplyResize(null, preview);
         var title = commandId is Commands.SameWidth or Commands.SameHeight or Commands.SameSize or Commands.SizeToGrid

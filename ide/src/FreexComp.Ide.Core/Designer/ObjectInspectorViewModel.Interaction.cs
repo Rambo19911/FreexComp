@@ -166,9 +166,10 @@ public sealed partial class ObjectInspectorViewModel
         var commands = _commands ?? throw new InvalidOperationException("Commands are not attached.");
         MenuItemModel Command(string id, MenuToggleKind toggle = MenuToggleKind.None) =>
             MenuItemModel.ForCommand(commands.Get(id).Title, commands.Get(id), null, toggle);
+        var reset = commands.Get("objectInspector.resetToDefault");
         return
         [
-            Command("objectInspector.resetToDefault"),
+            MenuItemModel.ForCommand(Grid.IsRevertToInherited ? Strings.Inspector_RevertToInherited : reset.Title, reset, null, MenuToggleKind.None),
             MenuItemModel.ForCommand(Strings.Inspector_CopyValue, commands.Get("edit.copy"), null, MenuToggleKind.None),
             Command("objectInspector.copyPropertyName"),
             MenuItemModel.Separator(),

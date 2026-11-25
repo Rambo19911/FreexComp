@@ -588,6 +588,12 @@ The unit was opened as code only.</value>
   <data name="Msg_Designer_ReadOnlyItem" xml:space="preserve">
     <value>{0} is read-only because its class or one of its properties is unknown</value>
   </data>
+  <data name="Msg_Designer_FrameChildFixed" xml:space="preserve">
+    <value>Components of a frame instance cannot be deleted, renamed, moved to another parent or reordered. Change them in the frame {0}.</value>
+  </data>
+  <data name="Msg_Designer_FrameCycle" xml:space="preserve">
+    <value>{0} cannot be placed here: the frame would contain itself.</value>
+  </data>
   <data name="Msg_Designer_HandlerNameInvalid" xml:space="preserve">
     <value>A handler name is a valid identifier.</value>
   </data>
@@ -1788,6 +1794,9 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   <data name="Cmd_designer_createDefaultHandler" xml:space="preserve">
     <value>Create Default Event Handler</value>
   </data>
+  <data name="Cmd_designer_revertToInherited" xml:space="preserve">
+    <value>Revert to Inherited</value>
+  </data>
   <data name="Cmd_designer_addToPalette" xml:space="preserve">
     <value>Add Selection as Template…</value>
   </data>
@@ -2361,6 +2370,9 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   </data>
   <data name="Menu_designer_createDefaultHandler" xml:space="preserve">
     <value>Create Default Event &amp;Handler</value>
+  </data>
+  <data name="Menu_designer_revertToInherited" xml:space="preserve">
+    <value>Revert to &amp;Inherited</value>
   </data>
   <data name="Menu_Designer_Order" xml:space="preserve">
     <value>&amp;Order</value>
@@ -4980,6 +4992,14 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   <data name="Inspector_CopyValue" xml:space="preserve">
     <value>Copy Value</value>
     <comment>object-inspector.md DSG-OI-039 row context menu (edit.copy)</comment>
+  </data>
+  <data name="Inspector_RevertToInherited" xml:space="preserve">
+    <value>Revert to Inherited</value>
+    <comment>frames-designer.md DSG-OI-118: the reset item with only inherited objects or instances selected</comment>
+  </data>
+  <data name="Designer_InheritedSuffix" xml:space="preserve">
+    <value>, inherited from {0}</value>
+    <comment>phase8-ui-additions.md UI-DSG-136: screen-reader name suffix of an inherited object; 0 = frame class</comment>
   </data>
   <data name="StringsEditor_Title" xml:space="preserve">
     <value>Edit {0} – {1}</value>

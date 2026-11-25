@@ -16,6 +16,14 @@ using FreexComp.Ide.Core.ViewModels;
 
 namespace FreexComp.Ide.Core.Designer;
 
+/// <summary>A request to show <paramref name="method"/> of <paramref name="frame"/>'s class (DSG-OI-120).</summary>
+public sealed class FrameHandlerRequestedEventArgs(FrameDefinition frame, string method) : EventArgs
+{
+    public FrameDefinition Frame { get; } = frame;
+
+    public string Method { get; } = method;
+}
+
 /// <summary>What a save of a form document writes after <see cref="FormDesignerViewModel.PrepareSave"/>.</summary>
 /// <param name="FormText">The <c>.form</c> text to write; null when the form buffer is not modified (DSG-FD-051).</param>
 /// <param name="RemovedHandlers">The number of empty handlers removed (DSG-CS-074 status message).</param>
@@ -57,8 +65,11 @@ public sealed class FormDesignerViewModel
 
     /// <param name="hasUnit">False: a <c>.form</c> opened without its unit (code-sync.md §8 <c>NoUnit</c>, DSG-CS-080) —
     /// the Design view without code sync and without a Code view; <paramref name="unit"/> is then an empty placeholder.</param>
-    public FormDesignerViewModel(TextDocumentViewModel unit, TextDocumentViewModel formText, ComponentCatalog catalog, bool hasUnit = true)
+    /// <param name="frames">The frames instances are resolved with (frames-designer.md §2); null: none.</param>
+    public FormDesignerViewModel(TextDocumentViewModel unit, TextDocumentViewModel formText, ComponentCatalog catalog, bool hasUnit = true,
+        IFrameCatalog? frames = null)
     {
+        Frames = frames;
         _unit = unit ?? throw new ArgumentNullException(nameof(unit));
         _formText = formText ?? throw new ArgumentNullException(nameof(formText));
         Catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
@@ -86,6 +97,18 @@ public sealed class FormDesignerViewModel
     }
 
     public ComponentCatalog Catalog { get; private set; }
+
+    /// <summary>The frames instances of this form are resolved with; null: none.</summary>
+    public IFrameCatalog? Frames { get; }
+
+    /// <summary>
+    /// DSG-OI-120: navigation to a handler a frame assigns (double-click on an inherited event value); the IDE opens that
+    /// frame's unit at the method.
+    /// </summary>
+    public event EventHandler<FrameHandlerRequestedEventArgs>? FrameHandlerRequested;
+
+    internal void RequestFrameHandler(FrameDefinition frame, string method) =>
+        FrameHandlerRequested?.Invoke(this, new FrameHandlerRequestedEventArgs(frame, method));
 
     /// <summary>False in the <c>NoUnit</c> mode (DSG-CS-080).</summary>
     public bool HasUnit { get; }
@@ -506,7 +529,7 @@ public sealed class FormDesignerViewModel
         }
     }
 
-    private string[] SelectedNames() => Surface is { } surface ? [.. surface.Selection.Items.Select(o => o.Name)] : [];
+    private string[] SelectedNames() => Surface is { } surface ? [.. surface.Selection.Items.Select(o => o.QualifiedName)] : [];
 
     /// <summary>
     /// DSG-TP-003: the component metadata is still loading (the form was opened before it finished). The Design view
@@ -892,6 +915,20 @@ public sealed class FormDesignerViewModel
 
     private void OnModelChanged(object? sender, FormChangedEventArgs e)
     {
+        // DSG-FD-111: a re-merge changes no line of this file: the form stays unmodified and in sync with its text.
+        if (e.IsRemerge)
+        {
+            if (_syncedVersion == Model!.Version - 1)
+            {
+                _syncedVersion = Model.Version;
+            }
+
+            if (_parsedVersion == Model.Version - 1)
+            {
+                _parsedVersion = Model.Version;
+            }
+        }
+
         // DSG-CS-046: the class code sync looks for follows the root's type name (a form rename, its undo and redo).
         Unit.FormTypeName = Model!.Root.TypeName;
         ModelChanged?.Invoke(this, EventArgs.Empty);
@@ -936,7 +973,7 @@ public sealed class FormDesignerViewModel
     private FormParseResult Parse(string text)
     {
         var path = _formText.FilePath ?? "Untitled.form";
-        var first = FormParser.Parse(text, path, Catalog);
+        var first = FormParser.Parse(text, path, Catalog, null, Frames);
         if (first.Document is not { } document || Catalog.Find(document.Root.TypeName) is not null)
         {
             return first;
@@ -946,6 +983,6 @@ public sealed class FormDesignerViewModel
             ? FormClassLocator.Locate(_unit.Buffer.Text, document.Root.TypeName, _unit.FilePath ?? FormClassLocator.PlaceholderPath)
                 .FormClass?.AncestorName
             : Catalog.All.FirstOrDefault(c => c.Kind == ComponentKind.Form)?.ClassName;
-        return ancestor is null ? first : FormParser.Parse(text, path, Catalog, ancestor);
+        return ancestor is null ? first : FormParser.Parse(text, path, Catalog, ancestor, Frames);
     }
 }

@@ -123,7 +123,7 @@ public sealed class LayoutEngine
     }
 
     private static LayoutNode FindNode(FormDocument form, Dictionary<FormObject, LayoutNode> nodes, string name, string step) =>
-        form.FindByName(name) is { } obj && nodes.TryGetValue(obj, out var node) ? node
+        form.FindByQualifiedName(name) is { } obj && nodes.TryGetValue(obj, out var node) ? node
         : throw new FormatException($"no placeable component '{name}' in step '{step.Trim()}'");
 
     /// <summary>

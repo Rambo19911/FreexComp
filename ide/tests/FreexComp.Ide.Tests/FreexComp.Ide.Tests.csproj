@@ -22,10 +22,13 @@
     <Compile Include="..\FreexComp.Ide.Core.Tests\Infrastructure\SpecTables.cs" Link="Infrastructure\SpecTables.cs" />
     <!-- The buffer contract runs against both implementations (IDE-ARCH-030). -->
     <Compile Include="..\FreexComp.Ide.Core.Tests\Text\TextBufferContractTests.cs" Link="Text\TextBufferContractTests.cs" />
+    <Compile Include="..\FreexComp.Ide.Core.Tests\Designer\FrameDesign.cs" Link="Designer\FrameDesign.cs" />
   </ItemGroup>
   <ItemGroup>
     <!-- D-078: the designer views load the test component metadata (testing.md §4). -->
     <None Include="..\TestData\metadata\**\*" LinkBase="TestData\metadata" CopyToOutputDirectory="PreserveNewest" />
+    <!-- D-119: the test-only TFrame entry of the frame view tests (frames-designer.md §10). -->
+    <None Include="..\TestData\frame-metadata\**\*" LinkBase="TestData\frame-metadata" CopyToOutputDirectory="PreserveNewest" />
     <!-- I-146: scenario files of the scripted debug adapter (testing.md §5.4). -->
     <None Include="..\TestData\debug-scenarios\**\*" LinkBase="TestData\debug-scenarios" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>

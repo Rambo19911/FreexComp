@@ -47,7 +47,7 @@ internal sealed class LayoutReader
     private void ReadTree(FormObject obj, LayoutNode parent, Dictionary<FormObject, LayoutNode> nodes,
         IReadOnlyDictionary<string, LayoutOverride>? overrides)
     {
-        var node = ReadNode(obj, overrides is not null && overrides.TryGetValue(obj.Name, out var o) ? o : null);
+        var node = ReadNode(obj, overrides is not null && overrides.TryGetValue(obj.QualifiedName, out var o) ? o : null);
         if (node is null)
         {
             return; // non-visual or unplaceable: neither it nor its subtree takes part (DSG-LAY-030)
@@ -72,12 +72,12 @@ internal sealed class LayoutReader
     {
         foreach (var (name, change) in overrides)
         {
-            if (change.ParentName is not { } parentName || form.FindByName(name) is not { } obj || !nodes.TryGetValue(obj, out var node))
+            if (change.ParentName is not { } parentName || form.FindByQualifiedName(name) is not { } obj || !nodes.TryGetValue(obj, out var node))
             {
                 continue;
             }
 
-            if (form.FindByName(parentName) is not { } parentObj || !nodes.TryGetValue(parentObj, out var newParent))
+            if (form.FindByQualifiedName(parentName) is not { } parentObj || !nodes.TryGetValue(parentObj, out var newParent))
             {
                 throw new ArgumentException($"Override of {name}: no placeable parent {parentName}", nameof(overrides));
             }

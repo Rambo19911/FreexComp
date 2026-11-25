@@ -223,8 +223,8 @@ public sealed class PropertyGridView : Border
             {
                 foreach (var row in grid.EventRows)
                 {
-                    AddRow(grid, row.Name, row.Name, 0, row.Value, isBold: row.Value.Length > 0, isReadOnly: grid.IsEventsReadOnly,
-                        isCurrent: string.Equals(row.Name, grid.CurrentEvent, StringComparison.OrdinalIgnoreCase), null);
+                    AddRow(grid, row.Name, row.Name, 0, row.Value, isBold: row.Value.Length > 0 && !row.IsInherited, isReadOnly: grid.IsEventsReadOnly,
+                        isCurrent: string.Equals(row.Name, grid.CurrentEvent, StringComparison.OrdinalIgnoreCase), null, secondaryValue: row.IsInherited);
                 }
             }
             else
@@ -278,7 +278,9 @@ public sealed class PropertyGridView : Border
         _rows.Children.Add(border);
     }
 
-    private void AddRow(PropertyGridViewModel grid, string path, string name, int depth, string display, bool isBold, bool isReadOnly, bool isCurrent, PropertyRow? row)
+    /// <param name="secondaryValue">DSG-OI-120: the value is a handler the frame assigns (<c>text.secondary</c>).</param>
+    private void AddRow(PropertyGridViewModel grid, string path, string name, int depth, string display, bool isBold, bool isReadOnly, bool isCurrent,
+        PropertyRow? row, bool secondaryValue = false)
     {
         var id = _rowPrefix + path;
         var nameCell = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(4 + 16 * depth, 0, 4, 0), VerticalAlignment = VerticalAlignment.Center };
@@ -321,7 +323,11 @@ public sealed class PropertyGridView : Border
             AutomationProperties.SetAutomationId(valueText, id + ".Value");
             valueText.Classes.Add(isBold ? "bodyStrong" : "body");
             valueText.FontWeight = isBold ? FontWeight.SemiBold : FontWeight.Normal;
-            Bind(valueText, TextBlock.ForegroundProperty, isReadOnly ? "FxcTextSecondaryBrush" : "FxcTextPrimaryBrush");
+            Bind(valueText, TextBlock.ForegroundProperty, isReadOnly || secondaryValue ? "FxcTextSecondaryBrush" : "FxcTextPrimaryBrush");
+            if (row is { Source: PropertyRowSource.Name, IsReadOnly: true } && grid.FixedNameTip is { } tip)
+            {
+                ToolTip.SetTip(valueText, tip); // DSG-OI-119
+            }
             var cell = new DockPanel { LastChildFill = true };
             if (row is { Info.Type: var type } && type.Equals("Boolean", StringComparison.OrdinalIgnoreCase) || row is { SetMember: not null })
             {

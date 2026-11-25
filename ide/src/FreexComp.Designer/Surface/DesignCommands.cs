@@ -75,6 +75,9 @@ public static class Commands
 
     public const string EditComponent = "designer.editComponent";
 
+    /// <summary>DSG-SUR-229: removes the overrides of the selected inherited objects and instances.</summary>
+    public const string RevertToInherited = "designer.revertToInherited";
+
     /// <summary>The commands a metadata verb may name (component-metadata.md §7); other verbs are not shown.</summary>
     public static IReadOnlyList<string> Verbs { get; } = [NewChild, DeletePage, NextPage, PreviousPage, EditCollection, EditComponent];
 
@@ -119,6 +122,7 @@ public static class UndoTitles
 
     /// <summary>An Object Inspector <c>Name</c> commit (object-inspector.md §7).</summary>
     public const string Rename = "Undo_Designer_Rename";
+    public const string RevertToInherited = "Undo_Designer_RevertToInherited";
 }
 
 /// <summary>Status message ids the surface shows (states-and-messages.md; design-surface.md §15).</summary>
@@ -141,4 +145,6 @@ public static class StatusIds
 
     /// <summary>DSG-CS-004: a code-sync edit was refused (it would add syntax errors); {0} = the reason.</summary>
     public const string CodeSyncConflict = "Msg.Designer.CodeSyncConflict";
+    public const string FrameChildFixed = "Msg.Designer.FrameChildFixed";
+    public const string FrameCycle = "Msg.Designer.FrameCycle";
 }

@@ -482,10 +482,24 @@ public sealed class PropertyGridViewModel : ObservableObject
         _original = null;
     }
 
-    /// <summary>DSG-OI-038: a stored value of a writable row (not Name, not the always-written geometry) can be removed.</summary>
+    /// <summary>
+    /// DSG-OI-038: a stored value of a writable row (not Name, not the always-written geometry) can be removed; DSG-OI-118:
+    /// an override of an inherited object can be removed, its geometry included.
+    /// </summary>
     public bool CanResetToDefault =>
         CanEdit && CurrentRow is { Source: PropertyRowSource.Metadata, IsReadOnly: false, SetMember: null, Info: { } info } row
-        && (_itemMode || !IsAlwaysWritten(row.Path)) && Selection.Any(o => StoredPaths(o, row.Path, info).Any());
+        && Selection.Any(o => ResetPaths(o, row.Path, info).Any());
+
+    /// <summary>DSG-OI-119: the tooltip of the read-only Name row of an inherited object; null otherwise.</summary>
+    public string? FixedNameTip => Selection.Select(o => o.InheritedFrame).FirstOrDefault(f => f is not null) is { } frame
+        ? DesignerMessages.Format("Msg.Designer.FrameChildFixed", frame.ClassName)
+        : null;
+
+    /// <summary>DSG-OI-118: every selected component is inherited or an instance: the reset reads "Revert to Inherited".</summary>
+    public bool IsRevertToInherited => Selection.Count > 0 && Selection.All(o => o.IsInherited || o.IsFrameInstance);
+
+    private IEnumerable<string> ResetPaths(FormObject obj, string path, PropertyInfo info) =>
+        _itemMode || obj.IsInherited || !IsAlwaysWritten(path) ? StoredPaths(obj, path, info) : [];
 
     /// <summary>DSG-OI-038: removes the stored value (an object row: all its stored sub-properties) of every object.</summary>
     public void ResetToDefault()
@@ -495,7 +509,7 @@ public sealed class PropertyGridViewModel : ObservableObject
             return;
         }
 
-        _target.Apply([.. Selection.SelectMany(o => StoredPaths(o, row.Path, info).Select(p => (FormChange)new RemoveProperty(o.Name, p)))]);
+        _target.Apply([.. Selection.SelectMany(o => ResetPaths(o, row.Path, info).Select(p => (FormChange)new RemoveProperty(o.QualifiedName, p)))]);
         Refresh();
     }
 
@@ -520,13 +534,13 @@ public sealed class PropertyGridViewModel : ObservableObject
                     chosen.Add(member);
                 }
 
-                changes.Add(new SetProperty(obj.Name, path, new SetValue([.. members.Where(m => chosen.Contains(m, Names))])));
+                changes.Add(new SetProperty(obj.QualifiedName, path, new SetValue([.. members.Where(m => chosen.Contains(m, Names))])));
             }
         }
         else if (info.Type.Equals("Boolean", StringComparison.OrdinalIgnoreCase))
         {
             var value = new IdentValue(row.Display == "True" ? "False" : "True");
-            changes.AddRange(Selection.Select(o => (FormChange)new SetProperty(o.Name, row.Path, value)));
+            changes.AddRange(Selection.Select(o => (FormChange)new SetProperty(o.QualifiedName, row.Path, value)));
         }
         else
         {
@@ -716,7 +730,7 @@ public sealed class PropertyGridViewModel : ObservableObject
 
         var stored = StoredFileName(chosen, project, relative);
         var changes = Selection.Where(o => !string.Equals(FileName(o, row.Path, info), stored, StringComparison.Ordinal))
-            .Select(o => (FormChange)new SetProperty(o.Name, row.Path, new StringValue(stored)))
+            .Select(o => (FormChange)new SetProperty(o.QualifiedName, row.Path, new StringValue(stored)))
             .ToList();
         if (changes.Count > 0)
         {
@@ -767,8 +781,8 @@ public sealed class PropertyGridViewModel : ObservableObject
 
         var changes = Selection.Where(o => !Lines(o, row.Path, info).SequenceEqual(result, StringComparer.Ordinal))
             .Select(o => result.Count == 0
-                ? (FormChange)new RemoveProperty(o.Name, row.Path)
-                : new SetProperty(o.Name, row.Path, new StringListValue([.. result])))
+                ? (FormChange)new RemoveProperty(o.QualifiedName, row.Path)
+                : new SetProperty(o.QualifiedName, row.Path, new StringListValue([.. result])))
             .ToList();
         if (changes.Count > 0)
         {
@@ -854,7 +868,26 @@ public sealed class PropertyGridViewModel : ObservableObject
         return [.. primary.Events
             .Where(e => selection.All(o => o.Info!.FindEvent(e.Name) is { } other && Names.Equals(other.Signature, e.Signature)))
             .OrderBy(e => e.Name, Names)
-            .Select(e => new EventRow(e.Name, e.Signature, CommonHandler(e.Name) ?? ""))];
+            .Select(EventRowOf)];
+    }
+
+    /// <summary>DSG-OI-120: the own handler; with none on every selected component, the one the frame assigns.</summary>
+    private EventRow EventRowOf(EventInfo e)
+    {
+        var own = CommonHandler(e.Name);
+        return own is "" && InheritedHandler(e.Name) is { } inherited
+            ? new EventRow(e.Name, e.Signature, inherited.Method) { IsInherited = true }
+            : new EventRow(e.Name, e.Signature, own ?? "");
+    }
+
+    /// <summary>The handler a frame assigns to the event, when it is the same for every selected component; null otherwise.</summary>
+    private (FrameDefinition Frame, string Method)? InheritedHandler(string eventName)
+    {
+        var handlers = Selection.Select(o => o.InheritedHandler(eventName)).ToList();
+        return handlers.Count > 0 && handlers[0] is { } first
+            && handlers.All(h => h is { } x && ReferenceEquals(x.Frame, first.Frame) && Names.Equals(x.Method, first.Method))
+            ? first
+            : null;
     }
 
     /// <summary>DSG-OI-087: the selection has no events.</summary>
@@ -878,7 +911,7 @@ public sealed class PropertyGridViewModel : ObservableObject
         var designer = Designer!;
         var obj = Selection[^1];
         var part = ev.Name.StartsWith("On", StringComparison.OrdinalIgnoreCase) ? ev.Name[2..] : ev.Name;
-        var stem = (obj.Parent is null ? "Form" : obj.Name) + part;
+        var stem = DesignSurfaceController.HandlerComponentPart(obj) + part;
         var compatible = designer.CodeSync.GetCompatibleMethods(ev.Signature);
         bool Usable(string name) => compatible.Contains(name, Names)
             || (designer.CodeSync.LookupMember(name) == MemberLookup.None && designer.Model!.FindByName(name) is null);
@@ -903,6 +936,17 @@ public sealed class PropertyGridViewModel : ObservableObject
         ArgumentNullException.ThrowIfNull(eventName);
         if (FindEvent(eventName) is not { } ev)
         {
+            return;
+        }
+
+        // DSG-OI-120: a handler the frame assigns is shown in the frame's unit; nothing changes.
+        if (CommonHandler(ev.Name) is "" && InheritedHandler(ev.Name) is { } inherited)
+        {
+            if (navigate)
+            {
+                Designer!.RequestFrameHandler(inherited.Frame, inherited.Method);
+            }
+
             return;
         }
 
@@ -972,12 +1016,12 @@ public sealed class PropertyGridViewModel : ObservableObject
                 code.NoteHandlerCandidate(name);
             }
 
-            return surface.Commit(UndoTitles.Event, [.. assigned.Select(o => (FormChange)new RemoveProperty(o.Name, ev.Name))]);
+            return surface.Commit(UndoTitles.Event, [.. assigned.Select(o => (FormChange)new RemoveProperty(o.QualifiedName, ev.Name))]);
         }
 
-        if (Names.Equals(t, v))
+        if (Names.Equals(t, v) || (v.Length == 0 && InheritedHandler(ev.Name) is { } inherited && Names.Equals(t, inherited.Method)))
         {
-            return true; // row 2
+            return true; // row 2 (DSG-OI-120: the frame's handler as shown)
         }
 
         if (!IsIdentifier(t) || SyntaxFacts.IsReservedWord(t))
@@ -1009,7 +1053,7 @@ public sealed class PropertyGridViewModel : ObservableObject
         if (v.Length > 0 && selection.Count == 1 && References(v) == 1 && code.LookupMember(v) == MemberLookup.Method)
         {
             var obj = selection[0];
-            return surface.Commit(UndoTitles.Event, [new SetProperty(obj.Name, ev.Name, new IdentValue(t))],
+            return surface.Commit(UndoTitles.Event, [new SetProperty(obj.QualifiedName, ev.Name, new IdentValue(t))],
                 () => code.RenameHandler(v, t), [new RenameHandlerOp(v, t)]) || Fail(null);
         }
 
@@ -1053,7 +1097,7 @@ public sealed class PropertyGridViewModel : ObservableObject
     {
         var old = Selection.Select(o => o.FindProperty(ev.Name)?.Value).OfType<IdentValue>().Select(i => i.Name)
             .Where(n => !Names.Equals(n, method)).ToList();
-        var changes = Selection.Select(o => (FormChange)new SetProperty(o.Name, ev.Name, new IdentValue(method))).ToList();
+        var changes = Selection.Select(o => (FormChange)new SetProperty(o.QualifiedName, ev.Name, new IdentValue(method))).ToList();
         if (!Designer!.Surface!.Commit(UndoTitles.Event, changes))
         {
             return false;
@@ -1070,7 +1114,7 @@ public sealed class PropertyGridViewModel : ObservableObject
     private bool Create(EventInfo ev, string name)
     {
         var signature = SignatureText(ev);
-        var changes = Selection.Select(o => (FormChange)new SetProperty(o.Name, ev.Name, new IdentValue(name))).ToList();
+        var changes = Selection.Select(o => (FormChange)new SetProperty(o.QualifiedName, ev.Name, new IdentValue(name))).ToList();
         var code = Designer!.CodeSync;
         return Designer.Surface!.Commit(UndoTitles.Event, changes, () => code.CreateHandler(name, signature), [new CreateHandlerOp(name, signature)]);
     }
@@ -1103,7 +1147,7 @@ public sealed class PropertyGridViewModel : ObservableObject
                 return DesignerMessages.Format(result.MessageId!, [.. result.Args]);
             }
 
-            changes.Add(new SetProperty(obj.Name, row.Path, result.Value!));
+            changes.Add(new SetProperty(obj.QualifiedName, row.Path, result.Value!));
         }
 
         if (Designer is not null && Names.Equals(row.Path, "TabOrder"))
@@ -1120,7 +1164,7 @@ public sealed class PropertyGridViewModel : ObservableObject
         var sequences = new Dictionary<FormObject, List<FormObject>>(ReferenceEqualityComparer.Instance);
         foreach (var change in requested.Cast<SetProperty>())
         {
-            var obj = Designer!.Model!.FindByName(change.ObjectName)!;
+            var obj = Designer!.Model!.FindByQualifiedName(change.ObjectName)!;
             if (!TabOrderRules.IsFocusable(obj) || change.Value is not IntegerValue { Value: var value })
             {
                 continue;
@@ -1235,7 +1279,7 @@ public sealed class PropertyGridViewModel : ObservableObject
     }
 
     private FormValue Effective(FormObject obj, string path, PropertyInfo info) =>
-        obj.FindProperty(path)?.Value ?? PropertyAccess.DefaultValue(Catalog, info);
+        obj.FindProperty(path)?.Value ?? obj.InheritedValue(path) ?? PropertyAccess.DefaultValue(Catalog, info);
 
     private IReadOnlyList<string> Lines(FormObject obj, string path, PropertyInfo info) =>
         Effective(obj, path, info) is StringListValue list ? list.Lines : [];

@@ -29,8 +29,8 @@ public sealed partial class DesignSurfaceController
 
             // Applied one after the other: to the end in current order, or to the start in reverse order.
             changes.AddRange(front
-                ? selected.Select(c => (FormChange)new MoveObject(c.Name, parent.Name, parent.Children.Count - 1))
-                : Enumerable.Reverse(selected).Select(c => (FormChange)new MoveObject(c.Name, parent.Name, 0)));
+                ? selected.Select(c => (FormChange)new MoveObject(c.QualifiedName, parent.QualifiedName, parent.Children.Count - 1))
+                : Enumerable.Reverse(selected).Select(c => (FormChange)new MoveObject(c.QualifiedName, parent.QualifiedName, 0)));
         }
 
         return changes;

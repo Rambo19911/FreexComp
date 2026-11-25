@@ -66,7 +66,7 @@ public sealed partial class DesignSurfaceController
         }
 
         var selection = Selection.ToSnapshot();
-        FormChange[] changes = [new SetProperty(obj.Name, ev.Name, new IdentValue(name))];
+        FormChange[] changes = [new SetProperty(obj.QualifiedName, ev.Name, new IdentValue(name))];
         var undo = ApplyEdit(changes);
         var (commitRedo, commitUndo) = LayoutCommit.StoreDifferences(Editor, _layout.Compute(Document));
         PushUnit(new DesignerUndoUnit(UndoTitles.Event, [.. changes, .. commitRedo], [.. commitUndo, .. undo], edits, selection, selection)
@@ -99,7 +99,7 @@ public sealed partial class DesignSurfaceController
     private string DefaultHandlerName(FormObject obj, EventInfo ev, IReadOnlyList<string> compatible)
     {
         var eventPart = ev.Name.StartsWith("On", StringComparison.OrdinalIgnoreCase) ? ev.Name[2..] : ev.Name;
-        var stem = (obj.Parent is null ? "Form" : obj.Name) + eventPart;
+        var stem = HandlerComponentPart(obj) + eventPart;
         bool Usable(string name) => compatible.Contains(name, StringComparer.OrdinalIgnoreCase)
             || (_host.CodeSync.LookupMember(name) == MemberLookup.None && Document.FindByName(name) is null);
 
@@ -110,6 +110,16 @@ public sealed partial class DesignSurfaceController
         }
 
         return candidate;
+    }
+
+    /// <summary>
+    /// The component part of a default handler name: <c>Form</c> for the root, <c>&lt;Instance&gt;&lt;Component&gt;</c> for
+    /// an inherited object (DSG-CS-113: <c>BillingAddress.StreetEdit</c> → <c>BillingAddressStreetEdit</c>), else the name.
+    /// </summary>
+    public static string HandlerComponentPart(FormObject obj)
+    {
+        ArgumentNullException.ThrowIfNull(obj);
+        return obj.Parent is null ? "Form" : obj.QualifiedName.Replace(".", "", StringComparison.Ordinal);
     }
 
     /// <summary>

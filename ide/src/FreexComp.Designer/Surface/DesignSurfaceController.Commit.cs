@@ -1,6 +1,7 @@
 using FreexComp.Designer.CodeSync;
 using FreexComp.Designer.Editing;
 using FreexComp.Designer.Layout;
+using FreexComp.Designer.Model;
 
 namespace FreexComp.Designer.Surface;
 
@@ -90,7 +91,13 @@ public sealed partial class DesignSurfaceController
         void Collect(FormObjectData data)
         {
             var typeName = data.TypeName[(data.TypeName.LastIndexOf('.') + 1)..]; // DSG-CS-030: unit qualifier stripped
-            fields.Add(new CodeSyncField(data.Name, typeName, Catalog.Find(data.TypeName)?.Unit ?? ""));
+            fields.Add(new CodeSyncField(data.Name, typeName,
+                Catalog.Find(data.TypeName)?.Unit ?? Document.Frames?.Find(data.TypeName)?.UnitName ?? "")); // DSG-CS-112
+            if (data.Kind == FormObjectKind.Inline)
+            {
+                return; // DSG-CS-112: the components of a frame are fields of the frame class
+            }
+
             foreach (var child in data.Children)
             {
                 Collect(child);

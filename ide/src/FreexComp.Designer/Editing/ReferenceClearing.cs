@@ -34,10 +34,10 @@ public static class ReferenceClearing
                     case null:
                         break;
                     case CollectionValue collection:
-                        changes.Add(new SetProperty(owner.Name, property.Path, collection));
+                        changes.Add(new SetProperty(owner.QualifiedName, property.Path, collection));
                         break;
                     default:
-                        changes.Add(new RemoveProperty(owner.Name, property.Path)); // the default of a reference is nil
+                        changes.Add(new RemoveProperty(owner.QualifiedName, property.Path)); // the default of a reference is nil
                         break;
                 }
             }

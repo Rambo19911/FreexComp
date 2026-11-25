@@ -203,7 +203,7 @@ public sealed class StructureViewModel : ToolWindowViewModel, ICommandTarget
         {
             // DSG-SUR-196: a component whose class has a component editor opens it (Enter, double-click on its node).
             const string editComponent = FreexComp.Designer.Surface.Commands.EditComponent;
-            if (_commands is { } commands && _form!.Designer.Model?.FindByName(row.Node.Name) is { Info.ComponentEditor: not null } component
+            if (_commands is { } commands && _form!.Designer.Model?.FindByQualifiedName(row.Node.Name) is { Info.ComponentEditor: not null } component
                 && _form.Designer.Surface is { } surface && surface.Selection.Items is [var only] && ReferenceEquals(only, component)
                 && commands.CanExecute(editComponent))
             {
@@ -377,6 +377,8 @@ public sealed class StructureViewModel : ToolWindowViewModel, ICommandTarget
     /// <summary>
     /// UI-TW-207, 209: the form, then its components in creation order (non-visual ones after their visual siblings), each
     /// <c>Name: TClass</c> with the key <c>Form/&lt;Name&gt;</c> (a duplicate name, preserved F0106, appends <c>#&lt;n&gt;</c>).
+    /// DSG-SUR-233: the inherited objects of an instance under it, named and keyed by their qualified name, with the frame
+    /// class they come from (UI-DSG-136).
     /// </summary>
     private static IReadOnlyList<StructureNode> BuildDesign(FormDocument model)
     {
@@ -384,14 +386,14 @@ public sealed class StructureViewModel : ToolWindowViewModel, ICommandTarget
         static bool IsNonVisual(FormObject obj) => obj.Info?.Kind == ComponentKind.NonVisual;
         StructureNode Node(FormObject obj)
         {
-            var key = DesignKeyPrefix + obj.Name;
+            var key = DesignKeyPrefix + obj.QualifiedName;
             var seen = keys.GetValueOrDefault(key);
             keys[key] = seen + 1;
             if (seen > 0)
                 key += "#" + seen.ToString(System.Globalization.CultureInfo.InvariantCulture);
             var children = obj.Children.Where(c => !IsNonVisual(c)).Concat(obj.Children.Where(IsNonVisual)).Select(Node).ToList();
-            return new StructureNode(key, obj.Name, $"{obj.Name}: {obj.TypeName}", StructureKind.Component, -1, 0, 0, children,
-                IsNonVisual: IsNonVisual(obj), IsUnavailable: obj.IsPreserved);
+            return new StructureNode(key, obj.QualifiedName, $"{obj.Name}: {obj.TypeName}", StructureKind.Component, -1, 0, 0, children,
+                IsNonVisual: IsNonVisual(obj), IsUnavailable: obj.IsPreserved, InheritedFrom: obj.InheritedFrame?.ClassName);
         }
 
         return [Node(model.Root)];
@@ -403,8 +405,8 @@ public sealed class StructureViewModel : ToolWindowViewModel, ICommandTarget
         if (_form?.Designer.Surface is not { } surface)
             return;
         var selected = surface.Selection.Items;
-        SelectedRows = [.. Rows.Where(r => selected.Any(o => o.Name.Equals(r.Node.Name, StringComparison.OrdinalIgnoreCase)))];
-        SelectedRow = Rows.FirstOrDefault(r => r.Node.Name.Equals(surface.Selection.Primary.Name, StringComparison.OrdinalIgnoreCase));
+        SelectedRows = [.. Rows.Where(r => selected.Any(o => o.QualifiedName.Equals(r.Node.Name, StringComparison.OrdinalIgnoreCase)))];
+        SelectedRow = Rows.FirstOrDefault(r => r.Node.Name.Equals(surface.Selection.Primary.QualifiedName, StringComparison.OrdinalIgnoreCase));
     }
 
     private void Flatten(string? keepKey)

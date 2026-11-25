@@ -148,7 +148,10 @@ public sealed class StructureView : UserControl
         var id = $"{Prefix}.Row.{row.Node.Key}";
         var panel = new DockPanel { MinHeight = 22, Margin = new Thickness(4 + 16 * row.Depth, 0, 4, 0), Background = Avalonia.Media.Brushes.Transparent };
         AutomationProperties.SetAutomationId(panel, id);
-        AutomationProperties.SetName(panel, row.Node.Text);
+        // UI-DSG-136: an inherited object's screen-reader name names the frame it comes from.
+        AutomationProperties.SetName(panel, row.Node.InheritedFrom is { } frame
+            ? row.Node.Text + string.Format(System.Globalization.CultureInfo.CurrentCulture, Strings.Designer_InheritedSuffix, frame)
+            : row.Node.Text);
         var chevron = new Panel { Width = 14 };
         if (row.HasChildren)
         {
@@ -196,7 +199,7 @@ public sealed class StructureView : UserControl
 
         var text = new TextBlock { Text = row.Node.Text, VerticalAlignment = VerticalAlignment.Center, TextTrimming = Avalonia.Media.TextTrimming.CharacterEllipsis };
         text.Bind(TextBlock.ForegroundProperty, text.GetResourceObservable(row.Node.Kind == StructureKind.Error ? "FxcStatusErrorBrush"
-            : row.Node.IsUnavailable ? "FxcTextDisabledBrush" : "FxcTextPrimaryBrush"));
+            : row.Node.IsUnavailable ? "FxcTextDisabledBrush" : row.Node.InheritedFrom is not null ? "FxcTextSecondaryBrush" : "FxcTextPrimaryBrush"));
         if (row.Node.Kind == StructureKind.Error)
             AutomationProperties.SetAutomationId(text, id + ".Message");
         if (row.Node.Visibility is { } visibility)

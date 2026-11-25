@@ -59,6 +59,7 @@ public sealed class ObjectInspectorView : UserControl
         ToolTip.SetTip(_byName, Strings.Inspector_ArrangeByName);
         ToolWindowFrame.FitFilterBox(_filter); // I-215
         ToolWindowFrame.FitComboBox(_selector, 26); // I-285: a combo box of design-tokens.md §8, not the theme's 32
+        _selector.ItemTemplate = new Avalonia.Controls.Templates.FuncDataTemplate<string>((item, _) => SelectorEntry(item));
         AutomationProperties.SetAutomationId(_filter, Prefix + ".Filter");
         AutomationProperties.SetName(_grid, Strings.Cmd_view_objectInspector);
         AutomationProperties.SetAutomationId(_empty, Prefix + ".Empty");
@@ -223,6 +224,24 @@ public sealed class ObjectInspectorView : UserControl
         {
             _building = was;
         }
+    }
+
+    /// <summary>
+    /// UI-DSG-136: an entry of the instance selector; an inherited object's name in <c>text.secondary</c>, its screen-reader
+    /// name ending with the frame it comes from.
+    /// </summary>
+    private TextBlock SelectorEntry(string? item)
+    {
+        var text = new TextBlock { Text = item, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
+        var index = item is null || _model is not { } model ? -1 : model.ComponentItems.ToList().IndexOf(item);
+        var frame = index >= 0 ? _model!.ComponentFrames[index] : null;
+        if (frame is not null)
+        {
+            text.Bind(TextBlock.ForegroundProperty, text.GetResourceObservable("FxcTextSecondaryBrush"));
+            AutomationProperties.SetName(text, item + string.Format(System.Globalization.CultureInfo.CurrentCulture, Strings.Designer_InheritedSuffix, frame));
+        }
+
+        return text;
     }
 
     /// <summary>Re-reads the header state and the empty state, then the grid's rows.</summary>

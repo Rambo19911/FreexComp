@@ -276,8 +276,14 @@ public sealed partial class DesignSurfaceController
 
         var primary = Selection.Primary;
         var start = primary.Parent is null || g.IsTrayItem(primary) ? Document.Root
-            : primary is { Info.AcceptsChildren: true, IsPreserved: false } ? primary
+            : primary is { Info.AcceptsChildren: true, IsPreserved: false } && !HasFixedStructure(primary) ? primary
             : primary.Parent;
+        if (HasFixedStructure(start))
+        {
+            ReportFrameChildFixed(start); // DSG-SUR-227: palette placement into an instance
+            return false;
+        }
+
         if (HoldingAncestor(start, info, report: true) is not { } parent)
         {
             return false;
@@ -334,7 +340,7 @@ public sealed partial class DesignSurfaceController
         }
 
         var at = Math.Clamp(index ?? parent.Children.Count, 0, parent.Children.Count);
-        var changes = new List<FormChange> { new AddObject(parent.Name, at, data) };
+        var changes = new List<FormChange> { new AddObject(parent.QualifiedName, at, data) };
         foreach (var property in info.Properties)
         {
             if (property.Initial is { } initial && InitialValue(property, initial.Replace("$(Name)", name, StringComparison.Ordinal)) is { } value)

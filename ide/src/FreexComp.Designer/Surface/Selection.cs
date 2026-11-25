@@ -12,11 +12,13 @@ public sealed class Selection
 {
     private readonly FormDocument _document;
     private List<FormObject> _items;
+    private string[] _names;
 
     public Selection(FormDocument document)
     {
         _document = document;
         _items = [document.Root];
+        _names = [document.Root.Name];
     }
 
     /// <summary>Raised after every change of the content or order (not when an operation leaves it as it was).</summary>
@@ -87,7 +89,7 @@ public sealed class Selection
         var objects = new List<FormObject>();
         foreach (var name in names)
         {
-            if (_document.FindByName(name) is { } obj && !objects.Exists(o => ReferenceEquals(o, obj)))
+            if (_document.FindByQualifiedName(name) is { } obj && !objects.Exists(o => ReferenceEquals(o, obj)))
             {
                 objects.Add(obj);
             }
@@ -111,8 +113,30 @@ public sealed class Selection
         return _document.AllObjects().Where(o => selected.Contains(o) && !HasSelectedAncestor(o, selected)).ToList();
     }
 
+    /// <summary>
+    /// DSG-FD-111: after a re-merge the inherited objects are new objects: the selection is chosen again by the qualified
+    /// names (a component still in the tree by its current name, a replaced one by the name it had when it was selected).
+    /// </summary>
+    public void Rebind()
+    {
+        var names = _items.Select((o, i) => IsInTree(o) ? o.QualifiedName : _names[i]).ToList();
+        Set(names);
+    }
+
+    /// <summary>True when <paramref name="obj"/> is still in the document's tree (its ancestors reach the root).</summary>
+    private bool IsInTree(FormObject obj)
+    {
+        var top = obj;
+        while (top.Parent is { } parent)
+        {
+            top = parent;
+        }
+
+        return ReferenceEquals(top, _document.Root);
+    }
+
     /// <summary>The names for an undo unit (form-document.md §8).</summary>
-    public SelectionSnapshot ToSnapshot() => new([.. _items.Select(o => o.Name)], Primary.Name);
+    public SelectionSnapshot ToSnapshot() => new([.. _items.Select(o => o.QualifiedName)], Primary.QualifiedName);
 
     private static bool HasSelectedAncestor(FormObject obj, HashSet<FormObject> selected)
     {
@@ -135,6 +159,7 @@ public sealed class Selection
         }
 
         _items = items;
+        _names = [.. items.Select(o => o.QualifiedName)];
         Changed?.Invoke(this, EventArgs.Empty);
     }
 }

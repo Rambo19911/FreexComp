@@ -19,7 +19,8 @@ public enum StructureKind { Group, Error, Unit, Class, Record, Interface, Enum, 
 /// (preserved) object (<c>text.disabled</c>, warning overlay).
 /// </summary>
 public sealed record StructureNode(string Key, string Name, string Text, StructureKind Kind, int NameOffset, int Start, int End,
-    IReadOnlyList<StructureNode> Children, string? Visibility = null, string? Position = null, bool IsNonVisual = false, bool IsUnavailable = false);
+    IReadOnlyList<StructureNode> Children, string? Visibility = null, string? Position = null, bool IsNonVisual = false, bool IsUnavailable = false,
+    string? InheritedFrom = null);
 
 /// <summary>The Structure tree of a Pascal syntax tree (UI-TW-200…209, IDE-ED-130), from <c>NavigationService.GetDocumentSymbols</c>.</summary>
 public static class StructureBuilder

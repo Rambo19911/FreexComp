@@ -63,6 +63,13 @@ public sealed partial class DesignSurfaceController
         _host = host;
         Selection = new Selection(document);
         Selection.Changed += (_, _) => Invalidated?.Invoke(this, EventArgs.Empty);
+        document.Changed += (_, e) =>
+        {
+            if (e.IsRemerge)
+            {
+                Selection.Rebind();
+            }
+        };
     }
 
     /// <summary>The surface must repaint.</summary>
@@ -213,6 +220,11 @@ public sealed partial class DesignSurfaceController
                 return true;
             case DesignKey.Up or DesignKey.Down when input.Modifiers == (InputModifiers.Ctrl | InputModifiers.Shift):
                 var zOrder = input.Key == DesignKey.Up ? Commands.BringToFront : Commands.SendToBack; // §9
+                if (!IsReadOnly && RefusedInFrame(zOrder))
+                {
+                    return ReportFrameChildFixed(); // DSG-SUR-227
+                }
+
                 if (!CanExecute(zOrder))
                 {
                     return false;
@@ -225,6 +237,11 @@ public sealed partial class DesignSurfaceController
             case DesignKey.Enter when input.Modifiers == InputModifiers.None:
                 return RunDefaultAction(); // §9, §11.4
             case DesignKey.Delete when input.Modifiers == InputModifiers.None:
+                if (!IsReadOnly && RefusedInFrame(Commands.Delete))
+                {
+                    return ReportFrameChildFixed(); // DSG-SUR-227
+                }
+
                 if (!CanExecute(Commands.Delete))
                 {
                     return false;
@@ -238,7 +255,8 @@ public sealed partial class DesignSurfaceController
     }
 
     /// <summary>DSG-SUR-003: on a read-only form only the selection commands and Copy can run.</summary>
-    public bool CanExecute(string commandId) => (!IsReadOnly || IsReadOnlySafe(commandId)) && CanExecuteCore(commandId);
+    public bool CanExecute(string commandId) =>
+        (!IsReadOnly || IsReadOnlySafe(commandId)) && !RefusedInFrame(commandId) && CanExecuteCore(commandId);
 
     private bool CanExecuteCore(string commandId) => commandId switch
     {
@@ -252,6 +270,7 @@ public sealed partial class DesignSurfaceController
         Commands.Undo => Undo.CanUndo && !IsPointerActive, // DSG-SUR-171
         Commands.Redo => Undo.CanRedo && !IsPointerActive,
         Commands.CreateDefaultHandler => CanCreateDefaultHandler,
+        Commands.RevertToInherited => !IsPointerActive && State != InteractionState.TabOrder && RevertChanges().Count > 0,
         Commands.BringToFront => CanZOrder(front: true),
         Commands.SendToBack => CanZOrder(front: false),
         _ when Commands.Arrange.Contains(commandId) => CanArrange(commandId),
@@ -264,6 +283,12 @@ public sealed partial class DesignSurfaceController
 
     public void Execute(string commandId, string? argument = null)
     {
+        if (!IsReadOnly && RefusedInFrame(commandId))
+        {
+            ReportFrameChildFixed(); // DSG-SUR-227
+            return;
+        }
+
         if (!CanExecute(commandId, argument))
         {
             return;
@@ -310,6 +335,9 @@ public sealed partial class DesignSurfaceController
                 break;
             case Commands.BringToFront or Commands.SendToBack:
                 ZOrder(commandId == Commands.BringToFront);
+                break;
+            case Commands.RevertToInherited:
+                RevertToInherited();
                 break;
             case var _ when Commands.Arrange.Contains(commandId):
                 Arrange(commandId);
@@ -544,9 +572,9 @@ public sealed partial class DesignSurfaceController
             foreach (var m in _moveSet)
             {
                 var b = Layout.GetBounds(m.Object);
-                overrides[m.Object.Name] = MovesToTarget(m)
+                overrides[m.Object.QualifiedName] = MovesToTarget(m)
                     ? new LayoutOverride(b with { Left = m.SurfaceLeft + dx - _moveTarget.Left, Top = m.SurfaceTop + dy - _moveTarget.Top },
-                        ParentName: _moveTarget.Container!.Name)
+                        ParentName: _moveTarget.Container!.QualifiedName)
                     : new LayoutOverride(b with { Left = m.Left + dx, Top = m.Top + dy });
             }
 
@@ -572,9 +600,9 @@ public sealed partial class DesignSurfaceController
     private FormObject TargetContainer((int X, int Y) p, FormObject anchor)
     {
         var g = Geometry;
-        if (!Contains(g.FormClientRect, p))
+        if (!Contains(g.FormClientRect, p) || _moveSet.Exists(m => m.Object.IsInherited))
         {
-            return anchor.Parent!;
+            return anchor.Parent!; // DSG-SUR-226, 227: inherited controls move inside their parent only
         }
 
         var target = Document.Root;
@@ -584,7 +612,8 @@ public sealed partial class DesignSurfaceController
             for (var i = target.Children.Count - 1; i >= 0 && next is null; i--)
             {
                 var c = target.Children[i];
-                if (c.Info is { AcceptsChildren: true } && !c.IsPreserved && g.IsControl(c) && !_moveSet.Exists(m => ReferenceEquals(m.Object, c))
+                if (c.Info is { AcceptsChildren: true } && !c.IsPreserved && !HasFixedStructure(c) && g.IsControl(c)
+                    && !_moveSet.Exists(m => ReferenceEquals(m.Object, c))
                     && !IsHiddenPage(c, g) && Contains(g.GetBounds(c), p) && Contains(g.GetClientRect(c), p))
                 {
                     next = c;
@@ -702,7 +731,7 @@ public sealed partial class DesignSurfaceController
             int x, y;
             if (!_moveTray && MovesToTarget(m))
             {
-                changes.Add(new MoveObject(obj.Name, target.Container!.Name, target.Container.Children.Count + appended++));
+                changes.Add(new MoveObject(obj.QualifiedName, target.Container!.QualifiedName, target.Container.Children.Count + appended++));
                 (x, y, left, top) = (m.SurfaceLeft + dx - target.Left, m.SurfaceTop + dy - target.Top, int.MinValue, int.MinValue);
             }
             else
@@ -712,12 +741,12 @@ public sealed partial class DesignSurfaceController
 
             if (x != left || !PropertyAccess.IsStored(obj, xPath))
             {
-                changes.Add(new SetProperty(obj.Name, xPath, new IntegerValue(x, false)));
+                changes.Add(new SetProperty(obj.QualifiedName, xPath, new IntegerValue(x, false)));
             }
 
             if (y != top || !PropertyAccess.IsStored(obj, yPath))
             {
-                changes.Add(new SetProperty(obj.Name, yPath, new IntegerValue(y, false)));
+                changes.Add(new SetProperty(obj.QualifiedName, yPath, new IntegerValue(y, false)));
             }
         }
 
@@ -897,7 +926,7 @@ public sealed partial class DesignSurfaceController
                 .ToList();
         }
 
-        var result = _layout.ComputeWithResizes(Document, _resizeBounds.Select(m => (m.Object.Name, m.Bounds)).ToList());
+        var result = _layout.ComputeWithResizes(Document, _resizeBounds.Select(m => (m.Object.QualifiedName, m.Bounds)).ToList());
         var geometry = new SurfaceGeometry(Document, result, _layout.Renderers, _settings.ShowComponentCaptions);
         _preview = (Document.Version, result, geometry, new HitTester(geometry));
         Invalidated?.Invoke(this, EventArgs.Empty);

@@ -58,7 +58,7 @@ public static class TabOrderRules
             var c = sequence[i];
             if (!PropertyAccess.IsStored(c, "TabOrder") || PropertyAccess.GetInt(c, "TabOrder") != i)
             {
-                changes.Add(new SetProperty(c.Name, "TabOrder", new IntegerValue(i, false)));
+                changes.Add(new SetProperty(c.QualifiedName, "TabOrder", new IntegerValue(i, false)));
             }
         }
 

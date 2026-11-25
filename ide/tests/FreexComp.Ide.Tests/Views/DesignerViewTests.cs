@@ -675,7 +675,9 @@ public sealed class DesignerViewTests
             "Context.Designer.Align", "Context.Designer.Size", "Context.Designer.Order", "-",
             "Context.designer.tabOrder", "Context.designer.lockControls", "-",
             "Context.designer.toggleGrid", "Context.designer.toggleSnapToGrid", "Context.designer.toggleGuidelines", "-",
-            "Context.designer.createDefaultHandler", "Context.view.toggleFormCode", "Context.view.formAsText",
+            // D-119 (frames-designer.md DSG-SUR-229 and the §12 context-menu row): Revert to Inherited follows the
+            // default handler item.
+            "Context.designer.createDefaultHandler", "Context.designer.revertToInherited", "Context.view.toggleFormCode", "Context.view.formAsText",
         ], menu.Items.Cast<object>().Select(Id));
         MenuItem Item(string id) => menu.Items.OfType<MenuItem>().Single(i => AutomationIds.Get(i) == id);
         Assert.Equal(
@@ -693,6 +695,8 @@ public sealed class DesignerViewTests
         Assert.True(Item("Context.edit.cut").IsEffectivelyEnabled);
         Assert.True(Item("Context.designer.selectParent").IsEffectivelyEnabled);
         Assert.True(Item("Context.designer.createDefaultHandler").IsEffectivelyEnabled);
+        Assert.False(Item("Context.designer.revertToInherited").IsEffectivelyEnabled); // DSG-SUR-229: no inherited object selected
+        Assert.Equal("Revert to _Inherited", Item("Context.designer.revertToInherited").Header);
         Assert.True(Item("Context.designer.toggleGrid").IsChecked);
         Assert.False(Item("Context.designer.lockControls").IsChecked);
         Assert.Equal("_Lock Controls", Item("Context.designer.lockControls").Header);

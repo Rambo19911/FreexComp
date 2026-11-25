@@ -231,6 +231,27 @@ public sealed class FormObject
     public bool IsOverridden(string path) => InheritedFrom is not null && FindProperty(path) is not null;
 
     /// <summary>
+    /// DSG-OI-120: the handler a frame assigns to <paramref name="eventName"/> of this inherited object or instance — the
+    /// method and the frame whose class declares it (the nearest level of the definition chain that stores it); null when
+    /// no level assigns one.
+    /// </summary>
+    public (FrameDefinition Frame, string Method)? InheritedHandler(string eventName)
+    {
+        var frame = IsInherited ? Scope?.Frame : Frame;
+        for (var o = InheritedFrom; o is not null && frame is not null; o = o.InheritedFrom)
+        {
+            if (o.FindProperty(eventName)?.Value is IdentValue { Name: var method })
+            {
+                return (frame, method);
+            }
+
+            frame = o.IsInherited ? o.Scope?.Frame : o.Frame;
+        }
+
+        return null;
+    }
+
+    /// <summary>
     /// The definition's effective value of <paramref name="path"/> (stored there, or the metadata default); for an event the
     /// definition's handler or null. Null for objects that inherit nothing.
     /// </summary>
@@ -264,6 +285,9 @@ public sealed class FormObject
     /// name of its scope instance plus its name (<c>BillingAddress.StreetEdit</c>).
     /// </summary>
     public string QualifiedName => IsInherited && Scope is { } scope ? scope.QualifiedName + "." + Name : Name;
+
+    /// <summary>The frame an inherited object comes from (the frame of its scope instance); null for other objects.</summary>
+    public FrameDefinition? InheritedFrame => IsInherited ? Scope?.Frame : null;
 
     /// <summary>The instance whose scope an inherited object belongs to (the nearest instance above it), else null.</summary>
     internal FormObject? Scope

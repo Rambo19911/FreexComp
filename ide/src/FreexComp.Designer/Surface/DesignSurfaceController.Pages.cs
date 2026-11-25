@@ -26,8 +26,8 @@ public sealed partial class DesignSurfaceController
         if (!ReferenceEquals(sheet, PageControlRenderer.ActiveSheet(pageControl)) && !IsReadOnly)
         {
             FormChange change = ReferenceEquals(sheet, PageControlRenderer.DefaultSheet(pageControl))
-                ? new RemoveProperty(pageControl.Name, "ActivePage")
-                : new SetProperty(pageControl.Name, "ActivePage", new IdentValue(sheet.Name));
+                ? new RemoveProperty(pageControl.QualifiedName, "ActivePage")
+                : new SetProperty(pageControl.QualifiedName, "ActivePage", new IdentValue(sheet.Name));
             Commit(UndoTitles.Property, [change], select: sheet);
             return true;
         }

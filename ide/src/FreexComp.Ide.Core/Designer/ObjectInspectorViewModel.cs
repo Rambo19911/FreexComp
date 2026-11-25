@@ -20,7 +20,11 @@ public enum InspectorPage { Properties, Events }
 public enum InspectorCommitCause { Enter, FocusLost }
 
 /// <summary>One row of the Events page: event name, signature type name and the handler name (blank when it differs).</summary>
-public sealed record EventRow(string Name, string Signature, string Value);
+public sealed record EventRow(string Name, string Signature, string Value)
+{
+    /// <summary>DSG-OI-120: <see cref="Value"/> is the handler the frame assigns (shown in <c>text.secondary</c>, not stored here).</summary>
+    public bool IsInherited { get; init; }
+}
 
 /// <summary>
 /// The Object Inspector (object-inspector.md): follows the selection of the active form document's Design view and shows
@@ -188,7 +192,7 @@ public sealed partial class ObjectInspectorViewModel : ToolWindowViewModel, ICom
     /// <summary>The selected components, the last being the primary.</summary>
     public IReadOnlyList<FormObject> Selection => IsEmpty ? [] : _designer!.Surface!.Selection.Items;
 
-    public IReadOnlyList<string> SelectedNames => [.. Selection.Select(o => o.Name)];
+    public IReadOnlyList<string> SelectedNames => [.. Selection.Select(o => o.QualifiedName)];
 
     /// <summary>The rows of the Properties page (re-read from the form on every access, DSG-OI-094).</summary>
     public IReadOnlyList<PropertyRow> Rows => IsEmpty ? [] : Grid.Rows;
@@ -309,12 +313,20 @@ public sealed partial class ObjectInspectorViewModel : ToolWindowViewModel, ICom
                 return [];
             }
 
-            return [model.Root, .. model.AllObjects().Where(o => o.Parent is not null).OrderBy(o => o.Name, Names)];
+            // DSG-OI-119: the inherited objects of an instance follow it, in tree order.
+            return [model.Root, .. model.AllObjects().Where(o => o.Parent is not null && !o.IsInherited).OrderBy(o => o.Name, Names)
+                .SelectMany(o => o.IsFrameInstance ? [o, .. Inherited(o)] : new[] { o })];
         }
     }
 
+    private static IEnumerable<FormObject> Inherited(FormObject instance) =>
+        instance.Children.Where(c => c.IsInherited).SelectMany(c => (IEnumerable<FormObject>)[c, .. Inherited(c)]);
+
     /// <summary>The instance selector's entries (UI-DSG-101).</summary>
-    public IReadOnlyList<string> ComponentItems => [.. Components.Select(o => o.Name + ": " + o.TypeName)];
+    public IReadOnlyList<string> ComponentItems => [.. Components.Select(o => o.QualifiedName + ": " + o.TypeName)];
+
+    /// <summary>UI-DSG-136: per entry of <see cref="ComponentItems"/>, the frame class an inherited object comes from, else null.</summary>
+    public IReadOnlyList<string?> ComponentFrames => [.. Components.Select(o => o.InheritedFrame?.ClassName)];
 
     /// <summary>The entry of the single selected component; -1 for none or several.</summary>
     public int SelectedComponentIndex

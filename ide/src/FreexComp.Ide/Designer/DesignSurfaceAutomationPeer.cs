@@ -85,9 +85,9 @@ public sealed class DesignSurfaceAutomationPeer(DesignSurfaceControl owner) : Co
         var form = owner.FormName;
         return parent.Kind switch
         {
-            PeerKind.Tray => [.. g.TrayItems.Select(o => Peer(AutomationIds.DesignerTrayItem(form, o.Name), PeerKind.Component, o, parent))],
+            PeerKind.Tray => [.. g.TrayItems.Select(o => Peer(AutomationIds.DesignerTrayItem(form, o.QualifiedName), PeerKind.Component, o, parent))],
             PeerKind.Form or PeerKind.Component when parent.Object is { } obj && !g.IsTrayItem(obj) =>
-                [.. obj.Children.Where(g.IsControl).Select(o => Peer(AutomationIds.DesignerControl(form, o.Name), PeerKind.Component, o, parent))],
+                [.. obj.Children.Where(g.IsControl).Select(o => Peer(AutomationIds.DesignerControl(form, o.QualifiedName), PeerKind.Component, o, parent))],
             _ => [],
         };
     }
@@ -155,7 +155,7 @@ internal sealed class VirtualPeer(DesignSurfaceAutomationPeer root, string id, P
     {
         if (Selectable() is { } surface && !surface.Selection.Contains(obj!))
         {
-            surface.Selection.Set([.. surface.Selection.Items.Select(o => o.Name), obj!.Name]);
+            surface.Selection.Set([.. surface.Selection.Items.Select(o => o.QualifiedName), obj!.QualifiedName]);
         }
     }
 
@@ -163,7 +163,7 @@ internal sealed class VirtualPeer(DesignSurfaceAutomationPeer root, string id, P
     {
         if (Selectable() is { } surface && surface.Selection.Contains(obj!))
         {
-            surface.Selection.Set([.. surface.Selection.Items.Where(o => !ReferenceEquals(o, obj)).Select(o => o.Name)]);
+            surface.Selection.Set([.. surface.Selection.Items.Where(o => !ReferenceEquals(o, obj)).Select(o => o.QualifiedName)]);
         }
     }
 
@@ -171,7 +171,7 @@ internal sealed class VirtualPeer(DesignSurfaceAutomationPeer root, string id, P
     {
         if (Selectable() is { } surface)
         {
-            surface.Selection.Set([obj!.Name]);
+            surface.Selection.Set([obj!.QualifiedName]);
         }
     }
 

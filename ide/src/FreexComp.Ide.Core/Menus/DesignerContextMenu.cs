@@ -46,7 +46,7 @@ public static class DesignerContextMenu
             Submenu("Designer.Order", Strings.Menu_Designer_Order, Order),
             MenuItemModel.Separator(),
             .. Items(["designer.tabOrder", "designer.lockControls", null, "designer.toggleGrid", "designer.toggleSnapToGrid",
-                "designer.toggleGuidelines", null, "designer.createDefaultHandler", "view.toggleFormCode", "view.formAsText"]),
+                "designer.toggleGuidelines", null, "designer.createDefaultHandler", "designer.revertToInherited", "view.toggleFormCode", "view.formAsText"]),
         ];
     }
 }

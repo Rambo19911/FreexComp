@@ -150,12 +150,12 @@ public sealed partial class DesignSurfaceController
             var (xPath, yPath) = tray ? ("DesignLeft", "DesignTop") : ("Left", "Top");
             if (nx != x || !PropertyAccess.IsStored(obj, xPath))
             {
-                changes.Add(new SetProperty(obj.Name, xPath, new IntegerValue(nx, false)));
+                changes.Add(new SetProperty(obj.QualifiedName, xPath, new IntegerValue(nx, false)));
             }
 
             if (ny != y || !PropertyAccess.IsStored(obj, yPath))
             {
-                changes.Add(new SetProperty(obj.Name, yPath, new IntegerValue(ny, false)));
+                changes.Add(new SetProperty(obj.QualifiedName, yPath, new IntegerValue(ny, false)));
             }
         }
 
@@ -226,7 +226,7 @@ public sealed partial class DesignSurfaceController
         }
 
         var selection = Selection.ToSnapshot();
-        var preview = _layout.ComputeWithResizes(Document, bounds.Select(m => (m.Object.Name, m.Bounds)).ToList());
+        var preview = _layout.ComputeWithResizes(Document, bounds.Select(m => (m.Object.QualifiedName, m.Bounds)).ToList());
         var (redo, undo) = ApplyResize(formClient, preview);
         PushNudge(UndoTitles.Resize, redo, undo, selection);
     }

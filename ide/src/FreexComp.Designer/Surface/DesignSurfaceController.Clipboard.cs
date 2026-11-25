@@ -29,7 +29,8 @@ public sealed partial class DesignSurfaceController
     /// </summary>
     private void Copy()
     {
-        var text = FormWriter.WriteObjects(CopySet());
+        // DSG-SUR-230: inherited controls leave the frame as ordinary components with their effective values.
+        var text = FormWriter.WriteObjects(CopySet().Select(o => o.IsInherited ? FrameCopies.Detach(o) : o));
         var parent = Selection.Primary.Parent ?? Document.Root;
         var origin = Geometry.GetClientRect(parent);
         var clipboard = _host.Clipboard;
@@ -38,7 +39,7 @@ public sealed partial class DesignSurfaceController
             [ClipboardFormats.Components] = $"; parent-origin {origin.Left} {origin.Top}\n" + text,
             [ClipboardFormats.Text] = text,
         });
-        _lastCopy = (clipboard.SequenceNumber, parent.Name);
+        _lastCopy = (clipboard.SequenceNumber, parent.QualifiedName);
     }
 
     /// <summary>DSG-SUR-113: copy, then delete as one "Cut" unit.</summary>
@@ -50,7 +51,7 @@ public sealed partial class DesignSurfaceController
 
     /// <summary>
     /// DSG-SUR-120, 128: not during a drag or in tab-order mode; the clipboard has the custom format, or plain text that
-    /// begins (after whitespace and <c>;</c> lines) with the keyword <c>object</c>.
+    /// begins (after whitespace and <c>;</c> lines) with the keyword <c>object</c> (or <c>inline</c>, DSG-SUR-230).
     /// </summary>
     private bool CanPaste => !IsPointerActive && State != InteractionState.TabOrder && PasteText() is not null;
 
@@ -76,9 +77,9 @@ public sealed partial class DesignSurfaceController
                 continue;
             }
 
-            const string keyword = "object";
-            return trimmed.StartsWith(keyword, StringComparison.OrdinalIgnoreCase)
-                && (trimmed.Length == keyword.Length || !(char.IsAsciiLetterOrDigit(trimmed[keyword.Length]) || trimmed[keyword.Length] == '_'));
+            // DSG-SUR-230: a frame instance (inline) is form text too.
+            return ((string[])["object", "inline"]).Any(keyword => trimmed.StartsWith(keyword, StringComparison.OrdinalIgnoreCase)
+                && (trimmed.Length == keyword.Length || !(char.IsAsciiLetterOrDigit(trimmed[keyword.Length]) || trimmed[keyword.Length] == '_')));
         }
 
         return false;
@@ -92,14 +93,14 @@ public sealed partial class DesignSurfaceController
     /// </summary>
     private void Paste()
     {
-        var fragment = FormParser.ParseFragment(PasteText()!, "clipboard", Catalog);
+        var fragment = FormParser.ParseFragment(PasteText()!, "clipboard", Catalog, Document.Frames, Document.Root.TypeName);
         if (fragment.HasSyntaxErrors || fragment.Objects.IsEmpty)
         {
             _host.SetStatus(StatusIds.PasteNothing);
             return;
         }
 
-        var objects = fragment.Objects.Where(o => !IsSkipped(o)).ToList();
+        var objects = fragment.Objects.Where(o => !IsSkipped(o) && !RefusedAsCycle(o)).ToList();
         var skipped = fragment.Objects.Sum(SkippedRoots);
         if (skipped > 0)
         {
@@ -112,11 +113,17 @@ public sealed partial class DesignSurfaceController
         }
 
         var target = PasteTarget();
+        if (HasFixedStructure(target))
+        {
+            ReportFrameChildFixed(target); // DSG-SUR-227: not into an instance or an inherited container
+            return;
+        }
+
         var sequence = _host.Clipboard.SequenceNumber;
-        var k = _lastPaste is { } last && last.Sequence == sequence && last.TargetName.Equals(target.Name, StringComparison.OrdinalIgnoreCase)
+        var k = _lastPaste is { } last && last.Sequence == sequence && last.TargetName.Equals(target.QualifiedName, StringComparison.OrdinalIgnoreCase)
             ? last.Count + 1
             : 1;
-        var copiedFrom = _lastCopy is { } copy && copy.Sequence == sequence ? Document.FindByName(copy.ParentName) : null;
+        var copiedFrom = _lastCopy is { } copy && copy.Sequence == sequence ? Document.FindByQualifiedName(copy.ParentName) : null;
 
         var data = objects.Select(o => (Object: o, Parent: PasteParent(o, target))).ToList();
 
@@ -154,7 +161,7 @@ public sealed partial class DesignSurfaceController
                 : (Coordinate(d.Object, "Left") + offsets[d.Object].Dx, Coordinate(d.Object, "Top") + offsets[d.Object].Dy)))
             .ToList();
         AddCopies(placements, UndoTitles.Paste);
-        _lastPaste = (sequence, target.Name, k);
+        _lastPaste = (sequence, target.QualifiedName, k);
     }
 
     /// <summary>A copy to create: the source object, its new parent and its new Left/Top (DesignLeft/DesignTop for a tray item).</summary>
@@ -168,6 +175,12 @@ public sealed partial class DesignSurfaceController
     /// </summary>
     private void AddCopies(IReadOnlyList<Placement> placements, string title)
     {
+        if (placements.Select(p => p.Parent).FirstOrDefault(HasFixedStructure) is { } fixedParent)
+        {
+            ReportFrameChildFixed(fixedParent); // DSG-SUR-227: a Ctrl-drag copy of inherited controls stays out of the frame
+            return;
+        }
+
         var names = PasteNames(placements.Select(p => p.Source));
         var changes = new List<AddObject>();
         var appended = new Dictionary<FormObject, int>(ReferenceEqualityComparer.Instance);
@@ -177,7 +190,7 @@ public sealed partial class DesignSurfaceController
             var (xPath, yPath) = IsNonVisual(obj) ? ("DesignLeft", "DesignTop") : ("Left", "Top");
             snapshot = WithProperty(WithProperty(snapshot, xPath, position.X), yPath, position.Y);
             var count = appended.GetValueOrDefault(parent);
-            changes.Add(new AddObject(parent.Name, parent.Children.Count + count, snapshot));
+            changes.Add(new AddObject(parent.QualifiedName, parent.Children.Count + count, snapshot));
             appended[parent] = count + 1;
         }
 
@@ -189,7 +202,7 @@ public sealed partial class DesignSurfaceController
 
         var before = Selection.ToSnapshot();
         var undo = new List<FormChange>(ApplyEdit(changes));
-        var copies = placements.Select(p => Document.FindByName(names[p.Source])!).ToList();
+        var copies = placements.Select(p => Document.FindByQualifiedName(names[p.Source])!).ToList();
 
         // DSG-SUR-127: focusable objects take the tab positions after the existing ones, in copied order.
         var renumber = copies.Where(TabOrderRules.IsFocusable).GroupBy(o => o.Parent!, ReferenceEqualityComparer.Instance)
@@ -205,7 +218,7 @@ public sealed partial class DesignSurfaceController
     }
 
     /// <summary>DSG-SUR-122: an object of a class the catalog does not know (or otherwise preserved) is not pasted.</summary>
-    private static bool IsSkipped(FormObject obj) => obj.IsPreserved || obj.Info is null;
+    private static bool IsSkipped(FormObject obj) => obj.Kind != FormObjectKind.Inline && (obj.IsPreserved || obj.Info is null);
 
     /// <summary>The number of skipped subtrees in <paramref name="obj"/>'s tree (a skipped object counts once with its subtree).</summary>
     private static int SkippedRoots(FormObject obj) => IsSkipped(obj) ? 1 : obj.Children.Sum(SkippedRoots);
@@ -224,7 +237,7 @@ public sealed partial class DesignSurfaceController
             return Document.Root;
         }
 
-        return primary is { Info.AcceptsChildren: true, IsPreserved: false } ? primary : primary.Parent;
+        return primary is { Info.AcceptsChildren: true, IsPreserved: false } && !HasFixedStructure(primary) ? primary : primary.Parent;
     }
 
     /// <summary>
@@ -248,7 +261,7 @@ public sealed partial class DesignSurfaceController
     }
 
     private bool CanHold(FormObject parent, ComponentInfo child) =>
-        parent is { IsPreserved: false, Info: { AcceptsChildren: true } p }
+        parent is { IsPreserved: false, Info: { AcceptsChildren: true } p } && !HasFixedStructure(parent)
         && (p.ChildClasses.IsEmpty || p.ChildClasses.Any(c => Catalog.IsAssignable(child.ClassName, c)))
         && (child.ParentClasses.IsEmpty || child.ParentClasses.Any(c => Catalog.IsAssignable(p.ClassName, c)));
 
@@ -259,7 +272,7 @@ public sealed partial class DesignSurfaceController
     /// </summary>
     private Dictionary<FormObject, string> PasteNames(IEnumerable<FormObject> objects)
     {
-        var used = new HashSet<string>(Document.AllObjects().Select(o => o.Name), StringComparer.OrdinalIgnoreCase);
+        var used = new HashSet<string>(Document.AllObjects().Where(o => !o.IsInherited).Select(o => o.Name), StringComparer.OrdinalIgnoreCase);
         var names = new Dictionary<FormObject, string>(ReferenceEqualityComparer.Instance);
         bool Free(string name) => !used.Contains(name) && _host.CodeSync.LookupMember(name) == MemberLookup.None;
 
@@ -285,6 +298,11 @@ public sealed partial class DesignSurfaceController
 
             used.Add(name);
             names[obj] = name;
+            if (obj.Kind == FormObjectKind.Inline)
+            {
+                return; // DSG-SUR-230: the inherited names of an instance are kept
+            }
+
             foreach (var child in obj.Children.Where(c => !IsSkipped(c)))
             {
                 Assign(child);
@@ -317,6 +335,15 @@ public sealed partial class DesignSurfaceController
 
     private FormObjectData TransformTree(FormObject obj, Dictionary<FormObject, string> names, Dictionary<string, string> renamed)
     {
+        if (obj.Kind == FormObjectKind.Inline)
+        {
+            // DSG-SUR-230: an instance keeps its lines and override blocks (the snapshot is read again on add); a
+            // preserved one keeps its structure so the new name and position are written.
+            var captured = FormObjectData.Capture(obj);
+            return new FormObjectData(FormObjectKind.Inline, names[obj], obj.TypeName, captured.Properties,
+                captured.Children);
+        }
+
         var info = obj.Info!;
         var properties = new List<FormPropertyData>();
         foreach (var property in FormObjectData.Capture(obj).Properties)

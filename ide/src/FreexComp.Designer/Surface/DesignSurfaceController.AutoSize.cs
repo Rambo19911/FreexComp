@@ -34,7 +34,7 @@ public sealed partial class DesignSurfaceController
             })
             .OfType<string>()
             .Distinct(StringComparer.OrdinalIgnoreCase)
-            .Select(Document.FindByName)
+            .Select(Document.FindByQualifiedName)
             .OfType<FormObject>();
 
     /// <summary>
@@ -96,7 +96,7 @@ public sealed partial class DesignSurfaceController
         {
             if (value != old)
             {
-                yield return new SetProperty(obj.Name, path, new IntegerValue(value, false));
+                yield return new SetProperty(obj.QualifiedName, path, new IntegerValue(value, false));
             }
         }
 

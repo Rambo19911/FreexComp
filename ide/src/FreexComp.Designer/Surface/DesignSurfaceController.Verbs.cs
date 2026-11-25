@@ -51,7 +51,7 @@ public sealed partial class DesignSurfaceController
     /// <see cref="CanExecute(string)"/> with the command's argument (the verb commands of DSG-SUR-192 … 196 take one).
     /// </summary>
     public bool CanExecute(string commandId, string? argument) =>
-        Commands.Verbs.Contains(commandId) ? !IsReadOnly && CanExecuteVerb(commandId, argument) : CanExecute(commandId);
+        Commands.Verbs.Contains(commandId) ? !IsReadOnly && !RefusedInFrame(commandId) && CanExecuteVerb(commandId, argument) : CanExecute(commandId);
 
     private static IReadOnlyList<DesignerVerb> KnownVerbs(FormObject component) =>
         component.Info is { } info ? [.. info.DesignerVerbs.Where(v => Commands.Verbs.Contains(v.Command))] : [];
@@ -196,10 +196,10 @@ public sealed partial class DesignSurfaceController
         var stored = pageControl.FindProperty("ActivePage") is not null;
         if (ReferenceEquals(sheet, PageControlRenderer.DefaultSheet(pageControl)))
         {
-            return stored ? new RemoveProperty(pageControl.Name, "ActivePage") : null;
+            return stored ? new RemoveProperty(pageControl.QualifiedName, "ActivePage") : null;
         }
 
-        return new SetProperty(pageControl.Name, "ActivePage", new IdentValue(sheet.Name));
+        return new SetProperty(pageControl.QualifiedName, "ActivePage", new IdentValue(sheet.Name));
     }
 
     /// <summary>
