@@ -24,7 +24,13 @@ A library file opens protected, so that you do not change it by accident. Choose
 above the text when you do want to change it.
 
 ## Changing it
-You may change the library source. Keep in mind:
+To change a library unit for one project only, open the unit and choose `Copy to Project` on the bar above
+the text. FreexComp copies the file into the project's folder and adds it to the project. From then on
+this project is built from the copy; every other project still uses the library unit. To go back, remove
+the file from the project and delete it. Units that include other files (`System`, `Math`, `Character`)
+cannot be copied this way.
+
+You may also change the library source itself. Keep in mind:
 
 - A changed library unit affects **every** project compiled afterwards, not only the one you are working on.
   Nothing has to be installed or registered: the next build of any project compiles the changed file.
