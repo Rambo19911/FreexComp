@@ -247,11 +247,22 @@ public sealed partial class MainWindow : Window
             return; // focus went to a dialog over this window (UI-DLG-001); it comes back when the dialog closes
         }
 
-        if (IsVisible && (FocusManager?.GetFocusedElement() is not Avalonia.Visual focused || TopLevel.GetTopLevel(focused) != this))
+        if (IsVisible && FocusLeft(this, FocusManager?.GetFocusedElement()))
         {
             RestoreFocus();
         }
     }
+
+    /// <summary>
+    /// The focus rule of <see cref="OnFocusMaybeLost"/>: focus went nowhere or out of <paramref name="window"/>. I-284: an
+    /// open popup of the window — a context menu, a submenu, a drop-down — is a top level of its own on the desktop
+    /// platform, but its content belongs to the window's logical tree (through the popup and the control that opened it);
+    /// focus there has not left, so the window does not take it back while the popup is used with the keyboard.
+    /// </summary>
+    internal static bool FocusLeft(TopLevel window, IInputElement? focused) =>
+        focused is not Avalonia.Visual visual
+        || (TopLevel.GetTopLevel(visual) != window
+            && !(visual is Avalonia.LogicalTree.ILogical logical && logical.GetLogicalAncestors().Contains(window)));
 
     private void OnFocusedDetached(object? sender, Avalonia.VisualTreeAttachmentEventArgs e)
     {

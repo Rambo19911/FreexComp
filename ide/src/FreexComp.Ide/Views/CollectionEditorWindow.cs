@@ -13,8 +13,8 @@ namespace FreexComp.Ide.Views;
 
 /// <summary>
 /// The collection editor (dialogs.md §25, object-inspector.md §5.7): 640 × 400, resizable; the item list (240 px, extended
-/// selection, <c>Dialog.CollectionEditor.Item.&lt;index&gt;</c>), the Add / Delete / Move Up / Move Down row under it and
-/// the embedded property grid of the selected item (<c>Dialog.CollectionEditor.Grid.Row.&lt;PropertyPath&gt;</c>, name
+/// selection, <c>Dialog.CollectionEditor.Item.&lt;index&gt;</c>), the Add / Delete / Move Up / Move Down row under the list
+/// and the grid, and the embedded property grid of the selected item (<c>Dialog.CollectionEditor.Grid.Row.&lt;PropertyPath&gt;</c>, name
 /// column 45 %). Keys (UI-DLG-240): Insert, Delete, Ctrl+Up / Ctrl+Down in the list; F4 moves to the grid; in the grid
 /// Up/Down, F2 or typing edits, Space toggles; Enter / Escape in a grid editor commit / cancel that edit only.
 /// </summary>
@@ -79,10 +79,12 @@ public sealed class CollectionEditorWindow : DialogWindow
         };
         Place(body, itemsLabel, 0, 0);
         Place(body, listHost, 1, 0);
+        // The button row starts under the list and runs on under the grid (the wireframe of dialogs.md §25): the four
+        // buttons need more than the list's 240 px at every scale (I-289); the grid ends above the row.
         Place(body, buttons, 2, 0);
+        Grid.SetColumnSpan(buttons, 3);
         Place(body, gridLabel, 0, 2);
         Place(body, p.Grid, 1, 2);
-        Grid.SetRowSpan(p.Grid, 2);
 
         void Sync()
         {

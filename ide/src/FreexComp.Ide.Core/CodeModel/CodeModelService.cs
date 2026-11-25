@@ -20,6 +20,7 @@ public sealed class CodeModelService
     private readonly IProjectService _projects;
     private readonly IDocumentService _documents;
     private readonly IToolchainLocator _toolchain;
+    private readonly Platform.IFileSystem _fileSystem;
     private readonly Dictionary<string, long> _overrides = new(StringComparer.OrdinalIgnoreCase);
     private (Project? Definition, FreexComp.Compiler.Targets.TargetInfo? Target, string? Rtl, string? Framework, string? Data) _projectKey;
 
@@ -29,6 +30,7 @@ public sealed class CodeModelService
         _projects = projects;
         _documents = documents;
         _toolchain = toolchain;
+        _fileSystem = fileSystem;
         Workspace = new Workspace(new CompilerFileSystemAdapter(fileSystem));
     }
 
@@ -46,20 +48,12 @@ public sealed class CodeModelService
             return null;
         var paths = _toolchain.Resolve();
         // IDE-PLAT-006: the key holds the definition (its active platform included) and the descriptor of that platform.
-        // IDE-PLAT-007: a platform that is not installed is analysed with the baseline descriptor and its own lists.
-        var target = _projects.PlatformCatalog.Find(project.ActivePlatform)?.Target ?? BuiltInPlatformCatalog.Baseline with { Id = project.ActivePlatform };
+        var target = Target(project.ActivePlatform);
         var key = (definition, target, paths.RtlDir, paths.FrameworkDir, paths.DataDir);
         if (key != _projectKey)
         {
             _projectKey = key;
-            var options = ProjectOptions.ToCompilationOptions(definition, project.ActiveConfiguration, target) with
-            {
-                RtlDirectory = paths.RtlDir ?? "",
-                UsePcuCache = false, // Check Syntax reads sources only and writes nothing (IDE-P3-055)
-            };
-            foreach (var library in new[] { paths.FrameworkDir, paths.DataDir }.OfType<string>()) // as BuildRequest.ExtraSearchPaths
-                options = options with { SearchPaths = options.SearchPaths.Add(Path.Combine(library, "src")) };
-            Workspace.SetProject(options);
+            Workspace.SetProject(Options(definition, project.ActiveConfiguration, target, paths));
         }
 
         var open = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -107,6 +101,45 @@ public sealed class CodeModelService
         if (Synchronize() is not { } compilation)
             return Task.FromResult(ImmutableArray<string>.Empty);
         return Worker.RunAsync("projectUnits", _ => compilation.Units.Select(u => u.Name).ToImmutableArray(), ct);
+    }
+
+    /// <summary>
+    /// I-280: the canonical names of every unit of the program of <paramref name="projectPath"/> in
+    /// <paramref name="configuration"/> — the loaded project with the open buffers (as <see cref="GetProjectUnitNamesAsync(CancellationToken)"/>),
+    /// any other project (a listed member of the group) as saved on disk, with its own active platform. Empty when the
+    /// project file cannot be read or the front end could not start.
+    /// </summary>
+    public Task<ImmutableArray<string>> GetProjectUnitNamesAsync(string projectPath, string configuration, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(projectPath);
+        if (string.Equals(projectPath, _projects.Project?.FilePath, StringComparison.OrdinalIgnoreCase))
+            return GetProjectUnitNamesAsync(ct);
+        if (ProjectFileAccess.Load(projectPath, _fileSystem).Project is not { } definition)
+            return Task.FromResult(ImmutableArray<string>.Empty);
+        var options = Options(definition, configuration, Target(ProjectOptions.GetEffectivePlatform(definition)), _toolchain.Resolve());
+        return Worker.RunAsync("memberUnits", _ =>
+        {
+            var workspace = new Workspace(new CompilerFileSystemAdapter(_fileSystem));
+            workspace.SetProject(options);
+            return workspace.CurrentCompilation.Units.Select(u => u.Name).ToImmutableArray();
+        }, ct);
+    }
+
+    /// <summary>IDE-PLAT-007: a platform that is not installed is analysed with the baseline descriptor and its own lists.</summary>
+    private FreexComp.Compiler.Targets.TargetInfo Target(string platform) =>
+        _projects.PlatformCatalog.Find(platform)?.Target ?? BuiltInPlatformCatalog.Baseline with { Id = platform };
+
+    /// <summary>The compilation options of <paramref name="definition"/>: the toolchain RTL, the library sources, no unit cache.</summary>
+    private static CompilationOptions Options(Project definition, string configuration, FreexComp.Compiler.Targets.TargetInfo target, ToolchainPaths paths)
+    {
+        var options = ProjectOptions.ToCompilationOptions(definition, configuration, target) with
+        {
+            RtlDirectory = paths.RtlDir ?? "",
+            UsePcuCache = false, // Check Syntax reads sources only and writes nothing (IDE-P3-055)
+        };
+        foreach (var library in new[] { paths.FrameworkDir, paths.DataDir }.OfType<string>()) // as BuildRequest.ExtraSearchPaths
+            options = options with { SearchPaths = options.SearchPaths.Add(Path.Combine(library, "src")) };
+        return options;
     }
 
     private static bool IsPascal(string path) =>

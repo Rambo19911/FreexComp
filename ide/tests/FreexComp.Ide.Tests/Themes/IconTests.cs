@@ -58,6 +58,53 @@ public sealed partial class IconTests
         Assert.Throws<KeyNotFoundException>(() => IconCatalog.Get("no-such-icon"));
     }
 
+    /// <summary>
+    /// I-290 (found by I-287): the cut-out exclamation mark of <c>warning-corner</c> is readable where the icon is used,
+    /// 10 × 10 DIP (UI-TW-104): every edge of the bar and of the dot lies on the device-pixel grid at 100 % and 200 %
+    /// (and the vertical edges also at 150 %), so that those pixels are drawn fully in <c>bg.panel</c> and not as a faint
+    /// blend; the bar is at least 2 × 2 device pixels at 100 %, the dot at least 2 × 1, with a full pixel row between them.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Phase", "8")]
+    [Trait("Req", "UI-TW-104")]
+    [Trait("Req", "UI-TOK-061")]
+    public void WarningCorner_CutOutIsOnTheDevicePixelGridAtItsSize()
+    {
+        const double size = 10; // DIP, UI-TW-104
+        var cutOuts = IconCatalog.Get("warning-corner").Layers.Where(l => l.ColorToken == "bg.panel")
+            .Select(l => l.Geometry.Bounds).OrderBy(b => b.Y).ToList();
+        Assert.Equal(2, cutOuts.Count); // the bar, then the dot
+        var problems = new List<string>();
+        void OnGrid(double unit, double scale, string what)
+        {
+            var px = unit * size / 16 * scale;
+            if (Math.Abs(px - Math.Round(px)) > 0.01)
+                problems.Add(FormattableString.Invariant($"{what} at {unit} of 16 is {px:0.###} device pixels at {scale:0.#}x"));
+        }
+
+        foreach (var (box, name) in cutOuts.Zip((string[])["bar", "dot"]))
+        {
+            foreach (var scale in (double[])[1.0, 2.0])
+            {
+                OnGrid(box.Left, scale, name + " left");
+                OnGrid(box.Right, scale, name + " right");
+                OnGrid(box.Top, scale, name + " top");
+                OnGrid(box.Bottom, scale, name + " bottom");
+            }
+
+            OnGrid(box.Left, 1.5, name + " left");
+            OnGrid(box.Right, 1.5, name + " right");
+        }
+
+        double Px(double units) => units * size / 16;
+        var (bar, dot) = (cutOuts[0], cutOuts[1]);
+        Assert.True(problems.Count == 0, string.Join(Environment.NewLine, problems));
+        Assert.True(Px(bar.Width) >= 1.99 && Px(bar.Height) >= 1.99, $"bar {bar}");
+        Assert.True(Px(dot.Width) >= 1.99 && Px(dot.Height) >= 0.99, $"dot {dot}");
+        Assert.True(Px(dot.Top - bar.Bottom) >= 0.99, $"bar {bar} and dot {dot} run together");
+        Assert.Equal(8.0, (bar.Left + bar.Right) / 2, 3); // centred under the apex
+    }
+
     /// <summary>toolbars.md §4: icon name → colour token (the brief's "; token" suffix, else <c>text.primary</c>).</summary>
     private static Dictionary<string, string> SpecIcons()
     {

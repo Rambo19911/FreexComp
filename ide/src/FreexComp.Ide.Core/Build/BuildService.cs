@@ -516,10 +516,14 @@ public sealed class BuildService : IBuildService
             return null;
         }
 
-        // I-225: the library goes beside the loaded project's program (the deployer reads that project's units).
-        if (result is { Canceled: false } && kind != BuildKind.Clean
-            && result.Projects.LastOrDefault(p => Same(p.ProjectPath, _projects.Project?.FilePath)) is { Success: true, OutputPath: { } built })
-            await DeployDatabaseLibraryAsync(built);
+        // I-225, I-280: the library goes beside the program of every project the request built that needs it (the loaded
+        // project, a listed member, each project of Build All and the dependencies built with them).
+        if (result is { Canceled: false } && kind != BuildKind.Clean)
+        {
+            foreach (var built in result.Projects.Where(p => p is { Success: true, OutputPath: not null }))
+                await DeployDatabaseLibraryAsync(built);
+        }
+
         Finish(_internalError && !result!.Success ? Strings.Msg_Build_InternalError
             : GroupSummary(result!) ?? Summary(result!, kind, subject.Name), success: result!.Success);
         if (result.Errors > 0 && !result.Canceled && _settings.Get(SettingsCatalog.MessagesAutoShowOnError))
@@ -528,20 +532,20 @@ public sealed class BuildService : IBuildService
     }
 
     /// <summary>Puts the database engine library beside a built program that needs it (I-225; set by the service graph).</summary>
-    public Func<string, Task<LibraryDeployResult>>? DeployDatabaseLibrary { get; set; }
+    public Func<ProjectBuildResult, Task<LibraryDeployResult>>? DeployDatabaseLibrary { get; set; }
 
     /// <summary>
     /// I-225: after a successful Build or Rebuild, before the summary. A copy is one Output line; a library that was not
     /// found or could not be copied is an Output line and a warning row (the program builds, but cannot open a database).
     /// </summary>
-    private async Task DeployDatabaseLibraryAsync(string outputPath)
+    private async Task DeployDatabaseLibraryAsync(ProjectBuildResult built)
     {
         if (DeployDatabaseLibrary is not { } deploy)
             return;
         LibraryDeployResult outcome;
         try
         {
-            outcome = await deploy(outputPath);
+            outcome = await deploy(built);
         }
         catch (Exception e)
         {

@@ -211,14 +211,21 @@ public sealed class ToolBarRow : DockPanel
     {
         var bar = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
         AutomationProperties.SetAutomationId(bar, "ToolBar." + model.Name);
+        object? previous = null;
         foreach (var item in model.Items)
         {
-            bar.Children.Add(item switch
+            var control = item switch
             {
                 ToolBarButtonModel b => CreateButton(b),
                 ToolBarComboModel c => CreateCombo(model.Name, c),
                 _ => Line((Metric("FxcMetricToolbarGroupGap") - 1) / 2),
-            });
+            };
+
+            // I-290: two combo boxes side by side do not touch; the tool-bar combo gap (space.2) lies between them.
+            if (item is ToolBarComboModel && previous is ToolBarComboModel)
+                control.Margin = new Thickness(Metric("FxcSpace2"), 0, 0, 0);
+            bar.Children.Add(control);
+            previous = item;
         }
 
         return bar;

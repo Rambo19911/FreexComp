@@ -13,39 +13,39 @@ object StdForm: TStdForm
     Width = 400
     Height = 29
     object ToolButton1: TToolButton
-      Width = 0
+      Width = 23
       Action = EditCut1
     end
     object ToolButton2: TToolButton
-      Width = 0
+      Width = 23
       Action = EditCopy1
     end
     object ToolButton3: TToolButton
-      Width = 0
+      Width = 23
       Action = EditPaste1
     end
     object ToolButton4: TToolButton
-      Width = 0
+      Width = 23
       Action = EditSelectAll1
     end
     object ToolButton5: TToolButton
-      Width = 0
+      Width = 23
       Action = EditUndo1
     end
     object ToolButton6: TToolButton
-      Width = 0
+      Width = 23
       Action = EditDelete1
     end
     object ToolButton7: TToolButton
-      Width = 0
+      Width = 23
       Action = FileOpen1
     end
     object ToolButton8: TToolButton
-      Width = 0
+      Width = 23
       Action = FileSaveAs1
     end
     object ToolButton9: TToolButton
-      Width = 0
+      Width = 23
       Action = FileExit1
     end
   end

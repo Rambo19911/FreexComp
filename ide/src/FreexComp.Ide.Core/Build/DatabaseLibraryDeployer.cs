@@ -28,10 +28,11 @@ public sealed record LibraryDeployResult(LibraryDeployStatus Status, string? Det
 /// <summary>
 /// I-225: after a successful build, puts the database engine library beside the program when the program needs it. The
 /// decision comes from the resolved unit list of the project: the unit that loads the library is in the build. The file
-/// is written only when it is missing or differs from the toolchain's.
+/// is written only when it is missing or differs from the toolchain's. I-280: for every project a request built, not
+/// only the loaded one; <paramref name="projectUnitNames"/> gives the units of a project file in a configuration.
 /// </summary>
 public sealed class DatabaseLibraryDeployer(IFileSystem fileSystem, IToolchainLocator toolchain,
-    Func<CancellationToken, Task<ImmutableArray<string>>> projectUnitNames)
+    Func<string, string, CancellationToken, Task<ImmutableArray<string>>> projectUnitNames)
 {
     /// <summary>The file name of the database engine library, as the data-access units load it.</summary>
     public const string FileName = "sqlite3.dll";
@@ -39,11 +40,13 @@ public sealed class DatabaseLibraryDeployer(IFileSystem fileSystem, IToolchainLo
     /// <summary>The data-access unit that loads <see cref="FileName"/>; every unit that needs the library uses it.</summary>
     public const string BindingUnit = "SQLite3API";
 
-    /// <param name="outputPath">The built program (<c>BuildResult.OutputPath</c>).</param>
-    public async Task<LibraryDeployResult> DeployAsync(string outputPath)
+    /// <param name="built">A project the request built: its file, configuration and program (<c>OutputPath</c>).</param>
+    public async Task<LibraryDeployResult> DeployAsync(FreexComp.Build.ProjectBuildResult built)
     {
-        ArgumentNullException.ThrowIfNull(outputPath);
-        var units = await projectUnitNames(CancellationToken.None);
+        ArgumentNullException.ThrowIfNull(built);
+        if (built.OutputPath is not { } outputPath)
+            return new LibraryDeployResult(LibraryDeployStatus.NotNeeded);
+        var units = await projectUnitNames(built.ProjectPath, built.Configuration, CancellationToken.None);
         if (!units.Contains(BindingUnit, StringComparer.OrdinalIgnoreCase))
             return new LibraryDeployResult(LibraryDeployStatus.NotNeeded);
         if (toolchain.Resolve().DatabaseLibraryDir is not { } directory)

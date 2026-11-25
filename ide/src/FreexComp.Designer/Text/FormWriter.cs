@@ -148,7 +148,7 @@ public static class FormWriter
 
     /// <summary>
     /// DSG-FD-044: the always-written properties of this object with the value used when the file has none: every
-    /// control's bounds; the root's Left/Top (new-form template 200/120), client size and PixelsPerInch = 96; the tray
+    /// control's bounds (position 0, the class's default size); the root's Left/Top (new-form template 200/120), client size and PixelsPerInch = 96; the tray
     /// position of a non-visual direct child of the root. <c>"stored": false</c> wins.
     /// </summary>
     private static List<(string Path, FormValue Value)> AlwaysWritten(FormObject obj)
@@ -193,10 +193,12 @@ public static class FormWriter
         }
         else
         {
+            // I-288: a control without a stored size gets the class's default size - the size the designer lays it out
+            // with and the run-time constructor gives it - not 0, which the run-time layout would use (a separator).
             Add("Left", 0);
             Add("Top", 0);
-            Add("Width", 0);
-            Add("Height", 0);
+            Add("Width", info.DefaultSize.Width);
+            Add("Height", info.DefaultSize.Height);
         }
 
         return result;

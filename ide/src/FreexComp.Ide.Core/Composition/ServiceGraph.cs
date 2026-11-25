@@ -204,7 +204,7 @@ public static class ServiceGraph
         build.BuildFinished += (_, _) => groups.Refresh(); // IDE-PM-152: a build may have changed what the listed members show
         var codeModel = new CodeModel.CodeModelService(projects, documents, toolchain, platform.FileSystem); // I-110
         build.CheckSyntax = codeModel.GetProjectDiagnosticsAsync;
-        build.DeployDatabaseLibrary = new DatabaseLibraryDeployer(platform.FileSystem, toolchain, codeModel.GetProjectUnitNamesAsync).DeployAsync; // I-225
+        build.DeployDatabaseLibrary = new DatabaseLibraryDeployer(platform.FileSystem, toolchain, codeModel.GetProjectUnitNamesAsync).DeployAsync; // I-225, I-280
         projects.UnitRename = new CodeModel.UnitRenameAnalyzer(codeModel, toolchain, librarySource); // I-236
         _ = new CodeModel.LiveDiagnosticsService(documents, codeModel, settings, platform.Clock, platform.Dispatcher); // I-111
         var semanticHighlights = new CodeModel.SemanticHighlightService(documents, codeModel, settings, platform.Clock, platform.Dispatcher); // I-112

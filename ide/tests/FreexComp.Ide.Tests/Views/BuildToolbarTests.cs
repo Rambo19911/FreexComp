@@ -101,4 +101,34 @@ public sealed class BuildToolbarTests
         await h.WaitForAsync(() => h.Services.State.Current.State == IdeState.Idle, "stopped");
         Assert.Equal(idle, Geometry());
     }
+
+    /// <summary>
+    /// I-290 (found by I-287): the Configuration and Platform combo boxes of the Build tool bar do not touch — between
+    /// the right edge of the one and the left edge of the other lies the tool-bar combo gap (<c>space.2</c>,
+    /// design-tokens.md §5), at every scale factor (UI-TOK-062), both on one line.
+    /// </summary>
+    [AvaloniaTheory(Timeout = 30000)]
+    [Trait("Phase", "8")]
+    [Trait("Req", "UI-TOK-062")]
+    [InlineData(1.0)]
+    [InlineData(1.5)]
+    [InlineData(2.0)]
+    public async Task ConfigurationAndPlatformCombos_HaveTheComboGap(double scale)
+    {
+        await using var h = await BuildScenario.StartAsync(o => o.Scale = scale, projectExtra: """, "platforms": ["win64", "win32"]""");
+        Assert.Equal(scale, h.Window.RenderScaling);
+        var gap = Assert.IsType<double>(h.Window.FindResource("FxcSpace2"));
+        Assert.Equal(4.0, gap);
+        Rect Box(string id)
+        {
+            var combo = h.Find<ComboBox>(id);
+            return new Rect(combo.TranslatePoint(default, h.Window)!.Value, combo.Bounds.Size);
+        }
+
+        Dispatcher.UIThread.RunJobs();
+        var (configuration, platform) = (Box("ToolBar.Build.Configuration"), Box("ToolBar.Build.Platform"));
+        Assert.Equal(configuration.Center.Y, platform.Center.Y, 0.01);
+        Assert.True(Math.Abs(platform.X - configuration.Right - gap) <= 0.5 / scale,
+            $"gap {platform.X - configuration.Right} between {configuration} and {platform}, expected {gap}");
+    }
 }

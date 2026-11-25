@@ -29,8 +29,10 @@ public sealed class CollectionEditorViewTests
     private static CollectionValue? Panels(FormDocumentViewModel d) =>
         d.Designer.Model!.FindByName("StatusBar1")!.FindProperty("Panels")?.Value as CollectionValue;
 
-    private static Task<HeadlessHarness> StartAsync() => HeadlessHarness.StartAsync(o =>
+    internal static Task<HeadlessHarness> StartAsync(string? theme = null) => HeadlessHarness.StartAsync(o =>
     {
+        if (theme is not null)
+            o.Settings["appearance.theme"] = theme;
         DesignerViewTests.Files(o);
         o.ToolWindows.Add(SampleToolViewModel.Definition("ToolPalette", ToolGroupId.RightLower, 5, "Cmd_view_toolPalette"));
         o.InitialFiles["MainForm.pas"] = DesignerViewTests.Unit
@@ -45,7 +47,7 @@ public sealed class CollectionEditorViewTests
     });
 
     /// <summary>Selects StatusBar1, makes Panels the current Object Inspector row and clicks its … button.</summary>
-    private static void OpenPanels(HeadlessHarness h, FormDocumentViewModel d)
+    internal static void OpenPanels(HeadlessHarness h, FormDocumentViewModel d)
     {
         d.Designer.Surface!.Selection.Select(d.Designer.Model!.FindByName("StatusBar1")!);
         Dispatcher.UIThread.RunJobs();

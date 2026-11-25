@@ -20,7 +20,7 @@ public sealed class DatabaseLibraryDeployTests
     private const string Deployed = BuildTestBed.Dir + @"\bin\" + DatabaseLibraryDeployer.FileName;
 
     /// <summary>The real RTL sources: the unit list needs a front end that starts (System.pas and its include files).</summary>
-    private static readonly Lazy<(string Name, string Text)[]> Rtl = new(() =>
+    internal static readonly Lazy<(string Name, string Text)[]> Rtl = new(() =>
     {
         var src = Path.Combine(SpecTables.RepoRootPath(), "rtl", "src");
         return [.. Directory.GetFiles(src, "*.inc").Append(Path.Combine(src, "System.pas")).Append(Path.Combine(src, "unit-aliases.json"))

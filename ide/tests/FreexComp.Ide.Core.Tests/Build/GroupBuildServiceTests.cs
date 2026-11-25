@@ -27,9 +27,9 @@ public sealed class GroupBuildServiceTests
 
     private static string Unit(string name) => $@"{Root}\{name}\{name}Unit.pas";
 
-    private static BuildTestBed NewBed()
+    private static BuildTestBed NewBed(Action<TestCompositionOptions>? configure = null)
     {
-        var bed = new BuildTestBed();
+        var bed = new BuildTestBed(configure);
         foreach (var name in (string[])["App", "Lib", "Tools"])
         {
             bed.File(Proj(name), $$"""
@@ -443,5 +443,62 @@ public sealed class GroupBuildServiceTests
         Assert.NotNull(await bed.Services.Build.BuildAsync(BuildKind.Build, continueToRun: true));
         Assert.True(bed.Engine.Requests[^1].StopOnFirstFailure);
         Assert.Equal(7, bed.Engine.Requests.Count);
+    });
+
+    /// <summary>
+    /// I-280 (found by I-276), IDE-P3-095: the database engine library goes beside the output of every project a request
+    /// built successfully whose resolved unit list holds the unit that loads it — a listed member built from its row and
+    /// each project of Build All — not only beside the loaded project's output; a project without that unit gets none.
+    /// Lib uses the data-access unit through its own unit (the resolved list, not the program's uses clause); App, the
+    /// loaded project, and Tools do not.
+    /// </summary>
+    [Fact(Timeout = 30000)]
+    [Trait("Task", "I-280")]
+    [Trait("Req", "IDE-P3-095")]
+    [Trait("Req", "IDE-PM-170")]
+    [Trait("Req", "IDE-PM-171")]
+    public Task ListedMemberThatUsesDataAccess_GetsTheDatabaseLibraryBesideItsOutput() => TestUiThread.RunAsync(async () =>
+    {
+        const string Home = @"G:\home";
+        var library = Home + @"\sqlite\" + DatabaseLibraryDeployer.FileName;
+        var bed = NewBed(o => o.ToolchainEnvironment = new ToolchainEnvironment(Home, @"G:\ide", []));
+        foreach (var (name, text) in DatabaseLibraryDeployTests.Rtl.Value)
+            bed.File(@"G:\rtl\" + name, text);
+        bed.File(library, "library v1");
+        bed.File($@"{Root}\Lib\{DatabaseLibraryDeployer.BindingUnit}.pas", $"unit {DatabaseLibraryDeployer.BindingUnit};\ninterface\nimplementation\nend.\n");
+        bed.File(Unit("Lib"), $"unit LibUnit;\ninterface\nuses {DatabaseLibraryDeployer.BindingUnit};\nimplementation\nend.\n");
+        bed.File($@"{Root}\Lib\Lib.pas", "program Lib;\nuses LibUnit;\nbegin\nend.\n");
+        bed.File(GroupPath, """
+            { "formatVersion": 1, "projects": ["App/App.pproj", "Lib/Lib.pproj", "Tools/Tools.pproj"], "activeProject": "App/App.pproj" }
+            """);
+        Assert.True(await bed.Services.Projects.OpenAsync(GroupPath));
+        await bed.Services.ProjectManager.MissingFileChecks;
+        Assert.Equal(Proj("App"), bed.Services.Projects.Project!.FilePath);
+        string Beside(string project) => Path.Combine(Path.GetDirectoryName(Proj(project))!, DatabaseLibraryDeployer.FileName);
+        foreach (var name in (string[])["App", "Lib", "Tools"])
+            bed.File(Path.ChangeExtension(Proj(name), ".exe"), "exe"); // the engine created the output folders
+        var copied = string.Format(System.Globalization.CultureInfo.InvariantCulture, FreexComp.Ide.Core.Resources.Strings.Msg_Build_DatabaseLibraryCopied, DatabaseLibraryDeployer.FileName);
+
+        // The listed member from its row: its output gets the library.
+        bed.Engine.Enqueue(Script(("Lib", true, [])));
+        Assert.True((await bed.Services.Build.BuildMemberAsync(Proj("Lib"), BuildKind.Build))!.Success);
+        Assert.Equal("library v1", bed.Text(Beside("Lib")));
+        Assert.Contains(copied, bed.OutputText(OutputChannels.Build));
+        Assert.False(bed.Fs.FileExists(Beside("App")));
+
+        // Build All: every built project that uses it (Lib), no other (App, the loaded project, and Tools).
+        bed.Fs.DeleteFile(Beside("Lib"));
+        bed.Engine.Enqueue(Script(("Lib", true, []), ("Tools", true, []), ("App", true, [])));
+        Assert.True((await bed.Services.Build.BuildGroupAsync(BuildKind.Build))!.Success);
+        Assert.Equal("library v1", bed.Text(Beside("Lib")));
+        Assert.False(bed.Fs.FileExists(Beside("App")));
+        Assert.False(bed.Fs.FileExists(Beside("Tools")));
+        Assert.All(bed.Services.Messages.Items, i => Assert.True(i.IsSummary)); // no warning row
+
+        // A project that failed gets nothing.
+        bed.Fs.DeleteFile(Beside("Lib"));
+        bed.Engine.Enqueue(Script(("Lib", false, [Error("Lib", "Undeclared identifier 'q'")])));
+        await bed.Services.Build.BuildMemberAsync(Proj("Lib"), BuildKind.Build);
+        Assert.False(bed.Fs.FileExists(Beside("Lib")));
     });
 }

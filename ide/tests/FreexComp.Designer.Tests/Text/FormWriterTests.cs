@@ -114,7 +114,7 @@ public sealed class FormWriterTests
             """;
 
         // Root: Left/Top of the new-form template, client size and PixelsPerInch = 96; controls: their bounds even when
-        // zero; a non-visual child of the root: its tray position, a nested one none; "stored": false wins (TForm Width/Height).
+        // zero, a control without a stored size the class's default size (I-288); a non-visual child of the root: its tray position, a nested one none; "stored": false wins (TForm Width/Height).
         Assert.Equal("""
             object F: TForm
               Left = 200
@@ -126,8 +126,8 @@ public sealed class FormWriterTests
               object B: TButton
                 Left = 0
                 Top = 0
-                Width = 0
-                Height = 0
+                Width = 75
+                Height = 25
                 Caption = 'No bounds'
               end
               object Zero: TLabel

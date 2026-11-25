@@ -17,7 +17,7 @@ namespace FreexComp.Ide.Core.Tests.Designer;
 /// metadata and saved — the text equals the file; an empty list writes nothing; the list has the strings editor.
 /// The files under <c>TestData/forms/actions</c> are the framework's two forms as the designer writes them: the
 /// framework's own files were written by hand and lack the lines the designer always writes (the form's
-/// <c>Left</c>, <c>Top</c> and <c>PixelsPerInch</c>, a tool button's <c>Width</c>); nothing else differs, which the
+/// <c>Left</c>, <c>Top</c> and <c>PixelsPerInch</c>, a tool button's <c>Width</c> — its default size, I-288); nothing else differs, which the
 /// test checks against the framework's files.
 /// </summary>
 [Trait("Phase", "8")]
@@ -26,7 +26,7 @@ public sealed class ActionFormRoundTripTests
     private static readonly string[] Forms = ["Act_SecondaryShortCuts.form", "Act_StdForm.form"];
 
     /// <summary>The lines the designer always writes and the hand-written forms of the framework tests do not have.</summary>
-    private static readonly string[] AlwaysWritten = ["  Left = 200", "  Top = 120", "  PixelsPerInch = 96", "      Width = 0"];
+    private static readonly string[] AlwaysWritten = ["  Left = 200", "  Top = 120", "  PixelsPerInch = 96", "      Width = 23"];
 
     /// <summary>A form of the framework tests (<c>ui-framework/tests/pascal</c>), written by hand.</summary>
     private static string FrameworkForm(string name) =>
