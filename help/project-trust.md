@@ -15,7 +15,7 @@ You have four answers:
 | Answer | What happens |
 |---|---|
 | `Build Without Events` | The project is built now, without its commands. Nothing is remembered; the question comes again next time. This is the answer of the Enter key. |
-| `Trust This Project` | The project is remembered as trusted, with the commands it has now, and is built. |
+| `Trust This Project` | The project is remembered as trusted, with the commands it has now, and is built with its commands. |
 | `Trust Folder...` | You choose a folder. Every project in that folder and below it is trusted from now on. |
 | `Cancel` | Nothing is built and nothing is remembered. |
 
@@ -24,10 +24,10 @@ have changed since you trusted the project.
 
 A project that has no such commands is never asked about.
 
-## What trust allows today
-This version does not run the commands of a project yet: a trusted project is built, and the build reports
-that its commands were ignored. Trust decides which projects will be allowed to run their commands once
-that is available, so answer the question as if they ran.
+## What trust allows
+The commands of a trusted project run as part of every build of that project: the commands listed before
+the build first, the commands listed after the build last. What they print appears in the Output window.
+See *Build events* for how to write them.
 
 ## Trusted locations
 Tools > Options > Environment > Trusted Locations shows the folders and projects you have trusted. Select
