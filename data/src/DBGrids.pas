@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 { DBGrids - the data grid: the rows of a dataset as lines and its fields as columns, drawn by the control, with an
   in-place editor for the selected cell. The grid reads the rows through the row window of its data link; only
   the visible rows are ever read. }

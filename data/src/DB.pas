@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 { DB - the dataset abstraction: TDataSet (state machine, events, field management, navigation API),
   TRowDataSet (fully buffered row list + view, driver hooks), fields, field definitions, parameters, the
   data-source attachment point, EDatabaseError.

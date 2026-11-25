@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 { SQLite3API - raw declarations of the SQLite C API and the dynamic loader of the stock sqlite3.dll
   (DAT-100...DAT-104), plus the UTF-16 <-> UTF-8 conversion for text that crosses the API as UTF-8
   (DAT-110). The library is loaded on first use with LoadLibraryW + GetProcAddress, so a missing library

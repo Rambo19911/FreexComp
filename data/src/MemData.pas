@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 { MemData - TMemTable, the dataset whose rows live only in memory: defined by field definitions (or by its
   persistent data fields), rows kept across Close, auto-increment counters, and a JSON form for saving and
   loading. The JSON writer and reader are private to this unit.

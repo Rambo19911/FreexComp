@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 { DBCtrls - the data-aware controls: each shows (and, where it can, edits) one field of the dataset behind its
   data source through a field data link. }
 unit DBCtrls;

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 // DBFilter - the filter-expression parser and evaluator behind TDataSet.Filter.
 //
 //   filter     = orExpr ;

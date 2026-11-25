@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 { SQLiteData - the SQLite driver on the stock sqlite3.dll: ESQLiteError and the mapping of result codes
   (DAT-115...DAT-117), TSQLiteConnection (DAT-120...DAT-129), the type mapping (DAT-130...DAT-132) and
   TSQLiteQuery (DAT-140...DAT-157). No UI-framework unit is used. }
