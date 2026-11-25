@@ -33,10 +33,67 @@ public sealed class MessagesViewTests
             Diag(h, "E2010", DiagnosticSeverity.Error, "Incompatible types: 'Integer' and 'string'", 4, 5, 4),
             Diag(h, "W1002", DiagnosticSeverity.Warning, "Variable 'Foo1' is declared but never used", 4, 5),
             Diag(h, "H2077", DiagnosticSeverity.Hint, "Value assigned to 'Foo' never used", 6, 3)));
-        h.Press("Ctrl+Shift+B");
-        await h.WaitForAsync(() => h.Services.State.Current.State == Core.Models.IdeState.Idle && h.Services.Build.ResultText is not null,
-            "build finished");
+        // I-272: the wait is for the end of the build started here. "Idle and a result text" also holds before that build
+        // has begun when the harness built before: the pre-build trust check reads the project file on a pool thread
+        // first (IDE-TRUST-003), and until it is back the state is Idle with the result text of the build before.
+        var finished = false;
+        void OnFinished(object? sender, EventArgs e) => finished = true;
+        h.Services.Build.BuildFinished += OnFinished;
+        try
+        {
+            h.Press("Ctrl+Shift+B");
+            await h.WaitForAsync(() => finished && h.Services.State.Current.State == Core.Models.IdeState.Idle, "build finished");
+        }
+        finally
+        {
+            h.Services.Build.BuildFinished -= OnFinished;
+        }
+
         Dispatcher.UIThread.RunJobs();
+    }
+
+    /// <summary>
+    /// I-272: <see cref="BuildWithMessagesAsync"/> waits for the build it started, also when it is not the first build of
+    /// the harness. Before a build starts, the trust check reads the project file on a pool thread (IDE-TRUST-003), so
+    /// the IDE state is still <c>Idle</c> — with the result text of the build before — until that read has come back;
+    /// here the read is held, which a loaded machine does by itself.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "IDE-TEST-013")]
+    public async Task BuildHelperWaitsForTheBuildItStarted()
+    {
+        await using var h = await BuildScenario.StartAsync();
+        await BuildWithMessagesAsync(h);
+        await h.ExecuteAsync("messages.clear");
+        Assert.Empty(h.Services.Messages.Items);
+        Assert.NotNull(h.Services.Build.ResultText); // the first build's
+
+        using var held = new ManualResetEventSlim();
+        using var release = new ManualResetEventSlim();
+        h.FileSystem.BeforeRead = path =>
+        {
+            if (Dispatcher.UIThread.CheckAccess() || !path.EndsWith(".pproj", StringComparison.OrdinalIgnoreCase))
+                return;
+            held.Set();
+            release.Wait();
+        };
+        try
+        {
+            var second = BuildWithMessagesAsync(h);
+            held.Wait(h.Deadline.Token); // the pool thread gets there without the UI thread; no second harness wait beside the helper's
+            Assert.Equal(Core.Models.IdeState.Idle, h.Services.State.Current.State); // the build has not begun
+            Assert.False(second.IsCompleted, "the helper returned before the build it started had begun");
+            release.Set();
+            await second;
+        }
+        finally
+        {
+            release.Set();
+            h.FileSystem.BeforeRead = null;
+        }
+
+        Assert.Equal(Core.Models.IdeState.Idle, h.Services.State.Current.State);
+        Assert.Equal(5, h.Services.Messages.Items.Count); // the second build's diagnostics and its summary
     }
 
     private static string Name(HeadlessHarness h, string id) => AutomationProperties.GetName(h.Find<Control>(id)) ?? "";
