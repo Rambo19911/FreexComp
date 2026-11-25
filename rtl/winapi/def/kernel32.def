@@ -26,6 +26,7 @@ FileTimeToSystemTime
 FindClose
 FindFirstFileW
 FindNextFileW
+FindResourceW
 FlushFileBuffers
 FlushInstructionCache
 FormatMessageW
@@ -79,8 +80,10 @@ LCMapStringEx
 LeaveCriticalSection
 LoadLibraryExW
 LoadLibraryW
+LoadResource
 LocalFileTimeToFileTime
 LocalFree
+LockResource
 MoveFileExW
 MoveFileW
 MulDiv
@@ -106,6 +109,7 @@ SetFileAttributesW
 SetFilePointerEx
 SetLastError
 SetStdHandle
+SizeofResource
 Sleep
 SwitchToThread
 SystemTimeToFileTime

@@ -7,7 +7,14 @@
   ICreateErrorInfo and ISupportErrorInfo (oaidl.h), SysAllocStringLen, SysFreeString, SysStringLen, VariantInit,
   VariantClear, VariantChangeType, SetErrorInfo, GetErrorInfo and CreateErrorInfo (oleauto.h), CoInitializeEx,
   CoUninitialize, CoCreateInstance, CLSIDFromProgID and CoTaskMemFree (combaseapi.h), SHCreateMemStream (shlwapi.h)
-  and the common result-code pages (winerror.h). Declarations only: the unit has no initialization code. }
+  and the common result-code pages (winerror.h). For the image codec bindings (rtl/winapi.md, rules RTL-1030 and
+  RTL-1031; task R-237): the reference pages of ISequentialStream and IStream (objidl.h), STATSTG, the STREAM_SEEK,
+  STATFLAG, COINIT and CLSCTX enumerations, PROPVARIANT and PropVariantClear (propidlbase.h, combaseapi.h). The pages
+  list the methods of an interface alphabetically; the order of the methods of ISequentialStream and IStream
+  declared here is the one of the platform header objidlbase.h as ported, with method slot numbers, by the
+  TerraFX.Interop.Windows project (MIT licence) - facts only, no text; the values of CLSCTX_INPROC_SERVER and
+  RPC_E_CHANGED_MODE are taken from the same port (the pages name them without a number). Declarations only: the
+  unit has no initialization code. }
 unit ActiveX;
 
 interface
@@ -108,7 +115,75 @@ const
   DISP_E_EXCEPTION = HResult($80020009);
   DISP_E_BADPARAMCOUNT = HResult($8002000E);
 
+  { CoCreateInstance: dwClsContext }
+  CLSCTX_INPROC_SERVER = 1;
+
+  { CoInitializeEx: dwCoInit, and its result when the thread already has the other threading model }
+  COINIT_APARTMENTTHREADED = 2;
+  COINIT_MULTITHREADED = 0;
+  RPC_E_CHANGED_MODE = HResult($80010106);
+
+  { IStream.Seek: dwOrigin (STREAM_SEEK) }
+  STREAM_SEEK_SET = 0;
+  STREAM_SEEK_CUR = 1;
+  STREAM_SEEK_END = 2;
+
+  { IStream.Stat: grfStatFlag (STATFLAG) }
+  STATFLAG_NONAME = 1;
+
 type
+  { STATSTG, 80 bytes: filled by IStream.Stat; pwcsName is allocated by the stream and freed by the caller with
+    CoTaskMemFree, and stays nil with STATFLAG_NONAME }
+  PStatStg = ^TStatStg;
+  TStatStg = record
+    pwcsName: PWideChar;
+    &type: DWORD;
+    cbSize: ULARGE_INTEGER;
+    mtime, ctime, atime: TFileTime;
+    grfMode: DWORD;
+    grfLocksSupported: DWORD;
+    clsid: TGUID;
+    grfStateBits: DWORD;
+    reserved: DWORD;
+  end;
+  STATSTG = TStatStg;
+
+  { PROPVARIANT, 24 bytes: the type number, three reserved words, then the value at offset 8. Only the scalar
+    members the RTL reads are named; pad gives the record the size of the system structure (its largest members
+    are a count followed by a pointer). A value the system returned is released with PropVariantClear }
+  PPropVariant = ^TPropVariant;
+  TPropVariant = record
+    vt: Word;
+    wReserved1, wReserved2, wReserved3: Word;
+    case Integer of
+      0: (uiVal: Word);
+      1: (ulVal: Cardinal);
+      2: (pwszVal: PWideChar);
+      3: (pad: array[0..1] of Pointer);
+  end;
+  PROPVARIANT = TPropVariant;
+
+  { a stream that is read and written in sequence; a nil pcbRead / pcbWritten is allowed }
+  ISequentialStream = interface(IUnknown)
+    ['{0C733A30-2A1C-11CE-ADE5-00AA0044773D}']
+    function Read(pv: Pointer; cb: ULONG; pcbRead: PDWORD): HResult; stdcall;
+    function Write(pv: Pointer; cb: ULONG; pcbWritten: PDWORD): HResult; stdcall;
+  end;
+
+  { a stream with a seek pointer; plibNewPosition, pcbRead and pcbWritten may be nil }
+  IStream = interface(ISequentialStream)
+    ['{0000000C-0000-0000-C000-000000000046}']
+    function Seek(dlibMove: LARGE_INTEGER; dwOrigin: DWORD; plibNewPosition: PULargeInteger): HResult; stdcall;
+    function SetSize(libNewSize: ULARGE_INTEGER): HResult; stdcall;
+    function CopyTo(const pstm: IStream; cb: ULARGE_INTEGER; pcbRead, pcbWritten: PULargeInteger): HResult; stdcall;
+    function Commit(grfCommitFlags: DWORD): HResult; stdcall;
+    function Revert: HResult; stdcall;
+    function LockRegion(libOffset, cb: ULARGE_INTEGER; dwLockType: DWORD): HResult; stdcall;
+    function UnlockRegion(libOffset, cb: ULARGE_INTEGER; dwLockType: DWORD): HResult; stdcall;
+    function Stat(out pstatstg: TStatStg; grfStatFlag: DWORD): HResult; stdcall;
+    function Clone(out ppstm: IStream): HResult; stdcall;
+  end;
+
   { the error information of the calling thread (SetErrorInfo / GetErrorInfo); strings are OLE strings the caller
     of a Get method frees }
   IErrorInfo = interface(IUnknown)
@@ -160,6 +235,7 @@ function CoCreateInstance(const rclsid: TGUID; pUnkOuter: Pointer; dwClsContext:
 function CLSIDFromProgID(lpszProgID: PWideChar; out lpclsid: TGUID): HResult; stdcall;
   external ole32 name 'CLSIDFromProgID';
 procedure CoTaskMemFree(pv: Pointer); stdcall; external ole32 name 'CoTaskMemFree';
+function PropVariantClear(var pvar: TPropVariant): HResult; stdcall; external ole32 name 'PropVariantClear';
 
 { shlwapi: a memory stream (an IStream reference the caller releases; nil when it cannot be created) }
 function SHCreateMemStream(pInit: PByte; cbInit: UINT): Pointer; stdcall; external shlwapi name 'SHCreateMemStream';

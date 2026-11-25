@@ -8,3 +8,4 @@ CoCreateInstance
 CoInitializeEx
 CoTaskMemFree
 CoUninitialize
+PropVariantClear

@@ -20,7 +20,7 @@ public sealed class StructSizesTests
     public sealed record Row(string Name, int Size, params (string Field, int Offset)[] Offsets);
 
     /// <summary>The units the generated program uses (besides TestKit).</summary>
-    public static readonly string[] Units = ["Types", "Windows", "CommCtrl", "CommDlg", "ShellAPI", "ActiveX", "RichEdit"];
+    public static readonly string[] Units = ["Types", "Windows", "CommCtrl", "CommDlg", "ShellAPI", "ActiveX", "RichEdit", "Wincodec"];
 
     /// <summary>
     /// winapi.md §4 table: the Types rows (RTL-600, R-038), the kernel32 rows, the user32 rows (R-109), the gdi32 rows (R-110), the comctl32 rows
@@ -149,6 +149,12 @@ public sealed class StructSizesTests
         new("TENLink", 52, ("msg", 24), ("wParam", 28), ("lParam", 36), ("chrg", 44)),
         new("TSelChange", 36, ("chrg", 24), ("seltyp", 32)),
         new("TENProtected", 52, ("msg", 24), ("wParam", 28), ("lParam", 36), ("chrg", 44)),
+
+        // image codec rows (R-237; RTL-1031, RTL-1033, RTL-1035)
+        new("TStatStg", 80, ("cbSize", 16), ("mtime", 24), ("atime", 40), ("grfMode", 48), ("clsid", 56), ("grfStateBits", 72), ("reserved", 76)),
+        new("TPropVariant", 24, ("wReserved1", 2), ("uiVal", 8), ("ulVal", 8), ("pwszVal", 8)),
+        new("TWICRect", 16, ("Y", 4), ("Width", 8), ("Height", 12)),
+        new("TBlendFunction", 4, ("BlendFlags", 1), ("SourceConstantAlpha", 2), ("AlphaFormat", 3)),
     ];
 
     [Fact]

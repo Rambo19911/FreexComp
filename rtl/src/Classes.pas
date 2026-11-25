@@ -421,6 +421,20 @@ type
     function Write(const Buffer; Count: Integer): Integer; override;
   end;
 
+  { RTL-1052 ... RTL-1054: a read-only view of a Win32 resource of a loaded module. The memory belongs to the module
+    image: nothing is copied and nothing is freed. Instance 0 is the program; code that wants the resources of its
+    own module passes HInstance. ResType is a name or one of the RT_ identifiers of Windows. }
+  TResourceStream = class(TCustomMemoryStream)
+  private
+    procedure Open(Instance: THandle; Name, ResType: PChar; const Shown: string);
+  protected
+    procedure SetSize(const NewSize: Int64); override;
+  public
+    constructor Create(Instance: THandle; const ResName: string; ResType: PChar);
+    constructor CreateFromID(Instance: THandle; ResID: Integer; ResType: PChar);
+    function Write(const Buffer; Count: Integer): Integer; override;
+  end;
+
   TBytesStream = class(TMemoryStream)
   private
     FBytes: TBytes;
@@ -2755,6 +2769,49 @@ begin
   finally
     S.Free;
   end;
+end;
+
+{ TResourceStream }
+
+{ Shown is the name the error message carries }
+procedure TResourceStream.Open(Instance: THandle; Name, ResType: PChar; const Shown: string);
+var
+  Info: HRSRC;
+  Data: HGLOBAL;
+  P: Pointer;
+begin
+  P := nil;
+  Data := 0;
+  Info := FindResourceW(HMODULE(Instance), Name, ResType);
+  if Info <> 0 then
+    Data := LoadResource(HMODULE(Instance), Info);
+  if Data <> 0 then
+    P := LockResource(Data);
+  if P = nil then
+    raise EResNotFound.CreateFmt(SResNotFound, [Shown]);
+  SetPointer(P, SizeofResource(HMODULE(Instance), Info));
+end;
+
+constructor TResourceStream.Create(Instance: THandle; const ResName: string; ResType: PChar);
+begin
+  inherited Create;
+  Open(Instance, PChar(ResName), ResType, ResName);
+end;
+
+constructor TResourceStream.CreateFromID(Instance: THandle; ResID: Integer; ResType: PChar);
+begin
+  inherited Create;
+  Open(Instance, PChar(NativeUInt(ResID)), ResType, IntToStr(ResID));
+end;
+
+function TResourceStream.Write(const Buffer; Count: Integer): Integer;
+begin
+  raise EStreamError.Create(SCantWriteResourceStreamError);
+end;
+
+procedure TResourceStream.SetSize(const NewSize: Int64);
+begin
+  raise EStreamError.Create(SCantWriteResourceStreamError);
 end;
 
 const

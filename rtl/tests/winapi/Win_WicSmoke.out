@@ -1,0 +1,59 @@
+# the imaging component (RTL-1030, RTL-1032)
+ok CoInitializeEx
+ok CoCreateInstance of the imaging factory
+ok SHCreateMemStream
+# the memory stream (RTL-1031, RTL-1037)
+ok Stat
+ok Stat reports the size
+ok Stat returns no name when none is asked for
+ok Seek to the end
+ok the end position
+ok Seek to the information header
+ok the new position
+ok Read
+ok the number of bytes read
+ok the bytes are those of the file
+ok Seek back
+ok the position after seeking back
+ok Seek to the start
+# decoding (RTL-1033, RTL-1034, RTL-1037)
+ok CreateDecoderFromStream
+ok GetContainerFormat
+ok the container is the bitmap container
+ok GetFrame
+ok GetSize
+ok the size is 4 x 3
+ok GetPixelFormat
+ok the pixel format is the 24-bit one
+ok CreateFormatConverter
+ok IWICFormatConverter.Initialize
+ok GetPixelFormat of the converter
+ok premultiplied 32-bit
+ok CopyPixels
+ok the twelve pixels equal the input with alpha 255
+# scaling and rotating (RTL-1034, RTL-1037)
+ok CreateBitmapScaler
+ok IWICBitmapScaler.Initialize
+ok GetSize of the scaler
+ok the size is 8 x 6
+ok CopyPixels of the scaler
+ok every pixel became a 2 x 2 block
+ok CreateBitmapFlipRotator
+ok IWICBitmapFlipRotator.Initialize
+ok GetSize of the rotator
+ok the size is 3 x 4
+ok CopyPixels of the rotator
+ok top left is the bottom left of the input
+ok top right is the top left of the input
+ok bottom left is the bottom right of the input
+ok bottom right is the top right of the input
+# metadata (RTL-1034)
+ok no metadata
+# bytes that are no image (RTL-1034)
+ok a memory stream of garbage
+ok failed
+ok no decoder
+# release
+ok only the program still holds the stream
+ok one reference is left
+# passed 51 failed 0

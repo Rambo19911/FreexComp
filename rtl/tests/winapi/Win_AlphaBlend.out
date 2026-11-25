@@ -1,0 +1,16 @@
+# GdiAlphaBlend (RTL-1035)
+ok two 32-bit bitmaps
+ok blend with per-pixel alpha
+ok a blended pixel: red 255, green 127, blue 127
+ok the opposite corner of the block
+ok a pixel outside the block stays white
+ok the pixel right of the block stays white
+ok blend without per-pixel alpha
+ok the source colour replaces the destination
+ok the pixel right of it stays white
+ok blend with a constant alpha of 0
+ok a transparent source changes nothing
+ok the earlier result is kept
+ok the bitmaps are deleted
+ok the device contexts are deleted
+# passed 14 failed 0

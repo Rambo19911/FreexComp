@@ -81,6 +81,7 @@ resourcestring
   SReadError = 'Stream read error';
   SWriteError = 'Stream write error';
   SStreamSetSize = 'Unable to change stream size';
+  SCantWriteResourceStreamError = 'Cannot write to a read-only resource stream';
   SStreamNoRead = '%s.Read not implemented';
   SStreamNoWrite = '%s.Write not implemented';
   SFCreateErrorEx = 'Cannot create file "%s". %s';

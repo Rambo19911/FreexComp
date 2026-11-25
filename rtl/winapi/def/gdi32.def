@@ -22,6 +22,7 @@ Ellipse
 EnumFontFamiliesExW
 ExcludeClipRect
 ExtTextOutW
+GdiAlphaBlend
 GdiFlush
 GetBkColor
 GetBkMode

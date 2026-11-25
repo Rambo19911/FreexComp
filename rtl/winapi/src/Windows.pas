@@ -8,7 +8,8 @@
     sysinfoapi.h, heapapi.h, memoryapi.h, winbase.h (including GlobalAlloc, GlobalLock, GlobalUnlock, GlobalFree,
     GlobalAddAtomW, GlobalDeleteAtom),
     errhandlingapi.h, debugapi.h, consoleapi.h, fileapi.h,
-    handleapi.h, timezoneapi.h, profileapi.h, synchapi.h, stringapiset.h, winnls.h, wdm.h RtlGetVersion);
+    handleapi.h, timezoneapi.h, profileapi.h, synchapi.h, stringapiset.h, winnls.h, wdm.h RtlGetVersion;
+    libloaderapi.h FindResourceW, LoadResource, LockResource, SizeofResource and the "Resource Types" page);
   - the structure pages SYSTEMTIME, FILETIME, WIN32_FIND_DATAW, WIN32_FILE_ATTRIBUTE_DATA, RTL_CRITICAL_SECTION,
     EXCEPTION_RECORD, TIME_ZONE_INFORMATION, SECURITY_ATTRIBUTES, OVERLAPPED, SYSTEM_INFO, OSVERSIONINFOW,
     OSVERSIONINFOEXW, ACTCTXW;
@@ -21,7 +22,7 @@
     Combo Box Styles, Static Control Styles, Scroll Bar Control Styles, Virtual-Key Codes, GetSystemMetrics,
     SystemParametersInfoW, GetSysColor, LoadCursorW/LoadIconW, MessageBox, DPI_AWARENESS_CONTEXT handle pages;
   - gdi32 (wingdi.h): the reference page of every gdi32 function declared below; the structure pages TEXTMETRICW,
-    LOGBRUSH, BITMAPINFOHEADER, RGBQUAD, BITMAPINFO, BITMAP, BITMAPFILEHEADER; Ternary Raster Operations, Binary
+    LOGBRUSH, BITMAPINFOHEADER, RGBQUAD, BITMAPINFO, BITMAP, BITMAPFILEHEADER, BLENDFUNCTION; Ternary Raster Operations, Binary
     Raster Operations, GetDeviceCaps, GetStockObject, LOGFONTW member pages.
   Unions are declared with the member the RTL uses until variant records exist (RTL-833, M2.5).
   POINT/RECT/SIZE are not declared: case-insensitively they would hide the Types functions Point, Rect and Size
@@ -95,6 +96,7 @@ type
   HKEY = type NativeUInt;
   HTREEITEM = type NativeUInt;
   HGLOBAL = type NativeUInt;
+  HRSRC = type NativeUInt;
   HLOCAL = type NativeUInt;
   HDWP = type NativeUInt;
   DPI_AWARENESS_CONTEXT = type NativeInt;
@@ -648,6 +650,16 @@ type
     bfOffBits: DWORD;
   end;
   BITMAPFILEHEADER = TBitmapFileHeader;
+
+  { BLENDFUNCTION: passed by value to GdiAlphaBlend }
+  PBlendFunction = ^TBlendFunction;
+  TBlendFunction = record
+    BlendOp: Byte;
+    BlendFlags: Byte;
+    SourceConstantAlpha: Byte;
+    AlphaFormat: Byte;
+  end;
+  BLENDFUNCTION = TBlendFunction;
 
   { FONTENUMPROCW: the ENUMLOGFONTEXW / NEWTEXTMETRICEXW arguments start with a LOGFONTW / TEXTMETRICW }
   TFNFontEnumProcW = function(lpelfe: PLogFontW; lpntme: PTextMetricW; FontType: DWORD; lParam: LPARAM): Integer; stdcall;
@@ -1960,6 +1972,10 @@ const
   SIMPLEREGION = 2;
   COMPLEXREGION = 3;
 
+  { BLENDFUNCTION: BlendOp and AlphaFormat }
+  AC_SRC_OVER = 0;
+  AC_SRC_ALPHA = 1;
+
   { DIBs }
   DIB_RGB_COLORS = 0;
   DIB_PAL_COLORS = 1;
@@ -2083,6 +2099,40 @@ function LoadLibraryEx(lpLibFileName: LPCWSTR; hFile: THandle; dwFlags: DWORD): 
   external kernel32 name 'LoadLibraryExW';
 function FreeLibrary(hLibModule: HMODULE): BOOL; stdcall; external kernel32 name 'FreeLibrary';
 function DisableThreadLibraryCalls(hLibModule: HMODULE): BOOL; stdcall; external kernel32 name 'DisableThreadLibraryCalls';
+
+{ ---------------------------------------------------------------- kernel32: resources of a module
+  hModule 0 is the module the process was created from. The handle LoadResource returns is no memory handle: it is
+  passed to LockResource only, and nothing is unlocked or freed. lpName and lpType are a name, '#number', or
+  MakeIntResource(number). }
+function FindResourceW(hModule: HMODULE; lpName, lpType: LPCWSTR): HRSRC; stdcall; external kernel32 name 'FindResourceW';
+function FindResource(hModule: HMODULE; lpName, lpType: LPCWSTR): HRSRC; stdcall; external kernel32 name 'FindResourceW';
+function LoadResource(hModule: HMODULE; hResInfo: HRSRC): HGLOBAL; stdcall; external kernel32 name 'LoadResource';
+function LockResource(hResData: HGLOBAL): Pointer; stdcall; external kernel32 name 'LockResource';
+function SizeofResource(hModule: HMODULE; hResInfo: HRSRC): DWORD; stdcall; external kernel32 name 'SizeofResource';
+
+{ resource types ("Resource Types" page): MAKEINTRESOURCEW values; functions, not constants, for the reason given
+  at IDC_ARROW below. A call site reads like the constant: FindResourceW(0, MakeIntResource(1), RT_MANIFEST). }
+function RT_CURSOR: PWideChar; inline;
+function RT_BITMAP: PWideChar; inline;
+function RT_ICON: PWideChar; inline;
+function RT_MENU: PWideChar; inline;
+function RT_DIALOG: PWideChar; inline;
+function RT_STRING: PWideChar; inline;
+function RT_FONTDIR: PWideChar; inline;
+function RT_FONT: PWideChar; inline;
+function RT_ACCELERATOR: PWideChar; inline;
+function RT_RCDATA: PWideChar; inline;
+function RT_MESSAGETABLE: PWideChar; inline;
+function RT_GROUP_CURSOR: PWideChar; inline;
+function RT_GROUP_ICON: PWideChar; inline;
+function RT_VERSION: PWideChar; inline;
+function RT_DLGINCLUDE: PWideChar; inline;
+function RT_PLUGPLAY: PWideChar; inline;
+function RT_VXD: PWideChar; inline;
+function RT_ANICURSOR: PWideChar; inline;
+function RT_ANIICON: PWideChar; inline;
+function RT_HTML: PWideChar; inline;
+function RT_MANIFEST: PWideChar; inline;
 { returns the previous error mode of the process }
 function SetErrorMode(uMode: UINT): UINT; stdcall; external kernel32 name 'SetErrorMode';
 { ANSI only by nature (RTL-821); the FARPROC result is an untyped code pointer }
@@ -2690,6 +2740,8 @@ function BitBlt(hdc: HDC; x, y, cx, cy: Integer; hdcSrc: HDC; x1, y1: Integer; r
 function StretchBlt(hdcDest: HDC; xDest, yDest, wDest, hDest: Integer; hdcSrc: HDC; xSrc, ySrc, wSrc, hSrc: Integer;
   rop: DWORD): BOOL; stdcall; external gdi32 name 'StretchBlt';
 function PatBlt(hdc: HDC; x, y, w, h: Integer; rop: DWORD): BOOL; stdcall; external gdi32 name 'PatBlt';
+function GdiAlphaBlend(hdcDest: HDC; xoriginDest, yoriginDest, wDest, hDest: Integer; hdcSrc: HDC;
+  xoriginSrc, yoriginSrc, wSrc, hSrc: Integer; ftn: TBlendFunction): BOOL; stdcall; external gdi32 name 'GdiAlphaBlend';
 function SetStretchBltMode(hdc: HDC; mode: Integer): Integer; stdcall; external gdi32 name 'SetStretchBltMode';
 function SetBrushOrgEx(hdc: HDC; x, y: Integer; lppt: PPoint): BOOL; stdcall; external gdi32 name 'SetBrushOrgEx';
 function GdiFlush: BOOL; stdcall; external gdi32 name 'GdiFlush';
@@ -2947,6 +2999,111 @@ end;
 function Failed(hr: HRESULT): Boolean;
 begin
   Result := hr < 0;
+end;
+
+function RT_CURSOR: PWideChar;
+begin
+  Result := PWideChar(1);
+end;
+
+function RT_BITMAP: PWideChar;
+begin
+  Result := PWideChar(2);
+end;
+
+function RT_ICON: PWideChar;
+begin
+  Result := PWideChar(3);
+end;
+
+function RT_MENU: PWideChar;
+begin
+  Result := PWideChar(4);
+end;
+
+function RT_DIALOG: PWideChar;
+begin
+  Result := PWideChar(5);
+end;
+
+function RT_STRING: PWideChar;
+begin
+  Result := PWideChar(6);
+end;
+
+function RT_FONTDIR: PWideChar;
+begin
+  Result := PWideChar(7);
+end;
+
+function RT_FONT: PWideChar;
+begin
+  Result := PWideChar(8);
+end;
+
+function RT_ACCELERATOR: PWideChar;
+begin
+  Result := PWideChar(9);
+end;
+
+function RT_RCDATA: PWideChar;
+begin
+  Result := PWideChar(10);
+end;
+
+function RT_MESSAGETABLE: PWideChar;
+begin
+  Result := PWideChar(11);
+end;
+
+function RT_GROUP_CURSOR: PWideChar;
+begin
+  Result := PWideChar(12);
+end;
+
+function RT_GROUP_ICON: PWideChar;
+begin
+  Result := PWideChar(14);
+end;
+
+function RT_VERSION: PWideChar;
+begin
+  Result := PWideChar(16);
+end;
+
+function RT_DLGINCLUDE: PWideChar;
+begin
+  Result := PWideChar(17);
+end;
+
+function RT_PLUGPLAY: PWideChar;
+begin
+  Result := PWideChar(19);
+end;
+
+function RT_VXD: PWideChar;
+begin
+  Result := PWideChar(20);
+end;
+
+function RT_ANICURSOR: PWideChar;
+begin
+  Result := PWideChar(21);
+end;
+
+function RT_ANIICON: PWideChar;
+begin
+  Result := PWideChar(22);
+end;
+
+function RT_HTML: PWideChar;
+begin
+  Result := PWideChar(23);
+end;
+
+function RT_MANIFEST: PWideChar;
+begin
+  Result := PWideChar(24);
 end;
 
 function GET_X_LPARAM(lp: LPARAM): Integer;

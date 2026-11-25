@@ -1,0 +1,83 @@
+# record layouts (RTL-1031, RTL-1033, RTL-1035)
+ok SizeOf(TStatStg)
+ok pwcsName
+ok type
+ok cbSize
+ok mtime
+ok ctime
+ok atime
+ok grfMode
+ok grfLocksSupported
+ok clsid
+ok grfStateBits
+ok reserved
+ok STATSTG
+ok SizeOf(TPropVariant)
+ok vt
+ok wReserved1
+ok wReserved2
+ok wReserved3
+ok uiVal
+ok ulVal
+ok pwszVal
+ok PROPVARIANT
+ok SizeOf(TWICRect)
+ok X
+ok Y
+ok Width
+ok Height
+ok WICRect
+ok SizeOf(TBlendFunction)
+ok BlendOp
+ok BlendFlags
+ok SourceConstantAlpha
+ok AlphaFormat
+ok BLENDFUNCTION
+# constants (RTL-1031, RTL-1033, RTL-1035)
+ok CLSCTX_INPROC_SERVER
+ok COINIT_APARTMENTTHREADED
+ok COINIT_MULTITHREADED
+ok RPC_E_CHANGED_MODE
+ok STREAM_SEEK_SET
+ok STREAM_SEEK_CUR
+ok STREAM_SEEK_END
+ok STATFLAG_NONAME
+ok WICDecodeMetadataCacheOnDemand
+ok WICDecodeMetadataCacheOnLoad
+ok WICBitmapDitherTypeNone
+ok WICBitmapPaletteTypeCustom
+ok WICBitmapInterpolationModeNearestNeighbor
+ok WICBitmapInterpolationModeLinear
+ok WICBitmapInterpolationModeCubic
+ok WICBitmapInterpolationModeFant
+ok WICBitmapTransformRotate0
+ok WICBitmapTransformRotate90
+ok WICBitmapTransformRotate180
+ok WICBitmapTransformRotate270
+ok WICBitmapTransformFlipHorizontal
+ok WICBitmapTransformFlipVertical
+ok WINCODEC_ERR_PROPERTYNOTFOUND
+ok WINCODEC_ERR_COMPONENTNOTFOUND
+ok WINCODEC_ERR_UNKNOWNIMAGEFORMAT
+ok WINCODEC_ERR_BADHEADER
+ok WINCODEC_ERR_BADIMAGE
+ok WINCODEC_ERR_STREAMREAD
+ok AC_SRC_OVER
+ok AC_SRC_ALPHA
+# a property value filled by the system (RTL-1037)
+ok CoInitializeEx
+ok the other threading model is refused
+ok the imaging factory
+ok a memory stream
+ok a decoder
+ok GetContainerFormat
+ok the container format
+ok GetFrame
+ok GetMetadataQueryReader
+ok GetMetadataByName
+ok the value is a 16-bit unsigned number
+ok the width
+ok PropVariantClear
+ok a cleared value is empty
+ok a block the image does not have
+# passed 79 failed 0

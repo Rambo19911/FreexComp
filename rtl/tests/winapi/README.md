@@ -17,6 +17,14 @@ layouts (com-support.md section 2).
 control of the engine created under a hidden window, through the shared unit `rtl/tests/RichEditKit.pas`. The unit declares
 no function. Not exercised against the system: the `EN_LINK` notification (the engine sends it for mouse input over
 a link only), so `EN_LINK` and the use of `TENLink` rest on the reference pages and the layout test.
+`Win_WicLayouts` checks the record layouts and constants the image codec bindings add (`ActiveX`: `STATSTG`,
+`PROPVARIANT`; `Wincodec`: `WICRect`; `Windows`: `BLENDFUNCTION`) and calls `PropVariantClear` on a value the imaging
+component returned; `Win_WicSmoke` calls the stream and imaging interface methods the image codec class uses on real
+objects (a bitmap file built in memory; the unit `Wincodec` declares no function); `Win_AlphaBlend` calls
+`GdiAlphaBlend`. Not called: the methods of `IStream` and of the imaging interfaces outside that list, so their
+declarations rest on the definition source named in the unit headers.
+`Win_ResourceSmoke` calls the resource functions of kernel32 (FindResourceW, LoadResource, LockResource, SizeofResource)
+on the manifest of the program and on the version resource of a system library, and checks the `RT_*` numbers.
 Exceptions:
 
 | Function | Covered by |

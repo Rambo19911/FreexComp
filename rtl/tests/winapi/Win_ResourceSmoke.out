@@ -1,0 +1,41 @@
+# resource type identifiers (RTL-1051)
+ok RT_CURSOR
+ok RT_BITMAP
+ok RT_ICON
+ok RT_MENU
+ok RT_DIALOG
+ok RT_STRING
+ok RT_FONTDIR
+ok RT_FONT
+ok RT_ACCELERATOR
+ok RT_RCDATA
+ok RT_MESSAGETABLE
+ok RT_GROUP_CURSOR
+ok RT_GROUP_ICON
+ok RT_VERSION
+ok RT_DLGINCLUDE
+ok RT_PLUGPLAY
+ok RT_VXD
+ok RT_ANICURSOR
+ok RT_ANIICON
+ok RT_HTML
+ok RT_MANIFEST
+# the manifest of the program (RTL-1050)
+ok FindResourceW
+ok FindResource is the same function
+ok module 0 and the #number forms find the same resource
+ok LoadResource
+ok LockResource
+ok SizeofResource > 0
+ok the bytes are text that contains assembly
+ok a missing resource gives 0
+# the version resource of a system library (RTL-1050)
+ok the library is loaded as a data file
+ok FindResourceW
+ok LoadResource
+ok LockResource
+ok SizeofResource > 0
+ok the resource starts with its length
+ok the library has no such resource of another type
+ok FreeLibrary
+# passed 37 failed 0

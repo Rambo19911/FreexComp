@@ -1,0 +1,33 @@
+# the manifest of the program by number (RTL-1052)
+ok Size > 0
+ok Position is 0
+ok Memory
+ok the bytes are text that contains assembly
+ok only the stream object was allocated: the bytes are not copied
+# Read, Seek and Position (RTL-1054)
+ok Read returns the bytes asked for
+ok Read returns the bytes of the resource
+ok Position after Read
+ok Seek from the end
+ok the last byte
+ok nothing after the end
+ok Position at the end
+ok Position can be set
+ok SaveToStream writes Size bytes
+ok SaveToStream writes the bytes of the resource
+ok CopyFrom reads the whole stream
+# the same resource by name and for module 0 (RTL-1052)
+ok the size by name
+ok both streams view the same memory of the module image
+ok Position of a new stream
+ok module 0 is the program
+# a resource that does not exist (RTL-1053)
+ok a missing name
+ok a missing number
+# the stream is read-only (RTL-1054)
+ok Write
+ok WriteBuffer
+ok Size :=
+ok the resource is unchanged
+ok no block is left after the streams are freed
+# passed 27 failed 0
