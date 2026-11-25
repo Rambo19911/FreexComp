@@ -25,7 +25,8 @@ namespace FreexComp.Ide.Views;
 /// The editor shows the buffer of <see cref="GeneratedTextDocumentViewModel.Content"/> and mirrors caret and selection
 /// into it, so the find panel (find mode only, the text is read-only) and its highlights work here too (I-058).
 /// A help document (UI-MENU-032; kind <c>help.&lt;id&gt;</c>, so <c>Document.Help.&lt;id&gt;</c>) is shown in the body font
-/// with word wrap and no horizontal scroll bar, its lines styled by <see cref="HelpPageColorizer"/>.
+/// with word wrap and no horizontal scroll bar, its lines styled by <see cref="HelpPageColorizer"/>, a wrapped list
+/// item continuing under its text (<see cref="HelpListItemWrapGenerator"/>).
 /// </summary>
 public sealed class GeneratedTextDocumentView : Decorator, ICommandTarget
 {
@@ -51,6 +52,12 @@ public sealed class GeneratedTextDocumentView : Decorator, ICommandTarget
         padding.Bind(WidthProperty, padding.GetResourceObservable("FxcSpace4"));
         _editor.TextArea.LeftMargins.Add(padding);
         _editor.TextArea.TextView.BackgroundRenderers.Add(new FindMatchRenderer(this, () => _find));
+        _editor.TextArea.TextView.SizeChanged += (_, e) =>
+        {
+            // I-266: the wrapped lines of a help page's list items are broken for the view's width.
+            if (e.WidthChanged && _editor.TextArea.TextView.ElementGenerators.OfType<HelpListItemWrapGenerator>().Any())
+                _editor.TextArea.TextView.Redraw();
+        };
         _editor.TextArea.Caret.PositionChanged += (_, _) => MirrorSelection();
         _editor.TextArea.SelectionChanged += (_, _) => MirrorSelection();
         _findPanel = new FindPanelView(() => _editor.TextArea.Focus()) { Margin = new Thickness(0, 0, 8, 0) };
@@ -115,6 +122,9 @@ public sealed class GeneratedTextDocumentView : Decorator, ICommandTarget
         var transformers = _editor.TextArea.TextView.LineTransformers;
         foreach (var styles in transformers.OfType<HelpPageColorizer>().ToList())
             transformers.Remove(styles);
+        var generators = _editor.TextArea.TextView.ElementGenerators;
+        foreach (var wrap in generators.OfType<HelpListItemWrapGenerator>().ToList())
+            generators.Remove(wrap);
         var help = _document.Kind.StartsWith(HelpPage.KindPrefix, StringComparison.Ordinal); // UI-MENU-032
         _fontFamily?.Dispose();
         _fontSize?.Dispose();
@@ -124,6 +134,8 @@ public sealed class GeneratedTextDocumentView : Decorator, ICommandTarget
         _editor.HorizontalScrollBarVisibility = help ? ScrollBarVisibility.Disabled : ScrollBarVisibility.Auto;
         if (help)
         {
+            generators.Add(new HelpListItemWrapGenerator(() => _document?.HelpLines, indent: false)); // I-266
+            generators.Add(new HelpListItemWrapGenerator(() => _document?.HelpLines, indent: true));
             transformers.Add(new HelpPageColorizer(
                 () => _document?.HelpLines,
                 () => this.TryFindResource("FxcTextPrimaryBrush", ActualThemeVariant, out var value) ? value as IBrush : null,
