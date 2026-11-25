@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 { Menus - shortcut functions (actions-menus.md section 3), the menu item tree and its native menus
   (controls-standard.md section 12). }
 unit Menus;

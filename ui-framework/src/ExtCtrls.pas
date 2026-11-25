@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 { ExtCtrls - extended controls (controls-standard.md sections 8, 13, 14, 15, 16, 19). }
 unit ExtCtrls;
 

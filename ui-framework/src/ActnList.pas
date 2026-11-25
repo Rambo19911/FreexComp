@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 { ActnList - actions and action lists (actions-menus.md section 1.1). }
 unit ActnList;
 

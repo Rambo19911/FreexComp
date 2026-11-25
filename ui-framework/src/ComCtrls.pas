@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 { ComCtrls - common controls (controls-standard.md sections 20 ... 24: page control, status bar, tool bar,
   progress bar, track bar). }
 unit ComCtrls;

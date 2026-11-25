@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 { ImgList - image lists over the native image list (graphics.md section 5). }
 unit ImgList;
 

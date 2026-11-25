@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 { Graphics - colours, graphics objects, canvases and images over GDI (graphics.md). }
 unit Graphics;
 

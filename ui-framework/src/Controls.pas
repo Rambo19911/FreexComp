@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 { Controls - the control object model (core.md) and the run-time layout engine (layout.md). }
 unit Controls;
 

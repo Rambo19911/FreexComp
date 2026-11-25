@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 { StdCtrls - the standard controls (controls-standard.md sections 1 ... 11, 18). }
 unit StdCtrls;
 

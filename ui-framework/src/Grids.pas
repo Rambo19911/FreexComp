@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 { Grids - the framework-drawn grid controls (controls-standard.md section 27). }
 unit Grids;
 

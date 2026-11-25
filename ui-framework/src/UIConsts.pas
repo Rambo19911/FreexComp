@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 { UIConsts - the message texts of the UI framework (README section 3): the catalogues of core.md section 14,
   graphics.md section 8, application-forms.md section 10 and controls-standard.md section 30. Strings only, no
   code. SSortedListError is RTLConsts' own text and is not repeated here. }

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 { Forms - the application object and its message loop (application-forms.md). }
 unit Forms;
 

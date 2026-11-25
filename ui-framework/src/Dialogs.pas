@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 { Dialogs - message boxes and simple dialogs (application-forms.md section 9); the common dialogs
   (controls-standard.md section 28). }
 unit Dialogs;
