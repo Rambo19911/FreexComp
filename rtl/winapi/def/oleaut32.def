@@ -1,10 +1,13 @@
 ; SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 ; oleaut32.def - exports used by the FreexComp RTL. Source: learn.microsoft.com (function reference pages).
-; Content: the ActiveX unit (com-support.md section 2).
+; Content: the ActiveX unit (com-support.md section 2; the safe-array functions: ui-automation.md RTL-1113).
 LIBRARY oleaut32.dll
 EXPORTS
 CreateErrorInfo
 GetErrorInfo
+SafeArrayCreateVector
+SafeArrayDestroy
+SafeArrayPutElement
 SetErrorInfo
 SysAllocStringLen
 SysFreeString

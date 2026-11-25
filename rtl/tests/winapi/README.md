@@ -11,7 +11,14 @@ declares for comctl32;
 `LongPaths` and `LongPaths_Unaware` call the registry functions it declares for advapi32 (through the shared unit
 `rtl/tests/LongPathKit.pas`, which reads the system long-path policy with them).
 `AX_Layouts` calls every function the `ActiveX` unit declares for oleaut32, ole32 and shlwapi and checks its record
-layouts (com-support.md section 2).
+layouts (com-support.md section 2), except the three safe-array functions, which `Win_UiaSmoke` calls.
+`Win_UiaLayouts` checks the record layouts of the `UIAutomation` unit (`UiaRect`, `UiaPoint`) and the values of its
+constants; `Win_UiaSmoke` calls every function it declares for uiautomationcore (on a message-only window, with a
+provider written in the test), the two annotation methods the framework uses on a real `IAccPropServices` object, and
+the safe-array functions, and proves the four property GUIDs through the system's identifier lookup. Not called: the
+methods of the provider and pattern interfaces (the system calls them; proven by the UI Automation client tests of the
+framework) and the other methods of `IAccPropServices`, so their declarations rest on the definition source named in
+the unit header.
 `Win_RichEditLayouts` checks the record layouts of the `RichEdit` unit (4-byte packing); `Win_RichEditSmoke` and
 `Win_RichEditFormat` (the second half: one program grew too long) use its messages, flags and records against a
 control of the engine created under a hidden window, through the shared unit `rtl/tests/RichEditKit.pas`. The unit declares

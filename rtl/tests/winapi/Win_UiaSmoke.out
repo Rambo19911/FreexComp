@@ -1,0 +1,42 @@
+ok a message-only window
+# uiautomationcore.dll (RTL-1113, RTL-1114)
+ok UiaClientsAreListening returns without fault
+ok UiaHostProviderFromHwnd
+ok a host provider
+ok get_ProviderOptions of the host provider
+ok the options of the host provider
+ok UiaGetReservedNotSupportedValue
+ok the not-supported value
+ok UiaReturnRawElementProvider(h, 0, 0, nil)
+ok UiaRaiseAutomationEvent
+ok UiaRaiseAutomationPropertyChangedEvent
+ok the old value is the caller's
+ok the new value is the caller's
+ok UiaRaiseStructureChangedEvent
+ok UiaDisconnectProvider
+# property GUIDs (RTL-1112)
+ok UiaLookupId found
+ok Name_Property_GUID
+ok HelpText_Property_GUID
+ok AutomationId_Property_GUID
+ok ControlType_Property_GUID
+ok CoInitializeEx
+# direct annotation (RTL-1112, RTL-1114)
+ok the annotation object
+ok IAccPropServices
+ok SetHwndPropStr
+ok ClearHwndProps
+# safe arrays (RTL-1113)
+ok SafeArrayCreateVector
+ok one dimension
+ok elements of four bytes
+ok SafeArrayPutElement 0
+ok SafeArrayPutElement 1
+ok SafeArrayPutElement 2
+ok SafeArrayPutElement 3
+ok an index past the end
+ok element 0
+ok element 3
+ok SafeArrayDestroy
+ok DestroyWindow
+# passed 37 failed 0

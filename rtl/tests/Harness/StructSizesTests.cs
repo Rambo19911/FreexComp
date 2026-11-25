@@ -20,7 +20,7 @@ public sealed class StructSizesTests
     public sealed record Row(string Name, int Size, params (string Field, int Offset)[] Offsets);
 
     /// <summary>The units the generated program uses (besides TestKit).</summary>
-    public static readonly string[] Units = ["Types", "Windows", "CommCtrl", "CommDlg", "ShellAPI", "ActiveX", "RichEdit", "Wincodec"];
+    public static readonly string[] Units = ["Types", "Windows", "CommCtrl", "CommDlg", "ShellAPI", "ActiveX", "RichEdit", "Wincodec", "UIAutomation"];
 
     /// <summary>
     /// winapi.md §4 table: the Types rows (RTL-600, R-038), the kernel32 rows, the user32 rows (R-109), the gdi32 rows (R-110), the comctl32 rows
@@ -154,6 +154,8 @@ public sealed class StructSizesTests
         new("TStatStg", 80, ("cbSize", 16), ("mtime", 24), ("atime", 40), ("grfMode", 48), ("clsid", 56), ("grfStateBits", 72), ("reserved", 76)),
         new("TPropVariant", 24, ("wReserved1", 2), ("uiVal", 8), ("ulVal", 8), ("pwszVal", 8)),
         new("TWICRect", 16, ("Y", 4), ("Width", 8), ("Height", 12)),
+        new("TUiaRect", 32, ("top", 8), ("width", 16), ("height", 24)),
+        new("TUiaPoint", 16, ("y", 8)),
         new("TBlendFunction", 4, ("BlendFlags", 1), ("SourceConstantAlpha", 2), ("AlphaFormat", 3)),
     ];
 

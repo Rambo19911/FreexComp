@@ -1,0 +1,13 @@
+; SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+; uiautomationcore.def - exports used by the FreexComp RTL. Source: learn.microsoft.com (function reference pages).
+; Content: the UIAutomation unit (ui-framework phase8/ui-automation.md, rule RTL-1113).
+LIBRARY uiautomationcore.dll
+EXPORTS
+UiaClientsAreListening
+UiaDisconnectProvider
+UiaGetReservedNotSupportedValue
+UiaHostProviderFromHwnd
+UiaRaiseAutomationEvent
+UiaRaiseAutomationPropertyChangedEvent
+UiaRaiseStructureChangedEvent
+UiaReturnRawElementProvider

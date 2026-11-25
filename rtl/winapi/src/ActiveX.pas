@@ -13,8 +13,10 @@
   list the methods of an interface alphabetically; the order of the methods of ISequentialStream and IStream
   declared here is the one of the platform header objidlbase.h as ported, with method slot numbers, by the
   TerraFX.Interop.Windows project (MIT licence) - facts only, no text; the values of CLSCTX_INPROC_SERVER and
-  RPC_E_CHANGED_MODE are taken from the same port (the pages name them without a number). Declarations only: the
-  unit has no initialization code. }
+  RPC_E_CHANGED_MODE are taken from the same port (the pages name them without a number). For the UI Automation
+  bindings (ui-framework phase8/ui-automation.md, rule RTL-1113; task R-243): the reference pages of
+  SafeArrayCreateVector, SafeArrayPutElement and SafeArrayDestroy (oleauto.h), SAFEARRAY (oaidl.h) and the VT_ARRAY
+  flag of VARENUM. Declarations only: the unit has no initialization code. }
 unit ActiveX;
 
 interface
@@ -74,6 +76,10 @@ type
   end;
   EXCEPINFO = TExcepInfo;
 
+  { a SAFEARRAY descriptor, owned by the oleaut32 allocator (SafeArrayCreateVector / SafeArrayDestroy); its fields
+    are not read through this unit }
+  PSafeArray = Pointer;
+
 const
   { VARENUM: variant type numbers }
   VT_EMPTY = 0;
@@ -95,6 +101,7 @@ const
   VT_UI4 = 19;
   VT_I8 = 20;
   VT_UI8 = 21;
+  VT_ARRAY = $2000;
   VT_BYREF = $4000;
 
   { IDispatch.Invoke: wFlags and the reserved member identifiers }
@@ -226,6 +233,14 @@ function SetErrorInfo(dwReserved: ULONG; const perrinfo: IErrorInfo): HResult; s
 function GetErrorInfo(dwReserved: ULONG; out pperrinfo: IErrorInfo): HResult; stdcall;
   external oleaut32 name 'GetErrorInfo';
 function CreateErrorInfo(out pperrinfo: ICreateErrorInfo): HResult; stdcall; external oleaut32 name 'CreateErrorInfo';
+{ a one-dimensional safe array of cElements elements of type vt (no VT_ARRAY / VT_BYREF flag), first index lLbound;
+  nil when it cannot be created }
+function SafeArrayCreateVector(vt: Word; lLbound: LONG; cElements: ULONG): PSafeArray; stdcall;
+  external oleaut32 name 'SafeArrayCreateVector';
+{ copies the element pv points to into the array at the indexes rgIndices points to (one per dimension) }
+function SafeArrayPutElement(psa: PSafeArray; rgIndices: PLONG; pv: Pointer): HResult; stdcall;
+  external oleaut32 name 'SafeArrayPutElement';
+function SafeArrayDestroy(psa: PSafeArray): HResult; stdcall; external oleaut32 name 'SafeArrayDestroy';
 
 { ole32 }
 function CoInitializeEx(pvReserved: Pointer; dwCoInit: DWORD): HResult; stdcall; external ole32 name 'CoInitializeEx';
