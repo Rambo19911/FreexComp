@@ -135,7 +135,7 @@ public sealed class RunTests
         var w = new BuildWorkspace(projectJson: BuildWorkspace.ProjectJson("Hello", extra: """ "events": { "preBuild": ["x"], "postBuild": [] }"""));
         w.Tools.Program = (_, _, _) => (["hello"], [], 0);
 
-        var (_, log) = await w.RunAsync(RunRequest(w));
+        var (_, log) = await w.RunAsync(RunRequest(w) with { Events = EventsPolicy.Run });         // CMP-1245: behind the trust gate
 
         var lines = log.Lines;
         Assert.True(lines.IndexOf("diagnostic W9001") < lines.IndexOf("programstdout hello"));

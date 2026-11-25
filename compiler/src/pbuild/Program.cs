@@ -1,3 +1,4 @@
+using FreexComp.Build;
 using FreexComp.Compiler;
 using FreexComp.PBuild;
 
@@ -10,4 +11,8 @@ Console.CancelKeyPress += (_, e) =>
     cancel.Cancel();                                                                    // CMP-803: the engine reports E9010 and returns
 };
 
-return PbuildCommand.Run(args, new PbuildEnvironment(Environment.CurrentDirectory, Console.Out, Console.Error, PhysicalFileSystem.Instance), cancel.Token);
+var environment = new PbuildEnvironment(Environment.CurrentDirectory, Console.Out, Console.Error, PhysicalFileSystem.Instance)
+{
+    TrustFilePath = ProjectTrust.DefaultStorePath(Environment.GetEnvironmentVariable),   // CMP-1247: the list the IDE writes
+};
+return PbuildCommand.Run(args, environment, cancel.Token);

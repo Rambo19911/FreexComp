@@ -20,6 +20,9 @@ public sealed record PbuildEnvironment(string CurrentDirectory, TextWriter Out, 
     public string? ToolchainDirectory { get; init; }
 
     public string? RtlDirectory { get; init; }
+
+    /// <summary>The per-user trust list for project commands (project-trust.md CMP-1247); null → nothing is trusted.</summary>
+    public string? TrustFilePath { get; init; }
 }
 
 /// <summary>
@@ -33,6 +36,7 @@ public static class PbuildCommand
     public const string HelpText = """
         pbuild <project.pproj | group.pgroup> [--config <name>] [--target build|rebuild|clean|run] [--platform <id>]
                [--diagnostics text|json] [--rtl <dir>] [--toolchain <dir>] [--jobs <N>] [--verbose]
+               [--trust-events | --no-events]
           --config <name>       any configuration of the project, matched case-insensitively (default: the project's
                                 activeConfiguration)
           --target <target>     build (default), rebuild, clean or run (build, then run the program)
@@ -43,6 +47,8 @@ public static class PbuildCommand
           --jobs <N> | -j <N>   maximum number of parallel compile jobs (0 = automatic: the project's "jobs", else one
                                 per processor; default 0)
           --verbose             echo external commands; names the parents of a derived configuration
+          --trust-events          run the project's build event commands without asking the trust list
+          --no-events             build without running the project's build event commands
           --version | --help
         """;
 
@@ -60,6 +66,7 @@ public static class PbuildCommand
         string? project = null, configuration = null, rtl = null, toolchain = null, platform = null;
         var target = BuildTarget.Build;
         var jobs = 0;
+        EventsPolicy? events = null;                                                     // CMP-1247
         bool json = false, verbose = false, help = false, version = false;
         var invalid = new List<string>();
         var errors = new List<Diagnostic>();
@@ -97,6 +104,17 @@ public static class PbuildCommand
                 case "--help": help = true; break;
                 case "--version": version = true; break;
                 case "--verbose": verbose = true; break;
+                case "--trust-events" or "--no-events":                                        // CMP-1247: both = E0005 for the second
+                    if (events is null)
+                    {
+                        events = arg == "--trust-events" ? EventsPolicy.Run : EventsPolicy.Skip;
+                    }
+                    else
+                    {
+                        invalid.Add(arg);
+                    }
+
+                    break;
                 case "--config": configuration = Value() ?? configuration; break;
                 case "--platform": platform = Value() ?? platform; break;                           // CMP-1018
                 case "--rtl": if (Value() is { } rtlDir) { rtl = Folder(arg, rtlDir); } break;          // C-239: as opc §1
@@ -201,6 +219,8 @@ public static class PbuildCommand
             RtlDirectory = rtl ?? env.RtlDirectory,
             MaxParallelism = jobs,
             RedirectRunOutput = false,                                                  // CMP-833: the program shares pbuild's console
+            Events = events ?? EventsPolicy.RequireTrust,
+            TrustStore = events is null && env.TrustFilePath is { } trustFile ? new FileTrustStore(env.FileSystem, trustFile) : null,
         };
         BuildResult result;
         try

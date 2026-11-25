@@ -28,6 +28,7 @@ public sealed partial class PbuildCliTests
 
     [Fact]
     [Trait("Req", "CMP-840")]
+    [Trait("Req", "CMP-1247")]
     public void Version_And_Help()
     {
         var w = new BuildWorkspace();
@@ -39,6 +40,13 @@ public sealed partial class PbuildCliTests
         Assert.Matches(@"^pbuild 0\.1\.0 \(abi 1, llvm \d+\.\d+\.\d+ pin\)$", Assert.Single(version));
         Assert.Equal(0, helpCode);
         Assert.StartsWith("pbuild <project.pproj | group.pgroup>", help[0], StringComparison.Ordinal);
+        // CMP-1247: both trust options, under the existing ones
+        var verbose = Array.FindIndex(help, l => l.StartsWith("  --verbose ", StringComparison.Ordinal));
+        Assert.True(verbose > 0);
+        Assert.Equal("  --trust-events          run the project's build event commands without asking the trust list", help[verbose + 1]);
+        Assert.Equal("  --no-events             build without running the project's build event commands", help[verbose + 2]);
+        Assert.Equal("  --version | --help", help[^1]);
+        Assert.Contains(help, l => l.Contains("[--trust-events | --no-events]", StringComparison.Ordinal));
     }
 
     [Fact]

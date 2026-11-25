@@ -45,90 +45,26 @@ public sealed class BuildEngine : IBuildEngine
         ArgumentNullException.ThrowIfNull(progress);
         var clock = Stopwatch.StartNew();
         var path = PathUtil.Normalize(request.ProjectPath);
-        ImmutableArray<ProjectOutcome> outcomes = path.EndsWith(".pgroup", StringComparison.OrdinalIgnoreCase)
-            ? await BuildGroupAsync(path, request, progress, ct).ConfigureAwait(false)
-            : await BuildGraphAsync(path, [path], [], path, request, progress, ct).ConfigureAwait(false);   // C-238: dependencies first
+        var plan = ProjectGraph.Plan(_fs, path, request.ProjectInGroup, request.Target == BuildTarget.Run);   // C-238: dependencies first
+        var outcomes = await BuildPlanAsync(path, plan, request, progress, ct).ConfigureAwait(false);
         return Aggregate(outcomes, clock.Elapsed);
     }
 
     /// <summary>
-    /// CMP-821: the projects of the group (or <see cref="BuildRequest.ProjectInGroup"/>; for <c>Run</c> the run project) and every
-    /// project they depend on, in topological order of <c>dependencies</c>; ties by the group's order, then discovery order, the
-    /// requested / active project last (CMP-807). A cycle is E9006 and nothing is built; a failed project skips its dependants.
-    /// Group-level errors (group file, cycle) are reported in a Started…Finished bracket of the group file.
+    /// Builds the projects of <paramref name="plan"/> in its order (CMP-821). For <c>Run</c> only the last one runs, the others are
+    /// built. A failed project skips its dependants. Plan-level errors (group file, cycle E9006) are reported in a
+    /// Started…Finished bracket of <paramref name="path"/> (the group file, or the single requested project) and nothing is built.
     /// </summary>
-    private async Task<ImmutableArray<ProjectOutcome>> BuildGroupAsync(string path, BuildRequest request, IProgress<BuildEvent> progress, CancellationToken ct)
+    private async Task<ImmutableArray<ProjectOutcome>> BuildPlanAsync(
+        string path, ProjectPlan plan, BuildRequest request, IProgress<BuildEvent> progress, CancellationToken ct)
     {
-        var groupLoad = ProjectSerializer.LoadGroup(path, _fs);
-        if (groupLoad.Value is not { } group || HasErrors(groupLoad.Diagnostics))
+        var gate = new TrustGate(request);
+        if (plan.Problems is { } problems)
         {
-            return [await BuildProjectAsync(path, new LoadResult<Project>(null, groupLoad.Diagnostics), request.Target, request, progress, ct).ConfigureAwait(false)];
+            return [await BuildProjectAsync(path, new LoadResult<Project>(null, problems), request.Target, request, gate, progress, ct).ConfigureAwait(false)];
         }
 
-        var directory = Path.GetDirectoryName(path)!;
-        var listed = group.Projects.Select(p => Resolve(directory, p)).ToList();
-        var requested = request.ProjectInGroup is { } inGroup ? Resolve(directory, inGroup)
-            : request.Target == BuildTarget.Run ? Resolve(directory, group.ActiveProject)
-            : null;
-        var last = requested ?? Resolve(directory, group.ActiveProject);
-        return await BuildGraphAsync(path, requested is null ? listed : [requested], listed, last, request, progress, ct).ConfigureAwait(false);
-    }
-
-    /// <summary>
-    /// <paramref name="roots"/> and every project they depend on, in topological order; ties by <paramref name="listed"/>, then
-    /// discovery order, <paramref name="last"/> last. For <c>Run</c> only <paramref name="last"/> runs, the others are built. A cycle is
-    /// E9006 reported in a bracket of <paramref name="path"/> (the group file, or the single requested project).
-    /// </summary>
-    private async Task<ImmutableArray<ProjectOutcome>> BuildGraphAsync(
-        string path, List<string> roots, List<string> listed, string last, BuildRequest request, IProgress<BuildEvent> progress, CancellationToken ct)
-    {
-        var loads = new Dictionary<string, LoadResult<Project>>(PathUtil.Comparer);
-        var dependencies = new Dictionary<string, List<string>>(PathUtil.Comparer);
-        var discovered = new List<string>();
-        void Visit(string project)
-        {
-            if (loads.ContainsKey(project))
-            {
-                return;
-            }
-
-            var load = ProjectSerializer.LoadProject(project, _fs);
-            loads[project] = load;
-            discovered.Add(project);
-            var projectDirectory = Path.GetDirectoryName(project)!;
-            dependencies[project] = load.Value is { } p && !HasErrors(load.Diagnostics)
-                ? [.. p.Dependencies.Select(d => Resolve(projectDirectory, d))]
-                : [];
-            foreach (var dependency in dependencies[project])
-            {
-                Visit(dependency);
-            }
-        }
-
-        foreach (var root in roots)
-        {
-            Visit(root);
-        }
-
-        int Position(string project) => listed.FindIndex(p => PathUtil.AreEqual(p, project)) is var i and >= 0 ? i : listed.Count + discovered.IndexOf(project);
-        int Rank(string project) => PathUtil.AreEqual(project, last) ? int.MaxValue : Position(project);
-
-        var remaining = new HashSet<string>(discovered, PathUtil.Comparer);
-        var order = new List<string>();
-        while (remaining.Count > 0
-               && remaining.Where(p => !dependencies[p].Any(remaining.Contains)).OrderBy(Rank).FirstOrDefault() is { } ready)
-        {
-            remaining.Remove(ready);
-            order.Add(ready);
-        }
-
-        if (remaining.Count > 0)
-        {
-            var cycle = FindCycle(remaining.OrderBy(Position).First(), dependencies, remaining);
-            var e9006 = Diagnostic.Create("E9006", Location.ForFile(path), string.Join(" -> ", cycle));
-            return [await BuildProjectAsync(path, new LoadResult<Project>(null, [e9006]), request.Target, request, progress, ct).ConfigureAwait(false)];
-        }
-
+        var (order, loads, dependencies, last) = (plan.Order, plan.Loads, plan.Dependencies, plan.Last);
         var outcomes = ImmutableArray.CreateBuilder<ProjectOutcome>();
         var failed = new Dictionary<string, string>(PathUtil.Comparer);                        // project → its name
         var libraries = new Dictionary<string, string>(PathUtil.Comparer);                     // library project → the DLL it built (CMP-1084)
@@ -138,7 +74,7 @@ public sealed class BuildEngine : IBuildEngine
             var failedDependency = dependencies[project].FirstOrDefault(failed.ContainsKey);
             ImmutableArray<string> libraryDependencies = [.. dependencies[project].Where(libraries.ContainsKey).Select(d => libraries[d]).Distinct(PathUtil.Comparer)];
             var outcome = await BuildProjectAsync(
-                project, loads[project], target, request, progress, ct, failedDependency is null ? null : failed[failedDependency], libraryDependencies)
+                project, loads[project], target, request, gate, progress, ct, failedDependency is null ? null : failed[failedDependency], libraryDependencies)
                 .ConfigureAwait(false);
             outcomes.Add(outcome);
             if (!outcome.Result.Success)
@@ -158,44 +94,6 @@ public sealed class BuildEngine : IBuildEngine
 
         return outcomes.ToImmutable();
     }
-
-    /// <summary>A dependency cycle through the part of <paramref name="within"/> reachable from <paramref name="start"/>: <c>A, B, …, A</c>.</summary>
-    private static List<string> FindCycle(string start, Dictionary<string, List<string>> dependencies, HashSet<string> within)
-    {
-        var stack = new List<string>();
-        var done = new HashSet<string>(PathUtil.Comparer);
-        List<string>? Walk(string node)
-        {
-            var onStack = stack.FindIndex(p => PathUtil.AreEqual(p, node));
-            if (onStack >= 0)
-            {
-                return [.. stack[onStack..], node];
-            }
-
-            if (!done.Add(node))
-            {
-                return null;
-            }
-
-            stack.Add(node);
-            foreach (var next in dependencies[node].Where(within.Contains))
-            {
-                if (Walk(next) is { } cycle)
-                {
-                    return cycle;
-                }
-            }
-
-            stack.RemoveAt(stack.Count - 1);
-            return null;
-        }
-
-        return Walk(start) ?? [start];
-    }
-
-    /// <summary>A project path (relative to <paramref name="directory"/> or absolute, '/' or '\') → normalised absolute path.</summary>
-    private static string Resolve(string directory, string path) =>
-        PathUtil.Normalize(Path.IsPathFullyQualified(path) ? path : Path.Combine(directory, path.Replace('/', '\\')));
 
     private static BuildResult Aggregate(ImmutableArray<ProjectOutcome> outcomes, TimeSpan elapsed)
     {
@@ -219,7 +117,7 @@ public sealed class BuildEngine : IBuildEngine
     /// built by the direct dependencies that are library projects (CMP-1084).
     /// </summary>
     private async Task<ProjectOutcome> BuildProjectAsync(
-        string path, LoadResult<Project> load, BuildTarget target, BuildRequest request, IProgress<BuildEvent> progress, CancellationToken ct,
+        string path, LoadResult<Project> load, BuildTarget target, BuildRequest request, TrustGate gate, IProgress<BuildEvent> progress, CancellationToken ct,
         string? skippedBecause = null, ImmutableArray<string> libraryDependencies = default)
     {
         var clock = Stopwatch.StartNew();
@@ -248,7 +146,18 @@ public sealed class BuildEngine : IBuildEngine
         }
         else if (project is not null && !HasErrors(diagnostics))
         {
-            if (configuration is null)
+            // CMP-1239: the trust gate, before anything else happens for the project; Clean executes no command
+            var gated = target != BuildTarget.Clean && ProjectTrust.HasCommands(project);
+            if (gated && request.Events == EventsPolicy.Skip)
+            {
+                project = project with { Events = new ProjectEvents([], []) };              // CMP-1241: for this build only
+            }
+
+            if (gated && request.Events == EventsPolicy.RequireTrust && !gate.Passes(project, path, location, diagnostics))
+            {
+                // CMP-1243: E9021 — no compile step, no process, no file written or deleted
+            }
+            else if (configuration is null)
             {
                 diagnostics.Add(Diagnostic.Create("E9005", location, requested));
             }
@@ -299,6 +208,39 @@ public sealed class BuildEngine : IBuildEngine
     private static bool HasErrors(IEnumerable<Diagnostic> diagnostics) => diagnostics.Any(d => d.Severity == DiagnosticSeverity.Error);
 
     private static int Count(IEnumerable<Diagnostic> diagnostics, DiagnosticSeverity severity) => diagnostics.Count(d => d.Severity == severity);
+
+    /// <summary>
+    /// The trust gate of one <see cref="RunAsync"/> call (project-trust.md CMP-1239…1246): the list is read once, on the first
+    /// project that has commands; it never prompts and never writes the list.
+    /// </summary>
+    private sealed class TrustGate(BuildRequest request)
+    {
+        private TrustSnapshot? _trust;
+
+        /// <summary>
+        /// Whether a project with commands may be built under <see cref="EventsPolicy.RequireTrust"/>; if not, E9021 is added
+        /// (after W9003 the first time an unreadable list was consulted, CMP-1244).
+        /// </summary>
+        public bool Passes(Project project, string path, Location location, List<Diagnostic> diagnostics)
+        {
+            if (_trust is null)
+            {
+                _trust = request.TrustStore?.Read() ?? new TrustSnapshot([], null);
+                if (_trust.ReadProblem is { } problem)
+                {
+                    diagnostics.Add(Diagnostic.Create("W9003", location, (request.TrustStore as FileTrustStore)?.FilePath ?? "", problem));
+                }
+            }
+
+            if (ProjectTrust.Evaluate(project, path, _trust) is TrustState.TrustedFolder or TrustState.TrustedProject)
+            {
+                return true;
+            }
+
+            diagnostics.Add(Diagnostic.Create("E9021", location, path));
+            return false;
+        }
+    }
 
     private sealed record ProjectOutcome(ProjectBuildResult Result, bool Canceled, int? RunExitCode);
 

@@ -11,6 +11,9 @@ public interface IBuildEngine
 
 public enum BuildTarget { Build, Rebuild, Clean, Run }
 
+/// <summary>What a build does with the command lists of a project (project-trust.md CMP-1241…1243).</summary>
+public enum EventsPolicy { RequireTrust, Run, Skip }
+
 public sealed record BuildRequest
 {
     /// <summary>.pproj or .pgroup, absolute.</summary>
@@ -47,6 +50,12 @@ public sealed record BuildRequest
 
     /// <summary>Target = Run: capture stdout/stderr as OutputLine events.</summary>
     public bool RedirectRunOutput { get; init; } = true;
+
+    /// <summary>Project commands: the trust gate (C-324). RequireTrust → E9021 for a project that has commands and is not trusted.</summary>
+    public EventsPolicy Events { get; init; } = EventsPolicy.RequireTrust;
+
+    /// <summary>The trust list read for <see cref="EventsPolicy.RequireTrust"/>; null → nothing is trusted.</summary>
+    public ITrustStore? TrustStore { get; init; }
 
     /// <summary>0 → the project's "jobs", else one job per processor.</summary>
     public int MaxParallelism { get; init; }

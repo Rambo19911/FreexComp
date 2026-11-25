@@ -208,7 +208,7 @@ public sealed class BuildEventOrderTests
         var w = new BuildWorkspace(projectJson: BuildWorkspace.ProjectJson("Hello", extra:
             """ "files": [{ "path": "Hello.pas" }, { "path": "Gone.pas" }], "events": { "preBuild": ["echo hi"], "postBuild": [] }"""));
 
-        var (result, log) = await w.RunAsync(w.Request());
+        var (result, log) = await w.RunAsync(w.Request() with { Events = EventsPolicy.Run });        // CMP-1245: behind the trust gate
 
         Assert.True(result.Success);
         Assert.Equal(
