@@ -229,6 +229,8 @@ More topics:
     - [ ] COM servers and Automation
     - [x] Inline variables with block scope
     - [x] Runtime library source included, Step Into library code
+    - [x] License texts and third-party notices shipped beside the tools
+    - [x] No-network guarantee checked by tests
     - [ ] Windows x86 target
 - [ ] First public release with installer
 
@@ -242,6 +244,7 @@ See the [open issues](https://github.com/Rambo19911/FreexComp/issues) for known 
 ## Network
 
 FreexComp needs no network connection and opens none on its own; `NETWORK-POLICY.md` lists every feature that is able to open one.
+An end-to-end test starts the IDE with an empty profile, builds and runs a program and checks that no connection was opened and no sign-in or registration step appeared.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
