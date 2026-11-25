@@ -57,3 +57,5 @@ A unit that cannot be compiled on its own can be left out by adding its name and
 `scripts/build-runtime.exclude.txt`. The list is empty as delivered.
 
 The script needs no network connection.
+
+What you may do with programs you build: see *What you may do with your applications*.

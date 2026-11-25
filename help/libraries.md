@@ -40,3 +40,5 @@ wait on synchronisation objects there. Export an explicit start-up routine for s
 A library cannot run by itself. Set Project › Options › Run › Host application (or Run › Run
 Parameters) to a program that loads the library; Run Without Debugging builds the library and starts
 that program. Starting a library under the debugger is not available yet; breakpoints are kept.
+
+What you may do with programs you build: see *What you may do with your applications*.
