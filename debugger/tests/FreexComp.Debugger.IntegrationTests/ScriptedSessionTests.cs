@@ -727,6 +727,99 @@ public sealed class ScriptedSessionTests(IntegrationFixture fixture)
     }
 
     /// <summary>
+    /// Inline variables of the program block (BlockInline.pas): the block has no frame of its own for them, the
+    /// compiler keeps each in static storage and declares it on a slot of the block that holds its address. At a stop
+    /// in the main block they are listed under Locals - not under Globals - and evaluable (watch and hover) only
+    /// inside their declaration scope, a redeclaration in a sibling block and a loop variable included.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "DBG-142")]
+    public async Task Phase8_ProgramBlockInlineVariable_Visible()
+    {
+        var program = fixture.Build("BlockInline");
+        var p = program.SourcePath;
+        var recorder = new SessionRecorder(nameof(Phase8_ProgramBlockInlineVariable_Visible));
+        await recorder.RunAsync(fixture, program, async session =>
+        {
+            // Line of the stop -> the rows of Locals, and what "Top", "Inner" and "I" evaluate to (null: not declared there).
+            (int Line, string[] Locals, string? Top, string? Inner, string? I)[] stops =
+            [
+                (7, [], null, null, null),                                                                        // before the first declaration
+                (12, ["Top = 10 : Integer", "Inner = 'in' : string"], "10 : Integer", "'in' : string", null),    // inside the first block
+                (17, ["Top = 10 : Integer", "Inner = 11 : Integer"], "10 : Integer", "11 : Integer", null),      // inside the sibling block
+                (20, ["Top = 10 : Integer", "I = 1 : Integer"], "10 : Integer", null, "1 : Integer"),            // the loop body, first pass
+                (20, ["Top = 10 : Integer", "I = 2 : Integer"], "10 : Integer", null, "2 : Integer"),            // the loop body, second pass
+                (21, ["Top = 10 : Integer"], "10 : Integer", null, null),                                         // after the blocks
+            ];
+            int[] lines = [.. stops.Select(s => s.Line).Distinct()];
+
+            await session.LaunchAsync(
+                new LaunchRequest
+                {
+                    Program = program.ExePath,
+                    Breakpoints = [new SourceBreakpoints(p, [.. lines.Select((line, index) => new BreakpointSpec { Id = index + 1, Line = line })])],
+                },
+                Ct);
+            Assert.True(session.HasTypeInfo);
+
+            for (var index = 0; index < stops.Length; index++)
+            {
+                var (line, expectedLocals, top, inner, i) = stops[index];
+                var stop = await recorder.WaitForStopAsync();
+                AssertStop(session, stop, StopReason.Breakpoint, p, line, [Array.IndexOf(lines, line) + 1]);
+                var frames = (await session.GetStackTraceAsync(stop.ThreadId, ct: Ct)).Frames;
+                Assert.Equal("BlockInline", frames[0].Name);
+                var scopes = await session.GetScopesAsync(frames[0].Id, Ct);
+                Assert.Equal([ScopeKind.Arguments, ScopeKind.Locals, ScopeKind.Globals], scopes.Select(s => s.Kind));
+                Assert.Empty(await session.GetChildrenAsync(scopes[0].Handle, ct: Ct));
+                var locals = await session.GetChildrenAsync(scopes[1].Handle, ct: Ct);
+                Assert.Equal(expectedLocals, locals.Select(Row));
+                Assert.DoesNotContain(locals, l => l.Name.Contains('$'));
+                // The declared global stays the only global: the storage of the inline variables is not shown there.
+                var globals = await session.GetChildrenAsync(scopes[2].Handle, ct: Ct);
+                Assert.Equal(["G"], globals.Select(g => g.Name));
+
+                foreach (var (name, expected) in ((string, string?)[])[("Top", top), ("Inner", inner), ("I", i)])
+                {
+                    // Watch and hover agree with the list, with the frame given and (null) in the top frame of the stop.
+                    foreach (var context in (EvaluateContext[])[EvaluateContext.Watch, EvaluateContext.Hover])
+                    {
+                        foreach (var frameId in (int?[])[frames[0].Id, null])
+                        {
+                            if (expected is null)
+                            {
+                                var error = await Assert.ThrowsAsync<DebuggerException>(() => session.EvaluateAsync(name, frameId, context, Ct));
+                                Assert.Equal(DebugErrorCode.ExpressionEvaluation, error.Code);
+                                Assert.Equal($"Undeclared identifier '{name}'", error.Message);
+                            }
+                            else
+                            {
+                                var value = (await session.EvaluateAsync(name, frameId, context, Ct)).Value;
+                                Assert.Equal(expected, $"{value.Value} : {value.TypeName}");
+                                Assert.Equal(name, value.Name);
+                            }
+                        }
+                    }
+                }
+
+                if (line == 17)
+                {
+                    // The inline variables mix with the declared global in one expression.
+                    Assert.Equal("23", (await session.EvaluateAsync("Inner + Top + G", frames[0].Id, EvaluateContext.Watch, Ct)).Value.Value);
+                }
+
+                await session.ContinueAsync(Ct);
+            }
+
+            var terminated = await recorder.WaitForTerminatedAsync();
+            Assert.Equal(TerminationCause.Exited, terminated.Cause);
+            Assert.Equal(0, terminated.ExitCode);
+            Assert.Equal("in\n11\n10\n20\n10\n", recorder.StdoutSoFar);
+        });
+    }
+
+    /// <summary>
     /// A finally part that runs while an exception unwinds the stack (FinallyUnwind.pas): the part's subprogram is
     /// then called from the routine's clean-up code, itself called by the run-time's unwinding. A stop inside the
     /// part still sees the routine's variables, the one declared in the part included - also when the stack is asked
