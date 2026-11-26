@@ -28,14 +28,20 @@ public static class FormParser
     /// is <c>F0107</c> and preserved; with one, a known frame gives a resolved instance and an unknown one <c>F0101</c>.
     /// The document follows later changes of the catalog (DSG-FD-111).
     /// </param>
+    /// <param name="ancestors">
+    /// The designed classes (forms and frames) a document may inherit from (DSG-FD-122): an <c>inherited</c> root whose
+    /// ancestor (<paramref name="rootAncestorClass"/>) is listed is a resolved descendant (DSG-FD-125), one whose ancestor
+    /// is not listed <c>F0112</c>; an <c>object</c> root whose ancestor is listed is <c>F0113</c>. Without a catalog an
+    /// <c>inherited</c> root is <c>F0107</c> and the whole form read-only.
+    /// </param>
     public static FormParseResult Parse(string text, string path, ComponentCatalog catalog, string? rootAncestorClass = null,
-        IFrameCatalog? frames = null)
+        IFrameCatalog? frames = null, IFrameCatalog? ancestors = null)
     {
-        var parser = new Parser(text, path, catalog, rootAncestorClass, frames);
+        var parser = new Parser(text, path, catalog, rootAncestorClass, frames, ancestors: ancestors);
         try
         {
             var document = parser.ParseFile();
-            document.AttachFrames(frames, catalog);
+            document.AttachFrames(frames, catalog, ancestors);
             FormValidator.Validate(document, catalog); // DSG-FD-070: validation runs after the parse
             return new FormParseResult(document, [.. document.Diagnostics]);
         }
@@ -112,11 +118,15 @@ public static class FormParser
     }
 
     private sealed class Parser(string text, string path, ComponentCatalog catalog, string? rootAncestorClass,
-        IFrameCatalog? frames = null, string? rootClass = null)
+        IFrameCatalog? frames = null, string? rootClass = null, IFrameCatalog? ancestors = null)
     {
         private readonly List<ParseDiagnostic> _diagnostics = [];
         private readonly HashSet<string> _names = new(StringComparer.OrdinalIgnoreCase);
         private readonly List<FormObject> _fileScope = [];
+
+        // DSG-FD-125, 126: the inherited objects of a resolved descendant's file scope by name, and its ancestor.
+        private readonly Dictionary<string, FormObject> _inheritedScope = new(StringComparer.OrdinalIgnoreCase);
+        private FrameDefinition? _ancestor;
         private string? _rootClass = rootClass;
         private int _pos;
         private string? _lineEnding;
@@ -256,6 +266,25 @@ public static class FormParser
                 }
             }
 
+            // DSG-FD-122, 125, 127: the root keyword must fit the ancestor catalog.
+            FrameDefinition? ancestor = null;
+            string? rootProblem = null;
+            if (isRoot && ancestors is not null)
+            {
+                var found = rootAncestorClass is null ? null : ancestors.Find(rootAncestorClass);
+                if (kind == FormObjectKind.Inherited)
+                {
+                    ancestor = IsAncestor(found, typeName) ? found : null;
+                    rootProblem = ancestor is null
+                        ? $"Class {typeName} has no ancestor form: its form file cannot start with \"inherited\": shown read-only"
+                        : null;
+                }
+                else if (kind == FormObjectKind.Object && found is not null)
+                {
+                    rootProblem = $"Class {typeName} inherits the form of {found.ClassName}: its form file must start with \"inherited\": shown read-only";
+                }
+            }
+
             var parentObject = _currentObject;
             _currentObject = name;
             var obj = new FormObject(kind, name, typeName, info, default)
@@ -264,9 +293,10 @@ public static class FormParser
                 HeaderSpan = new TextSpan(keywordStart, headerEnd - keywordStart),
             };
 
-            // DSG-FD-026, 108: duplicate names (F0106) are checked over the file scope.
+            // DSG-FD-026, 108: duplicate names (F0106) are checked over the file scope. An `inherited` object nested in a
+            // component a descendant creates names no component (F0107, RTL-1133).
             var preserved = parentPreserved || forcePreserved;
-            if (registerNames)
+            if (registerNames && !(kind == FormObjectKind.Inherited && _ancestor is not null))
             {
                 if (!_names.Add(name))
                 {
@@ -281,7 +311,16 @@ public static class FormParser
 
             if (!parentPreserved && !forcePreserved)
             {
-                if (asInstance && frame is null)
+                if (rootProblem is not null)
+                {
+                    Report(kind == FormObjectKind.Inherited ? "F0112" : "F0113", DiagnosticSeverity.Warning, rootProblem, keywordStart, keyword.Length, obj, null);
+                    preserved = true;
+                }
+                else if (ancestor is not null)
+                {
+                    // A resolved descendant: its root binds to the ancestor's root (below).
+                }
+                else if (asInstance && frame is null)
                 {
                     if (repeated is not null)
                     {
@@ -314,6 +353,13 @@ public static class FormParser
                 FrameInstances.Merge(obj, frame);
             }
 
+            if (ancestor is not null && !preserved)
+            {
+                FrameInstances.MergeAncestor(obj, ancestor);
+                _ancestor = ancestor;
+                RegisterInherited(obj);
+            }
+
             while (PeekWord() is { } word && !IsKeyword(word))
             {
                 obj.AddProperty(ParseProperty(obj));
@@ -322,6 +368,10 @@ public static class FormParser
             if (obj.IsFrameInstance)
             {
                 ParseScopeBody(obj, obj, []);
+            }
+            else if (obj.IsInheritedRoot)
+            {
+                ParseOpenBody(obj, []);
             }
             else
             {
@@ -379,15 +429,7 @@ public static class FormParser
                 if (target is not null && string.Equals(target.TypeName, header.TypeName, StringComparison.OrdinalIgnoreCase) && matched.Add(target))
                 {
                     ParseOverrideBlock(target, target.IsFrameInstance ? target : scope, target.IsFrameInstance ? [] : matched);
-                    for (var child = target; child.Parent is not null; child = child.Parent)
-                    {
-                        if (ReferenceEquals(child.Parent, container))
-                        {
-                            after = child.Name;
-                            break;
-                        }
-                    }
-
+                    after = SlotAfter(container, target) ?? after;
                     continue;
                 }
 
@@ -411,8 +453,116 @@ public static class FormParser
             }
         }
 
-        /// <summary>An <c>inherited</c> block matched to <paramref name="target"/>: its lines, then its nested blocks.</summary>
-        private void ParseOverrideBlock(FormObject target, FormObject scope, HashSet<FormObject> matched)
+        /// <summary>
+        /// DSG-FD-122: <paramref name="definition"/> can be the ancestor of a document of <paramref name="className"/> —
+        /// listed, its root resolved as a form or a frame, and the class not repeated by the chain.
+        /// </summary>
+        private static bool IsAncestor([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] FrameDefinition? definition, string className)
+        {
+            if (definition?.Document.Root is not { IsPreserved: false, Info.Kind: ComponentKind.Form or ComponentKind.Container })
+            {
+                return false;
+            }
+
+            var seen = new HashSet<FormDocument>(ReferenceEqualityComparer.Instance);
+            for (var d = definition; d is not null && seen.Add(d.Document); d = d.Document.Ancestor)
+            {
+                if (string.Equals(d.ClassName, className, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(d.Document.Root.TypeName, className, StringComparison.OrdinalIgnoreCase))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// DSG-FD-126: the inherited objects of a descendant that are not inside a frame instance join the file scope, in the
+        /// definition's pre-order (an instance itself joins; its components belong to its own scope).
+        /// </summary>
+        private void RegisterInherited(FormObject container)
+        {
+            foreach (var child in container.Children)
+            {
+                if (_names.Add(child.Name))
+                {
+                    _fileScope.Add(child);
+                    if (!child.IsPreserved)
+                    {
+                        _inheritedScope.Add(child.Name, child);
+                    }
+                }
+
+                if (!child.IsFrameInstance)
+                {
+                    RegisterInherited(child);
+                }
+            }
+        }
+
+        /// <summary>
+        /// DSG-FD-125: the open-scope body of a descendant's root or of one of its override blocks. An <c>inherited</c> block
+        /// is matched by name among the inherited objects of the file scope, anywhere in the tree; its lines become that
+        /// object's overrides. A block that matches nothing (or another class) is <c>F0109</c>, a second block for the same
+        /// object <c>F0106</c>; both are kept in <paramref name="container"/> as preserved blocks at their position. An
+        /// <c>object</c> or <c>inline</c> block is a new component, appended after the inherited children.
+        /// </summary>
+        private void ParseOpenBody(FormObject container, HashSet<FormObject> matched)
+        {
+            string? after = null;
+            while (PeekWord() is { } word && KeywordKind(word) is { } kind && IsKeyword(word))
+            {
+                if (kind != FormObjectKind.Inherited)
+                {
+                    container.AddChild(ParseObject(parentPreserved: false, isRoot: false));
+                    continue;
+                }
+
+                var header = PeekHeader();
+                var target = _inheritedScope.GetValueOrDefault(header.Name);
+                if (target is not null && string.Equals(target.TypeName, header.TypeName, StringComparison.OrdinalIgnoreCase) && matched.Add(target))
+                {
+                    ParseOverrideBlock(target, target, matched, open: true);
+                    after = SlotAfter(container, target) ?? after;
+                    continue;
+                }
+
+                var block = ParseObject(parentPreserved: false, isRoot: false, forcePreserved: true, registerNames: false);
+                if (target is not null && matched.Contains(target))
+                {
+                    Report("F0106", DiagnosticSeverity.Error, $"A component named {header.Name} already exists", header.NameStart, header.Name.Length, block, null);
+                }
+                else
+                {
+                    Report("F0109", DiagnosticSeverity.Warning,
+                        $"Component {header.Name}: {header.TypeName} is not part of {_ancestor!.ClassName}: shown read-only",
+                        header.NameStart, header.Name.Length, block, null);
+                }
+
+                container.AddPreservedBlock(block, after);
+            }
+        }
+
+        /// <summary>The name of the child of <paramref name="container"/> that holds <paramref name="target"/>, or null.</summary>
+        private static string? SlotAfter(FormObject container, FormObject target)
+        {
+            for (var child = target; child.Parent is not null; child = child.Parent)
+            {
+                if (ReferenceEquals(child.Parent, container))
+                {
+                    return child.Name;
+                }
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// An <c>inherited</c> block matched to <paramref name="target"/>: its lines, then its nested blocks — by the open-scope
+        /// body when <paramref name="open"/> and the target is not a frame instance, else by the closed scope.
+        /// </summary>
+        private void ParseOverrideBlock(FormObject target, FormObject scope, HashSet<FormObject> matched, bool open = false)
         {
             EnterNesting(_pos);
             var header = ReadHeader();
@@ -425,7 +575,15 @@ public static class FormParser
                 target.AddProperty(ParseProperty(target));
             }
 
-            ParseScopeBody(target, scope, matched);
+            if (open && !target.IsFrameInstance)
+            {
+                ParseOpenBody(target, matched);
+            }
+            else
+            {
+                ParseScopeBody(target, scope, open ? [] : matched);
+            }
+
             ParseEnd();
             _currentObject = parentObject;
             _depth--;

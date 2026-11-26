@@ -88,9 +88,16 @@ public sealed class FormDocument
     /// <summary>The weak link to <see cref="Frames"/>' <c>Changed</c> event (DSG-FD-111).</summary>
     internal FrameSubscription? FrameLink { get; private set; }
 
-    internal void AttachFrames(IFrameCatalog? frames, ComponentCatalog catalog)
+    /// <summary>The definition a resolved descendant document inherits from (DSG-FD-125); null for other documents.</summary>
+    public FrameDefinition? Ancestor => Root.IsInheritedRoot ? Root.InheritedSource : null;
+
+    /// <summary>The ancestor catalog the document was parsed with (DSG-FD-122); null: none.</summary>
+    public IFrameCatalog? Ancestors { get; private set; }
+
+    internal void AttachFrames(IFrameCatalog? frames, ComponentCatalog catalog, IFrameCatalog? ancestors = null)
     {
         Frames = frames;
+        Ancestors = ancestors;
         if (frames is not null)
         {
             FrameLink = new FrameSubscription(this, frames, catalog);
@@ -231,24 +238,97 @@ public sealed class FormObject
     public bool IsOverridden(string path) => InheritedFrom is not null && FindProperty(path) is not null;
 
     /// <summary>
-    /// DSG-OI-120: the handler a frame assigns to <paramref name="eventName"/> of this inherited object or instance — the
-    /// method and the frame whose class declares it (the nearest level of the definition chain that stores it); null when
-    /// no level assigns one.
+    /// DSG-OI-120, DSG-FD-135: the handler an earlier level assigns to <paramref name="eventName"/> of this inherited
+    /// object, instance or inherited root — the method and the definition (frame or ancestor form) whose file stores it
+    /// (the nearest level of the definition chain that stores one); null when no level assigns one.
     /// </summary>
     public (FrameDefinition Frame, string Method)? InheritedHandler(string eventName)
     {
-        var frame = IsInherited ? Scope?.Frame : Frame;
-        for (var o = InheritedFrom; o is not null && frame is not null; o = o.InheritedFrom)
+        for (var o = this; o.InheritedFrom is { } source; o = source)
         {
-            if (o.FindProperty(eventName)?.Value is IdentValue { Name: var method })
+            if (o.MergedFrom() is not { } level)
             {
-                return (frame, method);
+                return null;
             }
 
-            frame = o.IsInherited ? o.Scope?.Frame : o.Frame;
+            if (source.FindProperty(eventName)?.Value is IdentValue { Name: var method })
+            {
+                return (level, method);
+            }
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// The definition whose file stores <see cref="InheritedFrom"/>: the one merged at the nearest merge point at or
+    /// above this object — an instance this file creates (not an inherited copy of one) or the root of a descendant.
+    /// </summary>
+    private FrameDefinition? MergedFrom()
+    {
+        for (var p = this; p is not null; p = p.Parent)
+        {
+            if (p.IsInheritedRoot)
+            {
+                return p._ancestor;
+            }
+
+            if (p.IsFrameInstance && !p.IsInherited)
+            {
+                return p.Frame;
+            }
+        }
+
+        return null;
+    }
+
+    private FrameDefinition? _ancestor;
+
+    /// <summary>True for the root of a resolved descendant document (DSG-FD-125): it inherits from the ancestor's root.</summary>
+    public bool IsInheritedRoot => _ancestor is not null;
+
+    /// <summary>
+    /// DSG-FD-135: the definition of the level that supplies this object — for an inherited object the frame of its
+    /// instance, else the document's ancestor; for an inherited root the ancestor; null for other objects.
+    /// </summary>
+    public FrameDefinition? InheritedSource
+    {
+        get
+        {
+            if (IsInheritedRoot)
+            {
+                return _ancestor;
+            }
+
+            if (!IsInherited)
+            {
+                return null;
+            }
+
+            if (InheritedFrame is { } frame)
+            {
+                return frame;
+            }
+
+            var root = this;
+            while (root.Parent is { } parent)
+            {
+                root = parent;
+            }
+
+            return root._ancestor;
+        }
+    }
+
+    /// <summary>DSG-FD-132: false for a frame instance and every object inside one; new components go anywhere else.</summary>
+    public bool AcceptsNewChildren => !IsFrameInstance && Scope is null;
+
+    /// <summary>Makes this root a resolved descendant of <paramref name="ancestor"/> (DSG-FD-125).</summary>
+    internal void SetAncestor(FrameDefinition ancestor)
+    {
+        _ancestor = ancestor;
+        InheritedFrom = ancestor.Document.Root;
+        Info = ancestor.Document.Root.Info;
     }
 
     /// <summary>

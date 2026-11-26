@@ -21,6 +21,20 @@ internal static class FrameInstances
         }
     }
 
+    /// <summary>
+    /// DSG-FD-125: <paramref name="root"/> becomes the root of a resolved descendant of <paramref name="ancestor"/>: it
+    /// inherits from the ancestor's root and gets one inherited object per child of that root, with the definition's
+    /// nesting and creation order (inherited frame instances stay instances with their merged children).
+    /// </summary>
+    public static void MergeAncestor(FormObject root, FrameDefinition ancestor)
+    {
+        root.SetAncestor(ancestor);
+        foreach (var child in ancestor.Document.Root.Children)
+        {
+            root.AddChild(Copy(child));
+        }
+    }
+
     private static FormObject Copy(FormObject definition)
     {
         var copy = new FormObject(FormObjectKind.Inherited, definition.Name, definition.TypeName, definition.Info, default)
