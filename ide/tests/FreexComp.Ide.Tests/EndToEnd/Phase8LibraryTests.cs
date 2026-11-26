@@ -223,11 +223,13 @@ public sealed class Phase8LibraryTests
     /// <summary>
     /// Card F02-004 (IDE-LIB-022, IDE-LIB-023) with the real build engine, toolchain and debug adapter: Step Into at a call
     /// of a SysUtils routine stays in the program with "Step Into Library Source" off and stops in the protected
-    /// <c>SysUtils.pas</c> with it on (<see cref="LibrarySteppingScenario"/>).
+    /// <c>SysUtils.pas</c> with it on; the same for a routine of the framework unit Graphics, whose source lies under the
+    /// framework root (card F05-099 acceptance 3, IDE-LIB-040; <see cref="LibrarySteppingScenario"/>).
     /// </summary>
     [AvaloniaFact(Timeout = 120000)]
     [Trait("Req", "IDE-LIB-022")]
     [Trait("Req", "IDE-LIB-023")]
+    [Trait("Req", "IDE-LIB-040")]
     public Task E2E_Phase8_StepIntoLibrarySource() => LibrarySteppingScenario.StepIntoSysUtilsAsync();
 
     /// <summary>

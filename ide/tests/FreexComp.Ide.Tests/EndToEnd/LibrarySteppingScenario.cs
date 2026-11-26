@@ -8,8 +8,9 @@ namespace FreexComp.Ide.Tests.EndToEnd;
 
 /// <summary>
 /// Card F02-004 in the IDE with the real build engine, toolchain and debug adapter (library-source.md §3): Step Into at a
-/// call of a run-time library routine enters the library's source only with "Step Into Library Source" on. Shared by
-/// <see cref="Phase8LibraryTests"/> and the cross-area test of the lead-owned E2E project.
+/// call of a run-time library routine enters the library's source only with "Step Into Library Source" on; card F05-099
+/// acceptance 3 (IDE-LIB-040): the same holds for a routine of a UI-framework unit, whose source lies under the framework
+/// root. Shared by <see cref="Phase8LibraryTests"/> and the cross-area test of the lead-owned E2E project.
 /// </summary>
 public static class LibrarySteppingScenario
 {
@@ -17,25 +18,28 @@ public static class LibrarySteppingScenario
         program LibStep;
 
         uses
-          SysUtils;
+          SysUtils, Graphics;
 
         var
-          S, T: string;
+          S, T, C: string;
 
         begin
           S := 'step';
           T := UpperCase(S);
           WriteLn(T);
+          C := ColorToString(clRed);
+          WriteLn(C);
         end.
 
         """;
 
     /// <summary>
-    /// A console program calls <c>UpperCase</c> of SysUtils, with a breakpoint on the line of the call. With the toggle off
-    /// (the default) Step Into steps over the call and stays in the program's file (IDE-LIB-022). With it on, Step Into
-    /// stops in <c>SysUtils.pas</c> under the run-time library root; that file is the active document, protected and
-    /// read-only (IDE-LIB-002, IDE-LIB-023), and the top frame of the call stack is the library routine. Must be called on
-    /// the headless UI thread; a missing toolchain fails.
+    /// A console program calls <c>UpperCase</c> of SysUtils and then <c>ColorToString</c> of the framework unit Graphics,
+    /// with a breakpoint on the line of each call. With the toggle off (the default) Step Into steps over both calls and
+    /// stays in the program's file (IDE-LIB-022). With it on, Step Into stops in <c>SysUtils.pas</c> under the run-time
+    /// library root and then in <c>Graphics.pas</c> under the framework root (IDE-LIB-040); each file is the active
+    /// document, protected and read-only (IDE-LIB-002, IDE-LIB-023), and the top frame of the call stack is the library
+    /// routine. Must be called on the headless UI thread; a missing toolchain fails.
     /// </summary>
     public static async Task StepIntoSysUtilsAsync()
     {
@@ -51,11 +55,13 @@ public static class LibrarySteppingScenario
             o.InitialFiles[@"LibStep\LibStep.pas"] = source;
         });
         var toolchain = h.Services.Toolchain.Resolve();
-        if (toolchain.LlvmBinDir is null || toolchain.RtlDir is null)
+        if (toolchain.LlvmBinDir is null || toolchain.RtlDir is null || toolchain.FrameworkDir is null)
             Assert.Fail("LLVM toolchain not found (run scripts/bootstrap.ps1)"); // testing.md: fails, never skips
 
         var program = Path.Combine(h.TempDir, @"LibStep\LibStep.pas");
-        var callLine = source.Split('\n').ToList().FindIndex(l => l.Contains("UpperCase(S)", StringComparison.Ordinal)) + 1;
+        var lines = source.Split('\n').ToList();
+        var callLine = lines.FindIndex(l => l.Contains("UpperCase(S)", StringComparison.Ordinal)) + 1;
+        var frameworkCallLine = lines.FindIndex(l => l.Contains("ColorToString(clRed)", StringComparison.Ordinal)) + 1;
         var debug = h.Services.Debug!;
         string Output() => h.TryFind<TextEditor>("Tool.Output.Text")?.Document.Text ?? "";
         string Diagnostics() => $"state {h.Services.State.Current.State} at {h.Services.State.Current.PausedFile}({h.Services.State.Current.PausedLine}); messages: "
@@ -97,8 +103,12 @@ public static class LibrarySteppingScenario
             await WaitAsync(() => h.Services.State.Current.State == IdeState.Idle && debug.IsIdle, "the end of the program");
         }
 
+        // A session that cannot start (an unusable type-information file, say) fails the next stop with the box's text in
+        // the diagnostics, instead of waiting for the box to be answered until the test's timeout.
+        h.Messages.Answer("Msg.Debug.StartFailed", "Cancel");
         Assert.True(await h.Services.Projects.OpenAsync(Path.Combine(h.TempDir, @"LibStep\LibStep.pproj")));
         h.Services.Breakpoints!.Toggle(program, callLine);
+        h.Services.Breakpoints.Toggle(program, frameworkCallLine);
 
         // Off (the default): Step Into at the call steps over it — the next line of the program.
         Assert.False(debug.StepIntoLibrarySource);
@@ -106,6 +116,10 @@ public static class LibrarySteppingScenario
         Assert.Equal((program.ToUpperInvariant(), callLine), (stop.PausedFile?.ToUpperInvariant(), stop.PausedLine));
         stop = await StopAfterAsync("run.stepInto", "the stop after Step Into with library stepping off");
         Assert.Equal((program.ToUpperInvariant(), callLine + 1), (stop.PausedFile?.ToUpperInvariant(), stop.PausedLine));
+        stop = await StopAfterAsync("run.start", "the stop at the framework call");
+        Assert.Equal((program.ToUpperInvariant(), frameworkCallLine), (stop.PausedFile?.ToUpperInvariant(), stop.PausedLine));
+        stop = await StopAfterAsync("run.stepInto", "the stop after Step Into a framework call with library stepping off");
+        Assert.Equal((program.ToUpperInvariant(), frameworkCallLine + 1), (stop.PausedFile?.ToUpperInvariant(), stop.PausedLine));
         Assert.DoesNotContain(h.Services.Documents.Documents, d => h.Services.LibrarySource.IsLibrarySource(d.FilePath ?? ""));
         await ContinueToEndAsync();
 
@@ -134,9 +148,31 @@ public static class LibrarySteppingScenario
         Assert.Equal(unit, stack[0].Location?.Path, ignoreCase: true);
         Assert.Equal((program.ToUpperInvariant(), callLine), (stack[1].Location?.Path.ToUpperInvariant(), stack[1].Location?.Line));
 
+        // IDE-LIB-040: the next call enters a routine of the framework unit Graphics; Step Into stops in its source, which
+        // lies under the framework root of the library roots.
+        stop = await StopAfterAsync("run.start", "the stop at the framework call with library stepping on");
+        Assert.Equal((program.ToUpperInvariant(), frameworkCallLine), (stop.PausedFile?.ToUpperInvariant(), stop.PausedLine));
+        stop = await StopAfterAsync("run.stepInto", "the stop in the framework source");
+        var frameworkRoot = Path.GetFullPath(toolchain.FrameworkDir!).TrimEnd('\\');
+        Assert.Contains(h.Services.LibrarySource.Roots, root => string.Equals(root, frameworkRoot, StringComparison.OrdinalIgnoreCase));
+        Assert.True(stop.PausedFile?.StartsWith(frameworkRoot + "\\", StringComparison.OrdinalIgnoreCase) == true, Diagnostics());
+        var frameworkUnit = Path.Combine(frameworkRoot, "src", "Graphics.pas");
+        Assert.True(string.Equals(frameworkUnit, stop.PausedFile, StringComparison.OrdinalIgnoreCase), Diagnostics());
+        await WaitAsync(() => string.Equals(h.Services.Documents.ActiveDocument?.FilePath, frameworkUnit, StringComparison.OrdinalIgnoreCase), "the editor shows the framework file");
+        document = Assert.IsType<TextDocumentViewModel>(h.Services.Documents.ActiveDocument);
+        Assert.True(document.IsLibraryProtected);
+        Assert.True(document.Buffer.IsReadOnly);
+        frames = debug.GetFramesAsync();
+        await WaitAsync(() => frames.IsCompleted, "the call stack in the framework routine");
+        stack = (await frames)!.Frames;
+        Assert.Equal("ColorToString", stack[0].Name);
+        Assert.Equal(frameworkUnit, stack[0].Location?.Path, ignoreCase: true);
+        Assert.Equal((program.ToUpperInvariant(), frameworkCallLine), (stack[1].Location?.Path.ToUpperInvariant(), stack[1].Location?.Line));
+
         await ContinueToEndAsync();
         h.Clock.Advance(TimeSpan.FromMilliseconds(50)); // batched Output reaches its channel (IDE-P3-070)
-        Assert.True(h.Services.Output.GetLines(Core.Build.OutputChannels.Program).Any(l => l.Text == "STEP"), Diagnostics());
+        var output = h.Services.Output.GetLines(Core.Build.OutputChannels.Program).Select(l => l.Text).ToList();
+        Assert.True(output.Contains("STEP") && output.Contains("clRed"), Diagnostics());
         Assert.Empty(h.Messages.Requests);
     }
 }
