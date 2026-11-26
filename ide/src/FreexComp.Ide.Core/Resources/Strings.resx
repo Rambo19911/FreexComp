@@ -79,6 +79,9 @@ Add the existing file to the project and open it?</value>
   <data name="Msg_File_LibraryCopyIncludeMissing" xml:space="preserve">
     <value>{0} cannot be copied into the project because its include file {1} was not found.</value>
   </data>
+  <data name="Msg_File_LibraryCopyIncludeOutside" xml:space="preserve">
+    <value>{0} cannot be copied into the project because its include file {1} lies outside the unit's folder.</value>
+  </data>
   <data name="Msg_File_LibraryCopyUnsaved" xml:space="preserve">
     <value>Save or revert {0} before copying it into the project.</value>
   </data>

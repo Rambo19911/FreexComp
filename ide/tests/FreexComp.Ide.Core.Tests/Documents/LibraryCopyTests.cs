@@ -476,6 +476,84 @@ public sealed class LibraryCopyTests
     });
 
     [Fact(Timeout = 30000)]
+    [Trait("Req", "IDE-LIB-029")]
+    public Task IncludeOutsideTheUnitFolder_CopiesNothing() => TestUiThread.RunAsync(async () =>
+    {
+        var bed = new BuildTestBed();
+        var services = bed.Services;
+        await bed.OpenHelloAsync();
+        bed.File(Root + @"\sub\Leave.pas", "unit Leave;\r\ninterface\r\n{$I Own.inc}\r\n{$I ..\\shared\\X.inc}\r\nimplementation\r\nend.\r\n");
+        bed.File(Root + @"\sub\Own.inc", "const Own = 1;\r\n");
+        bed.File(Root + @"\shared\X.inc", "const X = 1;\r\n");
+        bed.File(Root + @"\Deep.pas", "unit Deep;\r\ninterface\r\n{$I parts\\Outer.inc}\r\nimplementation\r\nend.\r\n");
+        bed.File(Root + @"\parts\Outer.inc", "{$I '..\\..\\Y.inc'}\r\n");
+        bed.File(@"G:\Y.inc", "const Y = 2;\r\n");
+        var files = bed.Fs.AllFiles;
+        var projectFile = bed.Text(BuildTestBed.ProjectPath);
+        Assert.Equal("{0} cannot be copied into the project because its include file {1} lies outside the unit's folder.",
+            Strings.Msg_File_LibraryCopyIncludeOutside);
+
+        // The unit's file name and the include name as written (a nested one too, its quotes removed).
+        foreach (var (unit, name, include) in (ValueTuple<string, string, string>[])[
+                     (@"sub\Leave.pas", "Leave.pas", @"..\shared\X.inc"), ("Deep.pas", "Deep.pas", @"..\..\Y.inc")])
+        {
+            var library = await bed.OpenDocumentAsync(Path.Combine(Root, unit));
+            Assert.True(services.Commands.CanExecute(Command)); // refused when run, not disabled
+            await services.Commands.ExecuteAsync(Command);
+
+            // Nothing is written anywhere, inside or outside the project folder (the copy would not compile).
+            var text = name + " cannot be copied into the project because its include file " + include + " lies outside the unit's folder.";
+            Assert.Equal(Format(Strings.Msg_File_LibraryCopyIncludeOutside, name, include), text);
+            Assert.Equal(text, services.Status.Message);
+            Assert.Contains(bed.Log.Lines, l => l.Contains(text, StringComparison.Ordinal)); // UI-ED-149
+            Assert.Equal(files, bed.Fs.AllFiles);
+            Assert.Equal(projectFile, bed.Text(BuildTestBed.ProjectPath));
+            Assert.Equal(["Hello.pas|", "Unit1.pas|"], Entries(bed));
+            Assert.Same(library, services.Documents.ActiveDocument);
+            Assert.True(library.IsLibraryProtected);
+        }
+
+        Assert.Empty(bed.Dialogs.Requests);
+    });
+
+    [Fact(Timeout = 60000)]
+    [Trait("Req", "IDE-LIB-029")]
+    [Trait("Req", "IDE-LIB-034")]
+    public Task AbsoluteInclude_IsNotCopiedAndStillCompiles() => TestUiThread.RunAsync(async () =>
+    {
+        var bed = new BuildTestBed();
+        var services = bed.Services;
+        var src = Path.Combine(SpecTables.RepoRootPath(), "rtl", "src");
+        foreach (var file in Directory.GetFiles(src, "*.inc").Append(Path.Combine(src, "System.pas")).Append(Path.Combine(src, "unit-aliases.json")).Where(File.Exists))
+            bed.File(Path.Combine(Root, Path.GetFileName(file)), File.ReadAllText(file));
+
+        // An absolute name, outside the unit's folder and inside it; the absolute file's own relative include stays where it is too.
+        var unit = bed.File(Root + @"\AbsUnit.pas",
+            "unit AbsUnit;\r\ninterface\r\n{$I 'G:\\shared\\Consts.inc'}\r\n{$I G:\\rtl\\absparts\\Own.inc}\r\nfunction Answer: Integer;\r\nimplementation\r\nfunction Answer: Integer;\r\nbegin\r\n  Result := Base + Extra + Own;\r\nend;\r\nend.\r\n");
+        bed.File(@"G:\shared\Consts.inc", "const Base = 40;\r\n{$I ..\\more\\Extra}\r\n");
+        bed.File(@"G:\more\Extra.inc", "const Extra = 2;\r\n");
+        bed.File(Root + @"\absparts\Own.inc", "const Own = 0;\r\n");
+        await bed.OpenHelloAsync();
+        Assert.True(await services.Documents.CloseAllAsync());
+        bed.File(BuildTestBed.MainPath, "program Hello;\nuses AbsUnit;\nbegin\n  WriteLn(Answer);\nend.\n");
+        var files = bed.Fs.AllFiles;
+
+        await bed.OpenDocumentAsync(unit);
+        await services.Commands.ExecuteAsync(Command);
+        Assert.Equal(BuildTestBed.Dir + @"\AbsUnit.pas", services.Documents.ActiveDocument!.FilePath);
+        Assert.Equal("AbsUnit.pas was copied into the project. This project is now built from the copy.", services.Status.Message);
+        Assert.Equal([BuildTestBed.Dir + @"\AbsUnit.pas"], bed.Fs.AllFiles.Except(files));
+        Assert.Empty(bed.Dialogs.Requests);
+
+        // The copy compiles without the library unit: the absolute names still resolve where they are (IDE-LIB-034).
+        Assert.True(await services.Documents.CloseAllAsync());
+        bed.Fs.DeleteFile(unit);
+        var diagnostics = await services.CodeModel.GetProjectDiagnosticsAsync(CancellationToken.None);
+        Assert.DoesNotContain(diagnostics, d => d.Severity == FreexComp.Compiler.DiagnosticSeverity.Error);
+        Assert.Contains("AbsUnit", await services.CodeModel.GetProjectUnitNamesAsync(CancellationToken.None), StringComparer.OrdinalIgnoreCase);
+    });
+
+    [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-LIB-030")]
     public Task ExistingTargetIsNeverOverwritten() => TestUiThread.RunAsync(async () =>
     {

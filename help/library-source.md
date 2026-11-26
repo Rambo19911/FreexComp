@@ -28,7 +28,9 @@ To change a library unit for one project only, open the unit and choose `Copy to
 the text. FreexComp copies the file into the project's folder and adds it to the project. From then on
 this project is built from the copy; every other project still uses the library unit. To go back, remove
 the file from the project and delete it. Include files the unit uses are copied with it, into the same
-relative folders; if one of them is missing or already exists in the project, nothing is copied.
+relative folders; if one of them is missing or already exists in the project, nothing is copied. A unit whose include
+file is named with `..\` and lies outside the unit's folder cannot be copied, because the copy would not compile; an
+include file named with a full path is not copied and is still used from where it is.
 
 You may also change the library source itself. Keep in mind:
 

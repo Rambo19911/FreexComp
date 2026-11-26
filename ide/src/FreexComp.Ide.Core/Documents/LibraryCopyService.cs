@@ -167,14 +167,13 @@ public sealed class LibraryCopyService
                 return;
             }
 
-            var unitDirectory = Path.GetDirectoryName(PathUtil.Normalize(source))!;
-            foreach (var include in tree.IncludedTrees.Select(t => t.Text.Path).Distinct(StringComparer.OrdinalIgnoreCase))
+            // I-306: what a copied file names relatively moves with it and must stay in the unit's folder, else nothing is
+            // copied; an absolute name is found where it is (so are the files it names), and is not copied.
+            var unitDirectory = Path.GetDirectoryName(tree.Text.Path)!;
+            if (CollectIncludes(tree, unitDirectory, tree.IncludedTrees.ToLookup(t => t.Text.Path, StringComparer.OrdinalIgnoreCase), includes) is { } outside)
             {
-                // Only what lies in the unit's folder moves with it; a file elsewhere (absolute name) is found where it is.
-                var relative = Path.GetRelativePath(unitDirectory, include);
-                if (relative == ".." || relative.StartsWith(@"..\", StringComparison.Ordinal) || Path.IsPathRooted(relative))
-                    continue;
-                includes.Add((include, relative, _fileSystem.ReadAllBytes(include)));
+                Report(Format(Strings.Msg_File_LibraryCopyIncludeOutside, name, outside));
+                return;
             }
 
             var namedForm = FormOf(source, tree);
@@ -323,6 +322,55 @@ public sealed class LibraryCopyService
         {
             _log.Warning(LogCategory, $"{path}: not removed after a failed copy", e);
         }
+    }
+
+    /// <summary>
+    /// Adds the files that <paramref name="file"/>'s include directives name relatively, and theirs, in the order the
+    /// compiler opens them (IDE-LIB-029); returns the first name as written that leaves <paramref name="unitDirectory"/>.
+    /// The names are resolved as the compiler does with no search path (LANG-875): beside the including file, default
+    /// extension <c>.inc</c>; the files were all found, since a missing one stops the copy before.
+    /// </summary>
+    private string? CollectIncludes(SyntaxTree file, string unitDirectory, ILookup<string, SyntaxTree> trees,
+        List<(string Source, string Relative, byte[] Bytes)> includes)
+    {
+        var directory = Path.GetDirectoryName(file.Text.Path)!;
+        foreach (var directive in file.DescendantTrivia().Where(t => t.Kind == SyntaxKind.IncludeDirectiveTrivia).Select(t => t.Directive!))
+        {
+            var written = IncludeFileName(directive.Argument);
+            var named = written.Replace('/', '\\');
+            if (written.Length == 0 || named.StartsWith(@"\\", StringComparison.Ordinal) || (named.Length >= 3 && char.IsAsciiLetter(named[0]) && named[1] == ':' && named[2] == '\\'))
+                continue;
+            var path = PathUtil.Normalize(directory + @"\" + (Path.HasExtension(named.Split('\\')[^1]) ? named : named + ".inc"));
+            var relative = Path.GetRelativePath(unitDirectory, path);
+            if (relative == ".." || relative.StartsWith(@"..\", StringComparison.Ordinal) || Path.IsPathRooted(relative))
+                return written;
+            if (includes.Any(i => string.Equals(i.Source, path, StringComparison.OrdinalIgnoreCase)))
+                continue;
+            includes.Add((path, relative, _fileSystem.ReadAllBytes(path)));
+            foreach (var included in trees[path])
+            {
+                if (CollectIncludes(included, unitDirectory, trees, includes) is { } outside)
+                    return outside;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>The file name of an include directive's argument: one quoted string unquoted (<c>''</c> is a quote), else as is.</summary>
+    private static string IncludeFileName(string argument)
+    {
+        if (argument.Length < 2 || argument[0] != '\'' || argument[^1] != '\'')
+            return argument;
+        var unquoted = new System.Text.StringBuilder();
+        for (var i = 1; i < argument.Length - 1; i++)
+        {
+            if (argument[i] == '\'' && argument[++i] != '\'')
+                return argument; // not one quoted string
+            unquoted.Append(argument[i]);
+        }
+
+        return unquoted.ToString();
     }
 
     /// <summary>
