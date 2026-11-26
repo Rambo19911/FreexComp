@@ -1,0 +1,61 @@
+# header and pixels (UIF-1472)
+ok an empty list writes nothing
+ok size 54 + 4 x Count x Width x Height
+ok signature BM
+ok bfSize 2102
+ok reserved words 0
+ok bfOffBits 54
+ok biSize 40
+ok biWidth = Count x Width
+ok biHeight = Height, positive
+ok biPlanes 1
+ok biBitCount 32
+ok biCompression 0
+ok biSizeImage
+ok the remaining four fields 0
+ok top row is the last file row: opaque red
+ok blue 128 premultiplied (clamped on the way in)
+ok green 1 premultiplied
+ok transparent: all four bytes 0
+ok second cell side by side
+ok first file row is the bottom row
+# round trip (UIF-1473, UIF-1474)
+ok one Change after reading
+ok the list is emptied first
+ok identical cells
+ok reading needs no handle
+ok written again: identical bytes
+# a Phase 4 value (UIF-1474)
+ok two cells
+ok cell 0 opaque red
+ok cell 0 transparent pixel
+ok cell 1 opaque blue
+ok cell 1 transparent pixel
+ok written back byte for byte
+# opaque values (UIF-1473)
+ok 24-bit value: two cells
+ok 24-bit value: opaque
+ok 24-bit value: second cell
+ok all-zero alpha value: two cells
+ok all-zero alpha value: opaque
+ok a value narrower than Width gives no cell
+# damaged values (UIF-1473, UIF-1482)
+ok a truncated header
+ok no BMP signature
+ok truncated pixels
+ok the cells are kept
+ok the pixels are kept
+ok no Change
+# inline .form (UIF-1474)
+ok two cells from the form
+ok identical cells
+# a 24-bit list (UIF-1465, UIF-1474)
+ok alpha 128 written opaque, un-premultiplied
+ok alpha 1 written transparent
+ok identical cells
+ok identical bytes
+# the shared fixture alpha4.bin (UIF-1485)
+ok four cells in four arrangements
+ok fixture size
+ok the writer produces exactly the fixture
+# passed 52 failed 0

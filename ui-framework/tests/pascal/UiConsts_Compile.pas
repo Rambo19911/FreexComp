@@ -28,6 +28,8 @@ begin
   Writeln(SWICImageResize);
   Writeln(SWICImageEmpty);
   Writeln(SWICImageNoData);
+  Writeln(SInvalidImageSize);
+  Writeln(SImageListSizeMismatch);
   Writeln(SVisibleModal);
   Writeln(SDisabledModal);
   Writeln(SMDINotSupported);

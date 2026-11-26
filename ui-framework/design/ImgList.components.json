@@ -31,7 +31,8 @@
         { "name": "Width", "type": "Integer", "default": 16, "category": "Layout" },
         { "name": "Masked", "type": "Boolean", "default": true, "category": "Misc" },
         { "name": "BkColor", "type": "TColor", "default": "clNone", "category": "Misc", "editor": "color" },
-        { "name": "DrawingStyle", "type": "TDrawingStyle", "default": "dsNormal", "category": "Misc" }
+        { "name": "DrawingStyle", "type": "TDrawingStyle", "default": "dsNormal", "category": "Misc" },
+        { "name": "AllocBy", "type": "Integer", "default": 4, "category": "Misc" }
       ],
       "events": [
         { "name": "OnChange", "signature": "TNotifyEvent" }

@@ -33,6 +33,9 @@ resourcestring
   SWICImageResize = 'An image of this class cannot be resized';
   SWICImageEmpty = 'The image is empty';
   SWICImageNoData = 'The image has no encoded data to save';
+  { image lists (graphics.md section 8) }
+  SInvalidImageSize = 'Invalid image size';
+  SImageListSizeMismatch = 'Image list sizes do not match';
 
   { ---------------------------------------------------------------- forms (application-forms.md section 10) }
   SVisibleModal = 'Cannot make a visible window modal';

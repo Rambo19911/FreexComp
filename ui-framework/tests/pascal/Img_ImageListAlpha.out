@@ -1,0 +1,124 @@
+# alpha bitmap source (UIF-1461, UIF-1462, UIF-1466)
+ok Add returns 0
+ok two cells
+ok no handle needed for the store
+ok cell 0 (colour above alpha clamped, colour under alpha 0 cleared, mask ignored): GetAlphaBitmap
+ok cell 0 (colour above alpha clamped, colour under alpha 0 cleared, mask ignored): every pixel canonical
+ok cell 1: GetAlphaBitmap
+ok cell 1: every pixel canonical
+ok the source bitmap is not modified
+ok cell 0, native on white: top left
+ok cell 0, native on white: top right
+ok cell 0, native on white: bottom left
+ok cell 0, native on white: bottom right
+ok cell 0, native on black: top left
+ok cell 0, native on black: top right
+ok cell 0, native on black: bottom left
+ok cell 0, native on black: bottom right
+ok cell 0, Draw on white: top left
+ok cell 0, Draw on white: top right
+ok cell 0, Draw on white: bottom left
+ok cell 0, Draw on white: bottom right
+ok cell 0, Draw on black: top left
+ok cell 0, Draw on black: top right
+ok cell 0, Draw on black: bottom left
+ok cell 0, Draw on black: bottom right
+ok cell 1, native on white: top left
+ok cell 1, native on white: top right
+ok cell 1, native on white: bottom left
+ok cell 1, native on white: bottom right
+ok cell 1, native on black: top left
+ok cell 1, native on black: top right
+ok cell 1, native on black: bottom left
+ok cell 1, native on black: bottom right
+ok cell 1, Draw on white: top left
+ok cell 1, Draw on white: top right
+ok cell 1, Draw on white: bottom left
+ok cell 1, Draw on white: bottom right
+ok cell 1, Draw on black: top left
+ok cell 1, Draw on black: top right
+ok cell 1, Draw on black: bottom left
+ok cell 1, Draw on black: bottom right
+ok AddMasked of an alpha source ignores the mask colour: GetAlphaBitmap
+ok AddMasked of an alpha source ignores the mask colour: every pixel canonical
+# image decoded from alpha.png (UIF-1348 pixels)
+ok decoded width 16
+ok decoded height 12
+ok one cell
+ok top left opaque red
+ok top right opaque green
+ok bottom left blue, alpha 128, premultiplied
+ok bottom right transparent
+ok rows below the source are transparent
+ok native blend of the blue block on white
+ok transparent block leaves white
+ok rows below the source leave white
+ok Draw blend of the blue block on black
+ok Draw of the opaque green block
+# 32-bit bitmap with all alpha 0 (UIF-1462)
+ok GDI drawing leaves alpha 0
+ok the pixels are opaque
+# icons (UIF-1464)
+ok AddIcon of a 32-bit icon
+ok 32-bit icon premultiplied: GetAlphaBitmap
+ok 32-bit icon premultiplied: every pixel canonical
+ok 32-bit icon, native on white: top left
+ok 32-bit icon, native on white: top right
+ok 32-bit icon, native on white: bottom left
+ok 32-bit icon, native on white: bottom right
+ok 32-bit icon, native on black: top left
+ok 32-bit icon, native on black: top right
+ok 32-bit icon, native on black: bottom left
+ok 32-bit icon, native on black: bottom right
+ok 32-bit icon, Draw on white: top left
+ok 32-bit icon, Draw on white: top right
+ok 32-bit icon, Draw on white: bottom left
+ok 32-bit icon, Draw on white: bottom right
+ok 32-bit icon, Draw on black: top left
+ok 32-bit icon, Draw on black: top right
+ok 32-bit icon, Draw on black: bottom left
+ok 32-bit icon, Draw on black: bottom right
+ok AddIcon of a masked icon
+ok masked icon: black mask opaque
+ok masked icon: white mask transparent
+ok Masked = False: AddIcon
+ok Masked = False: the mask is ignored
+ok AddIcon of an 8 x 8 icon
+ok nearest neighbour: (0, 0) from (0, 0)
+ok nearest neighbour: (1, 1) from (0, 0)
+ok nearest neighbour: (5, 3) from (2, 1)
+ok nearest neighbour: (15, 15) from (7, 7)
+# GetAlphaBitmap, GetBitmap, GetIcon (UIF-1471)
+ok GetAlphaBitmap: invalid index
+ok GetAlphaBitmap: invalid index leaves the image
+ok GetAlphaBitmap: negative index
+ok GetAlphaBitmap: nil image
+ok GetAlphaBitmap: valid
+ok GetAlphaBitmap: pf32bit
+ok GetAlphaBitmap: width
+ok GetAlphaBitmap: height
+ok GetBitmap: valid
+ok GetBitmap: opaque red
+ok GetBitmap: blue 128 over white
+ok GetBitmap: green 1 over white
+ok GetBitmap: transparent is white
+ok GetBitmap: invalid index
+ok GetIcon: an icon
+ok GetIcon: width
+ok GetIcon: a second call replaces the icon
+ok GetIcon round trip: red
+ok GetIcon round trip: blue 128
+ok GetIcon round trip: green 1
+ok GetIcon round trip: transparent
+ok GetIcon: index = Count
+ok GetIcon: index -1
+ok GetIcon: nil icon
+# 24-bit list (UIF-1465)
+ok opaque red stays
+ok alpha 128: opaque, colour un-premultiplied
+ok alpha 1: transparent
+ok alpha 0: transparent
+ok native: the reduced blue block
+ok native: red
+ok native: the transparent alpha-1 block
+# passed 117 failed 0

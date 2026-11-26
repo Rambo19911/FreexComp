@@ -1,0 +1,161 @@
+# Insert (no handle)
+ok handle only when read
+ok Count from the store
+ok insert at the front
+ok one Change
+ok a 2-cell strip inserted in the middle, in order
+ok one Change per Insert
+ok insert at the end
+ok edits do not create a handle
+ok the native list follows the store
+# Insert (with handle)
+ok handle only when read
+ok Count from the store
+ok insert at the front
+ok one Change
+ok a 2-cell strip inserted in the middle, in order
+ok one Change per Insert
+ok insert at the end
+ok edits do not create a handle
+ok Handle value unchanged
+ok the native list follows the store
+# Replace, Move
+ok Replace with a 2-cell strip uses cell 0
+ok Replace keeps Count
+ok Replace: one Change
+ok ReplaceMasked: the mask colour is transparent
+ok ReplaceIcon
+ok native list after Replace
+ok Delete
+ok Move forward
+ok Move backward
+ok one Change per Move
+ok Move onto itself changes nothing
+ok and fires nothing
+ok native list after Move
+ok Handle value unchanged
+# index and size errors (UIF-1468, UIF-1482)
+ok a handle
+ok index error 0
+ok index error 1
+ok index error 2
+ok index error 3
+ok index error 4
+ok index error 5
+ok index error 6
+ok index error 7
+ok index error 8
+ok index error 9
+ok index error 10
+ok size error 11
+ok size error 12
+ok size error 13
+ok size error 14
+ok size error 15
+ok size error 16
+ok size error 17
+ok size error 18
+ok size error 19
+ok size error 20
+ok size error 21
+ok nothing changed
+ok native list unchanged
+ok no Change for a failure
+ok AddImage: size mismatch
+ok AddImages: size mismatch
+ok still no Change
+# opaque sources: mask, mask colour, Masked = False (UIF-1462)
+ok a mask pixel that is not black is transparent
+ok a black mask pixel is opaque
+ok outside the mask counts as black
+ok the mask colour is transparent
+ok other colours are opaque
+ok only the exact colour is transparent
+ok the source is not modified
+ok the mask is not modified
+ok Masked empties the list
+ok Masked = False ignores the mask
+ok Masked = False ignores the mask colour
+ok unmasked native list
+# cells of a source (UIF-1463)
+ok Add returns the first new index
+ok 40 pixels wide: 2 cells, the rest ignored
+ok a narrow source: one cell
+ok Count 3
+ok inside the source
+ok right of the source: transparent
+ok below the source: transparent
+# CreateSize, SetSize, AllocBy (UIF-1468)
+ok CreateSize width
+ok CreateSize height
+ok CreateSize: no owner
+ok CreateSize: other defaults
+ok AllocBy default 4
+ok SetSize to the same size keeps the cells
+ok and fires nothing
+ok SetSize width
+ok SetSize height
+ok SetSize empties the list
+ok SetSize: one Change
+ok AllocBy 0 is stored as 1
+ok AllocBy -5 is stored as 1
+ok AllocBy 10
+ok AllocBy changes fire Change
+ok a handle with AllocBy 10
+# AddImage, AddImages, Assign (UIF-1469)
+ok a handle
+ok AddImage returns the new index
+ok AddImage copies the cell
+ok AddImages appends all cells in order
+ok one Change each
+ok AddImages(Self) doubles the list
+ok AddImages(nil) does nothing
+ok native list after the copies
+ok the source list is unchanged
+ok a handle before Assign
+ok Assign: one Change
+ok Assign: Width
+ok Assign: Height
+ok Assign: Masked
+ok Assign: BkColor
+ok Assign: DrawingStyle
+ok Assign: AllocBy
+ok Assign: ColorDepth
+ok Assign: the cells
+ok Assign does not create the source handle
+ok a handle of its own
+ok Assign: the native list
+ok Assign(nil): the conversion error
+ok no Change for a failed Assign
+# BeginUpdate, EndUpdate (UIF-1470)
+ok EndUpdate without BeginUpdate does nothing
+ok inner EndUpdate: nothing
+ok outer EndUpdate: one Change
+ok an empty bracket fires nothing
+ok after the bracket each edit fires again
+ok Delete(9) inside a bracket raises
+ok a failure inside a bracket fires nothing
+# one handle for the clients (UIF-1467)
+ok start: Handle unchanged
+ok start: list view
+ok start: tree view
+ok middle Insert: Handle unchanged
+ok middle Insert: list view
+ok middle Insert: tree view
+ok Replace: Handle unchanged
+ok Replace: list view
+ok Replace: tree view
+ok Move: Handle unchanged
+ok Move: list view
+ok Move: tree view
+ok Delete: Handle unchanged
+ok Delete: list view
+ok Delete: tree view
+ok Clear: Handle unchanged
+ok Clear: list view
+ok Clear: tree view
+ok Add: Handle unchanged
+ok Add: list view
+ok Add: tree view
+ok native list at the end
+# passed 150 failed 0

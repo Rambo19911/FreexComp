@@ -20,6 +20,8 @@ The image is too large
 An image of this class cannot be resized
 The image is empty
 The image has no encoded data to save
+Invalid image size
+Image list sizes do not match
 Cannot make a visible window modal
 Cannot make a disabled window modal
 MDI forms are not supported
