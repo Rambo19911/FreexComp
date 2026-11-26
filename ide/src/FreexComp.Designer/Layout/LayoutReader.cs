@@ -30,10 +30,13 @@ internal sealed class LayoutReader
         var client = PropertyAccess.GetBounds(form.Root);
         (root.Width, root.Height) = (Math.Max(0, client.Width), Math.Max(0, client.Height));
         if (form.Root.IsPreserved
-            && (form.Root.Info is { Kind: ComponentKind.Form } info ? info : _catalog.All.FirstOrDefault(c => c.Kind == ComponentKind.Form)) is { } formClass)
+            && (form.Root.Info is { Kind: ComponentKind.Form, IsAbstract: false } info ? info
+                : _catalog.All.FirstOrDefault(c => c.Kind == ComponentKind.Form && !c.IsAbstract)) is { } formClass)
         {
             // DSG-FD-027 (D-134): a read-only root (unknown class, F0112, F0113) that stores no size is drawn at the metadata's
-            // default client size, the defaultSize of its form class, so the frame with the box content is visible.
+            // default client size, the defaultSize of its form class, so the frame with the box content is visible. D-135: the
+            // form class is the first one that is not abstract — the framework metadata lists the abstract base of the form
+            // class first, whose inherited defaultSize is a control's.
             if (!PropertyAccess.IsStored(form.Root, "ClientWidth") && !PropertyAccess.IsStored(form.Root, "Width"))
             {
                 root.Width = formClass.DefaultSize.Width;

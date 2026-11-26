@@ -108,6 +108,18 @@ public sealed class SurfaceGeometry
 
     public bool IsTrayItem(FormObject obj) => obj.Parent is { Parent: null } && obj.Info?.Kind == ComponentKind.NonVisual;
 
+    /// <summary>
+    /// True when <see cref="GetBounds"/> has bounds for <paramref name="obj"/>: the form, a tray item or a component with
+    /// layout bounds (not a non-visual child such as a menu item, nor a component of a read-only tree that is not placed).
+    /// </summary>
+    public bool HasBounds(FormObject obj) => obj.Parent is null || IsTrayItem(obj) || Layout.HasBounds(obj);
+
+    /// <summary>
+    /// D-135 (DSG-FD-134): a component a re-merge may select again — one with bounds, or a non-visual component that is
+    /// not read-only (a menu item or an action, selected through the Structure window or its editor).
+    /// </summary>
+    public bool IsSelectable(FormObject obj) => HasBounds(obj) || (obj.Info?.Kind == ComponentKind.NonVisual && !obj.IsPreserved);
+
     /// <summary>Outer bounds in surface coordinates: the frame for the form, the layout bounds for a control, the cell for a tray item.</summary>
     public Rect GetBounds(FormObject obj)
     {

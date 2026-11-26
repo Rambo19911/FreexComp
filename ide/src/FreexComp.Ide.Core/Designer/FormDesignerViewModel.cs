@@ -181,7 +181,8 @@ public sealed class FormDesignerViewModel
                     Stored("DesignLeft"), Stored("DesignTop"), cell.Width, cell.Height);
             }
 
-            var bounds =obj.Parent is not null && surface.Layout.HasBounds(obj) ? surface.Layout.GetBounds(obj) : PropertyAccess.GetBounds(obj);
+            // The form: its client size as drawn (D-135: a read-only root without a stored size has the default size, DSG-FD-027).
+            var bounds = surface.Layout.HasBounds(obj) ? surface.Layout.GetBounds(obj) : PropertyAccess.GetBounds(obj);
             var (left, top) = obj.Parent is null || !surface.Layout.HasBounds(obj)
                 ? (PropertyAccess.GetInt(obj, "Left"), PropertyAccess.GetInt(obj, "Top"))
                 : (bounds.Left, bounds.Top);

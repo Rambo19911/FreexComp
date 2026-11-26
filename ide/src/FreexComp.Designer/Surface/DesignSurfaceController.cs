@@ -67,7 +67,7 @@ public sealed partial class DesignSurfaceController
         {
             if (e.IsRemerge)
             {
-                Selection.Rebind();
+                Selection.Rebind(Geometry.IsSelectable);
             }
         };
     }

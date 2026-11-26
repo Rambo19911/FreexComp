@@ -392,7 +392,9 @@ public sealed class DesignSurfaceControl : Control, ICommandTarget
         if (e.Key == Key.Apps || (e.Key == Key.F10 && e.KeyModifiers == KeyModifiers.Shift))
         {
             // designer.md §8: by keyboard at the primary selection's top-left + (8, 8).
-            var b = _surface.Geometry.GetBounds(_surface.Selection.Primary);
+            // D-135: a component without bounds (one of a read-only tree) opens it at the form.
+            var g = _surface.Geometry;
+            var b = g.HasBounds(_surface.Selection.Primary) ? g.GetBounds(_surface.Selection.Primary) : g.FrameRect;
             _designer!.Host.ShowContextMenu(b.Left + 8, b.Top + 8);
             e.Handled = true;
             return;
@@ -459,11 +461,13 @@ public sealed class DesignSurfaceControl : Control, ICommandTarget
     /// <summary>
     /// DSG-SUR-030: the primary selection scrolls into view by the minimum distance, with an 8 DIP margin (aligned at its
     /// top-left when larger than the view) — for a selection from outside (Object Inspector, Structure, Messages) and
-    /// equally for one made on the surface (keyboard selection of a control outside the view).
+    /// equally for one made on the surface (keyboard selection of a control outside the view). D-135: a component without
+    /// bounds (a non-visual child, a component of a read-only tree) has nothing to scroll into view.
     /// </summary>
     private void BringSelectionIntoView()
     {
-        if (_surface is not { } surface || surface.Selection.Items.Count == 0 || this.FindAncestorOfType<ScrollViewer>() is not { } scroller)
+        if (_surface is not { } surface || surface.Selection.Items.Count == 0 || !surface.Geometry.HasBounds(surface.Selection.Primary)
+            || this.FindAncestorOfType<ScrollViewer>() is not { } scroller)
         {
             return;
         }

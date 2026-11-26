@@ -517,4 +517,50 @@ public sealed class ProjectFrameCatalogTests
         Assert.DoesNotContain(designer.DesignInfoBars, b => b.Kind == "FormReadOnlyKind");
         Assert.False(leaf.IsModified);
     }
+
+    /// <summary>
+    /// DSG-FD-134, DSG-FD-027 (D-135): with a new component inside an inherited panel selected, the ancestor's unit leaves
+    /// the project: the descendant is merged again into a read-only <c>F0112</c> document whose components are not
+    /// placeable; the selection is chosen again by name among the components that are still placeable, else the root; the
+    /// re-merged read-only root is drawn at the metadata's default client size and the status bar shows that size.
+    /// </summary>
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "DSG-FD-134")]
+    [Trait("Req", "DSG-FD-027")]
+    public Task Remerge_AncestorUnitRemovedWithNewComponentSelected_SelectsRootAtDefaultSize() => TestUiThread.RunAsync(RemovedSelectedOnUiThread);
+
+    private async Task RemovedSelectedOnUiThread()
+    {
+        InheritanceProject();
+        Assert.True(await _services.Projects.OpenAsync(ProjectPath));
+        var form = Assert.IsType<FormDocumentViewModel>((await _services.Documents.OpenAsync(MainUnitPath)).Value);
+        Assert.True(form.ShowView(DocumentView.Design));
+        var designer = form.Designer;
+        var surface = designer.Surface!;
+        surface.Selection.Set(["HelpButton"]);
+        Assert.True(surface.Layout.HasBounds(surface.Selection.Primary));
+        var selections = 0;
+        surface.Selection.Changed += (_, _) =>
+        {
+            selections++;
+            _ = surface.Geometry.GetBounds(surface.Selection.Primary); // every selected component is placeable
+        };
+
+        Assert.True(await _services.Projects.RemoveFromProjectAsync(["BaseDialogUnit.pas"]));
+        _clock.Advance(TimeSpan.FromSeconds(1));
+        Assert.Null(Frames.Ancestors.Find("TBaseDialog"));
+        Assert.Equal(["F0112"], designer.Model!.Diagnostics.Select(d => d.Code));
+        Assert.True(designer.Surface!.IsReadOnly);
+        Assert.Same(surface, designer.Surface);
+        Assert.NotNull(designer.Model.FindByName("HelpButton"));
+        Assert.Equal([designer.Model.Root], surface.Selection.Items);
+        Assert.Equal(1, selections);
+
+        // The read-only root stores no size: the default client size of the metadata's form class (DSG-FD-027).
+        var size = FrameDesign.Catalog.All.First(c => c.Kind == FreexComp.Designer.Catalog.ComponentKind.Form).DefaultSize;
+        Assert.Equal((size.Width, size.Height), (surface.Geometry.FormClientRect.Width, surface.Geometry.FormClientRect.Height));
+        Assert.Equal(string.Format(CultureInfo.CurrentCulture, Strings.Msg_Designer_Selection, "MainForm", "TMainForm", 0, 0, size.Width, size.Height),
+            designer.SelectionStatusText);
+        Assert.False(form.IsModified);
+    }
 }

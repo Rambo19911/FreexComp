@@ -403,6 +403,78 @@ public sealed class InheritedFormSurfaceTests
         Assert.Equal((300, 300), Client(sized));
     }
 
+    /// <summary>
+    /// DSG-FD-134, DSG-FD-027 (D-135), with the framework metadata (its first form class is the abstract base of the
+    /// form class): a descendant (level 3) with a new button inside an inherited panel selected loses its ancestor from
+    /// the ancestor catalog. It is merged again into a read-only <c>F0112</c> document; no selection handler sees a
+    /// component without bounds (the selection is chosen again among the placeable components, else the root), and the
+    /// read-only root is drawn at the metadata's default client size (the form class's <c>defaultSize</c>), as on a fresh open.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "DSG-FD-134")]
+    [Trait("Req", "DSG-FD-027")]
+    public void Remerge_AncestorRemovedWithNewComponentSelected_RootSelectedAtDefaultClientSize()
+    {
+        var catalog = FreexComp.Designer.Tests.Layout.LayoutHarness.Catalog;
+        var ancestors = new FrameCatalog();
+        FrameDefinition Level(string text, string unit, string ancestor)
+        {
+            var parsed = FreexComp.Designer.Text.FormParser.Parse(text, unit + ".form", catalog, ancestor, null, ancestors);
+            Assert.Empty(parsed.Diagnostics);
+            var definition = new FrameDefinition(parsed.Document!.Root.TypeName, unit, unit + ".form", parsed.Document);
+            ancestors.Set(definition);
+            return definition;
+        }
+
+        Level(BaseDialog, "BaseDialogUnit", "TForm");
+        Level(MidDialog, "MidDialogUnit", "TBaseDialog");
+        const string Leaf = """
+            inherited MidDialog2: TMidDialog2
+              inherited ButtonPanel: TPanel
+                object Button1: TButton
+                  Left = 100
+                  Top = 8
+                  Width = 75
+                  Height = 25
+                  Caption = 'Button1'
+                  TabOrder = 3
+                end
+              end
+            end
+
+            """;
+        using var h = DesignerHarness.FromText(Leaf, "MidDialog2.form", allowDiagnostics: true, catalog: catalog, rootAncestorClass: "TMidDialog",
+            ancestors: ancestors);
+        Assert.Empty(h.Document.Diagnostics);
+        Assert.True(h.Document.Root.IsInheritedRoot);
+        h.Select("Button1");
+        Assert.True(h.Controller.Geometry.IsControl(h.Selection.Primary));
+        var seen = new List<string>();
+        h.Selection.Changed += (_, _) =>
+        {
+            _ = h.Controller.Geometry.GetBounds(h.Selection.Primary); // as the view brings the selection into view
+            seen.Add(h.Selection.Primary.Name);
+        };
+
+        ancestors.Remove("TMidDialog");
+        Assert.Equal(["F0112"], h.Document.Diagnostics.Select(d => d.Code));
+        Assert.True(h.Document.Root.IsPreserved);
+        Assert.NotNull(h.Document.FindByName("Button1"));
+        Assert.False(h.Controller.Layout.HasBounds(h.Document.FindByName("Button1")!));
+        Assert.Equal(["MidDialog2"], seen);
+        Assert.Equal([h.Document.Root], h.Selection.Items);
+
+        var size = catalog.Find("TForm")!.DefaultSize;
+        Assert.Equal((400, 300), (size.Width, size.Height));
+        Assert.Equal((400, 300), (h.Controller.Geometry.FormClientRect.Width, h.Controller.Geometry.FormClientRect.Height));
+
+        // The same document opened fresh read-only: the same size.
+        using var fresh = DesignerHarness.FromText(Leaf, "MidDialog2.form", allowDiagnostics: true, catalog: catalog, rootAncestorClass: "TMidDialog",
+            ancestors: new FrameCatalog());
+        Assert.Equal(["F0112"], fresh.Document.Diagnostics.Select(d => d.Code));
+        Assert.Equal((400, 300), (fresh.Controller.Geometry.FormClientRect.Width, fresh.Controller.Geometry.FormClientRect.Height));
+    }
+
     [Fact]
     [Trait("Req", "DSG-SUR-242")]
     public void RevertToInherited_ControlAndRoot_OneUndoUnit()

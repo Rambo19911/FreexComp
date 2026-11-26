@@ -107,7 +107,7 @@ public sealed class DesignSurfaceAutomationPeer(DesignSurfaceControl owner) : Co
             PeerKind.Form => g.FrameRect,
             PeerKind.Tray => g.TrayRect,
             PeerKind.Handle or PeerKind.Guideline => peer.Bounds,
-            _ => peer.Object is { } obj ? g.GetBounds(obj) : default,
+            _ => peer.Object is { } obj && g.HasBounds(obj) ? g.GetBounds(obj) : default,
         };
         return new Rect(origin.X + r.Left, origin.Y + r.Top, r.Width, r.Height);
     }

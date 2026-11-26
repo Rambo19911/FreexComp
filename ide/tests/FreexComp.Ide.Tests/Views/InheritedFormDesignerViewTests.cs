@@ -267,6 +267,64 @@ public sealed class InheritedFormDesignerViewTests
         Assert.False(document.IsModified);
     }
 
+    /// <summary>
+    /// DSG-FD-134, DSG-SUR-030 (D-135): the ancestor of an open descendant leaves the ancestor catalog while a new button
+    /// inside an inherited panel is selected: the re-merged read-only <c>F0112</c> document selects its root; afterwards a
+    /// component without layout bounds selected from the Structure window, the context-menu key, Tab and the surface's
+    /// automation elements raise no exception (nothing to scroll into view; the menu opens at the form).
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "DSG-FD-134")]
+    [Trait("Req", "DSG-SUR-030")]
+    public async Task Remerge_AncestorRemovedWithNewComponentSelected_SelectionHandlersDoNotThrow()
+    {
+        await using var h = await StartAsync();
+        var (document, control) = await OpenDescendantAsync(h);
+        var surface = document.Designer.Surface!;
+        surface.Selection.Set(["HelpButton"]);
+        Dispatcher.UIThread.RunJobs();
+
+        var ancestors = Assert.IsType<FreexComp.Designer.Model.FrameCatalog>(((DocumentService)h.Services.Documents).DesignAncestors);
+        ancestors.Remove("TBaseDialog");
+        h.Clock.Advance(TimeSpan.FromSeconds(1)); // the read-only state follows the model 300 ms later (DSG-CS-010)
+        Dispatcher.UIThread.RunJobs();
+        var model = document.Designer.Model!;
+        Assert.Equal(["F0112"], model.Diagnostics.Select(d => d.Code));
+        Assert.True(document.Designer.Surface!.IsReadOnly);
+        Assert.Equal([model.Root], surface.Selection.Items);
+        var help = model.FindByName("HelpButton")!;
+        Assert.False(surface.Geometry.HasBounds(help));
+
+        // A component without bounds selected from outside (the Structure window).
+        await h.ExecuteAsync("view.structure");
+        Dispatcher.UIThread.RunJobs();
+        h.Click(StructureRow + "HelpButton");
+        Assert.Equal([help], surface.Selection.Items);
+
+        // The context-menu key opens the menu at the form; Tab moves on; the automation elements have their bounds.
+        control.Focus();
+        Dispatcher.UIThread.RunJobs();
+        h.Press("Shift+F10");
+        Assert.True(Assert.IsType<ContextMenu>(control.ContextMenu).IsOpen);
+        var frame = surface.Geometry.FrameRect;
+        Assert.Equal(new Point(frame.Left + 8, frame.Top + 8), control.ContextMenuPoint);
+        control.ContextMenu!.Close();
+        Dispatcher.UIThread.RunJobs();
+        control.Focus();
+        h.Press("Tab");
+        void Visit(AutomationPeer peer)
+        {
+            _ = peer.GetBoundingRectangle();
+            foreach (var child in peer.GetChildren())
+            {
+                Visit(child);
+            }
+        }
+
+        Visit(ControlAutomationPeer.CreatePeerForElement(control));
+        Assert.False(document.IsModified);
+    }
+
     private static Task<HeadlessHarness> StartAsync() => HeadlessHarness.StartAsync(o =>
     {
         o.InitialFiles["MainForm.pas"] = InheritedDesign.Unit;

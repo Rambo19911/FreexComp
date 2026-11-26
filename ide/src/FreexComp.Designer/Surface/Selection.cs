@@ -84,12 +84,15 @@ public sealed class Selection
     /// DSG-SUR-030: selection from outside by names (the last becomes primary); unknown names are skipped, the root is
     /// dropped from a multi-selection, nothing left selects the form.
     /// </summary>
-    public void Set(IEnumerable<string> names)
+    public void Set(IEnumerable<string> names) => Set(names, null);
+
+    private void Set(IEnumerable<string> names, Func<FormObject, bool>? keep)
     {
         var objects = new List<FormObject>();
         foreach (var name in names)
         {
-            if (_document.FindByQualifiedName(name) is { } obj && !objects.Exists(o => ReferenceEquals(o, obj)))
+            if (_document.FindByQualifiedName(name) is { } obj && (keep is null || obj.Parent is null || keep(obj))
+                && !objects.Exists(o => ReferenceEquals(o, obj)))
             {
                 objects.Add(obj);
             }
@@ -116,11 +119,13 @@ public sealed class Selection
     /// <summary>
     /// DSG-FD-111: after a re-merge the inherited objects are new objects: the selection is chosen again by the qualified
     /// names (a component still in the tree by its current name, a replaced one by the name it had when it was selected).
+    /// D-135: only components <paramref name="placeable"/> accepts are chosen again (a component of a read-only
+    /// <c>F0112</c> document has no layout bounds), else the form root.
     /// </summary>
-    public void Rebind()
+    public void Rebind(Func<FormObject, bool>? placeable = null)
     {
         var names = _items.Select((o, i) => IsInTree(o) ? o.QualifiedName : _names[i]).ToList();
-        Set(names);
+        Set(names, placeable);
     }
 
     /// <summary>True when <paramref name="obj"/> is still in the document's tree (its ancestors reach the root).</summary>
