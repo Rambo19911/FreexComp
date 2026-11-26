@@ -285,6 +285,33 @@ public sealed class FormDesignerViewModelTests
         Assert.Single(_services.Documents.Documents);
     }
 
+    /// <summary>
+    /// DSG-CS-080, DSG-FD-027 (D-133): a form without a unit whose class the metadata does not know binds to the first
+    /// concrete form class of the metadata (the framework metadata lists the abstract base of its form class first).
+    /// </summary>
+    [Fact(Timeout = 30000)]
+    [Trait("Phase", "8")]
+    [Trait("Req", "DSG-CS-080")]
+    [Trait("Req", "DSG-FD-027")]
+    public Task FormWithoutUnit_UnknownClass_BindsFirstConcreteFormClass() => TestUiThread.RunAsync(FormWithoutUnitConcreteOnUiThread);
+
+    private async Task FormWithoutUnitConcreteOnUiThread()
+    {
+        var catalog = DataDesignTests.Catalog;
+        Assert.True(catalog.All.First(c => c.Kind == FreexComp.Designer.Catalog.ComponentKind.Form).IsAbstract);
+        ((DocumentService)_services.Documents).DesignCatalog = catalog;
+        const string lonely = Dir + @"\Lonely.form";
+        File(lonely, "object Lonely: TLonely\n  Caption = 'Lonely'\n  ClientWidth = 300\n  ClientHeight = 200\nend\n");
+
+        var document = Assert.IsType<FormDocumentViewModel>((await _services.Documents.OpenAsync(lonely)).Value);
+
+        Assert.False(document.HasUnit);
+        var root = document.Designer.Model!.Root;
+        Assert.Equal("TForm", root.Info!.ClassName);
+        Assert.Empty(document.Designer.Model.Diagnostics);
+        Assert.False(document.Designer.Surface!.IsReadOnly);
+    }
+
     [Fact(Timeout = 30000)]
     [Trait("Req", "DSG-CS-080")]
     public Task FormWithoutUnitOpensDesignWithoutCodeSync() => TestUiThread.RunAsync(() => FormWithoutUnitOpensDesignWithoutCodeSyncOnUiThread()); // I-209

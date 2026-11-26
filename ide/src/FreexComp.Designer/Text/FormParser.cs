@@ -20,8 +20,8 @@ public static class FormParser
 
     /// <param name="rootAncestorClass">
     /// The ancestor of the form class declared in the unit (code sync supplies it from <c>class(TForm)</c>). The root
-    /// binds to its own class when the catalog has it, else to this class, else to the first catalog class of kind
-    /// <c>form</c>; a root bound by either fallback never raises <c>F0101</c>.
+    /// binds to its own class when the catalog has it, else to this class, else to the first concrete (not abstract)
+    /// catalog class of kind <c>form</c> (D-133); a root bound by either fallback never raises <c>F0101</c>.
     /// </param>
     /// <param name="frames">
     /// The frames <c>inline</c> objects resolve against (DSG-FD-102, 106): without a catalog every <c>inline</c> object
@@ -265,7 +265,7 @@ public static class FormParser
             {
                 info = rootAncestorClass is not null
                     ? catalog.Find(rootAncestorClass)
-                    : catalog.All.FirstOrDefault(c => c.Kind == ComponentKind.Form);
+                    : catalog.All.FirstOrDefault(c => c.Kind == ComponentKind.Form && !c.IsAbstract);
             }
 
             // DSG-FD-106, 107: an `inline` object of a known frame is a resolved instance; an unknown frame is F0101, a frame

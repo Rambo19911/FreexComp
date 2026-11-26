@@ -987,7 +987,7 @@ public sealed class FormDesignerViewModel
     /// <summary>
     /// Parses the form text; the root binds to the ancestor its unit declares (<c>class(TForm)</c>) when the catalog does
     /// not know the form class itself (README lead notes D-001…D-008). Without a unit the form class binds to the
-    /// metadata's form class when the catalog does not know it.
+    /// metadata's first concrete (not abstract) form class when the catalog does not know it.
     /// </summary>
     private FormParseResult Parse(string text)
     {
@@ -1001,7 +1001,7 @@ public sealed class FormDesignerViewModel
         var ancestor = HasUnit
             ? FormClassLocator.Locate(_unit.Buffer.Text, document.Root.TypeName, _unit.FilePath ?? FormClassLocator.PlaceholderPath)
                 .FormClass?.AncestorName
-            : Catalog.All.FirstOrDefault(c => c.Kind == ComponentKind.Form)?.ClassName;
+            : Catalog.All.FirstOrDefault(c => c.Kind == ComponentKind.Form && !c.IsAbstract)?.ClassName;
         return ancestor is null ? first : FormParser.Parse(text, path, Catalog, ancestor, Frames, Ancestors);
     }
 }

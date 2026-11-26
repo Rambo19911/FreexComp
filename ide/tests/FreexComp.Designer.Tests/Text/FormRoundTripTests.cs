@@ -30,9 +30,22 @@ public sealed class FormRoundTripTests
         Assert.False(bytes is [0xEF, 0xBB, 0xBF, ..]);
 
         // D-118: the frame files of the corpus are frame documents, and the forms resolve their instances against them.
-        var written = FormWriter.Write(FrameFormRoundTripTests.IsFrameFile(file)
-            ? Support.FrameFixtures.ParseFrame(text, FrameFormRoundTripTests.CorpusFrames(), file)
-            : Support.FrameFixtures.ParseForm(text, FrameFormRoundTripTests.CorpusFrames(), file));
+        // D-133: the levels of the inheritance chain are read against their ancestors — a resolved document, not the
+        // read-only text of an unknown ancestor (F0107).
+        var inherited = file.StartsWith("inherit-", StringComparison.Ordinal);
+        var document = inherited
+            ? InheritedFormRoundTripTests.ParseChainLevel(file)
+            : FrameFormRoundTripTests.IsFrameFile(file)
+                ? Support.FrameFixtures.ParseFrame(text, FrameFormRoundTripTests.CorpusFrames(), file)
+                : Support.FrameFixtures.ParseForm(text, FrameFormRoundTripTests.CorpusFrames(), file);
+        if (inherited)
+        {
+            Assert.Empty(document.Diagnostics);
+            Assert.False(document.Root.IsPreserved);
+            Assert.Equal(file != "inherit-base.form", document.Root.IsInheritedRoot);
+        }
+
+        var written = FormWriter.Write(document);
 
         Assert.Equal(text, written);
         Assert.Equal(bytes, Encoding.UTF8.GetBytes(written));

@@ -204,6 +204,67 @@ public sealed class InheritedFormDesignerViewTests
     }
 
     /// <summary>
+    /// DSG-SUR-245, 242 (D-133): Revert to Inherited from the Structure window's context menu, with the surface's enabled
+    /// rules — disabled on a new component and on an inherited one without overrides; on an inherited control with an
+    /// override it removes the override, on the inherited root its own overrides (its new children stay), each in one
+    /// "Revert to Inherited" undo unit; afterwards the item is disabled.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "DSG-SUR-245")]
+    [Trait("Req", "DSG-SUR-242")]
+    public async Task StructureContextMenu_RevertToInherited()
+    {
+        await using var h = await StartAsync();
+        var (document, _) = await OpenDescendantAsync(h);
+        var designer = document.Designer;
+        await h.ExecuteAsync("view.structure");
+        Dispatcher.UIThread.RunJobs();
+        var list = h.Find<ListBox>("Tool.Structure.List");
+        var original = designer.CurrentFormText();
+        Assert.Contains("    inherited OkButton: TButton\n      Caption = 'Apply'\n    end\n", original, StringComparison.Ordinal);
+        Assert.Contains("  Caption = 'Main'\n", original, StringComparison.Ordinal);
+
+        (bool Enabled, MenuItem Item) Revert(string name)
+        {
+            h.RightClick(StructureRow + name);
+            Assert.Equal([name], designer.Surface!.Selection.Items.Select(o => o.Name));
+            var menu = Assert.IsType<ContextMenu>(list.ContextMenu);
+            Assert.True(menu.IsOpen);
+            var item = Item(menu, "Context.designer.revertToInherited");
+            var enabled = item.IsEffectivelyEnabled;
+            Assert.Equal(designer.Surface.CanExecute(FreexComp.Designer.Surface.Commands.RevertToInherited), enabled);
+            menu.Close();
+            Dispatcher.UIThread.RunJobs();
+            return (enabled, item);
+        }
+
+        Assert.False(Revert("HelpButton").Enabled);
+        Assert.False(Revert("CancelButton").Enabled);
+
+        // An inherited control with an override: its block goes (the panel's block stays for the new child).
+        var (enabled, revert) = Revert("OkButton");
+        Assert.True(enabled);
+        revert.Command!.Execute(revert.CommandParameter);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(original.Replace("    inherited OkButton: TButton\n      Caption = 'Apply'\n    end\n", "", StringComparison.Ordinal),
+            designer.CurrentFormText());
+        Assert.Equal((1, "Undo_Designer_RevertToInherited"), (designer.Undo.UndoCount, designer.Undo.UndoTitleKey));
+        Assert.False(Revert("OkButton").Enabled);
+
+        // The inherited root: its own caption override goes; the new children and their lines stay.
+        (enabled, revert) = Revert("MainForm");
+        Assert.True(enabled);
+        revert.Command!.Execute(revert.CommandParameter);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(original.Replace("    inherited OkButton: TButton\n      Caption = 'Apply'\n    end\n", "", StringComparison.Ordinal)
+            .Replace("  Caption = 'Main'\n", "", StringComparison.Ordinal), designer.CurrentFormText());
+        Assert.Equal((2, "Undo_Designer_RevertToInherited"), (designer.Undo.UndoCount, designer.Undo.UndoTitleKey));
+        Assert.NotNull(designer.Model!.FindByName("HelpButton"));
+        Assert.NotNull(designer.Model.FindByName("NameEdit"));
+        Assert.False(Revert("MainForm").Enabled);
+    }
+
+    /// <summary>
     /// DSG-SUR-245, 238 (D-134 item 2): the Structure window's context menu offers the surface commands with the same
     /// enabled rules — for an inherited component (Copy and Select All enabled, Cut and Delete refused) and for a new one;
     /// the Delete key in the Structure window on an inherited component shows the surface's refusal message and deletes

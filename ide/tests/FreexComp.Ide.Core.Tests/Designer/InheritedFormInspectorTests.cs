@@ -18,12 +18,12 @@ public sealed class InheritedFormInspectorTests
 
     /// <summary><see cref="InheritedDesign.Form"/> opened in the Design view with its ancestor known.</summary>
     private async Task<(FormDocumentViewModel Document, FormDesignerViewModel Designer, ObjectInspectorViewModel Inspector)> OpenAsync(
-        string? unit = null)
+        string? unit = null, string? form = null)
     {
         var documents = (DocumentService)_f.Services.Documents;
         documents.DesignCatalog = FrameDesign.Catalog;
         documents.DesignAncestors = InheritedDesign.Ancestors();
-        var document = await _f.OpenAsync(unit ?? InheritedDesign.Unit, InheritedDesign.Form);
+        var document = await _f.OpenAsync(unit ?? InheritedDesign.Unit, form ?? InheritedDesign.Form);
         var inspector = new ObjectInspectorViewModel(_f.Services.Status);
         inspector.Bind(document.Designer);
         inspector.AttachCommands(_f.Services.Commands, null);
@@ -274,5 +274,56 @@ public sealed class InheritedFormInspectorTests
         Assert.Contains(bar.Actions, a => a.Name == "ViewAsText");
         Assert.True(document.ShowView(DocumentView.Text));
         Assert.False(document.FormText.Buffer.IsReadOnly);
+    }
+
+    /// <summary>
+    /// DSG-SUR-096, 240 (D-133): a TabOrder entry in the Object Inspector renumbers only the new siblings of a descendant;
+    /// the inherited ones keep theirs (no override line is written for them), like the surface's renumbering. An inherited
+    /// control whose own TabOrder is entered stores it as an override.
+    /// </summary>
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "DSG-SUR-096")]
+    [Trait("Req", "DSG-SUR-240")]
+    public Task TabOrderEdit_RenumbersNewSiblingsOnly() => TestUiThread.RunAsync(TabOrderOnUiThread);
+
+    private async Task TabOrderOnUiThread()
+    {
+        // The inherited panel holds OkButton 0, CancelButton 1 (inherited), HelpButton 2 and ExtraButton 3 (new).
+        var form = InheritedDesign.Form.Replace("      TabOrder = 2\n    end\n", "      TabOrder = 2\n    end\n    object ExtraButton: TButton\n"
+            + "      Left = 88\n      Top = 8\n      Width = 75\n      Height = 25\n      Caption = 'Extra'\n      TabOrder = 3\n    end\n",
+            StringComparison.Ordinal);
+        var unit = InheritedDesign.Unit.Replace("    HelpButton: TButton;", "    HelpButton: TButton;\r\n    ExtraButton: TButton;", StringComparison.Ordinal);
+        var (_, designer, inspector) = await OpenAsync(unit, form);
+        var model = designer.Model!;
+        var original = designer.CurrentFormText();
+        string? Stored(string name) => model.FindByName(name)!.FindProperty("TabOrder")?.Value.ToString();
+        int Value(string name) => FreexComp.Designer.Model.PropertyAccess.GetInt(model.FindByName(name)!, "TabOrder");
+
+        // A new button moved to the front: the other new one is renumbered, the inherited ones keep their values.
+        Select(designer, "ExtraButton");
+        inspector.SetCurrent("TabOrder");
+        Assert.True(inspector.BeginEdit());
+        inspector.EditText = "0";
+        Assert.True(inspector.Commit());
+        Assert.Equal((0, 3), (Value("ExtraButton"), Value("HelpButton")));
+        Assert.Equal((0, 1), (Value("OkButton"), Value("CancelButton")));
+        Assert.Null(Stored("OkButton"));
+        Assert.Null(Stored("CancelButton"));
+        Assert.DoesNotContain("inherited CancelButton", designer.CurrentFormText(), StringComparison.Ordinal);
+        Assert.DoesNotContain("      TabOrder = 1\n", designer.CurrentFormText(), StringComparison.Ordinal);
+        Assert.Equal(1, designer.Undo.UndoCount);
+        designer.Editor!.Apply(designer.Undo.Undo()!.Undo);
+        Assert.Equal(original, designer.CurrentFormText());
+
+        // An inherited button entered at the front stores its own value; its inherited sibling keeps its value.
+        Select(designer, "CancelButton");
+        inspector.SetCurrent("TabOrder");
+        Assert.True(inspector.BeginEdit());
+        inspector.EditText = "0";
+        Assert.True(inspector.Commit());
+        Assert.Equal(0, Value("CancelButton"));
+        Assert.Null(Stored("OkButton"));
+        Assert.NotNull(Stored("CancelButton"));
+        Assert.Equal((2, 3), (Value("HelpButton"), Value("ExtraButton")));
     }
 }

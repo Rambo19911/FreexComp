@@ -190,6 +190,25 @@ public sealed partial class FormParserTests
             Assert.Single(FormParser.Parse("object F: TForm\n  Tag = $10000000000000000\nend\n", "r.form", Catalog).Diagnostics).Message);
     }
 
+    /// <summary>
+    /// DSG-FD-027 (D-133): a root whose class the metadata does not know, parsed without an ancestor class, binds to the
+    /// first concrete form class of the metadata — the framework metadata lists the abstract base of its form class first.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "DSG-FD-027")]
+    public void RootWithoutKnownClassOrAncestor_BindsFirstConcreteFormClass()
+    {
+        var catalog = Layout.LayoutHarness.Catalog;
+        Assert.True(catalog.All.First(c => c.Kind == ComponentKind.Form).IsAbstract);
+
+        var result = FormParser.Parse("object Lonely: TLonely\n  Caption = 'Lonely'\n  ClientWidth = 300\nend\n", "Lonely.form", catalog);
+
+        Assert.Empty(result.Diagnostics);
+        Assert.Equal("TForm", result.Document!.Root.Info!.ClassName);
+        Assert.False(result.Document.Root.Info.IsAbstract);
+    }
+
     /// <summary>The object tree with every property path and value, for structural comparison.</summary>
     private static List<string> Shape(FormDocument document) =>
         [.. document.AllObjects().SelectMany(o => new[] { $"{o.Kind} {o.Name}: {o.TypeName} in {o.Parent?.Name}" }

@@ -1254,10 +1254,14 @@ public sealed class PropertyGridViewModel : ObservableObject
         return _target.Apply(changes) ? null : _target.FailureMessage ?? "";
     }
 
-    /// <summary>DSG-SUR-096: a TabOrder entry is clamped to 0 … n−1 and the siblings are renumbered in the same unit.</summary>
+    /// <summary>
+    /// DSG-SUR-096: a TabOrder entry is clamped to 0 … n−1 and the siblings are renumbered in the same unit; DSG-SUR-240
+    /// (D-133): an inherited sibling keeps its value (no override line), only an inherited control that was entered stores one.
+    /// </summary>
     private List<FormChange> TabOrderChanges(List<FormChange> requested)
     {
         var sequences = new Dictionary<FormObject, List<FormObject>>(ReferenceEqualityComparer.Instance);
+        var entered = new HashSet<FormObject>(ReferenceEqualityComparer.Instance);
         foreach (var change in requested.Cast<SetProperty>())
         {
             var obj = Designer!.Model!.FindByQualifiedName(change.ObjectName)!;
@@ -1275,9 +1279,11 @@ public sealed class PropertyGridViewModel : ObservableObject
 
             sequence.Remove(obj);
             sequence.Insert((int)Math.Clamp(value, 0, sequence.Count), obj);
+            entered.Add(obj);
         }
 
-        return [.. sequences.Values.SelectMany(s => TabOrderRules.Number(s))];
+        return [.. sequences.Values.SelectMany(s => TabOrderRules.Number(s)).Where(c =>
+            Designer!.Model!.FindByQualifiedName(((SetProperty)c).ObjectName) is { } o && (!o.IsInherited || entered.Contains(o)))];
     }
 
     /// <summary>DSG-OI-070 (validation order), 071 (effects): the rename of the primary component (one "Rename" unit).</summary>

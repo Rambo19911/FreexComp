@@ -16,6 +16,31 @@ public sealed class InheritedFormRoundTripTests
     private static readonly (string Form, string Unit)[] Chain =
         [("inherit-base.form", "InheritBase.pas"), ("inherit-mid.form", "InheritMid.pas"), ("inherit-leaf.form", "InheritLeaf.pas")];
 
+    /// <summary>
+    /// D-133: the level <paramref name="form"/> of <see cref="Chain"/> parsed as the designer reads it — every level before it
+    /// parsed with the ancestor its unit declares and added to the ancestor catalog, the corpus frames known.
+    /// </summary>
+    internal static FormDocument ParseChainLevel(string form)
+    {
+        var frames = FrameFormRoundTripTests.CorpusFrames();
+        var ancestors = new FrameCatalog();
+        foreach (var (level, unit) in Chain)
+        {
+            var text = File.ReadAllText(TestPaths.Combine("forms/canonical/" + level));
+            var (className, ancestorClass) = FormClassOf(File.ReadAllText(TestPaths.Combine("forms/canonical/" + unit)),
+                Path.GetFileNameWithoutExtension(unit));
+            var document = ParseWith(text, ancestorClass, frames, ancestors, level);
+            if (level == form)
+            {
+                return document;
+            }
+
+            ancestors.Set(new FrameDefinition(className, Path.GetFileNameWithoutExtension(unit), level, document));
+        }
+
+        throw new ArgumentException(form + " is not a level of the inheritance chain", nameof(form));
+    }
+
     private static readonly string[] AlwaysWrittenRootLines = ["Left", "Top", "ClientWidth", "ClientHeight", "PixelsPerInch"];
 
     [Fact]
