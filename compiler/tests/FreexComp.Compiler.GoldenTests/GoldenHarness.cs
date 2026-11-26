@@ -258,17 +258,7 @@ public static class GoldenRunner
     /// Best-effort clean-up of a passed case's folder: the just-exited program's image can stay locked for a moment
     /// (the OS or a scanner still holds it), which must not turn a passing case into a failure.
     /// </summary>
-    internal static void TryDelete(string directory)
-    {
-        try
-        {
-            Directory.Delete(directory, recursive: true);
-        }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-        {
-            // left behind under %TEMP%\FreexComp.Tests
-        }
-    }
+    internal static void TryDelete(string directory) => NativeRun.TryDeleteFolder(directory);       // C-362: retried; else left behind
 
     private static async Task<string?> RunInAsync(GoldenCase @case, bool o2, GoldenSetup setup, string temp, (TimeSpan Cpu, TimeSpan Wall) programLimits, CancellationToken ct)
     {

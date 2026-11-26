@@ -51,8 +51,17 @@ public interface IFileSystem
 
 public sealed class PhysicalFileSystem : IFileSystem
 {
+    private readonly Action<TimeSpan> _wait;
+
     private PhysicalFileSystem()
+        : this(Thread.Sleep)
     {
+    }
+
+    /// <summary>For tests (C-362): <paramref name="wait"/> replaces the real wait between the attempts of <see cref="FileRetry"/>.</summary>
+    internal PhysicalFileSystem(Action<TimeSpan> wait)
+    {
+        _wait = wait;
     }
 
     public static PhysicalFileSystem Instance { get; } = new();
@@ -84,14 +93,14 @@ public sealed class PhysicalFileSystem : IFileSystem
 
         var temp = path + ".tmp";
         File.WriteAllBytes(temp, data);
-        File.Move(temp, path, overwrite: true);
+        FileRetry.Run(() => File.Move(temp, path, overwrite: true), _wait);         // C-362: a reader or a just-exited program lets go
     }
 
     public void Delete(string path)
     {
         if (File.Exists(path))
         {
-            File.Delete(path);
+            FileRetry.Run(() => File.Delete(path), _wait);                           // C-362
         }
     }
 
@@ -101,7 +110,7 @@ public sealed class PhysicalFileSystem : IFileSystem
     {
         if (Directory.Exists(path))
         {
-            Directory.Delete(path, recursive: true);
+            FileRetry.Run(() => Directory.Delete(path, recursive: true), _wait);     // C-362
         }
     }
 }

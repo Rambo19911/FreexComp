@@ -33,6 +33,64 @@ public sealed class NativeRunTests
     public void Decide_NeverChecksMoreOftenThanEveryFiftyMilliseconds() =>
         Assert.Equal(TimeSpan.FromMilliseconds(50), NativeRun.Decide(TimeSpan.FromMilliseconds(19_990), S, 20 * S, 120 * S).NextCheck);
 
+    /// <summary>C-362: a just-run exe still held (by the OS or a scanner) is waited for until released, so the test can delete it.</summary>
+    [Fact]
+    [Trait("Kind", "Unit")]
+    public void WaitForRelease_HeldFile_ReturnsOnceReleased()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "FreexComp.Tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var exe = Path.Combine(dir, "P.exe");
+            File.WriteAllText(exe, "image");
+            var holder = new FileStream(exe, FileMode.Open, FileAccess.Read, FileShare.None);
+            var waits = new List<int>();
+
+            var released = NativeRun.WaitForRelease(exe, attempt =>
+            {
+                waits.Add(attempt);
+                if (attempt == 2)
+                {
+                    holder.Dispose();
+                }
+            });
+
+            Assert.True(released);
+            Assert.Equal([1, 2], waits);
+            File.Delete(exe);
+        }
+        finally
+        {
+            TestDirectories.Delete(dir);
+        }
+    }
+
+    [Fact]
+    [Trait("Kind", "Unit")]
+    public void WaitForRelease_StillHeld_GivesUpAfterTheBoundedAttempts_MissingFileIsReleased()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "FreexComp.Tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var exe = Path.Combine(dir, "P.exe");
+            File.WriteAllText(exe, "image");
+            var waits = 0;
+            using (new FileStream(exe, FileMode.Open, FileAccess.Read, FileShare.None))
+            {
+                Assert.False(NativeRun.WaitForRelease(exe, _ => waits++));
+            }
+
+            Assert.Equal(NativeRun.ReleaseAttempts - 1, waits);
+            Assert.True(NativeRun.WaitForRelease(Path.Combine(dir, "gone.exe"), _ => Assert.Fail("no wait for a missing file")));
+        }
+        finally
+        {
+            TestDirectories.Delete(dir);
+        }
+    }
+
     [Fact]
     [Trait("Kind", "Native")]
     [Trait("Category", "Toolchain")]

@@ -417,6 +417,7 @@ public sealed class EmitTests
         {
             var stdout = new List<string>();
             Assert.Equal(0, await NativeRun.RunAsync(Exe, _dir, stdout.Add, _ => { }));        // C-249
+            NativeRun.WaitForRelease(Exe);                                       // C-362: the test deletes or relinks it next
             return string.Join("\n", stdout);
         }
 

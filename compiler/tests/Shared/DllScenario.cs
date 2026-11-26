@@ -144,14 +144,7 @@ internal static class DllScenario
             return $"{name}: {failure}\n(work directory: {work})";                // kept for inspection
         }
 
-        try
-        {
-            Directory.Delete(work, recursive: true);
-        }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-        {
-            // a just-exited image can stay locked for a moment: left behind under %TEMP%\FreexComp.Tests
-        }
+        NativeRun.TryDeleteFolder(work);                                            // C-362: retried while a just-exited image is held; else left behind
 
         return null;
     }

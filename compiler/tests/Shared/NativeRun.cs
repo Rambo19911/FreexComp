@@ -96,6 +96,73 @@ internal static class NativeRun
 
     private static readonly Encoding Utf8 = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
 
+    /// <summary>
+    /// C-362: waits until nobody holds <paramref name="path"/> any more — a program that has just exited releases its image
+    /// asynchronously, and a scanner may still have it open — so that a test can delete or replace it. The file counts as
+    /// released when it opens for writing without sharing; between the attempts <paramref name="wait"/> (default: a real wait of
+    /// 50 ms, 100 ms, … , about 2 s in all) is called with the number of the failed attempt.
+    /// </summary>
+    /// <returns>Whether the file is released (or gone); false after the last attempt, and the caller's own operation then reports the real error.</returns>
+    public static bool WaitForRelease(string path, Action<int>? wait = null)
+    {
+        wait ??= attempt => Thread.Sleep(50 * attempt);
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                using var handle = File.OpenHandle(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+                return true;
+            }
+            catch (Exception e) when (e is FileNotFoundException or DirectoryNotFoundException)
+            {
+                return true;
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                if (attempt >= ReleaseAttempts)
+                {
+                    return false;
+                }
+
+                wait(attempt);
+            }
+        }
+    }
+
+    /// <summary>The attempts of <see cref="WaitForRelease"/>: the default waits add up to 50 ms × (1 + … + 8) = 1.8 s.</summary>
+    internal const int ReleaseAttempts = 9;
+
+    /// <summary>
+    /// C-362: best-effort removal of a passed run's temporary folder, retried as <see cref="WaitForRelease"/> while a just-run
+    /// program's image or a scanner still holds a file in it. A folder that still cannot be removed is left behind under
+    /// %TEMP%: cleaning up is not what a test checks, so it never fails one.
+    /// </summary>
+    /// <returns>Whether the folder is gone.</returns>
+    public static bool TryDeleteFolder(string directory)
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                if (Directory.Exists(directory))
+                {
+                    Directory.Delete(directory, recursive: true);
+                }
+
+                return true;
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                if (attempt >= ReleaseAttempts)
+                {
+                    return false;
+                }
+
+                Thread.Sleep(50 * attempt);
+            }
+        }
+    }
+
     /// <summary>Kills the process tree and reaps it; the reap is bounded by the test's token, not a fixed wall-clock wait (C-259).</summary>
     internal static async Task KillAsync(Process process, CancellationToken ct)
     {

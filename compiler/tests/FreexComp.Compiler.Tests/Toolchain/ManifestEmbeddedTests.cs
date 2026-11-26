@@ -159,7 +159,7 @@ public sealed class ManifestEmbeddedTests : IDisposable
             }
             finally
             {
-                Directory.Delete(root, recursive: true);                     // the test removes what the program created
+                TestDirectories.Delete(root);                                // the test removes what the program created (C-362: retried)
             }
         }
 
