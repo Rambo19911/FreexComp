@@ -30,6 +30,51 @@ public static class PropertyAccess
             : DefaultValue(obj.Catalog, info);
     }
 
+    /// <summary>
+    /// The line that gives <paramref name="obj"/> its value of <paramref name="path"/>: its own, else for an inherited object
+    /// or a frame instance the nearest one of the frame definition chain (DSG-FD-106), with the object that stores it; null
+    /// when no level stores one.
+    /// </summary>
+    public static (FormObject Owner, FormProperty Line)? EffectiveLine(FormObject obj, string path)
+    {
+        for (var o = obj; o is not null; o = o.InheritedFrom)
+        {
+            if (o.FindProperty(path) is { } stored)
+            {
+                return (o, stored);
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// The name of the component a reference property of <paramref name="obj"/> names in the file that stores the line
+    /// (<see cref="EffectiveLine"/>): a plain name, or <c>B</c> of <c>A.B</c> when <c>A</c> is the header name of that
+    /// file's root — in a frame's own file <c>FooterFrame.Note</c> names the frame's own <c>Note</c>, also in every
+    /// instance (rtl classes.md RTL-1104). Null for <c>nil</c>, no line, or a reference into another file.
+    /// </summary>
+    public static string? ReferencedName(FormObject obj, string path)
+    {
+        if (EffectiveLine(obj, path) is not var (owner, line))
+        {
+            return null;
+        }
+
+        var root = owner;
+        while (root.Parent is { } parent)
+        {
+            root = parent;
+        }
+
+        return line.Value switch
+        {
+            IdentValue { Name: var name } when !name.Equals("nil", StringComparison.OrdinalIgnoreCase) => name,
+            QualifiedIdentValue { Parts: [var file, var name] } when file.Equals(root.Name, StringComparison.OrdinalIgnoreCase) => name,
+            _ => null,
+        };
+    }
+
     public static bool IsStored(FormObject obj, string path) => obj.FindProperty(path) is not null;
 
     /// <summary>

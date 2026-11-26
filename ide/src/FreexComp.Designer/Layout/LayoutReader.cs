@@ -123,6 +123,11 @@ internal sealed class LayoutReader
                 Apply(node, property);
             }
 
+            if (node.Kind == NodeKind.PageControl)
+            {
+                node.ActivePageName = PropertyAccess.ReferencedName(obj, "ActivePage"); // RTL-1104: also FrameName.Sheet
+            }
+
             ApplyFont(node, obj);
         }
 
@@ -275,7 +280,6 @@ internal sealed class LayoutReader
             case "bevelouter" when v is IdentValue b: n.BevelOuter = !IsName(b.Name, "bvNone"); break;
             case "bevelinner" when v is IdentValue b: n.BevelInner = !IsName(b.Name, "bvNone"); break;
             case "tabheight": SetInt(v, ref n.TabHeight); break;
-            case "activepage" when v is IdentValue a: n.ActivePageName = a.Name; break;
             case "tabvisible": SetBool(v, ref n.TabVisible); break;
             case "buttonwidth": SetInt(v, ref n.ButtonWidth); break;
             case "buttonheight": SetInt(v, ref n.ButtonHeight); break;

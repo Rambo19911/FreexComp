@@ -223,14 +223,15 @@ public sealed class PageControlRenderer : DesignRenderer
     }
 
     /// <summary>
-    /// DSG-RND-017: the design-active sheet of a page control — the visual child named by the stored <c>ActivePage</c>
-    /// when it is tab-visible, else the first tab-visible one; null without such a sheet.
+    /// DSG-RND-017: the design-active sheet of a page control — the visual child named by the effective <c>ActivePage</c>
+    /// (<see cref="PropertyAccess.ReferencedName"/>: a plain name, or the file's header name qualified, RTL-1104) when it is
+    /// tab-visible, else the first tab-visible one; null without such a sheet.
     /// </summary>
     public static FormObject? ActiveSheet(FormObject pageControl)
     {
         ArgumentNullException.ThrowIfNull(pageControl);
         var sheets = Sheets(pageControl).Where(TabVisible).ToList();
-        return pageControl.FindProperty("ActivePage")?.Value is IdentValue { Name: var name }
+        return PropertyAccess.ReferencedName(pageControl, "ActivePage") is { } name
                && sheets.FirstOrDefault(s => s.Name.Equals(name, StringComparison.OrdinalIgnoreCase)) is { } named
             ? named
             : sheets.FirstOrDefault();
@@ -291,9 +292,9 @@ public sealed class PageControlRenderer : DesignRenderer
         pageControl.Children.Where(c => c.Info is { Kind: not ComponentKind.NonVisual });
 
     private static bool TabVisible(FormObject sheet) =>
-        sheet.FindProperty("TabVisible")?.Value is not IdentValue { Name: var v } || !v.Equals("False", StringComparison.OrdinalIgnoreCase);
+        PropertyAccess.EffectiveLine(sheet, "TabVisible")?.Line.Value is not IdentValue { Name: var v } || !v.Equals("False", StringComparison.OrdinalIgnoreCase);
 
-    private static string Caption(FormObject sheet) => sheet.FindProperty("Caption")?.Value is StringValue { Value: var c } ? c : "";
+    private static string Caption(FormObject sheet) => PropertyAccess.EffectiveLine(sheet, "Caption")?.Line.Value is StringValue { Value: var c } ? c : "";
 }
 
 /// <summary>§4.16 <c>tabsheet</c>: the effective fill; its geometry is the page rectangle (never stored).</summary>
