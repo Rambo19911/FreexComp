@@ -1,4 +1,6 @@
+using System.Numerics;
 using FreexComp.Compiler.Symbols;
+using FreexComp.Compiler.Types;
 using static FreexComp.Compiler.Tests.Binding.BinderTestHelper;
 
 namespace FreexComp.Compiler.Tests.Binding;
@@ -350,4 +352,56 @@ public sealed class ConstantFolderTests
     [InlineData("PAnsiChar(-1)", "PAnsiChar 18446744073709551615")]
     [InlineData("Pointer(5000000000)", "Pointer 5000000000")]
     public void IntegerToPointerCast(string expression, string expected) => Assert.Equal(expected, Fold(expression));
+
+    /// <summary>
+    /// C-357 (LANG-290, LANG-785): a typecast whose callee is a qualified, nested or generic type name folds like <c>TEn(1)</c> — in a
+    /// constant declaration, an array bound and a case label.
+    /// </summary>
+    [Theory]
+    [Trait("Phase", "8")]
+    [Trait("Req", "LANG-290")]
+    [Trait("Req", "LANG-785")]
+    [InlineData("TOuter.TEn(1)", "TOuter.TEn")]
+    [InlineData("TK<Integer>.TEn(1)", "TK<Integer>.TEn")]
+    [InlineData("P.TOuter.TEn(1)", "TOuter.TEn")]
+    [InlineData("P.TK<Integer>.TEn(1)", "TK<Integer>.TEn")]
+    [InlineData("TD.TEn(1)", "TK<Integer>.TEn")]
+    [InlineData("TOuter.TSmall(300)", "Byte")]                   // a nested alias of Byte
+    public void QualifiedTypecast_Folds(string expression, string type)
+    {
+        var (result, _) = Bind("""
+            program P;
+            type
+              TOuter = class
+              public
+                type
+                  TEn = (eA, eB, eC);
+                  TSmall = Byte;
+              end;
+              TK<T> = class
+              public
+                type TEn = (kA, kB, kC);
+              end;
+              TD = class(TK<Integer>)
+              end;
+            const
+              C = {E};
+            type
+              TArr = array[0..Ord({E})] of Byte;
+            var
+              N: Integer;
+            begin
+              case N of
+                Ord({E}): N := 0;
+              end;
+            end.
+            """.Replace("{E}", expression));
+
+        Assert.Equal([], Format(result.Diagnostics).Where(d => !d.StartsWith('H') && !d.StartsWith('W')));
+        var constant = Assert.IsType<ConstantSymbol>(result.Scope.LookupLocal("C"));
+        var expected = expression.EndsWith("(300)") ? 44 : 1;                   // Byte(300) wraps (LANG-290 row 1)
+        Assert.Equal((type, new BigInteger(expected)), (TypeMembers.DisplayName(constant.Type), constant.Value!.Value));
+        Assert.Same(constant.Type, constant.Value.Type);
+        Assert.Equal(new BigInteger(expected), Assert.IsType<ArrayTypeSymbol>(result.Scope.LookupLocal("TArr")).High);
+    }
 }

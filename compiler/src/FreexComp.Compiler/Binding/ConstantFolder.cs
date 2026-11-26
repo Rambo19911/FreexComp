@@ -235,7 +235,14 @@ internal sealed class ConstantFolder
     {
         if (_scope.Unqualified(invocation.Expression) is not IdentifierNameSyntax name)
         {
-            return NotConstant(invocation);
+            // C-357 (LANG-785): a callee that names a type — TOuter.TEn(1), TK<Integer>.TEn(1), U.TOuter.TEn(1) — is a typecast
+            return CalleeType(invocation.Expression) switch
+            {
+                null => NotConstant(invocation),
+                ErrorTypeSymbol => null,                                        // reported at the name
+                var type when IncompleteInstance(invocation.Expression, type) => null,
+                var type => FoldTypecastCall(invocation, type),
+            };
         }
 
         if (IsDefined != null && (name.Identifier.Value as string ?? name.Identifier.Text) is var function
@@ -250,19 +257,49 @@ internal sealed class ConstantFolder
             return null;
         }
 
-        var arguments = invocation.ArgumentList.Arguments;
         if (symbol is IntrinsicSymbol { IsFunction: true } intrinsic)
         {
             return FoldIntrinsicCall(invocation, intrinsic);
         }
 
-        if (symbol is not TypeSymbol target || arguments.Count != 1 || arguments[0].WidthColonToken != null)
+        return symbol is TypeSymbol target ? FoldTypecastCall(invocation, target) : NotConstant(invocation);
+    }
+
+    /// <summary>A typecast <c>T(v)</c> to <paramref name="target"/> of a constant <c>v</c> (LANG-290, 340).</summary>
+    private ConstantValue? FoldTypecastCall(InvocationExpressionSyntax invocation, TypeSymbol target)
+    {
+        var arguments = invocation.ArgumentList.Arguments;
+        if (arguments.Count != 1 || arguments[0].WidthColonToken != null)
         {
             return NotConstant(invocation);
         }
 
         var operand = Fold(arguments[0].Expression);
         return operand is null ? null : FoldTypecast(invocation, target, operand);
+    }
+
+    /// <summary>
+    /// C-357: the type a qualified, nested or generic callee names (LANG-770, 780, 785; LANG-774 visibility); null when it names
+    /// none. A generic segment that is not a generic type (a generic routine <c>Max&lt;Integer&gt;</c>) is not bound here.
+    /// </summary>
+    private TypeSymbol? CalleeType(ExpressionSyntax callee)
+    {
+        while (callee is ParenthesizedExpressionSyntax parenthesized)
+        {
+            callee = parenthesized.Expression;
+        }
+
+        return callee switch
+        {
+            GenericNameSyntax generic when !NamesGenericType(_scope, generic) => null,
+            MemberAccessExpressionSyntax { Name: GenericNameSyntax generic } access
+                when UnitQualifiers.Qualifier(_scope, access.Expression) is { } unit && !NamesGenericType(unit.Qualified, generic) => null,
+            MemberAccessExpressionSyntax or GenericNameSyntax => NestedNames.AccessibleTypeNamedBy(_scope, callee, Generic, _diagnostics, _types),
+            _ => null,
+        };
+
+        static bool NamesGenericType(Scope scope, GenericNameSyntax name) =>
+            scope.Lookup(GenericTypeSymbol.KeyOf(name.Identifier.Value as string ?? name.Identifier.Text, name.TypeArgumentList.Arguments.Count)) is GenericTypeSymbol;
     }
 
     /// <summary>LANG-862: <c>Defined(NAME)</c> (a conditional symbol) or <c>Declared(Ident)</c> (visible here; <c>Unit.Ident</c> allowed).</summary>
@@ -758,9 +795,10 @@ internal sealed class ConstantFolder
             {
                 (type, isTypeName) = (_types.String, true);
             }
-            else if (argument is MemberAccessExpressionSyntax or GenericNameSyntax && NestedNames.TypeNamedBy(_scope, argument, Generic) is { } nestedType)
+            else if (argument is MemberAccessExpressionSyntax or GenericNameSyntax && NestedNames.AccessibleTypeNamedBy(_scope, argument, Generic, _diagnostics, _types) is { } nestedType)
             {
-                // LANG-770: SizeOf(TOuter.TInner); LANG-784 (C-353): SizeOf(G<X>), High(U.G<X>.TEn), SizeOf(TOuter.TInner<X>)
+                // LANG-770: SizeOf(TOuter.TInner); LANG-784 (C-353): SizeOf(G<X>), High(U.G<X>.TEn), SizeOf(TOuter.TInner<X>);
+                // LANG-774 (C-356): E2610 for a nested type this code may not access
                 if (nestedType is ErrorTypeSymbol || IncompleteInstance(argument, nestedType))
                 {
                     return null;

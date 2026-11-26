@@ -52,6 +52,29 @@ internal static class NestedNames
     }
 
     /// <summary>
+    /// <see cref="TypeNamedBy"/> with LANG-774 visibility for a qualified name <c>O.N</c>: E2610 at <c>N</c> (naming the type that
+    /// declares <c>N</c>, C-354) and the error type when this code may not access the nested type (C-344; C-356, C-357: the
+    /// arguments of type-taking intrinsics and typecast callees too). Generic segments report their own visibility.
+    /// </summary>
+    public static TypeSymbol? AccessibleTypeNamedBy(Scope scope, ExpressionSyntax expression, GenericSegment? generic, DiagnosticBag diagnostics, BuiltInTypes types)
+    {
+        while (expression is ParenthesizedExpressionSyntax parenthesized)
+        {
+            expression = parenthesized.Expression;
+        }
+
+        var type = TypeNamedBy(scope, expression, generic);
+        if (type is not null && expression is MemberAccessExpressionSyntax { Name: var nestedName } && scope.Unqualified(expression) is not IdentifierNameSyntax
+            && InaccessibleNestedType(scope, type) is { } visibility && TypeMembers.EnclosingTypes(type).FirstOrDefault() is { } outer)
+        {
+            diagnostics.Report(nestedName, "E2610", visibility, type.Name, TypeMembers.DisplayName(outer));      // LANG-774 (C-344)
+            return types.Error;
+        }
+
+        return type;
+    }
+
+    /// <summary>
     /// LANG-774 (C-344): the visibility word of a nested type named from code at <paramref name="scope"/> that may not access it
     /// (<c>private</c>: other units; <c>strict private</c> / <c>strict protected</c>: code outside its enclosing type), else null.
     /// </summary>

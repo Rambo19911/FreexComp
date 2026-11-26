@@ -788,14 +788,7 @@ internal sealed partial class ExpressionBinder
 
     private TypeSymbol? TypeNamedBy(ExpressionSyntax expression)
     {
-        var type = NamedType(expression);                                         // LANG-780 (C-345): generic segments too
-        if (type is not null && Unparenthesized(expression) is MemberAccessExpressionSyntax { Name: var nestedName } && _scope.Unqualified(Unparenthesized(expression)) is not IdentifierNameSyntax
-            && NestedNames.InaccessibleNestedType(_scope, type) is { } visibility && TypeMembers.EnclosingTypes(type).FirstOrDefault() is { } outer)
-        {
-            _diagnostics.Report(nestedName, "E2610", visibility, type.Name, TypeMembers.DisplayName(outer));      // LANG-774 (C-344)
-            return _types.Error;
-        }
-
+        var type = NestedNames.AccessibleTypeNamedBy(_scope, expression, GenericSegment, _diagnostics, _types);   // LANG-780 (C-345), LANG-774 (C-344)
         if (type is not null && _types.HasTypeHints
             && _scope.Unqualified(Unparenthesized(expression)) is IdentifierNameSyntax { Identifier: { IsMissing: false } token } name)
         {

@@ -408,6 +408,146 @@ public sealed class NestedTypeBindingTests
             end.
             """));
 
+    /// <summary>
+    /// LANG-774, LANG-780 item 6 (C-356): a nested type named as the argument of a type-taking intrinsic (<c>SizeOf</c>, <c>TypeInfo</c>,
+    /// <c>Default</c>, <c>High</c>, <c>Low</c>) obeys the visibility of its section like every other use — in a constant and in a statement,
+    /// declared on the named type or inherited; E2610 names the declaring type. Code of the declaring type may name it.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "LANG-774")]
+    [Trait("Req", "LANG-780")]
+    public void IntrinsicArgument_NestedTypeVisibility_E2610()
+    {
+        var fs = new InMemoryFileSystem()
+            .Add(@"C:\p\P.pas", """
+                program P;
+                uses U;
+                type
+                  TLocal = class
+                  strict private
+                    type TLS = (lA, lB);
+                  public
+                    type TOk = record A, B: Integer; end;
+                  end;
+                  TLocalD = class(TLocal)
+                  end;
+                const
+                  C1 = SizeOf(TOuter.TSP);
+                  C2 = Ord(High(TDerived.TPriv));
+                  C3 = High(TDerived.TSProt);
+                  C4 = Ord(Low(TLocalD.TLS));
+                  C5 = SizeOf(TLocal.TOk) + SizeOf(TDerived.TOpen);
+                var
+                  N: Integer;
+                  Q: Pointer;
+                begin
+                  N := SizeOf(TDerived.TSP);
+                  Q := TypeInfo(TOuter.TPriv);
+                  Q := TypeInfo(TDerived.TSProt);
+                  N := Default(TOuter.TSProt);
+                  N := Ord(Low(TLocal.TLS));
+                  N := Ord(High(TOuter.TPriv));
+                  N := SizeOf(TLocalD.TOk) + Ord(High(TOuter.TOpen)) + Default(TDerived.TOpen);
+                end.
+                """)
+            .Add(@"C:\p\U.pas", """
+                unit U;
+                interface
+                type
+                  TOuter = class
+                  private
+                    type TPriv = (pA, pB, pC);
+                  strict private
+                    type TSP = record A: Int64; end;
+                  strict protected
+                    type TSProt = 0..9;
+                  public
+                    type TOpen = 0..3;
+                    procedure Use;
+                  end;
+                  TDerived = class(TOuter)
+                  end;
+                implementation
+                var
+                  N: Integer;
+                  Q: Pointer;
+                procedure TOuter.Use;
+                const
+                  K = SizeOf(TOuter.TSP) + Ord(High(TPriv)) + Low(TOuter.TSProt);
+                begin
+                  N := SizeOf(TOuter.TSP) + Default(TOuter.TSProt) + Ord(Low(TDerived.TPriv)) + K;
+                  Q := TypeInfo(TOuter.TPriv);
+                end;
+                begin
+                  N := SizeOf(TDerived.TPriv);
+                  Q := TypeInfo(TOuter.TPriv);
+                end.
+                """)
+            .AddSystem();
+        var options = new CompilationOptions { MainFile = @"C:\p\P.pas", RtlDirectory = @"C:\rtl", ObjectDirectory = @"C:\p\obj" };
+
+        var result = Compilation.Create(options, [], fs).Emit(new EmitOptions { Stage = EmitStage.Check }, TestContext.Current.CancellationToken);
+
+        Assert.Equal(
+        [
+            "P.pas(13,22): E2610 Cannot access strict private member 'TSP' of 'TOuter'",
+            "P.pas(14,26): E2610 Cannot access private member 'TPriv' of 'TOuter'",
+            "P.pas(15,22): E2610 Cannot access strict protected member 'TSProt' of 'TOuter'",
+            "P.pas(16,24): E2610 Cannot access strict private member 'TLS' of 'TLocal'",
+            "P.pas(22,24): E2610 Cannot access strict private member 'TSP' of 'TOuter'",
+            "P.pas(23,24): E2610 Cannot access private member 'TPriv' of 'TOuter'",
+            "P.pas(24,26): E2610 Cannot access strict protected member 'TSProt' of 'TOuter'",
+            "P.pas(25,23): E2610 Cannot access strict protected member 'TSProt' of 'TOuter'",
+            "P.pas(26,23): E2610 Cannot access strict private member 'TLS' of 'TLocal'",
+            "P.pas(27,24): E2610 Cannot access private member 'TPriv' of 'TOuter'",
+        ], result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error)
+            .Select(d => $"{Path.GetFileName(d.Location.Path)}({d.Location.LineSpan.Start.Line + 1},{d.Location.LineSpan.Start.Column + 1}): {d.Code} {d.Message}"));
+    }
+
+    /// <summary>
+    /// LANG-774, LANG-785 (C-357): a typecast whose callee names a nested type obeys its visibility, in a constant and in a statement,
+    /// own and inherited; code of the declaring type may cast to it.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "LANG-774")]
+    [Trait("Req", "LANG-785")]
+    public void Typecast_NestedTypeVisibility_E2610() =>
+        Assert.Equal(
+        [
+            "E2610(14,14): Cannot access strict private member 'TEn' of 'TOuter'",
+            "E2610(15,16): Cannot access strict protected member 'TSm' of 'TOuter'",
+            "E2610(25,19): Cannot access strict private member 'TEn' of 'TOuter'",
+            "E2610(26,17): Cannot access strict protected member 'TSm' of 'TOuter'",
+        ], BindDiagnostics("""
+            program P;
+            type
+              TOuter = class
+              strict private
+                type TEn = (eA, eB);
+              strict protected
+                type TSm = 0..9;
+              public
+                procedure Use;
+              end;
+              TDerived = class(TOuter)
+              end;
+            const
+              C = TOuter.TEn(1);
+              D = TDerived.TSm(2);
+            var
+              N: Integer;
+            procedure TOuter.Use;
+            const
+              K = TOuter.TEn(1);
+            begin
+              N := Ord(TOuter.TEn(N)) + Ord(K) + TDerived.TSm(3);
+            end;
+            begin
+              N := Ord(TOuter.TEn(N));
+              N := TDerived.TSm(N);
+            end.
+            """).Where(d => !d.StartsWith('H') && !d.StartsWith('W')));
+
     /// <summary>LANG-780 amendment (C-354): through a generic instance the inherited name is the ancestor instance's nested type.</summary>
     [Fact]
     [Trait("Req", "LANG-780")]

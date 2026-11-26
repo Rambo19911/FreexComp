@@ -1157,8 +1157,9 @@ internal sealed partial class ExpressionBinder
         {
             switch (Unparenthesized(invocation.Expression))
             {
-                case MemberAccessExpressionSyntax or GenericNameSyntax when NamedType(invocation.Expression) is { } namedTarget:
-                    // C-311: TOuter.TInner(x) (LANG-770); LANG-785 (C-346): TBox<Integer>(o), U.TPair<Byte, Byte>(w) are typecasts
+                case MemberAccessExpressionSyntax or GenericNameSyntax when TypeNamedBy(invocation.Expression) is { } namedTarget:
+                    // C-311: TOuter.TInner(x) (LANG-770); LANG-785 (C-346): TBox<Integer>(o), U.TPair<Byte, Byte>(w) are typecasts;
+                    // LANG-774 (C-357): E2610 for a nested type this code may not access
                     return BindTypecastInvocation(invocation, namedTarget, variableContext);
                 case MemberAccessExpressionSyntax member when !(_scope.Unqualified(member.Expression) is IdentifierNameSyntax { Identifier: { IsMissing: false } q } qualifier
                                                                 && _scope.For(qualifier).Lookup(q.Value as string ?? q.Text) is EnumTypeSymbol):
@@ -1816,10 +1817,11 @@ internal sealed partial class ExpressionBinder
             return (type, null);
         }
 
-        if (syntax is GenericNameSyntax or MemberAccessExpressionSyntax && NamedType(syntax) is { } named)
+        if (syntax is GenericNameSyntax or MemberAccessExpressionSyntax && TypeNamedBy(syntax) is { } named)
         {
-            // C-116: SizeOf(TPair<K, V>), Default(TList<T>); LANG-770: SizeOf(TOuter.TInner); LANG-780: SizeOf(U.TBox<Integer>)
-            return (IncompleteInstance(syntax, named) ? _types.Error : named, null);
+            // C-116: SizeOf(TPair<K, V>), Default(TList<T>); LANG-770: SizeOf(TOuter.TInner); LANG-780: SizeOf(U.TBox<Integer>);
+            // LANG-774 (C-356): E2610 for a nested type this code may not access
+            return (named.TypeKind == TypeKind.Error || IncompleteInstance(syntax, named) ? _types.Error : named, null);
         }
 
         var argument = BindExpression(syntax);
