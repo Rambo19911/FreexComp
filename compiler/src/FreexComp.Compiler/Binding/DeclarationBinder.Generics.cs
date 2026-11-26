@@ -298,6 +298,11 @@ internal sealed partial class DeclarationBinder
         {
             var argument = arguments[i];
             var c = constraints[i];
+            if (argument is TypeParameterTypeSymbol)
+            {
+                continue;                                                       // C-355: an open instance's type parameter
+            }
+
             SyntaxNode where = argumentSyntax is { } list && i < list.Count ? list[i] : at;
             void Fail(string constraint)
             {
@@ -419,6 +424,65 @@ internal sealed partial class DeclarationBinder
             : Instantiate(generic, typeArguments, name);
     }
 
+    /// <summary>C-355: this thread binds for the language service only (<see cref="BindOpen"/>).</summary>
+    [ThreadStatic]
+    private static bool t_open;
+
+    /// <summary>
+    /// C-355: while the result is not disposed, this thread binds an open instance or its method bodies: the instances it makes go to
+    /// <see cref="GenericTypeSymbol.OpenInstances"/>, no unit notes a use, no forward generic records a pending instance and no
+    /// generic method instance is made; nothing of it reaches code generation, a <c>.pcu</c>, debug information or a diagnostic.
+    /// </summary>
+    internal static OpenBinding BindOpen()
+    {
+        var previous = t_open;
+        t_open = true;
+        return new OpenBinding(previous, GenericUses.Suppress());
+    }
+
+    internal readonly struct OpenBinding(bool previous, GenericUses.Suppression suppression) : IDisposable
+    {
+        public void Dispose()
+        {
+            suppression.Dispose();
+            t_open = previous;
+        }
+    }
+
+    /// <summary>
+    /// C-355: the open instance of <paramref name="generic"/>: its declaration bound once below the declaring scope with each type
+    /// parameter declared as a <see cref="TypeParameterTypeSymbol"/> of its name (<see cref="BindOpen"/>; its diagnostics are dropped), with
+    /// the generic's method implementations defined on it. Null when the generic has no declaration text or is a forward declaration.
+    /// </summary>
+    internal static TypeSymbol? OpenInstanceOf(BuiltInTypes types, GenericTypeSymbol generic)
+    {
+        lock (types.GenericGate)
+        {
+            if (!generic.OpenInstanceAttempted)
+            {
+                generic.OpenInstanceAttempted = true;
+                if (generic is { Declaration: not null, DeclaringScope: { } scope, IsForward: false, ContainingSymbol: { } container })
+                {
+                    ImmutableArray<TypeSymbol> arguments = [.. generic.ParameterNames.Select(n => new TypeParameterTypeSymbol(n, types.Target))];
+                    using (BindOpen())
+                    {
+                        try
+                        {
+                            var instance = new DeclarationBinder(types, scope, container, new DiagnosticBag()).CreateInstance(generic, arguments);
+                            generic.OpenInstance = instance.TypeKind == TypeKind.Error ? null : instance;
+                        }
+                        catch (Exception e) when (e is InvalidOperationException or NotSupportedException)
+                        {
+                            generic.OpenInstance = null;                        // CMP-202: code insight never fails on a type parameter
+                        }
+                    }
+                }
+            }
+
+            return generic.OpenInstance;
+        }
+    }
+
     /// <summary>
     /// LANG-710/711: the instance of <paramref name="generic"/> for <paramref name="arguments"/> — made once per argument list (under
     /// the compilation's generic lock, units bind in parallel) by binding the declaration below the declaring scope with each type
@@ -429,7 +493,7 @@ internal sealed partial class DeclarationBinder
         var unit = GenericUses.Current ?? GenericUses.UnitOf(_scope);
         lock (_types.GenericGate)
         {
-            if (!generic.Instances.TryGetValue(arguments, out var instance))
+            if (!generic.Instances.TryGetValue(arguments, out var instance) && !(t_open && generic.OpenInstances.TryGetValue(arguments, out instance)))
             {
                 if (generic.Declaration is null || generic.DeclaringScope is null)
                 {
@@ -450,6 +514,11 @@ internal sealed partial class DeclarationBinder
                     using (GenericUses.For(unit))
                     {
                         instance = new DeclarationBinder(_types, _scope, _container, bag).CreateInstance(generic, arguments);
+                    }
+
+                    if (t_open)
+                    {
+                        return instance;                                                  // C-355: nothing of it reaches the compilation
                     }
 
                     if (generic.IsForward)
@@ -500,7 +569,7 @@ internal sealed partial class DeclarationBinder
                 type.QualifiedNameOverride = canonical;
             }
 
-            generic.Instances[arguments] = type;
+            (t_open ? generic.OpenInstances : generic.Instances)[arguments] = type;     // C-355: an open binding's instances stay apart
         }
 
         TypeSymbol instance;
@@ -607,7 +676,7 @@ internal sealed partial class DeclarationBinder
         {
             generic.Implementations.Add(implementation);
             var first = report;
-            foreach (var instance in generic.Instances.Values.Where(i => i.TypeKind != TypeKind.Error).ToList())
+            foreach (var instance in generic.Instances.Values.Concat(t_open ? generic.OpenInstances.Values : []).Where(i => i.TypeKind != TypeKind.Error).ToList())
             {
                 // C-345 (C-228): an instance made earlier belongs to the units that use it ā€” they note what its headings name
                 // (Binder.BindInstances); defining the method here does not make the declaring unit a user
@@ -772,6 +841,11 @@ internal sealed partial class DeclarationBinder
         {
             if (!generic.Instances.TryGetValue(arguments, out var instance))
             {
+                if (t_open)
+                {
+                    return null;                                                  // C-355: an open binding makes no generic method instance
+                }
+
                 var scope = new Scope(ScopeKind.Unit, generic.DeclaringScope, generic.DeclaringContainer) { DeclaresTypeParameters = true };
                 for (var i = 0; i < arguments.Length; i++)
                 {

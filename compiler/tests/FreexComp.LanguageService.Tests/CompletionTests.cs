@@ -460,4 +460,32 @@ public sealed class CompletionTests
         Assert.Contains("Create", inner);
         Assert.DoesNotContain("Go", inner);
     }
+
+    /// <summary>C-355: in the method bodies of a generic nothing instantiates, Self offers the generic's (or nested type's) members.</summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1394")]
+    public void UninstantiatedGeneric_SelfMembers()
+    {
+        string[] After(string piece)
+        {
+            var text = GenericNamesFixture.Uninstantiated;
+            var caret = GenericNamesFixture.Offset(text, piece) + piece.Length;
+            var doc = GenericNamesFixture.OpenUninstantiated();
+            return [.. CompletionService.GetCompletions(doc, caret, new CompletionTrigger(CompletionTriggerKind.Character, '.'), TestContext.Current.CancellationToken)
+                .Items.Select(i => i.Label)];
+        }
+
+        string[] stack = After("\n  Self.");
+        string[] node = After("  Result := Self.");
+        Assert.Contains("Top", stack);
+        Assert.Contains("Count", stack);
+        Assert.Contains("Push", stack);
+        Assert.Contains("Peek", stack);
+        Assert.Contains("TNode", stack);
+        Assert.Contains("Value", node);
+        Assert.Contains("Next", node);
+        Assert.Contains("IsLast", node);
+        Assert.DoesNotContain("Push", node);
+    }
 }

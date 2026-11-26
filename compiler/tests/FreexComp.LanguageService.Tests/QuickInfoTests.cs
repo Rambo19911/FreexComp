@@ -216,4 +216,22 @@ public sealed class QuickInfoTests
         var declared = QuickInfoService.GetQuickInfo(unit, GenericNamesFixture.Offset(GenericNamesFixture.Unit, "TEnumerator = class") + 1, TestContext.Current.CancellationToken);
         Assert.Equal("type TList<T>.TEnumerator = class(TObject)", declared?.Signature);
     }
+
+    /// <summary>C-355: a nested type of a generic nothing instantiates is shown with the generic's name, at its declaration and its uses.</summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1394")]
+    public void UninstantiatedGeneric_NestedType()
+    {
+        var doc = GenericNamesFixture.OpenUninstantiated();
+        var text = GenericNamesFixture.Uninstantiated;
+        string? At(string piece, string segment) =>
+            QuickInfoService.GetQuickInfo(doc, GenericNamesFixture.Offset(text, piece) + piece.IndexOf(segment, StringComparison.Ordinal) + 1,
+                                          TestContext.Current.CancellationToken)?.Signature;
+
+        Assert.Equal("type TStack<T>.TNode = class(TObject)", At("TNode = class", "TNode"));
+        Assert.Equal("type TStack<T>.TNode = class(TObject)", At("Top: TNode", "TNode"));
+        Assert.Equal("type TStack<T>.TNode = class(TObject)", At("TStack<T>.TNode.IsLast", "TNode"));
+        Assert.Null(At("Value: T", "Value"));                                    // C-347: no hover for a member at its declaration
+    }
 }

@@ -261,4 +261,28 @@ public sealed class GoToDefinitionTests
         Assert.Equal(InUG("TInner = class"), Go("TOuter.TInner.Go", "TInner"));
         Assert.Equal(InUG("Make: TList<T>;"), Go("TList<T>.Make", "Make"));
     }
+
+    /// <summary>C-355: in a generic nothing instantiates, method headings, nested types and members navigate like in an instantiated one.</summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1394")]
+    public void UninstantiatedGeneric_NestedMethodHeading()
+    {
+        var doc = GenericNamesFixture.OpenUninstantiated();
+        var text = GenericNamesFixture.Uninstantiated;
+        (string, int) In(string piece, int occurrence = 1) => (TestFiles.PathOf("UO.pas"), GenericNamesFixture.Offset(text, piece, occurrence));
+        (string, int) Go(string piece, string segment) =>
+            Single(NavigationService.GoToDefinition(doc, GenericNamesFixture.Offset(text, piece) + piece.IndexOf(segment, StringComparison.Ordinal) + 1,
+                                                    TestContext.Current.CancellationToken));
+
+        Assert.Equal(In("IsLast: Boolean;"), Go("TStack<T>.TNode.IsLast", "IsLast"));
+        Assert.Equal(In("IsLast", 2), Go("IsLast: Boolean;", "IsLast"));
+        Assert.Equal(In("TNode = class"), Go("TStack<T>.TNode.IsLast", "TNode"));
+        Assert.Equal(In("TStack<T> = class"), Go("TStack<T>.TNode.IsLast", "TStack"));
+        Assert.Equal(In("Push(const V: T);"), Go("TStack<T>.Push", "Push"));
+        Assert.Equal(In("Push", 2), Go("Push(const V: T);", "Push"));
+        Assert.Equal(In("TNode = class"), Go("Top: TNode", "TNode"));
+        Assert.Equal(In("Count: Integer"), Go("Count + 1", "Count"));          // a member in a method body
+        Assert.Equal(In("Value: T"), Go("Top.Value", "Value"));
+    }
 }

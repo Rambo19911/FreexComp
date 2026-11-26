@@ -55,6 +55,23 @@ public sealed class GenericTypeSymbol : TypeSymbol
     /// <summary>The instances made so far, by argument list (identity of the argument types).</summary>
     internal Dictionary<ImmutableArray<TypeSymbol>, TypeSymbol> Instances { get; } = new(ArgumentsComparer.Instance);
 
+    /// <summary>
+    /// C-355: the instances made while the language service binds an open instance (<see cref="OpenInstance"/>, its method bodies):
+    /// over <see cref="TypeParameterTypeSymbol"/> arguments, and every other instance those name. Kept apart from <see cref="Instances"/>,
+    /// which code generation, the <c>.pcu</c> writer and debug information walk, so none of them is ever seen by a program.
+    /// </summary>
+    internal Dictionary<ImmutableArray<TypeSymbol>, TypeSymbol> OpenInstances { get; } = new(ArgumentsComparer.Instance);
+
+    /// <summary>
+    /// C-355: the instance over the generic's own type parameters (each a <see cref="TypeParameterTypeSymbol"/>), made on demand for the
+    /// language service (<c>DeclarationBinder.OpenInstanceOf</c>); it stands for the definition inside its own declaration and method
+    /// implementations. Null until made, or when it cannot be (no declaration text, a forward declaration).
+    /// </summary>
+    internal TypeSymbol? OpenInstance { get; set; }
+
+    /// <summary>C-355: <see cref="OpenInstance"/> was attempted (it is made at most once).</summary>
+    internal bool OpenInstanceAttempted { get; set; }
+
     /// <summary>Method implementations <c>procedure TList&lt;T&gt;.Add(…)</c> found so far, applied to every instance.</summary>
     internal List<GenericMethodImplementation> Implementations { get; } = [];
 
@@ -85,6 +102,19 @@ public sealed class GenericTypeSymbol : TypeSymbol
 
             return hash.ToHashCode();
         }
+    }
+}
+
+/// <summary>
+/// C-355: a type parameter standing for itself, the argument of a generic's open instance (<see cref="GenericTypeSymbol.OpenInstance"/>).
+/// It exists for the language service only: it has no members and the size of a pointer (so that layouts of the open instance hold),
+/// and no program, <c>.pcu</c>, IR or debug information ever names it.
+/// </summary>
+internal sealed class TypeParameterTypeSymbol : TypeSymbol
+{
+    internal TypeParameterTypeSymbol(string name, Targets.TargetInfo target)
+        : base(TypeKind.TypeParameter, name, target.PointerSize, target.PointerAlign)
+    {
     }
 }
 

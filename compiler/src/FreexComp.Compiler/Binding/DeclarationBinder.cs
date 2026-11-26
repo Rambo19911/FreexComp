@@ -390,7 +390,7 @@ internal sealed partial class DeclarationBinder
     /// </summary>
     private void RecordAlias(SyntaxToken identifier, TypeSyntax syntax, TypeSymbol type)
     {
-        if (_container is not UnitSymbol unit || type.TypeKind == TypeKind.Error
+        if (_container is not UnitSymbol unit || type.TypeKind == TypeKind.Error || t_open                 // C-355: no alias of an open binding
             || syntax is not (NamedTypeSyntax or StringTypeSyntax { Length: null }))
         {
             return;

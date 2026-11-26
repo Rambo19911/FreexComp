@@ -68,6 +68,46 @@ internal static class GenericNamesFixture
         end.
         """.ReplaceLineEndings("\n");
 
+    /// <summary>C-355: a unit whose generic nothing instantiates (the program only uses the unit).</summary>
+    public static readonly string Uninstantiated = """
+        unit UO;
+        interface
+        type
+          TStack<T> = class
+          public
+            type
+              TNode = class
+              public
+                Value: T;
+                Next: TNode;
+                function IsLast: Boolean;
+              end;
+          public
+            Top: TNode;
+            Count: Integer;
+            procedure Push(const V: T);
+            function Peek: T;
+          end;
+        implementation
+        function TStack<T>.TNode.IsLast: Boolean;
+        begin
+          Result := Self.Next = nil;
+        end;
+        procedure TStack<T>.Push(const V: T);
+        begin
+          Self.Count := Count + 1;
+        end;
+        function TStack<T>.Peek: T;
+        begin
+          Result := Top.Value;
+        end;
+        end.
+        """.ReplaceLineEndings("\n");
+
+    /// <summary>C-355: the document of <c>UO.pas</c> in a project whose program uses <c>UO</c> without instantiating its generic.</summary>
+    public static Document OpenUninstantiated(string? unitText = null) =>
+        MarkupTestFile.Open("UO.pas", ("P.pas", "program P;\nuses UO;\nbegin\nend.\n"), ("UO.pas", unitText ?? Uninstantiated));
+
     /// <summary>The project document of <paramref name="path"/> (<c>P.pas</c> or <c>UG.pas</c>).</summary>
     public static Document Open(string path = "P.pas") => MarkupTestFile.Open(path, ("P.pas", Program), ("UG.pas", Unit));
 

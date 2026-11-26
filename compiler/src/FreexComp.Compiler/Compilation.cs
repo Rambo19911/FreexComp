@@ -440,7 +440,8 @@ public sealed class Compilation
         UnitSymbol? FindUnit(string name) =>
             loaded.UsedAs.FirstOrDefault(e => IdentifierComparer.Instance.Equals(e.Value, name)).Key?.Symbol
             ?? units.FirstOrDefault(u => u.Symbol is not null && IdentifierComparer.Instance.Equals(u.Name, name))?.Symbol;
-        return new SemanticModel(compilation, loaded.Tree!, loaded.Result!, diagnostics, FindUnit);
+        var bodies = loaded.IsPartial && front.Binder.PartialBodies is { } partial ? partial.Filter : null;    // C-355
+        return new SemanticModel(compilation, loaded.Tree!, loaded.Result!, diagnostics, FindUnit, bodies);
     }
 
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, Lazy<SyntaxTree?>> _trees = new(PathUtil.Comparer);

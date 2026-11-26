@@ -31,9 +31,11 @@ public sealed class SemanticModel
     private readonly Dictionary<SyntaxNode, (BoundExpression Outer, BoundExpression Inner)> _expressions = new(ReferenceEqualityComparer.Instance);
     private readonly List<(TextSpan Span, BoundRoutineBody Body)> _bodies = [];
     private readonly List<(int Start, int End, Scope Scope)> _inlineScopes = [];
+    private readonly List<TypeSymbol> _openInstances = [];
 
+    /// <param name="bodies">C-244: for a position model, the bodies it binds (null: all); C-355 binds open method bodies only among them.</param>
     internal SemanticModel(Compilation compilation, SyntaxTree tree, BindingResult result, ImmutableArray<Diagnostic> diagnostics,
-                           Func<string, UnitSymbol?> findUnit)
+                           Func<string, UnitSymbol?> findUnit, Func<SyntaxNode, bool>? bodies = null)
     {
         Compilation = compilation;
         SyntaxTree = tree;
@@ -59,6 +61,55 @@ public sealed class SemanticModel
             }
 
             Walk(routine.Body);
+        }
+
+        BindOpenBodies(bodies);
+    }
+
+    /// <summary>
+    /// C-355: the method implementations in this file of its generics' open instances (nested types too) that no bound instance body
+    /// covers here, bound on the open instance (<see cref="DeclarationBinder.BindOpen"/>; their diagnostics are dropped) and indexed like
+    /// the other bodies, so that code insight works in a generic's methods before (and without) any use of it.
+    /// </summary>
+    private void BindOpenBodies(Func<SyntaxNode, bool>? filter)
+    {
+        var covered = _bodies.Select(b => b.Span).ToHashSet();
+        var pending = new Queue<RoutineSymbol>(_openInstances.SelectMany(TypeMembers.SelfAndNestedTypes).SelectMany(t => TypeMembers.Methods(t))
+            .Where(m => m.Definition is { } definition && ReferenceEquals(definition.SyntaxTree, SyntaxTree) && (filter is null || filter(definition))
+                        && covered.Add(definition.Span)));
+        using (DeclarationBinder.BindOpen())
+        {
+            while (pending.TryDequeue(out var routine))
+            {
+                BoundRoutineBody body;
+                try
+                {
+                    body = Binder.BindRoutineBody(_result, routine);
+                }
+                catch (Exception e) when (e is InvalidOperationException or NotSupportedException)
+                {
+                    continue;                                                   // CMP-202: code insight never fails on a type parameter
+                }
+
+                foreach (var bound in body.AnonymousBodies.Prepend(body))
+                {
+                    if (bound.Routine.Definition is { } definition && ReferenceEquals(definition.SyntaxTree, SyntaxTree))
+                    {
+                        _bodies.Add((definition.Span, bound));
+                    }
+
+                    foreach (var symbol in bound.Scope.Symbols)
+                    {
+                        Declare(symbol);
+                    }
+
+                    Walk(bound.Body);
+                    foreach (var nested in bound.NestedRoutines.Where(r => r.Definition is not null))
+                    {
+                        pending.Enqueue(nested);
+                    }
+                }
+            }
         }
     }
 
@@ -334,6 +385,20 @@ public sealed class SemanticModel
             }
         }
 
+        // C-355: in a type's declaration (a field's type, a method heading) a nested type or constant of that type or of an enclosing
+        // one (LANG-770); a generic stands for its representative instance
+        if (left is null && GetEnclosingSymbol(token.Span.Start) is TypeSymbol enclosing)
+        {
+            for (Symbol? type = enclosing; type is TypeSymbol outer; type = outer.ContainingSymbol)
+            {
+                var members = Representative(outer) ?? outer;
+                if (LookupSymbols(token.Span.Start, name, members).FirstOrDefault(m => m is TypeSymbol or ConstantSymbol) is { } member)
+                {
+                    return member;
+                }
+            }
+        }
+
         return ScopeAt(node.Span.Start).Lookup(name) ?? _findUnit(name);
     }
 
@@ -380,11 +445,17 @@ public sealed class SemanticModel
 
         var arguments = generic.TypeArgumentList.Arguments
             .Select(a => a is StringTypeSyntax { Length: null } ? _result.Types.String : GetSymbolInfo(a).Symbol as TypeSymbol).ToArray();
-        return arguments.All(a => a is not null) && definition.Instances.TryGetValue([.. arguments!], out var instance) ? instance : definition;
+        return arguments.All(a => a is not null) && (definition.Instances.TryGetValue([.. arguments!], out var instance)
+            || definition.OpenInstances.TryGetValue([.. arguments!], out instance)) ? instance : definition;          // C-355: TStack<T> in its methods
     }
 
-    /// <summary>C-347: an instance standing for a generic definition (the first one made), or null when none exists or it is no generic.</summary>
-    private static TypeSymbol? Representative(TypeSymbol type) => type is GenericTypeSymbol generic ? generic.Instances.Values.FirstOrDefault() : null;
+    /// <summary>
+    /// C-347: the instance standing for a generic definition, or null when it is no generic. C-355: its open instance (over its own type
+    /// parameters); only when that cannot be made (no declaration text) the first instance made, if any.
+    /// </summary>
+    private TypeSymbol? Representative(TypeSymbol type) => type is GenericTypeSymbol generic
+        ? DeclarationBinder.OpenInstanceOf(_result.Types, generic) ?? generic.Instances.Values.FirstOrDefault()
+        : null;
 
     /// <summary>The identifier naming what a node refers to: a name, a member access's member, an invocation's callee.</summary>
     private static SyntaxToken NameToken(SyntaxNode node) => node switch
@@ -495,6 +566,11 @@ public sealed class SemanticModel
                     // CMP-1394 (C-347): the members of a generic's declaration (nested types, their methods) are those of an instance
                     if (Representative(type) is { } instance)
                     {
+                        if (type is GenericTypeSymbol { OpenInstance: { } open } && ReferenceEquals(open, instance))
+                        {
+                            _openInstances.Add(open);                           // C-355: its method bodies are bound on it
+                        }
+
                         foreach (var member in instance.Members)
                         {
                             Visit(member);
