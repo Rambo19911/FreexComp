@@ -653,7 +653,7 @@ internal static class PcuReader
                     return _byId[id] = new DynamicArrayTypeSymbol(types.Target, name, Type(entry, "element"), container, []);
                 case "pointer":
                 {
-                    var pointer = new PointerTypeSymbol(types.Target, name, pointedType: null, entry["pointerMath"]!.GetValue<bool>());
+                    var pointer = new PointerTypeSymbol(types.Target, name, pointedType: null, entry["pointerMath"]!.GetValue<bool>(), container);      // C-366
                     _byId[id] = pointer;                                    // before the target: ^T may point back (LANG-208)
                     pointer.PointedType = entry["target"] is null ? null : Type(entry, "target");
                     return pointer;

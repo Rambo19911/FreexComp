@@ -666,12 +666,20 @@ internal static class Strings
 /// <summary>Untyped <c>Pointer</c> (<see cref="PointedType"/> null) and typed pointers.</summary>
 public sealed class PointerTypeSymbol : TypeSymbol
 {
-    internal PointerTypeSymbol(TargetInfo target, string name, TypeSymbol? pointedType, bool allowsPointerMath)
+    internal PointerTypeSymbol(TargetInfo target, string name, TypeSymbol? pointedType, bool allowsPointerMath, Symbol? declaredIn = null)
         : base(TypeKind.Pointer, name, size: target.PointerSize, alignment: target.PointerAlign)
     {
         PointedType = pointedType;
         AllowsPointerMath = allowsPointerMath;
+        DeclaredIn = declaredIn;
     }
+
+    /// <summary>
+    /// C-366: the unit, routine or type whose type section declared this pointer (null for built-ins and <c>^T</c> constructors).
+    /// Kept apart from <see cref="Symbol.ContainingSymbol"/>, which would change the link names of CMP-361; the debug-info sidecar
+    /// reads the declaring unit from it (debug-info-sidecar.md §4).
+    /// </summary>
+    internal Symbol? DeclaredIn { get; }
 
     /// <summary>Set after construction for a forward reference <c>^T</c> to a type declared later in the same section (LANG-208).</summary>
     public TypeSymbol? PointedType { get; internal set; }

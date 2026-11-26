@@ -96,7 +96,7 @@ internal sealed class PdiFragmentBuilder(TargetInfo target, string unitName, str
 
         var id = _types.Count + 1;
         _ids[type] = id;
-        var entry = new JsonObject { ["id"] = id, ["name"] = IsNamed(type) ? TypeMembers.DisplayName(type) : "" };     // CMP-1393: TOuter.TInner
+        var entry = new JsonObject { ["id"] = id, ["name"] = IsNamed(type) ? DisplayName(type) : "" };                 // CMP-1393: TOuter.TInner
         if (IsNamed(type) && UnitOf(type) is { } unit)
         {
             entry["unit"] = unit;
@@ -251,7 +251,12 @@ internal sealed class PdiFragmentBuilder(TargetInfo target, string unitName, str
     }
 
     /// <summary>The fragment as JSON text (formatVersion 1; <c>globals</c> sorted by name, <c>routines</c> by file and line).</summary>
-    public string ToJson() => PdiSidecar.Write(ToNode());
+    public string ToJson()
+    {
+        var node = ToNode();
+        PdiSidecar.CheckTypeReferences(node);
+        return PdiSidecar.Write(node);
+    }
 
     public JsonObject ToNode()
     {
@@ -293,6 +298,10 @@ internal sealed class PdiFragmentBuilder(TargetInfo target, string unitName, str
         _ => type.IsPredefined || !type.Locations.IsEmpty,
     };
 
+    /// <summary>CMP-1393: <c>TOuter.TInner</c>; a pointer nested in a type the same (C-366: its outer type is <see cref="PointerTypeSymbol.DeclaredIn"/>).</summary>
+    private static string DisplayName(TypeSymbol type) =>
+        type is PointerTypeSymbol { DeclaredIn: TypeSymbol outer } ? TypeMembers.DisplayName(outer) + "." + type.Name : TypeMembers.DisplayName(type);
+
     /// <summary>The unit declaring <paramref name="type"/> (omitted for built-ins).</summary>
     private static string? UnitOf(TypeSymbol type)
     {
@@ -301,7 +310,9 @@ internal sealed class PdiFragmentBuilder(TargetInfo target, string unitName, str
             return null;
         }
 
-        for (var symbol = type.ContainingSymbol; symbol is not null; symbol = symbol.ContainingSymbol)
+        // C-366: a named pointer belongs to the unit of its declaration, so a record pointing back at itself through it is unified
+        // by unit + name in the merge like the record (debug-info-sidecar.md §4)
+        for (var symbol = type is PointerTypeSymbol pointer ? pointer.DeclaredIn : type.ContainingSymbol; symbol is not null; symbol = symbol.ContainingSymbol)
         {
             if (symbol is UnitSymbol unit)
             {
@@ -423,6 +434,7 @@ internal static class PdiSidecar
             var fragment = JsonNode.Parse(text)!.AsObject();
             var local = fragment["types"]!.AsArray().Select(t => t!.AsObject()).ToDictionary(t => t["id"]!.GetValue<int>());
             var mapped = new Dictionary<int, int>();
+            var inProgress = new Dictionary<int, int>();                            // C-366: unit-less types being mapped → 0 or a reserved id
             var fragmentIndex = index++;
 
             int Map(int id)
@@ -430,6 +442,19 @@ internal static class PdiSidecar
                 if (mapped.TryGetValue(id, out var known))
                 {
                     return known;
+                }
+
+                if (inProgress.TryGetValue(id, out var reserved))
+                {
+                    // a cycle through types without a unit: the type gets its id now, its entry is filled when its mapping ends
+                    if (reserved == 0)
+                    {
+                        reserved = types.Count + 1;
+                        types.Add(new JsonObject { ["id"] = reserved });
+                        inProgress[id] = reserved;
+                    }
+
+                    return reserved;
                 }
 
                 var source = local[id];
@@ -453,9 +478,23 @@ internal static class PdiSidecar
                 }
 
                 // a built-in or constructed type: unified by its structure (references mapped first)
-                mapped[id] = -1;                                                    // a cycle through types without a unit is not expected
+                inProgress[id] = 0;
                 Remap(entry, Map);
                 entry.Remove("id");
+                inProgress.Remove(id, out var cycleId);
+                if (cycleId != 0)
+                {
+                    // reached back through its references: it keeps the reserved id (its structure names itself, nothing to unify with)
+                    var slot = types[cycleId - 1];
+                    foreach (var (name, value) in entry.ToList())
+                    {
+                        entry.Remove(name);
+                        slot[name] = value;
+                    }
+
+                    return mapped[id] = cycleId;
+                }
+
                 var structure = "S|" + entry.ToJsonString();
                 if (byKey.TryGetValue(structure, out var same))
                 {
@@ -502,7 +541,7 @@ internal static class PdiSidecar
             }
         }
 
-        return Write(new JsonObject
+        var sidecar = new JsonObject
         {
             ["formatVersion"] = 1,
             ["program"] = program,
@@ -510,7 +549,9 @@ internal static class PdiSidecar
             ["abi"] = PdiAbi.Block(target),
             ["types"] = new JsonArray([.. types.Select(t => (JsonNode)t)]),
             ["units"] = units,
-        });
+        };
+        CheckTypeReferences(sidecar);
+        return Write(sidecar);
     }
 
     private static void Remap(JsonObject entry, Func<int, int> map)
@@ -534,6 +575,55 @@ internal static class PdiSidecar
         if (node[name] is JsonValue value && value.TryGetValue<int>(out var id))
         {
             node[name] = map(id);
+        }
+    }
+
+    /// <summary>
+    /// C-366 (debug-info-sidecar.md §4): every type reference of <paramref name="sidecar"/> — of a type, a field, a global, a routine's
+    /// <c>self</c> and its variables — names one of its type entries; anything else is a compiler bug, never written.
+    /// </summary>
+    internal static void CheckTypeReferences(JsonObject sidecar)
+    {
+        var ids = sidecar["types"]!.AsArray().Select(t => t!["id"]!.GetValue<int>()).ToHashSet();
+
+        void Check(JsonObject node, string member, string owner)
+        {
+            if (node[member] is JsonValue value && value.TryGetValue<int>(out var id) && !ids.Contains(id))
+            {
+                throw new InvalidOperationException($"debug-info sidecar: {owner} refers to unknown type id {id}");
+            }
+        }
+
+        foreach (var type in sidecar["types"]!.AsArray().Select(t => t!.AsObject()))
+        {
+            var owner = "type " + type["id"];
+            foreach (var name in TypeReferences)
+            {
+                Check(type, name, owner);
+            }
+
+            foreach (var field in type["fields"] as JsonArray ?? [])
+            {
+                Check(field!.AsObject(), "type", owner + " field " + field["name"]);
+            }
+        }
+
+        foreach (var unit in sidecar["units"]!.AsArray().Select(u => u!.AsObject()))
+        {
+            var owner = "unit " + unit["name"];
+            foreach (var global in unit["globals"] as JsonArray ?? [])
+            {
+                Check(global!.AsObject(), "type", owner + " global " + global["name"]);
+            }
+
+            foreach (var routine in (unit["routines"] as JsonArray ?? []).Select(r => r!.AsObject()))
+            {
+                Check(routine, "self", owner + " routine " + routine["linkageName"]);
+                foreach (var variable in routine["vars"] as JsonArray ?? [])
+                {
+                    Check(variable!.AsObject(), "type", owner + " routine " + routine["linkageName"] + " variable " + variable["name"]);
+                }
+            }
         }
     }
 

@@ -434,7 +434,7 @@ internal sealed partial class DeclarationBinder
             case RealTypeSymbol real:
                 return new RealTypeSymbol(name, real.RealKind, real.Alignment, _container, locations);                          // C-262: RTTI name
             case PointerTypeSymbol { PointedType: var pointed } pointer when !ReferenceEquals(pointer, _types.Nil):
-                return new PointerTypeSymbol(_types.Target, name, pointed, pointer.AllowsPointerMath);
+                return new PointerTypeSymbol(_types.Target, name, pointed, pointer.AllowsPointerMath, _container);
             default:
                 return Unsupported(syntax, "distinct type of " + KindName(source));
         }
@@ -469,13 +469,13 @@ internal sealed partial class DeclarationBinder
             && (_sectionTypeNames!.Contains(NameOf(pointedName.Identifier)) && _scope.LookupLocal(NameOf(pointedName.Identifier)) is null
                 || _scope.Lookup(NameOf(pointedName.Identifier)) is null))
         {
-            var forward = new PointerTypeSymbol(_types.Target, name, pointedType: null, allowsPointerMath: false);
+            var forward = new PointerTypeSymbol(_types.Target, name, pointedType: null, allowsPointerMath: false, _container);
             _forwardPointers.Add((forward, pointedName));
             return forward;
         }
 
         var target = BindType(syntax.PointedType, declared: declared);
-        return target.TypeKind == TypeKind.Error ? _types.Error : new PointerTypeSymbol(_types.Target, name, target, allowsPointerMath: false);
+        return target.TypeKind == TypeKind.Error ? _types.Error : new PointerTypeSymbol(_types.Target, name, target, allowsPointerMath: false, _container);
     }
 
     // ------------------------------------------------------------------ enumerations and subranges (LANG-210…212)
