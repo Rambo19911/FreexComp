@@ -29,6 +29,11 @@ program AccessibilityProbe;
       window of the probe's thread, the grid takes the focus, the program takes the provider of cell (3, 6) and makes
       it the current cell (AutomationFocusChanged and SelectionItem_ElementSelected on it when a client listens),
       lets the cell go, shrinks the grid to 4 rows and frees the form, then 'shrunk';
+    U-164: on WM_APP + 14: the edits that take the keyboard focus when a form of the probe is activated (NameEdit
+      and the edit of every later second form) get BorderStyle bsNone, then 'borderless'. With the client edge the
+      system's themed edit animates its border when it gains or loses the focus and keeps a varying number of
+      device contexts, bitmaps and regions of those animations in the process (tens of each, measured; a program
+      without the framework shows the same); without it the counts of the leak tests stay the framework's own;
     WM_CLOSE ends the program ('probe: close' on stderr, exit code 0). }
 uses
   Windows, Messages, Types, SysUtils, Classes, Graphics, Controls, Forms, StdCtrls, ExtCtrls, ComCtrls, Grids,
@@ -48,12 +53,14 @@ const
   WM_PROBE_LISTENING = WM_APP + 11;
   WM_PROBE_DETACHED = WM_APP + 12;
   WM_PROBE_SHRINK = WM_APP + 13;
+  WM_PROBE_BORDERLESS = WM_APP + 14;
 
 type
   TProbeForm = class(TForm)
   private
     FHeld: TForm;
     FCycles: Integer;
+    FBorderless: Boolean;
     procedure Clicked(Sender: TObject);
     function NewSecondForm: TForm;
     procedure SayGrid;
@@ -108,6 +115,8 @@ begin
   E.Name := 'SecondEdit';
   E.Parent := Result;
   E.SetBounds(8, 100, 120, 23);
+  if FBorderless then
+    E.BorderStyle := bsNone;
   B := TButton.Create(Result);
   B.Name := 'SecondButton';
   B.Caption := 'Close';
@@ -240,6 +249,12 @@ begin
         Say('listening False');
     WM_PROBE_DETACHED:
       Say('detached ' + IntToStr(AutomationDetachedProviderCount));
+    WM_PROBE_BORDERLESS:
+      begin
+        FBorderless := True;
+        TEdit(FindComponent('NameEdit')).BorderStyle := bsNone;
+        Say('borderless');
+      end;
     WM_PROBE_SHRINK:
       begin
         ShrinkGrid;

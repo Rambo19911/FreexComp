@@ -519,6 +519,31 @@ public static partial class Gui
 
     public static IntPtr Foreground() => GetForegroundWindow();
 
+    /// <summary>U-164: the id of the process that owns <paramref name="hwnd"/> (0 for no window).</summary>
+    public static int ProcessOf(IntPtr hwnd)
+    {
+        GetWindowThreadProcessId(hwnd, out var pid);
+        return pid;
+    }
+
+    /// <summary>
+    /// U-164: asks the foreground holder (<see cref="StartForegroundHolder"/>), while its window <paramref name="holderWindow"/>
+    /// is the foreground, to hand the foreground to <paramref name="target"/> (e.g. the window the user had before the
+    /// test). Only this request is made, never another method of <see cref="BringToForeground"/>, so a window of another
+    /// program is never minimised or attached to. True when <paramref name="target"/> is the foreground afterwards
+    /// (polled for up to 500 ms).
+    /// </summary>
+    public static bool HandOver(IntPtr holderWindow, IntPtr target)
+    {
+        if (!IsHolder(holderWindow) || GetForegroundWindow() != holderWindow || target == IntPtr.Zero)
+        {
+            return false;
+        }
+
+        Send(holderWindow, WM_HANDOVER, (nuint)target, 0);
+        return WaitUntil(() => GetForegroundWindow() == target, TimeSpan.FromMilliseconds(500));   // attempt slice, not a budget: the hand-back is best effort, no test asserts it
+    }
+
     /// <summary>
     /// U-126: makes <paramref name="hwnd"/> (a top-level window of another process) the foreground window; false only
     /// when it still is not after <paramref name="timeout"/> (default 5 s). A plain <c>SetForegroundWindow</c> from the

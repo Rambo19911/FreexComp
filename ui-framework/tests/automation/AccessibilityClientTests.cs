@@ -14,6 +14,8 @@ namespace FreexComp.UiFramework.Automation.Tests;
 /// interop slice in <c>UiaClient.cs</c>, decision Q-P8A-16). Each test builds <c>tests/gui/AccessibilityProbe.pas</c>, starts it (its form is shown
 /// without activation), finds elements by <c>AutomationId</c> (= component name) under the probe's window, and closes
 /// the probe. The tests only read elements of the probe process: no mouse, no input to other windows, no focus.
+/// U-164: the form-cycle tests move the foreground between the probe and a foreground holder of the test
+/// (<see cref="ForegroundTurns"/>) and hand it back to the window that had it before.
 /// </summary>
 [Trait("Phase", "8")]
 [Trait("Kind", "Native")]
@@ -32,6 +34,7 @@ public sealed class AccessibilityClientTests
     private const uint WM_PROBE_REMOVE = WM_APP + 7;
     private const uint WM_PROBE_LISTENING = WM_APP + 11;
     private const uint WM_PROBE_DETACHED = WM_APP + 12;
+    private const uint WM_PROBE_BORDERLESS = WM_APP + 14;
 
     public static string ProbeSource => Path.Combine(UiCorpus.AreaDirectory, "tests", "gui", "AccessibilityProbe.pas");
 
@@ -170,6 +173,8 @@ public sealed class AccessibilityClientTests
     /// U-163: the client listens (<see cref="Listen"/>) before the first count, so the counts do not depend on whether
     /// a client of another process starts listening during the cycles (the system then creates the providers of the
     /// probe's live windows and objects of its own: before U-163 the test failed whenever that happened).
+    /// U-164: the counts do not depend either on whether another process gives the probe the foreground during the
+    /// cycles (<see cref="ThousandFormCycles"/>: warm-up with the foreground, counts with no window of the probe active).
     /// </summary>
     [Fact]
     [Trait("Req", "UIF-1425")]
@@ -180,7 +185,8 @@ public sealed class AccessibilityClientTests
         Harness.RequireDesktop();
         using var probe = Probe.Start();
         Listen(probe);
-        var failure = ThousandFormCycles(probe, null);
+        using var turns = new ForegroundTurns(probe);
+        var failure = ThousandFormCycles(probe, turns, null);
         probe.RemoveHandlers();
         Assert.True(failure is null, failure);
         probe.Close();
@@ -201,7 +207,44 @@ public sealed class AccessibilityClientTests
     {
         Harness.RequireDesktop();
         using var probe = Probe.Start();
-        var failure = ThousandFormCycles(probe, () => Listen(probe));
+        using var turns = new ForegroundTurns(probe);
+        var failure = ThousandFormCycles(probe, turns, () => Listen(probe));
+        probe.RemoveHandlers();
+        Assert.True(failure is null, failure);
+        probe.Close();
+    }
+
+    /// <summary>
+    /// U-164 (UIF-1425, UIF-1426, UIF-1440): the cycles of <see cref="Uia_ProvidersReleasedOverThousandFormCycles"/>
+    /// while the foreground moves between the probe and another process (the failure of the lead's run beside the data
+    /// area's client test, deterministic): the test's foreground holder hands the foreground to the probe before the
+    /// first form and the 500th and takes it back before the 250th and the 750th, so that half of the second forms are
+    /// activated and their edit takes the keyboard focus. The counts are those of the other cycle tests.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "UIF-1425")]
+    [Trait("Req", "UIF-1426")]
+    [Trait("Req", "UIF-1440")]
+    public void Uia_ProvidersReleasedWhileTheForegroundMoves()
+    {
+        Harness.RequireDesktop();
+        using var probe = Probe.Start();
+        Listen(probe);
+        using var turns = new ForegroundTurns(probe);
+        var failure = ThousandFormCycles(probe, turns, null, round =>
+        {
+            if (round % 25 == 0)
+            {
+                if (round % 50 == 0)
+                {
+                    turns.ToProbe();
+                }
+                else
+                {
+                    turns.ToHolder();
+                }
+            }
+        });
         probe.RemoveHandlers();
         Assert.True(failure is null, failure);
         probe.Close();
@@ -228,9 +271,18 @@ public sealed class AccessibilityClientTests
     /// counts of the probe (bound of <c>HelloForm_NoGdiLeakOnResize</c>) and its count of live provider objects are
     /// the same before and after and no provider object without its control is left; else the failure. With
     /// <paramref name="midway"/> (U-163) the first 500 forms are compared, <paramref name="midway"/> runs, and the last
-    /// 500 are compared with the counts taken after it and one more form.
+    /// 500 are compared with the counts taken after it and one more form. <paramref name="everyRound"/> (U-164) runs
+    /// before each tenth form (argument: 0, 1, … 99).
+    /// U-164, the same foreground conditions for every count: once the probe's thread has had the keyboard focus (another
+    /// process gave it the foreground), the system keeps objects of its own for the thread (its text-services window,
+    /// fonts: GDI +5, USER +11 measured, from then on constant), and while a window of the probe is the foreground a few
+    /// more USER objects (+2). So before the first count the probe gets the foreground from the holder of
+    /// <paramref name="turns"/> for one form and loses it again for one more, and each count is taken with the holder
+    /// in front when a window of the probe has the foreground; then the foreground goes back to the window that had it
+    /// before the test. The edits that take the focus are borderless (<c>WM_APP + 14</c> of the probe: the system's
+    /// border animations of themed edits keep a varying number of objects, see the probe). The bounds are unchanged.
     /// </summary>
-    private static string? ThousandFormCycles(Probe probe, Action? midway)
+    private static string? ThousandFormCycles(Probe probe, ForegroundTurns turns, Action? midway, Action<int>? everyRound = null)
     {
         var held = new List<IUIAutomationElement>();
 
@@ -253,9 +305,16 @@ public sealed class AccessibilityClientTests
 
         Counts Take()
         {
+            if (turns.ProbeHasForeground)
+            {
+                turns.ToHolder();                                        // counted as the baseline is: no probe window active
+            }
+
             Gui.WaitIdle(probe.Window);
-            return new(probe.Request(WM_PROBE_COUNT, "providers "), probe.Request(WM_PROBE_DETACHED, "detached "),
+            var counts = new Counts(probe.Request(WM_PROBE_COUNT, "providers "), probe.Request(WM_PROBE_DETACHED, "detached "),
                 Gui.GuiResources(probe.App.Process, Gui.GR_GDIOBJECTS), Gui.GuiResources(probe.App.Process, Gui.GR_USEROBJECTS));
+            turns.HandBack();
+            return counts;
         }
 
         string? Compare(string what, Counts a, Counts b) =>
@@ -265,6 +324,11 @@ public sealed class AccessibilityClientTests
                     + $"{a.Detached} -> {b.Detached}, GDI {a.Gdi} -> {b.Gdi}, USER {a.User} -> {b.User}";
 
         Round(0);                                                        // warm-up: first use of the client
+        probe.Request(WM_PROBE_BORDERLESS, "borderless");
+        turns.ToProbe();
+        Round(0);                                                        // warm-up: a form activated, its edit focused
+        turns.ToHolder();
+        Round(0);                                                        // warm-up: a form of the inactive probe
         var before = Take();
         for (var i = 0; i < 100; i++)
         {
@@ -280,12 +344,68 @@ public sealed class AccessibilityClientTests
                 before = Take();
             }
 
+            everyRound?.Invoke(i);
             Round(9);
         }
 
         var failure = Compare(midway is null ? "1000 forms" : "the last 500 forms", before, Take());
         GC.KeepAlive(held);
         return failure;
+    }
+
+    /// <summary>
+    /// U-164: the foreground holder of a cycle test (<see cref="Gui.StartForegroundHolder"/>, killed on dispose) and the
+    /// window that had the foreground before it, to which the foreground is handed back after each turn of the test.
+    /// </summary>
+    internal sealed class ForegroundTurns : IDisposable
+    {
+        private readonly Probe probe;
+        private readonly Gui.GuiProcess holder;
+        private readonly IntPtr previous;
+
+        public ForegroundTurns(Probe probe)
+        {
+            this.probe = probe;
+            previous = Gui.Foreground();
+            holder = Gui.StartForegroundHolder();
+            Window = Gui.WaitForMainWindow(holder, "FxcForegroundHolder", "Foreground Holder", TimeSpan.Zero);
+        }
+
+        /// <summary>The holder's window.</summary>
+        public IntPtr Window { get; }
+
+        /// <summary>Whether a window of the probe is the foreground window.</summary>
+        public bool ProbeHasForeground => Gui.ProcessOf(Gui.Foreground()) == probe.App.Process.Id;
+
+        /// <summary>The probe's main window becomes the foreground, handed over by the holder (so really activated).</summary>
+        public void ToProbe()
+        {
+            if (Gui.Foreground() != Window)
+            {
+                ToHolder();                                             // only the holder hands it over: no other program is touched
+            }
+
+            Assert.True(Gui.BringToForeground(probe.Window, probe.Remaining), $"the probe did not get the foreground (it is {Gui.Foreground():X})");
+        }
+
+        /// <summary>The holder's window becomes the foreground: no window of the probe is active.</summary>
+        public void ToHolder() =>
+            Assert.True(Gui.BringToForeground(Window, probe.Remaining), $"the holder did not get the foreground (it is {Gui.Foreground():X})");
+
+        /// <summary>
+        /// While the holder has the foreground, it is handed back to the window that had it before the test (when that
+        /// is a window of neither the probe nor the holder); otherwise nothing.
+        /// </summary>
+        public void HandBack()
+        {
+            var owner = Gui.ProcessOf(previous);
+            if (owner != 0 && owner != probe.App.Process.Id && owner != holder.Process.Id)
+            {
+                Gui.HandOver(Window, previous);
+            }
+        }
+
+        public void Dispose() => holder.Dispose();
     }
 
     /// <summary>The counts of the probe a leak check compares: its provider and detached-provider lines, GDI and USER objects.</summary>
