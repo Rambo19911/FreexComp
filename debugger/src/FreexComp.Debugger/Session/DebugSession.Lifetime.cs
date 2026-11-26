@@ -5,9 +5,6 @@ namespace FreexComp.Debugger.Session;
 // Termination, natural exit and adapter crash (architecture DBG-019 … DBG-023; DAP usage §7).
 internal sealed partial class DebugSession
 {
-    private static readonly TimeSpan DisconnectTimeout = TimeSpan.FromSeconds(3);
-    private static readonly TimeSpan AdapterExitWait = TimeSpan.FromSeconds(2);
-
     /// <summary>
     /// Valid in every state and idempotent: every call returns the same task, which completes when the adapter
     /// process has exited or was killed (DBG-406).
@@ -98,7 +95,7 @@ internal sealed partial class DebugSession
 
         // Collect what the adapter left behind: its exit code and its last stderr lines (DBG-006, DBG-007).
         if (protocolError is null)
-            await WaitBrieflyAsync(adapter.WaitForExitAsync(CancellationToken.None)).ConfigureAwait(false);
+            await WaitBrieflyAsync(adapter.WaitForExitAsync(CancellationToken.None), _options.ShutdownWaits.AdapterExit).ConfigureAwait(false);
         var beforeInitialize = _capabilities is null;
         await StopAdapterAsync(disconnect: false, terminateDebuggee: false).ConfigureAwait(false);
 
@@ -133,7 +130,7 @@ internal sealed partial class DebugSession
             try
             {
                 var arguments = new DisconnectArguments(terminateDebuggee && HasCapability("supportTerminateDebuggee") ? true : null);
-                await client.RequestAsync("disconnect", arguments, DisconnectTimeout, CancellationToken.None).ConfigureAwait(false);
+                await client.RequestAsync("disconnect", arguments, _options.ShutdownWaits.Disconnect, CancellationToken.None).ConfigureAwait(false);
             }
             catch (DebuggerException)
             {
@@ -143,21 +140,22 @@ internal sealed partial class DebugSession
 
         adapter.CloseInput();
         if (disconnect)
-            await WaitBrieflyAsync(adapter.WaitForExitAsync(CancellationToken.None)).ConfigureAwait(false);
+            await WaitBrieflyAsync(adapter.WaitForExitAsync(CancellationToken.None), _options.ShutdownWaits.AdapterExit).ConfigureAwait(false);
         _client?.Close();
         await adapter.DisposeAsync().ConfigureAwait(false);   // kills the process tree, closes the job object
-        await WaitBrieflyAsync(adapter.StderrCompleted).ConfigureAwait(false);
+        await WaitBrieflyAsync(adapter.StderrCompleted, _options.ShutdownWaits.StderrEnd).ConfigureAwait(false);
     }
 
     /// <summary>
-    /// Waits up to 2 s on the session clock. Neither a timeout nor a failure of what is waited for is an error: these
-    /// waits only collect what the adapter left behind, and the end of the session must not depend on them.
+    /// Waits up to <paramref name="limit"/> (one of <see cref="ShutdownWaits"/>) on the session clock. Neither a timeout
+    /// nor a failure of what is waited for is an error: these waits only collect what the adapter left behind, and the
+    /// end of the session must not depend on them.
     /// </summary>
-    private async Task WaitBrieflyAsync(Task task)
+    private async Task WaitBrieflyAsync(Task task, TimeSpan limit)
     {
         try
         {
-            await task.WaitAsync(AdapterExitWait, _time).ConfigureAwait(false);
+            await task.WaitAsync(limit, _time).ConfigureAwait(false);
         }
         catch (Exception)
         {

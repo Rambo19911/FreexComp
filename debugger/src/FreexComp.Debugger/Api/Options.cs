@@ -21,11 +21,33 @@ public sealed record DebugSessionOptions
     /// <summary>Timeout from the start of the launch until the debuggee runs or stops for the first time.</summary>
     public TimeSpan LaunchTimeout { get; init; } = TimeSpan.FromSeconds(30);
 
+    /// <summary>
+    /// The waits of the shutdown sequence (DBG-020). The defaults suit an interactive session; a test that runs the
+    /// session on the system clock lifts them to its own deadline, as it lifts <see cref="RequestTimeout"/>.
+    /// </summary>
+    public ShutdownWaits ShutdownWaits { get; init; } = new();
+
     /// <summary>Optional protocol trace sink (every message, both directions). Called on arbitrary threads.</summary>
     public Action<DapTraceEntry>? Trace { get; init; }
 
     /// <summary>Value display options.</summary>
     public ValueFormatOptions Format { get; init; } = new();
+}
+
+/// <summary>How long the end of a session waits for the adapter before it goes on (DBG-020).</summary>
+public sealed record ShutdownWaits
+{
+    /// <summary>Timeout of the <c>disconnect</c> request (step 1).</summary>
+    public TimeSpan Disconnect { get; init; } = TimeSpan.FromSeconds(3);
+
+    /// <summary>
+    /// Wait for the adapter's exit once its input is closed (step 3; then its process tree is killed), and for its exit
+    /// code once its output ended by itself.
+    /// </summary>
+    public TimeSpan AdapterExit { get; init; } = TimeSpan.FromSeconds(2);
+
+    /// <summary>Wait for the end of the adapter's error stream once its process tree has ended (its last lines are read).</summary>
+    public TimeSpan StderrEnd { get; init; } = TimeSpan.FromSeconds(2);
 }
 
 /// <summary>One traced protocol message or adapter stderr line.</summary>

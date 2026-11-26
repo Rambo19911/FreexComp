@@ -8,7 +8,8 @@
 // not necessarily JSON: simulates a protocol error) and "hang": true (after the step the adapter blocks forever and
 // ignores its input: simulates an adapter that does not react to disconnect or end of input) and "thenWaitForEvent":
 // "<name>" (after the response and events of the step the adapter blocks until the named operating-system event is
-// signalled: a test holds the adapter for as long as it wants, e.g. past a wait of the session).
+// signalled: a test holds the adapter for as long as it wants, e.g. past a wait of the session) and "thenDelayMs": <n>
+// (after the response and events of the step the adapter does nothing for n ms: an adapter slow to end, on a real clock).
 // Built-in answers (no step needed): initialize, launch, configurationDone, disconnect, setExceptionBreakpoints,
 // setFunctionBreakpoints (every breakpoint verified, ids from 1001), readMemory, writeMemory.
 // Scenario extension: "variables": { "Name": "0x1000" } answers an "evaluate" of "&Name" that no step claims the way the
@@ -241,6 +242,12 @@ internal static class Program
             Output.Flush();
             using var gate = new EventWaitHandle(false, EventResetMode.ManualReset, gateName.GetString());
             gate.WaitOne();
+        }
+
+        if (step is not null && step.Json.TryGetProperty("thenDelayMs", out var thenDelay))
+        {
+            Output.Flush();
+            Thread.Sleep(thenDelay.GetInt32());
         }
 
         if (step is not null && step.Json.TryGetProperty("thenExit", out var exitCode))

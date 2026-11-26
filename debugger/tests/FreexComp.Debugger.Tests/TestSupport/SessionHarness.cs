@@ -108,8 +108,12 @@ internal sealed class SessionHarness : IAsyncDisposable
 
     /// <param name="scenarioJson">FakeAdapter scenario.</param>
     /// <param name="configure">Changes to the session options.</param>
+    /// <param name="systemClock">
+    /// The session runs on the system clock instead of <see cref="Clock"/> (which then does not drive it): for a test of
+    /// the session's real-time waits.
+    /// </param>
     public static SessionHarness Create(
-        string scenarioJson, Func<DebugSessionOptions, DebugSessionOptions>? configure = null)
+        string scenarioJson, Func<DebugSessionOptions, DebugSessionOptions>? configure = null, bool systemClock = false)
     {
         var scenarioPath = FakeAdapterRunner.WriteScenario(scenarioJson);
         var trace = new Watch<DapTraceEntry>();
@@ -130,7 +134,7 @@ internal sealed class SessionHarness : IAsyncDisposable
         };
         options = configure?.Invoke(options) ?? options;
         var clock = new ManualTimeProvider();
-        session = new DebugSession(options, clock);
+        session = new DebugSession(options, systemClock ? TimeProvider.System : clock);
         return new SessionHarness(scenarioPath, session, clock, trace);
     }
 

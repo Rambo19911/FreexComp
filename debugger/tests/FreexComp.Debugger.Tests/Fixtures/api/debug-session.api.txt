@@ -12,12 +12,19 @@ DebugSessionOptions.AdapterArguments : IReadOnlyList<string> { get; init; }
 DebugSessionOptions.UserSourceRoots : IReadOnlyList<string> { get; init; }
 DebugSessionOptions.RequestTimeout : TimeSpan { get; init; }
 DebugSessionOptions.LaunchTimeout : TimeSpan { get; init; }
+DebugSessionOptions.ShutdownWaits : ShutdownWaits { get; init; }
 DebugSessionOptions.Trace : Action<DapTraceEntry>? { get; init; }
 DebugSessionOptions.Format : ValueFormatOptions { get; init; }
 
 type DapTraceEntry : sealed record
 DapTraceEntry..ctor(DateTimeOffset Time, DapDirection Direction, string Json)
 type DapDirection : enum = ToAdapter, FromAdapter, AdapterStderr
+
+type ShutdownWaits : sealed record
+ShutdownWaits..ctor()
+ShutdownWaits.Disconnect : TimeSpan { get; init; }
+ShutdownWaits.AdapterExit : TimeSpan { get; init; }
+ShutdownWaits.StderrEnd : TimeSpan { get; init; }
 
 type ValueFormatOptions : sealed record
 ValueFormatOptions..ctor()

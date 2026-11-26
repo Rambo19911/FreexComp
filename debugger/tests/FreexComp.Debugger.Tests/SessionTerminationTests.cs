@@ -162,8 +162,10 @@ public sealed class SessionTerminationTests
     [Trait("Req", "DBG-020")]
     public async Task AdapterIgnoresDisconnect_Killed()
     {
-        // The adapter neither answers disconnect nor reacts to its input being closed.
-        await using var harness = SessionHarness.Create("""{ "steps": [ { "on": "disconnect", "hang": true } ] }""");
+        // The adapter neither answers disconnect nor reacts to its input being closed. Before it hangs it sends an event
+        // (ignored by a session that is ending) that tells the test it has read the disconnect request.
+        await using var harness = SessionHarness.Create(
+            """{ "steps": [ { "on": "disconnect", "thenEvents": [ { "event": "hanging" } ], "hang": true } ] }""");
         await harness.LaunchAsync();
         var adapter = Assert.NotNull(harness.AdapterProcessId);
         var disconnectWait = harness.Clock.WhenTimerCreated(TimeSpan.FromSeconds(3));
@@ -171,6 +173,10 @@ public sealed class SessionTerminationTests
 
         var terminate = harness.Session.TerminateAsync(Ct);
         await disconnectWait.WaitAsync(Safety, Ct);
+        // G-090: the timeout starts when the request is queued, before it is written to the adapter. Run out before the
+        // adapter holds the request, it closes the adapter's input first: the adapter ends at the end of its input
+        // instead of hanging, and the session's next 2 s wait is the one for the end of the adapter's error stream.
+        await harness.Trace.WaitAsync(e => e.Direction == DapDirection.FromAdapter && e.Json.Contains("\"hanging\"", StringComparison.Ordinal));
         Assert.Equal(DebugState.Terminating, harness.Session.State);
         Assert.False(exitWait.IsCompleted);
         harness.Clock.Advance(TimeSpan.FromSeconds(3));    // disconnect timeout: ignored
@@ -215,6 +221,24 @@ public sealed class SessionTerminationTests
 
         await terminate.WaitAsync(Safety, Ct);
         Assert.False(SessionHarness.IsAlive(adapter));
+        harness.AssertScenarioComplete();
+    }
+
+    [Fact]
+    [Trait("Req", "DBG-020")]
+    public async Task ShutdownWaitsLifted_AdapterExitingLate_StderrRead()
+    {
+        // G-089: on the system clock the adapter answers disconnect and exits only 3 s later, past the default 2 s exit
+        // wait. With the shutdown waits lifted to the test's deadline it is waited for, and its last stderr line is read.
+        var lifted = new ShutdownWaits { Disconnect = Safety, AdapterExit = Safety, StderrEnd = Safety };
+        await using var harness = SessionHarness.Create(
+            """{ "steps": [ { "on": "disconnect", "respond": {}, "thenDelayMs": 3000 } ] }""",
+            options => options with { RequestTimeout = Safety, LaunchTimeout = Safety, ShutdownWaits = lifted },
+            systemClock: true);
+        await harness.LaunchAsync();
+
+        await harness.Session.TerminateAsync(Ct).WaitAsync(Safety, Ct);
+        Assert.Equal(DebugState.Terminated, harness.Session.State);
         harness.AssertScenarioComplete();
     }
 

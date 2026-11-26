@@ -38,6 +38,10 @@ public sealed class ApiShapeTests
         Assert.Empty(options.UserSourceRoots);
         Assert.Equal(TimeSpan.FromSeconds(10), options.RequestTimeout);
         Assert.Equal(TimeSpan.FromSeconds(30), options.LaunchTimeout);
+        Assert.Equal(new ShutdownWaits(), options.ShutdownWaits);
+        Assert.Equal(TimeSpan.FromSeconds(3), options.ShutdownWaits.Disconnect);
+        Assert.Equal(TimeSpan.FromSeconds(2), options.ShutdownWaits.AdapterExit);
+        Assert.Equal(TimeSpan.FromSeconds(2), options.ShutdownWaits.StderrEnd);
         Assert.Null(options.Trace);
         Assert.Equal(new ValueFormatOptions(), options.Format);
 
