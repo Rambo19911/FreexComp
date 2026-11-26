@@ -233,35 +233,35 @@ Help pages (also shown inside the IDE with F1):
 <!-- ROADMAP -->
 ## Roadmap
 
-- [x] IDE shell: main window, code editor, project open and save
-- [x] Object Pascal compiler for Windows x64 console programs
-- [x] Build and run from the IDE, clickable error messages
-- [x] Native Windows UI framework (core controls)
-- [x] Visual form designer and Object Inspector
-- [x] Debugger: breakpoints, stepping, locals, call stack
-- [x] Data access: SQLite and data-aware controls
-- [ ] Full feature set (in progress)
-    - [x] Build configurations with inheritance
-    - [x] DLL projects
-    - [x] COM-compatible interfaces and calling conventions
-    - [ ] COM servers and Automation
-    - [x] Inline variables with block scope
-    - [x] Runtime library source included, Step Into library code
-    - [x] License texts and third-party notices shipped beside the tools
-    - [x] No-network guarantee checked by tests
-    - [x] Offline help pages in the IDE
-    - [x] Hardware faults (access violation, division by zero) caught by `try` … `except`
-    - [x] `deprecated`, `platform` and `experimental` warnings for every kind of symbol
-    - [x] Build events with a trust question before project commands run
-    - [x] Rich text editor control
-    - [x] Resource scripts and compiled resource files (`.rc`, `.res`, `{$R}`), resource compiler tool `prc`
-    - [x] PNG, JPEG and GIF images with transparency
-    - [x] Copy a library unit into a project to change it for that project only
-    - [x] Frames: reusable form parts with per-instance changes
-    - [x] Form inheritance: descendant forms and frames that follow their ancestor
-    - [x] Accessibility for screen readers and UI test tools
-    - [x] Licence checks: runtime sources, everything that reaches a built program, all dependencies
-    - [ ] Windows x86 target
+Phases 1–7 (IDE shell, compiler, build and run, UI framework, form designer, debugger, data access) are complete.
+Phase 8 implements the full feature set for Windows, area by area. Progress counts finished feature items
+(updated 2026-11-26; non-Windows platforms are out of scope).
+
+| Area | Done | Progress | Finished so far (☐ = in work) |
+|---|---:|---|---|
+| Compilers and toolchains | 4 / 26 | `██░░░░░░░░` | Object Pascal compiler for Windows x64 · DLL projects · ☐ Windows x86 target |
+| Licensing and notices | 5 / 5 | `██████████` | Licence texts and third-party notices shipped · licence checks for runtime sources, built programs and dependencies |
+| Target platforms (Windows) | 2 / 11 | `██░░░░░░░░` | — |
+| Styled UI framework | 0 / 130 | `░░░░░░░░░░` | — |
+| Native Windows UI framework and designer | 12 / 107 | `█░░░░░░░░░` | Core controls · visual form designer and Object Inspector · rich text editor · PNG, JPEG and GIF images · frames · form inheritance · accessibility for screen readers and UI test tools |
+| COM and ActiveX | 1 / 18 | `█░░░░░░░░░` | COM-compatible interfaces and calling conventions · ☐ COM servers and Automation |
+| AI features | 0 / 31 | `░░░░░░░░░░` | — |
+| Visual data binding | 0 / 16 | `░░░░░░░░░░` | — |
+| Build and deploy | 11 / 36 | `███░░░░░░░` | Build and run from the IDE, clickable errors · build configurations with inheritance · build events with a trust question · resource scripts and the resource compiler `prc` |
+| Language and runtime library | 6 / 118 | `█░░░░░░░░░` | Inline variables · hardware faults caught by `try` … `except` · `deprecated` / `platform` / `experimental` warnings · runtime library source included |
+| IDE | 6 / 120 | `█░░░░░░░░░` | Main window, code editor, project open and save · copy a library unit into a project · no-network guarantee checked by tests |
+| Source control | 0 / 18 | `░░░░░░░░░░` | — |
+| Refactoring and navigation | 0 / 27 | `░░░░░░░░░░` | — |
+| Debugging | 3 / 41 | `█░░░░░░░░░` | Breakpoints, stepping, locals, call stack · Step Into library code |
+| Unit testing | 0 / 9 | `░░░░░░░░░░` | — |
+| Help | 0 / 8 | `░░░░░░░░░░` | Offline help pages in the IDE (first pages) |
+| Data access | 1 / 93 | `█░░░░░░░░░` | SQLite and data-aware controls |
+| Network clients | 0 / 14 | `░░░░░░░░░░` | — |
+| Web front-end framework | 0 / 29 | `░░░░░░░░░░` | — |
+| Bundled components | 0 / 6 | `░░░░░░░░░░` | — |
+| Local web UI | 0 / 18 | `░░░░░░░░░░` | — |
+| **Total** | **51 / 881** | `█░░░░░░░░░` | **6 %** |
+
 - [ ] First public release with installer
 
 See the [open issues](https://github.com/Rambo19911/FreexComp/issues) for known issues and proposals.
