@@ -43,6 +43,7 @@
     "Winapi.RichEdit": "RichEdit",
     "Winapi.ShellAPI": "ShellAPI",
     "Winapi.UIAutomation": "UIAutomation",
+    "Winapi.UxTheme": "UxTheme",
     "Winapi.Wincodec": "Wincodec",
     "Winapi.Windows": "Windows"
   }

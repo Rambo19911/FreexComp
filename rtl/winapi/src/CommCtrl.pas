@@ -7,6 +7,8 @@
     commctrl.h, among them ImageList_Replace and ImageList_SetOverlayImage, task R-249, and ImageList_GetBkColor,
     task R-253) and the ImageList_AddIcon
     and INDEXTOOVERLAYMASK macro pages;
+  - the DRAWITEMSTRUCT structure page (ODT_TAB, task R-255; the page names the constant without its number: 101 is
+    the value of the Win32 API metadata published by Microsoft with its windows-rs project (MIT licence), a fact only);
   - the structure pages INITCOMMONCONTROLSEX, NMCUSTOMDRAW, NMLVCUSTOMDRAW, NMTVCUSTOMDRAW, TCITEMW,
     TCHITTESTINFO, TBBUTTON, TBADDBITMAP, TBBUTTONINFOW, NMTOOLBARW, PBRANGE, UDACCEL, NMUPDOWN, TTTOOLINFOW,
     NMTTDISPINFOW, HDITEMW, HDLAYOUT, HDHITTESTINFO, NMHEADERW, LVITEMW, LVCOLUMNW, NMLISTVIEW, NMITEMACTIVATE,
@@ -282,6 +284,9 @@ const
   TCHT_ONITEMICON = $0002;
   TCHT_ONITEMLABEL = $0004;
   TCHT_ONITEM = TCHT_ONITEMICON or TCHT_ONITEMLABEL;
+
+  { owner-draw control type of a tab control (DRAWITEMSTRUCT.CtlType, task R-255) }
+  ODT_TAB = 101;
 
   TCN_KEYDOWN = UINT(TCN_FIRST - 0);
   TCN_SELCHANGE = UINT(TCN_FIRST - 1);

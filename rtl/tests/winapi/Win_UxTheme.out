@@ -1,0 +1,35 @@
+# import
+ok the loaded uxtheme exports SetWindowTheme
+# GetWindowTheme
+ok InitCommonControlsEx
+ok a hidden top-level window
+ok a SysTabControl32 child
+ok after WM_THEMECHANGED the tab control has a theme handle exactly when IsAppThemed
+# SetWindowTheme
+ok SetWindowTheme(h, '', '') returns S_OK
+ok no theme handle afterwards
+# OpenThemeData
+ok OpenThemeData(h, 'TAB') returns a handle exactly when IsAppThemed
+# DrawThemeBackground
+ok a 32-bit memory bitmap
+ok DrawThemeBackground(TABP_TABITEM, TIS_SELECTED) returns S_OK
+ok it changes pixels of the bitmap
+ok DrawThemeBackground with a clip rectangle returns S_OK
+ok it changes pixels inside the clip rectangle
+ok it keeps the pixels outside the clip rectangle
+ok CloseThemeData returns S_OK
+ok DeleteObject
+ok DeleteDC
+# parts and states
+ok TABP_TABITEM
+ok TABP_PANE
+ok TIS_NORMAL
+ok TIS_HOT
+ok TIS_SELECTED
+ok TIS_DISABLED
+ok TIS_FOCUSED
+# ODT_TAB
+ok ODT_TAB
+# cleanup
+ok DestroyWindow
+# passed 26 failed 0

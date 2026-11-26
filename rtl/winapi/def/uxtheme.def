@@ -1,0 +1,11 @@
+; SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+; uxtheme.def - exports used by the FreexComp RTL. Source: learn.microsoft.com (function reference pages).
+; Content: the UxTheme unit (ui-framework phase8/tab-control.md section 9, rules RTL-1144 and RTL-1146).
+LIBRARY uxtheme.dll
+EXPORTS
+CloseThemeData
+DrawThemeBackground
+GetWindowTheme
+IsAppThemed
+OpenThemeData
+SetWindowTheme
