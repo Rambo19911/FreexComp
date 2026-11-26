@@ -26,7 +26,8 @@ public sealed class CatalogLoaderTests
         Assert.Equal("StdCtrls", edit.Unit);
         Assert.Equal(
             ["Tag", "Left", "Top", "Width", "Height", "Align", "Anchors", "AlignWithMargins", "Margins", "Constraints", "Cursor",
-             "Enabled", "Hint", "ParentShowHint", "ShowHint", "Visible", "PopupMenu", "Alignment", "AutoSelect", "AutoSize"],
+             "Enabled", "Hint", "ParentShowHint", "ShowHint", "Visible", "PopupMenu", "AccessibleName", "AccessibleDescription",
+             "AccessibleRole"],
             edit.Properties.Take(20).Select(p => p.Name));
         Assert.Equal("TComponent", edit.Properties[0].DeclaringClass);
         Assert.Equal("TControl", edit.FindProperty("Anchors")!.DeclaringClass);
@@ -35,6 +36,11 @@ public sealed class CatalogLoaderTests
         Assert.Equal(PropertyKind.Enum, edit.FindProperty("charcase")!.Kind);
         Assert.Equal(PropertyKind.Object, edit.FindProperty("Font")!.Kind);
         Assert.Equal(PropertyKind.Component, edit.FindProperty("PopupMenu")!.Kind);
+        // TControl's accessibility properties (U-155), category Misc; the role is an enum with its default.
+        Assert.Equal("TControl", edit.FindProperty("AccessibleRole")!.DeclaringClass);
+        Assert.Equal(PropertyKind.Enum, edit.FindProperty("AccessibleRole")!.Kind);
+        Assert.Equal("arDefault", edit.FindProperty("AccessibleRole")!.Default);
+        Assert.All(["AccessibleName", "AccessibleDescription", "AccessibleRole"], n => Assert.Equal("Misc", edit.FindProperty(n)!.Category));
         Assert.False(edit.FindProperty("Left")!.HasDefault);
         Assert.Equal(-1L, edit.FindProperty("TabOrder")!.Default);
         Assert.Equal("", edit.FindProperty("PasswordChar")!.Default);

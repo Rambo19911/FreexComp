@@ -114,6 +114,30 @@ public sealed class ObjectInspectorViewTests
     }
 
     [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "DSG-OI-004")]
+    [Trait("Req", "DSG-OI-010")]
+    public async Task AccessibilityPropertiesUnderMisc()
+    {
+        await using var h = await HeadlessHarness.StartAsync(Phase5);
+        var d = await OpenDesignAsync(h, "NameEdit");
+        h.Press("F4");
+
+        // D-122: TControl's AccessibleName, AccessibleDescription and AccessibleRole (U-155, category Misc) are rows of
+        // the Misc category, by name, with Name; the role shows its default and cycles like any enum.
+        var header = h.Find<Control>("Tool.ObjectInspector.Category.Misc");
+        var rows = ((Panel)header.GetVisualParent()!).Children;
+        var misc = rows.Skip(rows.IndexOf(header) + 1)
+            .TakeWhile(c => AutomationIds.Get(c)?.StartsWith("Tool.ObjectInspector.Row.", StringComparison.Ordinal) == true)
+            .Select(c => AutomationIds.Get(c)!["Tool.ObjectInspector.Row.".Length..]).ToList();
+        Assert.Equal(["AccessibleDescription", "AccessibleName", "AccessibleRole", "Name"], misc);
+        Assert.Equal("arDefault", ValueText(h, "AccessibleRole"));
+        Assert.Equal("", ValueText(h, "AccessibleName"));
+        GoTo(h, "AccessibleRole");
+        h.DoubleClick(Row("AccessibleRole") + ".Value");
+        Assert.Equal(new IdentValue("arButton"), Stored(d, "NameEdit", "AccessibleRole"));
+    }
+
+    [AvaloniaFact(Timeout = 30000)]
     [Trait("Req", "DSG-OI-032")]
     [Trait("Req", "UI-DSG-106")]
     public async Task BooleanToggleAndEnumCycle()

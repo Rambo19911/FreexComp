@@ -497,4 +497,154 @@ public sealed class ToolPaletteViewTests
         Assert.Null(h.TryFind<Control>(Picker));
         Assert.Null(document.Designer.Host.ArmedPaletteClass);
     }
+
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "DSG-TP-064")]
+    [Trait("Req", "UI-DSG-138")]
+    public async Task FramesItem_FirstClickAfterPickerPlaces()
+    {
+        await using var h = await HeadlessHarness.StartAsync(FrameProject(frames: true));
+        var document = await OpenFrameDesignAsync(h, "MainForm.pas");
+        var designer = document.Designer;
+
+        // D-123: the frame is chosen with the mouse as in the real IDE: move onto the row, press (chooses and closes the
+        // picker), release where the picker was.
+        h.Click(Item + "Frames");
+        var row = PointIn(h, h.Find<Control>(Picker + ".TFooterFrame"), 0.5, 0.5);
+        h.Window.MouseMove(row);
+        Dispatcher.UIThread.RunJobs();
+        h.Window.MouseDown(row, MouseButton.Left);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Null(h.TryFind<Control>(Picker));
+        Assert.Equal("TFooterFrame", designer.Host.ArmedPaletteClass);
+        h.Window.MouseUp(row, MouseButton.Left);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(string.Format(CultureInfo.CurrentCulture, Strings.Msg_Designer_PlacementArmed, "TFooterFrame"), h.Status.Message);
+
+        // One click on the form places the instance (DSG-TP-064 single-shot).
+        var control = h.Find<DesignSurfaceControl>(AutomationIds.Designer("MainForm"));
+        var client = designer.Surface!.Geometry.FormClientRect;
+        var at = control.TranslatePoint(new Point(client.Left + 24, client.Top + 160), h.Window)!.Value;
+        h.Window.MouseMove(at);
+        Dispatcher.UIThread.RunJobs();
+        h.Window.MouseDown(at, MouseButton.Left);
+        Dispatcher.UIThread.RunJobs();
+        h.Window.MouseUp(at, MouseButton.Left);
+        Dispatcher.UIThread.RunJobs();
+        var instance = designer.Model!.FindByName("FooterFrame1");
+        Assert.NotNull(instance);
+        Assert.Equal((24, 160), (Int(instance, "Left"), Int(instance, "Top")));
+        Assert.Null(designer.Host.ArmedPaletteClass);
+        Assert.NotEqual(string.Format(CultureInfo.CurrentCulture, Strings.Msg_Designer_PlacementArmed, "TFooterFrame"), h.Status.Message);
+
+        // The same through the search box (DSG-TP-033: Enter on the Frames item opens the picker, the search stays).
+        h.Click("Tool.ToolPalette.Filter");
+        h.Type("Fram");
+        h.Press("Enter");
+        Assert.Equal(["TAddressFrame", "TFooterFrame", "TOuterFrame"], PickerRows(h));
+        row = PointIn(h, h.Find<Control>(Picker + ".TAddressFrame"), 0.5, 0.5);
+        h.Window.MouseMove(row);
+        Dispatcher.UIThread.RunJobs();
+        h.Window.MouseDown(row, MouseButton.Left);
+        Dispatcher.UIThread.RunJobs();
+        h.Window.MouseUp(row, MouseButton.Left);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal("TAddressFrame", designer.Host.ArmedPaletteClass);
+        at = control.TranslatePoint(new Point(client.Left + 300, client.Top + 40), h.Window)!.Value;
+        h.Window.MouseMove(at);
+        Dispatcher.UIThread.RunJobs();
+        h.Window.MouseDown(at, MouseButton.Left);
+        Dispatcher.UIThread.RunJobs();
+        h.Window.MouseUp(at, MouseButton.Left);
+        Dispatcher.UIThread.RunJobs();
+        Assert.NotNull(designer.Model!.FindByName("AddressFrame1"));
+        Assert.Null(designer.Host.ArmedPaletteClass);
+    }
+
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "DSG-TP-063")]
+    [Trait("Req", "DSG-TP-065")]
+    public async Task FramesItem_OpeningPickerDisarmsArmedClass()
+    {
+        await using var h = await HeadlessHarness.StartAsync(FrameProject(frames: true));
+        var document = await OpenFrameDesignAsync(h, "MainForm.pas");
+        var designer = document.Designer;
+        var control = h.Find<DesignSurfaceControl>(AutomationIds.Designer("MainForm"));
+        var client = designer.Surface!.Geometry.FormClientRect;
+        void AssertIdle()
+        {
+            Assert.Null(designer.Host.ArmedPaletteClass);
+            Assert.DoesNotContain(h.FindAll(Item), c => c.Classes.Contains("armed"));
+            Assert.True(string.IsNullOrEmpty(h.Status.Message), h.Status.Message);
+        }
+
+        // D-123: opening the picker disarms the armed class (the arrow state, the idle status) like choosing any other item.
+        h.Click(Item + "TLabel");
+        Assert.Equal("TLabel", designer.Host.ArmedPaletteClass);
+        h.Click(Item + "Frames");
+        Assert.True(h.Find<Control>(Picker).IsEffectivelyVisible);
+        AssertIdle();
+
+        // A click on the form while the picker is open only closes it (light dismiss, consumed): nothing is placed.
+        var at = control.TranslatePoint(new Point(client.Left + 40, client.Top + 120), h.Window)!.Value;
+        h.Window.MouseMove(at);
+        Dispatcher.UIThread.RunJobs();
+        h.Window.MouseDown(at, MouseButton.Left);
+        Dispatcher.UIThread.RunJobs();
+        h.Window.MouseUp(at, MouseButton.Left);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Null(h.TryFind<Control>(Picker));
+        Assert.Null(designer.Model!.FindByName("Label1"));
+        Assert.Empty(designer.Model.Root.Children);
+        AssertIdle();
+
+        // Escape closes the picker with nothing armed.
+        h.Click(Item + "TLabel");
+        h.Click(Item + "Frames");
+        h.Press("Escape");
+        Assert.Null(h.TryFind<Control>(Picker));
+        AssertIdle();
+
+        // Choosing a frame arms that frame.
+        h.Click(Item + "TLabel");
+        h.Click(Item + "Frames");
+        h.Press("Enter");
+        Assert.Equal("TAddressFrame", designer.Host.ArmedPaletteClass);
+        Assert.Equal(string.Format(CultureInfo.CurrentCulture, Strings.Msg_Designer_PlacementArmed, "TAddressFrame"), h.Status.Message);
+    }
+
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-DSG-138")]
+    public async Task FramesItem_PickerTypeToJump()
+    {
+        await using var h = await HeadlessHarness.StartAsync(FrameProject(frames: true));
+        var document = await OpenFrameDesignAsync(h, "MainForm.pas");
+        h.Click(Item + "Frames");
+        string Current() => Assert.Single(PickerRows(h), r => h.Find<Control>(Picker + "." + r).Classes.Contains("current"));
+        Assert.Equal("TAddressFrame", Current());
+
+        // UI-DSG-138 type-ahead on the shown name (the class without its T), either case; the next row after the
+        // highlighted one, wrapping; a character no name starts with changes nothing.
+        h.Type("o");
+        Assert.Equal("TOuterFrame", Current());
+        h.Type("F");
+        Assert.Equal("TFooterFrame", Current());
+        h.Type("a");
+        Assert.Equal("TAddressFrame", Current());
+        h.Type("t");
+        Assert.Equal("TAddressFrame", Current());
+        h.Type("f");
+        Assert.Equal("TFooterFrame", Current());
+        h.Type("f");
+        Assert.Equal("TFooterFrame", Current());
+        Assert.Null(document.Designer.Host.ArmedPaletteClass);
+
+        // Enter chooses the row type-ahead reached.
+        h.Press("Enter");
+        Assert.Null(h.TryFind<Control>(Picker));
+        Assert.Equal("TFooterFrame", document.Designer.Host.ArmedPaletteClass);
+    }
+
+    private static Point PointIn(HeadlessHarness h, Control control, double fx, double fy) =>
+        control.TranslatePoint(new Point(control.Bounds.Width * fx, control.Bounds.Height * fy), h.Window)!.Value;
 }

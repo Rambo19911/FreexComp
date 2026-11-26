@@ -321,6 +321,9 @@ public sealed class ToolPaletteViewModel : ToolWindowViewModel
             return;
         }
 
+        // D-123: opening the picker disarms whatever is armed (the arrow state, the idle status), like choosing any other
+        // item; only a frame chosen in the picker arms again (DSG-TP-064), Escape or a click outside leaves nothing armed.
+        _designer.Host.Disarm();
         var root = model.Root.TypeName;
         _pickerRows = [.. frames.All
             .Where(f => !Names.Equals(f.ClassName, root) && FrameCatalog.RepeatedClass(frames, f.ClassName, root) is null)

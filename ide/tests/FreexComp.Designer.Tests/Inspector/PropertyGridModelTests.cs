@@ -98,7 +98,11 @@ public sealed class PropertyGridModelTests
         Assert.Equal(PropertyRowKind.Category, grid.Rows[0].Kind);
         var appearance = grid.Rows.Skip(1).TakeWhile(r => r.Kind == PropertyRowKind.Property).Select(r => r.Path).ToList();
         Assert.Equal(["Caption", "Cursor", "Font", "ParentFont", "WordWrap"], appearance);
-        Assert.Equal("Misc", grid.Rows[grid.Rows.ToList().FindIndex(r => r.Path == "Name") - 1].Name);
+        // Misc holds Name and TControl's accessibility properties (U-155), by name like every category.
+        var misc = grid.Rows.SkipWhile(r => !(r.Kind == PropertyRowKind.Category && r.Name == "Misc")).Skip(1)
+            .TakeWhile(r => r.Kind == PropertyRowKind.Property).Select(r => r.Path).ToList();
+        Assert.Equal(["AccessibleDescription", "AccessibleName", "AccessibleRole", "Name"], misc);
+        Assert.Equal("arDefault", Row(grid, "AccessibleRole").Display);
         Assert.Equal("GreetButton", Row(grid, "Name").Display);
         Assert.Equal("&Greet", Row(grid, "Caption").Display);
         Assert.Equal("(TFont)", Row(grid, "Font").Display);
