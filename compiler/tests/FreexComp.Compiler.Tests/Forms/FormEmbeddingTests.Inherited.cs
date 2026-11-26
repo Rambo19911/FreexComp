@@ -279,4 +279,96 @@ public sealed partial class FormEmbeddingTests
         Assert.Equal([e3106], Errors(Emit(program, ("B.pas", unit), ("Base.form", BaseForm), ("Child.form", @object)).Result));
         Assert.Equal([e3106], Precompiled(@object));
     }
+
+    /// <summary>
+    /// LANG-956 (inherited frame instances): in a descendant file an <c>inherited</c> object whose class has a form is an instance the
+    /// ancestor placed with <c>inline</c>. Its own name needs a field of the root class or an ancestor and its event lines are checked;
+    /// its contents are an instance scope as inside an <c>inline</c> object (LANG-952…954): nested override blocks need no field (their
+    /// events are still checked against the root), a nested <c>object</c> is not reported (the reader reports F0110).
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "LANG-956")]
+    [Trait("Req", "LANG-952")]
+    [Trait("Req", "LANG-954")]
+    public void InheritedRoot_InheritedFrameInstance_ContentsAreInstanceScope()
+    {
+        const string program = """
+            program P;
+            type
+              TNotify = procedure(Sender: TObject) of object;
+              TPart = class
+              private
+                FOnClick: TNotify;
+              published
+                property OnClick: TNotify read FOnClick write FOnClick;
+              end;
+              TTestFrame = class
+              private
+                FOnResize: TNotify;
+              published
+                Box: TPart;
+                Inner: TPart;
+                property OnResize: TNotify read FOnResize write FOnResize;
+              end;
+              THolder = class
+              published
+                F: TTestFrame;
+              end;
+              TChild = class(THolder)
+              published
+                FIELDS
+                procedure Clicked(Sender: TObject);
+              end;
+
+            procedure TChild.Clicked(Sender: TObject); begin end;
+
+            {$FORM Frame.form}
+            {$FORM Holder.form}
+            {$FORM Child.form}
+            begin end.
+
+            """;
+        const string frame = "object TestFrame: TTestFrame\n  object Box: TPart\n    object Inner: TPart\n    end\n  end\nend\n";
+        const string holder = "object Holder: THolder\n  inline F: TTestFrame\n    inherited Box: TPart\n      Tag = 1\n    end\n  end\nend\n";
+        const string child = """
+            inherited Child: TChild
+              inherited F: TTestFrame
+                OnResize = Clicked
+                inherited Box: TPart
+                  OnClick = Clicked
+                  inherited Inner: TPart
+                    OnClick = Clicked
+                  end
+                  object Added: TPart
+                    OnClick = Missing
+                  end
+                end
+                inline Again: TTestFrame
+                end
+              end
+            end
+
+            """;
+
+        string[] Run(string fields, string childForm) =>
+            Errors(Emit(program.ReplaceLineEndings("\n").Replace("FIELDS", fields, StringComparison.Ordinal),
+                ("Frame.form", frame), ("Holder.form", holder), ("Child.form", childForm.ReplaceLineEndings("\n"))).Result);
+
+        // the root class has no field for Box, Inner, Added or Again: none is needed, nothing inside the instance is reported
+        Assert.Empty(Run("Extra: TPart;", child));
+
+        // the instance's own name keeps the field rule (LANG-956)
+        Assert.Equal(["Child.form(2,13): error E3101: Form 'Child': field 'G: TTestFrame' is not declared in class 'TChild'"],
+            Run("Extra: TPart;", child.Replace("inherited F:", "inherited G:", StringComparison.Ordinal)));
+
+        // the event lines of the instance and of its override blocks are checked against the root class (LANG-953)
+        Assert.Equal(
+            [
+                "Child.form(3,16): error E3101: Form 'Child': method 'Nope' is not declared in class 'TChild'",
+                "Child.form(5,17): error E3101: Form 'Child': method 'Nope' is not declared in class 'TChild'",
+                "Child.form(7,19): error E3101: Form 'Child': method 'Nope' is not declared in class 'TChild'",
+            ],
+            Run("Extra: TPart;", child.Replace("= Clicked", "= Nope", StringComparison.Ordinal)));
+    }
 }

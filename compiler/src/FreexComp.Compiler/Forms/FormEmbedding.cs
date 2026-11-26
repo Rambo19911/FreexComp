@@ -148,28 +148,59 @@ internal static class FormEmbedding
         }
 
         CheckEvents(result, path, root, @class, root, diagnostics);
-        foreach (var item in root.Descendants())
+        foreach (var item in root.Children)
         {
-            if (item.IsOverride)
+            CheckObject(result, path, root, @class, item, inInstance: false, hasForm, diagnostics);
+        }
+    }
+
+    /// <summary>
+    /// One object and its contents, depth first in file order. Inside a frame instance — an <c>inline</c> object, or (LANG-956) an
+    /// <c>inherited</c> object of a descendant file whose class has a form, an instance the ancestor placed — the override blocks name
+    /// frame components (no field of the root; events checked, LANG-952, 953) and a nested <c>object</c> / <c>inline</c> is not
+    /// reported (LANG-954: the reader reports F0110).
+    /// </summary>
+    private static void CheckObject(BindingResult result, string path, FormObject root, ClassTypeSymbol @class, FormObject item, bool inInstance,
+        Func<ClassTypeSymbol, bool> hasForm, List<Diagnostic> diagnostics)
+    {
+        if (inInstance)
+        {
+            if (item.Keyword == "inherited")
             {
                 CheckEvents(result, path, root, @class, item, diagnostics);  // a component of the frame: no field of the root (LANG-952)
-                continue;
+                foreach (var child in item.Children)
+                {
+                    CheckObject(result, path, root, @class, child, inInstance: true, hasForm, diagnostics);
+                }
             }
 
-            var field = @class.SelfAndAncestors().SelectMany(c => c.Fields)
-                .FirstOrDefault(f => f.Visibility == Visibility.Published && IdentifierComparer.Instance.Equals(f.Name, item.Name));
-            if (field is null)
-            {
-                diagnostics.Add(Diagnostic.Create("E3101", At(path, item.Line, item.Column), root.Name, "field", item.Name + ": " + item.ClassName, @class.Name));
-            }
-            else if (result.Scope.Lookup(item.ClassName) is ClassTypeSymbol component
-                     ? !(field.Type is ClassTypeSymbol declared && component.InheritsFrom(declared))
-                     : field.Type is not ClassTypeSymbol)
-            {
-                diagnostics.Add(Diagnostic.Create("E3102", At(path, item.Line, item.Column), root.Name, field.Name, item.ClassName));
-            }
+            return;
+        }
 
-            CheckEvents(result, path, root, @class, item, diagnostics);
+        CheckField(result, path, root, @class, item, diagnostics);
+        CheckEvents(result, path, root, @class, item, diagnostics);
+        var instance = item.Keyword == "inline"
+                       || item.Keyword == "inherited" && result.Scope.Lookup(item.ClassName) is ClassTypeSymbol frame && frame.SelfAndAncestors().Any(hasForm);
+        foreach (var child in item.Children)
+        {
+            CheckObject(result, path, root, @class, child, instance, hasForm, diagnostics);
+        }
+    }
+
+    /// <summary>LANG-671, 952, 956: a published field of the root class or an ancestor (E3101), of the object's class when visible (E3102).</summary>
+    private static void CheckField(BindingResult result, string path, FormObject root, ClassTypeSymbol @class, FormObject item, List<Diagnostic> diagnostics)
+    {
+        var field = @class.SelfAndAncestors().SelectMany(c => c.Fields)
+            .FirstOrDefault(f => f.Visibility == Visibility.Published && IdentifierComparer.Instance.Equals(f.Name, item.Name));
+        if (field is null)
+        {
+            diagnostics.Add(Diagnostic.Create("E3101", At(path, item.Line, item.Column), root.Name, "field", item.Name + ": " + item.ClassName, @class.Name));
+        }
+        else if (result.Scope.Lookup(item.ClassName) is ClassTypeSymbol component
+                 ? !(field.Type is ClassTypeSymbol declared && component.InheritsFrom(declared))
+                 : field.Type is not ClassTypeSymbol)
+        {
+            diagnostics.Add(Diagnostic.Create("E3102", At(path, item.Line, item.Column), root.Name, field.Name, item.ClassName));
         }
     }
 
