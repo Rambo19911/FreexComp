@@ -29,6 +29,7 @@ E2604  reserved  lead decision 2026-11-14 (C-096): no case needs it; unrelated c
 W1011  Phase8  lead note 2026-11-14 (C-067): reserved for Phase 8, no rule defines it yet
 W1012  retired  lead note 2026-11-14 (C-067): LANG-280 rule 2 makes an out-of-range subrange constant E2012
 W1030  retired  F06-001 (C-301): 'safecall' is implemented (com-interfaces.md LANG-685); never reported
+E2657  retired  F06-001 (C-352): members of a dispatch interface without dispid are numbered automatically (com-interfaces.md LANG-694); never reported
 W1050  elsewhere UnitBindingTests  a hint directive is reported outside its own unit (LANG-472, C-127)
 W1051  elsewhere UnitBindingTests  a hint directive is reported outside its own unit (LANG-472, C-127)
 W1052  elsewhere UnitBindingTests  a hint directive is reported outside its own unit (LANG-472, C-127)

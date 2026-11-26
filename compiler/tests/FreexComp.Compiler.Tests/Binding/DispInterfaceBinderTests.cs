@@ -175,12 +175,10 @@ public sealed class DispInterfaceBinderTests
         AssertDiagnostics(
             [
                 "E2660(2,23): 'an ancestor' is not allowed in a dispatch interface",
-                "E2657(3,15): Member 'NoId' of a dispatch interface needs a 'dispid'",
                 "E2659(5,32): Duplicate dispid 1 in 'IBad'",
                 "E2660(6,31): 'overload' is not allowed in a dispatch interface",
                 "E2660(7,31): 'stdcall' is not allowed in a dispatch interface",
                 "E2660(8,25): 'read' is not allowed in a dispatch interface",
-                "E2657(9,14): Member 'NoPropId' of a dispatch interface needs a 'dispid'",
                 "E2658(10,23): Type 'untyped parameter' is not an Automation type",
                 "E2660(11,32): 'a default value' is not allowed in a dispatch interface",
                 "E2014(12,27): Type of expression must be Integer",
@@ -247,6 +245,59 @@ public sealed class DispInterfaceBinderTests
         AssertDiagnostics(
             ["E2014(1,43): Type of expression must be Integer", "E2900(1,96): Feature not supported: readonly outside a dispatch interface"],
             ("type IFoo = interface procedure P; dispid 'x'; function G: Integer; property X: Integer read G readonly; end; begin end."));
+    }
+
+    /// <summary>
+    /// LANG-694 amended (C-352): a member of a dispatch interface without <c>dispid</c> is numbered automatically, in declaration
+    /// order, after the highest <c>dispid</c> written in that interface (1 when none is written; negative numbers such as -4 do not
+    /// lower the start); explicit numbers are kept; a property's accessors carry its number; E2659 still reports duplicates among the
+    /// explicit numbers, and an automatic number never collides with one. E2657 is no longer reported.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "LANG-694")]
+    public void MemberWithoutDispid_GetsNumberAfterTheHighest()
+    {
+        var result = BindWithDispatch("""
+            type
+              IAuto = dispinterface
+                procedure First;
+                procedure Fixed; dispid 7;
+                property Value: Integer;
+                function Neg: Integer; dispid -4;
+                property Item[I: Integer]: Integer dispid 0; default;
+                procedure Last;
+              end;
+              INone = dispinterface
+                procedure A;
+                property B: Integer readonly;
+              end;
+              INeg = dispinterface
+                function Items: IDispatch; dispid -4;
+                procedure A;
+              end;
+            begin
+            end.
+            """);
+        Assert.Empty(Format(result.Diagnostics));
+        InterfaceTypeSymbol Named(string name) => result.Unit.ImplementationMembers.OfType<InterfaceTypeSymbol>().Single(i => i.Name == name);
+        var auto = Named("IAuto");
+        Assert.Equal([("First", 8), ("Fixed", 7), ("Neg", -4), ("Last", 10)], auto.Methods.Select(m => (m.Name, m.DispId ?? int.MinValue)));
+        Assert.Equal([("Value", 9), ("Item", 0)], auto.Properties.Select(p => (p.Name, p.DispId ?? int.MinValue)));
+        Assert.Equal(9, auto.Properties[0].ReadMethod!.DispId);
+        Assert.Equal(9, auto.Properties[0].WriteMethod!.DispId);
+        var none = Named("INone");
+        Assert.Equal([1], none.Methods.Select(m => m.DispId));
+        Assert.Equal(2, none.Properties[0].DispId);
+        Assert.Null(none.Properties[0].WriteMethod);
+        Assert.Equal(2, none.Properties[0].ReadMethod!.DispId);
+        Assert.Equal([-4, 1], Named("INeg").Methods.Select(m => m.DispId));
+
+        AssertDiagnostics(
+            ["E2659(1,83): Duplicate dispid 1 in 'IDup'"],
+            "type IDup = dispinterface procedure X; procedure Y; dispid 1; procedure Z; dispid 1; end; begin end.");
+        var dup = BindWithDispatch("type IDup = dispinterface procedure X; procedure Y; dispid 1; procedure Z; end; begin end.");
+        Assert.Empty(Format(dup.Diagnostics));
+        Assert.Equal([2, 1, 3], dup.Unit.ImplementationMembers.OfType<InterfaceTypeSymbol>().Single().Methods.Select(m => m.DispId));
     }
 
     // ------------------------------------------------------------------ LANG-696

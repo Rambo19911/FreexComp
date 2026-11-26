@@ -1444,6 +1444,64 @@ public sealed partial class PcuTests
         Assert.True(result.Success, string.Join("\n", result.Diagnostics.Select(d => d.ToText())));
     }
 
+    /// <summary>
+    /// CMP-1392 (C-370): the elements of an unscoped enumeration nested in a class or a helper are members of the outer type, so
+    /// <c>TOuter.eC</c> and <c>TIntHelper.fC</c> bind against the <c>.pcu</c> as against the source (with the enumeration's type and
+    /// its section's visibility: an element of a strict private one is E2610 from another unit in both).
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1392")]
+    public void NestedEnumElementThroughOuterType()
+    {
+        const string Unit = """
+            unit U;
+            interface
+            type
+              TOuter = class
+              public
+                type TE = (eA, eB, eC);
+              end;
+              TIntHelper = record helper for Integer
+              strict private
+                type THidden = (hA, hB);
+              public
+                type TF = (fA, fB, fC);
+              end;
+            implementation
+            end.
+            """;
+        const string Program = "program P;\nuses U;\nconst\n  N = Ord(TOuter.eC) + Ord(TIntHelper.fB);\nvar\n  E: TOuter.TE;\n  F: TIntHelper.TF;\n"
+            + "  A: array[0..N] of Byte;\nbegin\n  E := TOuter.eC;\n  F := TIntHelper.fC;\n  Writeln(Ord(E) + Ord(F) + SizeOf(A));\nend.\n";
+        const string Hidden = "program P;\nuses U;\nbegin\n  Writeln(Ord(TIntHelper.hB));\nend.\n";
+        string[] hiddenErrors = ["P.pas(4,26): E2610 Cannot access strict private member 'hB' of 'TIntHelper'"];
+
+        var source = Compilation.Create(Options(), [], Files(u: Unit, program: Program))
+            .Emit(new EmitOptions { Stage = EmitStage.Check }, TestContext.Current.CancellationToken);
+        Assert.True(source.Success, string.Join("\n", source.Diagnostics.Select(d => d.ToText())));
+        Assert.Equal(hiddenErrors, Errors(Compilation.Create(Options(), [], Files(u: Unit, program: Hidden))
+            .Emit(new EmitOptions { Stage = EmitStage.Check }, TestContext.Current.CancellationToken)));
+
+        var pcu = Pcu("U", Files(u: Unit, program: "program P;\nuses U;\nbegin\nend.\n")).ToJsonString();
+        var fromPcu = AgainstPcu(pcu, Program);
+        Assert.True(fromPcu.Success, string.Join("\n", fromPcu.Diagnostics.Select(d => d.ToText())));
+        Assert.Equal(hiddenErrors, Errors(AgainstPcu(pcu, Hidden)));
+
+        EmitResult AgainstPcu(string text, string program)
+        {
+            var fs = new InMemoryFileSystem().Add(@"C:\p\P.pas", program).AddSystem()
+                .Add(Path.Combine(PcuImportTests.Lib, "U.pcu"), text + "\n").Add(Path.Combine(PcuImportTests.Lib, "U.obj"), "");
+            return Compilation.Create(Options() with { SearchPaths = [PcuImportTests.Lib] }, [], fs)
+                .Emit(new EmitOptions { Stage = EmitStage.Check }, TestContext.Current.CancellationToken);
+        }
+
+        static string[] Errors(EmitResult result) =>
+        [
+            .. result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error)
+                .Select(d => $"{Path.GetFileName(d.Location.Path)}({d.Location.LineSpan.Start.Line + 1},{d.Location.LineSpan.Start.Column + 1}): {d.Code} {d.Message}"),
+        ];
+    }
+
     // ------------------------------------------------------------------ Emit writes it (CMP-141, toolchain.md §6)
 
     [Fact]

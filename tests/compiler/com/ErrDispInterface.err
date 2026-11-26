@@ -1,5 +1,4 @@
 ErrDispInterface.pas(10,23): error E2660: 'an ancestor' is not allowed in a dispatch interface
-ErrDispInterface.pas(12,15): error E2657: Member 'NoNumber' of a dispatch interface needs a 'dispid'
 ErrDispInterface.pas(14,30): error E2659: Duplicate dispid 1 in 'IBad'
 ErrDispInterface.pas(15,49): error E2660: 'overload' is not allowed in a dispatch interface
 ErrDispInterface.pas(16,37): error E2660: 'stdcall' is not allowed in a dispatch interface

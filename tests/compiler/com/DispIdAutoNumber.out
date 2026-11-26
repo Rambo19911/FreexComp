@@ -1,0 +1,17 @@
+-- IAuto
+dispid 8 flags 1
+dispid 7 flags 1
+dispid 9 flags 2
+dispid 9 flags 4
+dispid -4 flags 1
+dispid 0 flags 2
+dispid 10 flags 1
+-- INone
+dispid 1 flags 1
+dispid 2 flags 2
+dispid 3 flags 1
+-- INeg
+dispid -4 flags 1
+dispid 1 flags 1
+sum 0
+done

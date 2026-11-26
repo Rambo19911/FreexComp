@@ -12,8 +12,9 @@ internal sealed partial class DeclarationBinder
     /// <summary>
     /// LANG-693: the body of <c>D = dispinterface … end</c>. The type has no method table of its own: its values are references to
     /// an <c>IDispatch</c>, so <c>System.IDispatch</c> (else the root interface) is its internal ancestor — that gives the
-    /// conversions to <c>IDispatch</c> and <c>IInterface</c> and the reference counting of interfaces. Members need a <c>dispid</c>
-    /// (E2657), unique in the type (E2659); their types are Automation types (E2658); anything else is E2660.
+    /// conversions to <c>IDispatch</c> and <c>IInterface</c> and the reference counting of interfaces. Members without a <c>dispid</c>
+    /// are numbered after the highest written one (C-352); written ones are unique in the type (E2659); their types are Automation
+    /// types (E2658); anything else is E2660.
     /// </summary>
     private void BindDispInterfaceBody(InterfaceTypeSymbol type, DispInterfaceTypeSyntax syntax)
     {
@@ -34,6 +35,7 @@ internal sealed partial class DeclarationBinder
         var properties = ImmutableArray.CreateBuilder<PropertySymbol>();
         var names = new Dictionary<string, Symbol>(IdentifierComparer.Instance);
         var dispIds = new Dictionary<int, SyntaxNode>();
+        var unnumbered = new List<Symbol>();
         foreach (var member in syntax.Members)
         {
             switch (member)
@@ -42,7 +44,7 @@ internal sealed partial class DeclarationBinder
                     _diagnostics.Report(section.StrictKeyword ?? section.VisibilityKeyword, "E2660",
                         (section.StrictKeyword ?? section.VisibilityKeyword).Text.ToLowerInvariant());
                     break;
-                case MethodDeclarationSyntax method when BindDispMethod(type, method, dispIds) is { } symbol:
+                case MethodDeclarationSyntax method when BindDispMethod(type, method, dispIds, unnumbered) is { } symbol:
                     if (names.TryGetValue(symbol.Name, out var existing))
                     {
                         _diagnostics.ReportRedeclared(((IdentifierNameSyntax)method.Heading.Name).Identifier, symbol.Name, existing);   // no overloading
@@ -54,7 +56,7 @@ internal sealed partial class DeclarationBinder
                     break;
                 case MethodDeclarationSyntax:
                     break;
-                case PropertyDeclarationSyntax property when BindDispProperty(type, property, names, dispIds, properties) is { } symbol:
+                case PropertyDeclarationSyntax property when BindDispProperty(type, property, names, dispIds, unnumbered, properties) is { } symbol:
                     properties.Add(symbol);
                     break;
                 case PropertyDeclarationSyntax:
@@ -70,12 +72,31 @@ internal sealed partial class DeclarationBinder
             }
         }
 
+        // LANG-694 (C-352): members without a dispid are numbered in declaration order after the highest written one (1 when none
+        // is written or the highest is negative), so they never collide with an explicit number
+        var next = Math.Max(dispIds.Count == 0 ? 0 : dispIds.Keys.Max(), 0);
+        foreach (var member in unnumbered)
+        {
+            next++;
+            switch (member)
+            {
+                case MethodSymbol method:
+                    method.DispId = next;
+                    break;
+                case PropertySymbol property:
+                    property.DispId = next;
+                    property.ReadMethod?.DispId = next;
+                    property.WriteMethod?.DispId = next;
+                    break;
+            }
+        }
+
         type.Methods = methods.ToImmutable();
         type.Properties = properties.ToImmutable();
     }
 
     /// <summary>A method of a dispatch interface: a procedure or function whose only directive is <c>dispid N</c> (LANG-693, 694).</summary>
-    private MethodSymbol? BindDispMethod(InterfaceTypeSymbol type, MethodDeclarationSyntax syntax, Dictionary<int, SyntaxNode> dispIds)
+    private MethodSymbol? BindDispMethod(InterfaceTypeSymbol type, MethodDeclarationSyntax syntax, Dictionary<int, SyntaxNode> dispIds, List<Symbol> unnumbered)
     {
         var heading = syntax.Heading;
         if (heading.Name is not IdentifierNameSyntax { Identifier: { IsMissing: false } identifier })
@@ -126,7 +147,12 @@ internal sealed partial class DeclarationBinder
             }
         }
 
-        method.DispId = BindMemberDispId(type, method.Name, identifier, number, dispIds);
+        method.DispId = BindMemberDispId(type, number, dispIds);
+        if (number is null)
+        {
+            unnumbered.Add(method);
+        }
+
         return method;
     }
 
@@ -137,7 +163,7 @@ internal sealed partial class DeclarationBinder
     /// index arguments and the default property bind like those of every other property.
     /// </summary>
     private PropertySymbol? BindDispProperty(InterfaceTypeSymbol type, PropertyDeclarationSyntax syntax, Dictionary<string, Symbol> names,
-        Dictionary<int, SyntaxNode> dispIds, ImmutableArray<PropertySymbol>.Builder bound)
+        Dictionary<int, SyntaxNode> dispIds, List<Symbol> unnumbered, ImmutableArray<PropertySymbol>.Builder bound)
     {
         if (syntax.Identifier.IsMissing)
         {
@@ -195,7 +221,12 @@ internal sealed partial class DeclarationBinder
             }
         }
 
-        property.DispId = BindMemberDispId(type, name, syntax.Identifier, number, dispIds);
+        property.DispId = BindMemberDispId(type, number, dispIds);
+        if (number is null)
+        {
+            unnumbered.Add(property);
+        }
+
         if (syntax.DefaultKeyword is { } defaultKeyword)
         {
             if (!property.IsArrayProperty)
@@ -283,14 +314,13 @@ internal sealed partial class DeclarationBinder
     }
 
     /// <summary>
-    /// LANG-694: the <c>dispid</c> of a dispatch-interface member — required (E2657), an integer constant in the <c>Integer</c>
-    /// range, not used by an earlier member (E2659 with the first as related location).
+    /// LANG-694: the written <c>dispid</c> of a dispatch-interface member — an integer constant in the <c>Integer</c> range, not used
+    /// by an earlier member (E2659 with the first as related location); none written is numbered later (C-352: no E2657).
     /// </summary>
-    private int? BindMemberDispId(InterfaceTypeSymbol type, string name, SyntaxToken identifier, ExpressionSyntax? value, Dictionary<int, SyntaxNode> dispIds)
+    private int? BindMemberDispId(InterfaceTypeSymbol type, ExpressionSyntax? value, Dictionary<int, SyntaxNode> dispIds)
     {
         if (value is null)
         {
-            _diagnostics.Report(identifier, "E2657", name);
             return null;
         }
 
