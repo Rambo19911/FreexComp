@@ -440,18 +440,18 @@ internal sealed partial class DeclarationBinder
         }
 
         var text = NameOf(name.Identifier);
-        if (TypeMembers.NestedType(outer, text) is { } inner)
+        if (TypeMembers.MemberNestedType(outer, text) is { } inner)                         // C-354: inherited too
         {
             if (NestedNames.InaccessibleNestedType(_scope, inner) is { } visibility)
             {
-                _diagnostics.Report(name, "E2610", visibility, inner.Name, TypeMembers.DisplayName(outer));    // LANG-774 (C-344)
+                _diagnostics.Report(name, "E2610", visibility, inner.Name, TypeMembers.DisplayName(TypeMembers.EnclosingTypes(inner).First()));   // LANG-774 (C-344, C-354: the declaring type)
                 return _types.Error;
             }
 
             return inner;
         }
 
-        if (TypeMembers.NestedGenerics(outer, text).Select(g => g.ParameterNames.Length).DefaultIfEmpty(0).Min() is var arity and > 0)
+        if (TypeMembers.MemberNestedGenerics(outer, text).Select(g => g.ParameterNames.Length).DefaultIfEmpty(0).Min() is var arity and > 0)
         {
             _diagnostics.Report(name, "E2703", text, arity);                                // LANG-781
             return _types.Error;
@@ -513,11 +513,11 @@ internal sealed partial class DeclarationBinder
                     return null;
                 }
 
-                if (TypeMembers.NestedType(outer, NameOf(right)) is { } inner)
+                if ((implementationPath ? TypeMembers.NestedType(outer, NameOf(right)) : TypeMembers.MemberNestedType(outer, NameOf(right))) is { } inner)
                 {
                     if (!implementationPath && NestedNames.InaccessibleNestedType(_scope, inner) is { } visibility)
                     {
-                        _diagnostics.Report(rightName, "E2610", visibility, inner.Name, TypeMembers.DisplayName(outer));    // LANG-774 (C-344)
+                        _diagnostics.Report(rightName, "E2610", visibility, inner.Name, TypeMembers.DisplayName(TypeMembers.EnclosingTypes(inner).First()));   // LANG-774 (C-354)
                         return null;
                     }
 

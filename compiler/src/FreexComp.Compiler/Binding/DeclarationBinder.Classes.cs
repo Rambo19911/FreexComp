@@ -66,8 +66,12 @@ internal sealed partial class DeclarationBinder
         BindClassBody(type, syntax);
     }
 
-    /// <summary>Parent, modifiers, fields (ABI §7.1 layout), methods and the VMT slots of one class.</summary>
-    private void BindClassBody(ClassTypeSymbol type, ClassTypeSyntax syntax)
+    /// <summary>
+    /// Parent, modifiers, fields (ABI §7.1 layout), methods and the VMT slots of one class. <paramref name="bound"/>: the parent and
+    /// listed interfaces already bound by the binder that handed the body to this one (C-354).
+    /// </summary>
+    private void BindClassBody(ClassTypeSymbol type, ClassTypeSyntax syntax,
+        (ClassTypeSymbol? Parent, List<(InterfaceTypeSymbol Interface, TypeSyntax Syntax)> Listed)? bound = null)
     {
         if (!(_scope.Kind == ScopeKind.TypeMember && ReferenceEquals(_scope.Owner, type))
             && Members(syntax.Members, Visibility.Public).Any(m => m.Member is ConstSectionSyntax or TypeSectionSyntax))
@@ -89,25 +93,29 @@ internal sealed partial class DeclarationBinder
         type.IsForward = false;
         type.IsAbstract = syntax.Modifier?.ContextualKind == SyntaxKind.AbstractKeyword;
         type.IsSealed = syntax.Modifier?.ContextualKind == SyntaxKind.SealedKeyword;
-        var listed = new List<(InterfaceTypeSymbol Interface, TypeSyntax Syntax)>();
+        var listed = bound?.Listed ?? [];
         var resolutions = new List<MethodResolutionSyntax>();
-        type.Parent = BindParent(type, syntax.Heritage, listed);
+        type.Parent = bound is { } given ? given.Parent : BindParent(type, syntax.Heritage, listed);
         if (_inheritedNested is { } inheritedNested)
         {
             _inheritedNested = null;
-            foreach (var ancestor in type.Parent?.SelfAndAncestors() ?? [])
-            {
-                foreach (var member in ancestor.NestedMembers)
-                {
-                    inheritedNested.TryDeclare(member, out _);                  // the nearest ancestor's declaration wins
-                }
-
-                foreach (var (name, target) in ancestor.NestedAliases)
-                {
-                    inheritedNested.TryDeclare(name, target, out _);
-                }
-            }
+            DeclareInheritedNested(inheritedNested, type.Parent);
         }
+        else if (bound is null && !(_scope.Kind == ScopeKind.TypeMember && ReferenceEquals(_scope.Owner, type))
+            && (type.Parent?.SelfAndAncestors() ?? []).Any(a => !a.NestedMembers.IsEmpty || !a.NestedAliases.IsEmpty))
+        {
+            // LANG-772 (C-354): a class without type or const sections of its own still sees its ancestors' nested names in its
+            // member list; its body is bound in a member scope that holds them (the container stays, no nested type is declared)
+            var inherited = new Scope(ScopeKind.TypeMember, _scope, type);
+            DeclareInheritedNested(inherited, type.Parent);
+            new DeclarationBinder(_types, new Scope(ScopeKind.TypeMember, inherited, type), _container, _diagnostics)
+            {
+                _sectionTypeNames = _sectionTypeNames,
+                _forwardPointers = _forwardPointers,
+            }.BindClassBody(type, syntax, (type.Parent, listed));
+            return;
+        }
+
         var state = syntax.ClassKeyword.DirectiveState;
         type.IsTypeInfo = state.TypeInfo || type.Parent?.IsTypeInfo == true;                 // LANG-611, ABI-142
         type.RttiScope = state.Rtti switch                                                  // LANG-882 (C-169)
@@ -220,6 +228,23 @@ internal sealed partial class DeclarationBinder
             else
             {
                 yield return (member, visibility);
+            }
+        }
+    }
+
+    /// <summary>LANG-772 (C-344, C-354): declares the nested types, constants and nested aliases of <paramref name="parent"/> and its ancestors, nearest first.</summary>
+    private static void DeclareInheritedNested(Scope scope, ClassTypeSymbol? parent)
+    {
+        foreach (var ancestor in parent?.SelfAndAncestors() ?? [])
+        {
+            foreach (var member in ancestor.NestedMembers)
+            {
+                scope.TryDeclare(member, out _);                                // the nearest ancestor's declaration wins
+            }
+
+            foreach (var (name, target) in ancestor.NestedAliases)
+            {
+                scope.TryDeclare(name, target, out _);
             }
         }
     }

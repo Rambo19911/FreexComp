@@ -360,11 +360,11 @@ internal sealed partial class DeclarationBinder
         GenericTypeSymbol? generic;
         if (outer is not null)
         {
-            var all = TypeMembers.NestedGenerics(outer, text).ToList();
+            var all = TypeMembers.MemberNestedGenerics(outer, text).ToList();             // C-354: inherited too
             generic = all.FirstOrDefault(g => g.ParameterNames.Length == arguments.Count);
             if (generic is null)
             {
-                if (all.Count > 0 || TypeMembers.NestedType(outer, text) is not null)
+                if (all.Count > 0 || TypeMembers.MemberNestedType(outer, text) is not null)
                 {
                     _diagnostics.Report(name, "E2703", text, all.Count > 0 ? all.Min(g => g.ParameterNames.Length) : 0);
                 }
@@ -378,7 +378,7 @@ internal sealed partial class DeclarationBinder
 
             if (NestedNames.InaccessibleNestedType(_scope, generic) is { } visibility)
             {
-                _diagnostics.Report(name, "E2610", visibility, generic.Name, TypeMembers.DisplayName(outer));      // LANG-774
+                _diagnostics.Report(name, "E2610", visibility, generic.Name, TypeMembers.DisplayName(TypeMembers.EnclosingTypes(generic).FirstOrDefault() ?? outer));   // LANG-774 (C-354: the declaring type)
                 return _types.Error;
             }
         }

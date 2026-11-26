@@ -653,7 +653,7 @@ internal sealed partial class ExpressionBinder
 
             if (candidates.IsEmpty)
             {
-                if (TypeMembers.NestedType(className, name) is { } nestedType)
+                if (TypeMembers.MemberNestedType(className, name) is { } nestedType)
                 {
                     _diagnostics.Report(syntax, "E2009", nestedType.Name);              // a nested type is not a value (C-311)
                 }

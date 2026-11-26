@@ -369,7 +369,7 @@ public sealed class SemanticModel
             : ContainerOf(left) switch
             {
                 UnitSymbol unit => unit.InterfaceMembers,
-                TypeSymbol type => TypeMembers.NestedGenerics(type, name),
+                TypeSymbol type => TypeMembers.MemberNestedGenerics(type, name),            // C-354: inherited too
                 _ => [],
             };
         if (candidates.OfType<GenericTypeSymbol>().FirstOrDefault(g => IdentifierComparer.Instance.Equals(g.Name, name) && g.ParameterNames.Length == arity)

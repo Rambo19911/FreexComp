@@ -441,4 +441,23 @@ public sealed class CompletionTests
         Assert.Contains("Create", nested);
         Assert.DoesNotContain("MoveNext", nested);
     }
+
+    /// <summary>LANG-780 amendment (C-354): a derived class qualifier offers its ancestors' nested types (an instance ancestor's too).</summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "LANG-780")]
+    public void DerivedQualifier_OffersInheritedNestedTypes()
+    {
+        static string[] After(string qualifier) =>
+            [.. Complete("program P;\nuses UG;\ntype\n  TDerived = class(TOuter) end;\n  TMyList = class(TList<Integer>) end;\nvar O: TObject;\nbegin\n  O := "
+                + qualifier + "$$\nend.", '.', ("UG.pas", GenericNamesFixture.Unit)).List.Items.Select(i => i.Label)];
+
+        string[] derived = After("TDerived.");
+        Assert.Contains("TInner", derived);
+        Assert.Contains("TBox", derived);
+        Assert.Contains("TEnumerator", After("TMyList."));
+        string[] inner = After("TDerived.TInner.");
+        Assert.Contains("Create", inner);
+        Assert.DoesNotContain("Go", inner);
+    }
 }

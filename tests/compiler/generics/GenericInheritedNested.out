@@ -1,0 +1,8 @@
+TInner base inner
+TRUE TRUE TRUE
+derived shadowed / base shadowed FALSE
+base inner guarded
+one
+two
+TEnumerator one TRUE
+TRUE one

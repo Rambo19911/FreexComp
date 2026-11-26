@@ -73,6 +73,21 @@ internal static class TypeMembers
     public static IEnumerable<GenericTypeSymbol> NestedGenerics(TypeSymbol type, string name) =>
         NestedMembers(type).OfType<GenericTypeSymbol>().Where(g => IdentifierComparer.Instance.Equals(g.Name, name));
 
+    /// <summary>
+    /// LANG-780 amendment (C-354): the nested type <paramref name="name"/> in the type member scope of <paramref name="type"/> — its
+    /// own, else the nearest ancestor's (a class's own nested type hides a same-named inherited one).
+    /// </summary>
+    public static TypeSymbol? MemberNestedType(TypeSymbol type, string name) =>
+        SelfAndAncestors(type).Select(t => NestedType(t, name)).FirstOrDefault(t => t is not null);
+
+    /// <summary>LANG-780 amendment (C-354): the generic types <paramref name="name"/> of the nearest of <paramref name="type"/> and its ancestors that declares any.</summary>
+    public static IEnumerable<GenericTypeSymbol> MemberNestedGenerics(TypeSymbol type, string name) =>
+        SelfAndAncestors(type).Select(t => NestedGenerics(t, name).ToList()).FirstOrDefault(g => g.Count > 0) ?? [];
+
+    /// <summary>LANG-780 amendment (C-354): the nested member (type or constant) <paramref name="name"/> of <paramref name="type"/> or its nearest ancestor.</summary>
+    public static Symbol? MemberNestedMember(TypeSymbol type, string name) =>
+        SelfAndAncestors(type).Select(t => NestedMembers(t).FirstOrDefault(m => IdentifierComparer.Instance.Equals(m.Name, name))).FirstOrDefault(m => m is not null);
+
     /// <summary>The class or record a nested type is declared in, innermost first (LANG-770).</summary>
     public static IEnumerable<TypeSymbol> EnclosingTypes(Symbol symbol)
     {

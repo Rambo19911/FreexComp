@@ -301,4 +301,223 @@ public sealed class NestedTypeBindingTests
             procedure TOuter.TInner.Run; begin end;
             begin end.
             """));
+
+    /// <summary>
+    /// LANG-780 amendment (C-354): a class's type member scope includes its ancestors' nested types — <c>TDerived.TInner</c> in type
+    /// and expression positions, unit-qualified, and the simple name in the derived class's member list and method bodies (LANG-772).
+    /// </summary>
+    [Fact]
+    [Trait("Req", "LANG-780")]
+    [Trait("Req", "LANG-772")]
+    [Trait("Req", "LANG-774")]
+    public void InheritedNestedType_ThroughDerivedClass()
+    {
+        var (result, _) = Bind("""
+            program P;
+            type
+              TBase = class
+              public
+                type
+                  TInner = class
+                    class function Id: Integer;
+                  end;
+                  TCell<T> = class
+                    V: T;
+                    class function Id: Integer;
+                  end;
+                const Limit = 7;
+              protected
+                type
+                  THidden = class
+                    class function Id: Integer;
+                  end;
+              end;
+              TDerived = class(TBase)
+              public
+                F: TInner;
+                G: THidden;
+                function Make: TInner;
+              end;
+              TMore = class(TDerived)
+              end;
+            class function TBase.TInner.Id: Integer; begin Result := 1 end;
+            class function TBase.TCell<T>.Id: Integer; begin Result := SizeOf(T) end;
+            class function TBase.THidden.Id: Integer; begin Result := 2 end;
+            function TDerived.Make: TInner;
+            var H: THidden;
+            begin
+              H := G;
+              Result := nil;
+              if THidden.Id + TInner.Id = 3 then
+                Result := F;
+            end;
+            var
+              X: TDerived.TInner;
+              Y: P.TDerived.TInner;
+              Z: TMore.TInner;
+              C: TDerived.TCell<Integer>;
+              D: TBase.TCell<Integer>;
+              I: Integer;
+            begin
+              I := TDerived.TInner.Id + P.TMore.TInner.Id + TDerived.TCell<Integer>.Id + TMore.Limit;
+              X := nil;
+              Z := X;
+              Y := Z;
+              D := C;
+            end.
+            """);
+
+        Assert.Empty(Format(result.Diagnostics));
+        var inner = Nested<ClassTypeSymbol>(Lookup<ClassTypeSymbol>(result, "TBase"), "TInner");
+        var derived = Lookup<ClassTypeSymbol>(result, "TDerived");
+        Assert.Same(inner, Lookup<VariableSymbol>(result, "X").Type);
+        Assert.Same(inner, Lookup<VariableSymbol>(result, "Y").Type);
+        Assert.Same(inner, Lookup<VariableSymbol>(result, "Z").Type);
+        Assert.Same(inner, derived.Fields.Single(f => f.Name == "F").Type);
+        Assert.Same(inner, derived.Methods.Single(m => m.Name == "Make").ReturnType);
+        Assert.Same(Lookup<VariableSymbol>(result, "D").Type, Lookup<VariableSymbol>(result, "C").Type);
+        Assert.Null(TypeMembers.NestedType(derived, "TInner"));                          // still declared only in TBase
+    }
+
+    /// <summary>LANG-780 amendment, LANG-774 (C-354): an inherited nested type keeps the visibility of the section that declares it.</summary>
+    [Fact]
+    [Trait("Req", "LANG-774")]
+    public void InheritedNestedType_Visibility_E2610() =>
+        Assert.Equal(
+        [
+            "E2610(15,15): Cannot access strict protected member 'THidden' of 'TBase'",
+            "E2610(17,17): Cannot access strict protected member 'THidden' of 'TBase'",
+        ], BindDiagnostics("""
+            program P;
+            type
+              TBase = class
+              strict protected
+                type
+                  THidden = class
+                    class function Id: Integer;
+                  end;
+              end;
+              TDerived = class(TBase)
+              end;
+            class function TBase.THidden.Id: Integer; begin Result := 1 end;
+            var
+              I: Integer;
+              X: TDerived.THidden;
+            begin
+              I := TDerived.THidden.Id;
+            end.
+            """));
+
+    /// <summary>LANG-780 amendment (C-354): through a generic instance the inherited name is the ancestor instance's nested type.</summary>
+    [Fact]
+    [Trait("Req", "LANG-780")]
+    [Trait("Req", "LANG-775")]
+    public void InheritedNestedType_ThroughGenericInstance()
+    {
+        var (result, _) = Bind("""
+            program P;
+            type
+              TList<T> = class
+              public
+                type
+                  TEnumerator = class
+                    Current: T;
+                    class function Id: Integer;
+                  end;
+                function GetEnumerator: TEnumerator;
+              end;
+              TObjectList<T: class> = class(TList<T>)
+              public
+                function First: TEnumerator;
+              end;
+              TFoo = class
+              end;
+              TIntList = class(TList<Integer>)
+              end;
+            class function TList<T>.TEnumerator.Id: Integer; begin Result := SizeOf(T) end;
+            function TList<T>.GetEnumerator: TEnumerator; begin Result := nil end;
+            function TObjectList<T>.First: TEnumerator; begin Result := GetEnumerator end;
+            var
+              A: TObjectList<TFoo>.TEnumerator;
+              B: TList<TFoo>.TEnumerator;
+              C: TIntList.TEnumerator;
+              D: TList<Integer>.TEnumerator;
+              E: TList<string>.TEnumerator;
+              I: Integer;
+            begin
+              I := TObjectList<TFoo>.TEnumerator.Id + TIntList.TEnumerator.Id;
+              A := nil;
+              B := A;
+              C := nil;
+              D := C;
+              A.Current := nil;
+              D.Current := 1;
+            end.
+            """);
+
+        Assert.Empty(Format(result.Diagnostics));
+        var a = Lookup<VariableSymbol>(result, "A").Type;
+        var c = Lookup<VariableSymbol>(result, "C").Type;
+        Assert.Same(a, Lookup<VariableSymbol>(result, "B").Type);
+        Assert.Same(c, Lookup<VariableSymbol>(result, "D").Type);
+        Assert.NotSame(a, c);
+        Assert.NotSame(c, Lookup<VariableSymbol>(result, "E").Type);
+        Assert.Equal("TList<TFoo>.TEnumerator", TypeMembers.DisplayName(a));
+    }
+
+    /// <summary>LANG-780 amendment (C-354): a nested type of the class itself hides a same-named inherited one.</summary>
+    [Fact]
+    [Trait("Req", "LANG-780")]
+    [Trait("Req", "LANG-772")]
+    public void InheritedNestedType_HiddenByOwn()
+    {
+        var (result, _) = Bind("""
+            program P;
+            type
+              TBase = class
+              public
+                type
+                  TInner = class
+                    A: Integer;
+                  end;
+              end;
+              TDerived = class(TBase)
+              public
+                type
+                  TInner = class
+                    B: string;
+                    class function Id: Integer;
+                  end;
+              public
+                F: TInner;
+                function Make: TInner;
+              end;
+              TMore = class(TDerived)
+              end;
+            class function TDerived.TInner.Id: Integer; begin Result := 2 end;
+            function TDerived.Make: TInner; begin Result := F; Result.B := 'x' end;
+            var
+              X: TDerived.TInner;
+              Y: TMore.TInner;
+              Z: TBase.TInner;
+              I: Integer;
+            begin
+              I := TMore.TInner.Id;
+              X := Y;
+              X.B := 'y';
+              Z.A := 1;
+            end.
+            """);
+
+        Assert.Empty(Format(result.Diagnostics));
+        var baseInner = Nested<ClassTypeSymbol>(Lookup<ClassTypeSymbol>(result, "TBase"), "TInner");
+        var derived = Lookup<ClassTypeSymbol>(result, "TDerived");
+        var own = Nested<ClassTypeSymbol>(derived, "TInner");
+        Assert.NotSame(baseInner, own);
+        Assert.Same(own, Lookup<VariableSymbol>(result, "X").Type);
+        Assert.Same(own, Lookup<VariableSymbol>(result, "Y").Type);
+        Assert.Same(baseInner, Lookup<VariableSymbol>(result, "Z").Type);
+        Assert.Same(own, derived.Fields.Single(f => f.Name == "F").Type);
+        Assert.Same(own, derived.Methods.Single(m => m.Name == "Make").ReturnType);
+    }
 }

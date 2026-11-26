@@ -40,12 +40,12 @@ internal static class NestedNames
                 return TypeNamedBy(scope, access.Expression, generic) switch
                 {
                     ErrorTypeSymbol error => error,
-                    { } outer when TypeMembers.NestedGenerics(outer, member.Value as string ?? member.Text).Any() => generic(name, null, outer),
+                    { } outer when TypeMembers.MemberNestedGenerics(outer, member.Value as string ?? member.Text).Any() => generic(name, null, outer),   // C-354: inherited too
                     _ => null,                                          // a generic method TUtil.Max<Integer>
                 };
             case MemberAccessExpressionSyntax { Name.Identifier: { IsMissing: false } member } access
                 when TypeNamedBy(scope, access.Expression, generic) is { } outer:
-                return outer is ErrorTypeSymbol ? outer : TypeMembers.NestedType(outer, member.Value as string ?? member.Text);
+                return outer is ErrorTypeSymbol ? outer : TypeMembers.MemberNestedType(outer, member.Value as string ?? member.Text);   // C-354
             default:
                 return null;
         }
@@ -109,6 +109,6 @@ internal static class NestedNames
         }
 
         var text = member.Value as string ?? member.Text;
-        return TypeMembers.NestedMembers(outer).FirstOrDefault(m => IdentifierComparer.Instance.Equals(m.Name, text));
+        return TypeMembers.MemberNestedMember(outer, text);                               // C-354: inherited too
     }
 }
