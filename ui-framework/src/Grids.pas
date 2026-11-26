@@ -296,10 +296,21 @@ type
 implementation
 
 uses
-  UIConsts;
+  UIConsts, UIAutomation, Accessibility;
 
 type
   TFormAccess = class(TCustomForm);
+
+  { ui-automation.md UIF-1417, UIF-1421 (the patterns of the grid come with U-157) }
+  TGridAutomationProvider = class(TWindowAutomationProvider)
+  public
+    class function DefaultControlType(Control: TControl): Integer; override;
+  end;
+
+class function TGridAutomationProvider.DefaultControlType(Control: TControl): Integer;
+begin
+  Result := UIA_DataGridControlTypeId;
+end;
 
 procedure GridError(const Msg: string);
 begin
@@ -2188,4 +2199,5 @@ end;
 
 initialization
   RegisterClasses([TStringGrid]);
+  RegisterAutomationProvider(TCustomGrid, TGridAutomationProvider);
 end.

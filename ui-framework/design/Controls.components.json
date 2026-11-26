@@ -26,7 +26,8 @@
     ] },
     "TFormBorderStyle": { "kind": "enum", "values": ["bsNone", "bsSingle", "bsSizeable", "bsDialog", "bsToolWindow", "bsSizeToolWin"] },
     "TScrollBarKind": { "kind": "enum", "values": ["sbHorizontal", "sbVertical"] },
-    "TBevelCut": { "kind": "enum", "values": ["bvNone", "bvLowered", "bvRaised", "bvSpace"] }
+    "TBevelCut": { "kind": "enum", "values": ["bvNone", "bvLowered", "bvRaised", "bvSpace"] },
+    "TAccessibleRole": { "kind": "enum", "values": ["arDefault", "arButton", "arCheckBox", "arComboBox", "arCustom", "arDataGrid", "arDataItem", "arEdit", "arGroup", "arHeaderItem", "arImage", "arList", "arListItem", "arMenuItem", "arPane", "arProgressBar", "arRadioButton", "arScrollBar", "arSeparator", "arSlider", "arStatusBar", "arTab", "arTabItem", "arTable", "arText", "arThumb", "arToolBar", "arTree", "arTreeItem", "arWindow"] }
   },
   "components": [
     {
@@ -52,7 +53,10 @@
         { "name": "ParentShowHint", "type": "Boolean", "default": true, "category": "Misc" },
         { "name": "ShowHint", "type": "Boolean", "default": false, "category": "Misc" },
         { "name": "Visible", "type": "Boolean", "default": true, "category": "Appearance", "affectsLayout": true },
-        { "name": "PopupMenu", "type": "TPopupMenu", "kind": "component", "category": "Action" }
+        { "name": "PopupMenu", "type": "TPopupMenu", "kind": "component", "category": "Action" },
+        { "name": "AccessibleName", "type": "string", "default": "", "category": "Misc", "localizable": true },
+        { "name": "AccessibleDescription", "type": "string", "default": "", "category": "Misc", "localizable": true },
+        { "name": "AccessibleRole", "type": "TAccessibleRole", "default": "arDefault", "category": "Misc" }
       ],
       "events": []
     },

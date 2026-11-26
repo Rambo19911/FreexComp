@@ -1,0 +1,94 @@
+# accessible properties (UIF-1410)
+ok AccessibleName default
+ok AccessibleDescription default
+ok AccessibleRole default
+ok AccessibleName is published
+ok AccessibleDescription is published
+ok AccessibleRole is published
+ok AccessibleName through RTTI
+ok AccessibleRole through RTTI
+ok AccessibleRole read through RTTI
+# names (UIF-1411, UIF-1412)
+ok form: its caption, mnemonic removed
+ok label: caption; a single & removed, && becomes &
+ok AccessibleName wins over the caption
+ok panel: caption
+ok group box: caption
+ok tab sheet: caption
+ok tool button: caption
+ok tool button without caption: its hint (the short part)
+ok image: its hint
+ok no source: empty
+ok the first associated label in creation order, mnemonic removed
+ok AccessibleName wins over the associated label
+ok a static text is an associated label too
+ok a native control has no provider (UIF-1420)
+ok the name of a native control follows the same rules
+# HelpText, AutomationId, ClassName, FrameworkId (UIF-1413)
+ok HelpText: the hint without the part after |
+ok HelpText: a hint without |
+ok HelpText: AccessibleDescription wins
+ok HelpText: none
+ok AutomationId = Name
+ok AutomationId of an unnamed control: empty
+ok ClassName
+ok ClassName of a program class
+ok FrameworkId
+ok LocalizedControlType: not supplied
+ok LocalizedControlType of arCustom: the description
+ok a window: focusability from the host
+ok a graphic control is not focusable
+ok a graphic control has no focus
+# control types (UIF-1417)
+ok form
+ok frame
+ok panel
+ok scroll box
+ok tab sheet
+ok group box
+ok tool bar
+ok tool button tbsButton
+ok tool button tbsCheck
+ok tool button tbsDropDown
+ok tool button tbsSeparator
+ok tool button tbsDivider
+ok label
+ok image
+ok splitter
+ok grid
+ok bevel
+ok shape
+ok another framework window class
+ok another graphic class
+ok AccessibleRole overrides the class default
+ok a second override
+# control and content elements (UIF-1419)
+ok bevel: IsControlElement
+ok bevel: IsContentElement
+ok shape: IsControlElement
+ok shape: IsContentElement
+ok bevel with a role: IsControlElement
+ok bevel with a role: IsContentElement
+ok splitter: IsControlElement
+ok splitter: IsContentElement
+ok tool bar separator: IsControlElement
+ok tool bar separator: IsContentElement
+ok tool bar divider: IsControlElement
+ok tool bar divider: IsContentElement
+ok tool button: IsControlElement
+ok tool button: IsContentElement
+ok a hidden control: IsControlElement
+ok a hidden control: IsContentElement
+ok panel: IsControlElement
+ok panel: IsContentElement
+ok label: IsControlElement
+ok label: IsContentElement
+# IsEnabled and IsOffscreen (UIF-1418)
+ok enabled chain
+ok a disabled parent two levels up
+ok a disabled parent of a window
+ok the disabled control
+ok enabled again
+ok the form is not shown: off screen
+ok every provider is released with its form (UIF-1425)
+# passed 87 failed 0

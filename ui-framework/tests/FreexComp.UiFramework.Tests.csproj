@@ -13,5 +13,8 @@
   <ItemGroup>
     <!-- the Pascal programs are data read from the source tree, never compiled by the .NET SDK build -->
     <None Remove="pascal\**" />
+    <!-- the UI Automation client tests are a project of their own (ui-automation.md section 9) -->
+    <Compile Remove="automation\**" />
+    <None Remove="automation\**" />
   </ItemGroup>
 </Project>

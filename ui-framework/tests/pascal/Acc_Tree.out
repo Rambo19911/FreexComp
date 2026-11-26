@@ -1,0 +1,100 @@
+# the provider of a framework window (UIF-1423)
+ok a provider
+ok one provider per control (UIF-1425)
+ok get_ProviderOptions
+ok server-side
+ok get_HostRawElementProvider
+ok the host provider of the window
+ok a fragment root
+ok get_FragmentRoot
+ok its fragment root is itself
+ok Navigate 0 returns S_OK
+ok no parent (the system knows the window's parent)
+ok Navigate 1 returns S_OK
+ok no sibling
+ok GetRuntimeId
+ok no runtime id of its own (the host supplies it)
+ok get_BoundingRectangle
+ok empty (the host supplies it)
+# navigation of graphic children (UIF-1423, UIF-1424)
+ok Navigate 3 returns S_OK
+ok first child: the first graphic element
+ok Navigate 4 returns S_OK
+ok last child: the last graphic element
+ok Navigate 1 returns S_OK
+ok bevel, window and hidden label skipped
+ok Navigate 2 returns S_OK
+ok no element before the first
+ok Navigate 0 returns S_OK
+ok parent: the windowed parent
+ok Navigate 3 returns S_OK
+ok a graphic control has no children
+ok Navigate 1 returns S_OK
+ok next of Second
+ok Navigate 2 returns S_OK
+ok previous of Second
+ok Navigate 1 returns S_OK
+ok no element after the last
+ok Navigate 2 returns S_OK
+ok previous of Last
+ok Navigate 4 returns S_OK
+ok Controls[] order after BringToFront
+ok Navigate 3 returns S_OK
+ok Controls[] order after SendToBack
+# graphic controls are fragments (UIF-1424)
+ok get_ProviderOptions
+ok server-side
+ok get_HostRawElementProvider
+ok no host provider
+ok get_FragmentRoot
+ok the fragment root is the parent's provider
+ok get_BoundingRectangle
+ok left, top: ClientToScreen of the parent
+ok width
+ok height
+ok GetEmbeddedFragmentRoots
+ok no embedded fragment roots
+ok SetFocus: graphic controls cannot take the focus
+# runtime ids (UIF-1424)
+ok two elements
+ok two elements (second control)
+ok first element: UiaAppendRuntimeId
+ok first element of the second control
+ok unique numbers
+ok stable while the provider lives
+# hit testing and focus (UIF-1423)
+ok a point in First
+ok Last and Second overlap: the topmost (Last)
+ok a point only in Second
+ok a bevel is no element: the window itself
+ok a hidden label: the window itself
+ok no graphic child: the window itself
+ok GetFocus
+ok GetFocus: nil
+# lifetime (UIF-1425, UIF-1426, UIF-1427)
+ok a destroyed label: GetPropertyValue
+ok a destroyed label: Navigate
+ok removed from its parent: the old provider is disconnected
+ok back in a parent: a new provider
+ok the new provider answers
+ok its window destroyed: the old provider answers no more
+ok changes of controls without a provider create none (UIF-1440)
+ok the changed name is answered
+# registry (UIF-1421)
+ok the nearest registered ancestor
+ok its own text from the registered class
+ok its control type from the registered class
+ok TLabel keeps its provider class
+ok TLabel keeps its control type
+ok TWinControl: a window provider
+ok TGraphicControl: a fragment provider
+ok every provider object is released (UIF-1425)
+# WM_GETOBJECT (UIF-1422, UIF-1426)
+ok another object id: no provider (the default handling)
+ok UiaRootObjectId: answered
+ok UiaRootObjectId: the provider is created
+ok the control keeps it
+ok a second request: the same provider
+ok a native control gets no provider
+ok its window destroyed: the provider is disconnected
+# passed 91 failed 0

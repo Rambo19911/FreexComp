@@ -1246,11 +1246,69 @@ type
 implementation
 
 uses
-  RTLConsts, RichEdit;
+  RTLConsts, RichEdit, UIAutomation, Accessibility;
 
 type
   TFormAccess = class(TCustomForm);
   TImageListAccess = class(TCustomImageList);
+
+  { ui-automation.md UIF-1411, UIF-1417, UIF-1419, UIF-1421: the rules of the classes of this unit }
+  TTabSheetAutomationProvider = class(TWindowAutomationProvider)
+  public
+    class function OwnText(Control: TControl): string; override;
+    class function DefaultControlType(Control: TControl): Integer; override;
+  end;
+
+  TToolBarAutomationProvider = class(TWindowAutomationProvider)
+  public
+    class function DefaultControlType(Control: TControl): Integer; override;
+  end;
+
+  TToolButtonAutomationProvider = class(TGraphicAutomationProvider)
+  public
+    class function OwnText(Control: TControl): string; override;
+    class function DefaultControlType(Control: TControl): Integer; override;
+    class function ElementKind(Control: TControl): TAccessibleElementKind; override;
+  end;
+
+class function TTabSheetAutomationProvider.OwnText(Control: TControl): string;
+begin
+  Result := ControlCaption(Control);
+end;
+
+class function TTabSheetAutomationProvider.DefaultControlType(Control: TControl): Integer;
+begin
+  Result := UIA_PaneControlTypeId;
+end;
+
+class function TToolBarAutomationProvider.DefaultControlType(Control: TControl): Integer;
+begin
+  Result := UIA_ToolBarControlTypeId;
+end;
+
+{ the caption; a button without one is named by its hint }
+class function TToolButtonAutomationProvider.OwnText(Control: TControl): string;
+begin
+  Result := ControlCaption(Control);
+  if Result = '' then
+    Result := GetShortHint(Control.Hint);
+end;
+
+class function TToolButtonAutomationProvider.DefaultControlType(Control: TControl): Integer;
+begin
+  if TToolButton(Control).Style in [tbsSeparator, tbsDivider] then
+    Result := UIA_SeparatorControlTypeId
+  else
+    Result := UIA_ButtonControlTypeId;
+end;
+
+class function TToolButtonAutomationProvider.ElementKind(Control: TControl): TAccessibleElementKind;
+begin
+  if TToolButton(Control).Style in [tbsSeparator, tbsDivider] then
+    Result := ekNone
+  else
+    Result := ekContent;
+end;
 
 { the DPI of a control: its form's current PixelsPerInch, 96 (logical) without a form }
 function ControlDPI(Control: TControl): Integer;
@@ -6261,6 +6319,9 @@ end;
 initialization
   RegisterClasses([TPageControl, TTabSheet, TStatusBar, TToolBar, TToolButton, TProgressBar, TTrackBar, TListView, TTreeView,
     TRichEdit]);
+  RegisterAutomationProvider(TTabSheet, TTabSheetAutomationProvider);
+  RegisterAutomationProvider(TToolBar, TToolBarAutomationProvider);
+  RegisterAutomationProvider(TToolButton, TToolButtonAutomationProvider);
 
 finalization
   { a window that outlives this unit (a form freed by a later finalization) still runs the engine's code }

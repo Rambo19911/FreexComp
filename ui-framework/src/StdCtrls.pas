@@ -921,11 +921,78 @@ var
 implementation
 
 uses
-  RTLConsts, Forms;
+  RTLConsts, Forms, UIAutomation, Accessibility;
 
 type
   { access to the protected PixelsPerInch / ActiveControl of a form }
   TFormAccess = class(TCustomForm);
+
+  { ui-automation.md UIF-1411, UIF-1417, UIF-1421: the rules of the classes of this unit }
+  TLabelAutomationProvider = class(TGraphicAutomationProvider)
+  public
+    class function OwnText(Control: TControl): string; override;
+    class function DefaultControlType(Control: TControl): Integer; override;
+    class function LabelTarget(Control: TControl): TControl; override;
+  end;
+
+  { native: asked for its rules only (annotation, UIF-1414) }
+  TStaticTextAutomationProvider = class(TWindowAutomationProvider)
+  public
+    class function OwnText(Control: TControl): string; override;
+    class function LabelTarget(Control: TControl): TControl; override;
+  end;
+
+  { native buttons, check boxes and radio buttons: their caption is their own text }
+  TButtonControlAutomationProvider = class(TWindowAutomationProvider)
+  public
+    class function OwnText(Control: TControl): string; override;
+  end;
+
+  TGroupBoxAutomationProvider = class(TWindowAutomationProvider)
+  public
+    class function OwnText(Control: TControl): string; override;
+    class function DefaultControlType(Control: TControl): Integer; override;
+  end;
+
+class function TLabelAutomationProvider.OwnText(Control: TControl): string;
+begin
+  Result := ControlCaption(Control);
+end;
+
+class function TLabelAutomationProvider.DefaultControlType(Control: TControl): Integer;
+begin
+  Result := UIA_TextControlTypeId;
+end;
+
+class function TLabelAutomationProvider.LabelTarget(Control: TControl): TControl;
+begin
+  Result := TCustomLabel(Control).FocusControl;
+end;
+
+class function TStaticTextAutomationProvider.OwnText(Control: TControl): string;
+begin
+  Result := ControlCaption(Control);
+end;
+
+class function TStaticTextAutomationProvider.LabelTarget(Control: TControl): TControl;
+begin
+  Result := TCustomStaticText(Control).FocusControl;
+end;
+
+class function TButtonControlAutomationProvider.OwnText(Control: TControl): string;
+begin
+  Result := ControlCaption(Control);
+end;
+
+class function TGroupBoxAutomationProvider.OwnText(Control: TControl): string;
+begin
+  Result := ControlCaption(Control);
+end;
+
+class function TGroupBoxAutomationProvider.DefaultControlType(Control: TControl): Integer;
+begin
+  Result := UIA_GroupControlTypeId;
+end;
 
 const
   { posted by a combo box to itself: show the state before a rejected selection again, after the native control
@@ -4291,4 +4358,8 @@ end;
 initialization
   RegisterClasses([TLabel, TEdit, TMemo, TButton, TCheckBox, TRadioButton, TGroupBox, TListBox, TComboBox,
     TScrollBar, TStaticText]);
+  RegisterAutomationProvider(TCustomLabel, TLabelAutomationProvider);
+  RegisterAutomationProvider(TCustomStaticText, TStaticTextAutomationProvider);
+  RegisterAutomationProvider(TButtonControl, TButtonControlAutomationProvider);
+  RegisterAutomationProvider(TCustomGroupBox, TGroupBoxAutomationProvider);
 end.

@@ -645,11 +645,39 @@ function LayoutDumpString(const S: string): string;
 implementation
 
 uses
-  RTLConsts, ActnList;
+  RTLConsts, ActnList, UIAutomation, Accessibility;
 
 type
   { protected access to Action (local descendant) }
   TControlAccess = class(TControl);
+
+  { ui-automation.md UIF-1411, UIF-1417, UIF-1421: scroll boxes and frames are panes, forms are windows named by
+    their caption }
+  TPaneAutomationProvider = class(TWindowAutomationProvider)
+  public
+    class function DefaultControlType(Control: TControl): Integer; override;
+  end;
+
+  TFormAutomationProvider = class(TWindowAutomationProvider)
+  public
+    class function OwnText(Control: TControl): string; override;
+    class function DefaultControlType(Control: TControl): Integer; override;
+  end;
+
+class function TPaneAutomationProvider.DefaultControlType(Control: TControl): Integer;
+begin
+  Result := UIA_PaneControlTypeId;
+end;
+
+class function TFormAutomationProvider.OwnText(Control: TControl): string;
+begin
+  Result := ControlCaption(Control);
+end;
+
+class function TFormAutomationProvider.DefaultControlType(Control: TControl): Integer;
+begin
+  Result := UIA_WindowControlTypeId;
+end;
 
 function GetParentForm(Control: TControl; TopForm: Boolean): TCustomForm;
 begin
@@ -3877,6 +3905,8 @@ initialization
   MenuSelectHook := HintMenuSelect;
   ActionTargetSearch := FormsActionTargetSearch;             { UIF-1363 }
   RegisterClasses([TForm, TScrollBox, TFrame]);               { UIF-1390 }
+  RegisterAutomationProvider(TScrollingWinControl, TPaneAutomationProvider);
+  RegisterAutomationProvider(TCustomForm, TFormAutomationProvider);
 
 finalization
   ActionTargetSearch := nil;

@@ -265,11 +265,74 @@ type
 implementation
 
 uses
-  Forms;
+  Forms, UIAutomation, Accessibility;
 
 type
   { access to the protected Padding of a parent }
   TWinControlAccess = class(TWinControl);
+
+  { ui-automation.md UIF-1411, UIF-1417, UIF-1419, UIF-1421: the rules of the classes of this unit }
+  TPanelAutomationProvider = class(TWindowAutomationProvider)
+  public
+    class function OwnText(Control: TControl): string; override;
+    class function DefaultControlType(Control: TControl): Integer; override;
+  end;
+
+  TImageAutomationProvider = class(TGraphicAutomationProvider)
+  public
+    class function OwnText(Control: TControl): string; override;
+    class function DefaultControlType(Control: TControl): Integer; override;
+  end;
+
+  { shapes and bevels: no elements unless a role is set }
+  TDecorationAutomationProvider = class(TGraphicAutomationProvider)
+  public
+    class function ElementKind(Control: TControl): TAccessibleElementKind; override;
+  end;
+
+  TSplitterAutomationProvider = class(TGraphicAutomationProvider)
+  public
+    class function DefaultControlType(Control: TControl): Integer; override;
+    class function ElementKind(Control: TControl): TAccessibleElementKind; override;
+  end;
+
+class function TPanelAutomationProvider.OwnText(Control: TControl): string;
+begin
+  Result := ControlCaption(Control);
+end;
+
+class function TPanelAutomationProvider.DefaultControlType(Control: TControl): Integer;
+begin
+  Result := UIA_PaneControlTypeId;
+end;
+
+class function TImageAutomationProvider.OwnText(Control: TControl): string;
+begin
+  Result := GetShortHint(Control.Hint);
+end;
+
+class function TImageAutomationProvider.DefaultControlType(Control: TControl): Integer;
+begin
+  Result := UIA_ImageControlTypeId;
+end;
+
+class function TDecorationAutomationProvider.ElementKind(Control: TControl): TAccessibleElementKind;
+begin
+  if Control.AccessibleRole = arDefault then
+    Result := ekNone
+  else
+    Result := ekContent;
+end;
+
+class function TSplitterAutomationProvider.DefaultControlType(Control: TControl): Integer;
+begin
+  Result := UIA_ThumbControlTypeId;
+end;
+
+class function TSplitterAutomationProvider.ElementKind(Control: TControl): TAccessibleElementKind;
+begin
+  Result := ekControl;
+end;
 
 { ---------------------------------------------------------------- TCustomPanel }
 
@@ -1171,6 +1234,11 @@ initialization
   TimerList := TList.Create;
   TimerHook := DispatchTimer;
   RegisterClasses([TPanel, TImage, TShape, TBevel, TSplitter, TTimer]);
+  RegisterAutomationProvider(TCustomPanel, TPanelAutomationProvider);
+  RegisterAutomationProvider(TImage, TImageAutomationProvider);
+  RegisterAutomationProvider(TShape, TDecorationAutomationProvider);
+  RegisterAutomationProvider(TBevel, TDecorationAutomationProvider);
+  RegisterAutomationProvider(TSplitter, TSplitterAutomationProvider);
 
 finalization
   TimerHook := nil;

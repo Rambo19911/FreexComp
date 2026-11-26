@@ -29,6 +29,11 @@ type
     csParentBackground);
   TControlState = set of (csLButtonDown, csClicked, csReadingState, csAlignmentNeeded, csFocusing, csCreating,
     csCustomPaint, csDestroyingHandle);
+  { ui-automation.md UIF-1410, UIF-1417: the control type a control reports (arDefault: the default of its class) }
+  TAccessibleRole = (arDefault, arButton, arCheckBox, arComboBox, arCustom, arDataGrid, arDataItem, arEdit,
+    arGroup, arHeaderItem, arImage, arList, arListItem, arMenuItem, arPane, arProgressBar, arRadioButton,
+    arScrollBar, arSeparator, arSlider, arStatusBar, arTab, arTabItem, arTable, arText, arThumb, arToolBar,
+    arTree, arTreeItem, arWindow);
   TMouseEvent = procedure(Sender: TObject; Button: TMouseButton; Shift: TShiftState; X, Y: Integer) of object;
   TMouseMoveEvent = procedure(Sender: TObject; Shift: TShiftState; X, Y: Integer) of object;
   TMouseWheelEvent = procedure(Sender: TObject; Shift: TShiftState; WheelDelta: Integer; MousePos: TPoint;
@@ -270,6 +275,14 @@ type
     FActionLink: TControlActionLink;
     FOnResize: TNotifyEvent;
     FOnConstrainedResize: TConstrainedResizeEvent;
+    FAccessibleName: string;
+    FAccessibleDescription: string;
+    FAccessibleRole: TAccessibleRole;
+    FAutomationObject: TObject;
+    procedure SetAccessibleName(const Value: string);
+    procedure SetAccessibleDescription(const Value: string);
+    procedure SetAccessibleRole(Value: TAccessibleRole);
+    procedure AccessibleChanged;
     procedure SetLeft(Value: Integer);
     procedure SetTop(Value: Integer);
     procedure SetWidth(Value: Integer);
@@ -435,6 +448,9 @@ type
     property ControlState: TControlState read FControlState write FControlState;
     property Showing: Boolean read GetShowing;
     property WindowProc: TWndMethod read FWindowProc write FWindowProc;
+    { ui-automation.md UIF-1425: the UI Automation provider of the control, owned by the unit Accessibility (nil until
+      a client asks); Controls only tells Accessibility when the control or its window goes }
+    property AutomationObject: TObject read FAutomationObject write FAutomationObject;
   published
     property Left: Integer read FLeft write SetLeft;
     property Top: Integer read FTop write SetTop;
@@ -452,6 +468,10 @@ type
     property ShowHint: Boolean read FShowHint write SetShowHint stored IsShowHintStored default False;
     property Visible: Boolean read FVisible write SetVisible default True;
     property PopupMenu: TPopupMenu read FPopupMenu write SetPopupMenu;
+    { ui-automation.md UIF-1410 }
+    property AccessibleName: string read FAccessibleName write SetAccessibleName;
+    property AccessibleDescription: string read FAccessibleDescription write SetAccessibleDescription;
+    property AccessibleRole: TAccessibleRole read FAccessibleRole write SetAccessibleRole default arDefault;
   end;
 
   TControlClass = class of TControl;
@@ -478,6 +498,7 @@ type
     FPadding: TPadding;
     FCtlID: Cardinal;                                        { control id of the child window (0 = not yet assigned) }
     FSwallowChar: Boolean;                                   { UIF-085 step 2: drop the next WM_CHAR }
+    FAccessibleAnnotated: Boolean;                           { UIF-1414: the window carries direct annotations }
     FOnEnter: TNotifyEvent;
     FOnExit: TNotifyEvent;
     FOnKeyDown: TKeyEvent;
@@ -588,6 +609,11 @@ type
     procedure MainWndProc(var Message: TMessage);
     procedure DefaultHandler(var Message); override;
     property Handle: HWND read GetHandle;
+    { ui-automation.md UIF-1414: the window is (or will be) of a system window class (a native control); without a
+      handle the answer comes from CreateParams }
+    function HasSystemWindowClass: Boolean;
+    { UIF-1414: set by Accessibility after it annotated the window; cleared when the window goes }
+    property AccessibleAnnotated: Boolean read FAccessibleAnnotated write FAccessibleAnnotated;
     { background brush for WM_ERASEBKGND and WM_CTLCOLOR*; its colour follows Color }
     property Brush: TBrush read FBrush;
     procedure InsertControl(AControl: TControl);
@@ -701,6 +727,14 @@ function KeyDataToShiftState(KeyData: LPARAM): TShiftState;
 
 type
   TMouseControlHook = procedure(Control: TControl);
+  { ui-automation.md UIF-1420: what Controls tells the unit Accessibility (acProperties: an accessible property,
+    the name or the text changed; acRemoved: a graphic control with a provider leaves its parent;
+    acWindowDestroying: the window of a control with a provider or annotations is being destroyed (WM_NCDESTROY,
+    the handle is still valid); acDestroying: a control with a provider is destroyed) }
+  TAccessibilityChange = (acProperties, acRemoved, acWindowDestroying, acDestroying);
+  { UIF-1420, UIF-1422: True when the message (WM_GETOBJECT) was answered (Message.Result set) }
+  TAccessibilityMessageHook = function(Control: TWinControl; var Message: TMessage): Boolean;
+  TAccessibilityChangeHook = procedure(Control: TControl; Change: TAccessibilityChange);
 
 var
   { core.md UIF-068: called after the control under the mouse changed (nil: none); set by Forms (hints) }
@@ -711,6 +745,10 @@ var
   FocusRootClass: TClass;
   { layout.md UIF-310: dump mode (set by Forms); window bounds never follow or feed back the fields (UIF-211, UIF-213) }
   LayoutDumpMode: Boolean;
+  { ui-automation.md UIF-1420: assigned by Accessibility in its initialization, cleared in its finalization (nil: no
+    UI Automation support; WM_GETOBJECT gets the default handling) }
+  AccessibilityMessageHook: TAccessibilityMessageHook;
+  AccessibilityChangeHook: TAccessibilityChangeHook;
 
 implementation
 
@@ -1098,6 +1136,8 @@ end;
 
 destructor TControl.Destroy;
 begin
+  if (FAutomationObject <> nil) and Assigned(AccessibilityChangeHook) then
+    AccessibilityChangeHook(Self, acDestroying);
   if CaptureControl = Self then
     SetCaptureControl(nil);
   if MouseControl = Self then
@@ -1474,6 +1514,41 @@ begin
   inherited SetName(NewName);
   if Follow then
     SetText(Name);
+  AccessibleChanged;
+end;
+
+{ ui-automation.md UIF-1410, UIF-1415, UIF-1445 }
+procedure TControl.AccessibleChanged;
+begin
+  if Assigned(AccessibilityChangeHook) then
+    AccessibilityChangeHook(Self, acProperties);
+end;
+
+procedure TControl.SetAccessibleName(const Value: string);
+begin
+  if FAccessibleName <> Value then
+  begin
+    FAccessibleName := Value;
+    AccessibleChanged;
+  end;
+end;
+
+procedure TControl.SetAccessibleDescription(const Value: string);
+begin
+  if FAccessibleDescription <> Value then
+  begin
+    FAccessibleDescription := Value;
+    AccessibleChanged;
+  end;
+end;
+
+procedure TControl.SetAccessibleRole(Value: TAccessibleRole);
+begin
+  if FAccessibleRole <> Value then
+  begin
+    FAccessibleRole := Value;
+    AccessibleChanged;
+  end;
 end;
 
 procedure TControl.SetCaption(const Value: TCaption);
@@ -1499,6 +1574,7 @@ begin
   begin
     SetTextBuf(PChar(string(Value)));
     Perform(CM_TEXTCHANGED, 0, 0);
+    AccessibleChanged;
   end;
 end;
 
@@ -2851,6 +2927,10 @@ begin
       WMPaint(TWMPaint(Message));
     WM_PRINTCLIENT:
       WMPrintClient(Message);
+    { ui-automation.md UIF-1414, UIF-1422 }
+    WM_GETOBJECT:
+      if not (Assigned(AccessibilityMessageHook) and AccessibilityMessageHook(Self, Message)) then
+        inherited WndProc(Message);
   else
     inherited WndProc(Message);
   end;
@@ -3078,6 +3158,10 @@ end;
 { UIF-036: the window is gone; detach the object }
 procedure TWinControl.WMNCDestroy(var Message: TWMNoParams);
 begin
+  { ui-automation.md UIF-1415, UIF-1426: annotations cleared and providers disconnected while the handle is valid }
+  if ((FAutomationObject <> nil) or FAccessibleAnnotated) and Assigned(AccessibilityChangeHook) then
+    AccessibilityChangeHook(Self, acWindowDestroying);
+  FAccessibleAnnotated := False;
   DefaultHandler(Message);
   if FHandle <> 0 then
     RemovePropW(FHandle, PChar(ControlAtom));
@@ -3114,6 +3198,20 @@ begin
   Result := FHandle <> 0;
 end;
 
+function TWinControl.HasSystemWindowClass: Boolean;
+var
+  Params: TCreateParams;
+begin
+  if FHandle <> 0 then
+    Result := not FOwnClass
+  else
+  begin
+    FillChar(Params, SizeOf(Params), 0);
+    CreateParams(Params);
+    Result := Params.SubclassOf <> nil;
+  end;
+end;
+
 function TWinControl.GetControl(Index: Integer): TControl;
 begin
   Result := TControl(FControls[Index]);
@@ -3144,7 +3242,9 @@ end;
 procedure TWinControl.RemoveControl(AControl: TControl);
 begin
   if AControl is TWinControl then
-    TWinControl(AControl).DestroyHandle;
+    TWinControl(AControl).DestroyHandle
+  else if (AControl.FAutomationObject <> nil) and Assigned(AccessibilityChangeHook) then
+    AccessibilityChangeHook(AControl, acRemoved);              { ui-automation.md UIF-1426 }
   FTabList.Remove(Pointer(AControl));
   FControls.Remove(Pointer(AControl));
   AControl.FParent := nil;
