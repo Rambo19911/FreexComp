@@ -106,6 +106,9 @@ public sealed class ProjectService : IProjectService
         commands.RegisterHandler("file.newForm", new Handler(_ => Project is not null, _ => AddNewFormAsync())); // menus.md: needs a project
         commands.RegisterHandler("project.addNewFrame", new Handler(_ => OnOpenProject, _ => AddNewFrameAsync())); // DSG-CS-115
         commands.RegisterHandler("file.newFrame", new Handler(_ => Project is not null, _ => AddNewFrameAsync()));
+        // DSG-CS-126: the New Inherited Form dialog; the files go where project.addNewForm puts them.
+        commands.RegisterHandler("project.addNewInheritedForm", new Handler(_ => OnOpenProject, _ => AddNewInheritedFormAsync()));
+        commands.RegisterHandler("file.newInheritedForm", new Handler(_ => Project is not null, _ => AddNewInheritedFormAsync()));
         commands.RegisterHandler("file.newFile", new Handler(_ => true, _ => NewFileAsync()));
         commands.RegisterHandler("project.addExistingFile", new Handler(_ => OnOpenProject, _ => PickAndAddExistingAsync()));
         commands.RegisterHandler("project.addNewFile", new Handler(_ => OnOpenProject, _ => AddNewFileAsync()));
@@ -402,6 +405,51 @@ public sealed class ProjectService : IProjectService
         : AddNewFormUnitAsync(Designer.NewFrameTemplate.NextName, name => Designer.NewFrameTemplate.UnitText(name, name), Designer.NewFrameTemplate.FormText);
 
     /// <summary>
+    /// The classes the New Inherited Form dialog offers (DSG-FD-123: the project catalog's ancestor view); set by the
+    /// service graph, null: none.
+    /// </summary>
+    public Func<IReadOnlyList<Designer.InheritableClass>>? InheritableClasses { get; set; }
+
+    /// <summary>
+    /// <c>file.newInheritedForm</c> / <c>project.addNewInheritedForm</c> (DSG-CS-124…126, UI-DLG-316…322): the New
+    /// Inherited Form dialog over the project's forms and frames; OK writes the unit and form of the chosen ancestor's
+    /// kind with the names of DSG-CS-125 into the folder of IDE-PM-040, saves the entry and opens the unit in the Design
+    /// view. True when a form or frame was created.
+    /// </summary>
+    public async Task<bool> AddNewInheritedFormAsync()
+    {
+        if (_project is not { } project)
+            return false;
+
+        var rows = (InheritableClasses?.Invoke() ?? []).Select(c => new Dialogs.NewInheritedFormRow(c.ClassName, c.IsFrame, c.UnitPath,
+            Path.GetRelativePath(project.Directory, c.UnitPath)));
+        var active = (_documents.ActiveDocument as FormDocumentViewModel)?.Designer.Model?.Root.TypeName;
+        var (_, isTaken) = NewFormTarget(project);
+        var created = false;
+        var dialog = new Dialogs.NewInheritedFormViewModel(rows, active, ancestor => Designer.NewInheritedFormTemplate.NextName(ancestor, isTaken),
+            async (row, _) => created = await AddNewFormUnitAsync(taken => Designer.NewInheritedFormTemplate.NextName(row.ClassName, taken),
+                name => Designer.NewInheritedFormTemplate.UnitText(name, row.ClassName, Path.GetFileNameWithoutExtension(row.FullPath), row.IsFrame),
+                Designer.NewInheritedFormTemplate.FormText),
+            _layout);
+        await _dialogs.ShowAsync(dialog);
+        return created;
+    }
+
+    /// <summary>
+    /// DSG-CS-110: the folder of IDE-PM-040 for a new form unit, and whether a unit name is taken there (a project unit,
+    /// or a <c>.pas</c> / <c>.form</c> file of the folder).
+    /// </summary>
+    private (string Folder, Func<string, bool> IsTaken) NewFormTarget(Project project)
+    {
+        var folder = SelectedFolder?.Invoke() is { } selected && IsInside(selected, project.Directory)
+            ? Path.GetFullPath(selected)
+            : Path.GetDirectoryName(Resolve(project.MainSource))!;
+        var units = UnitNames(project);
+        return (folder, n => units.Contains(n) || _fileSystem.FileExists(Path.Combine(folder, n + ".pas"))
+            || _fileSystem.FileExists(Path.Combine(folder, n + ".form")));
+    }
+
+    /// <summary>
     /// DSG-CS-110, 115: a new unit with its form in the folder of IDE-PM-040 (a name is free when no project unit and no
     /// file of the folder has it), the <c>{ path, form }</c> entry saved at once, the unit opened in the Design view.
     /// </summary>
@@ -410,12 +458,8 @@ public sealed class ProjectService : IProjectService
         if (_project is null)
             return false;
 
-        var folder = SelectedFolder?.Invoke() is { } selected && IsInside(selected, _project.Directory)
-            ? Path.GetFullPath(selected)
-            : Path.GetDirectoryName(Resolve(_project.MainSource))!;
-        var units = UnitNames(_project);
-        var name = nextName(
-            n => units.Contains(n) || _fileSystem.FileExists(Path.Combine(folder, n + ".pas")) || _fileSystem.FileExists(Path.Combine(folder, n + ".form")));
+        var (folder, isTaken) = NewFormTarget(_project);
+        var name = nextName(isTaken);
         var unitPath = Path.Combine(folder, name + ".pas");
         var formPath = Path.Combine(folder, name + ".form");
         if (!await WriteNewFileAsync(unitPath, SourceBytes(unitText(name))))

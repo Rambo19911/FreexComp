@@ -49,7 +49,7 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel, ICommandTarge
     [
         "project.build", "project.rebuild", "project.clean", null, "run.start", "run.startWithoutDebugging", null,
         "project.dependencies", null, // UI-TW-129
-        "project.addNewUnit", "project.addNewForm", "project.addNewFrame", "project.addNewFile", "project.addExistingFile", "project.newFolder", null,
+        "project.addNewUnit", "project.addNewForm", "project.addNewFrame", "project.addNewInheritedForm", "project.addNewFile", "project.addExistingFile", "project.newFolder", null,
         "project.viewSource", "file.showInExplorer", "file.openInTerminal", "project.openOutputFolder", "file.copyPath", null,
         "project.addExistingProject", "project.addNewProject", "project.removeFromGroup", "project.moveProjectUp", "project.moveProjectDown", null, // UI-TW-129
         "file.closeProject", null, "project.options",
@@ -57,7 +57,7 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel, ICommandTarge
 
     private static readonly string?[] FolderMenu =
     [
-        "project.addNewUnit", "project.addNewForm", "project.addNewFrame", "project.addNewFile", "project.addExistingFile", "project.newFolder", null,
+        "project.addNewUnit", "project.addNewForm", "project.addNewFrame", "project.addNewInheritedForm", "project.addNewFile", "project.addExistingFile", "project.newFolder", null,
         "project.removeFile", null, "file.showInExplorer", "file.openInTerminal", "file.copyPath",
     ];
 

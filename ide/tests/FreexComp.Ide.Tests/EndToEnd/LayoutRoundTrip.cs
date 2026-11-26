@@ -145,7 +145,8 @@ internal static class LayoutRoundTrip
     /// <summary>
     /// Step (3): for every form of <paramref name="runtime"/>, in its order, the project's form file whose root object has
     /// that name, parsed and laid out in run-time mode with its <c>.steps</c> sidecar (else a single <c>dump</c>). Frame
-    /// instances resolve with the frames of the folder's units, as the IDE's project frame catalog reads them (DSG-FD-103).
+    /// instances resolve with the frames of the folder's units and descendant forms with its designed classes, as the
+    /// IDE's project frame catalog reads them (DSG-FD-103, 123).
     /// </summary>
     public static LayoutDumpDocument DesignerDump(string projectDir, LayoutDumpDocument runtime)
     {
@@ -160,7 +161,7 @@ internal static class LayoutRoundTrip
         var forms = new Dictionary<string, (string Path, FreexComp.Designer.Model.FormDocument Document)>(StringComparer.OrdinalIgnoreCase);
         foreach (var file in files)
         {
-            var parsed = Parse(file, catalog, frames);
+            var parsed = Parse(file, catalog, frames, frames.Ancestors);
             Assert.True(parsed.Document is { Diagnostics.Count: 0 }, file + ":\n" + string.Join("\n", parsed.Diagnostics));
             forms[parsed.Document!.Root.Name] = (file, parsed.Document);
         }
@@ -182,7 +183,8 @@ internal static class LayoutRoundTrip
     /// Parses a form file as the designer does (FormDesignerViewModel): the root binds to the ancestor its unit declares
     /// (<c>class(TForm)</c>) when the catalog does not know the form class itself.
     /// </summary>
-    private static FormParseResult Parse(string file, ComponentCatalog catalog, FreexComp.Designer.Model.IFrameCatalog frames)
+    private static FormParseResult Parse(string file, ComponentCatalog catalog, FreexComp.Designer.Model.IFrameCatalog frames,
+        FreexComp.Designer.Model.IFrameCatalog ancestors)
     {
         var text = File.ReadAllText(file, Encoding.UTF8);
         var first = FormParser.Parse(text, file, catalog, null, frames);
@@ -190,7 +192,7 @@ internal static class LayoutRoundTrip
         if (first.Document is not { } document || catalog.Find(document.Root.TypeName) is not null || !File.Exists(unit))
             return first;
         var ancestor = FormClassLocator.Locate(File.ReadAllText(unit, Encoding.UTF8), document.Root.TypeName, unit).FormClass?.AncestorName;
-        return ancestor is null ? first : FormParser.Parse(text, file, catalog, ancestor, frames);
+        return ancestor is null ? first : FormParser.Parse(text, file, catalog, ancestor, frames, ancestors);
     }
 
     /// <summary>Step (4): equality per DSG-LAY-054; the message lists every difference and both documents.</summary>

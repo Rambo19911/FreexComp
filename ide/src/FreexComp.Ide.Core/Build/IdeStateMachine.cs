@@ -140,6 +140,7 @@ public static class IdeCommandAvailability
         ["project.addNewUnit"] = IdleOnly,
         ["project.addNewForm"] = IdleOnly,
         ["project.addNewFrame"] = IdleOnly,
+        ["project.addNewInheritedForm"] = IdleOnly,
         ["project.addExistingFile"] = IdleOnly,
         ["project.newFolder"] = IdleOnly,
         ["project.addNewFile"] = IdleOnly,

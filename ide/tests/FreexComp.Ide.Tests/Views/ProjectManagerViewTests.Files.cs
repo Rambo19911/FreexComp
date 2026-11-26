@@ -344,7 +344,7 @@ public sealed partial class ProjectManagerViewTests
         Assert.True(h.Services.ToolWindows.Show(ProjectManagerViewModel.ToolName, focus: true));
         pm.Select(pm.Find("NewFolder1/")!);
         Dispatcher.UIThread.RunJobs();
-        Assert.Equal(["project.addNewUnit", "project.addNewForm", "project.addNewFrame", "project.addNewFile", "project.addExistingFile", "project.newFolder", "-",
+        Assert.Equal(["project.addNewUnit", "project.addNewForm", "project.addNewFrame", "project.addNewInheritedForm", "project.addNewFile", "project.addExistingFile", "project.newFolder", "-",
             "project.removeFile", "-", "file.showInExplorer", "file.openInTerminal", "file.copyPath"],
             pm.ContextMenu().Select(m => m.Command?.Id ?? "-"));
         Assert.True(h.Services.Commands.CanExecute("project.removeFile"));

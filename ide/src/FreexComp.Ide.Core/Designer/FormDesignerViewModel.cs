@@ -643,10 +643,14 @@ public sealed class FormDesignerViewModel
 
     /// <summary>
     /// The form problems <c>InfoBar.FormErrors</c> counts and <c>Show Problems</c> lists (DSG-FD-071): the model's parse and
-    /// validation diagnostics of severity warning or error (the <c>F0107</c> hints have <c>InfoBar.FormReadOnlyKind</c>).
+    /// validation diagnostics of severity warning or error (the <c>F0107</c> hints have <c>InfoBar.FormReadOnlyKind</c>, and so
+    /// have the <c>F0112</c>, <c>F0113</c> warnings of a read-only descendant: UI-DSG-145, the DSG-FD-027 presentation).
     /// </summary>
     public IReadOnlyList<FormDiagnostic> Problems =>
-        Model is { } model ? [.. model.Diagnostics.Where(d => d.Severity is FreexComp.Compiler.DiagnosticSeverity.Error or FreexComp.Compiler.DiagnosticSeverity.Warning)] : [];
+        Model is { } model
+            ? [.. model.Diagnostics.Where(d => d.Severity is FreexComp.Compiler.DiagnosticSeverity.Error or FreexComp.Compiler.DiagnosticSeverity.Warning
+                && d.Code is not ("F0112" or "F0113"))]
+            : [];
 
     /// <summary>
     /// DSG-FD-071: a form problem chosen in Messages. While the model and the form text are those of the last parse, the

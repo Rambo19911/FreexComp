@@ -98,10 +98,27 @@ internal static class FrameInstances
         return null;
     }
 
-    /// <summary>The classes of the <c>inline</c> objects in a definition's file (resolved or not).</summary>
+    /// <summary>
+    /// The classes a definition's construction creates: those of its <c>inline</c> objects (resolved or not), also the
+    /// instances it inherits from its ancestor levels, and the ancestor class itself (a frame derived from another frame
+    /// constructs the ancestor's components too; D-132).
+    /// </summary>
     private static IEnumerable<string> ContainedClasses(FrameDefinition definition) =>
-        definition.Document.AllObjects().Where(o => o.Kind == FormObjectKind.Inline && !o.IsInherited && o.Parent is not null)
-            .Select(o => o.TypeName).Distinct(StringComparer.OrdinalIgnoreCase);
+        definition.Document.AllObjects().Where(o => o.Parent is not null && IsInstance(o)).Select(o => o.TypeName)
+            .Concat(definition.Document.Ancestor is { } ancestor ? [ancestor.ClassName] : [])
+            .Distinct(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>An <c>inline</c> object, or an inherited copy of one (a copy's kind is <see cref="FormObjectKind.Inherited"/>).</summary>
+    private static bool IsInstance(FormObject obj)
+    {
+        var source = obj;
+        while (source.IsInherited && source.InheritedFrom is { } from)
+        {
+            source = from;
+        }
+
+        return source.Kind == FormObjectKind.Inline;
+    }
 
     /// <summary>True when <paramref name="className"/> is one of <paramref name="changed"/> or contains one of them.</summary>
     private static bool Affected(IFrameCatalog frames, string className, IReadOnlyCollection<string> changed, HashSet<string> visiting)

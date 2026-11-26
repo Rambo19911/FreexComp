@@ -56,6 +56,16 @@ internal static class InheritedDesign
 
     public const string BaseFormPath = @"C:\p\BaseDialogUnit.form";
 
+    /// <summary>The unit of <see cref="BaseDialog"/> (<c>BaseDialogUnit</c>): its fields and handlers (D-132).</summary>
+    public static readonly string BaseUnit = string.Join("\r\n",
+        "unit BaseDialogUnit;", "", "interface", "", "uses", "  Classes, Controls, Forms, StdCtrls, ExtCtrls;", "", "type",
+        "  TBaseDialog = class(TForm)", "    TitleLabel: TLabel;", "    ButtonPanel: TPanel;", "    OkButton: TButton;",
+        "    CancelButton: TButton;", "    procedure FormCreate(Sender: TObject);", "    procedure CancelButtonClick(Sender: TObject);",
+        "    procedure OkButtonClick(Sender: TObject);", "  end;", "", "var", "  BaseDialog: TBaseDialog;", "", "implementation", "",
+        "{$FORM BaseDialogUnit.form}", "", "procedure TBaseDialog.FormCreate(Sender: TObject);", "begin", "end;", "",
+        "procedure TBaseDialog.CancelButtonClick(Sender: TObject);", "begin", "end;", "",
+        "procedure TBaseDialog.OkButtonClick(Sender: TObject);", "begin", "end;", "", "end.", "");
+
     /// <summary>A catalog with <c>TBaseDialog</c> (unit <c>BaseDialogUnit</c>).</summary>
     public static FrameCatalog Ancestors()
     {

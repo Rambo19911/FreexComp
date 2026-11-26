@@ -323,6 +323,7 @@ public static class ServiceGraph
         {
             frames = Designer.ProjectFrameCatalog.ForIde(projects, documents, platform.FileSystem, output); // DSG-FD-103, 104
             var projectFrames = frames;
+            projects.InheritableClasses = projectFrames.Inheritable; // DSG-FD-123: the New Inherited Form dialog (D-132)
             metadata = new Designer.ComponentMetadataService(documents, platform.FileSystem, settings, status, platform.Log, platform.ToolchainEnvironment,
                 platform.Dialogs) { Output = output }; // D-088: loaded by the start-up sequence (DSG-TP-003)
             metadata.RegisterCommands(commands);

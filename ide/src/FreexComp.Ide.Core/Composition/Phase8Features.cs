@@ -20,6 +20,7 @@ public static class Phase8Features
         "file.copyLibraryUnitToProject", // F05-099
         "file.editLibrarySource", // F02-004
         "file.newFrame", // F05-006
+        "file.newInheritedForm", // F05-007
         "file.openInTerminal", // F09-054
         "file.saveGroupAs", // F09-009
         "help.contents", // I-257
@@ -29,6 +30,7 @@ public static class Phase8Features
         "project.addExistingProject", // F09-009
         "project.addNewFile", // F09-054
         "project.addNewFrame", // F05-006
+        "project.addNewInheritedForm", // F05-007
         "project.addNewProject", // F09-009
         "project.addPlatform", // F03-003
         "project.buildAll", // F09-009

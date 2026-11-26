@@ -1,0 +1,21 @@
+unit $(UnitName);
+
+interface
+
+uses
+  Classes, Controls, Forms, $(AncestorUnit);
+
+type
+  T$(FormName) = class($(AncestorClass))
+  private
+  public
+  end;
+
+var
+  $(FormName): T$(FormName);
+
+implementation
+
+{$FORM $(UnitName).form}
+
+end.

@@ -73,6 +73,7 @@ public sealed class DialogLabelTests
         ["Message"] = (typeof(MessageBoxWindow), Scene.Project, (h, _) => h.Services.Dialogs.ShowMessageAsync(new MessageRequest("Msg.File.NotFound", ["a.pas"]))),
         ["NewConfiguration"] = (typeof(NewConfigurationWindow), Scene.Project, Model((_, _) => new NewConfigurationViewModel(["Debug", "Release"], "Debug"))),
         ["NewFile"] = (typeof(NewFileWindow), Scene.Project, Command("file.newFile")),
+        ["NewInheritedForm"] = (typeof(NewInheritedFormWindow), Scene.Project, Command("file.newInheritedForm")),
         ["NewProject"] = (typeof(NewProjectWindow), Scene.Project, Command("file.newProject")),
         ["Options"] = (typeof(OptionsWindow), Scene.Project, Command("tools.options")),
         ["ProjectDependencies"] = (typeof(ProjectDependenciesWindow), Scene.Group, Command("project.dependencies")),

@@ -628,7 +628,7 @@ Set the framework folder in Tools &gt; Options &gt; Toolchain Paths.</value>
     <value>{0}({1},{2}): component metadata error: {3}</value>
   </data>
   <data name="Msg_Designer_FrameUnreadable" xml:space="preserve">
-    <value>{0} cannot be read for the frame list: {1}</value>
+    <value>{0} cannot be read for the frame and form lists: {1}</value>
   </data>
   <data name="Msg_Designer_Selection" xml:space="preserve">
     <value>{0}: {1} — {2}, {3} — {4} × {5}</value>
@@ -826,6 +826,12 @@ The form change was undone.</value>
   </data>
   <data name="Msg_NewFile_NameInvalid" xml:space="preserve">
     <value>A file name cannot be empty or contain any of these characters: \ / : * ? " &lt; &gt; |</value>
+  </data>
+  <data name="Msg_NewInheritedForm_NoAncestors" xml:space="preserve">
+    <value>This project has no forms or frames to inherit from. Create one with File › New › Form.</value>
+  </data>
+  <data name="Msg_NewInheritedForm_NoMatch" xml:space="preserve">
+    <value>No form or frame matches the filter.</value>
   </data>
   <data name="Msg_ProjectOptions_EventsHint" xml:space="preserve">
     <value>Each line is one command. Commands run in the project folder, one after another. A command that ends with an exit code other than 0 stops the build.</value>
@@ -1159,6 +1165,9 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   </data>
   <data name="Cmd_file_newFrame" xml:space="preserve">
     <value>New Frame</value>
+  </data>
+  <data name="Cmd_file_newInheritedForm" xml:space="preserve">
+    <value>New Inherited Form…</value>
   </data>
   <data name="Cmd_file_open" xml:space="preserve">
     <value>Open File…</value>
@@ -1564,6 +1573,9 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   </data>
   <data name="Cmd_project_addNewFrame" xml:space="preserve">
     <value>Add New Frame</value>
+  </data>
+  <data name="Cmd_project_addNewInheritedForm" xml:space="preserve">
+    <value>Add New Inherited Form…</value>
   </data>
   <data name="Cmd_project_addExistingFile" xml:space="preserve">
     <value>Add Existing File…</value>
@@ -2140,6 +2152,9 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   <data name="Menu_file_newFrame" xml:space="preserve">
     <value>Fra&amp;me</value>
   </data>
+  <data name="Menu_file_newInheritedForm" xml:space="preserve">
+    <value>&amp;Inherited Form…</value>
+  </data>
   <data name="Menu_file_open" xml:space="preserve">
     <value>&amp;Open File…</value>
   </data>
@@ -2606,6 +2621,9 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   </data>
   <data name="Menu_project_addNewFrame" xml:space="preserve">
     <value>Add New Fr&amp;ame</value>
+  </data>
+  <data name="Menu_project_addNewInheritedForm" xml:space="preserve">
+    <value>Add New In&amp;herited Form…</value>
   </data>
   <data name="Menu_project_addExistingFile" xml:space="preserve">
     <value>Add Exi&amp;sting File…</value>
@@ -5037,6 +5055,10 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
     <value>(inherits {0})</value>
     <comment>form-inheritance-designer.md UI-DSG-144: suffix of the Structure root row of a descendant; 0 = ancestor class</comment>
   </data>
+  <data name="Designer_AncestorChainRepeats" xml:space="preserve">
+    <value>The ancestor chain of {0} repeats {1}</value>
+    <comment>form-inheritance-designer.md DSG-FD-123: reason of Msg.Designer.FrameUnreadable; 0 = class of the unit, 1 = the class that comes back</comment>
+  </data>
   <data name="StringsEditor_Title" xml:space="preserve">
     <value>Edit {0} – {1}</value>
     <comment>object-inspector.md DSG-OI-055: 0 = property, 1 = component name or StringsEditor_Components</comment>
@@ -5570,6 +5592,26 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   <data name="HelpContents_Empty" xml:space="preserve">
     <value>No help pages are installed.</value>
     <comment>I-257: Help Contents dialog, shown in place of the list when the help folder holds no page</comment>
+  </data>
+  <data name="Dialog_NewInheritedForm_Title" xml:space="preserve">
+    <value>New Inherited Form</value>
+    <comment>UI-DLG-316: title of the New Inherited Form dialog</comment>
+  </data>
+  <data name="Dialog_NewInheritedForm_InheritFrom" xml:space="preserve">
+    <value>&amp;Inherit from:</value>
+    <comment>UI-DLG-316: label of the Ancestors list</comment>
+  </data>
+  <data name="Dialog_NewInheritedForm_Preview" xml:space="preserve">
+    <value>New class: T{0}    Unit: {1}.pas</value>
+    <comment>UI-DLG-316: preview line; 0 = new name, 1 = unit name (DSG-CS-125)</comment>
+  </data>
+  <data name="Dialog_NewInheritedForm_KindForm" xml:space="preserve">
+    <value>Form</value>
+    <comment>UI-DLG-316: kind column of a form row</comment>
+  </data>
+  <data name="Dialog_NewInheritedForm_KindFrame" xml:space="preserve">
+    <value>Frame</value>
+    <comment>UI-DLG-316: kind column of a frame row</comment>
   </data>
   <data name="Dialog_TrustProject_Title" xml:space="preserve">
     <value>Project Commands — {0}</value>

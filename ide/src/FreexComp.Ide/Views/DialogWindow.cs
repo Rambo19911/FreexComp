@@ -49,9 +49,9 @@ public class DialogWindow : Window
             SizeToContent = SizeToContent.Height;
         if (model.CanResize)
         {
-            // UI-DLG-005: the stated size is the minimum; the last size is remembered.
-            MinWidth = model.Width;
-            MinHeight = model.Height ?? 0;
+            // UI-DLG-005: the stated size is the minimum (unless the dialog states another); the last size is remembered.
+            MinWidth = model.MinimumSize?.Width ?? model.Width;
+            MinHeight = model.MinimumSize?.Height ?? model.Height ?? 0;
             if (model.StoredSize is { } stored)
             {
                 Width = Math.Max(stored.Width, MinWidth);

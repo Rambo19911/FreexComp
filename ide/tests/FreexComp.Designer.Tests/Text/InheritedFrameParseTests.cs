@@ -96,4 +96,41 @@ public sealed class InheritedFrameParseTests
         Assert.Equal("StreetEditChange", handler.Method);
         Assert.Same(address, handler.Frame);
     }
+
+    /// <summary>
+    /// F0111 through an ancestor (Q-P8A-18, D-129 follow-up, D-132): <c>TFancyAddressFrame</c> contains the city frame only
+    /// through the inherited instance of its ancestor, so a city frame placing a fancy address frame contains itself; and a
+    /// frame placing its own descendant contains itself through the ancestor level.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "DSG-FD-107")]
+    [Trait("Req", "DSG-FD-124")]
+    public void RepeatedClass_CountsInheritedInstancesAndTheAncestor_F0111()
+    {
+        var frames = AddressFrames();
+        AddLevel(frames, FancyAddressFrame, "FancyAddressFrameUnit", "TAddressFrame", frames);
+        Assert.Equal("TCityFrame", FrameCatalog.RepeatedClass(frames, "TFancyAddressFrame", "TCityFrame"));
+        Assert.Equal("TAddressFrame", FrameCatalog.RepeatedClass(frames, "TFancyAddressFrame", "TAddressFrame"));
+        Assert.Null(FrameCatalog.RepeatedClass(frames, "TFancyAddressFrame", "THouseForm"));
+
+        var city = ParseFrame("""
+            object CityFrame: TCityFrame
+              Left = 0
+              Top = 0
+              Width = 400
+              Height = 300
+              inline Fancy: TFancyAddressFrame
+                Left = 0
+                Top = 0
+                Width = 320
+                Height = 180
+              end
+            end
+
+            """, frames, "city.form");
+        var diagnostic = Assert.Single(city.Diagnostics);
+        Assert.Equal("F0111", diagnostic.Code);
+        Assert.True(city.FindByName("Fancy")!.IsPreserved);
+    }
 }
