@@ -680,6 +680,127 @@ public sealed class NestedTypeBindingTests
             end.
             """).Where(d => !d.StartsWith('H') && !d.StartsWith('W')));
 
+    /// <summary>
+    /// LANG-774, LANG-770 (C-361): a nested constant keeps the visibility of its section — <c>TOuter.Limit</c> from outside is E2610
+    /// in constant expressions, type bounds and statements, own and inherited (naming the declaring type), also by simple name in a
+    /// descendant; code of the declaring type may name it, a descendant its strict protected ones, public constants stay usable.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "LANG-774")]
+    [Trait("Req", "LANG-770")]
+    public void NestedConstant_Visibility_E2610() =>
+        Assert.Equal(
+        [
+            "E2610(17,15): Cannot access strict private member 'Limit' of 'TOuter'",
+            "E2610(18,15): Cannot access strict private member 'Limit' of 'TOuter'",
+            "E2610(19,17): Cannot access strict protected member 'Step' of 'TOuter'",
+            "E2610(22,22): Cannot access strict private member 'Limit' of 'TOuter'",
+            "E2610(32,31): Cannot access strict private member 'Limit' of 'TOuter'",
+            "E2610(36,15): Cannot access strict private member 'Limit' of 'TOuter'",
+            "E2610(37,17): Cannot access strict protected member 'Step' of 'TOuter'",
+            "E2610(38,19): Cannot access strict private member 'Limit' of 'TOuter'",
+        ], BindDiagnostics("""
+            program P;
+            type
+              TOuter = class
+              strict private
+                const Limit = 3;
+              strict protected
+                const Step = 2;
+              public
+                const Open = 10;
+                procedure Use;
+              end;
+              TDerived = class(TOuter)
+              public
+                procedure Go;
+              end;
+            const
+              C1 = TOuter.Limit;
+              C2 = TOuter.Limit * 2;
+              C3 = TDerived.Step + 1;
+              C4 = TOuter.Open + TDerived.Open;
+            var
+              A: array[0..TOuter.Limit] of Byte;
+              N: Integer;
+            procedure TOuter.Use;
+            const
+              K = TOuter.Limit + TOuter.Step + TDerived.Limit + Step + Limit;
+            begin
+              N := TOuter.Limit + TDerived.Step + K + Step + Limit;
+            end;
+            procedure TDerived.Go;
+            begin
+              N := Step + TDerived.Step + Limit;
+            end;
+            begin
+              N := C4;
+              N := TOuter.Limit;
+              N := TDerived.Step + TOuter.Open;
+              N := Ord(TOuter.Limit = 3);
+            end.
+            """).Where(d => !d.StartsWith('H') && !d.StartsWith('W')));
+
+    /// <summary>
+    /// LANG-774 (C-361): nested types, aliases and constants of a record or class helper obey the visibility of their section like
+    /// those of classes and records — as a type, an intrinsic argument and a typecast callee in constants and statements, a constant
+    /// through the helped type; code of the helper may name them, public ones stay usable.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "LANG-774")]
+    [Trait("Req", "LANG-750")]
+    public void HelperNestedType_Visibility_E2610() =>
+        Assert.Equal(
+        [
+            "E2610(20,26): Cannot access strict private member 'TSmall' of 'TIntHelper'",
+            "E2610(21,19): Cannot access strict protected member 'TWide' of 'TIntHelper'",
+            "E2610(23,17): Cannot access strict private member 'TSmall' of 'TIntHelper'",
+            "E2610(24,17): Cannot access strict private member 'TBox' of 'TObjHelper'",
+            "E2610(35,19): Cannot access strict protected member 'TWide' of 'TIntHelper'",
+            "E2610(36,26): Cannot access strict private member 'TSmall' of 'TIntHelper'",
+            "E2610(37,16): Cannot access strict private member 'Limit' of 'TIntHelper'",
+        ], BindDiagnostics("""
+            program P;
+            type
+              TIntHelper = record helper for Integer
+              strict private
+                type TSmall = (sA, sB);
+                const Limit = 3;
+              strict protected
+                type TWide = Int64;
+              public
+                type TOpen = Word;
+                const Open = 4;
+                function Twice: Integer;
+              end;
+              TOwn = class end;
+              TObjHelper = class helper for TOwn
+              strict private
+                type TBox = record X: Integer; end;
+              end;
+            const
+              C1 = SizeOf(TIntHelper.TSmall);
+              C2 = TIntHelper.TWide(7);
+            var
+              A: TIntHelper.TSmall;
+              B: TObjHelper.TBox;
+              O: TIntHelper.TOpen;
+              N: Integer;
+            function TIntHelper.Twice: Integer;
+            var
+              L: TIntHelper.TSmall;
+            begin
+              L := TSmall(Self);
+              Result := Ord(L) + SizeOf(TIntHelper.TWide) + Integer.Limit + Limit;
+            end;
+            begin
+              N := TIntHelper.TWide(N);
+              N := SizeOf(TIntHelper.TSmall);
+              N := Integer.Limit;
+              N := SizeOf(O) + SizeOf(TIntHelper.TOpen) + Integer.Open;
+            end.
+            """).Where(d => !d.StartsWith('H') && !d.StartsWith('W')));
+
     /// <summary>LANG-780 amendment (C-354): through a generic instance the inherited name is the ancestor instance's nested type.</summary>
     [Fact]
     [Trait("Req", "LANG-780")]

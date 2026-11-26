@@ -201,7 +201,7 @@ internal sealed partial class DeclarationBinder
                 Unsupported(typed.Type!, "typed constant in a type");
                 break;
             case ConstSectionSyntax constSection:
-                BindConstSection(constSection, declared);
+                BindConstSection(constSection, declared, visibility);                 // LANG-774 (C-361): the section's visibility
                 break;
             case TypeSectionSyntax typeSection:
                 BindTypeSection(typeSection, declared);
@@ -421,7 +421,7 @@ internal sealed partial class DeclarationBinder
             case QualifiedNameSyntax { Right: IdentifierNameSyntax right } qualified when UnitQualifiers.Qualifier(_scope, qualified.Left) is not null:
                 return BindTypeName(right);                                                 // U.TName (LANG-311, 538)
             case QualifiedNameSyntax { Right: var right } qualified when !right.Identifier.IsMissing:
-                return ResolveTypeName(qualified.Left) switch
+                return (HelperNamedBy(qualified.Left) ?? ResolveTypeName(qualified.Left)) switch
                 {
                     ErrorTypeSymbol error => error,
                     var outer => NestedTypeNamed(outer, right),
@@ -429,6 +429,16 @@ internal sealed partial class DeclarationBinder
             default:
                 return _types.Error;
         }
+    }
+
+    /// <summary>
+    /// C-361: the helper a type path's qualifier names (<c>THelper</c>, <c>U.THelper</c>), else null — a helper's nested types are named
+    /// through it (LANG-770, 774); LANG-754 (E2751) forbids a helper only as a type itself.
+    /// </summary>
+    private HelperTypeSymbol? HelperNamedBy(NameSyntax qualifier)
+    {
+        var last = qualifier is QualifiedNameSyntax { Right: var right } qualified && UnitQualifiers.Qualifier(_scope, qualified.Left) is not null ? right : qualifier;
+        return last is IdentifierNameSyntax { Identifier: { IsMissing: false } identifier } name ? _scope.For(name).Lookup(NameOf(identifier)) as HelperTypeSymbol : null;
     }
 
     /// <summary>The nested type <paramref name="name"/> (plain or generic) of <paramref name="outer"/> (LANG-770, 774, 778, 780).</summary>

@@ -104,6 +104,63 @@ internal static class GenericNamesFixture
         end.
         """.ReplaceLineEndings("\n");
 
+    /// <summary>
+    /// C-358: a generic nothing instantiates whose type parameters have a class, an interface and a <c>constructor</c> constraint, and
+    /// whose method calls a generic method with its own type parameter.
+    /// </summary>
+    public static readonly string Constrained = """
+        unit UO;
+        interface
+        type
+          TThing = class
+          public
+            Name: string;
+            constructor Create;
+            procedure Rename(const S: string);
+          end;
+          IShape = interface
+            function Area: Integer;
+          end;
+          TUtil = class
+          public
+            class function Max<T>(const A, B: T): T;
+          end;
+          THolder<T: TThing; S: IShape; C: constructor> = class
+          public
+            Item: T;
+            Shape: S;
+            function Make: C;
+            function Larger(const A, B: T): T;
+            procedure Use;
+          end;
+        implementation
+        constructor TThing.Create;
+        begin
+        end;
+        procedure TThing.Rename(const S: string);
+        begin
+          Name := S;
+        end;
+        class function TUtil.Max<T>(const A, B: T): T;
+        begin
+          Result := A;
+        end;
+        function THolder<T, S, C>.Make: C;
+        begin
+          Result := C.Create;
+        end;
+        function THolder<T, S, C>.Larger(const A, B: T): T;
+        begin
+          Result := TUtil.Max<T>(A, B);
+        end;
+        procedure THolder<T, S, C>.Use;
+        begin
+          if Shape.Area > 0 then
+            Item.Rename(Item.Name);
+        end;
+        end.
+        """.ReplaceLineEndings("\n");
+
     /// <summary>C-355: the document of <c>UO.pas</c> in a project whose program uses <c>UO</c> without instantiating its generic.</summary>
     public static Document OpenUninstantiated(string? unitText = null) =>
         MarkupTestFile.Open("UO.pas", ("P.pas", "program P;\nuses UO;\nbegin\nend.\n"), ("UO.pas", unitText ?? Uninstantiated));

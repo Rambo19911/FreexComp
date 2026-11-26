@@ -35,7 +35,26 @@ public sealed partial class GenericBindingTests
             Value: T;
             class var Count: Integer;
           end;
+          TUtil = class
+          public
+            class function Max<T>(const A, B: T): T;
+          end;
+          TKeep<T: TUtil; C: constructor> = class
+          public
+            Item: T;
+            function Larger(const A, B: T): T;
+          end;
         implementation
+        class function TUtil.Max<T>(const A, B: T): T;
+        begin
+          Result := A;
+        end;
+        function TKeep<T, C>.Larger(const A, B: T): T;
+        begin
+          Result := TUtil.Max<T>(A, B);
+          Item.Free;
+          C.Create.Free;
+        end;
         procedure TStack<T>.Push(const V: T);
         var
           S: TStack<T>;
@@ -89,6 +108,13 @@ public sealed partial class GenericBindingTests
         var box = generics["TBox"];
 
         Assert.NotNull(stack.OpenInstance);                                          // the model made it, and bound a body on it
+        // C-358: a generic method called with an open instance's type parameter gets an instance for navigation only
+        var max = model.Unit.InterfaceMembers.OfType<ClassTypeSymbol>().Single(c => c.Name == "TUtil").GenericMethods.Single();
+        var call = model.SyntaxTree.FindToken(model.SyntaxTree.Text.Text.IndexOf("Max<T>(A, B)", StringComparison.Ordinal));
+        Assert.Same(max, Assert.IsType<MethodSymbol>(model.GetSymbolInfo(call.Parent!).Symbol).GenericMethodDefinition);
+        Assert.Empty(max.Instances);
+        Assert.Single(max.OpenInstances);
+        Assert.NotNull(generics["TKeep"].OpenInstance);
         var top = model.SyntaxTree.FindToken(model.SyntaxTree.Text.Text.IndexOf("Top := nil", StringComparison.Ordinal));
         Assert.Same(stack.OpenInstance, Assert.IsType<FieldSymbol>(model.GetSymbolInfo(top.Parent!).Symbol).ContainingSymbol);
         Assert.Empty(stack.Instances);

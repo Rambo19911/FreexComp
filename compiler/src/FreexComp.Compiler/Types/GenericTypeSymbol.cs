@@ -107,15 +107,28 @@ public sealed class GenericTypeSymbol : TypeSymbol
 
 /// <summary>
 /// C-355: a type parameter standing for itself, the argument of a generic's open instance (<see cref="GenericTypeSymbol.OpenInstance"/>).
-/// It exists for the language service only: it has no members and the size of a pointer (so that layouts of the open instance hold),
-/// and no program, <c>.pcu</c>, IR or debug information ever names it.
+/// It exists for the language service only: it has no members of its own and the size of a pointer (so that layouts of the open instance
+/// hold), and no program, <c>.pcu</c>, IR or debug information ever names it. C-358: code insight offers the members of its constraints.
 /// </summary>
 internal sealed class TypeParameterTypeSymbol : TypeSymbol
 {
-    internal TypeParameterTypeSymbol(string name, Targets.TargetInfo target)
+    internal TypeParameterTypeSymbol(string name, Targets.TargetInfo target, TypeParameterConstraints? constraints = null)
         : base(TypeKind.TypeParameter, name, target.PointerSize, target.PointerAlign)
     {
+        Constraints = constraints ?? TypeParameterConstraints.None;
     }
+
+    /// <summary>C-358: the constraints of the type parameter it stands for (LANG-702).</summary>
+    internal TypeParameterConstraints Constraints { get; }
+
+    /// <summary>
+    /// C-358: the types whose members code insight offers for it — its class and interface constraints, else <c>TObject</c> for a
+    /// <c>class</c> or <c>constructor</c> constraint (which offers <c>Create</c>); empty without such a constraint.
+    /// </summary>
+    internal IEnumerable<TypeSymbol> MemberTypes(BuiltInTypes types) =>
+        Constraints.Types.Any(t => t is ClassTypeSymbol) || !(Constraints.Class || Constraints.Constructor) || types.TObject is not { } root
+            ? Constraints.Types.Where(t => t is ClassTypeSymbol or InterfaceTypeSymbol)
+            : Constraints.Types.Where(t => t is InterfaceTypeSymbol).Prepend(root);
 }
 
 /// <summary>

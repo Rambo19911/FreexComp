@@ -430,8 +430,8 @@ internal sealed partial class DeclarationBinder
 
     /// <summary>
     /// C-355: while the result is not disposed, this thread binds an open instance or its method bodies: the instances it makes go to
-    /// <see cref="GenericTypeSymbol.OpenInstances"/>, no unit notes a use, no forward generic records a pending instance and no
-    /// generic method instance is made; nothing of it reaches code generation, a <c>.pcu</c>, debug information or a diagnostic.
+    /// <see cref="GenericTypeSymbol.OpenInstances"/> (generic method instances to <see cref="GenericMethodSymbol.OpenInstances"/>, C-358), no unit
+    /// notes a use and no forward generic records a pending instance; nothing of it reaches code generation, a <c>.pcu</c>, debug information or a diagnostic.
     /// </summary>
     internal static OpenBinding BindOpen()
     {
@@ -463,7 +463,9 @@ internal sealed partial class DeclarationBinder
                 generic.OpenInstanceAttempted = true;
                 if (generic is { Declaration: not null, DeclaringScope: { } scope, IsForward: false, ContainingSymbol: { } container })
                 {
-                    ImmutableArray<TypeSymbol> arguments = [.. generic.ParameterNames.Select(n => new TypeParameterTypeSymbol(n, types.Target))];
+                    // C-358: each carries its constraints, for the members code insight offers
+                    ImmutableArray<TypeSymbol> arguments = [.. generic.ParameterNames.Select((n, i) =>
+                        new TypeParameterTypeSymbol(n, types.Target, i < generic.Constraints.Length ? generic.Constraints[i] : null))];
                     using (BindOpen())
                     {
                         try
@@ -839,13 +841,8 @@ internal sealed partial class DeclarationBinder
         var unit = GenericUses.Current ?? GenericUses.UnitOf(_scope);
         lock (_types.GenericGate)
         {
-            if (!generic.Instances.TryGetValue(arguments, out var instance))
+            if (!generic.Instances.TryGetValue(arguments, out var instance) && !(t_open && generic.OpenInstances.TryGetValue(arguments, out instance)))
             {
-                if (t_open)
-                {
-                    return null;                                                  // C-355: an open binding makes no generic method instance
-                }
-
                 var scope = new Scope(ScopeKind.Unit, generic.DeclaringScope, generic.DeclaringContainer) { DeclaresTypeParameters = true };
                 for (var i = 0; i < arguments.Length; i++)
                 {
@@ -875,15 +872,23 @@ internal sealed partial class DeclarationBinder
                 }
 
                 instance.GenericMethodDefinition = generic;
-                instance.GenericSuffix = "<" + string.Join(",", arguments.Select(Emit.Mangler.TypeName)) + ">";
-                generic.Instances[arguments] = instance;
+                if (!t_open)
+                {
+                    instance.GenericSuffix = "<" + string.Join(",", arguments.Select(Emit.Mangler.TypeName)) + ">";
+                }
+
+                (t_open ? generic.OpenInstances : generic.Instances)[arguments] = instance;   // C-358: an open binding's, for navigation only
                 if (generic.Implementation is { } implementation)
                 {
                     DefineGenericMethodInstance(instance, implementation, arguments);
                 }
             }
 
-            GenericUses.Note(instance, unit, at);
+            if (!t_open)
+            {
+                GenericUses.Note(instance, unit, at);
+            }
+
             return instance;
         }
     }

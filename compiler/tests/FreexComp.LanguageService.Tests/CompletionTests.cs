@@ -488,4 +488,40 @@ public sealed class CompletionTests
         Assert.Contains("IsLast", node);
         Assert.DoesNotContain("Push", node);
     }
+
+    /// <summary>
+    /// C-358: in a generic nothing instantiates, a value of a type parameter with a class or interface constraint offers the members of
+    /// that constraint (hover shows them), and a <c>constructor</c> constraint offers <c>Create</c> on the type parameter.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1394")]
+    public void UninstantiatedGeneric_ConstrainedParameterMembers()
+    {
+        var text = GenericNamesFixture.Constrained;
+        var doc = GenericNamesFixture.OpenUninstantiated(text);
+        string[] After(string piece)
+        {
+            var caret = GenericNamesFixture.Offset(text, piece) + piece.Length;
+            return [.. CompletionService.GetCompletions(doc, caret, new CompletionTrigger(CompletionTriggerKind.Character, '.'), TestContext.Current.CancellationToken)
+                .Items.Select(i => i.Label)];
+        }
+
+        string[] item = After("    Item.");
+        string[] inner = After("Rename(Item.");
+        string[] shape = After("if Shape.");
+        string[] made = After("Result := C.");
+        Assert.Contains("Name", item);
+        Assert.Contains("Rename", item);
+        Assert.Contains("Free", item);                                          // inherited from the constraint's ancestor
+        Assert.DoesNotContain("Area", item);
+        Assert.DoesNotContain("Larger", item);
+        Assert.Contains("Name", inner);
+        Assert.Contains("Area", shape);
+        Assert.DoesNotContain("Name", shape);
+        Assert.Contains("Create", made);
+
+        var rename = GenericNamesFixture.Offset(text, "Item.Rename") + "Item.".Length + 1;
+        Assert.Equal("procedure TThing.Rename(const S: string)", QuickInfoService.GetQuickInfo(doc, rename, TestContext.Current.CancellationToken)?.Signature);
+    }
 }

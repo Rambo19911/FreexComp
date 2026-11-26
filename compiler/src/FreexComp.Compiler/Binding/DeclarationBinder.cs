@@ -205,7 +205,8 @@ internal sealed partial class DeclarationBinder
         return declared.ToImmutable();
     }
 
-    private void BindConstSection(ConstSectionSyntax section, ImmutableArray<Symbol>.Builder declared)
+    /// <summary>A <c>const</c> section; <paramref name="visibility"/> is the section's visibility for one nested in a type (LANG-774, C-361).</summary>
+    private void BindConstSection(ConstSectionSyntax section, ImmutableArray<Symbol>.Builder declared, Visibility visibility = Visibility.Public)
     {
         var isResourceString = section.Keyword.Kind == SyntaxKind.ResourceStringKeyword;
         foreach (var declaration in section.Declarations)
@@ -230,7 +231,7 @@ internal sealed partial class DeclarationBinder
                 var value = type.TypeKind == TypeKind.Error || !IsStaticallyInitializable(type, declaration.Type) ? null
                     : BindTypedConstant(declaration.Value, type);
                 var locations = ImmutableArray.Create(DiagnosticBag.LocationOf(identifier));
-                symbol = new ConstantSymbol(NameOf(identifier), type, value, isTyped: true, _container, locations)
+                symbol = new ConstantSymbol(NameOf(identifier), type, value, isTyped: true, _container, locations, visibility)
                 {
                     Storage = new VariableSymbol(NameOf(identifier), type, isGlobal: true, _container, locations, value) { IsReadOnly = true },
                 };
@@ -243,7 +244,7 @@ internal sealed partial class DeclarationBinder
                     value = AsResourceString(value, declaration.Value);
                 }
 
-                symbol = Constant(identifier, value?.Type ?? _types.Error, value, isTyped: false);
+                symbol = Constant(identifier, value?.Type ?? _types.Error, value, isTyped: false, visibility);
             }
 
             symbol.Hints = BindHints(declaration.HintDirectives);                                 // LANG-472 (C-232)
@@ -2052,8 +2053,8 @@ internal sealed partial class DeclarationBinder
         return null;
     }
 
-    private ConstantSymbol Constant(SyntaxToken identifier, TypeSymbol type, ConstantValue? value, bool isTyped) =>
-        new(NameOf(identifier), type, value, isTyped, _container, [DiagnosticBag.LocationOf(identifier)]);
+    private ConstantSymbol Constant(SyntaxToken identifier, TypeSymbol type, ConstantValue? value, bool isTyped, Visibility visibility) =>
+        new(NameOf(identifier), type, value, isTyped, _container, [DiagnosticBag.LocationOf(identifier)], visibility);
 
     /// <summary>Adds the symbol to the scope; E2004 when the scope already declares the name (LANG-402, LANG-518).</summary>
     private void Declare(SyntaxToken identifier, Symbol symbol, ImmutableArray<Symbol>.Builder declared)

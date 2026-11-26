@@ -677,14 +677,23 @@ internal sealed class PcuWriter(PcuContext context)
                 entry["outer"] = TypeId(outer);                                    // CMP-1392 (C-344): created inside its enclosing type
             }
 
-            if (!type.IsGenericInstance && (TypeMembers.NestedMembers(type).OfType<TypeSymbol>().Any() || !TypeMembers.NestedAliases(type).IsEmpty))
+            var constants = TypeMembers.NestedMembers(type).OfType<ConstantSymbol>().Where(c => c is { IsTyped: false, Value: not null }).ToList();
+            if (!type.IsGenericInstance && (TypeMembers.NestedMembers(type).OfType<TypeSymbol>().Any() || !TypeMembers.NestedAliases(type).IsEmpty || constants.Count > 0))
             {
-                // CMP-1392 (C-344): the nested types (and type aliases) of a class or record, with their section's visibility
+                // CMP-1392 (C-344): the nested types (and type aliases) of a class or record, with their section's visibility;
+                // C-361: its nested (true) constants with their value and section's visibility too
                 entry["nested"] = new JsonArray([.. TypeMembers.NestedMembers(type).OfType<TypeSymbol>().Select(t => (JsonNode?)new JsonObject
                 {
                     ["name"] = t.Name,
                     ["type"] = TypeId(t),
                     ["visibility"] = VisibilityName(t.NestedVisibility),
+                }), .. constants.Select(c => (JsonNode?)new JsonObject
+                {
+                    ["name"] = c.Name,
+                    ["type"] = TypeId(c.Type),
+                    ["const"] = true,
+                    ["value"] = Value(c.Value, c.Type),
+                    ["visibility"] = VisibilityName(c.Visibility),
                 }), .. TypeMembers.NestedAliases(type).Select(a => (JsonNode?)new JsonObject
                 {
                     ["name"] = a.Name,

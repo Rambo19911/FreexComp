@@ -226,9 +226,13 @@ public sealed class SemanticModel
                 types.AddRange(TypeMembers.SelfAndAncestors(helper));
             }
 
-            for (var type = container; type is not null; type = Inherited(type))
+            // C-358: a type parameter of an open instance has the members of its constraints
+            foreach (var start in container is TypeParameterTypeSymbol parameter ? parameter.MemberTypes(_result.Types) : [container])
             {
-                types.Add(type);
+                for (var type = start; type is not null; type = Inherited(type))
+                {
+                    types.Add(type);
+                }
             }
 
             foreach (var type in types)
@@ -718,7 +722,7 @@ public sealed class SemanticModel
                 break;
             case BoundFieldAccessExpression field:
                 Reference(field.Syntax, (Symbol?)field.Property ?? field.Field, field.Record.Type);
-                Walk(field.Record);
+                WalkReceiver(field.Record, field.Syntax);
                 break;
             case BoundTypeTestExpression test:
                 if (test.Syntax is BinaryExpressionSyntax { Right: { } target })
@@ -730,7 +734,7 @@ public sealed class SemanticModel
                 break;
             case BoundPropertyAccessExpression property:
                 Reference(property.Syntax, property.Property);
-                Walk(property.Self);
+                WalkReceiver(property.Self, property.Syntax);
                 WalkAll(property.Indexes);
                 break;
             case BoundAddressOfExpression address:
@@ -892,6 +896,18 @@ public sealed class SemanticModel
                 Declare(jump.Label.Symbol);
                 ReferenceLabel(((GotoStatementSyntax)jump.Syntax).Label, jump.Label.Symbol);
                 break;
+        }
+    }
+
+    /// <summary>
+    /// The receiver of a member access; C-358: an implicit one (<c>Self</c> or a <c>with</c> receiver, made at the member's own name) is no
+    /// expression of its own, so the name keeps the member's type (completion after <c>Shape.</c> for a field <c>Shape</c>).
+    /// </summary>
+    private void WalkReceiver(BoundExpression? receiver, SyntaxNode member)
+    {
+        if (receiver is not null && !ReferenceEquals(receiver.Syntax, member))
+        {
+            Walk(receiver);
         }
     }
 

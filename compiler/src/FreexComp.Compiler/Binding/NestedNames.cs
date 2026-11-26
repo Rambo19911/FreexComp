@@ -95,6 +95,21 @@ internal static class NestedNames
     public static string? InaccessibleNestedType(Scope scope, TypeSymbol nested) =>
         TypeMembers.EnclosingTypes(nested).FirstOrDefault() is { } outer ? Inaccessible(scope, nested.NestedVisibility, outer) : null;
 
+    /// <summary>
+    /// LANG-774 (C-361): E2610 at <paramref name="at"/> when <paramref name="member"/> is a constant nested in a class, record or helper
+    /// whose section code at <paramref name="scope"/> may not access (naming the type that declares it); true when reported.
+    /// </summary>
+    public static bool ReportInaccessibleConstant(Scope scope, SyntaxNode at, Symbol member, DiagnosticBag diagnostics)
+    {
+        if (member is not ConstantSymbol { ContainingSymbol: TypeSymbol owner } || Inaccessible(scope, member.Visibility, owner) is not { } word)
+        {
+            return false;
+        }
+
+        diagnostics.Report(at, "E2610", word, member.Name, TypeMembers.DisplayName(owner));
+        return true;
+    }
+
     /// <summary>LANG-774: the visibility word of a member of <paramref name="outer"/> declared in a <paramref name="visibility"/> section when code at <paramref name="scope"/> may not access it, else null.</summary>
     private static string? Inaccessible(Scope scope, Visibility visibility, TypeSymbol outer)
     {
@@ -105,6 +120,7 @@ internal static class NestedNames
 
         UnitSymbol? unit = null;
         var selves = new List<TypeSymbol>();
+        var inMethod = false;
         for (var s = scope; s is not null; s = s.Parent)
         {
             switch (s.Owner)
@@ -112,11 +128,13 @@ internal static class NestedNames
                 case UnitSymbol u when s.Kind == ScopeKind.Unit:
                     unit ??= u;
                     break;
-                case TypeSymbol type when s.Kind == ScopeKind.TypeMember:
+                case TypeSymbol type when s.Kind == ScopeKind.TypeMember && !inMethod:
                     selves.Add(type);
                     break;
-                case MethodSymbol method:
+                case MethodSymbol method when !inMethod:
+                    // C-361: a method body's member scopes include its type's ancestors (LANG-621); the code is its own type's only
                     selves.Add(method.Owner);
+                    inMethod = true;
                     break;
             }
         }

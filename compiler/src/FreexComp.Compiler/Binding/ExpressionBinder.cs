@@ -702,6 +702,8 @@ internal sealed partial class ExpressionBinder
                 return ImplicitMethodCall(name, name, argumentList: null);
             case RoutineSymbol:
                 return CallExpression(name, name, argumentList: null);             // LANG-312: parameterless call
+            case ConstantSymbol constant when NestedNames.ReportInaccessibleConstant(_scope, name, constant, _diagnostics):
+                return Error(name);                                                 // LANG-774 (C-361): an inherited nested constant
             case ConstantSymbol { IsTyped: false, Value: { } value } constant:
                 return new BoundConstantExpression(name, constant, value);
             case ConstantSymbol { IsTyped: true, Storage: { } storage }:

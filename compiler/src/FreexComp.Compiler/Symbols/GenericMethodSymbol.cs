@@ -41,5 +41,11 @@ public sealed class GenericMethodSymbol : Symbol
 
     internal Dictionary<ImmutableArray<TypeSymbol>, MethodSymbol> Instances { get; } = new(GenericTypeSymbol.ArgumentsComparer.Instance);
 
+    /// <summary>
+    /// C-358: the instances an open binding (the language service, C-355) makes for calls in a generic's open method bodies — headings only,
+    /// for navigation; kept apart from <see cref="Instances"/>, which code generation and the <c>.pcu</c> writer walk.
+    /// </summary>
+    internal Dictionary<ImmutableArray<TypeSymbol>, MethodSymbol> OpenInstances { get; } = new(GenericTypeSymbol.ArgumentsComparer.Instance);
+
     public override string ToDisplayString() => $"{Owner.Name}.{Name}<{string.Join(", ", ParameterNames)}>";
 }

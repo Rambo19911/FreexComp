@@ -471,8 +471,8 @@ internal static class PcuReader
         // -------------------------------------------------------------- types
 
         /// <summary>
-        /// CMP-1392 (C-344): the nested types and type aliases of the classes and records read so far, with their section's visibility
-        /// (a <c>.pcu</c> written before this card has no <c>nested</c> keys).
+        /// CMP-1392 (C-344): the nested types and type aliases of the classes and records read so far, with their section's visibility;
+        /// C-361: nested constants, and those of helpers too (a <c>.pcu</c> written before C-344 has no <c>nested</c> keys).
         /// </summary>
         private void AttachNested()
         {
@@ -483,6 +483,14 @@ internal static class PcuReader
                 foreach (var item in pending.Nested)
                 {
                     var type = Type(item!, "type");
+                    if (item!["const"] is JsonValue constant && constant.GetValue<bool>())
+                    {
+                        // C-361: a nested constant with its section's visibility; an entry without one reads as public
+                        members.Add(new ConstantSymbol(Text(item, "name"), type, Value(item["value"], type), isTyped: false, pending.Owner, [],
+                            item["visibility"] is JsonValue cv ? VisibilityOf(cv.GetValue<string>()) : Visibility.Public));
+                        continue;
+                    }
+
                     if (item!["alias"] is JsonValue alias && alias.GetValue<bool>())
                     {
                         // C-359: the section's visibility; a .pcu written before has none and reads as public
@@ -516,6 +524,10 @@ internal static class PcuReader
                     case RecordTypeSymbol r:
                         r.NestedMembers = [.. r.NestedMembers, .. members];
                         r.NestedAliases = [.. r.NestedAliases, .. aliases];
+                        break;
+                    case HelperTypeSymbol h:
+                        h.NestedMembers = [.. h.NestedMembers, .. members];    // C-361: a helper's nested constants and types (LANG-750)
+                        h.NestedAliases = [.. h.NestedAliases, .. aliases];
                         break;
                     default:
                         throw new PcuFormatException($"'{pending.Owner.Name}' cannot have nested types");

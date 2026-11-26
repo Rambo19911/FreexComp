@@ -68,14 +68,14 @@ internal static class TypeMembers
     {
         if (NestedMembers(type).FirstOrDefault(m => m is not GenericTypeSymbol && IdentifierComparer.Instance.Equals(m.Name, name)) is { } member)
         {
-            // a nested type outside a class or record (a helper's) has no visibility check, as before C-359
+            // C-361: a helper's nested type has its section's visibility too (LANG-774); one declared elsewhere has none
             return member is not TypeSymbol nested ? null
                 : EnclosingTypes(nested).FirstOrDefault() is { } enclosing ? (nested, nested.Name, enclosing, nested.NestedVisibility)
-                : (nested, nested.Name, type, Visibility.Public);
+                : (nested, nested.Name, type, ReferenceEquals(nested.ContainingSymbol, type) ? nested.NestedVisibility : Visibility.Public);
         }
 
         var alias = NestedAliases(type).FirstOrDefault(a => IdentifierComparer.Instance.Equals(a.Name, name));
-        return alias.Target is null ? null : (alias.Target, alias.Name, type, type is ClassTypeSymbol or RecordTypeSymbol ? alias.Visibility : Visibility.Public);
+        return alias.Target is null ? null : (alias.Target, alias.Name, type, alias.Visibility);                 // C-361: a helper's too
     }
 
     /// <summary>LANG-778 (C-345): the generic types named <paramref name="name"/> nested in <paramref name="type"/> (any arity).</summary>

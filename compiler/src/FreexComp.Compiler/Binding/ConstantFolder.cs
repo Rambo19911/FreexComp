@@ -97,6 +97,11 @@ internal sealed class ConstantFolder
                 && (outer is ErrorTypeSymbol || IncompleteInstance(memberAccess.Expression, outer)):
                 return null;                                                    // C-353: reported at the generic segment; C-360: E2610 at an inaccessible one
             case MemberAccessExpressionSyntax memberAccess when NestedNames.NestedMember(_scope, memberAccess, Generic) is { } nested:
+                if (NestedNames.ReportInaccessibleConstant(_scope, memberAccess.Name, nested, _diagnostics))
+                {
+                    return null;                                                // LANG-774 (C-361): the constant's section
+                }
+
                 return nested switch                                            // LANG-770 (C-122): TOuter.Limit
                 {
                     ConstantSymbol { IsTyped: false } constant => constant.Value,
@@ -158,7 +163,7 @@ internal sealed class ConstantFolder
             case null:
                 return null;
             case ConstantSymbol { IsTyped: false } constant:
-                return constant.Value;
+                return NestedNames.ReportInaccessibleConstant(_scope, name, constant, _diagnostics) ? null : constant.Value;   // LANG-774 (C-361): inherited
             case EnumMemberSymbol member:
                 return member.Value;
             case TypeSymbol type:

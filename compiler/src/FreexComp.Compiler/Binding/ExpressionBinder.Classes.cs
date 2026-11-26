@@ -997,9 +997,14 @@ internal sealed partial class ExpressionBinder
     /// <summary>The type an expression names, generic segments included (LANG-780); null when it names none.</summary>
     private TypeSymbol? NamedType(ExpressionSyntax expression) => NestedNames.TypeNamedBy(_scope, expression, GenericSegment);
 
-    /// <summary>A nested constant or enumeration element used as a value (LANG-770); null for other members.</summary>
-    private static BoundExpression? NestedValue(SyntaxNode syntax, Symbol member) => member switch
+    /// <summary>
+    /// A nested constant or enumeration element used as a value (LANG-770); null for other members. A constant of a section this code
+    /// may not access is E2610 at the member name (LANG-774, C-361).
+    /// </summary>
+    private BoundExpression? NestedValue(SyntaxNode syntax, Symbol member) => member switch
     {
+        ConstantSymbol constant when NestedNames.ReportInaccessibleConstant(_scope, syntax is MemberAccessExpressionSyntax access ? access.Name : syntax, constant, _diagnostics)
+            => Error(syntax),
         ConstantSymbol { IsTyped: false, Value: { } value } constant => new BoundConstantExpression(syntax, constant, value),
         EnumMemberSymbol element => new BoundLiteral(syntax, element.Value),
         _ => null,
