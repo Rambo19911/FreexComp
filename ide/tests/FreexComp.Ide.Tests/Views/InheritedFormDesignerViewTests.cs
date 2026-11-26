@@ -7,7 +7,9 @@ using Avalonia.Controls.Documents;
 using Avalonia.Media;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
+using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
+using Avalonia.Input;
 using FreexComp.Designer.Rendering;
 using FreexComp.Ide.Core.Documents;
 using FreexComp.Ide.Core.Resources;
@@ -15,6 +17,7 @@ using FreexComp.Ide.Core.Tests.Designer;
 using FreexComp.Ide.Core.ViewModels;
 using FreexComp.Ide.Designer;
 using FreexComp.Ide.Tests.Infrastructure;
+using Point = Avalonia.Point;
 using Rect = Avalonia.Rect;
 
 namespace FreexComp.Ide.Tests.Views;
@@ -142,6 +145,164 @@ public sealed class InheritedFormDesignerViewTests
         // DSG-SUR-245: the Structure window's menu offers the surface commands with the same enabled rules.
         Assert.False(surface.CanExecute(FreexComp.Designer.Surface.Commands.Delete));
     }
+
+    /// <summary>
+    /// DSG-SUR-242, 229 (D-134 item 1): an inherited button dragged inside its inherited panel stores <c>Left</c> /
+    /// <c>Top</c> overrides; <c>Revert to Inherited</c> is then enabled in the design-surface context menu and in the
+    /// Structure window's, and the Structure menu's item removes the overrides (one undo unit).
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "DSG-SUR-242")]
+    [Trait("Req", "DSG-SUR-229")]
+    public async Task RevertToInherited_AfterMove_EnabledInSurfaceAndStructureMenus()
+    {
+        await using var h = await StartAsync();
+        var (document, control) = await OpenDescendantAsync(h);
+        var surface = document.Designer.Surface!;
+        var model = document.Designer.Model!;
+        var cancel = model.FindByName("CancelButton")!;
+        Assert.Empty(cancel.Properties);
+
+        // The drag: press on the button, move 40 to the left in steps, release.
+        var b = surface.Geometry.GetBounds(cancel);
+        var (x, y) = (b.Left + b.Width / 2.0, b.Top + b.Height / 2.0);
+        Pointer(h, control, x, y, p => h.Window.MouseDown(p, MouseButton.Left));
+        foreach (var step in new[] { 5, 20, 40 })
+        {
+            Pointer(h, control, x - step, y, p => h.Window.MouseMove(p));
+        }
+
+        Pointer(h, control, x - 40, y, p => h.Window.MouseUp(p, MouseButton.Left));
+        Assert.Equal(["CancelButton"], surface.Selection.Items.Select(o => o.Name));
+        Assert.NotNull(model.FindByName("CancelButton")!.FindProperty("Left"));
+        Assert.Equal("ButtonPanel", model.FindByName("CancelButton")!.Parent!.Name);
+
+        // The surface's context menu.
+        b = surface.Geometry.GetBounds(model.FindByName("CancelButton")!);
+        (x, y) = (b.Left + b.Width / 2.0, b.Top + b.Height / 2.0);
+        Pointer(h, control, x, y, p => h.Window.MouseDown(p, MouseButton.Right));
+        Pointer(h, control, x, y, p => h.Window.MouseUp(p, MouseButton.Right));
+        var menu = Assert.IsType<ContextMenu>(control.ContextMenu);
+        Assert.True(menu.IsOpen);
+        Assert.True(Item(menu, "Context.designer.revertToInherited").IsEffectivelyEnabled);
+        menu.Close();
+        Dispatcher.UIThread.RunJobs();
+
+        // The Structure window's context menu: enabled too; its item reverts the move.
+        await h.ExecuteAsync("view.structure");
+        Dispatcher.UIThread.RunJobs();
+        h.RightClick(StructureRow + "CancelButton");
+        var list = h.Find<ListBox>("Tool.Structure.List");
+        menu = Assert.IsType<ContextMenu>(list.ContextMenu);
+        var revert = Item(menu, "Context.designer.revertToInherited");
+        Assert.True(revert.IsEffectivelyEnabled);
+        menu.Close();
+        revert.Command!.Execute(revert.CommandParameter);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Empty(model.FindByName("CancelButton")!.Properties);
+        Assert.Equal("Undo_Designer_RevertToInherited", document.Designer.Undo.UndoTitleKey);
+    }
+
+    /// <summary>
+    /// DSG-SUR-245, 238 (D-134 item 2): the Structure window's context menu offers the surface commands with the same
+    /// enabled rules — for an inherited component (Copy and Select All enabled, Cut and Delete refused) and for a new one;
+    /// the Delete key in the Structure window on an inherited component shows the surface's refusal message and deletes
+    /// nothing.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "DSG-SUR-245")]
+    [Trait("Req", "DSG-SUR-238")]
+    public async Task StructureMenu_SameEnabledRulesAsSurface_DeleteKeyShowsMessage()
+    {
+        await using var h = await StartAsync();
+        var (document, control) = await OpenDescendantAsync(h);
+        var surface = document.Designer.Surface!;
+        var model = document.Designer.Model!;
+        await h.ExecuteAsync("view.structure");
+        Dispatcher.UIThread.RunJobs();
+        var list = h.Find<ListBox>("Tool.Structure.List");
+
+        foreach (var name in new[] { "CancelButton", "HelpButton" })
+        {
+            var b = surface.Geometry.GetBounds(model.FindByName(name)!);
+            var (x, y) = (b.Left + b.Width / 2.0, b.Top + b.Height / 2.0);
+            control.Focus();
+            Dispatcher.UIThread.RunJobs();
+            Pointer(h, control, x, y, p => h.Window.MouseDown(p, MouseButton.Right));
+            Pointer(h, control, x, y, p => h.Window.MouseUp(p, MouseButton.Right));
+            Assert.Equal([name], surface.Selection.Items.Select(o => o.Name));
+            var menu = Assert.IsType<ContextMenu>(control.ContextMenu);
+            var onSurface = Enabled(menu);
+            menu.Close();
+            Dispatcher.UIThread.RunJobs();
+
+            h.Click(StructureRow + name); // the tree has the keyboard focus, as after a click in the real window
+            Assert.True(list.IsKeyboardFocusWithin);
+            h.RightClick(StructureRow + name);
+            Assert.Equal([name], surface.Selection.Items.Select(o => o.Name));
+            menu = Assert.IsType<ContextMenu>(list.ContextMenu);
+            var inStructure = Enabled(menu);
+            menu.Close();
+            Dispatcher.UIThread.RunJobs();
+            Assert.Equal(onSurface, inStructure);
+            Assert.True(inStructure["Context.edit.copy"], name);
+            Assert.True(inStructure["Context.edit.selectAll"], name);
+            Assert.Equal(name == "HelpButton", inStructure["Context.edit.delete"]);
+            Assert.Equal(name == "HelpButton", inStructure["Context.edit.cut"]);
+        }
+
+        // The Delete key on the inherited component: on the surface, then in the Structure window — the same message.
+        surface.Selection.Set(["CancelButton"]);
+        control.Focus();
+        Dispatcher.UIThread.RunJobs();
+        h.Press("Delete");
+        var message = h.Services.Status.Message;
+        Assert.Contains("TBaseDialog", message, StringComparison.Ordinal);
+        h.Services.Status.ShowMessage("-", TimeSpan.FromMinutes(1));
+        h.Click(StructureRow + "CancelButton");
+        Assert.True(list.IsKeyboardFocusWithin);
+        h.Press("Delete");
+        Assert.Equal(message, h.Services.Status.Message);
+        Assert.NotNull(model.FindByName("CancelButton"));
+        Assert.False(document.IsModified);
+    }
+
+    private static Task<HeadlessHarness> StartAsync() => HeadlessHarness.StartAsync(o =>
+    {
+        o.InitialFiles["MainForm.pas"] = InheritedDesign.Unit;
+        o.InitialFiles["MainForm.form"] = InheritedDesign.Form.ReplaceLineEndings("\r\n");
+    });
+
+    /// <summary><see cref="InheritedDesign.Form"/> in the Design view with its ancestor known; the surface focused.</summary>
+    private static async Task<(FormDocumentViewModel Document, DesignSurfaceControl Control)> OpenDescendantAsync(HeadlessHarness h)
+    {
+        var documents = (DocumentService)h.Services.Documents;
+        documents.DesignCatalog = FrameDesign.Catalog;
+        documents.DesignAncestors = InheritedDesign.Ancestors();
+        var document = Assert.IsType<FormDocumentViewModel>((await documents.OpenAsync(Path.Combine(h.TempDir, "MainForm.pas"))).Value);
+        Dispatcher.UIThread.RunJobs();
+        h.Click(AutomationIds.DocumentViewTab("MainForm.pas", "Design"));
+        Assert.Equal(DocumentView.Design, document.ActiveView);
+        Assert.True(document.Designer.Model!.Root.IsInheritedRoot);
+        return (document, h.Find<DesignSurfaceControl>(AutomationIds.Designer("MainForm")));
+    }
+
+    /// <summary>A pointer event at a surface point (main-window coordinates), then the queued jobs.</summary>
+    private static void Pointer(HeadlessHarness h, DesignSurfaceControl control, double x, double y, Action<Point> send)
+    {
+        send(control.TranslatePoint(new Point(x, y), h.Window)!.Value);
+        Dispatcher.UIThread.RunJobs();
+    }
+
+    private static MenuItem Item(ContextMenu menu, string id) =>
+        Items(menu.Items.OfType<MenuItem>()).Single(i => AutomationIds.Get(i) == id);
+
+    private static IEnumerable<MenuItem> Items(IEnumerable<MenuItem> items) =>
+        items.SelectMany(i => new[] { i }.Concat(Items(i.Items.OfType<MenuItem>())));
+
+    /// <summary>Every item of the menu and its submenus by automation id: enabled or not.</summary>
+    private static Dictionary<string, bool> Enabled(ContextMenu menu) =>
+        Items(menu.Items.OfType<MenuItem>()).ToDictionary(i => AutomationIds.Get(i)!, i => i.IsEffectivelyEnabled);
 
     private static Color ToColor(Rgba c) => Color.FromArgb(c.A, c.R, c.G, c.B);
 

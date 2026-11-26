@@ -17,6 +17,7 @@ public static class Phase8Features
     /// </summary>
     internal static readonly IReadOnlyList<string> DeliveredIds =
     [
+        "designer.revertToInherited", // F05-006, F05-007 (D-134)
         "file.copyLibraryUnitToProject", // F05-099
         "file.editLibrarySource", // F02-004
         "file.newFrame", // F05-006

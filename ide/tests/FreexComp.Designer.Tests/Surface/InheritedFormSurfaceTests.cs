@@ -332,8 +332,16 @@ public sealed class InheritedFormSurfaceTests
         Assert.Contains("    end\n    object Button1: TButton\n", h.Text, StringComparison.Ordinal);
         Assert.True(h.Text.IndexOf("object Button1", StringComparison.Ordinal) < h.Text.IndexOf("object HelpButton", StringComparison.Ordinal));
 
-        // There it cannot go further back; the key does nothing more.
-        Assert.False(h.Controller.CanExecute(Commands.SendToBack));
+        // There it cannot go further back: the command stays enabled (not its container's first child, amended DSG-SUR-241,
+        // D-134); the clamp leaves it in place, so only the message is shown — no change, no undo unit.
+        var text = h.Text;
+        var units = h.Undo.UndoCount;
+        h.Host.Statuses.Clear();
+        Assert.True(h.Controller.CanExecute(Commands.SendToBack));
+        h.Execute(Commands.SendToBack);
+        Assert.Equal(["OkButton", "CancelButton", "Button1", "HelpButton"], h.ChildNames("ButtonPanel"));
+        Assert.Equal([Status(StatusIds.InheritedOrderKept)], Statuses(h));
+        Assert.Equal((text, units), (h.Text, h.Undo.UndoCount));
         Assert.True(h.Controller.CanExecute(Commands.BringToFront));
 
         // Bring to front works as usual.
@@ -343,9 +351,56 @@ public sealed class InheritedFormSurfaceTests
         h.ExecuteUndo();
         Assert.Equal(["OkButton", "CancelButton", "HelpButton", "Button1"], h.ChildNames("ButtonPanel"));
 
-        // At the root the new edit already follows the inherited components: nothing to do.
+        // At the root the new edit already follows the inherited components: enabled, the message only.
         h.Select("NameEdit");
+        h.Host.Statuses.Clear();
+        text = h.Text;
+        units = h.Undo.UndoCount;
+        Assert.True(h.Controller.CanExecute(Commands.SendToBack));
+        h.Execute(Commands.SendToBack);
+        Assert.Equal([Status(StatusIds.InheritedOrderKept)], Statuses(h));
+        Assert.Equal((text, units), (h.Text, h.Undo.UndoCount));
+
+        // A new component that is its container's first child (no inherited sibling before it) stays disabled.
+        h.Host.Arm("TPanel");
+        h.Click("MidDialog", (220, 60));
+        h.Host.Arm("TButton");
+        h.Click("Panel1", (8, 8));
+        h.Select("Button2");
+        Assert.Equal(["Button2"], h.ChildNames("Panel1"));
         Assert.False(h.Controller.CanExecute(Commands.SendToBack));
+    }
+
+    /// <summary>
+    /// DSG-FD-027, DSG-FD-127 (D-134 item 5): a read-only descendant (<c>F0112</c>) whose root stores no size is drawn at the
+    /// metadata's default client size — the size an empty form of the metadata's form class has — instead of a 0 × 0
+    /// frame; a size it stores is kept, per dimension.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "DSG-FD-027")]
+    [Trait("Req", "DSG-FD-127")]
+    public void ReadOnlyDescendant_SizelessRoot_DrawnAtMetadataDefaultClientSize()
+    {
+        static DesignerHarness ReadOnly(string lines) => DesignerHarness.FromText("inherited MidForm2: TMidForm2\n" + lines + "end\n", "MidForm2.form",
+            allowDiagnostics: true, catalog: Components, rootAncestorClass: "TMidForm", ancestors: new FrameCatalog());
+
+        // The metadata's default client size: the defaultSize of its form class (400 × 300, as the new-form template, DSG-CS-111).
+        var size = Components.All.First(c => c.Kind == FreexComp.Designer.Catalog.ComponentKind.Form).DefaultSize;
+        Assert.Equal((400, 300), (size.Width, size.Height));
+        static (int, int) Client(DesignerHarness d) => (d.Controller.Geometry.FormClientRect.Width, d.Controller.Geometry.FormClientRect.Height);
+
+        using var h = ReadOnly("");
+        Assert.Equal(["F0112"], h.Document.Diagnostics.Select(d => d.Code));
+        Assert.True(h.Document.Root.IsPreserved);
+        Assert.Equal((400, 300), Client(h));
+        Assert.Equal(new Rect(16, 16, 402, 332), h.Controller.Geometry.FrameRect);
+        var canvas = new FreexComp.Designer.Rendering.RecordingCanvas();
+        h.Controller.Render(canvas, new Rect(0, 0, 1200, 900));
+        Assert.NotEmpty(canvas.Ops);
+
+        using var sized = ReadOnly("  ClientWidth = 300\n");
+        Assert.True(sized.Document.Root.IsPreserved);
+        Assert.Equal((300, 300), Client(sized));
     }
 
     [Fact]

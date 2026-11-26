@@ -458,4 +458,63 @@ public sealed class ProjectFrameCatalogTests
         Assert.Equal(text, form.Designer.CurrentFormText());
         Assert.False(form.IsModified);
     }
+
+    /// <summary>
+    /// DSG-FD-134, IDE-PM-051 (D-134 item 4): with three levels (TBaseDialog, TMainForm, TMain2) and the middle level's form
+    /// file not named after its unit (<c>{$FORM main-form.form}</c>), an open leaf whose ancestor's unit is removed from the
+    /// project goes read-only with <c>F0112</c>; when the unit is added back (the Project Manager's Add to Project bar adds
+    /// existing files) it comes back with the form its directive names and the leaf is merged against it again: no
+    /// diagnostic, editable, no read-only bar, not modified.
+    /// </summary>
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "DSG-FD-134")]
+    public Task Remerge_AncestorUnitRemovedThenAddedBack_DescendantReturns() => TestUiThread.RunAsync(AddedBackOnUiThread);
+
+    private async Task AddedBackOnUiThread()
+    {
+        File(ProjectPath, """
+            { "formatVersion": 1, "name": "Hello", "appType": "gui", "mainSource": "Hello.pas", "files": [
+              { "path": "Hello.pas" },
+              { "path": "BaseDialogUnit.pas", "form": "BaseDialogUnit.form" },
+              { "path": "MainForm.pas", "form": "main-form.form" },
+              { "path": "Main2.pas", "form": "Main2.form" } ] }
+            """);
+        File(Dir + @"\Hello.pas", "program Hello;\nuses Forms, MainForm, Main2;\nbegin\nend.\n");
+        File(BaseUnitPath, InheritedDesign.BaseUnit);
+        File(Dir + @"\BaseDialogUnit.form", InheritedDesign.BaseDialog);
+        File(MainUnitPath, InheritedDesign.Unit.Replace("{$FORM MainForm.form}", "{$FORM main-form.form}", StringComparison.Ordinal));
+        File(Dir + @"\main-form.form", InheritedDesign.Form);
+        const string Leaf = Dir + @"\Main2.pas";
+        File(Leaf, string.Join("\r\n", "unit Main2;", "", "interface", "", "uses", "  Classes, Controls, Forms, StdCtrls, ExtCtrls, MainForm;", "",
+            "type", "  TMain2 = class(TMainForm)", "  end;", "", "var", "  Main2: TMain2;", "", "implementation", "", "{$FORM Main2.form}", "",
+            "end.", ""));
+        File(Dir + @"\Main2.form", "inherited Main2: TMain2\n  Caption = 'Leaf'\nend\n");
+        Assert.True(await _services.Projects.OpenAsync(ProjectPath));
+        var leaf = Assert.IsType<FormDocumentViewModel>((await _services.Documents.OpenAsync(Leaf)).Value);
+        Assert.True(leaf.ShowView(DocumentView.Design));
+        var designer = leaf.Designer;
+        Assert.True(designer.Model!.Root.IsInheritedRoot);
+        Assert.Empty(designer.Model.Diagnostics);
+        Assert.False(designer.Surface!.IsReadOnly);
+
+        // The ancestor's unit leaves the project: read-only with F0112 and its bar.
+        Assert.True(await _services.Projects.RemoveFromProjectAsync(["MainForm.pas"]));
+        _clock.Advance(TimeSpan.FromSeconds(1));
+        Assert.Null(Frames.Ancestors.Find("TMainForm"));
+        Assert.Equal(["F0112"], designer.Model!.Diagnostics.Select(d => d.Code));
+        Assert.True(designer.Surface!.IsReadOnly);
+        Assert.Contains(designer.DesignInfoBars, b => b.Kind == "FormReadOnlyKind");
+
+        // Added back: merged again, editable, the bar gone, the file untouched.
+        Assert.Equal(1, await _services.Projects.AddExistingFilesAsync([MainUnitPath], reportFirstDuplicateOnly: true));
+        _clock.Advance(TimeSpan.FromSeconds(1));
+        Assert.Contains(_services.Projects.Project!.Files, f => f is { Path: "MainForm.pas", Form: "main-form.form" });
+        Assert.NotNull(Frames.Ancestors.Find("TMainForm"));
+        Assert.Empty(designer.Model!.Diagnostics.Select(d => d.ToString()));
+        Assert.True(designer.Model.Root.IsInheritedRoot);
+        Assert.Same(Frames.Ancestors.Find("TMainForm"), designer.Model.Ancestor);
+        Assert.False(designer.Surface!.IsReadOnly);
+        Assert.DoesNotContain(designer.DesignInfoBars, b => b.Kind == "FormReadOnlyKind");
+        Assert.False(leaf.IsModified);
+    }
 }

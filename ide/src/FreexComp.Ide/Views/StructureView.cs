@@ -134,6 +134,9 @@ public sealed class StructureView : UserControl
                 e.Handled = true;
                 await _model.GoToSourceAsync(row);
                 break;
+            case Key.Delete:
+                e.Handled = _model.DeleteKey(); // DSG-SUR-238: reached only when edit.delete is disabled (UI-KEY-007)
+                break;
             case Key.Right when row.HasChildren && !row.IsExpanded:
             case Key.Left when row.HasChildren && row.IsExpanded:
                 e.Handled = true;

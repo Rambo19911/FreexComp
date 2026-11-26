@@ -63,6 +63,11 @@ public sealed class LayoutResult
                 continue;
             }
 
+            if (obj.IsPreserved && ReferenceEquals(obj, _root))
+            {
+                continue; // DSG-FD-027, DSG-LAY-030, 068: a read-only root stores nothing; a missing size is the drawn default
+            }
+
             var stored = StoredBounds(obj);
             if (stored != entry.Bounds)
             {

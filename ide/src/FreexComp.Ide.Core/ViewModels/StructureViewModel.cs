@@ -165,17 +165,34 @@ public sealed class StructureViewModel : ToolWindowViewModel, ICommandTarget
         SyncFromSurface(); // also when the surface kept its selection (the root dropped from a multi-selection)
     }
 
-    /// <summary>UI-TW-207: <c>edit.delete</c> in the Design view's tree deletes the selected components, as on the surface.</summary>
-    bool ICommandTarget.CanExecute(string commandId, string? argument) =>
-        commandId == FreexComp.Designer.Surface.Commands.Delete && IsDesign && _form!.Designer.Surface is { } surface && surface.CanExecute(commandId);
+    /// <summary>The edit commands the Design view's tree runs on the design surface (UI-TW-207, DSG-SUR-245).</summary>
+    private static readonly HashSet<string> SurfaceEditCommands = new(
+    [
+        FreexComp.Designer.Surface.Commands.Cut, FreexComp.Designer.Surface.Commands.Copy, FreexComp.Designer.Surface.Commands.Paste,
+        FreexComp.Designer.Surface.Commands.Delete, FreexComp.Designer.Surface.Commands.SelectAll,
+    ], StringComparer.Ordinal);
 
-    Task<bool> ICommandTarget.ExecuteAsync(string commandId, string? argument)
-    {
-        if (!((ICommandTarget)this).CanExecute(commandId, argument))
-            return Task.FromResult(false);
-        _form!.Designer.Surface!.Execute(commandId, argument);
-        return Task.FromResult(true);
-    }
+    /// <summary>
+    /// UI-TW-207, DSG-SUR-245: in the Design view the tree's <c>edit.cut</c>, <c>copy</c>, <c>paste</c>, <c>delete</c> and
+    /// <c>selectAll</c> are the surface's — the same enabled rules and effects (the OS clipboard included), so its context
+    /// menu enables what the surface menu enables. Undo and redo keep going to the active document (UI-CMD-011).
+    /// </summary>
+    bool ICommandTarget.CanExecute(string commandId, string? argument) =>
+        SurfaceEditCommands.Contains(commandId) && IsDesign && new FreexComp.Ide.Core.Designer.DesignSurfaceCommands(_form!.Designer).CanExecute(commandId, argument);
+
+    Task<bool> ICommandTarget.ExecuteAsync(string commandId, string? argument) =>
+        ((ICommandTarget)this).CanExecute(commandId, argument)
+            ? new FreexComp.Ide.Core.Designer.DesignSurfaceCommands(_form!.Designer).ExecuteAsync(commandId, argument)
+            : Task.FromResult(false);
+
+    /// <summary>
+    /// DSG-SUR-238: the Delete key in the Design view's tree when <c>edit.delete</c> is disabled — on a selection with an
+    /// inherited component the surface shows its refusal message and deletes nothing, as the key does on the surface.
+    /// True when handled.
+    /// </summary>
+    public bool DeleteKey() =>
+        IsDesign && _form!.Designer.Surface is { } surface
+        && surface.OnKey(new FreexComp.Designer.Surface.KeyInput(FreexComp.Designer.Surface.DesignKey.Delete, FreexComp.Designer.Surface.InputModifiers.None));
 
     /// <summary>
     /// tool-windows.md §3: in the Design view a row's context menu is the designer context menu of the selection (its

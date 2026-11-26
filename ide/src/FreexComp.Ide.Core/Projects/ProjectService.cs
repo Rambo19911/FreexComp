@@ -695,14 +695,13 @@ public sealed class ProjectService : IProjectService
     }
 
     /// <summary>
-    /// IDE-PM-051: the sibling <c>&lt;base&gt;.form</c> when it exists and the unit's text has a <c>{$FORM &lt;base&gt;.form}</c>
-    /// directive (directive trivia of the compiler lexer, so a directive inside a comment does not count).
+    /// IDE-PM-051: the form file the unit's <c>{$FORM &lt;name&gt;.form}</c> directive names (directive trivia of the compiler
+    /// lexer, so a directive inside a comment does not count), beside the unit (IDE-PM-125: the directive names no
+    /// directory), when it exists — the sibling <c>&lt;base&gt;.form</c> or a form named otherwise (D-134: a unit removed from
+    /// the project and added back keeps its form).
     /// </summary>
     private string? FormCompanion(string unitPath)
     {
-        var form = Path.ChangeExtension(unitPath, ".form");
-        if (!_fileSystem.FileExists(form))
-            return null;
         string text;
         try
         {
@@ -713,14 +712,18 @@ public sealed class ProjectService : IProjectService
             return null;
         }
 
-        var expected = Path.GetFileName(form);
         foreach (var token in Lexer.Tokenize(SourceText.From(unitPath, text)))
         {
             foreach (var trivia in token.LeadingTrivia.Concat(token.TrailingTrivia))
             {
                 if (trivia.Kind == SyntaxKind.DirectiveTrivia && trivia.Directive is { Name: "FORM" } directive
-                    && string.Equals(directive.Argument.Trim().Trim('\''), expected, StringComparison.OrdinalIgnoreCase))
-                    return form;
+                    && directive.Argument.Trim().Trim('\'') is { Length: > 0 } name
+                    && name.IndexOfAny(Path.GetInvalidFileNameChars()) < 0
+                    && name.EndsWith(".form", StringComparison.OrdinalIgnoreCase))
+                {
+                    var form = Path.Combine(Path.GetDirectoryName(unitPath)!, name);
+                    return _fileSystem.FileExists(form) ? form : null;
+                }
             }
         }
 
