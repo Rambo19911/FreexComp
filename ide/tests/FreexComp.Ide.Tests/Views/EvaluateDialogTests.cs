@@ -119,6 +119,7 @@ public sealed class EvaluateDialogTests
 
         h.Press("Shift+F5");
         await DebugScenario.WaitForStateAsync(h, IdeState.Idle);
+        await DebugScenario.WaitForScenarioCompleteAsync(h); // I-301: the line may be read after the session ended
         Assert.Contains("SCENARIO-COMPLETE", h.DebugSessions.AdapterStderr());
     }
 }

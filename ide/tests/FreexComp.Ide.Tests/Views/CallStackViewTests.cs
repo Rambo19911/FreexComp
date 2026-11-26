@@ -167,6 +167,7 @@ public sealed class CallStackViewTests
         h.Press("Shift+F5");
         await DebugScenario.WaitForStateAsync(h, IdeState.Idle);
         Assert.Equal(Strings.Msg_Debug_NoSession, stack.EmptyHeading);
+        await DebugScenario.WaitForScenarioCompleteAsync(h); // I-301: the line may be read after the session ended
         Assert.Contains("SCENARIO-COMPLETE", h.DebugSessions.AdapterStderr());
     }
 }

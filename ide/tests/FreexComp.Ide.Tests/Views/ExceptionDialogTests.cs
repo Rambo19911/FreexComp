@@ -114,6 +114,7 @@ public sealed class ExceptionDialogTests
         h.Press("Shift+F5");
         await DebugScenario.WaitForStateAsync(h, IdeState.Idle);
         Dispatcher.UIThread.RunJobs();
+        await DebugScenario.WaitForScenarioCompleteAsync(h); // I-301: the line may be read after the session ended
         Assert.Contains("SCENARIO-COMPLETE", h.DebugSessions.AdapterStderr());
 
         // An operating-system exception: the class text is its description, the message its code in hexadecimal.

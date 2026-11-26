@@ -99,6 +99,7 @@ public sealed partial class EventLogViewTests
         Dispatcher.UIThread.RunJobs();
         Assert.Equal(["Thread: Thread 9 exited", "Process: Process 0 exited with code 3"], log.Rows.Skip(6).Select(Row));
         Assert.Equal(8, log.Rows.Count);
+        await DebugScenario.WaitForScenarioCompleteAsync(h); // I-301: the line may be read after the session ended
         Assert.Contains("SCENARIO-COMPLETE", h.DebugSessions.AdapterStderr());
 
         // UI-TW-1301: the filter matches Kind and Message (applied after the filter delay).

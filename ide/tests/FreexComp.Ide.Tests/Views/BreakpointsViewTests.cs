@@ -199,6 +199,7 @@ public sealed class BreakpointsViewTests
         h.Press("Shift+F5");
         await DebugScenario.WaitForStateAsync(h, IdeState.Idle);
         Dispatcher.UIThread.RunJobs();
+        await DebugScenario.WaitForScenarioCompleteAsync(h); // I-301: the line may be read after the session ended
         Assert.Contains("SCENARIO-COMPLETE", h.DebugSessions.AdapterStderr());
         Assert.All(view.Rows, r => Assert.Equal("0", r.Cells[5].Text)); // 0 outside a session
 

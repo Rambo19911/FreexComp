@@ -146,6 +146,7 @@ public sealed class ThreadsViewTests
         Dispatcher.UIThread.RunJobs();
         Assert.Empty(threads.Rows);
         Assert.Equal(Strings.Msg_Debug_NoSession, threads.EmptyHeading);
+        await DebugScenario.WaitForScenarioCompleteAsync(h); // I-301: the line may be read after the session ended
         Assert.Contains("SCENARIO-COMPLETE", h.DebugSessions.AdapterStderr());
     }
 }

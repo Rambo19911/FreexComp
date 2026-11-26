@@ -116,6 +116,7 @@ public sealed class ExecutionLineTests
         Dispatcher.UIThread.RunJobs();
         Assert.Equal("Hello – FreexComp", h.Window.Title);
         Assert.Equal("Breakpoint", probe.GlyphAt(5));
+        await DebugScenario.WaitForScenarioCompleteAsync(h); // I-301: the line may be read after the session ended
         Assert.Contains("SCENARIO-COMPLETE", h.DebugSessions.AdapterStderr());
     }
 }

@@ -44,6 +44,14 @@ public static class DebugScenario
     public static Task WaitForStateAsync(HeadlessHarness h, IdeState state) =>
         h.WaitForAsync(() => h.Services.State.Current.State == state, $"IDE state {state}");
 
+    /// <summary>
+    /// I-301: waits, up to the test's own timeout, until the scripted adapter has reported on its error stream that every
+    /// step of the scenario was consumed (<c>SCENARIO-COMPLETE</c>). The session ends after fixed 2 s waits for the
+    /// adapter's exit and for the end of its error stream, so under load the IDE can be idle before the line is read.
+    /// </summary>
+    public static Task WaitForScenarioCompleteAsync(HeadlessHarness h) =>
+        h.Deadline.WaitAsync(h.DebugSessions.WaitForStderrLineAsync("SCENARIO-COMPLETE"), "the scripted adapter's SCENARIO-COMPLETE");
+
     /// <summary>The demo program of <see cref="FreexComp.Ide.TestSupport.DebugDemo"/> in the project folder (its frames are there).</summary>
     public static string DemoPath(HeadlessHarness h) => Path.Combine(h.TempDir, @"Hello\DbgDemo.pas");
 

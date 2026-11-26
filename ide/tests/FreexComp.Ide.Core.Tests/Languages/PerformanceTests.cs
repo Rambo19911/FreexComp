@@ -81,9 +81,13 @@ public sealed class PerformanceTests
     /// the background lexing, folding and token scans it started, so they cannot overlap the next performance test
     /// (I-179). I-205: measured like <see cref="TokenizeLargeUnitWithinBudget"/> (fastest CPU time of the calling thread,
     /// stopping after the time limit), so the background scans of a loaded machine cannot run it into its timeout; the
-    /// drain waits for them up to the test's own timeout.
+    /// drain waits for them up to the test's own timeout. I-300: the measurement keeps its own limit
+    /// (<see cref="PerformanceBudget.DefaultTimeLimit"/>, 15 s) and the drain gets the rest of a 120 s safety-net timeout
+    /// (like <c>LargeFileTests</c>): the last lexing, folding and token scans of the 1 MB unit run on the thread pool, and
+    /// with every test project running at once they took longer than the 13 s a 30 s timeout left after the measurement.
+    /// How long the drain takes is never measured; the UI-thread budget is unchanged.
     /// </summary>
-    [Fact(Timeout = 30000)]
+    [Fact(Timeout = 120000)]
     [Trait("Req", "IDE-ARCH-082")]
     [Trait("Req", "UI-CMD-013")]
     public void EditCommandsOnLargeUnitStayWithinUiThreadBudget()
@@ -106,7 +110,7 @@ public sealed class PerformanceTests
                 var target = doc.CommandTarget!;
                 var line = doc.Buffer.LineCount / 2;
                 doc.ViewState.Caret = new FreexComp.Ide.Core.Text.TextPosition(line, 1);
-                fastest = PerformanceBudget.MinThreadCpu(() =>
+                fastest = PerformanceBudget.MinThreadCpu(timeLimit: PerformanceBudget.DefaultTimeLimit, action: () =>
                 {
                     Assert.True(doc.TypeText("x"));
                     Assert.True(target.ExecuteAsync("edit.undo", null).GetAwaiter().GetResult());

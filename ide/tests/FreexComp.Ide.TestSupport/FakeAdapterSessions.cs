@@ -108,6 +108,26 @@ public sealed class FakeAdapterSessions : IDebugSessionFactory, IDisposable
     }
 
     /// <summary>
+    /// I-301: completes when the adapter has written <paramref name="line"/> to its error stream (a line already written
+    /// counts). No polling: completed by the trace callback. The session reads that stream on a thread of its own and
+    /// gives up on it 2 s of wall time after the adapter's exit, so on a loaded machine a line (the scripted adapter's
+    /// <c>SCENARIO-COMPLETE</c>) can arrive after the session has ended and the IDE is idle again.
+    /// </summary>
+    public Task WaitForStderrLineAsync(string line)
+    {
+        bool Match(DapTraceEntry e) => e.Direction == DapDirection.AdapterStderr && e.Json == line;
+        var found = new TaskCompletionSource<DapTraceEntry>(TaskCreationOptions.RunContinuationsAsynchronously);
+        lock (_gate)
+        {
+            if (_trace.Any(Match))
+                return Task.CompletedTask;
+            _waiters.Add((Match, found));
+        }
+
+        return found.Task;
+    }
+
+    /// <summary>
     /// Completes when the adapter has received the <paramref name="count"/>-th request of <paramref name="command"/>
     /// (already sent ones count). No polling: completed by the trace callback.
     /// </summary>

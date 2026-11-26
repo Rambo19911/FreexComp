@@ -125,6 +125,7 @@ public sealed class Phase6AcceptanceTests
         Assert.Equal(DebugDemo.StopLine, Assert.Single(session.RootElement.GetProperty("breakpoints").EnumerateArray()).GetProperty("line").GetInt32());
 
         // Every step of the scenario file was asked for, in its order.
+        await DebugScenario.WaitForScenarioCompleteAsync(h); // I-301: the line may be read after the session ended
         Assert.Contains("SCENARIO-COMPLETE", h.DebugSessions.AdapterStderr());
         Assert.Empty(h.Messages.Requests);
     }
