@@ -13,8 +13,11 @@ build=$?
 grep -E "Warning\(s\)|Error\(s\)" "$log"
 if [ "$build" -ne 0 ]; then echo "VERIFY FAILED: build exit $build"; echo "VERIFY LOG: $log"; exit 1; fi
 
-dotnet test FreexComp.sln -m:4 --no-build > "$log" 2>&1
+# A single test that runs longer than 5 minutes is a hang: its test host is stopped (no dump) and the run reports it.
+dotnet test FreexComp.sln -m:4 --no-build --blame-hang-timeout 5m --blame-hang-dump-type none > "$log" 2>&1
 tests=$?
+# GUI programs a stopped test host left behind (the full verify runs only when no agent runs tests).
+taskkill //IM AccessibilityProbe.exe //F >/dev/null 2>&1
 grep -E "Passed!|Failed!|aborted|crash|Catastrophic failure|Unhandled exception|Cleanup Failure|^  Failed " "$log"
 
 status=0
