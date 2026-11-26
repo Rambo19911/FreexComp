@@ -103,12 +103,12 @@ RAD Studio is a trademark of its respective owner and is named here only to desc
 | Area | What you get today |
 |---|---|
 | IDE | Main window with docking tool windows, light and dark themes, projects and project groups, build configurations |
-| Code editor | Syntax highlighting, code completion, navigation, folding, error markers |
-| Compiler | Object Pascal for Windows x64: console and GUI programs, units, DLLs, generics, interfaces, COM support |
+| Code editor | Syntax highlighting, code completion, parameter hints, code templates, Go to Declaration, back/forward navigation, find and replace, bookmarks, folding, error markers |
+| Compiler | Object Pascal for Windows x64: console and GUI programs, units, DLLs, generics, interfaces, COM support, Unicode strings, inline variables, parallel code generation and an on-disk unit cache |
 | Form designer | Visual design with Object Inspector; the saved form compiles to the same layout at run time |
 | UI framework | Native Windows controls written in Object Pascal on top of Win32, including a rich text editor control |
-| Debugger | Breakpoints, stepping, locals and call stack |
-| Data access | SQLite with data-aware controls |
+| Debugger | Breakpoints with conditions and pass counts, stepping (also into the library source), Run to Cursor, locals, watches, Evaluate, call stack and threads |
+| Data access | Datasets with SQLite and in-memory tables, filters, data-aware controls including a data grid and a navigator |
 | Build | Build configurations, pre-build and post-build commands with macros; commands of a project run only after you have trusted it |
 | Actions | Action lists that drive menus, buttons and tool buttons, shortcuts and secondary shortcuts, ready-made edit and file actions, and an Action List Editor with categories |
 | Project groups | Several projects in one group file with one active project; Build All with dependencies first, stop or continue after a failing project, and circular dependencies refused; the same from `pbuild` |
@@ -168,6 +168,9 @@ No Visual Studio, MSVC or Windows SDK is needed. Details: [supported platforms](
    ```sh
    dotnet test FreexComp.sln
    ```
+   A full run takes about 15 minutes. The UI tests open real windows, so run them in a signed-in desktop session
+   and leave the mouse and keyboard alone meanwhile. To run one area only, pass its test project, for example
+   `dotnet test compiler/tests/FreexComp.Compiler.Tests`.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -192,10 +195,15 @@ end.
 dotnet run --project compiler/src/opc -- Hello.pas -o Hello.exe
 ```
 
-More topics:
-* [Writing and calling a library](help/libraries.md)
-* [Library source](help/library-source.md)
-* [Supported platforms](help/supported-platforms.md)
+Help pages (also shown inside the IDE with F1):
+
+| Topic | Pages |
+|---|---|
+| Forms | [Frames](help/frames.md) · [Form inheritance](help/form-inheritance.md) · [Actions](help/actions.md) · [Accessibility](help/accessibility.md) |
+| Projects | [Project groups](help/project-groups.md) · [Platforms](help/platforms.md) · [Build events](help/build-events.md) · [Trusting a project](help/project-trust.md) |
+| Resources | [Resource files](help/resource-files.md) · [Image files](help/image-files.md) |
+| Libraries | [Writing and calling a library](help/libraries.md) · [Library source](help/library-source.md) |
+| Distribution | [Your applications](help/your-applications.md) · [Supported platforms](help/supported-platforms.md) |
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -279,8 +287,25 @@ Contributions are welcome: bug reports, feature requests and pull requests.
 2. Create a feature branch (`git checkout -b feature/my-change`)
 3. Add a test that fails without your change, then make it pass
 4. Make sure `dotnet build FreexComp.sln` and `dotnet test FreexComp.sln` are green
-5. Commit (`git commit -m "area: what changed"`) and push the branch
+5. Commit and push the branch. Write a short subject line, a blank line, then one `- ` line per change:
+   ```text
+   ide: Go to Line follows the visible view of a form
+
+   - Go to Line and the caret indicator use the Code or Text view shown
+   - Run to Cursor only in Object Pascal source
+   - Test: FormTextViewActiveEditorTests
+   ```
 6. Open a pull request
+
+Keeping a fork up to date:
+```sh
+git remote add upstream https://github.com/Rambo19911/FreexComp.git
+git fetch upstream
+git rebase upstream/main
+```
+
+The project is a clean-room implementation: do not copy code, headers, documentation or assets from other
+products, and do not name commercial products in code or comments.
 
 Only dependencies under permissive licenses may be added; list them in `THIRD-PARTY-NOTICES.md` in the same pull request.
 
@@ -293,7 +318,8 @@ Only dependencies under permissive licenses may be added; list them in `THIRD-PA
 FreexComp is licensed under the Apache License 2.0 (`LICENSE`).
 The runtime libraries are licensed under Apache-2.0 WITH LLVM-exception (`LICENSE-RUNTIME`), so programs built with
 FreexComp can be distributed without attribution duties from these libraries.
-Third-party components are listed in `THIRD-PARTY-NOTICES.txt`.
+Third-party components are listed in [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md); the plain-text
+`THIRD-PARTY-NOTICES.txt` shipped beside the tools is generated from the same data by `scripts/gen-notices.ps1`.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
