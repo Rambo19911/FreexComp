@@ -1,0 +1,55 @@
+# Assign from another format fails natively (UIF-1482)
+ok a handle before Assign
+ok EOutOfResources
+ok no Change
+ok Width
+ok Height
+ok Count
+ok Masked
+ok ColorDepth
+ok BkColor
+ok AllocBy
+ok DrawingStyle
+ok BlendColor
+ok the pixels of the store
+ok the handle is kept
+ok the Handle value
+ok the native list
+ok the overlay table
+ok no source handle
+ok the source is unchanged
+# Assign from the same format fails natively (UIF-1482)
+ok a handle before Assign
+ok EOutOfResources
+ok no Change
+ok Width
+ok Height
+ok Count
+ok Masked
+ok ColorDepth
+ok BkColor
+ok AllocBy
+ok DrawingStyle
+ok BlendColor
+ok the pixels of the store
+ok the handle is kept
+ok the Handle value
+ok the native list
+ok the overlay table
+# Assign without a handle needs no native list
+ok no exception
+ok one Change
+ok Width copied
+ok cells copied
+ok still no handle
+# Assign with the seam off
+ok a handle before Assign
+ok one Change
+ok Width
+ok Height
+ok AllocBy
+ok the cells
+ok a handle
+ok the native list
+ok the overlay table
+# passed 50 failed 0

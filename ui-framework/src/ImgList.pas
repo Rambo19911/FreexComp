@@ -68,6 +68,7 @@ type
     function NativeOverlays(const Table: TIntegerDynArray): Boolean;
     procedure Commit(const Cells: TByteDynArray; NewCount, Edit, Index: Integer; const Table: TIntegerDynArray);
     procedure InsertCells(Index: Integer; const Cells: TByteDynArray; N: Integer);
+    procedure CopyFrom(S: TCustomImageList);
     procedure SetWidth(Value: Integer);
     procedure SetHeight(Value: Integer);
     procedure SetMasked(Value: Boolean);
@@ -83,6 +84,10 @@ type
     procedure SetAllocBy(Value: Integer);
     procedure ReadData(Stream: TStream);
     procedure WriteData(Stream: TStream);
+  protected
+    { U-169: a seam for the native failure tests; True makes every creation of a native list fail as
+      ImageList_Create returning 0 }
+    class var FFailNativeCreate: Boolean;
   protected
     procedure Change; virtual;
     procedure DefineProperties(Filer: TFiler); override;
@@ -431,7 +436,10 @@ begin
       Flags := ILC_COLOR32;
     if FMasked then
       Flags := Flags or ILC_MASK;
-    FHandle := ImageList_Create(FWidth, FHeight, Flags, FAllocBy, FAllocBy);
+    if FFailNativeCreate then
+      FHandle := 0
+    else
+      FHandle := ImageList_Create(FWidth, FHeight, Flags, FAllocBy, FAllocBy);
     if FHandle = 0 then
       raise EOutOfResources.Create(SOutOfResources);
     ApplyBkColor;
@@ -1112,31 +1120,51 @@ begin
   Commit(None, 0, EditRebuild, 0, Overlays(OvClear, 0, 0));
 end;
 
-{ UIF-1469: properties and cells; the handle stays when the format is the same, else it is made again on use }
+{ UIF-1469: the copied properties, the cells and the overlay table; nothing native }
+procedure TCustomImageList.CopyFrom(S: TCustomImageList);
+begin
+  FWidth := S.FWidth;
+  FHeight := S.FHeight;
+  FMasked := S.FMasked;
+  FColorDepth := S.FColorDepth;
+  FBkColor := S.FBkColor;
+  FDrawingStyle := S.FDrawingStyle;
+  FBlendColor := S.FBlendColor;
+  FImageType := S.FImageType;
+  FAllocBy := S.FAllocBy;
+  FCells := Slice(S.FCells, 0, S.FCount, S.CellBytes);
+  FCount := S.FCount;
+  FOverlays := S.Overlays(OvKeep, 0, 0);
+end;
+
+{ UIF-1469, UIF-1482 (U-169): with a handle the new native list is built into a temporary list first; only when
+  that succeeds are its handle, the store and the properties taken over, else the target stays as it was }
 procedure TCustomImageList.Assign(Source: TPersistent);
 var
-  S: TCustomImageList;
+  S, T: TCustomImageList;
+  H: HIMAGELIST;
 begin
   if Source is TCustomImageList then
   begin
     S := TCustomImageList(Source);
     if S = Self then
       Exit;
-    if (S.FWidth <> FWidth) or (S.FHeight <> FHeight) or (S.FMasked <> FMasked) or
-      (S.FColorDepth <> FColorDepth) then
-      FreeHandle;
-    FWidth := S.FWidth;
-    FHeight := S.FHeight;
-    FMasked := S.FMasked;
-    FColorDepth := S.FColorDepth;
-    FBkColor := S.FBkColor;
-    FDrawingStyle := S.FDrawingStyle;
-    FBlendColor := S.FBlendColor;
-    FImageType := S.FImageType;
-    FAllocBy := S.FAllocBy;
+    H := 0;
     if FHandle <> 0 then
-      ApplyBkColor;
-    Commit(Slice(S.FCells, 0, S.FCount, CellBytes), S.FCount, EditRebuild, 0, S.Overlays(OvKeep, 0, 0));
+    begin
+      T := TCustomImageList.Create(nil);
+      try
+        T.CopyFrom(S);
+        H := T.GetHandle;                                      { EOutOfResources; T frees what it made }
+        T.FHandle := 0;
+      finally
+        T.Free;
+      end;
+    end;
+    FreeHandle;
+    CopyFrom(S);
+    FHandle := H;
+    Change;
   end
   else
     inherited Assign(Source);
