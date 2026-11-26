@@ -64,13 +64,16 @@ public sealed class FindService : IFindService
         _documents = documents ?? throw new ArgumentNullException(nameof(documents));
         documents.DocumentOpened += (_, e) =>
         {
-            if (TextOf(e.Document) is { } text)
+            foreach (var text in TextsOf(e.Document))
                 text.FindSource = For; // the editor view binds its panel through For(doc)
         };
         documents.DocumentClosed += (_, e) =>
         {
-            if (TextOf(e.Document) is { } text && _sessions.Remove(text, out var session))
-                session.Detach();
+            foreach (var text in TextsOf(e.Document))
+            {
+                if (_sessions.Remove(text, out var session))
+                    session.Detach();
+            }
         };
     }
 
@@ -95,12 +98,23 @@ public sealed class FindService : IFindService
             _layout.AddDialogHistory(HistoryDialog, "ReplaceText", _replaceText);
     }
 
-    /// <summary>The text document behind a document tab: a text file, or the content of a generated document.</summary>
+    /// <summary>
+    /// The text shown by a document tab: the editor of its visible view (I-302: the form text in a form document's Text
+    /// view, nothing in its Design view), or the content of a generated document.
+    /// </summary>
     private static TextDocumentViewModel? TextOf(DocumentViewModel? document) => document switch
     {
-        TextDocumentViewModel text => text,
         GeneratedTextDocumentViewModel generated => generated.Content,
-        _ => null,
+        _ => document?.VisibleText,
+    };
+
+    /// <summary>Every text a document tab can show: a form document's unit and form text.</summary>
+    private static IEnumerable<TextDocumentViewModel> TextsOf(DocumentViewModel document) => document switch
+    {
+        FormDocumentViewModel form => [form, form.FormText],
+        TextDocumentViewModel text => [text],
+        GeneratedTextDocumentViewModel generated => [generated.Content],
+        _ => [],
     };
 
     public event EventHandler? QueryChanged;

@@ -510,7 +510,7 @@ public sealed partial class DebugService : IDebugService
         // tool-windows.md §12, §13: from a Locals or Watches row the commands take the row's expression.
         commands.RegisterHandler("run.evaluate", new Handler(() => _active is not null, Paused, () =>
             _dialogs.ShowAsync(new EvaluateViewModel(this, UiState, ToolExpression?.Invoke() ?? ExpressionAtCaret()))));
-        commands.RegisterHandler("run.addWatch", new Handler(() => ToolExpression?.Invoke() is not null || _documents.ActiveDocument is TextDocumentViewModel, () => true, () =>
+        commands.RegisterHandler("run.addWatch", new Handler(() => ToolExpression?.Invoke() is not null || _documents.ActiveDocument?.VisibleText is not null, () => true, () =>
         {
             if (Watches.Add(ToolExpression?.Invoke() ?? ExpressionAtCaret()) >= 0) // UI-TW-1103: directly, without the dialog
                 ShowWatches?.Invoke();
@@ -531,7 +531,7 @@ public sealed partial class DebugService : IDebugService
     /// <summary>The selection, else the word at the caret, of the active text document (dialogs.md §20, §21 default).</summary>
     public string ExpressionAtCaret()
     {
-        if (_documents.ActiveDocument is not TextDocumentViewModel document)
+        if (_documents.ActiveDocument?.VisibleText is not { } document) // I-302: the editor of the visible view
             return "";
         var selection = document.Selection;
         var (start, end) = selection.IsEmpty ? EditorOperations.WordAt(document.Buffer, selection.Caret) : (selection.Start, selection.End);
@@ -542,7 +542,12 @@ public sealed partial class DebugService : IDebugService
     /// <summary>DBG-255: the step commands name the current thread — the thread of the stop until another was switched to.</summary>
     private int StepThread => _threadId ?? _stop!.ThreadId;
 
-    private TextDocumentViewModel? EditorFile => _documents.ActiveDocument as TextDocumentViewModel is { FilePath: not null } text ? text : null;
+    /// <summary>
+    /// <c>run.runToCursor</c>: the editor of the active document's visible view when it can hold breakpoints, a saved
+    /// Object Pascal text (I-302: not a form's Text view, nothing in its Design view).
+    /// </summary>
+    private TextDocumentViewModel? EditorFile =>
+        _documents.ActiveDocument?.VisibleText is { FilePath: not null } text && text.Language.Id == "pascal" ? text : null;
 
     /// <summary><c>run.start</c>: Continue while paused; the restart question while a program runs without the debugger; else start.</summary>
     private Task StartCommandAsync()

@@ -245,6 +245,9 @@ public partial class TextDocumentViewModel : DocumentViewModel, ICommandTarget
     /// </summary>
     public override ICommandTarget? CommandTarget => this;
 
+    /// <summary>A text document shows its own text.</summary>
+    public override TextDocumentViewModel? VisibleText => this;
+
     bool ICommandTarget.CanExecute(string commandId, string? argument) => commandId switch
     {
         UndoCommandId => !Buffer.IsReadOnly && Buffer.CanUndo,

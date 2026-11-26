@@ -325,9 +325,12 @@ public sealed class BreakpointService : IBreakpointService
             Condition: breakpoint.Condition, PassCount: breakpoint.PassCount);
     }
 
-    /// <summary>The active document when it can hold breakpoints: a saved Object Pascal text (menus.md §7).</summary>
+    /// <summary>
+    /// The editor of the active document's visible view (I-302) when it can hold breakpoints: a saved Object Pascal text
+    /// (menus.md §7).
+    /// </summary>
     private TextDocumentViewModel? Editor =>
-        _documents.ActiveDocument is TextDocumentViewModel { FilePath: not null } text && CanHold(text) ? text : null;
+        _documents.ActiveDocument?.VisibleText is { FilePath: not null } text && CanHold(text) ? text : null;
 
     private BreakpointModel? AtCaret =>
         ToolSelection?.Invoke() is { Count: > 0 } rows ? (rows.Count == 1 ? rows[0] : null)
@@ -344,7 +347,7 @@ public sealed class BreakpointService : IBreakpointService
 
     private async Task ShowDialogAsync(BreakpointModel? breakpoint)
     {
-        var active = _documents.ActiveDocument as TextDocumentViewModel;
+        var active = _documents.ActiveDocument?.VisibleText;
         var files = _projects.Project is { } project
             ? project.Files.Select(f => Path.GetFullPath(Path.Combine(project.Directory, f.Path.Replace('/', '\\')))).ToList()
             : [];

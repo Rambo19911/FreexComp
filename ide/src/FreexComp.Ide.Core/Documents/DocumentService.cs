@@ -39,6 +39,7 @@ public sealed class DocumentService : IDocumentService
     private readonly Dictionary<string, Task<OperationResult<DocumentViewModel>>> _loading = new(StringComparer.OrdinalIgnoreCase);
     private ICommandService? _commands;
     private TextDocumentViewModel? _statusSource;
+    private FormDocumentViewModel? _statusForm;
 
     public DocumentService(IFileSystem fileSystem, ITextBufferFactory buffers, ILanguageRegistry languages, ISettingsService settings,
         IStatusService status, IFocusTracker focus, IDialogService dialogs, FilePrompts prompts)
@@ -215,8 +216,8 @@ public sealed class DocumentService : IDocumentService
             _ => _documents.Count > 0, _ => _dialogs.ShowAsync(new DocumentsViewModel(this, Layout))));
         // Status-bar R7 "Save with Encoding" (IDE-P1-074): only the encoding of the next save changes.
         commands.RegisterHandler("edit.setEncoding", new Handler(
-            arg => ActiveDocument is TextDocumentViewModel && arg is not null && FileEncodings.FromId(arg) is not null,
-            arg => ((TextDocumentViewModel)ActiveDocument!).SetEncoding(FileEncodings.FromId(arg!)!.Value)));
+            arg => EncodingTarget is not null && arg is not null && FileEncodings.FromId(arg) is not null,
+            arg => EncodingTarget!.SetEncoding(FileEncodings.FromId(arg!)!.Value)));
         // The fold commands, edit.convertLineEndings and the editor operations reach the active document through the
         // generic Editor-scope route (EditorCommandRoute, registered by ServiceGraph).
 
@@ -699,7 +700,7 @@ public sealed class DocumentService : IDocumentService
         }
 
         UpdateTitleSuffixes();
-        if (document == _statusSource)
+        if (document == ActiveDocument)
             PushStatus();
         DocumentSaved?.Invoke(this, new DocumentEventArgs(document));
         _status.ShowMessage(string.Format(CultureInfo.CurrentCulture, Strings.Msg_File_Saved, document.Title), StatusMessageDuration);
@@ -1052,62 +1053,88 @@ public sealed class DocumentService : IDocumentService
             }
         };
         if (document is TextDocumentViewModel text)
-        {
-            text.ReadOnlyEditRefused += (_, _) => _status.ShowMessage(Strings.Msg_Editor_ReadOnlyEdit, StatusMessageDuration);
-            text.StatusMessage += (_, message) => _status.ShowMessage(message, StatusMessageDuration);
-            var undoState = (text.Buffer.CanUndo, text.Buffer.CanRedo);
-            text.Buffer.Changed += (_, _) =>
-            {
-                // edit.undo / edit.redo follow the buffer (menus.md, toolbars.md).
-                if ((text.Buffer.CanUndo, text.Buffer.CanRedo) != undoState)
-                {
-                    undoState = (text.Buffer.CanUndo, text.Buffer.CanRedo);
-                    _commands?.InvalidateCanExecute();
-                }
-            };
-        }
+            WireEditor(text);
+        if (document is FormDocumentViewModel form)
+            WireEditor(form.FormText); // I-302: the Text view's editor reports like the Code view's
         UpdateTitleSuffixes();
         DocumentOpened?.Invoke(this, new DocumentEventArgs(document));
         Activate(document);
         _commands?.InvalidateCanExecute();
     }
 
+    /// <summary>The read-only and status messages of an editor and the undo/redo states of its buffer.</summary>
+    private void WireEditor(TextDocumentViewModel text)
+    {
+        text.ReadOnlyEditRefused += (_, _) => _status.ShowMessage(Strings.Msg_Editor_ReadOnlyEdit, StatusMessageDuration);
+        text.StatusMessage += (_, message) => _status.ShowMessage(message, StatusMessageDuration);
+        var undoState = (text.Buffer.CanUndo, text.Buffer.CanRedo);
+        text.Buffer.Changed += (_, _) =>
+        {
+            // edit.undo / edit.redo follow the buffer (menus.md, toolbars.md).
+            if ((text.Buffer.CanUndo, text.Buffer.CanRedo) != undoState)
+            {
+                undoState = (text.Buffer.CanUndo, text.Buffer.CanRedo);
+                _commands?.InvalidateCanExecute();
+            }
+        };
+    }
+
     private void SetActive(DocumentViewModel? document)
     {
         ActiveDocument = document;
         _focus.SetActiveDocumentTarget(document?.CommandTarget);
-        FollowStatus(document as TextDocumentViewModel);
+        FollowStatus(document);
         ActiveDocumentChanged?.Invoke(this, EventArgs.Empty);
         _commands?.InvalidateCanExecute();
     }
 
     /// <summary>
-    /// The status bar shows the active text document's fields (IDE-ARCH: <c>IStatusService.SetEditor</c>); in the Design
-    /// view of a form document the designer selection instead (UI-DSG-130).
+    /// The status bar shows the fields of the active document's visible editor (IDE-ARCH: <c>IStatusService.SetEditor</c>;
+    /// I-302: the Code or the Text view of a form document); in the Design view of a form document the designer
+    /// selection instead (UI-DSG-130).
     /// </summary>
-    private void FollowStatus(TextDocumentViewModel? document)
+    private void FollowStatus(DocumentViewModel? document)
+    {
+        if (_statusForm is { } old)
+        {
+            old.ActiveViewChanged -= OnStatusViewChanged;
+            old.Designer.SelectionChanged -= OnDesignerStatusChanged;
+            old.Designer.ModelChanged -= OnDesignerStatusChanged;
+        }
+
+        _statusForm = document as FormDocumentViewModel;
+        if (_statusForm is { } form)
+        {
+            form.ActiveViewChanged += OnStatusViewChanged;
+            form.Designer.SelectionChanged += OnDesignerStatusChanged;
+            form.Designer.ModelChanged += OnDesignerStatusChanged;
+        }
+
+        FollowEditor(document?.VisibleText);
+    }
+
+    /// <summary>I-302: another view of the active form document: the command target and the status fields follow it.</summary>
+    private void OnStatusViewChanged(object? sender, EventArgs e)
+    {
+        if (sender is not FormDocumentViewModel form || form != ActiveDocument)
+            return;
+        _focus.SetActiveDocumentTarget(form.CommandTarget);
+        FollowEditor(form.VisibleText);
+    }
+
+    private void FollowEditor(TextDocumentViewModel? editor)
     {
         if (_statusSource is not null)
         {
             _statusSource.PropertyChanged -= OnStatusSourceChanged;
             _statusSource.ViewState.PropertyChanged -= OnStatusSourceChanged;
-            if (_statusSource is FormDocumentViewModel old)
-            {
-                old.Designer.SelectionChanged -= OnDesignerStatusChanged;
-                old.Designer.ModelChanged -= OnDesignerStatusChanged;
-            }
         }
 
-        _statusSource = document;
-        if (document is not null)
+        _statusSource = editor;
+        if (editor is not null)
         {
-            document.PropertyChanged += OnStatusSourceChanged;
-            document.ViewState.PropertyChanged += OnStatusSourceChanged;
-            if (document is FormDocumentViewModel form)
-            {
-                form.Designer.SelectionChanged += OnDesignerStatusChanged;
-                form.Designer.ModelChanged += OnDesignerStatusChanged;
-            }
+            editor.PropertyChanged += OnStatusSourceChanged;
+            editor.ViewState.PropertyChanged += OnStatusSourceChanged;
         }
 
         PushStatus();
@@ -1123,7 +1150,7 @@ public sealed class DocumentService : IDocumentService
 
     private void PushStatus()
     {
-        if (_statusSource is FormDocumentViewModel { ActiveView: DocumentView.Design } form)
+        if (_statusForm is { ActiveView: DocumentView.Design } form)
         {
             _status.SetEditor(null);
             _status.SetDesignerSelection(form.Designer.SelectionStatusText);
@@ -1195,6 +1222,13 @@ public sealed class DocumentService : IDocumentService
             return [.. selected.Select(FindByPath).OfType<TextDocumentViewModel>().Where(d => d.IsModified)];
         return ActiveDocument is TextDocumentViewModel { IsModified: true } active ? [active] : [];
     }
+
+    /// <summary>
+    /// <c>edit.setEncoding</c>: the active document when its own text is shown (I-302); the Text view of a form document
+    /// shows the <c>.form</c>, which is always written as UTF-8 (DSG-FD-040), and the Design view no text.
+    /// </summary>
+    private TextDocumentViewModel? EncodingTarget =>
+        ActiveDocument is TextDocumentViewModel document && document.VisibleText == document ? document : null;
 
     /// <summary><c>file.copyPath</c> / <c>file.showInExplorer</c>: the one selected node while the Project Manager has focus, else the active document's file.</summary>
     private string? PathTarget() =>

@@ -661,7 +661,7 @@ public sealed class CompletionController
         commands.RegisterHandler(CommandId, new Handler(this));
     }
 
-    private bool CanComplete => _documents.ActiveDocument is TextDocumentViewModel { Completion: not null } && _projects.Project is not null;
+    private bool CanComplete => _documents.ActiveDocument?.VisibleText is { Completion: not null } && _projects.Project is not null; // I-302
 
     private void Attach(DocumentViewModel document)
     {
@@ -691,6 +691,6 @@ public sealed class CompletionController
         public bool CanExecute(string? argument) => owner.CanComplete;
 
         public Task ExecuteAsync(string? argument) =>
-            owner._documents.ActiveDocument is TextDocumentViewModel { Completion: { } session } ? session.InvokeAsync() : Task.CompletedTask;
+            owner._documents.ActiveDocument?.VisibleText is { Completion: { } session } ? session.InvokeAsync() : Task.CompletedTask;
     }
 }

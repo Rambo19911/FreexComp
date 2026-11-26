@@ -251,8 +251,11 @@ public sealed class StatusBarViewModel : ObservableObject
     /// <summary>The active editor's encoding id (the bullet in the R7 submenu); null without an editor.</summary>
     public string? EncodingId => Editor?.EncodingId;
 
-    /// <summary>R7 "Reopen with Encoding…": possible for the active text document with a file.</summary>
-    public bool CanReopenWithEncoding => _documents?.ActiveDocument is TextDocumentViewModel { FilePath: not null };
+    /// <summary>
+    /// R7 "Reopen with Encoding…": possible for the active text document with a file while its own text is shown (I-302:
+    /// not in the Text view of a form document, whose <c>.form</c> is always UTF-8, DSG-FD-040).
+    /// </summary>
+    public bool CanReopenWithEncoding => _documents?.ActiveDocument is TextDocumentViewModel { FilePath: not null } document && document.VisibleText == document;
 
     /// <summary>R7 "Reopen with Encoding…" (dialogs.md section 18) for the active document.</summary>
     public Task ReopenWithEncodingAsync() =>

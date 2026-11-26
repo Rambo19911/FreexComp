@@ -88,7 +88,8 @@ public sealed class BookmarkService
         }
     }
 
-    private TextDocumentViewModel? Editor => _documents.ActiveDocument as TextDocumentViewModel is { FilePath: not null } text && _attached.ContainsKey(text)
+    /// <summary>The editor of the active document's visible view (I-302) when it holds bookmarks (a form text does not).</summary>
+    private TextDocumentViewModel? Editor => _documents.ActiveDocument?.VisibleText is { FilePath: not null } text && _attached.ContainsKey(text)
         ? text
         : null;
 

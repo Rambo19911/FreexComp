@@ -31,7 +31,7 @@ public sealed class GoToDeclarationService(IDocumentService documents, IProjectS
         commands.RegisterHandler(CommandId, new Handler(this));
     }
 
-    private bool CanGo => documents.ActiveDocument is TextDocumentViewModel { FilePath: not null } d && d.Language.Id == "pascal" && projects.Project is not null;
+    private bool CanGo => documents.ActiveDocument?.VisibleText is { FilePath: not null } d && d.Language.Id == "pascal" && projects.Project is not null; // I-302
 
     /// <summary>Goes to the declaration of the identifier at <paramref name="offset"/> of <paramref name="document"/>; false when there is none.</summary>
     public async Task<bool> GoAsync(TextDocumentViewModel document, int offset)
@@ -64,7 +64,7 @@ public sealed class GoToDeclarationService(IDocumentService documents, IProjectS
 
     private Task GoFromCaretAsync()
     {
-        if (documents.ActiveDocument is not TextDocumentViewModel document)
+        if (documents.ActiveDocument?.VisibleText is not { } document)
             return Task.CompletedTask;
         return GoAsync(document, document.CaretOffset); // I-210
     }

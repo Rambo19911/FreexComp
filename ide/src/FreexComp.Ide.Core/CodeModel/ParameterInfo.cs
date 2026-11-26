@@ -367,7 +367,7 @@ public sealed class ParameterInfoController
         commands.RegisterHandler(CommandId, new Handler(this));
     }
 
-    private bool CanShow => _documents.ActiveDocument is TextDocumentViewModel { ParameterInfo: not null } && _projects.Project is not null;
+    private bool CanShow => _documents.ActiveDocument?.VisibleText is { ParameterInfo: not null } && _projects.Project is not null; // I-302
 
     private void Attach(DocumentViewModel document)
     {
@@ -419,7 +419,7 @@ public sealed class ParameterInfoController
 
         public async Task ExecuteAsync(string? argument)
         {
-            if (owner._documents.ActiveDocument is not TextDocumentViewModel { ParameterInfo: { } info } document)
+            if (owner._documents.ActiveDocument?.VisibleText is not { ParameterInfo: { } info } document)
                 return;
             await info.InvokeAsync();
             if (!info.IsOpen && document.Hover is { } hover)

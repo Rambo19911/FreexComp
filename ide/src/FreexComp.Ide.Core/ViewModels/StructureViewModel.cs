@@ -291,7 +291,7 @@ public sealed class StructureViewModel : ToolWindowViewModel, ICommandTarget
             }
         }
 
-        _document = _documents.ActiveDocument as TextDocumentViewModel;
+        _document = _documents.ActiveDocument?.VisibleText; // I-302: a form document's Text view shows no code structure
         if (_document is { } document && document.Language.Id == "pascal")
         {
             document.Buffer.Changed += OnBufferChanged;

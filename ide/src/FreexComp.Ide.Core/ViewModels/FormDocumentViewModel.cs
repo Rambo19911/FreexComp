@@ -32,6 +32,7 @@ public sealed class FormDocumentViewModel : TextDocumentViewModel
         {
             OnPropertyChanged(nameof(ActiveView));
             OnPropertyChanged(nameof(CommandTarget));
+            OnPropertyChanged(nameof(VisibleText));
             ActiveViewChanged?.Invoke(this, EventArgs.Empty);
         };
         _designer.ModifiedChanged += (_, _) => OnPropertyChanged(nameof(IsModified));
@@ -63,6 +64,14 @@ public sealed class FormDocumentViewModel : TextDocumentViewModel
 
     /// <summary>Editing commands go to the text the active view shows; the Design view has its own targets.</summary>
     public override ICommandTarget? CommandTarget => ActiveView switch
+    {
+        DocumentView.Code => this,
+        DocumentView.Text => FormText,
+        _ => null,
+    };
+
+    /// <summary>I-302: the Code view shows the unit, the Text view the form text, the Design view no text editor.</summary>
+    public override TextDocumentViewModel? VisibleText => ActiveView switch
     {
         DocumentView.Code => this,
         DocumentView.Text => FormText,

@@ -65,6 +65,13 @@ public abstract class DocumentViewModel : ObservableObject
     public abstract ICommandTarget? CommandTarget { get; }
 
     /// <summary>
+    /// The text whose editor the visible view of this document shows (I-302): what the active-editor commands
+    /// (Go to Line, find, bookmarks, breakpoints, code insight, navigation history) and the status-bar editor fields act
+    /// on; null when no text editor is shown (menus.md UI-MENU-010 "text").
+    /// </summary>
+    public virtual TextDocumentViewModel? VisibleText => null;
+
+    /// <summary>
     /// Shows <paramref name="bar"/> on top (or queues it when <see cref="MaxVisibleInfoBars"/> are shown); a bar of the
     /// same kind is replaced in its place (UI-ED-092).
     /// </summary>

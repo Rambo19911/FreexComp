@@ -38,11 +38,11 @@ public sealed class CodeTemplateController
     private sealed class Handler(CodeTemplateController owner) : ICommandHandler
     {
         public bool CanExecute(string? argument) =>
-            owner._documents.ActiveDocument is TextDocumentViewModel { Templates: not null, Completion: not null, IsReadOnly: false };
+            owner._documents.ActiveDocument?.VisibleText is { Templates: not null, Completion: not null, IsReadOnly: false }; // I-302
 
         public Task ExecuteAsync(string? argument)
         {
-            if (owner._documents.ActiveDocument is TextDocumentViewModel { Completion: { } session })
+            if (owner._documents.ActiveDocument?.VisibleText is { Completion: { } session })
                 session.ShowTemplates();
             return Task.CompletedTask;
         }

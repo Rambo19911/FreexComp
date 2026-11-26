@@ -64,7 +64,7 @@ public sealed class NavigationService : INavigationService
     private readonly List<Entry> _entries = [];
     private int _index;
     private bool _navigating;
-    private TextDocumentViewModel? _lastActive;
+    private DocumentViewModel? _lastActive;
     private ICommandService? _commands;
 
     public NavigationService(IDocumentService documents, IDialogService dialogs, IStatusService status, IFileSystem fileSystem)
@@ -162,7 +162,7 @@ public sealed class NavigationService : INavigationService
     /// </summary>
     private async Task GoAsync(bool back)
     {
-        if (back && _index == _entries.Count && _documents.ActiveDocument is TextDocumentViewModel current)
+        if (back && _index == _entries.Count && _documents.ActiveDocument?.VisibleText is { } current)
         {
             RecordDeparture(current, current.ViewState.Caret);
             _index = _entries.Count - 1; // the user is at the entry just recorded
@@ -203,11 +203,21 @@ public sealed class NavigationService : INavigationService
                     return false;
                 document = opened;
             }
+            else if (FormOf(document) is { } form)
+            {
+                // I-302: a location in a form text is shown in the Text view of its form document.
+                _documents.Activate(form);
+                if (form.ActiveView != DocumentView.Text)
+                    form.ShowView(DocumentView.Text);
+            }
             else
             {
                 _documents.Activate(document);
             }
 
+            // A location in a unit is shown in the Code view of its form document (I-218, I-302).
+            if (document is FormDocumentViewModel { HasUnit: true, ActiveView: not DocumentView.Code } unit)
+                unit.ShowView(DocumentView.Code);
             var position = entry.Current;
             var buffer = document.Buffer;
             var offset = buffer.GetOffset(Math.Clamp(position.Line, 1, buffer.LineCount), position.Column);
@@ -219,7 +229,7 @@ public sealed class NavigationService : INavigationService
         finally
         {
             _navigating = false;
-            _lastActive = _documents.ActiveDocument as TextDocumentViewModel;
+            _lastActive = _documents.ActiveDocument;
         }
     }
 
@@ -232,11 +242,17 @@ public sealed class NavigationService : INavigationService
             _index--;
     }
 
+    /// <summary>The open form document whose Text view edits <paramref name="formText"/>; null for a listed document.</summary>
+    private FormDocumentViewModel? FormOf(TextDocumentViewModel formText) =>
+        _documents.Documents.OfType<FormDocumentViewModel>().FirstOrDefault(f => f.FormText == formText);
+
     private void OnDocumentOpened(object? sender, DocumentEventArgs e)
     {
         if (e.Document is not TextDocumentViewModel document)
             return;
         document.Jumped += OnJumped;
+        if (document is FormDocumentViewModel form)
+            form.FormText.Jumped += OnJumped; // I-302: far jumps in the Text view are recorded too
         foreach (var entry in _entries.Where(x => x.Document is null && x.Path is not null &&
                      string.Equals(x.Path, document.FilePath, StringComparison.OrdinalIgnoreCase)))
             entry.Bind(document); // an entry in a closed document follows the reopened one
@@ -247,6 +263,17 @@ public sealed class NavigationService : INavigationService
         if (e.Document is not TextDocumentViewModel document)
             return;
         document.Jumped -= OnJumped;
+        if (document is FormDocumentViewModel form)
+        {
+            // I-302: locations in the form text go with their document (reopening its .form opens the form document).
+            form.FormText.Jumped -= OnJumped;
+            for (var i = _entries.Count - 1; i >= 0; i--)
+            {
+                if (_entries[i].Document == form.FormText)
+                    Remove(i);
+            }
+        }
+
         for (var i = _entries.Count - 1; i >= 0; i--)
         {
             if (_entries[i].Document != document)
@@ -260,12 +287,15 @@ public sealed class NavigationService : INavigationService
 
     private void OnJumped(object? sender, TextPosition from) => RecordDeparture((TextDocumentViewModel)sender!, from);
 
-    /// <summary>IDE-ED-100: switching (or opening) documents records the location left in the previous one.</summary>
+    /// <summary>
+    /// IDE-ED-100: switching (or opening) documents records the location left in the previous one: the caret of the
+    /// editor its visible view showed (I-302: the form text in the Text view; nothing from a Design view).
+    /// </summary>
     private void OnActiveDocumentChanged(object? sender, EventArgs e)
     {
-        var active = _documents.ActiveDocument as TextDocumentViewModel;
-        if (!_navigating && _lastActive is { } last && last != active && _documents.Documents.Contains(last))
-            RecordDeparture(last, last.ViewState.Caret);
+        var active = _documents.ActiveDocument;
+        if (!_navigating && _lastActive is { } last && last != active && _documents.Documents.Contains(last) && last.VisibleText is { } left)
+            RecordDeparture(left, left.ViewState.Caret);
         _lastActive = active;
     }
 
@@ -334,13 +364,14 @@ public sealed class NavigationService : INavigationService
 
         public async Task ExecuteAsync(string? argument)
         {
-            if (owner.Active is not { } document)
+            if (owner._documents.ActiveDocument is not { VisibleText: { } document } host)
                 return;
             var dialog = new GoToLineViewModel(document.Buffer.LineCount, document.ViewState.Caret.Line);
-            if (await owner._dialogs.ShowAsync(dialog) is { } target && owner._documents.Documents.Contains(document))
+            if (await owner._dialogs.ShowAsync(dialog) is { } target && owner._documents.Documents.Contains(host))
                 owner.GoToLine(document, target.Line, target.Column);
         }
     }
 
-    private TextDocumentViewModel? Active => _documents.ActiveDocument as TextDocumentViewModel;
+    /// <summary>menus.md "text": the editor of the active document's visible view (I-302: the form text in the Text view).</summary>
+    private TextDocumentViewModel? Active => _documents.ActiveDocument?.VisibleText;
 }

@@ -525,7 +525,7 @@ public sealed class SearchResultsViewModel : ToolWindowViewModel, ICommandTarget
     /// <summary>IDE-P1-105-like default: the single-line selection, else the word at the caret.</summary>
     private string? InitialText()
     {
-        if (_documents.ActiveDocument is not TextDocumentViewModel document)
+        if (_documents.ActiveDocument?.VisibleText is not { } document) // I-302: the editor of the visible view
             return null;
         var selection = document.Selection;
         var buffer = document.Buffer;
