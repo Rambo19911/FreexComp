@@ -194,6 +194,68 @@ public sealed class LocalsViewTests
     }
 
     /// <summary>
+    /// I-309: Locals and evaluation read a dynamic array from the same memory at one stop, so they agree on its length and
+    /// elements — the demo's own data (three elements; <c>Nums[3]</c> is out of bounds, as the debugger's tests have it)
+    /// and the data whose length a test patches to 250 (its memory holds 60 elements: the elements after them are
+    /// unreadable in both).
+    /// </summary>
+    [AvaloniaTheory(Timeout = TestDeadline.DebugTestTimeout)]
+    [InlineData(3, "(10, 20, 30)", "30")]
+    [InlineData(250, "(10, 20, 30, 0, 0, 0, 0, 0, …) (Length: 250)", "<unreadable memory at $000001F3A2B404F4>")]
+    [Trait("Req", "UI-TW-1000")]
+    [Trait("Req", "UI-TW-1006")]
+    [Trait("Req", "DBG-257")]
+    public async Task NumsLengthAgreesWithEvaluation(int length, string localsValue, string lastElement)
+    {
+        await using var h = await DebugScenario.StartDemoAsync();
+        var demo = DebugScenario.DemoPath(h);
+        var debug = h.Services.Debug!;
+        var locals = h.Services.DebugShell!.Locals;
+        (ulong, string)[] patches = length == 3 ? [] : [(0x1F3A2B40108ul, length.ToString("X2", System.Globalization.CultureInfo.InvariantCulture) + "00000000000000")];
+        h.DebugSessions.UseScenario($$"""
+            { {{DebugDemo.Data(patches)}}, "steps": [
+              {{DebugDemo.FirstStep(demo)}},
+              {{DebugDemo.AtStop(demo)}},
+              {{DebugScenarios.Continue(DebugScenarios.Exit())}} ] }
+            """);
+        h.Press("F11");
+        await DebugScenario.WaitForStopAsync(h, DebugDemo.StopLine);
+        async Task<string> EvaluateAsync(string expression)
+        {
+            try
+            {
+                return (await debug.EvaluateAsync(expression, EvaluateContext.Watch)).Value.Value;
+            }
+            catch (DebuggerException e)
+            {
+                return "error: " + e.Message;
+            }
+        }
+
+        // Locals: the length; its last element (in the last range of 100 when there are more than 100).
+        Assert.Equal(localsValue, RowOf(locals, "Nums").Cells[1].Text);
+        locals.Toggle(RowOf(locals, "Nums"));
+        await DebugScenario.SettleAsync(h);
+        if (length > 100)
+        {
+            locals.Toggle(RowOf(locals, $"Nums[{length / 100 * 100}..{length - 1}]"));
+            await DebugScenario.SettleAsync(h);
+        }
+
+        var last = RowOf(locals, $"Nums[{length - 1}]").Cells[1];
+        Assert.Equal(lastElement, last.Style == DebugCellStyle.Tertiary ? last.ToolTip : last.Text);
+
+        // Evaluation in the same stop: the same length, the same last element, the next index out of bounds.
+        Assert.Equal(length.ToString(System.Globalization.CultureInfo.InvariantCulture), await EvaluateAsync("Length(Nums)"));
+        Assert.Equal(localsValue, await EvaluateAsync("Nums"));
+        Assert.Equal(lastElement, await EvaluateAsync($"Nums[{length - 1}]"));
+        Assert.Equal($"error: Index {length} out of bounds (0..{length - 1})", await EvaluateAsync($"Nums[{length}]"));
+        h.Press("F5");
+        await DebugScenario.WaitForStateAsync(h, IdeState.Idle);
+        await DebugScenario.WaitForScenarioCompleteAsync(h);
+    }
+
+    /// <summary>
     /// I-222: Enter in the Value editor when the session is gone already (it ended under the open editor; the IDE applies
     /// that with the session's next event) — the commit ends without a failure of its own, the editor closes and nothing
     /// is left under way.

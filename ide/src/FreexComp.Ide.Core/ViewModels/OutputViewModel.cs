@@ -132,7 +132,7 @@ public sealed class OutputViewModel : ToolWindowViewModel
 
     public override IReadOnlyList<ToolWindowToolBarItem> ToolBarCommands { get; } =
     [
-        new("output.clear", "clear"),
+        new("output.clear", "trash"),
         new("output.toggleWordWrap", "word-wrap"),
         new("output.toggleScrollLock", "scroll-lock"),
     ];

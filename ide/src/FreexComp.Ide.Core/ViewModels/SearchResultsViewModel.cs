@@ -111,8 +111,8 @@ public sealed class SearchResultsViewModel : ToolWindowViewModel, ICommandTarget
 
     public override IReadOnlyList<ToolWindowToolBarItem> ToolBarCommands { get; } =
     [
-        new("searchResults.repeat", "sync"), new("searchResults.cancel", "stop"), new("searchResults.expandAll", "chevron-down"),
-        new("searchResults.collapseAll", "collapse-all"), new("searchResults.clear", "clear"),
+        new("searchResults.repeat", "refresh"), new("searchResults.cancel", "stop"), new("searchResults.expandAll", "chevron-down"),
+        new("searchResults.collapseAll", "collapse-all"), new("searchResults.clear", "trash"),
     ];
 
     public override bool HasFilter => true;

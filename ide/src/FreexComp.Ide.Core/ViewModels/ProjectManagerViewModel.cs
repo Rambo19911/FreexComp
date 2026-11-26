@@ -150,8 +150,8 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel, ICommandTarge
     public override IReadOnlyList<ToolWindowToolBarItem> ToolBarCommands { get; } =
     [
         new("project.addNewUnit", "new-file"),
-        new("project.addExistingFile", "open-folder"),
-        new("projectManager.syncWithEditor", "sync"),
+        new("project.addExistingFile", "file-import"),
+        new("projectManager.syncWithEditor", "target"),
         new("projectManager.collapseAll", "collapse-all"),
     ];
 

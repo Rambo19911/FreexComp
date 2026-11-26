@@ -146,6 +146,50 @@ public sealed partial class IconTests
         Assert.NotEqual(IconCatalog.Get("x").Layers[0].Geometry.Bounds, IconCatalog.Get("close").Layers[0].Geometry.Bounds); // 10 × 10, not the 8 × 8 close
     }
 
+    /// <summary>
+    /// I-308 (tool-windows.md §5, §6, §7, §8; toolbars.md §4): the tool bars of Project Manager, Messages, Output and
+    /// Search Results show the icons the spec names — <c>file-import</c>, <c>target</c>, <c>trash</c> and <c>refresh</c> —
+    /// instead of the catalogue icons that stood in for them; each new one is an outline drawing in <c>text.primary</c>
+    /// on the 16 grid, and none is a copy of another icon.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Phase", "8")]
+    [Trait("Req", "UI-TW-008")]
+    [Trait("Req", "UI-TOK-040")]
+    public async Task ToolWindowToolBarsShowTheirNamedIcons()
+    {
+        await using var h = await Infrastructure.DebugScenario.StartAsync();
+        IEnumerable<string> Icons(string tool, params string[] commands)
+        {
+            Assert.True(h.Services.ToolWindows.Show(tool, focus: false));
+            Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+            return commands.Select(command =>
+                h.Find<Button>($"Tool.{tool}.ToolBar.{command}").GetVisualDescendants().OfType<IdeIcon>().Single().IconName!);
+        }
+
+        Assert.Equal(["new-file", "file-import", "target", "collapse-all"],
+            Icons("ProjectManager", "project.addNewUnit", "project.addExistingFile", "projectManager.syncWithEditor", "projectManager.collapseAll"));
+        Assert.Equal(["error", "warning", "hint", "trash"],
+            Icons("Messages", "messages.toggleErrors", "messages.toggleWarnings", "messages.toggleHints", "messages.clear"));
+        Assert.Equal(["trash", "word-wrap", "scroll-lock"], Icons("Output", "output.clear", "output.toggleWordWrap", "output.toggleScrollLock"));
+        Assert.Equal(["refresh", "stop", "chevron-down", "collapse-all", "trash"],
+            Icons("SearchResults", "searchResults.repeat", "searchResults.cancel", "searchResults.expandAll", "searchResults.collapseAll", "searchResults.clear"));
+
+        static string Shape(string name) => string.Join(" ", IconCatalog.Get(name).Layers.Select(l => l.Geometry.Bounds.ToString()));
+        foreach (var name in (string[])["file-import", "target", "trash", "refresh"])
+        {
+            var icon = IconCatalog.Get(name);
+            Assert.Equal("text.primary", icon.ColorToken);
+            Assert.All(icon.Layers, layer =>
+            {
+                var bounds = layer.Geometry.Bounds;
+                Assert.True((bounds.Width > 0 || bounds.Height > 0) && bounds.X >= 0 && bounds.Y >= 0 && bounds.Right <= 16 && bounds.Bottom <= 16, $"{name}: {bounds}");
+                Assert.False(layer.IsFilled, $"{name}: an outline drawing");
+            });
+            Assert.DoesNotContain(IconCatalog.Names.Where(n => n != name), other => Shape(other) == Shape(name));
+        }
+    }
+
     /// <summary>toolbars.md §4: icon name → colour token (the brief's "; token" suffix, else <c>text.primary</c>).</summary>
     private static Dictionary<string, string> SpecIcons()
     {

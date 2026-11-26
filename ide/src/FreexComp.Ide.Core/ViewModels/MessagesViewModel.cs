@@ -134,7 +134,7 @@ public sealed class MessagesViewModel : ToolWindowViewModel, ICommandTarget
         new("messages.toggleErrors", "error"),
         new("messages.toggleWarnings", "warning"),
         new("messages.toggleHints", "hint"),
-        new("messages.clear", "clear"),
+        new("messages.clear", "trash"),
     ];
 
     public override bool HasFilter => true;

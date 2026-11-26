@@ -56,6 +56,9 @@ public abstract class DebugToolWindowView : UserControl
         _empty.Children.Add(_secondary);
 
         AutomationProperties.SetAutomationId(_list, _prefix + ".List");
+        // UI-TW-007 (I-307): the list is the primary control; a list box is not focusable by itself, and the window's
+        // panel (focusable for the empty state) would take the focus instead.
+        _list.Focusable = true;
         ToolWindowFrame.SetIsPrimary(_list, true);
         _list.Styles.Add(new Style(x => x.OfType<ListBoxItem>())
         {
