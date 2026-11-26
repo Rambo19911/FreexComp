@@ -134,6 +134,11 @@ public sealed class CodeSyncService(FormUnit unit, ComponentCatalog catalog, Act
     public IReadOnlyList<TextEditRecord> CreateHandler(string methodName, string signatureText) =>
         Run(() => CreateHandlerCore(methodName, signatureText));
 
+    /// <summary>DSG-CS-120, 121: the hiding method of an ancestor's handler (stub with <c>inherited;</c>); a candidate too (DSG-CS-071).</summary>
+    /// <exception cref="CodeSyncException">The edit would add syntax errors (DSG-CS-004); nothing was changed.</exception>
+    public IReadOnlyList<TextEditRecord> CreateInheritedHandler(string methodName, string signatureText) =>
+        Run(() => CreateHandlerCore(methodName, signatureText, callInherited: true));
+
     /// <summary>DSG-CS-066; a candidate keeps being one under its new name.</summary>
     public IReadOnlyList<TextEditRecord> RenameHandler(string oldName, string newName) => Run(() => RenameHandlerCore(oldName, newName));
 
@@ -198,6 +203,7 @@ public sealed class CodeSyncService(FormUnit unit, ComponentCatalog catalog, Act
         RemoveFieldsOp remove => FieldEdits.RemoveFields(Unit, remove.Names),
         RenameFieldOp rename => FieldEdits.RenameField(Unit, rename.OldName, rename.NewName).Edits,
         CreateHandlerOp create => CreateHandlerCore(create.MethodName, create.Signature),
+        CreateInheritedHandlerOp create => CreateHandlerCore(create.MethodName, create.Signature, callInherited: true),
         RenameHandlerOp rename => RenameHandlerCore(rename.OldName, rename.NewName),
         RenameFormClassAndVariableOp rename => FieldEdits.RenameFormClassAndVariable(Unit, rename.OldFormName, rename.NewFormName).Edits,
         RepairOp => Form?.Invoke() is { } form ? Reconciler.Reconcile(Unit, form, Catalog, FormFileName, ReconcileMode.Repair).Edits : [],
@@ -231,9 +237,9 @@ public sealed class CodeSyncService(FormUnit unit, ComponentCatalog catalog, Act
         return units.Count == 0 ? added : added with { Edits = [.. added.Edits, .. UsesEdits.EnsureUnits(Unit, units)] };
     }
 
-    private IReadOnlyList<TextEditRecord> CreateHandlerCore(string methodName, string signatureText)
+    private IReadOnlyList<TextEditRecord> CreateHandlerCore(string methodName, string signatureText, bool callInherited = false)
     {
-        var edits = HandlerEdits.CreateHandler(Unit, methodName, Catalog.FindEventSignature(signatureText) ?? signatureText);
+        var edits = HandlerEdits.CreateHandler(Unit, methodName, Catalog.FindEventSignature(signatureText) ?? signatureText, callInherited);
         _candidates.Add(methodName);
 
         // DSG-CS-055: the unit of the signature's types when the metadata names it (eventSignatureUnits); else nothing.

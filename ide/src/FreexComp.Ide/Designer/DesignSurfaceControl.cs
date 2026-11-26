@@ -256,31 +256,57 @@ public sealed class DesignSurfaceControl : Control, ICommandTarget
         _toolTipFor = null;
     }
 
-    private TrayToolTip? _toolTipFor;
+    private object? _toolTipFor;
 
-    /// <summary>UI-DSG-083: over a tray item its class name (bodyStrong), plus "Double-click to edit" with a componentEditor.</summary>
+    /// <summary>
+    /// UI-DSG-083: over a tray item its class name (bodyStrong), plus "Double-click to edit" with a componentEditor.
+    /// UI-DSG-142: over an inherited component of a descendant (tray item or control) a last line "Inherited from …".
+    /// </summary>
     private void UpdateToolTip()
     {
-        var tip = _surface is { State: InteractionState.Idle } surface ? surface.GetTrayToolTip(_pointer.X, _pointer.Y) : null;
-        if (tip == _toolTipFor)
+        object? tip = _surface is { State: InteractionState.Idle } surface
+            ? (object?)surface.GetTrayToolTip(_pointer.X, _pointer.Y) ?? surface.GetInheritedControlToolTip(_pointer.X, _pointer.Y)
+            : null;
+        if (Equals(tip, _toolTipFor))
         {
             return;
         }
 
         _toolTipFor = tip;
-        if (tip is null)
+        ToolTip.SetTip(this, tip is null ? null : BuildToolTip(tip));
+    }
+
+    /// <summary>The tooltip content for a <see cref="TrayToolTip"/> or an <see cref="InheritedControlToolTip"/>.</summary>
+    internal static StackPanel BuildToolTip(object tip)
+    {
+        var panel = new StackPanel();
+        string? inheritedFrom = null;
+        if (tip is TrayToolTip tray)
         {
-            ToolTip.SetTip(this, null);
-            return;
+            panel.Children.Add(new TextBlock { Text = tray.ClassName, Classes = { "bodyStrong" } });
+            if (tray.OpensEditor)
+            {
+                panel.Children.Add(new TextBlock { Text = FreexComp.Ide.Core.Resources.Strings.Designer_TrayEditHint, Classes = { "body" } });
+            }
+
+            inheritedFrom = tray.InheritedFrom;
+        }
+        else if (tip is InheritedControlToolTip control)
+        {
+            panel.Children.Add(new TextBlock { Text = control.Name + ": " + control.ClassName, Classes = { "bodyStrong" } });
+            inheritedFrom = control.InheritedFrom;
         }
 
-        var panel = new StackPanel { Children = { new TextBlock { Text = tip.ClassName, Classes = { "bodyStrong" } } } };
-        if (tip.OpensEditor)
+        if (inheritedFrom is not null)
         {
-            panel.Children.Add(new TextBlock { Text = FreexComp.Ide.Core.Resources.Strings.Designer_TrayEditHint, Classes = { "body" } });
+            panel.Children.Add(new TextBlock
+            {
+                Text = string.Format(System.Globalization.CultureInfo.CurrentCulture, FreexComp.Ide.Core.Resources.Strings.Designer_InheritedFromTooltip, inheritedFrom),
+                Classes = { "body" },
+            });
         }
 
-        ToolTip.SetTip(this, panel);
+        return panel;
     }
 
     protected override void OnPointerReleased(PointerReleasedEventArgs e)

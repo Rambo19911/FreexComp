@@ -47,10 +47,24 @@ public sealed partial class DesignSurfaceController
             return;
         }
 
+        var signature = Catalog.FindEventSignature(ev.Signature) ?? ev.Signature;
+
+        // DSG-SUR-244, DSG-CS-120: an ancestor's handler M — the descendant's method M (created as the hiding stub when the
+        // class lacks it, in one "Event" unit), no form line.
+        if (AncestorFormHandler(Document, obj, ev.Name) is { } inherited)
+        {
+            if (code.LookupMember(inherited) == MemberLookup.Method || Commit(UndoTitles.Event, [],
+                    () => code.CreateInheritedHandler(inherited, signature), [new CreateInheritedHandlerOp(inherited, signature)]))
+            {
+                code.NavigateToHandler(inherited);
+            }
+
+            return;
+        }
+
         RepairFirst(); // DSG-CS-091 (a): before the handler is created
         var compatible = code.GetCompatibleMethods(ev.Signature);
         var name = DefaultHandlerName(obj, ev, compatible);
-        var signature = Catalog.FindEventSignature(ev.Signature) ?? ev.Signature;
         IReadOnlyList<TextEditRecord> edits = [];
         if (!compatible.Contains(name, StringComparer.OrdinalIgnoreCase))
         {
@@ -94,14 +108,16 @@ public sealed partial class DesignSurfaceController
 
     /// <summary>
     /// DSG-OI-082: <c>&lt;ComponentName&gt;&lt;EventNameWithoutLeadingOn&gt;</c> (the form root: <c>Form…</c>); while a member of
-    /// that name exists that is not a compatible method, digits 2, 3, … are appended.
+    /// that name exists that is not a compatible method, digits 2, 3, … are appended. DSG-CS-122: in a descendant no handler
+    /// name of the ancestor chain is taken.
     /// </summary>
     private string DefaultHandlerName(FormObject obj, EventInfo ev, IReadOnlyList<string> compatible)
     {
         var eventPart = ev.Name.StartsWith("On", StringComparison.OrdinalIgnoreCase) ? ev.Name[2..] : ev.Name;
         var stem = HandlerComponentPart(obj) + eventPart;
-        bool Usable(string name) => compatible.Contains(name, StringComparer.OrdinalIgnoreCase)
-            || (_host.CodeSync.LookupMember(name) == MemberLookup.None && Document.FindByName(name) is null);
+        var taken = AncestorHandlerNames(Document); // DSG-CS-122
+        bool Usable(string name) => !taken.Contains(name) && (compatible.Contains(name, StringComparer.OrdinalIgnoreCase)
+            || (_host.CodeSync.LookupMember(name) == MemberLookup.None && Document.FindByName(name) is null));
 
         var candidate = stem;
         for (var n = 2; !Usable(candidate); n++)
@@ -120,6 +136,64 @@ public sealed partial class DesignSurfaceController
     {
         ArgumentNullException.ThrowIfNull(obj);
         return obj.Parent is null ? "Form" : obj.QualifiedName.Replace(".", "", StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// DSG-CS-120, DSG-OI-125: the method an ancestor form assigns to <paramref name="eventName"/> of <paramref name="obj"/> —
+    /// the inherited root or an inherited component outside every frame instance of a descendant, with no line of its own
+    /// for the event — when the level storing it belongs to the document's ancestor chain; null otherwise (no handler, an
+    /// own line, a handler of a frame, or a component inside an instance: DSG-OI-120 applies there).
+    /// </summary>
+    public static string? AncestorFormHandler(FormDocument document, FormObject obj, string eventName)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+        ArgumentNullException.ThrowIfNull(obj);
+        ArgumentNullException.ThrowIfNull(eventName);
+        if (!(obj.IsInheritedRoot || ShowsInheritedMarker(obj)) || obj.FindProperty(eventName) is not null
+            || obj.InheritedHandler(eventName) is not { } handler)
+        {
+            return null;
+        }
+
+        for (var level = document.Ancestor; level is not null; level = level.Document.Ancestor)
+        {
+            if (string.Equals(level.ClassName, handler.Frame.ClassName, StringComparison.OrdinalIgnoreCase))
+            {
+                return handler.Method;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// DSG-CS-122: the handler names stored at the levels of a descendant's ancestor chain (the event values of every object's
+    /// <see cref="FormObject.InheritedFrom"/> chain in the merged model); empty for a document that is no descendant.
+    /// </summary>
+    public static IReadOnlySet<string> AncestorHandlerNames(FormDocument document)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (document.Ancestor is null)
+        {
+            return names;
+        }
+
+        foreach (var obj in document.AllObjects())
+        {
+            for (var level = obj.InheritedFrom; level is not null; level = level.InheritedFrom)
+            {
+                foreach (var property in level.Properties)
+                {
+                    if (property is { IsEvent: true, Value: IdentValue { Name: var method } })
+                    {
+                        names.Add(method);
+                    }
+                }
+            }
+        }
+
+        return names;
     }
 
     /// <summary>

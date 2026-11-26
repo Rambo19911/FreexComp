@@ -594,6 +594,12 @@ The unit was opened as code only.</value>
   <data name="Msg_Designer_FrameCycle" xml:space="preserve">
     <value>{0} cannot be placed here: the frame would contain itself.</value>
   </data>
+  <data name="Msg_Designer_InheritedComponentFixed" xml:space="preserve">
+    <value>Inherited components cannot be deleted, renamed, moved to another parent or reordered. Change them in the ancestor {0}.</value>
+  </data>
+  <data name="Msg_Designer_InheritedOrderKept" xml:space="preserve">
+    <value>Components added in this form stay in front of the inherited ones.</value>
+  </data>
   <data name="Msg_Designer_HandlerNameInvalid" xml:space="preserve">
     <value>A handler name is a valid identifier.</value>
   </data>
@@ -5017,7 +5023,19 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   </data>
   <data name="Designer_InheritedSuffix" xml:space="preserve">
     <value>, inherited from {0}</value>
-    <comment>phase8-ui-additions.md UI-DSG-136: screen-reader name suffix of an inherited object; 0 = frame class</comment>
+    <comment>phase8-ui-additions.md UI-DSG-136, form-inheritance-designer.md UI-DSG-143: screen-reader name suffix of an inherited object; 0 = frame or ancestor class</comment>
+  </data>
+  <data name="Inspector_ShowInheritedHandler" xml:space="preserve">
+    <value>Show Inherited Handler</value>
+    <comment>form-inheritance-designer.md DSG-OI-125: Events-page row menu item after Revert to Inherited</comment>
+  </data>
+  <data name="Designer_InheritedFromTooltip" xml:space="preserve">
+    <value>Inherited from {0}</value>
+    <comment>form-inheritance-designer.md UI-DSG-142: last line of the design-surface tooltip of an inherited component; 0 = ancestor class</comment>
+  </data>
+  <data name="Designer_InheritsSuffix" xml:space="preserve">
+    <value>(inherits {0})</value>
+    <comment>form-inheritance-designer.md UI-DSG-144: suffix of the Structure root row of a descendant; 0 = ancestor class</comment>
   </data>
   <data name="StringsEditor_Title" xml:space="preserve">
     <value>Edit {0} – {1}</value>

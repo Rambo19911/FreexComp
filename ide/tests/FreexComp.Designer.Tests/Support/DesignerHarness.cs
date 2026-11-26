@@ -37,15 +37,23 @@ internal sealed class DesignerHarness : IDisposable
     /// <param name="allowDiagnostics">The form may have diagnostics (preserved items: unknown classes, inherited objects).</param>
     /// <param name="catalog">The metadata: the test metadata when null (the framework metadata is <c>LayoutHarness.Catalog</c>).</param>
     /// <param name="frames">The frame catalog <c>inline</c> objects are resolved with (frames-designer.md §2); null: none.</param>
+    /// <param name="ancestors">The ancestor catalog an <c>inherited</c> root is resolved with (form-inheritance-designer.md §2); null: none.</param>
     public static DesignerHarness FromText(string text, string path = "test.form", bool allowDiagnostics = false,
-        FreexComp.Designer.Catalog.ComponentCatalog? catalog = null, IFrameCatalog? frames = null, string? rootAncestorClass = null)
+        FreexComp.Designer.Catalog.ComponentCatalog? catalog = null, IFrameCatalog? frames = null, string? rootAncestorClass = null,
+        IFrameCatalog? ancestors = null)
     {
         catalog ??= TestCatalog.Instance;
-        var result = FormParser.Parse(text.Replace("\r\n", "\n"), path, catalog, rootAncestorClass, frames);
+        var result = FormParser.Parse(text.Replace("\r\n", "\n"), path, catalog, rootAncestorClass, frames, ancestors);
         var document = result.Document ?? throw new InvalidOperationException("form did not parse:\n" + text);
         Assert.True(allowDiagnostics || document.Diagnostics.Count == 0, string.Join("\n", document.Diagnostics));
-        return new DesignerHarness(document, catalog) { AllowDiagnostics = allowDiagnostics, Frames = frames, RootAncestorClass = rootAncestorClass };
+        return new DesignerHarness(document, catalog)
+        {
+            AllowDiagnostics = allowDiagnostics, Frames = frames, RootAncestorClass = rootAncestorClass, Ancestors = ancestors,
+        };
     }
+
+    /// <summary>The ancestor catalog of a descendant form (the final parse of <see cref="Dispose"/> uses it too).</summary>
+    private IFrameCatalog? Ancestors { get; init; }
 
     /// <summary>The frame catalog of the form (the final parse of <see cref="Dispose"/> uses it too).</summary>
     public IFrameCatalog? Frames { get; private init; }
@@ -215,7 +223,7 @@ internal sealed class DesignerHarness : IDisposable
         }
 
         AssertInvariant();
-        var reparsed = FormParser.Parse(Text, "check.form", _catalog, RootAncestorClass, Frames);
+        var reparsed = FormParser.Parse(Text, "check.form", _catalog, RootAncestorClass, Frames, Ancestors);
         Assert.True(reparsed.Document is { } doc && (AllowDiagnostics || doc.Diagnostics.Count == 0),
             string.Join("\n", reparsed.Document?.Diagnostics ?? []));
     }
@@ -363,6 +371,16 @@ internal sealed class FakeCodeSync : ICodeSync
     {
         CreatedHandlers.Add((methodName, signatureText));
         LastEdits = [new TextEditRecord(100 * CreatedHandlers.Count, "", "procedure " + methodName + ";")];
+        return LastEdits;
+    }
+
+    /// <summary>The hiding methods created (<see cref="CreateInheritedHandler"/>, DSG-CS-120): method name and signature text.</summary>
+    public List<(string Name, string Signature)> CreatedInheritedHandlers { get; } = [];
+
+    public IReadOnlyList<TextEditRecord> CreateInheritedHandler(string methodName, string signatureText)
+    {
+        CreatedInheritedHandlers.Add((methodName, signatureText));
+        LastEdits = [new TextEditRecord(100 * CreatedInheritedHandlers.Count + 50, "", "procedure " + methodName + "; inherited")];
         return LastEdits;
     }
 

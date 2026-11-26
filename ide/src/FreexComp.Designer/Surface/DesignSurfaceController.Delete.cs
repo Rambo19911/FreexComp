@@ -42,9 +42,9 @@ public sealed partial class DesignSurfaceController
             return false;
         }
 
-        if (members.FirstOrDefault(m => m.IsInherited) is { } inherited)
+        if (members.FirstOrDefault(IsStructureFixed) is { } inherited)
         {
-            ReportFrameChildFixed(inherited); // DSG-SUR-227
+            ReportFixed(inherited, newChildren: false); // DSG-SUR-227, 238
             return false;
         }
 

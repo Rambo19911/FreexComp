@@ -313,8 +313,10 @@ public sealed partial class ObjectInspectorViewModel : ToolWindowViewModel, ICom
                 return [];
             }
 
-            // DSG-OI-119: the inherited objects of an instance follow it, in tree order.
-            return [model.Root, .. model.AllObjects().Where(o => o.Parent is not null && !o.IsInherited).OrderBy(o => o.Name, Names)
+            // DSG-OI-119: the inherited objects of an instance follow it, in tree order. DSG-OI-124: the inherited components of a
+            // descendant (outside instances) are components of the file scope.
+            return [model.Root, .. model.AllObjects()
+                .Where(o => o.Parent is not null && (!o.IsInherited || DesignSurfaceController.ShowsInheritedMarker(o))).OrderBy(o => o.Name, Names)
                 .SelectMany(o => o.IsFrameInstance ? [o, .. Inherited(o)] : new[] { o })];
         }
     }
@@ -325,8 +327,11 @@ public sealed partial class ObjectInspectorViewModel : ToolWindowViewModel, ICom
     /// <summary>The instance selector's entries (UI-DSG-101).</summary>
     public IReadOnlyList<string> ComponentItems => [.. Components.Select(o => o.QualifiedName + ": " + o.TypeName)];
 
-    /// <summary>UI-DSG-136: per entry of <see cref="ComponentItems"/>, the frame class an inherited object comes from, else null.</summary>
-    public IReadOnlyList<string?> ComponentFrames => [.. Components.Select(o => o.InheritedFrame?.ClassName)];
+    /// <summary>
+    /// UI-DSG-136, 143: per entry of <see cref="ComponentItems"/>, the frame or ancestor class an inherited object comes from
+    /// (<see cref="FormObject.InheritedSource"/>), else null.
+    /// </summary>
+    public IReadOnlyList<string?> ComponentFrames => [.. Components.Select(o => o.IsInherited ? o.InheritedSource?.ClassName : null)];
 
     /// <summary>The entry of the single selected component; -1 for none or several.</summary>
     public int SelectedComponentIndex

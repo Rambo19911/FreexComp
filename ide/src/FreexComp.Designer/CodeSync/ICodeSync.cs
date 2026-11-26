@@ -26,6 +26,13 @@ public interface ICodeSync
     IReadOnlyList<TextEditRecord> CreateHandler(string methodName, string signatureText);
 
     /// <summary>
+    /// DSG-CS-120, 121: creates the method <paramref name="methodName"/> of the descendant class that hides the ancestor's
+    /// handler of that name — the declaration of DSG-CS-060 and the stub <c>heading⏎begin⏎IU inherited;⏎IU⏎end;</c>; only the
+    /// missing parts are added. Returns the text edits applied (for the undo unit).
+    /// </summary>
+    IReadOnlyList<TextEditRecord> CreateInheritedHandler(string methodName, string signatureText);
+
+    /// <summary>
     /// code-sync.md §4.2 and §5 (DSG-TP-053, DSG-SUR-127): adds the fields of new components to the form class and ensures
     /// the units of their classes in the interface <c>uses</c> clause, as one code-editor undo group; returns the text edits
     /// applied (for the undo unit).
@@ -96,6 +103,9 @@ public sealed record RenameFieldOp(string OldName, string NewName) : CodeSyncOp;
 
 /// <summary><see cref="Signature"/>: the event signature type name or a procedural signature text.</summary>
 public sealed record CreateHandlerOp(string MethodName, string Signature) : CodeSyncOp;
+
+/// <summary>DSG-CS-120: the hiding method of an inherited handler (<see cref="ICodeSync.CreateInheritedHandler"/>).</summary>
+public sealed record CreateInheritedHandlerOp(string MethodName, string Signature) : CodeSyncOp;
 
 public sealed record RenameHandlerOp(string OldName, string NewName) : CodeSyncOp;
 

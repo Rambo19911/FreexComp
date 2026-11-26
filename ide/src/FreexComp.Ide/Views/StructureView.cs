@@ -143,15 +143,22 @@ public sealed class StructureView : UserControl
         }
     }
 
+    /// <summary>UI-DSG-144: the root row's suffix, two spaces after the name (the resource itself has no leading gap).</summary>
+    private static string InheritsSuffix(string ancestor) =>
+        "  " + string.Format(System.Globalization.CultureInfo.CurrentCulture, Strings.Designer_InheritsSuffix, ancestor);
+
     private Control CreateRow(StructureRow row)
     {
         var id = $"{Prefix}.Row.{row.Node.Key}";
         var panel = new DockPanel { MinHeight = 22, Margin = new Thickness(4 + 16 * row.Depth, 0, 4, 0), Background = Avalonia.Media.Brushes.Transparent };
         AutomationProperties.SetAutomationId(panel, id);
-        // UI-DSG-136: an inherited object's screen-reader name names the frame it comes from.
+        // UI-DSG-136, UI-DSG-143: an inherited object's screen-reader name names the frame or ancestor it comes from;
+        // UI-DSG-144: the root row of a descendant names its ancestor.
         AutomationProperties.SetName(panel, row.Node.InheritedFrom is { } frame
             ? row.Node.Text + string.Format(System.Globalization.CultureInfo.CurrentCulture, Strings.Designer_InheritedSuffix, frame)
-            : row.Node.Text);
+            : row.Node.InheritsFrom is { } inherits
+                ? row.Node.Text + InheritsSuffix(inherits)
+                : row.Node.Text);
         var chevron = new Panel { Width = 14 };
         if (row.HasChildren)
         {
@@ -200,6 +207,15 @@ public sealed class StructureView : UserControl
         var text = new TextBlock { Text = row.Node.Text, VerticalAlignment = VerticalAlignment.Center, TextTrimming = Avalonia.Media.TextTrimming.CharacterEllipsis };
         text.Bind(TextBlock.ForegroundProperty, text.GetResourceObservable(row.Node.Kind == StructureKind.Error ? "FxcStatusErrorBrush"
             : row.Node.IsUnavailable ? "FxcTextDisabledBrush" : row.Node.InheritedFrom is not null ? "FxcTextSecondaryBrush" : "FxcTextPrimaryBrush"));
+        // UI-DSG-144: the root row of a resolved descendant ends with "  (inherits TAncestor)" in text.secondary.
+        if (row.Node.InheritsFrom is { } ancestor)
+        {
+            var suffix = new Avalonia.Controls.Documents.Run(InheritsSuffix(ancestor));
+            suffix.Bind(Avalonia.Controls.Documents.TextElement.ForegroundProperty, text.GetResourceObservable("FxcTextSecondaryBrush"));
+            text.Text = null;
+            text.Inlines = [new Avalonia.Controls.Documents.Run(row.Node.Text), suffix];
+        }
+
         if (row.Node.Kind == StructureKind.Error)
             AutomationProperties.SetAutomationId(text, id + ".Message");
         if (row.Node.Visibility is { } visibility)

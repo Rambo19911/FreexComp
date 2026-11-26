@@ -377,8 +377,8 @@ public sealed class StructureViewModel : ToolWindowViewModel, ICommandTarget
     /// <summary>
     /// UI-TW-207, 209: the form, then its components in creation order (non-visual ones after their visual siblings), each
     /// <c>Name: TClass</c> with the key <c>Form/&lt;Name&gt;</c> (a duplicate name, preserved F0106, appends <c>#&lt;n&gt;</c>).
-    /// DSG-SUR-233: the inherited objects of an instance under it, named and keyed by their qualified name, with the frame
-    /// class they come from (UI-DSG-136).
+    /// DSG-SUR-233, 245: the inherited objects of an instance under it, named and keyed by their qualified name, with the frame
+    /// or ancestor class they come from (UI-DSG-136, 143); the root of a descendant with its ancestor class (UI-DSG-144).
     /// </summary>
     private static IReadOnlyList<StructureNode> BuildDesign(FormDocument model)
     {
@@ -393,7 +393,8 @@ public sealed class StructureViewModel : ToolWindowViewModel, ICommandTarget
                 key += "#" + seen.ToString(System.Globalization.CultureInfo.InvariantCulture);
             var children = obj.Children.Where(c => !IsNonVisual(c)).Concat(obj.Children.Where(IsNonVisual)).Select(Node).ToList();
             return new StructureNode(key, obj.QualifiedName, $"{obj.Name}: {obj.TypeName}", StructureKind.Component, -1, 0, 0, children,
-                IsNonVisual: IsNonVisual(obj), IsUnavailable: obj.IsPreserved, InheritedFrom: obj.InheritedFrame?.ClassName);
+                IsNonVisual: IsNonVisual(obj), IsUnavailable: obj.IsPreserved, InheritedFrom: obj.IsInherited ? obj.InheritedSource?.ClassName : null,
+                InheritsFrom: obj.IsInheritedRoot ? obj.InheritedSource?.ClassName : null);
         }
 
         return [Node(model.Root)];

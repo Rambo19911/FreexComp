@@ -160,16 +160,28 @@ public sealed partial class ObjectInspectorViewModel
 
     // ---- menus -----------------------------------------------------------------------------------------------------
 
-    /// <summary>DSG-OI-039: the row context menu.</summary>
+    /// <summary>DSG-OI-125: the action id of the <c>Show Inherited Handler</c> row-menu item (element <c>Context.objectInspector.showInheritedHandler</c>).</summary>
+    public const string ShowInheritedHandlerId = "objectInspector.showInheritedHandler";
+
+    /// <summary>
+    /// DSG-OI-039: the row context menu. DSG-OI-125: on the Events page <c>Show Inherited Handler</c> follows the reset item,
+    /// enabled when the current event has an inherited handler.
+    /// </summary>
     public IReadOnlyList<MenuItemModel> BuildContextMenu()
     {
         var commands = _commands ?? throw new InvalidOperationException("Commands are not attached.");
         MenuItemModel Command(string id, MenuToggleKind toggle = MenuToggleKind.None) =>
             MenuItemModel.ForCommand(commands.Get(id).Title, commands.Get(id), null, toggle);
         var reset = commands.Get("objectInspector.resetToDefault");
+        var current = CurrentEvent;
+        IReadOnlyList<MenuItemModel> inherited = Page == InspectorPage.Events && !IsEmpty
+            ? [MenuItemModel.ForAction(ShowInheritedHandlerId, Strings.Inspector_ShowInheritedHandler, () => Grid.ShowInheritedHandler(current ?? ""),
+                disabled: current is null || !Grid.CanShowInheritedHandler(current))]
+            : [];
         return
         [
             MenuItemModel.ForCommand(Grid.IsRevertToInherited ? Strings.Inspector_RevertToInherited : reset.Title, reset, null, MenuToggleKind.None),
+            .. inherited,
             MenuItemModel.ForCommand(Strings.Inspector_CopyValue, commands.Get("edit.copy"), null, MenuToggleKind.None),
             Command("objectInspector.copyPropertyName"),
             MenuItemModel.Separator(),

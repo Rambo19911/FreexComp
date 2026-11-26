@@ -84,6 +84,9 @@ public sealed class DocumentService : IDocumentService
     /// <summary>The frames form documents are read with (frames-designer.md §2); null: none known (tests set it directly).</summary>
     public FreexComp.Designer.Model.IFrameCatalog? DesignFrames { get; set; }
 
+    /// <summary>The ancestor catalog descendant forms are read with (form-inheritance-designer.md §2); null: none (tests set it directly).</summary>
+    public FreexComp.Designer.Model.IFrameCatalog? DesignAncestors { get; set; }
+
     /// <summary>
     /// The companion form of a unit named by the open project's <c>form</c> entry (designer README §3; absolute path),
     /// or null; the sibling <c>.form</c> of the same base name is used otherwise (set by the service graph).
@@ -860,7 +863,7 @@ public sealed class DocumentService : IDocumentService
                 _languages.ForPath(companion.Path), companion.Text.Encoding, lineEnding) { DiskStamp = companion.Stamp };
             Configure(formText);
             var formDocument = new FormDocumentViewModel(_buffers.Create(detection.Text, lineEnding), fullPath, language, detection.Encoding,
-                lineEnding, formText, DesignCatalog, frames: DesignFrames) { DiskStamp = stamp };
+                lineEnding, formText, DesignCatalog, frames: DesignFrames, ancestors: DesignAncestors) { DiskStamp = stamp };
             formDocument.Designer.Status = _status;
             BindDesignerClipboard(formDocument);
             formDocument.Designer.FrameHandlerRequested += OnFrameHandlerRequested;
@@ -934,7 +937,7 @@ public sealed class DocumentService : IDocumentService
             lineEnding) { DiskStamp = stamp };
         Configure(formText);
         var document = new FormDocumentViewModel(_buffers.Create("", lineEnding), fullPath, language, detection.Encoding, lineEnding,
-            formText, DesignCatalog, hasUnit: false, frames: DesignFrames) { DiskStamp = stamp };
+            formText, DesignCatalog, hasUnit: false, frames: DesignFrames, ancestors: DesignAncestors) { DiskStamp = stamp };
         document.Designer.Status = _status;
         BindDesignerClipboard(document);
         document.Designer.FrameHandlerRequested += OnFrameHandlerRequested;

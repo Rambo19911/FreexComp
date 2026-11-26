@@ -16,11 +16,12 @@ public enum StructureKind { Group, Error, Unit, Class, Record, Interface, Enum, 
 /// = the declaration span (caret tracking, UI-TW-205). <see cref="Visibility"/> = <c>private</c>, <c>protected</c>, … for
 /// members (null = none / public); <see cref="Position"/> = <c>line:col</c> of an error row. Design view (UI-TW-207):
 /// <see cref="IsNonVisual"/> = a non-visual component (gear overlay), <see cref="IsUnavailable"/> = an unknown or read-only
-/// (preserved) object (<c>text.disabled</c>, warning overlay).
+/// (preserved) object (<c>text.disabled</c>, warning overlay), <see cref="InheritedFrom"/> = the frame or ancestor class of an
+/// inherited object (UI-DSG-136, 143), <see cref="InheritsFrom"/> = the ancestor class of a descendant's root row (UI-DSG-144).
 /// </summary>
 public sealed record StructureNode(string Key, string Name, string Text, StructureKind Kind, int NameOffset, int Start, int End,
     IReadOnlyList<StructureNode> Children, string? Visibility = null, string? Position = null, bool IsNonVisual = false, bool IsUnavailable = false,
-    string? InheritedFrom = null);
+    string? InheritedFrom = null, string? InheritsFrom = null);
 
 /// <summary>The Structure tree of a Pascal syntax tree (UI-TW-200…209, IDE-ED-130), from <c>NavigationService.GetDocumentSymbols</c>.</summary>
 public static class StructureBuilder

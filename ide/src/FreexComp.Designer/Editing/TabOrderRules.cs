@@ -34,7 +34,8 @@ public static class TabOrderRules
     /// The changes that number <paramref name="parent"/>'s effective sequence 0 … n−1 after removing
     /// <paramref name="removed"/> from it and appending <paramref name="appended"/> (in that order): one
     /// <see cref="SetProperty"/> per control whose stored value differs (unassigned controls receive their value,
-    /// DSG-SUR-091). Non-focusable objects in either list are ignored.
+    /// DSG-SUR-091). Non-focusable objects in either list are ignored. DSG-SUR-240: an inherited control keeps its position — no
+    /// change is made for it; only the new controls of a descendant (and every ordinary control) are numbered.
     /// </summary>
     public static IReadOnlyList<FormChange> Renumber(FormObject parent, IEnumerable<FormObject>? removed = null,
         IEnumerable<FormObject>? appended = null)
@@ -46,17 +47,20 @@ public static class TabOrderRules
             skip.Add(a);
         }
 
-        return Number([.. Sequence(parent).Where(c => !skip.Contains(c)), .. add]);
+        return Number([.. Sequence(parent).Where(c => !skip.Contains(c)), .. add], keepInherited: true);
     }
 
-    /// <summary>One <see cref="SetProperty"/> per control of <paramref name="sequence"/> whose stored <c>TabOrder</c> is not its index.</summary>
-    public static IReadOnlyList<FormChange> Number(IReadOnlyList<FormObject> sequence)
+    /// <summary>
+    /// One <see cref="SetProperty"/> per control of <paramref name="sequence"/> whose stored <c>TabOrder</c> is not its index;
+    /// with <paramref name="keepInherited"/> none for an inherited control (DSG-SUR-240).
+    /// </summary>
+    public static IReadOnlyList<FormChange> Number(IReadOnlyList<FormObject> sequence, bool keepInherited = false)
     {
         var changes = new List<FormChange>();
         for (var i = 0; i < sequence.Count; i++)
         {
             var c = sequence[i];
-            if (!PropertyAccess.IsStored(c, "TabOrder") || PropertyAccess.GetInt(c, "TabOrder") != i)
+            if (!(keepInherited && c.IsInherited) && (!PropertyAccess.IsStored(c, "TabOrder") || PropertyAccess.GetInt(c, "TabOrder") != i))
             {
                 changes.Add(new SetProperty(c.QualifiedName, "TabOrder", new IntegerValue(i, false)));
             }

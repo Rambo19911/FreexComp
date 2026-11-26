@@ -306,8 +306,8 @@ public sealed class PropertyGridModel(ComponentCatalog catalog)
             return obj.Properties.Any(p => p.Path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
         }
 
-        // DSG-OI-117: an inherited object's value is bold iff it is overridden, its geometry included.
-        if (obj.IsInherited)
+        // DSG-OI-117, 122: an inherited object's or an inherited root's value is bold iff it is overridden, its geometry included.
+        if (obj.IsInherited || obj.IsInheritedRoot)
         {
             return obj.IsOverridden(node.Path);
         }

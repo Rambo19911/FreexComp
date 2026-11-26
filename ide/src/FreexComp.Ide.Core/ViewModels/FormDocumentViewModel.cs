@@ -22,12 +22,12 @@ public sealed class FormDocumentViewModel : TextDocumentViewModel
 
     public FormDocumentViewModel(ITextBuffer buffer, string filePath, ILanguageDefinition language, FileEncoding encoding,
         LineEndingKind defaultLineEnding, TextDocumentViewModel formText, ComponentCatalog catalog, bool hasUnit = true,
-        FreexComp.Designer.Model.IFrameCatalog? frames = null)
+        FreexComp.Designer.Model.IFrameCatalog? frames = null, FreexComp.Designer.Model.IFrameCatalog? ancestors = null)
         : base(buffer, filePath, null, language, encoding, defaultLineEnding)
     {
         ArgumentNullException.ThrowIfNull(formText);
         FormText = formText;
-        _designer = new FormDesignerViewModel(this, formText, catalog, hasUnit, frames);
+        _designer = new FormDesignerViewModel(this, formText, catalog, hasUnit, frames, ancestors);
         _designer.ActiveViewChanged += (_, _) =>
         {
             OnPropertyChanged(nameof(ActiveView));

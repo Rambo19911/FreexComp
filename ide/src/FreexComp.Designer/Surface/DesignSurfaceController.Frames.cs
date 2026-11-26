@@ -1,34 +1,90 @@
 using FreexComp.Designer.Editing;
 using FreexComp.Designer.Layout;
 using FreexComp.Designer.Model;
+using FreexComp.Designer.Rendering;
 
 namespace FreexComp.Designer.Surface;
 
-/// <summary>Frame instances on the design surface (frames-designer.md §6, DSG-SUR-225…233).</summary>
+/// <summary>
+/// Frame instances and descendant forms on the design surface (frames-designer.md §6, DSG-SUR-225…233;
+/// form-inheritance-designer.md §5, DSG-SUR-237…245).
+/// </summary>
 public sealed partial class DesignSurfaceController
 {
     /// <summary>
-    /// DSG-SUR-227: an instance and the objects inherited into it keep the frame's structure — nothing is added to them,
-    /// removed from them or reordered; they are never drop or paste targets.
+    /// DSG-SUR-227, 237 (a) "no structural change": an inherited object — a component of a frame shown in an instance or a
+    /// component of a descendant's ancestor — is not deleted, cut, renamed, re-parented or reordered.
     /// </summary>
-    internal static bool HasFixedStructure(FormObject obj) => obj.IsInherited || obj.IsFrameInstance;
-
-    /// <summary>DSG-SUR-227: the commands that change the structure of the selected components.</summary>
-    private static bool ChangesStructure(string commandId) =>
-        commandId is Commands.Delete or Commands.Cut or Commands.BringToFront or Commands.SendToBack or Commands.NewChild or Commands.DeletePage;
-
-    /// <summary>DSG-SUR-227: a structure command with inherited objects in the selection — disabled for the whole selection.</summary>
-    private bool RefusedInFrame(string commandId) => ChangesStructure(commandId) && Selection.Items.Any(o => o.IsInherited);
+    internal static bool IsStructureFixed(FormObject obj) => obj.IsInherited;
 
     /// <summary>
-    /// DSG-SUR-227: <c>Msg.Designer.FrameChildFixed</c> naming the frame whose component <paramref name="obj"/> is (the first
-    /// inherited object of the selection when null); always true (the key or command was handled by refusing it).
+    /// DSG-SUR-227, 237 (b) "no new children": a frame instance and every object inside one is no placement, paste or drop
+    /// target; the inherited root and the other inherited objects of a descendant accept new components.
     /// </summary>
-    private bool ReportFrameChildFixed(FormObject? obj = null)
+    internal static bool RefusesNewChildren(FormObject obj) => !obj.AcceptsNewChildren;
+
+    /// <summary>
+    /// DSG-SUR-227, 237: the object a command is refused for and whether the refusal is a "no new children" one; null when
+    /// the command is not refused. A structure command with an inherited object in the selection is refused for all.
+    /// </summary>
+    private (FormObject Object, bool NewChildren)? Refusal(string commandId)
     {
-        obj ??= Selection.Items.First(o => o.IsInherited);
-        _host.SetStatus(StatusIds.FrameChildFixed, FrameClassOf(obj));
+        switch (commandId)
+        {
+            case Commands.Delete or Commands.Cut or Commands.BringToFront or Commands.SendToBack:
+                return Selection.Items.FirstOrDefault(IsStructureFixed) is { } fixedObject ? (fixedObject, false) : null;
+            case Commands.NewChild:
+                return VerbComponent is { } parent && RefusesNewChildren(parent) ? (parent, true) : null;
+            case Commands.DeletePage:
+                return VerbComponent is { Info: { } info } pageControl && IsPageControl(info) && Pages(pageControl) is [var first, ..]
+                    && (PageControlRenderer.ActiveSheet(pageControl) ?? first) is { IsInherited: true } page
+                    ? (page, false)
+                    : null;
+            default:
+                return null;
+        }
+    }
+
+    /// <summary>DSG-SUR-227, 237: the command is refused for the selection (see <see cref="Refusal"/>).</summary>
+    private bool RefusedInFrame(string commandId) => Refusal(commandId) is not null;
+
+    /// <summary>The status message of a refused command (<see cref="Refusal"/>); always true (the key or command was handled).</summary>
+    private bool ReportRefusal(string commandId)
+    {
+        var (obj, newChildren) = Refusal(commandId)!.Value;
+        return ReportFixed(obj, newChildren);
+    }
+
+    /// <summary>DSG-SUR-227, 238: the status message of <see cref="FixedMessage"/>; always true.</summary>
+    private bool ReportFixed(FormObject obj, bool newChildren)
+    {
+        var (messageId, className) = FixedMessage(obj, newChildren);
+        _host.SetStatus(messageId, className);
         return true;
+    }
+
+    /// <summary>
+    /// DSG-SUR-238: the message of a change refused for <paramref name="obj"/>. A structural change of a component that comes
+    /// from the descendant's ancestor — an inherited object outside every instance, an inherited instance, or a component
+    /// inside an inherited instance — is <c>Msg.Designer.InheritedComponentFixed</c> naming the ancestor class; a "no new
+    /// children" refusal (<paramref name="newChildren"/>) and every refusal inside an instance the file creates is
+    /// <c>Msg.Designer.FrameChildFixed</c> naming the frame (DSG-SUR-227).
+    /// </summary>
+    public static (string MessageId, string ClassName) FixedMessage(FormObject obj, bool newChildren = false)
+    {
+        ArgumentNullException.ThrowIfNull(obj);
+        if (!newChildren)
+        {
+            for (var p = obj; p is not null; p = p.Parent)
+            {
+                if (p.IsInherited && p.Scope is null && p.InheritedSource is { } source)
+                {
+                    return (StatusIds.InheritedComponentFixed, source.ClassName);
+                }
+            }
+        }
+
+        return (StatusIds.FrameChildFixed, FrameClassOf(obj));
     }
 
     /// <summary>
@@ -51,16 +107,16 @@ public sealed partial class DesignSurfaceController
     private static readonly string[] InstanceKeeps = ["Left", "Top", "Width", "Height", "TabOrder"];
 
     /// <summary>
-    /// DSG-SUR-229: for each selected inherited object its own overrides; for each selected instance every override line of
-    /// its inherited objects (nested instances included) and its own lines except <see cref="InstanceKeeps"/>. Preserved
-    /// blocks (<c>F0109</c>, <c>F0110</c>) are not overrides and stay.
+    /// DSG-SUR-229, 242: for each selected inherited object and inherited root its own overrides; for each selected instance
+    /// every override line of its inherited objects (nested instances included) and its own lines except
+    /// <see cref="InstanceKeeps"/>. Preserved blocks (<c>F0109</c>, <c>F0110</c>) are not overrides and stay.
     /// </summary>
     private List<FormChange> RevertChanges()
     {
         var lines = new List<(FormObject Object, string Path)>();
         foreach (var obj in Selection.Items)
         {
-            if (obj.IsInherited)
+            if (obj.IsInherited || obj.IsInheritedRoot) // DSG-SUR-242: the root of a descendant too, not its children
             {
                 lines.AddRange(obj.Properties.Select(p => (obj, p.Path)));
             }

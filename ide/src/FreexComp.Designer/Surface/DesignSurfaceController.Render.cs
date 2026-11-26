@@ -163,9 +163,31 @@ public sealed partial class DesignSurfaceController
                 {
                     canvas.DrawRect(b, Palette.HandleSecondary, 1, LineStyle.Dash); // UI-DSG-134: below the selection outlines
                 }
+
+                if (ShowsInheritedMarker(child) && b.Width >= MarkerMinimum && b.Height >= MarkerMinimum)
+                {
+                    DrawInheritedMarker(canvas, b); // UI-DSG-141: below the selection outlines and handles
+                }
             }
         }
     }
+
+    /// <summary>UI-DSG-141: a control whose width or height is below this many logical pixels gets no inherited marker.</summary>
+    private const int MarkerMinimum = 12;
+
+    /// <summary>
+    /// UI-DSG-141, 143, 146: an inherited component of a descendant that is not inside a frame instance (the components of
+    /// instances keep the instance outline, UI-DSG-134) — it shows the inherited marker.
+    /// </summary>
+    public static bool ShowsInheritedMarker(FormObject obj)
+    {
+        ArgumentNullException.ThrowIfNull(obj);
+        return obj.IsInherited && obj.Scope is null;
+    }
+
+    /// <summary>UI-DSG-141: a filled right triangle of 6 × 6 in the top-left corner of <paramref name="b"/>, the right angle at the corner.</summary>
+    private void DrawInheritedMarker(IDesignCanvas canvas, Rect b) =>
+        canvas.FillPolygon([new(b.Left, b.Top), new(b.Left + 6, b.Top), new(b.Left, b.Top + 6)], Palette.HandleSecondary);
 
     /// <summary>UI-DSG-020 … 022: 1 × 1 dots at the grid positions of the client origin, every second one below 4 DIP, only in the viewport.</summary>
     private void DrawGrid(IDesignCanvas canvas, Rect client, Rect viewport)
@@ -224,6 +246,11 @@ public sealed partial class DesignSurfaceController
             using (canvas.PushTranslate(tile.Left, tile.Top))
             {
                 DrawComponent(canvas, new RenderContext(item, SurfaceGeometry.TileSize, SurfaceGeometry.TileSize, palette: p.Renderers), item);
+            }
+
+            if (ShowsInheritedMarker(item))
+            {
+                DrawInheritedMarker(canvas, tile); // UI-DSG-141: the tile of an inherited non-visual component
             }
 
             if (g.ShowComponentCaptions)

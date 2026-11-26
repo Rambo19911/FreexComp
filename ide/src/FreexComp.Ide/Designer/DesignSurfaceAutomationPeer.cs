@@ -184,6 +184,9 @@ internal sealed class VirtualPeer(DesignSurfaceAutomationPeer root, string id, P
         PeerKind.Handle => id[(id.LastIndexOf('.') + 1)..],
         PeerKind.Guideline => id[(id.IndexOf(".Guideline.", StringComparison.Ordinal) + 1)..],
         PeerKind.Tray => "Tray",
+        // UI-DSG-146: an inherited component of a descendant names its ancestor class.
+        _ when obj is not null && DesignSurfaceController.ShowsInheritedMarker(obj) && obj.InheritedSource is { } source =>
+            obj.Name + string.Format(System.Globalization.CultureInfo.CurrentCulture, FreexComp.Ide.Core.Resources.Strings.Designer_InheritedSuffix, source.ClassName),
         _ => obj?.Name ?? "",
     };
 

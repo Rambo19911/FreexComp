@@ -23,6 +23,7 @@
     <!-- The buffer contract runs against both implementations (IDE-ARCH-030). -->
     <Compile Include="..\FreexComp.Ide.Core.Tests\Text\TextBufferContractTests.cs" Link="Text\TextBufferContractTests.cs" />
     <Compile Include="..\FreexComp.Ide.Core.Tests\Designer\FrameDesign.cs" Link="Designer\FrameDesign.cs" />
+    <Compile Include="..\FreexComp.Ide.Core.Tests\Designer\InheritedDesign.cs" Link="Designer\InheritedDesign.cs" />
   </ItemGroup>
   <ItemGroup>
     <!-- D-078: the designer views load the test component metadata (testing.md §4). -->

@@ -307,11 +307,11 @@ public sealed partial class DesignSurfaceController
 
         var primary = Selection.Primary;
         var start = primary.Parent is null || g.IsTrayItem(primary) ? Document.Root
-            : primary is { Info.AcceptsChildren: true, IsPreserved: false } && !HasFixedStructure(primary) ? primary
+            : primary is { Info.AcceptsChildren: true, IsPreserved: false } && !RefusesNewChildren(primary) ? primary
             : primary.Parent;
-        if (HasFixedStructure(start))
+        if (RefusesNewChildren(start))
         {
-            ReportFrameChildFixed(start); // DSG-SUR-227: palette placement into an instance
+            ReportFixed(start, newChildren: true); // DSG-SUR-227: palette placement into an instance
             return false;
         }
 

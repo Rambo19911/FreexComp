@@ -154,10 +154,13 @@ public sealed class MenuItemModel : ObservableObject
     internal static MenuItemModel ForVerb(string verbId, string caption, IdeCommand command, string? argument) =>
         new(null, caption, command, argument, MenuToggleKind.None, [], false, false) { VerbId = verbId };
 
-    /// <summary>An item that runs <paramref name="run"/> (no command; IDE-WEL-008 Pin/Unpin, Remove from List).</summary>
-    internal static MenuItemModel ForAction(string actionId, string label, Action run, bool? isChecked = null) =>
+    /// <summary>
+    /// An item that runs <paramref name="run"/> (no command; IDE-WEL-008 Pin/Unpin, Remove from List); <paramref name="disabled"/>:
+    /// shown disabled (DSG-OI-125 <c>Show Inherited Handler</c> without an inherited handler).
+    /// </summary>
+    internal static MenuItemModel ForAction(string actionId, string label, Action run, bool? isChecked = null, bool disabled = false) =>
         new(null, label, null, null, isChecked is null ? MenuToggleKind.None : MenuToggleKind.Check, [], false, false)
-        { ActionId = actionId, Run = run, IsCheckedAction = isChecked };
+        { ActionId = actionId, Run = run, IsCheckedAction = isChecked, IsDisabled = disabled };
 
     internal static MenuItemModel ForSubmenu(string key, string label, IReadOnlyList<MenuItemModel> children, bool alwaysEnabled) =>
         new(key, label, null, null, MenuToggleKind.None, children, false, alwaysEnabled);

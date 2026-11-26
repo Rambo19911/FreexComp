@@ -147,4 +147,10 @@ public static class StatusIds
     public const string CodeSyncConflict = "Msg.Designer.CodeSyncConflict";
     public const string FrameChildFixed = "Msg.Designer.FrameChildFixed";
     public const string FrameCycle = "Msg.Designer.FrameCycle";
+
+    /// <summary>DSG-SUR-238: a structural change of an inherited component of a descendant; {0} = the ancestor class.</summary>
+    public const string InheritedComponentFixed = "Msg.Designer.InheritedComponentFixed";
+
+    /// <summary>DSG-SUR-241: send to back stopped after the inherited components.</summary>
+    public const string InheritedOrderKept = "Msg.Designer.InheritedOrderKept";
 }

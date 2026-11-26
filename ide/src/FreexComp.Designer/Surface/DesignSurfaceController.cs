@@ -222,7 +222,7 @@ public sealed partial class DesignSurfaceController
                 var zOrder = input.Key == DesignKey.Up ? Commands.BringToFront : Commands.SendToBack; // §9
                 if (!IsReadOnly && RefusedInFrame(zOrder))
                 {
-                    return ReportFrameChildFixed(); // DSG-SUR-227
+                    return ReportRefusal(zOrder); // DSG-SUR-227, 238
                 }
 
                 if (!CanExecute(zOrder))
@@ -239,7 +239,7 @@ public sealed partial class DesignSurfaceController
             case DesignKey.Delete when input.Modifiers == InputModifiers.None:
                 if (!IsReadOnly && RefusedInFrame(Commands.Delete))
                 {
-                    return ReportFrameChildFixed(); // DSG-SUR-227
+                    return ReportRefusal(Commands.Delete); // DSG-SUR-227, 238
                 }
 
                 if (!CanExecute(Commands.Delete))
@@ -285,7 +285,7 @@ public sealed partial class DesignSurfaceController
     {
         if (!IsReadOnly && RefusedInFrame(commandId))
         {
-            ReportFrameChildFixed(); // DSG-SUR-227
+            ReportRefusal(commandId); // DSG-SUR-227, 238
             return;
         }
 
@@ -600,7 +600,7 @@ public sealed partial class DesignSurfaceController
     private FormObject TargetContainer((int X, int Y) p, FormObject anchor)
     {
         var g = Geometry;
-        if (!Contains(g.FormClientRect, p) || _moveSet.Exists(m => m.Object.IsInherited))
+        if (!Contains(g.FormClientRect, p) || _moveSet.Exists(m => IsStructureFixed(m.Object)))
         {
             return anchor.Parent!; // DSG-SUR-226, 227: inherited controls move inside their parent only
         }
@@ -612,7 +612,7 @@ public sealed partial class DesignSurfaceController
             for (var i = target.Children.Count - 1; i >= 0 && next is null; i--)
             {
                 var c = target.Children[i];
-                if (c.Info is { AcceptsChildren: true } && !c.IsPreserved && !HasFixedStructure(c) && g.IsControl(c)
+                if (c.Info is { AcceptsChildren: true } && !c.IsPreserved && !RefusesNewChildren(c) && g.IsControl(c)
                     && !_moveSet.Exists(m => ReferenceEquals(m.Object, c))
                     && !IsHiddenPage(c, g) && Contains(g.GetBounds(c), p) && Contains(g.GetClientRect(c), p))
                 {

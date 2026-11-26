@@ -53,7 +53,8 @@ public static class HandlerEdits
     /// <exception cref="ArgumentException">The signature is not a procedural type.</exception>
     /// <exception cref="InvalidOperationException">The state is not <c>Ok</c>.</exception>
     /// <exception cref="CodeSyncException">The name is another kind of member (D-065, <c>Msg.Designer.NameConflictsWithMember</c>).</exception>
-    public static IReadOnlyList<TextEditRecord> CreateHandler(FormUnit unit, string methodName, string signatureText)
+    /// <param name="callInherited">DSG-CS-120, 121: the hiding method of an ancestor's handler — its stub calls <c>inherited;</c>.</param>
+    public static IReadOnlyList<TextEditRecord> CreateHandler(FormUnit unit, string methodName, string signatureText, bool callInherited = false)
     {
         ArgumentNullException.ThrowIfNull(unit);
         ArgumentNullException.ThrowIfNull(methodName);
@@ -79,7 +80,7 @@ public static class HandlerEdits
 
             if (!info.Implementations.ContainsKey(methodName))
             {
-                records.AddRange(unit.Apply([ImplementationStub(unit, info, kind + " " + info.ClassName + "." + methodName + tail)]));
+                records.AddRange(unit.Apply([ImplementationStub(unit, info, kind + " " + info.ClassName + "." + methodName + tail, callInherited)]));
             }
         }
 
@@ -119,6 +120,26 @@ public static class HandlerEdits
         }
 
         var begin = body.BeginKeyword;
+        var lines = info.Tree.Text.Lines;
+        var beginLine = lines.GetLinePosition(begin.Span.End).Line;
+        var endLine = lines.GetLinePosition(body.EndKeyword.Span.Start).Line;
+
+        // DSG-CS-121: the hiding stub's caret is case (b) — the end of the first whitespace-only line of the body.
+        if (IsInheritedOnlyBody(implementation))
+        {
+            var text = info.Tree.Text.Text;
+            for (var line = beginLine + 1; line < endLine; line++)
+            {
+                var span = lines.GetLineSpan(line);
+                if (text.AsSpan(span.Start, span.Length).IsWhiteSpace())
+                {
+                    return span.End;
+                }
+            }
+
+            return body.EndKeyword.Span.Start;
+        }
+
         var next = begin.GetNextToken();
         foreach (var trivia in begin.TrailingTrivia.Concat(next.LeadingTrivia))
         {
@@ -133,10 +154,35 @@ public static class HandlerEdits
             return next.Span.Start;
         }
 
-        var lines = info.Tree.Text.Lines;
-        var beginLine = lines.GetLinePosition(begin.Span.End).Line;
-        var endLine = lines.GetLinePosition(body.EndKeyword.Span.Start).Line;
         return endLine - beginLine >= 2 ? lines.GetLineSpan(beginLine + 1).End : body.EndKeyword.Span.Start;
+    }
+
+    /// <summary>
+    /// DSG-CS-121: the body is exactly the hiding stub's statement — one <c>inherited;</c> without a method name or
+    /// arguments, no local declarations, no comments or directives (whitespace aside).
+    /// </summary>
+    internal static bool IsInheritedOnlyBody(RoutineDeclarationSyntax implementation)
+    {
+        if (implementation.Block is not { Declarations.Count: 0, Body: var body }
+            || body.Statements.Where(s => s is not EmptyStatementSyntax).ToList()
+                is not [InheritedStatementSyntax { Expression: InheritedExpressionSyntax { Name: null } }])
+        {
+            return false;
+        }
+
+        var tokens = body.DescendantTokens().ToList();
+        for (var i = 0; i < tokens.Count; i++)
+        {
+            IEnumerable<SyntaxTrivia> trivia = i == 0 ? tokens[i].TrailingTrivia
+                : i == tokens.Count - 1 ? tokens[i].LeadingTrivia
+                : tokens[i].LeadingTrivia.Concat(tokens[i].TrailingTrivia);
+            if (trivia.Any(t => t.Kind is not (SyntaxKind.WhitespaceTrivia or SyntaxKind.EndOfLineTrivia)))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /// <summary>DSG-CS-066: the name in the class declaration and in the implementation heading; calls are not changed.</summary>
@@ -149,13 +195,14 @@ public static class HandlerEdits
 
     /// <summary>
     /// DSG-CS-070: the implementation body has no statements, comments or local declarations; a declaration without
-    /// implementation is empty too. A name the class does not declare or implement is not empty.
+    /// implementation is empty too. A name the class does not declare or implement is not empty. DSG-CS-121: a body that
+    /// is exactly the one statement <c>inherited;</c> (the untouched hiding stub) counts as empty.
     /// </summary>
     public static bool IsHandlerEmpty(FormClassInfo info, string methodName)
     {
         ArgumentNullException.ThrowIfNull(info);
         return info.Implementations.TryGetValue(methodName, out var implementation)
-            ? SyntaxEdits.IsEmptyMethodBody(implementation)
+            ? SyntaxEdits.IsEmptyMethodBody(implementation) || IsInheritedOnlyBody(implementation)
             : SyntaxEdits.FindMember(info.Class, methodName) is MethodDeclarationSyntax;
     }
 
@@ -191,12 +238,16 @@ public static class HandlerEdits
         return (records, removed);
     }
 
-    /// <summary>DSG-CS-062: <c>heading⏎begin⏎IU⏎end;</c> at the DSG-CS-061 position.</summary>
-    private static TextChange ImplementationStub(FormUnit unit, FormClassInfo info, string headingText)
+    /// <summary>
+    /// DSG-CS-062: <c>heading⏎begin⏎IU⏎end;</c> at the DSG-CS-061 position; DSG-CS-121 (<paramref name="callInherited"/>):
+    /// <c>heading⏎begin⏎IU inherited;⏎IU⏎end;</c>.
+    /// </summary>
+    private static TextChange ImplementationStub(FormUnit unit, FormClassInfo info, string headingText, bool callInherited = false)
     {
         var options = unit.Options(info);
         var le = options.LineEnding;
-        return SyntaxEdits.InsertMethodImplementation(info.Unit, info.ClassName, headingText + le + "begin" + le + options.IndentUnit + le + "end;");
+        var call = callInherited ? options.IndentUnit + "inherited;" + le : "";
+        return SyntaxEdits.InsertMethodImplementation(info.Unit, info.ClassName, headingText + le + "begin" + le + call + options.IndentUnit + le + "end;");
     }
 
     /// <summary>A signature text such as <c>procedure(Sender: TObject)</c> as a procedural type, or null.</summary>

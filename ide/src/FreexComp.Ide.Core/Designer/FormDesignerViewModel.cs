@@ -66,10 +66,12 @@ public sealed class FormDesignerViewModel
     /// <param name="hasUnit">False: a <c>.form</c> opened without its unit (code-sync.md §8 <c>NoUnit</c>, DSG-CS-080) —
     /// the Design view without code sync and without a Code view; <paramref name="unit"/> is then an empty placeholder.</param>
     /// <param name="frames">The frames instances are resolved with (frames-designer.md §2); null: none.</param>
+    /// <param name="ancestors">The ancestor catalog an <c>inherited</c> root is resolved with (form-inheritance-designer.md §2); null: none.</param>
     public FormDesignerViewModel(TextDocumentViewModel unit, TextDocumentViewModel formText, ComponentCatalog catalog, bool hasUnit = true,
-        IFrameCatalog? frames = null)
+        IFrameCatalog? frames = null, IFrameCatalog? ancestors = null)
     {
         Frames = frames;
+        Ancestors = ancestors;
         _unit = unit ?? throw new ArgumentNullException(nameof(unit));
         _formText = formText ?? throw new ArgumentNullException(nameof(formText));
         Catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
@@ -100,6 +102,9 @@ public sealed class FormDesignerViewModel
 
     /// <summary>The frames instances of this form are resolved with; null: none.</summary>
     public IFrameCatalog? Frames { get; }
+
+    /// <summary>The ancestor catalog a descendant form is resolved with (DSG-FD-122); null: none.</summary>
+    public IFrameCatalog? Ancestors { get; }
 
     /// <summary>
     /// DSG-OI-120: navigation to a handler a frame assigns (double-click on an inherited event value); the IDE opens that
@@ -754,6 +759,15 @@ public sealed class FormDesignerViewModel
                 [new InfoBarAction("ViewAsText", Strings.Button_ViewAsText, () => Run(ShowFormAsText))], null));
         }
 
+        // UI-DSG-145: a read-only descendant (F0112 ancestor not found, F0113 object root of a descendant class) shows the
+        // DSG-FD-027 presentation with the diagnostic's own text.
+        if (Model is { } readOnlyModel && Surface is not null
+            && readOnlyModel.Diagnostics.FirstOrDefault(d => d.Code is "F0112" or "F0113") is { } readOnlyRoot)
+        {
+            bars.Add(new InfoBarViewModel("FormReadOnlyKind", InfoBarSeverity.Info, readOnlyRoot.Message,
+                [new InfoBarAction("ViewAsText", Strings.Button_ViewAsText, () => Run(ShowFormAsText))], null));
+        }
+
         if (Surface is { State: InteractionState.TabOrder } tabOrder)
         {
             bars.Add(new InfoBarViewModel("TabOrder", InfoBarSeverity.Info, Strings.Msg_Designer_TabOrderMode,
@@ -973,7 +987,7 @@ public sealed class FormDesignerViewModel
     private FormParseResult Parse(string text)
     {
         var path = _formText.FilePath ?? "Untitled.form";
-        var first = FormParser.Parse(text, path, Catalog, null, Frames);
+        var first = FormParser.Parse(text, path, Catalog, null, Frames, Ancestors);
         if (first.Document is not { } document || Catalog.Find(document.Root.TypeName) is not null)
         {
             return first;
@@ -983,6 +997,6 @@ public sealed class FormDesignerViewModel
             ? FormClassLocator.Locate(_unit.Buffer.Text, document.Root.TypeName, _unit.FilePath ?? FormClassLocator.PlaceholderPath)
                 .FormClass?.AncestorName
             : Catalog.All.FirstOrDefault(c => c.Kind == ComponentKind.Form)?.ClassName;
-        return ancestor is null ? first : FormParser.Parse(text, path, Catalog, ancestor, Frames);
+        return ancestor is null ? first : FormParser.Parse(text, path, Catalog, ancestor, Frames, Ancestors);
     }
 }

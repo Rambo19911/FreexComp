@@ -113,9 +113,9 @@ public sealed partial class DesignSurfaceController
         }
 
         var target = PasteTarget();
-        if (HasFixedStructure(target))
+        if (RefusesNewChildren(target))
         {
-            ReportFrameChildFixed(target); // DSG-SUR-227: not into an instance or an inherited container
+            ReportFixed(target, newChildren: true); // DSG-SUR-227, 237: not into an instance or an object inside one
             return;
         }
 
@@ -175,9 +175,9 @@ public sealed partial class DesignSurfaceController
     /// </summary>
     private void AddCopies(IReadOnlyList<Placement> placements, string title)
     {
-        if (placements.Select(p => p.Parent).FirstOrDefault(HasFixedStructure) is { } fixedParent)
+        if (placements.Select(p => p.Parent).FirstOrDefault(RefusesNewChildren) is { } fixedParent)
         {
-            ReportFrameChildFixed(fixedParent); // DSG-SUR-227: a Ctrl-drag copy of inherited controls stays out of the frame
+            ReportFixed(fixedParent, newChildren: true); // DSG-SUR-227: a Ctrl-drag copy of inherited controls stays out of the frame
             return;
         }
 
@@ -237,7 +237,7 @@ public sealed partial class DesignSurfaceController
             return Document.Root;
         }
 
-        return primary is { Info.AcceptsChildren: true, IsPreserved: false } && !HasFixedStructure(primary) ? primary : primary.Parent;
+        return primary is { Info.AcceptsChildren: true, IsPreserved: false } && !RefusesNewChildren(primary) ? primary : primary.Parent;
     }
 
     /// <summary>
@@ -261,7 +261,7 @@ public sealed partial class DesignSurfaceController
     }
 
     private bool CanHold(FormObject parent, ComponentInfo child) =>
-        parent is { IsPreserved: false, Info: { AcceptsChildren: true } p } && !HasFixedStructure(parent)
+        parent is { IsPreserved: false, Info: { AcceptsChildren: true } p } && !RefusesNewChildren(parent)
         && (p.ChildClasses.IsEmpty || p.ChildClasses.Any(c => Catalog.IsAssignable(child.ClassName, c)))
         && (child.ParentClasses.IsEmpty || child.ParentClasses.Any(c => Catalog.IsAssignable(p.ClassName, c)));
 
@@ -272,7 +272,8 @@ public sealed partial class DesignSurfaceController
     /// </summary>
     private Dictionary<FormObject, string> PasteNames(IEnumerable<FormObject> objects)
     {
-        var used = new HashSet<string>(Document.AllObjects().Where(o => !o.IsInherited).Select(o => o.Name), StringComparer.OrdinalIgnoreCase);
+        // DSG-FD-126: the file scope — the inherited components of a descendant too, not those inside instances.
+        var used = new HashSet<string>(Document.AllObjects().Where(o => !o.IsInherited || o.Scope is null).Select(o => o.Name), StringComparer.OrdinalIgnoreCase);
         var names = new Dictionary<FormObject, string>(ReferenceEqualityComparer.Instance);
         bool Free(string name) => !used.Contains(name) && _host.CodeSync.LookupMember(name) == MemberLookup.None;
 

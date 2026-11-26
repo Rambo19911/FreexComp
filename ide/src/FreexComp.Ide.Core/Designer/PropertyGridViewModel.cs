@@ -490,16 +490,24 @@ public sealed class PropertyGridViewModel : ObservableObject
         CanEdit && CurrentRow is { Source: PropertyRowSource.Metadata, IsReadOnly: false, SetMember: null, Info: { } info } row
         && Selection.Any(o => ResetPaths(o, row.Path, info).Any());
 
-    /// <summary>DSG-OI-119: the tooltip of the read-only Name row of an inherited object; null otherwise.</summary>
-    public string? FixedNameTip => Selection.Select(o => o.InheritedFrame).FirstOrDefault(f => f is not null) is { } frame
-        ? DesignerMessages.Format("Msg.Designer.FrameChildFixed", frame.ClassName)
+    /// <summary>
+    /// DSG-OI-119, 124: the tooltip of the read-only Name row of an inherited object — <c>Msg.Designer.FrameChildFixed</c> in
+    /// an instance the form creates, <c>Msg.Designer.InheritedComponentFixed</c> for a component of a descendant's ancestor
+    /// (DSG-SUR-238); null otherwise.
+    /// </summary>
+    public string? FixedNameTip => Selection.FirstOrDefault(o => o.IsInherited) is { } inherited
+        && DesignSurfaceController.FixedMessage(inherited) is var (messageId, className)
+        ? DesignerMessages.Format(messageId, className)
         : null;
 
-    /// <summary>DSG-OI-118: every selected component is inherited or an instance: the reset reads "Revert to Inherited".</summary>
-    public bool IsRevertToInherited => Selection.Count > 0 && Selection.All(o => o.IsInherited || o.IsFrameInstance);
+    /// <summary>
+    /// DSG-OI-118, 123: every selected component is inherited, an instance or an inherited root: the reset reads "Revert to
+    /// Inherited".
+    /// </summary>
+    public bool IsRevertToInherited => Selection.Count > 0 && Selection.All(o => o.IsInherited || o.IsFrameInstance || o.IsInheritedRoot);
 
     private IEnumerable<string> ResetPaths(FormObject obj, string path, PropertyInfo info) =>
-        _itemMode || obj.IsInherited || !IsAlwaysWritten(path) ? StoredPaths(obj, path, info) : [];
+        _itemMode || obj.IsInherited || obj.IsInheritedRoot || !IsAlwaysWritten(path) ? StoredPaths(obj, path, info) : [];
 
     /// <summary>DSG-OI-038: removes the stored value (an object row: all its stored sub-properties) of every object.</summary>
     public void ResetToDefault()
@@ -890,6 +898,44 @@ public sealed class PropertyGridViewModel : ObservableObject
             : null;
     }
 
+    /// <summary>
+    /// DSG-OI-125, DSG-CS-120: the ancestor form's handler of the event when it is the same for every selected component
+    /// (inherited root or inherited components outside frame instances, none with a line of its own); null otherwise.
+    /// </summary>
+    private string? AncestorHandler(string eventName)
+    {
+        if (Designer?.Model is not { } model)
+        {
+            return null;
+        }
+
+        var handlers = Selection.Select(o => DesignSurfaceController.AncestorFormHandler(model, o, eventName)).ToList();
+        return handlers.Count > 0 && handlers[0] is { } first && handlers.All(h => Names.Equals(h, first)) ? first : null;
+    }
+
+    /// <summary>
+    /// DSG-OI-125: <c>Show Inherited Handler</c> is enabled — the row shows an inherited handler (no own line, the same
+    /// inherited handler on every selected component).
+    /// </summary>
+    public bool CanShowInheritedHandler(string eventName)
+    {
+        ArgumentNullException.ThrowIfNull(eventName);
+        return FindEvent(eventName) is { } ev && CommonHandler(ev.Name) is "" && InheritedHandler(ev.Name) is not null;
+    }
+
+    /// <summary>
+    /// DSG-OI-125: <c>Show Inherited Handler</c> — the definition storing the inherited handler (an ancestor form or a frame,
+    /// DSG-FD-135) is opened at the method by the IDE (<see cref="FormDesignerViewModel.FrameHandlerRequested"/>).
+    /// </summary>
+    public void ShowInheritedHandler(string eventName)
+    {
+        ArgumentNullException.ThrowIfNull(eventName);
+        if (CanShowInheritedHandler(eventName) && InheritedHandler(FindEvent(eventName)!.Name) is { } inherited)
+        {
+            Designer!.RequestFrameHandler(inherited.Frame, inherited.Method);
+        }
+    }
+
     /// <summary>DSG-OI-087: the selection has no events.</summary>
     public bool HasNoEvents => Designer is not null && Selection.Count > 0 && AllEvents().Count == 0;
 
@@ -902,7 +948,8 @@ public sealed class PropertyGridViewModel : ObservableObject
 
     /// <summary>
     /// DSG-OI-082: <c>&lt;Component&gt;&lt;Event without On&gt;</c> (the form root: <c>Form…</c>) of the primary component;
-    /// while a member of that name exists that is not a compatible method, or a component has it, 2, 3, … are appended.
+    /// while a member of that name exists that is not a compatible method, or a component has it, 2, 3, … are appended;
+    /// DSG-CS-122: in a descendant no handler name of the ancestor chain is taken.
     /// </summary>
     public string DefaultHandlerName(string eventName)
     {
@@ -913,8 +960,9 @@ public sealed class PropertyGridViewModel : ObservableObject
         var part = ev.Name.StartsWith("On", StringComparison.OrdinalIgnoreCase) ? ev.Name[2..] : ev.Name;
         var stem = DesignSurfaceController.HandlerComponentPart(obj) + part;
         var compatible = designer.CodeSync.GetCompatibleMethods(ev.Signature);
-        bool Usable(string name) => compatible.Contains(name, Names)
-            || (designer.CodeSync.LookupMember(name) == MemberLookup.None && designer.Model!.FindByName(name) is null);
+        var taken = DesignSurfaceController.AncestorHandlerNames(designer.Model!); // DSG-CS-122
+        bool Usable(string name) => !taken.Contains(name) && (compatible.Contains(name, Names)
+            || (designer.CodeSync.LookupMember(name) == MemberLookup.None && designer.Model!.FindByName(name) is null));
 
         var candidate = stem;
         for (var n = 2; !Usable(candidate); n++)
@@ -936,6 +984,28 @@ public sealed class PropertyGridViewModel : ObservableObject
         ArgumentNullException.ThrowIfNull(eventName);
         if (FindEvent(eventName) is not { } ev)
         {
+            return;
+        }
+
+        // DSG-OI-125, DSG-CS-120: an ancestor form's handler M — the descendant's method M is opened, or created first as the
+        // hiding stub (one "Event" unit, no form line).
+        if (CommonHandler(ev.Name) is "" && AncestorHandler(ev.Name) is { } hidden)
+        {
+            var hiding = Designer!.CodeSync;
+            if (hiding.LookupMember(hidden) == MemberLookup.Method)
+            {
+                if (navigate)
+                {
+                    hiding.NavigateToHandler(hidden);
+                }
+            }
+            else if (!IsEventsReadOnly && Designer.Surface!.Commit(UndoTitles.Event, [], () => hiding.CreateInheritedHandler(hidden, SignatureText(ev)),
+                         [new CreateInheritedHandlerOp(hidden, SignatureText(ev))]) && navigate)
+            {
+                hiding.NavigateToHandler(hidden);
+            }
+
+            RaiseRowsChanged();
             return;
         }
 
@@ -1195,7 +1265,7 @@ public sealed class PropertyGridViewModel : ObservableObject
             sequence.Insert((int)Math.Clamp(value, 0, sequence.Count), obj);
         }
 
-        return [.. sequences.Values.SelectMany(TabOrderRules.Number)];
+        return [.. sequences.Values.SelectMany(s => TabOrderRules.Number(s))];
     }
 
     /// <summary>DSG-OI-070 (validation order), 071 (effects): the rename of the primary component (one "Rename" unit).</summary>
