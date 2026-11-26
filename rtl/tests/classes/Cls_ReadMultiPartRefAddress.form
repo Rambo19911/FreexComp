@@ -1,0 +1,4 @@
+object AddressFrame: TAddressFrame
+  object StreetEdit: TPart
+  end
+end

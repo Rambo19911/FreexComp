@@ -1,0 +1,7 @@
+object OuterFrame: TOuterFrame
+  object Pad: TPart
+    Buddy = Home.StreetEdit
+  end
+  inline Home: TAddressFrame
+  end
+end

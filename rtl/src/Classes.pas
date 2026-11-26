@@ -4701,44 +4701,70 @@ begin
     ((FRootHeader <> '') and (CompareText(FRootHeader, Name) = 0)));
 end;
 
-{ RTL-1093: a plain name is looked up in the innermost frame instance first (the instance itself included);
-  RTL-1104: a name or the first part of a qualified name that names the root of this file is the lookup root }
+{ the components named by the dotted Path below Start, each part a component of the previous one; nil when a part
+  is missing }
+function FindComponentPath(Start: TComponent; const Path: string): TComponent;
+var
+  P: Integer;
+  Rest, Part: string;
+begin
+  Result := Start;
+  Rest := Path;
+  while (Result <> nil) and (Rest <> '') do
+  begin
+    P := Pos('.', Rest);
+    if P = 0 then
+    begin
+      Part := Rest;
+      Rest := '';
+    end
+    else
+    begin
+      Part := Copy(Rest, 1, P - 1);
+      Rest := Copy(Rest, P + 1, MaxInt);
+    end;
+    Result := Result.FindComponent(Part);
+  end;
+end;
+
+{ RTL-1093: the first part of a reference is looked up in the innermost frame instance first (the instance itself by
+  name, then its components), else among the names of the file (RTL-1104: the root's name or header name is the
+  lookup root, else a component of the lookup root); each further part is a component of the previous part's
+  instance (Outer1.Home.StreetEdit). A qualified reference not found so goes through FindGlobalComponent (RTL-498) }
 function TReader.ResolveReference(const Name: string; Scope: TComponent): TComponent;
 var
   P: Integer;
-  Container: TComponent;
+  First, Rest: string;
 begin
   Result := nil;
   P := Pos('.', Name);
-  if (P = 0) and (Scope <> nil) then
-  begin
-    if CompareText(Scope.Name, Name) = 0 then
-      Result := Scope
-    else
-      Result := Scope.FindComponent(Name);
-    if Result <> nil then
-      Exit;
-  end;
   if P = 0 then
   begin
-    if FLookupRoot = nil then
-      Exit;
-    if NamesRoot(Name) then
-      Result := FLookupRoot
-    else
-      Result := FLookupRoot.FindComponent(Name);
+    First := Name;
+    Rest := '';
   end
   else
   begin
-    if NamesRoot(Copy(Name, 1, P - 1)) then
-      Result := FLookupRoot.FindComponent(Copy(Name, P + 1, MaxInt));
-    if (Result = nil) and Assigned(FindGlobalComponent) then
-    begin
-      Container := FindGlobalComponent(Copy(Name, 1, P - 1));
-      if Container <> nil then
-        Result := Container.FindComponent(Copy(Name, P + 1, MaxInt));
-    end;
+    First := Copy(Name, 1, P - 1);
+    Rest := Copy(Name, P + 1, MaxInt);
   end;
+  if Scope <> nil then
+  begin
+    if CompareText(Scope.Name, First) = 0 then
+      Result := Scope
+    else
+      Result := Scope.FindComponent(First);
+  end;
+  if (Result = nil) and (FLookupRoot <> nil) then
+  begin
+    if NamesRoot(First) then
+      Result := FLookupRoot
+    else
+      Result := FLookupRoot.FindComponent(First);
+  end;
+  Result := FindComponentPath(Result, Rest);
+  if (Result = nil) and (P > 0) and Assigned(FindGlobalComponent) then
+    Result := FindComponentPath(FindGlobalComponent(First), Rest);
 end;
 
 { RTL-496 component reference: now if possible, else a fix-up resolved after the root's end }

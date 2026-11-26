@@ -1,0 +1,17 @@
+# references of three and more parts
+Box: Buddy=Outer2.Home.StreetEdit Buddy2=nil
+Outer1: Buddy=Outer1.Home.StreetEdit Buddy2=nil
+Outer1.Pad: Buddy=Outer1.Home.StreetEdit Buddy2=Outer1.Home.StreetEdit
+Outer2: Buddy=Outer2.Home.StreetEdit Buddy2=nil
+Outer2.Pad: Buddy=Outer2.Home.StreetEdit Buddy2=Outer1.Home.StreetEdit
+Outer2.Home: Buddy=Outer2.Home.StreetEdit Buddy2=nil
+Late: Buddy=Outer1.Home.StreetEdit Buddy2=Outer1.Home
+ok three parts, fixed up after the root's end
+ok scope-relative in the instance's lines
+ok scope-relative names the own instance
+ok three parts from another instance's lines
+ok the frame's own file, per instance
+ok four parts through the root's name
+# an unresolved part
+ok F0105 names the whole reference
+# passed 7 failed 0
