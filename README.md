@@ -114,6 +114,7 @@ RAD Studio is a trademark of its respective owner and is named here only to desc
 | Project groups | Several projects in one group file with one active project; Build All with dependencies first, stop or continue after a failing project, and circular dependencies refused; the same from `pbuild` |
 | Platforms | Several target platforms per project with an active platform, per-platform options and output folders; 64-bit Windows is the installed platform today |
 | Frames | Reusable form parts designed once and placed on many forms and frames; each instance can change and revert property values and event handlers, and changes to the frame reach every instance |
+| Form inheritance | Forms and frames built on other forms and frames of the project (New Inherited Form): inherited controls keep following the ancestor, the descendant adds controls, overrides and reverts values, and its handlers can call the ancestor's |
 | Accessibility | Forms and controls describe themselves to screen readers and UI test tools through Windows UI Automation: names, roles, descriptions, tool-button and grid patterns, change events |
 | Help | Offline help pages shipped next to the IDE, opened from Help > Contents (F1) |
 
@@ -247,6 +248,7 @@ More topics:
     - [x] PNG, JPEG and GIF images with transparency
     - [x] Copy a library unit into a project to change it for that project only
     - [x] Frames: reusable form parts with per-instance changes
+    - [x] Form inheritance: descendant forms and frames that follow their ancestor
     - [x] Accessibility for screen readers and UI test tools
     - [x] Licence checks: runtime sources, everything that reaches a built program, all dependencies
     - [ ] Windows x86 target
