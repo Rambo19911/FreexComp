@@ -25,7 +25,7 @@ public sealed class InheritedFormEditTests
     public void OverrideEqualToInheritedRemoved_StructureChangesRejected_AddIntoInheritedContainer()
     {
         var frames = AddressFrames();
-        var ancestors = new FrameCatalog();
+        var ancestors = new AncestorCatalog();
         AddLevel(ancestors, BaseDialog, "BaseDialogUnit", "TForm");
         var text = MidDialog.Replace("""
               object NameEdit: TEdit
@@ -126,7 +126,7 @@ public sealed class InheritedFormEditTests
     [Trait("Req", "DSG-LAY-067")]
     public void AncestorLeftChange_MovesDescendantUnlessOverridden()
     {
-        var ancestors = new FrameCatalog();
+        var ancestors = new AncestorCatalog();
         var baseDoc = AddLevel(ancestors, BaseDialog, "BaseDialogUnit", "TForm").Document;
         const string plainText = "inherited PlainDialog: TPlainDialog\nend\n";
         const string movedText = """
@@ -169,7 +169,7 @@ public sealed class InheritedFormEditTests
     [Trait("Req", "DSG-FD-134")]
     public void Remerge_AncestorRemovesRenamesAddsComponents_NotModified_UndoStillApplies()
     {
-        var ancestors = new FrameCatalog();
+        var ancestors = new AncestorCatalog();
         var baseDef = AddLevel(ancestors, BaseDialog, "BaseDialogUnit", "TForm");
         var baseEditor = new FormEditor(baseDef.Document, Components);
         const string text = """

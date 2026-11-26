@@ -97,7 +97,7 @@ public sealed class FrameSelfReferenceTests
     [Trait("Req", "DSG-RND-017")]
     public void FrameDocument_HeaderNameReferencesResolveToItselfAndAreKept()
     {
-        var frames = new FrameCatalog();
+        var frames = new AncestorCatalog();
         var definition = AddFrame(frames, FooterFrame, "FooterFrameUnit");
         var document = definition.Document;
 
@@ -125,7 +125,7 @@ public sealed class FrameSelfReferenceTests
     [Trait("Req", "DSG-RND-017")]
     public void Instances_HeaderNameReferencesOfTheFrameResolveInEachInstanceAndAreKept()
     {
-        var frames = new FrameCatalog();
+        var frames = new AncestorCatalog();
         var definition = AddFrame(frames, FooterFrame, "FooterFrameUnit");
         var document = ParseForm(OrderForm, frames);
 
@@ -171,7 +171,7 @@ public sealed class FrameSelfReferenceTests
     [Trait("Req", "DSG-FD-112")]
     public void OuterFile_FrameHeaderNameIsNotAName()
     {
-        var frames = new FrameCatalog();
+        var frames = new AncestorCatalog();
         AddFrame(frames, FooterFrame, "FooterFrameUnit");
         var text = OrderForm.Replace("      Caption = 'Remark'", "      Caption = 'Remark'\n      FocusControl = FooterFrame", StringComparison.Ordinal);
 

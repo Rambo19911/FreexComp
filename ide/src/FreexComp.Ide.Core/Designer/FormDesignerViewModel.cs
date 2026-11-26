@@ -16,10 +16,10 @@ using FreexComp.Ide.Core.ViewModels;
 
 namespace FreexComp.Ide.Core.Designer;
 
-/// <summary>A request to show <paramref name="method"/> of <paramref name="frame"/>'s class (DSG-OI-120).</summary>
-public sealed class FrameHandlerRequestedEventArgs(FrameDefinition frame, string method) : EventArgs
+/// <summary>A request to show <paramref name="method"/> of <paramref name="definition"/>'s class (DSG-OI-120, DSG-FD-135).</summary>
+public sealed class InheritedHandlerRequestedEventArgs(AncestorDefinition definition, string method) : EventArgs
 {
-    public FrameDefinition Frame { get; } = frame;
+    public AncestorDefinition Definition { get; } = definition;
 
     public string Method { get; } = method;
 }
@@ -68,7 +68,7 @@ public sealed class FormDesignerViewModel
     /// <param name="frames">The frames instances are resolved with (frames-designer.md §2); null: none.</param>
     /// <param name="ancestors">The ancestor catalog an <c>inherited</c> root is resolved with (form-inheritance-designer.md §2); null: none.</param>
     public FormDesignerViewModel(TextDocumentViewModel unit, TextDocumentViewModel formText, ComponentCatalog catalog, bool hasUnit = true,
-        IFrameCatalog? frames = null, IFrameCatalog? ancestors = null)
+        IAncestorCatalog? frames = null, IAncestorCatalog? ancestors = null)
     {
         Frames = frames;
         Ancestors = ancestors;
@@ -101,19 +101,19 @@ public sealed class FormDesignerViewModel
     public ComponentCatalog Catalog { get; private set; }
 
     /// <summary>The frames instances of this form are resolved with; null: none.</summary>
-    public IFrameCatalog? Frames { get; }
+    public IAncestorCatalog? Frames { get; }
 
     /// <summary>The ancestor catalog a descendant form is resolved with (DSG-FD-122); null: none.</summary>
-    public IFrameCatalog? Ancestors { get; }
+    public IAncestorCatalog? Ancestors { get; }
 
     /// <summary>
-    /// DSG-OI-120: navigation to a handler a frame assigns (double-click on an inherited event value); the IDE opens that
-    /// frame's unit at the method.
+    /// DSG-OI-120, DSG-FD-135: navigation to a handler an ancestor (a frame or a form) assigns (double-click on an inherited
+    /// event value); the IDE opens that ancestor's unit at the method.
     /// </summary>
-    public event EventHandler<FrameHandlerRequestedEventArgs>? FrameHandlerRequested;
+    public event EventHandler<InheritedHandlerRequestedEventArgs>? InheritedHandlerRequested;
 
-    internal void RequestFrameHandler(FrameDefinition frame, string method) =>
-        FrameHandlerRequested?.Invoke(this, new FrameHandlerRequestedEventArgs(frame, method));
+    internal void RequestInheritedHandler(AncestorDefinition definition, string method) =>
+        InheritedHandlerRequested?.Invoke(this, new InheritedHandlerRequestedEventArgs(definition, method));
 
     /// <summary>False in the <c>NoUnit</c> mode (DSG-CS-080).</summary>
     public bool HasUnit { get; }

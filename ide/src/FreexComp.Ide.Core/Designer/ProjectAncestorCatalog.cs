@@ -13,11 +13,11 @@ using FreexComp.Ide.Core.ViewModels;
 
 namespace FreexComp.Ide.Core.Designer;
 
-/// <summary>A unit of the project with a <c>form</c> entry (absolute paths): a possible frame (DSG-FD-103).</summary>
-public sealed record FrameSource(string UnitPath, string FormPath);
+/// <summary>A unit of the project with a <c>form</c> entry (absolute paths): a possible frame or ancestor (DSG-FD-103, 123).</summary>
+public sealed record AncestorSource(string UnitPath, string FormPath);
 
-/// <summary>A frame unit open in the IDE: its unit text and the designer model of its form (DSG-FD-103).</summary>
-public sealed record OpenFrameUnit(string UnitText, FormDocument Model);
+/// <summary>A designed unit (frame or form) open in the IDE: its unit text and the designer model of its form (DSG-FD-103).</summary>
+public sealed record OpenAncestorUnit(string UnitText, FormDocument Model);
 
 /// <summary>A class of the ancestor view (DSG-FD-123): a form or a frame, and the unit that declares it (absolute).</summary>
 public sealed record InheritableClass(string ClassName, bool IsFrame, string UnitPath);
@@ -34,7 +34,7 @@ public sealed record InheritableClass(string ClassName, bool IsFrame, string Uni
 /// removed — nothing when nothing differs; an applied change of a definition's document raises it for that class
 /// (DSG-FD-104). Group members, other projects and libraries are not listed (DSG-FD-105). No Avalonia types.
 /// </summary>
-public sealed class ProjectFrameCatalog : IFrameCatalog
+public sealed class ProjectAncestorCatalog : IAncestorCatalog
 {
     /// <summary>The ancestor of a base frame's class (DSG-FD-103); a frame may also derive from a frame (DSG-FD-124).</summary>
     public const string FrameAncestor = "TFrame";
@@ -42,23 +42,23 @@ public sealed class ProjectFrameCatalog : IFrameCatalog
     private static readonly StringComparer Names = StringComparer.OrdinalIgnoreCase;
 
     private readonly IFileSystem _fileSystem;
-    private readonly Func<IReadOnlyList<FrameSource>> _sources;
+    private readonly Func<IReadOnlyList<AncestorSource>> _sources;
     private readonly Func<ComponentCatalog> _catalog;
-    private readonly Func<string, OpenFrameUnit?> _open;
+    private readonly Func<string, OpenAncestorUnit?> _open;
     private readonly Action<string>? _report;
     private readonly HashSet<string> _raising = new(Names);
     private SortedDictionary<string, Entry> _entries = new(Names);
     private Dictionary<string, Candidate>? _pending;
     private Dictionary<string, string> _reported = new(StringComparer.OrdinalIgnoreCase);
-    private List<FrameDefinition>? _all;
+    private List<AncestorDefinition>? _all;
     private readonly AncestorView _ancestors;
 
     /// <param name="sources">The units of the loaded project that have a <c>form</c> entry (none without a project).</param>
     /// <param name="catalog">The component metadata the frames are read with.</param>
     /// <param name="open">The open frame unit of a unit path, or null when it is not open.</param>
     /// <param name="report">Writes one line on the Output channel <c>designer</c>.</param>
-    public ProjectFrameCatalog(IFileSystem fileSystem, Func<IReadOnlyList<FrameSource>> sources, Func<ComponentCatalog> catalog,
-        Func<string, OpenFrameUnit?>? open = null, Action<string>? report = null)
+    public ProjectAncestorCatalog(IFileSystem fileSystem, Func<IReadOnlyList<AncestorSource>> sources, Func<ComponentCatalog> catalog,
+        Func<string, OpenAncestorUnit?>? open = null, Action<string>? report = null)
     {
         _fileSystem = fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
         _sources = sources ?? throw new ArgumentNullException(nameof(sources));
@@ -69,18 +69,18 @@ public sealed class ProjectFrameCatalog : IFrameCatalog
     }
 
     /// <summary>The frames view (DSG-FD-103, 124), sorted by class name.</summary>
-    public IReadOnlyList<FrameDefinition> All => _all ??= [.. _entries.Values.Where(e => e.IsFrame).Select(e => e.Definition)];
+    public IReadOnlyList<AncestorDefinition> All => _all ??= [.. _entries.Values.Where(e => e.IsFrame).Select(e => e.Definition)];
 
     /// <summary>Raised for the classes of the frames view added, changed or removed.</summary>
-    public event EventHandler<FrameCatalogChangedEventArgs>? Changed;
+    public event EventHandler<AncestorCatalogChangedEventArgs>? Changed;
 
     /// <summary>
     /// DSG-FD-123: the ancestor view — every designed class of the project (forms and frames), sorted by class name;
     /// descendant documents are read with it. Same entries, refresh and reports as the frames view.
     /// </summary>
-    public IFrameCatalog Ancestors => _ancestors;
+    public IAncestorCatalog Ancestors => _ancestors;
 
-    public FrameDefinition? Find(string className)
+    public AncestorDefinition? Find(string className)
     {
         ArgumentNullException.ThrowIfNull(className);
         if (_pending is not null && _pending.TryGetValue(className, out var pending))
@@ -215,7 +215,7 @@ public sealed class ProjectFrameCatalog : IFrameCatalog
     }
 
     /// <summary>A unit and its form as read now; null when it is no frame or cannot be read (then in <paramref name="problems"/>).</summary>
-    private Candidate? Read(FrameSource source, ComponentCatalog catalog, Dictionary<string, string> problems)
+    private Candidate? Read(AncestorSource source, ComponentCatalog catalog, Dictionary<string, string> problems)
     {
         string unitText;
         string? formText = null;
@@ -266,7 +266,7 @@ public sealed class ProjectFrameCatalog : IFrameCatalog
     }
 
     /// <summary>The candidate's definition: the previous one when nothing changed, else built now (null: not readable, or a cycle).</summary>
-    private FrameDefinition? Resolve(Candidate candidate)
+    private AncestorDefinition? Resolve(Candidate candidate)
     {
         if (candidate.Done)
         {
@@ -290,7 +290,7 @@ public sealed class ProjectFrameCatalog : IFrameCatalog
             }
             else if (candidate.Model is { } model)
             {
-                candidate.Entry = new Entry(new FrameDefinition(candidate.ClassName, unitName, candidate.Source.FormPath, model),
+                candidate.Entry = new Entry(new AncestorDefinition(candidate.ClassName, unitName, candidate.Source.FormPath, model),
                     candidate.Source.UnitPath, candidate.Stamp, candidate.IsFrame);
             }
             else
@@ -300,7 +300,7 @@ public sealed class ProjectFrameCatalog : IFrameCatalog
                     this, _ancestors);
                 if (parsed.Document is { } document)
                 {
-                    candidate.Entry = new Entry(new FrameDefinition(candidate.ClassName, unitName, candidate.Source.FormPath, document),
+                    candidate.Entry = new Entry(new AncestorDefinition(candidate.ClassName, unitName, candidate.Source.FormPath, document),
                         candidate.Source.UnitPath, candidate.Stamp, candidate.IsFrame);
                 }
                 else
@@ -358,7 +358,7 @@ public sealed class ProjectFrameCatalog : IFrameCatalog
             var frames = fresh.Where(n => frameClasses.Contains(n, Names)).ToList();
             if (frames.Count > 0)
             {
-                Changed?.Invoke(this, new FrameCatalogChangedEventArgs(frames));
+                Changed?.Invoke(this, new AncestorCatalogChangedEventArgs(frames));
             }
 
             _ancestors.Raise(fresh);
@@ -379,14 +379,14 @@ public sealed class ProjectFrameCatalog : IFrameCatalog
     /// document's model is replaced, and when the metadata is reloaded. Window activation calls <see cref="Refresh"/>
     /// through the main window (files changed on disk).
     /// </summary>
-    public static ProjectFrameCatalog ForIde(IProjectService projects, DocumentService documents, IFileSystem fileSystem, IOutputService? output)
+    public static ProjectAncestorCatalog ForIde(IProjectService projects, DocumentService documents, IFileSystem fileSystem, IOutputService? output)
     {
         ArgumentNullException.ThrowIfNull(projects);
         ArgumentNullException.ThrowIfNull(documents);
-        var frames = new ProjectFrameCatalog(fileSystem, () => Sources(projects), () => documents.DesignCatalog,
+        var frames = new ProjectAncestorCatalog(fileSystem, () => Sources(projects), () => documents.DesignCatalog,
             unit => documents.Documents.OfType<FormDocumentViewModel>().FirstOrDefault(d =>
                 d.HasUnit && d.Designer.Model is not null && string.Equals(d.FilePath, unit, StringComparison.OrdinalIgnoreCase)) is { } open
-                ? new OpenFrameUnit(open.Buffer.Text, open.Designer.Model!)
+                ? new OpenAncestorUnit(open.Buffer.Text, open.Designer.Model!)
                 : null,
             output is null ? null : line => output.Append(OutputChannels.Designer, line, OutputKind.Error));
         documents.DesignFrames = frames;
@@ -410,7 +410,7 @@ public sealed class ProjectFrameCatalog : IFrameCatalog
         return frames;
     }
 
-    private static List<FrameSource> Sources(IProjectService projects)
+    private static List<AncestorSource> Sources(IProjectService projects)
     {
         if (projects.Project is not { } project)
         {
@@ -418,24 +418,24 @@ public sealed class ProjectFrameCatalog : IFrameCatalog
         }
 
         string Full(string relative) => Path.GetFullPath(Path.Combine(project.Directory, relative.Replace('/', Path.DirectorySeparatorChar)));
-        return [.. project.Files.Where(f => !string.IsNullOrEmpty(f.Form) && !string.IsNullOrEmpty(f.Path)).Select(f => new FrameSource(Full(f.Path), Full(f.Form!)))];
+        return [.. project.Files.Where(f => !string.IsNullOrEmpty(f.Form) && !string.IsNullOrEmpty(f.Path)).Select(f => new AncestorSource(Full(f.Path), Full(f.Form!)))];
     }
 
     /// <summary>What a definition was built from: the catalog, and the open model or the unit and form texts.</summary>
     private sealed record Stamp(ComponentCatalog Catalog, FormDocument? Open, string? UnitText, string? FormText);
 
-    private sealed record Entry(FrameDefinition Definition, string UnitPath, Stamp Stamp, bool IsFrame);
+    private sealed record Entry(AncestorDefinition Definition, string UnitPath, Stamp Stamp, bool IsFrame);
 
     /// <summary>DSG-FD-123: the ancestor view over the entries of its frames view.</summary>
-    private sealed class AncestorView(ProjectFrameCatalog owner) : IFrameCatalog
+    private sealed class AncestorView(ProjectAncestorCatalog owner) : IAncestorCatalog
     {
-        private List<FrameDefinition>? _all;
+        private List<AncestorDefinition>? _all;
 
-        public IReadOnlyList<FrameDefinition> All => _all ??= [.. owner._entries.Values.Select(e => e.Definition)];
+        public IReadOnlyList<AncestorDefinition> All => _all ??= [.. owner._entries.Values.Select(e => e.Definition)];
 
-        public event EventHandler<FrameCatalogChangedEventArgs>? Changed;
+        public event EventHandler<AncestorCatalogChangedEventArgs>? Changed;
 
-        public FrameDefinition? Find(string className)
+        public AncestorDefinition? Find(string className)
         {
             ArgumentNullException.ThrowIfNull(className);
             if (owner._pending is not null && owner._pending.TryGetValue(className, out var pending))
@@ -448,12 +448,12 @@ public sealed class ProjectFrameCatalog : IFrameCatalog
 
         public void Reset() => _all = null;
 
-        public void Raise(IReadOnlyList<string> classNames) => Changed?.Invoke(this, new FrameCatalogChangedEventArgs(classNames));
+        public void Raise(IReadOnlyList<string> classNames) => Changed?.Invoke(this, new AncestorCatalogChangedEventArgs(classNames));
     }
 
-    private sealed class Candidate(FrameSource source, string className, string? ancestorClass, Stamp stamp, FormDocument? model, string? formText)
+    private sealed class Candidate(AncestorSource source, string className, string? ancestorClass, Stamp stamp, FormDocument? model, string? formText)
     {
-        public FrameSource Source { get; } = source;
+        public AncestorSource Source { get; } = source;
 
         public string ClassName { get; } = className;
 

@@ -318,10 +318,10 @@ public static class ServiceGraph
         Designer.ComponentMetadataService? metadata = null;
         Designer.ObjectInspectorViewModel? objectInspector = null;
         Designer.ToolPaletteViewModel? toolPalette = null;
-        Designer.ProjectFrameCatalog? frames = null;
+        Designer.ProjectAncestorCatalog? frames = null;
         if ((toolWindowPhase ?? ImplementedPhase) >= 5)
         {
-            frames = Designer.ProjectFrameCatalog.ForIde(projects, documents, platform.FileSystem, output); // DSG-FD-103, 104
+            frames = Designer.ProjectAncestorCatalog.ForIde(projects, documents, platform.FileSystem, output); // DSG-FD-103, 104
             var projectFrames = frames;
             projects.InheritableClasses = projectFrames.Inheritable; // DSG-FD-123: the New Inherited Form dialog (D-132)
             metadata = new Designer.ComponentMetadataService(documents, platform.FileSystem, settings, status, platform.Log, platform.ToolchainEnvironment,

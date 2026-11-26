@@ -124,7 +124,7 @@ public sealed class FrameInspectorTests
 
         // Double-click on the inherited value navigates to the frame's method; nothing changes.
         var requests = new List<(string FormPath, string Method)>();
-        designer.FrameHandlerRequested += (_, e) => requests.Add((e.Frame.FormPath, e.Method));
+        designer.InheritedHandlerRequested += (_, e) => requests.Add((e.Definition.FormPath, e.Method));
         var text = designer.CurrentFormText();
         inspector.ActivateEvent("OnChange");
         Assert.Equal([(@"C:\p\AddressFrameUnit.form", "StreetEditChange")], requests);

@@ -39,8 +39,8 @@ internal sealed class DesignerHarness : IDisposable
     /// <param name="frames">The frame catalog <c>inline</c> objects are resolved with (frames-designer.md §2); null: none.</param>
     /// <param name="ancestors">The ancestor catalog an <c>inherited</c> root is resolved with (form-inheritance-designer.md §2); null: none.</param>
     public static DesignerHarness FromText(string text, string path = "test.form", bool allowDiagnostics = false,
-        FreexComp.Designer.Catalog.ComponentCatalog? catalog = null, IFrameCatalog? frames = null, string? rootAncestorClass = null,
-        IFrameCatalog? ancestors = null)
+        FreexComp.Designer.Catalog.ComponentCatalog? catalog = null, IAncestorCatalog? frames = null, string? rootAncestorClass = null,
+        IAncestorCatalog? ancestors = null)
     {
         catalog ??= TestCatalog.Instance;
         var result = FormParser.Parse(text.Replace("\r\n", "\n"), path, catalog, rootAncestorClass, frames, ancestors);
@@ -53,10 +53,10 @@ internal sealed class DesignerHarness : IDisposable
     }
 
     /// <summary>The ancestor catalog of a descendant form (the final parse of <see cref="Dispose"/> uses it too).</summary>
-    private IFrameCatalog? Ancestors { get; init; }
+    private IAncestorCatalog? Ancestors { get; init; }
 
     /// <summary>The frame catalog of the form (the final parse of <see cref="Dispose"/> uses it too).</summary>
-    public IFrameCatalog? Frames { get; private init; }
+    public IAncestorCatalog? Frames { get; private init; }
 
     /// <summary>The root's ancestor class the form was read with (<c>TFrame</c> for a frame document).</summary>
     private string? RootAncestorClass { get; init; }

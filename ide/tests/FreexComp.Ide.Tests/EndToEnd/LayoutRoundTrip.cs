@@ -153,9 +153,9 @@ internal static class LayoutRoundTrip
         var catalog = Catalog;
         var engine = new LayoutEngine(catalog, RendererRegistry.CreateDefault());
         var files = Directory.EnumerateFiles(projectDir, "*.form", SearchOption.AllDirectories).Order(StringComparer.Ordinal).ToList();
-        var frames = new FreexComp.Ide.Core.Designer.ProjectFrameCatalog(new FreexComp.Ide.Core.Platform.PhysicalFileSystem(),
+        var frames = new FreexComp.Ide.Core.Designer.ProjectAncestorCatalog(new FreexComp.Ide.Core.Platform.PhysicalFileSystem(),
             () => [.. files.Where(f => File.Exists(Path.ChangeExtension(f, ".pas")))
-                .Select(f => new FreexComp.Ide.Core.Designer.FrameSource(Path.ChangeExtension(f, ".pas"), f))],
+                .Select(f => new FreexComp.Ide.Core.Designer.AncestorSource(Path.ChangeExtension(f, ".pas"), f))],
             () => catalog);
         frames.Refresh();
         var forms = new Dictionary<string, (string Path, FreexComp.Designer.Model.FormDocument Document)>(StringComparer.OrdinalIgnoreCase);
@@ -183,8 +183,8 @@ internal static class LayoutRoundTrip
     /// Parses a form file as the designer does (FormDesignerViewModel): the root binds to the ancestor its unit declares
     /// (<c>class(TForm)</c>) when the catalog does not know the form class itself.
     /// </summary>
-    private static FormParseResult Parse(string file, ComponentCatalog catalog, FreexComp.Designer.Model.IFrameCatalog frames,
-        FreexComp.Designer.Model.IFrameCatalog ancestors)
+    private static FormParseResult Parse(string file, ComponentCatalog catalog, FreexComp.Designer.Model.IAncestorCatalog frames,
+        FreexComp.Designer.Model.IAncestorCatalog ancestors)
     {
         var text = File.ReadAllText(file, Encoding.UTF8);
         var first = FormParser.Parse(text, file, catalog, null, frames);

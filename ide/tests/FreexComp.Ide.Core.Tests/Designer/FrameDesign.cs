@@ -63,11 +63,11 @@ internal static class FrameDesign
         "");
 
     /// <summary>A catalog with <c>TAddressFrame</c> (unit <c>AddressFrameUnit</c>).</summary>
-    public static FrameCatalog Frames()
+    public static AncestorCatalog Frames()
     {
         var parsed = FormParser.Parse(AddressFrame, @"C:\p\AddressFrameUnit.form", Catalog, "TFrame");
         Assert.Empty(parsed.Diagnostics);
-        return new FrameCatalog(new FrameDefinition("TAddressFrame", "AddressFrameUnit", @"C:\p\AddressFrameUnit.form", parsed.Document!));
+        return new AncestorCatalog(new AncestorDefinition("TAddressFrame", "AddressFrameUnit", @"C:\p\AddressFrameUnit.form", parsed.Document!));
     }
 
     /// <summary>The customer form: an own panel and one instance whose label caption is overridden.</summary>
@@ -125,7 +125,7 @@ internal static class FrameDesign
         "");
 
     /// <summary>The form read with the frames, as the designer reads it.</summary>
-    public static FormDocument ParseForm(string text, IFrameCatalog frames)
+    public static FormDocument ParseForm(string text, IAncestorCatalog frames)
     {
         var parsed = FormParser.Parse(text.Replace("\r\n", "\n", StringComparison.Ordinal), "MainForm.form", Catalog, null, frames);
         Assert.False(parsed.HasSyntaxErrors);

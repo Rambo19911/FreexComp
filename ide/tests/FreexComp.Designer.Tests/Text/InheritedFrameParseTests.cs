@@ -110,9 +110,9 @@ public sealed class InheritedFrameParseTests
     {
         var frames = AddressFrames();
         AddLevel(frames, FancyAddressFrame, "FancyAddressFrameUnit", "TAddressFrame", frames);
-        Assert.Equal("TCityFrame", FrameCatalog.RepeatedClass(frames, "TFancyAddressFrame", "TCityFrame"));
-        Assert.Equal("TAddressFrame", FrameCatalog.RepeatedClass(frames, "TFancyAddressFrame", "TAddressFrame"));
-        Assert.Null(FrameCatalog.RepeatedClass(frames, "TFancyAddressFrame", "THouseForm"));
+        Assert.Equal("TCityFrame", AncestorCatalog.RepeatedClass(frames, "TFancyAddressFrame", "TCityFrame"));
+        Assert.Equal("TAddressFrame", AncestorCatalog.RepeatedClass(frames, "TFancyAddressFrame", "TAddressFrame"));
+        Assert.Null(AncestorCatalog.RepeatedClass(frames, "TFancyAddressFrame", "THouseForm"));
 
         var city = ParseFrame("""
             object CityFrame: TCityFrame

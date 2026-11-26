@@ -37,7 +37,7 @@ public sealed class FrameSurfaceTests
 
         """;
 
-    private static DesignerHarness Open(string text = OneInstance, FrameCatalog? frames = null)
+    private static DesignerHarness Open(string text = OneInstance, AncestorCatalog? frames = null)
     {
         var h = DesignerHarness.FromText(text, "customer.form", catalog: Components, frames: frames ?? AddressFrames());
         h.Settings.NoSnapping();
@@ -341,7 +341,7 @@ public sealed class FrameSurfaceTests
         // Into a form whose catalog does not know the frame: a preserved F0101 instance (shown read-only).
         using (var other = DesignerHarness.FromText(OneInstance.Replace("  inline BillingAddress: TAddressFrame\n    Left = 8\n    Top = 8\n"
                        + "    Width = 320\n    Height = 180\n    TabOrder = 0\n  end\n", "", StringComparison.Ordinal), "other.form",
-                   allowDiagnostics: true, catalog: Components, frames: new FrameCatalog()))
+                   allowDiagnostics: true, catalog: Components, frames: new AncestorCatalog()))
         {
             other.Host.Clipboard.SetData(new Dictionary<string, string> { [ClipboardFormats.Text] = instanceText });
             other.Execute(Commands.Paste);
@@ -454,7 +454,7 @@ public sealed class FrameSurfaceTests
 
         // An instance of a frame the catalog does not know (F0101): the unknown-class box (dashed status.error border,
         // "Name: TClassName"), no instance outline.
-        using (var h = DesignerHarness.FromText(OneInstance, "customer.form", allowDiagnostics: true, catalog: Components, frames: new FrameCatalog()))
+        using (var h = DesignerHarness.FromText(OneInstance, "customer.form", allowDiagnostics: true, catalog: Components, frames: new AncestorCatalog()))
         {
             Assert.True(h.Object("BillingAddress").IsPreserved);
             var ops = Ops(h);
@@ -565,7 +565,7 @@ public sealed class FrameSurfaceTests
 
     private static DesignerHarness OpenStatusForm()
     {
-        var frames = new FrameCatalog();
+        var frames = new AncestorCatalog();
         AddFrame(frames, StatusFrame, "StatusFrameUnit");
         return Open(StatusForm, frames);
     }
@@ -668,7 +668,7 @@ public sealed class FrameSurfaceTests
 
     private static DesignerHarness OpenPagesForm()
     {
-        var frames = new FrameCatalog();
+        var frames = new AncestorCatalog();
         AddFrame(frames, PagesFrame, "PagesFrameUnit");
         return Open(PagesForm, frames);
     }

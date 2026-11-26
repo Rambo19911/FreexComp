@@ -67,12 +67,12 @@ internal static class InheritedDesign
         "procedure TBaseDialog.OkButtonClick(Sender: TObject);", "begin", "end;", "", "end.", "");
 
     /// <summary>A catalog with <c>TBaseDialog</c> (unit <c>BaseDialogUnit</c>).</summary>
-    public static FrameCatalog Ancestors()
+    public static AncestorCatalog Ancestors()
     {
         var parsed = FormParser.Parse(BaseDialog, BaseFormPath, FrameDesign.Catalog, "TForm");
         Assert.Empty(parsed.Diagnostics);
-        var ancestors = new FrameCatalog();
-        ancestors.Set(new FrameDefinition("TBaseDialog", "BaseDialogUnit", BaseFormPath, parsed.Document!));
+        var ancestors = new AncestorCatalog();
+        ancestors.Set(new AncestorDefinition("TBaseDialog", "BaseDialogUnit", BaseFormPath, parsed.Document!));
         return ancestors;
     }
 
@@ -129,7 +129,7 @@ internal static class InheritedDesign
         "");
 
     /// <summary>The descendant read against the ancestor, as the designer reads it.</summary>
-    public static FormDocument ParseForm(string text, IFrameCatalog ancestors)
+    public static FormDocument ParseForm(string text, IAncestorCatalog ancestors)
     {
         var parsed = FormParser.Parse(text, "MainForm.form", FrameDesign.Catalog, "TBaseDialog", null, ancestors);
         Assert.False(parsed.HasSyntaxErrors);

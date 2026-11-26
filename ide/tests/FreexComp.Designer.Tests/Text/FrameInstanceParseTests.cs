@@ -95,7 +95,7 @@ public sealed class FrameInstanceParseTests
         Assert.Equal(["F0107", "F0107"], without.Diagnostics.Select(d => d.Code));
         Assert.True(without.FindByName("BillingAddress")!.IsPreserved);
         Assert.False(without.FindByName("BillingAddress")!.IsFrameInstance);
-        var empty = ParseForm(CustomerForm, FrameCatalog.Empty);
+        var empty = ParseForm(CustomerForm, AncestorCatalog.Empty);
         Assert.Equal(["form.form(15,26): warning F0101: Class TAddressFrame not found", "form.form(39,27): warning F0101: Class TAddressFrame not found"],
             empty.Diagnostics.Select(d => d.ToString()));
         Assert.Equal(CustomerForm, FormWriter.Write(empty));

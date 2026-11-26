@@ -149,7 +149,7 @@ internal static class FrameFixtures
         """;
 
     /// <summary>A frame document (root ancestor <c>TFrame</c>) parsed with <paramref name="frames"/>; no syntax errors.</summary>
-    public static FormDocument ParseFrame(string text, IFrameCatalog frames, string path = "frame.form")
+    public static FormDocument ParseFrame(string text, IAncestorCatalog frames, string path = "frame.form")
     {
         var result = FormParser.Parse(text, path, Components, "TFrame", frames);
         Assert.False(result.HasSyntaxErrors, string.Join("; ", result.Diagnostics));
@@ -157,7 +157,7 @@ internal static class FrameFixtures
     }
 
     /// <summary>A form document parsed with <paramref name="frames"/>; no syntax errors.</summary>
-    public static FormDocument ParseForm(string text, IFrameCatalog? frames, string path = "form.form")
+    public static FormDocument ParseForm(string text, IAncestorCatalog? frames, string path = "form.form")
     {
         var result = FormParser.Parse(text, path, Components, null, frames);
         Assert.False(result.HasSyntaxErrors, string.Join("; ", result.Diagnostics));
@@ -165,18 +165,18 @@ internal static class FrameFixtures
     }
 
     /// <summary>Adds the frame document of <paramref name="text"/> to <paramref name="frames"/> under its root class.</summary>
-    public static FrameDefinition AddFrame(FrameCatalog frames, string text, string unitName)
+    public static AncestorDefinition AddFrame(AncestorCatalog frames, string text, string unitName)
     {
         var document = ParseFrame(text, frames, unitName + ".form");
-        var definition = new FrameDefinition(document.Root.TypeName, unitName, unitName + ".form", document);
+        var definition = new AncestorDefinition(document.Root.TypeName, unitName, unitName + ".form", document);
         frames.Set(definition);
         return definition;
     }
 
     /// <summary>A catalog with <c>TCityFrame</c> and <c>TAddressFrame</c> (which contains a city frame).</summary>
-    public static FrameCatalog AddressFrames()
+    public static AncestorCatalog AddressFrames()
     {
-        var frames = new FrameCatalog();
+        var frames = new AncestorCatalog();
         AddFrame(frames, CityFrame, "CityFrameUnit");
         AddFrame(frames, AddressFrame, "AddressFrameUnit");
         return frames;

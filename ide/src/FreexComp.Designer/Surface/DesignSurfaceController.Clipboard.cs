@@ -37,7 +37,7 @@ public sealed partial class DesignSurfaceController
     private void Copy()
     {
         // DSG-SUR-230: inherited controls leave the frame as ordinary components with their effective values.
-        var text = FormWriter.WriteObjects(CopySet().Select(o => o.IsInherited ? FrameCopies.Detach(o) : o));
+        var text = FormWriter.WriteObjects(CopySet().Select(o => o.IsInherited ? InheritedCopies.Detach(o) : o));
         var parent = Selection.Primary.Parent ?? Document.Root;
         var origin = Geometry.GetClientRect(parent);
         var clipboard = _host.Clipboard;

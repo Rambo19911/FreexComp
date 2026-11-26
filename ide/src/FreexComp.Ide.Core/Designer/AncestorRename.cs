@@ -12,7 +12,7 @@ namespace FreexComp.Ide.Core.Designer;
 
 /// <summary>
 /// D-137: a component of an ancestor form or frame renamed in the designer is renamed in every descendant of the project
-/// (the ancestor view of <see cref="ProjectFrameCatalog"/>, any depth): the inherited component of each descendant's file
+/// (the ancestor view of <see cref="ProjectAncestorCatalog"/>, any depth): the inherited component of each descendant's file
 /// scope takes the new name with the component references of the descendant's own lines (DSG-FD-082; handler names
 /// stay). The descendants change before the ancestor and in the same undo unit (<see cref="ILinkedEdits"/>), deepest
 /// first, so that every re-merge (DSG-FD-134) finds the names it expects and no block is preserved with <c>F0109</c>. A
@@ -29,13 +29,13 @@ public sealed class AncestorRename
     private static readonly StringComparer Names = StringComparer.OrdinalIgnoreCase;
 
     private readonly IFileSystem _fileSystem;
-    private readonly ProjectFrameCatalog _catalog;
+    private readonly ProjectAncestorCatalog _catalog;
     private readonly Func<ComponentCatalog> _components;
     private readonly Func<FormDocument, FormDesignerViewModel?> _open;
 
     /// <param name="components">The component metadata closed descendants are edited with.</param>
     /// <param name="open">The designer of an open document whose model is the given document, or null.</param>
-    public AncestorRename(IFileSystem fileSystem, ProjectFrameCatalog catalog, Func<ComponentCatalog> components,
+    public AncestorRename(IFileSystem fileSystem, ProjectAncestorCatalog catalog, Func<ComponentCatalog> components,
         Func<FormDocument, FormDesignerViewModel?> open)
     {
         _fileSystem = fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
@@ -63,7 +63,7 @@ public sealed class AncestorRename
         // The rank of a document: 0 for the renamed one, else 1 + the highest rank of what it depends on (none: unaffected).
         var ranks = new Dictionary<string, int?>(Names);
         var visiting = new HashSet<string>(Names);
-        int? Rank(FrameDefinition definition)
+        int? Rank(AncestorDefinition definition)
         {
             if (Names.Equals(definition.ClassName, own.ClassName))
             {
@@ -97,7 +97,7 @@ public sealed class AncestorRename
     }
 
     /// <summary>True when <paramref name="definition"/> is the class <paramref name="own"/> or inherits from it.</summary>
-    private static bool Derives(FrameDefinition? definition, string own)
+    private static bool Derives(AncestorDefinition? definition, string own)
     {
         var seen = new HashSet<FormDocument>(ReferenceEqualityComparer.Instance);
         for (var level = definition; level is not null && seen.Add(level.Document); level = level.Document.Ancestor)
@@ -332,7 +332,7 @@ public sealed class AncestorRename
     /// (written only when the written text changes; on a revert the file's earlier bytes when the file still holds what the
     /// apply wrote).
     /// </summary>
-    private Step Change(FrameDefinition definition, IReadOnlyList<FormChange> changes, Step? reverting,
+    private Step Change(AncestorDefinition definition, IReadOnlyList<FormChange> changes, Step? reverting,
         Func<FormDocument, List<FormChange>> pendingRenames)
     {
         var document = definition.Document;

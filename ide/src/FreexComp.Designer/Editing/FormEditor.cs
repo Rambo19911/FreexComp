@@ -93,7 +93,7 @@ public sealed class FormEditor(FormDocument document, ComponentCatalog catalog)
         CheckNewNames(change.Data, names);
         var obj = change.Data.Original is { Parent: null } original ? original
             : change.Data.Kind == FormObjectKind.Inline && document.Frames is not null
-                && FrameCopies.BuildInstance(change.Data, document, catalog) is { } instance ? instance
+                && InheritedCopies.BuildInstance(change.Data, document, catalog) is { } instance ? instance
             : Build(change.Data, parentPreserved: false);
         parent.InsertChild(index, obj);
         document.Register(obj);

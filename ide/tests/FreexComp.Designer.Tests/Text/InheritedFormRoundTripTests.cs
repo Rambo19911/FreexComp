@@ -23,7 +23,7 @@ public sealed class InheritedFormRoundTripTests
     internal static FormDocument ParseChainLevel(string form)
     {
         var frames = FrameFormRoundTripTests.CorpusFrames();
-        var ancestors = new FrameCatalog();
+        var ancestors = new AncestorCatalog();
         foreach (var (level, unit) in Chain)
         {
             var text = File.ReadAllText(TestPaths.Combine("forms/canonical/" + level));
@@ -35,7 +35,7 @@ public sealed class InheritedFormRoundTripTests
                 return document;
             }
 
-            ancestors.Set(new FrameDefinition(className, Path.GetFileNameWithoutExtension(unit), level, document));
+            ancestors.Set(new AncestorDefinition(className, Path.GetFileNameWithoutExtension(unit), level, document));
         }
 
         throw new ArgumentException(form + " is not a level of the inheritance chain", nameof(form));
@@ -54,7 +54,7 @@ public sealed class InheritedFormRoundTripTests
         // Each level is parsed with the ancestor its unit declares (class(…)) and joins the ancestor catalog; the leaf
         // contains an instance of the corpus frame.
         var frames = FrameFormRoundTripTests.CorpusFrames();
-        var ancestors = new FrameCatalog();
+        var ancestors = new AncestorCatalog();
         var documents = new List<(FormDocument Document, byte[] Bytes)>();
         foreach (var (form, unit) in Chain)
         {
@@ -65,7 +65,7 @@ public sealed class InheritedFormRoundTripTests
             var document = ParseWith(text, ancestorClass, frames, ancestors, form);
             Assert.Empty(document.Diagnostics);
             Assert.Equal(className, document.Root.TypeName);
-            ancestors.Set(new FrameDefinition(className, Path.GetFileNameWithoutExtension(unit), form, document));
+            ancestors.Set(new AncestorDefinition(className, Path.GetFileNameWithoutExtension(unit), form, document));
             documents.Add((document, bytes));
         }
 
@@ -124,7 +124,7 @@ public sealed class InheritedFormRoundTripTests
     [Trait("Req", "DSG-FD-131")]
     public void BlocksInDefinitionOrder_NewChildrenLast_PreservedBlocksAtTheirSlot()
     {
-        var ancestors = new FrameCatalog();
+        var ancestors = new AncestorCatalog();
         AddLevel(ancestors, BaseDialog, "BaseDialogUnit", "TForm");
 
         // DSG-FD-128: a descendant that changed nothing writes no root line.

@@ -131,5 +131,5 @@ public sealed record IdeServices
     public Designer.ComponentMetadataService? Metadata { get; init; }
 
     /// <summary>From Phase 5: the frames of the loaded project (DSG-FD-103, 104); the form documents resolve instances with it.</summary>
-    public Designer.ProjectFrameCatalog? Frames { get; init; }
+    public Designer.ProjectAncestorCatalog? Frames { get; init; }
 }

@@ -83,16 +83,16 @@ public sealed class FormDocument
     }
 
     /// <summary>The frames instances were resolved with (null: none; <c>inline</c> objects are then <c>F0107</c>).</summary>
-    public IFrameCatalog? Frames { get; private set; }
+    public IAncestorCatalog? Frames { get; private set; }
 
     /// <summary>The weak link to <see cref="Frames"/>' <c>Changed</c> event (DSG-FD-111).</summary>
-    internal FrameSubscription? FrameLink { get; private set; }
+    internal InstanceSubscription? InstanceLink { get; private set; }
 
     /// <summary>The definition a resolved descendant document inherits from (DSG-FD-125); null for other documents.</summary>
-    public FrameDefinition? Ancestor => Root.IsInheritedRoot ? Root.InheritedSource : null;
+    public AncestorDefinition? Ancestor => Root.IsInheritedRoot ? Root.InheritedSource : null;
 
     /// <summary>The ancestor catalog the document was parsed with (DSG-FD-122); null: none.</summary>
-    public IFrameCatalog? Ancestors { get; private set; }
+    public IAncestorCatalog? Ancestors { get; private set; }
 
     /// <summary>The ancestor class the root was parsed with (code sync's <c>class(…)</c>); a re-merge parses with it again.</summary>
     internal string? RootAncestorClass { get; private set; }
@@ -106,14 +106,14 @@ public sealed class FormDocument
     /// </summary>
     internal bool FollowsAncestor => AncestorLink is not null && Root.Kind == FormObjectKind.Inherited;
 
-    internal void AttachFrames(IFrameCatalog? frames, ComponentCatalog catalog, IFrameCatalog? ancestors = null, string? rootAncestorClass = null)
+    internal void AttachFrames(IAncestorCatalog? frames, ComponentCatalog catalog, IAncestorCatalog? ancestors = null, string? rootAncestorClass = null)
     {
         Frames = frames;
         Ancestors = ancestors;
         RootAncestorClass = rootAncestorClass;
         if (frames is not null)
         {
-            FrameLink = new FrameSubscription(this, frames, catalog);
+            InstanceLink = new InstanceSubscription(this, frames, catalog);
         }
 
         if (ancestors is not null && rootAncestorClass is not null)
@@ -292,7 +292,7 @@ public sealed class FormObject
     public ComponentInfo? Info { get; internal set; }
 
     /// <summary>The frame definition of a resolved instance (an <c>inline</c> object, or a nested instance inside one).</summary>
-    public FrameDefinition? Frame { get; internal set; }
+    public AncestorDefinition? Frame { get; internal set; }
 
     /// <summary>True for a resolved frame instance: the scope of its inherited objects (DSG-FD-106, 108).</summary>
     public bool IsFrameInstance => Frame is not null;
@@ -314,7 +314,7 @@ public sealed class FormObject
     /// object, instance or inherited root — the method and the definition (frame or ancestor form) whose file stores it
     /// (the nearest level of the definition chain that stores one); null when no level assigns one.
     /// </summary>
-    public (FrameDefinition Frame, string Method)? InheritedHandler(string eventName)
+    public (AncestorDefinition Frame, string Method)? InheritedHandler(string eventName)
     {
         for (var o = this; o.InheritedFrom is { } source; o = source)
         {
@@ -336,7 +336,7 @@ public sealed class FormObject
     /// The definition whose file stores <see cref="InheritedFrom"/>: the one merged at the nearest merge point at or
     /// above this object — an instance this file creates (not an inherited copy of one) or the root of a descendant.
     /// </summary>
-    private FrameDefinition? MergedFrom()
+    private AncestorDefinition? MergedFrom()
     {
         for (var p = this; p is not null; p = p.Parent)
         {
@@ -354,7 +354,7 @@ public sealed class FormObject
         return null;
     }
 
-    private FrameDefinition? _ancestor;
+    private AncestorDefinition? _ancestor;
 
     /// <summary>True for the root of a resolved descendant document (DSG-FD-125): it inherits from the ancestor's root.</summary>
     public bool IsInheritedRoot => _ancestor is not null;
@@ -363,7 +363,7 @@ public sealed class FormObject
     /// DSG-FD-135: the definition of the level that supplies this object — for an inherited object the frame of its
     /// instance, else the document's ancestor; for an inherited root the ancestor; null for other objects.
     /// </summary>
-    public FrameDefinition? InheritedSource
+    public AncestorDefinition? InheritedSource
     {
         get
         {
@@ -396,7 +396,7 @@ public sealed class FormObject
     public bool AcceptsNewChildren => !IsFrameInstance && Scope is null;
 
     /// <summary>Makes this root a resolved descendant of <paramref name="ancestor"/> (DSG-FD-125).</summary>
-    internal void SetAncestor(FrameDefinition ancestor)
+    internal void SetAncestor(AncestorDefinition ancestor)
     {
         _ancestor = ancestor;
         InheritedFrom = ancestor.Document.Root;
@@ -439,7 +439,7 @@ public sealed class FormObject
     public string QualifiedName => IsInherited && Scope is { } scope ? scope.QualifiedName + "." + Name : Name;
 
     /// <summary>The frame an inherited object comes from (the frame of its scope instance); null for other objects.</summary>
-    public FrameDefinition? InheritedFrame => IsInherited ? Scope?.Frame : null;
+    public AncestorDefinition? InheritedFrame => IsInherited ? Scope?.Frame : null;
 
     /// <summary>The instance whose scope an inherited object belongs to (the nearest instance above it), else null.</summary>
     internal FormObject? Scope

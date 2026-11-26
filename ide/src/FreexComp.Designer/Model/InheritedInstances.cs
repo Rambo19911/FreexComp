@@ -3,15 +3,18 @@ using FreexComp.Designer.Text;
 
 namespace FreexComp.Designer.Model;
 
-/// <summary>Merging frame definitions into instances and following later definition changes (frames-designer.md §3).</summary>
-internal static class FrameInstances
+/// <summary>
+/// Merging frame definitions into instances and ancestor definitions into descendant roots, and following later definition
+/// changes (frames-designer.md §3, form-inheritance-designer.md DSG-FD-125, 134).
+/// </summary>
+internal static class InheritedInstances
 {
     /// <summary>
     /// DSG-FD-106: <paramref name="instance"/> becomes a resolved instance of <paramref name="frame"/> with one inherited
     /// object per object of the definition's tree (same nesting and creation order). Preserved objects of the definition
     /// are copied as read-only boxes without children.
     /// </summary>
-    public static void Merge(FormObject instance, FrameDefinition frame)
+    public static void Merge(FormObject instance, AncestorDefinition frame)
     {
         instance.Frame = frame;
         instance.InheritedFrom = frame.Document.Root;
@@ -26,7 +29,7 @@ internal static class FrameInstances
     /// inherits from the ancestor's root and gets one inherited object per child of that root, with the definition's
     /// nesting and creation order (inherited frame instances stay instances with their merged children).
     /// </summary>
-    public static void MergeAncestor(FormObject root, FrameDefinition ancestor)
+    public static void MergeAncestor(FormObject root, AncestorDefinition ancestor)
     {
         root.SetAncestor(ancestor);
         foreach (var child in ancestor.Document.Root.Children)
@@ -62,7 +65,7 @@ internal static class FrameInstances
     /// a document of <paramref name="rootClass"/> — the frame contains itself or the root class, directly or through other
     /// frames — or null. Classes are compared ASCII case-insensitively.
     /// </summary>
-    public static string? RepeatedClass(IFrameCatalog frames, string frameClass, string? rootClass)
+    public static string? RepeatedClass(IAncestorCatalog frames, string frameClass, string? rootClass)
     {
         var path = new List<string>();
         if (rootClass is not null)
@@ -73,7 +76,7 @@ internal static class FrameInstances
         return Visit(frames, frameClass, path);
     }
 
-    private static string? Visit(IFrameCatalog frames, string className, List<string> path)
+    private static string? Visit(IAncestorCatalog frames, string className, List<string> path)
     {
         if (path.Contains(className, StringComparer.OrdinalIgnoreCase))
         {
@@ -103,7 +106,7 @@ internal static class FrameInstances
     /// instances it inherits from its ancestor levels, and the ancestor class itself (a frame derived from another frame
     /// constructs the ancestor's components too; D-132).
     /// </summary>
-    private static IEnumerable<string> ContainedClasses(FrameDefinition definition) =>
+    private static IEnumerable<string> ContainedClasses(AncestorDefinition definition) =>
         definition.Document.AllObjects().Where(o => o.Parent is not null && IsInstance(o)).Select(o => o.TypeName)
             .Concat(definition.Document.Ancestor is { } ancestor ? [ancestor.ClassName] : [])
             .Distinct(StringComparer.OrdinalIgnoreCase);
@@ -121,7 +124,7 @@ internal static class FrameInstances
     }
 
     /// <summary>True when <paramref name="className"/> is one of <paramref name="changed"/> or contains one of them.</summary>
-    private static bool Affected(IFrameCatalog frames, string className, IReadOnlyCollection<string> changed, HashSet<string> visiting)
+    private static bool Affected(IAncestorCatalog frames, string className, IReadOnlyCollection<string> changed, HashSet<string> visiting)
     {
         if (changed.Contains(className, StringComparer.OrdinalIgnoreCase))
         {
@@ -144,7 +147,7 @@ internal static class FrameInstances
     /// <see cref="FormDocument.Changed"/> once with <see cref="FormChangeFlags.Structure"/> and
     /// <see cref="FormChangedEventArgs.IsRemerge"/>; nothing is raised when no instance is affected.
     /// </summary>
-    public static void Remerge(FormDocument document, IFrameCatalog frames, ComponentCatalog catalog, IReadOnlyCollection<string> changed)
+    public static void Remerge(FormDocument document, IAncestorCatalog frames, ComponentCatalog catalog, IReadOnlyCollection<string> changed)
     {
         if (document.FollowsAncestor)
         {
@@ -250,16 +253,16 @@ internal static class FrameInstances
 }
 
 /// <summary>
-/// A descendant document's link to its ancestor catalog (DSG-FD-134), held like <see cref="FrameSubscription"/>: when a
+/// A descendant document's link to its ancestor catalog (DSG-FD-134), held like <see cref="InstanceSubscription"/>: when a
 /// class of the document's ancestor chain or a frame it contains changes, the document is merged again from its root.
 /// </summary>
 internal sealed class AncestorSubscription
 {
     private readonly WeakReference<FormDocument> _document;
-    private readonly IFrameCatalog _ancestors;
+    private readonly IAncestorCatalog _ancestors;
     private readonly ComponentCatalog _catalog;
 
-    public AncestorSubscription(FormDocument document, IFrameCatalog ancestors, ComponentCatalog catalog)
+    public AncestorSubscription(FormDocument document, IAncestorCatalog ancestors, ComponentCatalog catalog)
     {
         _document = new WeakReference<FormDocument>(document);
         _ancestors = ancestors;
@@ -267,7 +270,7 @@ internal sealed class AncestorSubscription
         ancestors.Changed += OnChanged;
     }
 
-    private void OnChanged(object? sender, FrameCatalogChangedEventArgs e)
+    private void OnChanged(object? sender, AncestorCatalogChangedEventArgs e)
     {
         if (!_document.TryGetTarget(out var document))
         {
@@ -275,23 +278,23 @@ internal sealed class AncestorSubscription
         }
         else if (document.Root.Kind == FormObjectKind.Inherited && document.DependsOn(e.ClassNames))
         {
-            FrameInstances.RemergeRoot(document, _catalog);
+            InheritedInstances.RemergeRoot(document, _catalog);
         }
     }
 }
 
 /// <summary>
-/// A document's link to its frame catalog (DSG-FD-111). The catalog holds this object, the object holds the document
+/// A document's link to its frame catalog (DSG-FD-111; a descendant is merged again from its root, DSG-FD-134). The catalog holds this object, the object holds the document
 /// weakly: a document that is no longer used is not kept alive by the catalog, and its link removes itself on the next
 /// change.
 /// </summary>
-internal sealed class FrameSubscription
+internal sealed class InstanceSubscription
 {
     private readonly WeakReference<FormDocument> _document;
-    private readonly IFrameCatalog _frames;
+    private readonly IAncestorCatalog _frames;
     private readonly ComponentCatalog _catalog;
 
-    public FrameSubscription(FormDocument document, IFrameCatalog frames, ComponentCatalog catalog)
+    public InstanceSubscription(FormDocument document, IAncestorCatalog frames, ComponentCatalog catalog)
     {
         _document = new WeakReference<FormDocument>(document);
         _frames = frames;
@@ -299,11 +302,11 @@ internal sealed class FrameSubscription
         frames.Changed += OnChanged;
     }
 
-    private void OnChanged(object? sender, FrameCatalogChangedEventArgs e)
+    private void OnChanged(object? sender, AncestorCatalogChangedEventArgs e)
     {
         if (_document.TryGetTarget(out var document))
         {
-            FrameInstances.Remerge(document, _frames, _catalog, e.ClassNames);
+            InheritedInstances.Remerge(document, _frames, _catalog, e.ClassNames);
         }
         else
         {

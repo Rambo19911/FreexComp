@@ -83,10 +83,10 @@ public sealed class DocumentService : IDocumentService
     public FreexComp.Designer.Catalog.ComponentCatalog DesignCatalog { get; set; } = FreexComp.Designer.Catalog.ComponentCatalog.Empty;
 
     /// <summary>The frames form documents are read with (frames-designer.md §2); null: none known (tests set it directly).</summary>
-    public FreexComp.Designer.Model.IFrameCatalog? DesignFrames { get; set; }
+    public FreexComp.Designer.Model.IAncestorCatalog? DesignFrames { get; set; }
 
     /// <summary>The ancestor catalog descendant forms are read with (form-inheritance-designer.md §2); null: none (tests set it directly).</summary>
-    public FreexComp.Designer.Model.IFrameCatalog? DesignAncestors { get; set; }
+    public FreexComp.Designer.Model.IAncestorCatalog? DesignAncestors { get; set; }
 
     /// <summary>D-137: renames an ancestor's component in the project's descendants; given to every form document's designer.</summary>
     public AncestorRename? DesignAncestorRename { get; set; }
@@ -871,7 +871,7 @@ public sealed class DocumentService : IDocumentService
             formDocument.Designer.Status = _status;
             formDocument.Designer.AncestorRename = DesignAncestorRename;
             BindDesignerClipboard(formDocument);
-            formDocument.Designer.FrameHandlerRequested += OnFrameHandlerRequested;
+            formDocument.Designer.InheritedHandlerRequested += OnInheritedHandlerRequested;
             formDocument.ActiveViewChanged += (_, _) => _commands?.InvalidateCanExecute();
             document = formDocument;
         }
@@ -946,7 +946,7 @@ public sealed class DocumentService : IDocumentService
         document.Designer.Status = _status;
         document.Designer.AncestorRename = DesignAncestorRename;
         BindDesignerClipboard(document);
-        document.Designer.FrameHandlerRequested += OnFrameHandlerRequested;
+        document.Designer.InheritedHandlerRequested += OnInheritedHandlerRequested;
         document.ActiveViewChanged += (_, _) => _commands?.InvalidateCanExecute();
         Add(document);
         return OperationResult<DocumentViewModel>.Of(document);
@@ -1259,15 +1259,15 @@ public sealed class DocumentService : IDocumentService
     /// DSG-OI-120, 121: a handler a frame assigns opens the frame's unit (the project frame catalog knows its path, else the
     /// unit beside the frame's form) in the Code view at the method.
     /// </summary>
-    private void OnFrameHandlerRequested(object? sender, FrameHandlerRequestedEventArgs e) => FrameHandlerOpening = OpenFrameHandlerAsync(e);
+    private void OnInheritedHandlerRequested(object? sender, InheritedHandlerRequestedEventArgs e) => InheritedHandlerOpening = OpenInheritedHandlerAsync(e);
 
-    /// <summary>The last opening of a frame's unit at a handler (DSG-OI-120), for tests to await.</summary>
-    internal Task FrameHandlerOpening { get; private set; } = Task.CompletedTask;
+    /// <summary>The last opening of an ancestor's unit (a frame or a form) at a handler (DSG-OI-120, DSG-FD-135), for tests to await.</summary>
+    internal Task InheritedHandlerOpening { get; private set; } = Task.CompletedTask;
 
-    private async Task OpenFrameHandlerAsync(FrameHandlerRequestedEventArgs e)
+    private async Task OpenInheritedHandlerAsync(InheritedHandlerRequestedEventArgs e)
     {
-        var unit = (DesignFrames as ProjectFrameCatalog)?.UnitPathOf(e.Frame.ClassName)
-            ?? Path.ChangeExtension(e.Frame.FormPath, ".pas");
+        var unit = (DesignFrames as ProjectAncestorCatalog)?.UnitPathOf(e.Definition.ClassName)
+            ?? Path.ChangeExtension(e.Definition.FormPath, ".pas");
         var opened = await OpenAsync(unit);
         if (opened.Value is FormDocumentViewModel { HasUnit: true } frame)
         {

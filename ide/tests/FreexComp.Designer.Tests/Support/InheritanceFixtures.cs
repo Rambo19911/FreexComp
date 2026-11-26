@@ -110,7 +110,7 @@ internal static class InheritanceFixtures
         """;
 
     /// <summary>A document parsed with a frame catalog and an ancestor catalog; no syntax errors.</summary>
-    public static FormDocument ParseWith(string text, string? ancestorClass, IFrameCatalog? frames, IFrameCatalog? ancestors, string path = "form.form")
+    public static FormDocument ParseWith(string text, string? ancestorClass, IAncestorCatalog? frames, IAncestorCatalog? ancestors, string path = "form.form")
     {
         var result = FormParser.Parse(text, path, Components, ancestorClass, frames, ancestors);
         Assert.False(result.HasSyntaxErrors, string.Join("; ", result.Diagnostics));
@@ -118,18 +118,18 @@ internal static class InheritanceFixtures
     }
 
     /// <summary>Parses <paramref name="text"/> against <paramref name="ancestors"/> and adds it there under its root class.</summary>
-    public static FrameDefinition AddLevel(FrameCatalog ancestors, string text, string unitName, string ancestorClass, IFrameCatalog? frames = null)
+    public static AncestorDefinition AddLevel(AncestorCatalog ancestors, string text, string unitName, string ancestorClass, IAncestorCatalog? frames = null)
     {
         var document = ParseWith(text, ancestorClass, frames, ancestors, unitName + ".form");
-        var definition = new FrameDefinition(document.Root.TypeName, unitName, unitName + ".form", document);
+        var definition = new AncestorDefinition(document.Root.TypeName, unitName, unitName + ".form", document);
         ancestors.Set(definition);
         return definition;
     }
 
     /// <summary>An ancestor catalog holding the three dialog levels (each merged against the ones before it).</summary>
-    public static FrameCatalog DialogChain()
+    public static AncestorCatalog DialogChain()
     {
-        var ancestors = new FrameCatalog();
+        var ancestors = new AncestorCatalog();
         AddLevel(ancestors, BaseDialog, "BaseDialogUnit", "TForm");
         AddLevel(ancestors, MidDialog, "MidDialogUnit", "TBaseDialog");
         AddLevel(ancestors, LeafDialog, "LeafDialogUnit", "TMidDialog");

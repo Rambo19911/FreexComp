@@ -98,7 +98,7 @@ public sealed class InheritedFormParseTests
     [Trait("Req", "UI-DSG-145")]
     public void Diagnostics_F0112_F0113_F0109_F0106_F0107()
     {
-        var ancestors = new FrameCatalog();
+        var ancestors = new AncestorCatalog();
         var baseDef = AddLevel(ancestors, BaseDialog, "BaseDialogUnit", "TForm");
         Assert.Empty(baseDef.Document.Diagnostics);
 
@@ -169,7 +169,7 @@ public sealed class InheritedFormParseTests
 
         // F0112: no ancestor with a form (unknown class, no class, an ancestor shown read-only, a chain that repeats).
         var broken = FormParser.Parse("inherited BrokenDialog: TBrokenDialog\nend\n", "broken.form", Components).Document!;
-        ancestors.Set(new FrameDefinition("TBrokenDialog", "BrokenDialogUnit", "BrokenDialogUnit.form", broken));
+        ancestors.Set(new AncestorDefinition("TBrokenDialog", "BrokenDialogUnit", "BrokenDialogUnit.form", broken));
         foreach (var (text, ancestorClass) in new (string, string?)[]
         {
             (MidDialog, "TForm"), (MidDialog, null), (MidDialog, "TBrokenDialog"),
@@ -220,7 +220,7 @@ public sealed class InheritedFormParseTests
     {
         var frames = AddressFrames();
         var address = frames.Find("TAddressFrame")!;
-        var ancestors = new FrameCatalog();
+        var ancestors = new AncestorCatalog();
         var dialog = AddLevel(ancestors, """
             object AddrDialog: TAddrDialog
               Left = 200

@@ -195,7 +195,7 @@ public sealed class InheritedFormInspectorTests
         inspector.Page = InspectorPage.Events;
         EventRow OnClick() => inspector.EventRows.Single(r => r.Name == "OnClick");
         var requests = new List<(string FormPath, string Method)>();
-        designer.FrameHandlerRequested += (_, e) => requests.Add((e.Frame.FormPath, e.Method));
+        designer.InheritedHandlerRequested += (_, e) => requests.Add((e.Definition.FormPath, e.Method));
         MenuItemModel ShowInherited() => inspector.BuildContextMenu().Single(i => i.ActionId == ObjectInspectorViewModel.ShowInheritedHandlerId);
 
         // Show Inherited Handler follows the reset item; it opens the ancestor's method and changes nothing.
@@ -264,7 +264,7 @@ public sealed class InheritedFormInspectorTests
         // The ancestor is not listed: F0112, the whole form read-only with the diagnostic's text in the read-only bar.
         var documents = (DocumentService)_f.Services.Documents;
         documents.DesignCatalog = FrameDesign.Catalog;
-        documents.DesignAncestors = new FreexComp.Designer.Model.FrameCatalog();
+        documents.DesignAncestors = new FreexComp.Designer.Model.AncestorCatalog();
         var document = await _f.OpenAsync(InheritedDesign.Unit, InheritedDesign.Form);
         var designer = document.Designer;
         var problem = designer.Model!.Diagnostics.Single(d => d.Code == "F0112");

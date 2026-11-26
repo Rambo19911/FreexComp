@@ -326,7 +326,7 @@ public sealed class ToolPaletteViewModel : ToolWindowViewModel
         _designer.Host.Disarm();
         var root = model.Root.TypeName;
         _pickerRows = [.. frames.All
-            .Where(f => !Names.Equals(f.ClassName, root) && FrameCatalog.RepeatedClass(frames, f.ClassName, root) is null)
+            .Where(f => !Names.Equals(f.ClassName, root) && AncestorCatalog.RepeatedClass(frames, f.ClassName, root) is null)
             .OrderBy(f => f.ClassName, StringComparer.OrdinalIgnoreCase)
             .Select(f => new FramePickerRow(f.ClassName, f.ClassName is ['T', _, ..] ? f.ClassName[1..] : f.ClassName, f.UnitName))];
         OnPropertyChanged(nameof(IsFramePickerOpen));

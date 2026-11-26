@@ -358,7 +358,7 @@ public sealed partial class DesignSurfaceController
         int? index, IReadOnlyList<(string Path, FormValue Value)> extra, bool select, string? name)
     {
         var frame = IsFrameClass(info);
-        if (frame && Document.Frames is { } frames && FrameInstances.RepeatedClass(frames, info.ClassName, Document.Root.TypeName) is not null)
+        if (frame && Document.Frames is { } frames && InheritedInstances.RepeatedClass(frames, info.ClassName, Document.Root.TypeName) is not null)
         {
             _host.SetStatus(StatusIds.FrameCycle, info.ClassName); // DSG-SUR-232
             return null;

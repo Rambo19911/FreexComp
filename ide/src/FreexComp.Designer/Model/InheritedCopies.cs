@@ -9,7 +9,7 @@ namespace FreexComp.Designer.Model;
 /// Frame instances and inherited objects leaving or entering a document (frames-designer.md DSG-SUR-230): the clipboard
 /// copy of inherited controls, and instances rebuilt from snapshots (paste, redo).
 /// </summary>
-internal static class FrameCopies
+internal static class InheritedCopies
 {
     /// <summary>
     /// DSG-SUR-230: an inherited object as an ordinary component with its <b>effective</b> lines and its inherited children

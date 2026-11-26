@@ -10,7 +10,7 @@ public sealed class InheritedFormValidationTests
     [Trait("Req", "DSG-FD-136")]
     public void OverrideLinesValidated_ReferencesToInheritedResolve()
     {
-        var ancestors = new Designer.Model.FrameCatalog();
+        var ancestors = new Designer.Model.AncestorCatalog();
         AddLevel(ancestors, BaseDialog, "BaseDialogUnit", "TForm");
 
         var document = ParseWith("""

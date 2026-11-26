@@ -35,7 +35,7 @@ public static class FormParser
     /// <c>inherited</c> root is <c>F0107</c> and the whole form read-only.
     /// </param>
     public static FormParseResult Parse(string text, string path, ComponentCatalog catalog, string? rootAncestorClass = null,
-        IFrameCatalog? frames = null, IFrameCatalog? ancestors = null)
+        IAncestorCatalog? frames = null, IAncestorCatalog? ancestors = null)
     {
         var parser = new Parser(text, path, catalog, rootAncestorClass, frames, ancestors: ancestors);
         try
@@ -59,7 +59,7 @@ public static class FormParser
     /// <c>inline</c> objects resolve as in <see cref="Parse"/>; <paramref name="rootClass"/> (the class of the document
     /// the fragment is meant for) takes part in the <c>F0111</c> check.
     /// </summary>
-    public static FormFragmentResult ParseFragment(string text, string path, ComponentCatalog catalog, IFrameCatalog? frames = null,
+    public static FormFragmentResult ParseFragment(string text, string path, ComponentCatalog catalog, IAncestorCatalog? frames = null,
         string? rootClass = null)
     {
         var parser = new Parser(BlankCommentLines(text), path, catalog, null, frames, rootClass);
@@ -79,7 +79,7 @@ public static class FormParser
     /// catalogs and not validated (the caller takes over its tree); null on a syntax error.
     /// </summary>
     internal static FormDocument? ParseAgain(string text, string path, ComponentCatalog catalog, string? rootAncestorClass,
-        IFrameCatalog? frames, IFrameCatalog? ancestors)
+        IAncestorCatalog? frames, IAncestorCatalog? ancestors)
     {
         var parser = new Parser(text, path, catalog, rootAncestorClass, frames, ancestors: ancestors);
         try
@@ -97,7 +97,7 @@ public static class FormParser
     /// parser's diagnostics (positions in <paramref name="text"/>); null object on a syntax error.
     /// </summary>
     internal static (FormObject? Object, List<ParseDiagnostic> Diagnostics) ParseInstance(string text, string path, ComponentCatalog catalog,
-        IFrameCatalog frames, string rootClass)
+        IAncestorCatalog frames, string rootClass)
     {
         var parser = new Parser(text, path, catalog, null, frames, rootClass);
         try
@@ -136,7 +136,7 @@ public static class FormParser
     }
 
     private sealed class Parser(string text, string path, ComponentCatalog catalog, string? rootAncestorClass,
-        IFrameCatalog? frames = null, string? rootClass = null, IFrameCatalog? ancestors = null)
+        IAncestorCatalog? frames = null, string? rootClass = null, IAncestorCatalog? ancestors = null)
     {
         private readonly List<ParseDiagnostic> _diagnostics = [];
         private readonly HashSet<string> _names = new(StringComparer.OrdinalIgnoreCase);
@@ -144,7 +144,7 @@ public static class FormParser
 
         // DSG-FD-125, 126: the inherited objects of a resolved descendant's file scope by name, and its ancestor.
         private readonly Dictionary<string, FormObject> _inheritedScope = new(StringComparer.OrdinalIgnoreCase);
-        private FrameDefinition? _ancestor;
+        private AncestorDefinition? _ancestor;
         private string? _rootClass = rootClass;
         private int _pos;
         private string? _lineEnding;
@@ -271,7 +271,7 @@ public static class FormParser
             // DSG-FD-106, 107: an `inline` object of a known frame is a resolved instance; an unknown frame is F0101, a frame
             // that contains itself (or the document's root class) F0111.
             var asInstance = kind == FormObjectKind.Inline && frames is not null && !isRoot;
-            FrameDefinition? frame = null;
+            AncestorDefinition? frame = null;
             string? repeated = null;
             if (asInstance && !parentPreserved && !forcePreserved)
             {
@@ -279,13 +279,13 @@ public static class FormParser
                 info = definition?.Document.Root.Info;
                 if (definition is not null && info is not null)
                 {
-                    repeated = FrameInstances.RepeatedClass(frames, definition.ClassName, _rootClass);
+                    repeated = InheritedInstances.RepeatedClass(frames, definition.ClassName, _rootClass);
                     frame = repeated is null ? definition : null;
                 }
             }
 
             // DSG-FD-122, 125, 127: the root keyword must fit the ancestor catalog.
-            FrameDefinition? ancestor = null;
+            AncestorDefinition? ancestor = null;
             string? rootProblem = null;
             if (isRoot && ancestors is not null)
             {
@@ -368,12 +368,12 @@ public static class FormParser
             obj.IsPreserved = preserved;
             if (frame is not null && !preserved)
             {
-                FrameInstances.Merge(obj, frame);
+                InheritedInstances.Merge(obj, frame);
             }
 
             if (ancestor is not null && !preserved)
             {
-                FrameInstances.MergeAncestor(obj, ancestor);
+                InheritedInstances.MergeAncestor(obj, ancestor);
                 _ancestor = ancestor;
                 RegisterInherited(obj);
             }
@@ -475,7 +475,7 @@ public static class FormParser
         /// DSG-FD-122: <paramref name="definition"/> can be the ancestor of a document of <paramref name="className"/> —
         /// listed, its root resolved as a form or a frame, and the class not repeated by the chain.
         /// </summary>
-        private static bool IsAncestor([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] FrameDefinition? definition, string className)
+        private static bool IsAncestor([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] AncestorDefinition? definition, string className)
         {
             if (definition?.Document.Root is not { IsPreserved: false, Info.Kind: ComponentKind.Form or ComponentKind.Container })
             {

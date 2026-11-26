@@ -14,9 +14,9 @@ public sealed class FrameFormRoundTripTests
     /// The frames of the canonical corpus: every <c>*-frame.form</c> file, parsed as a frame document (root ancestor
     /// <c>TFrame</c>) and registered under its root class; the other corpus files are parsed with this catalog.
     /// </summary>
-    internal static FrameCatalog CorpusFrames()
+    internal static AncestorCatalog CorpusFrames()
     {
-        var frames = new FrameCatalog();
+        var frames = new AncestorCatalog();
         foreach (var file in FormParserTests.CorpusFiles("canonical").Where(IsFrameFile))
         {
             AddFrame(frames, File.ReadAllText(TestPaths.Combine("forms/canonical/" + file)), Path.GetFileNameWithoutExtension(file));
@@ -139,7 +139,7 @@ public sealed class FrameFormRoundTripTests
     [Trait("Req", "DSG-FD-121")]
     public void FrameRootWritesLeftTopWidthHeight()
     {
-        var frame = ParseFrame("object PlainFrame: TPlainFrame\n  Width = 200\nend\n", FrameCatalog.Empty);
+        var frame = ParseFrame("object PlainFrame: TPlainFrame\n  Width = 200\nend\n", AncestorCatalog.Empty);
 
         Assert.Same(Components.Find("TFrame"), frame.Root.Info);
         Assert.Equal("object PlainFrame: TPlainFrame\n  Left = 0\n  Top = 0\n  Width = 200\n  Height = 240\nend\n", FormWriter.Write(frame));
@@ -160,7 +160,7 @@ public sealed class FrameFormRoundTripTests
         Assert.DoesNotContain("ClientWidth", rows.Keys);
 
         // A form root is unchanged: client size and PixelsPerInch.
-        var form = ParseForm("object F: TF\nend\n", FrameCatalog.Empty);
+        var form = ParseForm("object F: TF\nend\n", AncestorCatalog.Empty);
         Assert.Equal("object F: TF\n  Left = 200\n  Top = 120\n  ClientWidth = 0\n  ClientHeight = 0\n  PixelsPerInch = 96\nend\n", FormWriter.Write(form));
     }
 }

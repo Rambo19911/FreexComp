@@ -71,7 +71,7 @@ public sealed class InheritedFormSurfaceTests
     /// <summary><see cref="InheritanceFixtures.MidDialog"/> opened as a descendant of <see cref="InheritanceFixtures.BaseDialog"/>.</summary>
     private static DesignerHarness Open(string text = MidDialog)
     {
-        var ancestors = new FrameCatalog();
+        var ancestors = new AncestorCatalog();
         AddLevel(ancestors, BaseDialog, "BaseDialogUnit", "TForm");
         var h = DesignerHarness.FromText(text, "MidDialogUnit.form", catalog: Components, rootAncestorClass: "TBaseDialog", ancestors: ancestors);
         Assert.True(h.Document.Root.IsInheritedRoot);
@@ -83,7 +83,7 @@ public sealed class InheritedFormSurfaceTests
     private static DesignerHarness OpenFrameLeaf()
     {
         var frames = AddressFrames();
-        var ancestors = new FrameCatalog();
+        var ancestors = new AncestorCatalog();
         AddLevel(ancestors, FrameDialog, "FrameDialogUnit", "TForm", frames);
         var h = DesignerHarness.FromText(FrameLeaf, "FrameLeafUnit.form", catalog: Components, frames: frames, rootAncestorClass: "TFrameDialog",
             ancestors: ancestors);
@@ -382,7 +382,7 @@ public sealed class InheritedFormSurfaceTests
     public void ReadOnlyDescendant_SizelessRoot_DrawnAtMetadataDefaultClientSize()
     {
         static DesignerHarness ReadOnly(string lines) => DesignerHarness.FromText("inherited MidForm2: TMidForm2\n" + lines + "end\n", "MidForm2.form",
-            allowDiagnostics: true, catalog: Components, rootAncestorClass: "TMidForm", ancestors: new FrameCatalog());
+            allowDiagnostics: true, catalog: Components, rootAncestorClass: "TMidForm", ancestors: new AncestorCatalog());
 
         // The metadata's default client size: the defaultSize of its form class (400 × 300, as the new-form template, DSG-CS-111).
         var size = Components.All.First(c => c.Kind == FreexComp.Designer.Catalog.ComponentKind.Form).DefaultSize;
@@ -416,12 +416,12 @@ public sealed class InheritedFormSurfaceTests
     public void Remerge_AncestorRemovedWithNewComponentSelected_RootSelectedAtDefaultClientSize()
     {
         var catalog = FreexComp.Designer.Tests.Layout.LayoutHarness.Catalog;
-        var ancestors = new FrameCatalog();
-        FrameDefinition Level(string text, string unit, string ancestor)
+        var ancestors = new AncestorCatalog();
+        AncestorDefinition Level(string text, string unit, string ancestor)
         {
             var parsed = FreexComp.Designer.Text.FormParser.Parse(text, unit + ".form", catalog, ancestor, null, ancestors);
             Assert.Empty(parsed.Diagnostics);
-            var definition = new FrameDefinition(parsed.Document!.Root.TypeName, unit, unit + ".form", parsed.Document);
+            var definition = new AncestorDefinition(parsed.Document!.Root.TypeName, unit, unit + ".form", parsed.Document);
             ancestors.Set(definition);
             return definition;
         }
@@ -470,7 +470,7 @@ public sealed class InheritedFormSurfaceTests
 
         // The same document opened fresh read-only: the same size.
         using var fresh = DesignerHarness.FromText(Leaf, "MidDialog2.form", allowDiagnostics: true, catalog: catalog, rootAncestorClass: "TMidDialog",
-            ancestors: new FrameCatalog());
+            ancestors: new AncestorCatalog());
         Assert.Equal(["F0112"], fresh.Document.Diagnostics.Select(d => d.Code));
         Assert.Equal((400, 300), (fresh.Controller.Geometry.FormClientRect.Width, fresh.Controller.Geometry.FormClientRect.Height));
     }

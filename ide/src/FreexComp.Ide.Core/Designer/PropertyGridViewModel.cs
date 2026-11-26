@@ -901,7 +901,7 @@ public sealed class PropertyGridViewModel : ObservableObject
     }
 
     /// <summary>The handler a frame assigns to the event, when it is the same for every selected component; null otherwise.</summary>
-    private (FrameDefinition Frame, string Method)? InheritedHandler(string eventName)
+    private (AncestorDefinition Frame, string Method)? InheritedHandler(string eventName)
     {
         var handlers = Selection.Select(o => o.InheritedHandler(eventName)).ToList();
         return handlers.Count > 0 && handlers[0] is { } first
@@ -937,14 +937,14 @@ public sealed class PropertyGridViewModel : ObservableObject
 
     /// <summary>
     /// DSG-OI-125: <c>Show Inherited Handler</c> — the definition storing the inherited handler (an ancestor form or a frame,
-    /// DSG-FD-135) is opened at the method by the IDE (<see cref="FormDesignerViewModel.FrameHandlerRequested"/>).
+    /// DSG-FD-135) is opened at the method by the IDE (<see cref="FormDesignerViewModel.InheritedHandlerRequested"/>).
     /// </summary>
     public void ShowInheritedHandler(string eventName)
     {
         ArgumentNullException.ThrowIfNull(eventName);
         if (CanShowInheritedHandler(eventName) && InheritedHandler(FindEvent(eventName)!.Name) is { } inherited)
         {
-            Designer!.RequestFrameHandler(inherited.Frame, inherited.Method);
+            Designer!.RequestInheritedHandler(inherited.Frame, inherited.Method);
         }
     }
 
@@ -1026,7 +1026,7 @@ public sealed class PropertyGridViewModel : ObservableObject
         {
             if (navigate)
             {
-                Designer!.RequestFrameHandler(inherited.Frame, inherited.Method);
+                Designer!.RequestInheritedHandler(inherited.Frame, inherited.Method);
             }
 
             return;

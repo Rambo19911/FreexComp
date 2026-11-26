@@ -345,7 +345,7 @@ public sealed class InheritedFormDesignerViewTests
         surface.Selection.Set(["HelpButton"]);
         Dispatcher.UIThread.RunJobs();
 
-        var ancestors = Assert.IsType<FreexComp.Designer.Model.FrameCatalog>(((DocumentService)h.Services.Documents).DesignAncestors);
+        var ancestors = Assert.IsType<FreexComp.Designer.Model.AncestorCatalog>(((DocumentService)h.Services.Documents).DesignAncestors);
         ancestors.Remove("TBaseDialog");
         h.Clock.Advance(TimeSpan.FromSeconds(1)); // the read-only state follows the model 300 ms later (DSG-CS-010)
         Dispatcher.UIThread.RunJobs();

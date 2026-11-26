@@ -94,7 +94,7 @@ public sealed partial class DesignSurfaceController
     private bool RefusedAsCycle(FormObject obj)
     {
         if (obj.Kind != FormObjectKind.Inline || Document.Frames is not { } frames
-            || FrameInstances.RepeatedClass(frames, obj.TypeName, Document.Root.TypeName) is null)
+            || InheritedInstances.RepeatedClass(frames, obj.TypeName, Document.Root.TypeName) is null)
         {
             return false;
         }

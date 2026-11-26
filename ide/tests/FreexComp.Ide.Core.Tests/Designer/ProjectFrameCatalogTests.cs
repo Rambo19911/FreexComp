@@ -44,7 +44,7 @@ public sealed class ProjectFrameCatalogTests
         ((DocumentService)_services.Documents).DesignCatalog = FrameDesign.Catalog;
     }
 
-    private ProjectFrameCatalog Frames => _services.Frames!;
+    private ProjectAncestorCatalog Frames => _services.Frames!;
 
     private void File(string path, string text)
     {
@@ -58,7 +58,7 @@ public sealed class ProjectFrameCatalogTests
         return [.. _services.Output.GetLines(OutputChannels.Designer).Select(l => l.Text)];
     }
 
-    private static string Caption(FrameDefinition frame) =>
+    private static string Caption(AncestorDefinition frame) =>
         ((StringValue)PropertyAccess.GetEffective(frame.Document.FindByName("StreetLabel")!, "Caption")).Value;
 
     [Fact(Timeout = 30000)]
@@ -178,7 +178,7 @@ public sealed class ProjectFrameCatalogTests
         var text = form.Designer.CurrentFormText();
 
         inspector.ActivateEvent("OnChange");
-        await ((DocumentService)_services.Documents).FrameHandlerOpening;
+        await ((DocumentService)_services.Documents).InheritedHandlerOpening;
 
         var frame = Assert.IsType<FormDocumentViewModel>(_services.Documents.ActiveDocument);
         Assert.Equal(FrameUnitPath, frame.FilePath);
@@ -360,8 +360,8 @@ public sealed class ProjectFrameCatalogTests
         Assert.True(fancy.Document.Root.IsInheritedRoot);
         Assert.Same(Frames.Find("TAddressFrame"), fancy.Document.Ancestor);
         Assert.Equal(["StreetLabel", "StreetEdit", "CityPanel"], fancy.Document.Root.Children.Select(c => c.Name));
-        Assert.Null(FrameCatalog.RepeatedClass(Frames, "TFancyFrame", "THouseForm")); // placeable on the form
-        Assert.Equal("TAddressFrame", FrameCatalog.RepeatedClass(Frames, "TFancyFrame", "TAddressFrame")); // not inside its ancestor
+        Assert.Null(AncestorCatalog.RepeatedClass(Frames, "TFancyFrame", "THouseForm")); // placeable on the form
+        Assert.Equal("TAddressFrame", AncestorCatalog.RepeatedClass(Frames, "TFancyFrame", "TAddressFrame")); // not inside its ancestor
 
         // Its instance on the open form merges the whole chain: base, derived frame, instance overrides.
         var house = Assert.IsType<FormDocumentViewModel>((await _services.Documents.OpenAsync(Dir + @"\HouseForm.pas")).Value);
@@ -447,7 +447,7 @@ public sealed class ProjectFrameCatalogTests
         var show = inspector.BuildContextMenu().Single(i => i.ActionId == ObjectInspectorViewModel.ShowInheritedHandlerId);
         Assert.False(show.IsDisabled);
         show.Run!();
-        await ((DocumentService)_services.Documents).FrameHandlerOpening;
+        await ((DocumentService)_services.Documents).InheritedHandlerOpening;
 
         var ancestor = Assert.IsType<FormDocumentViewModel>(_services.Documents.ActiveDocument);
         Assert.Equal(BaseUnitPath, ancestor.FilePath);

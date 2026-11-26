@@ -22,7 +22,7 @@ public sealed class FormDocumentViewModel : TextDocumentViewModel
 
     public FormDocumentViewModel(ITextBuffer buffer, string filePath, ILanguageDefinition language, FileEncoding encoding,
         LineEndingKind defaultLineEnding, TextDocumentViewModel formText, ComponentCatalog catalog, bool hasUnit = true,
-        FreexComp.Designer.Model.IFrameCatalog? frames = null, FreexComp.Designer.Model.IFrameCatalog? ancestors = null)
+        FreexComp.Designer.Model.IAncestorCatalog? frames = null, FreexComp.Designer.Model.IAncestorCatalog? ancestors = null)
         : base(buffer, filePath, null, language, encoding, defaultLineEnding)
     {
         ArgumentNullException.ThrowIfNull(formText);

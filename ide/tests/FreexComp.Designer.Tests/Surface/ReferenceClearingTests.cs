@@ -43,7 +43,7 @@ public sealed class ReferenceClearingTests
 
         """;
 
-    private static FrameCatalog Frames()
+    private static AncestorCatalog Frames()
     {
         var frames = AddressFrames();
         AddFrame(frames, OuterFrame, "OuterFrameUnit");

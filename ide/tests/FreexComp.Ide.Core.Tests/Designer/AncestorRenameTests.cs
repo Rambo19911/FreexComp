@@ -52,7 +52,7 @@ public sealed class AncestorRenameTests
         ((DocumentService)_services.Documents).DesignCatalog = FrameDesign.Catalog;
     }
 
-    private ProjectFrameCatalog Frames => _services.Frames!;
+    private ProjectAncestorCatalog Frames => _services.Frames!;
 
     private void File(string path, string text)
     {
