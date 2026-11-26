@@ -58,7 +58,16 @@ type
       SourceIndex, DestIndex, Count: Integer); static;
   end;
 
+  { the enumerators are completed after their containers; the containers name them as nested aliases }
+  TListEnumerator<T> = class;
+  TDictionaryEnumerator<K, V> = class;
+  TQueueEnumerator<T> = class;
+  TStackEnumerator<T> = class;
+
   TList<T> = class(TEnumerable<T>)
+  public
+    type
+      TEnumerator = TListEnumerator<T>;
   private
     FItems: TArray<T>;
     FCount: Integer;
@@ -121,7 +130,11 @@ type
     constructor Create(AList: TList<T>);
   end;
 
+  { the nested names of the ancestor, repeated: the compiler does not yet find nested types through an ancestor }
   TObjectList<T: class> = class(TList<T>)
+  public
+    type
+      TEnumerator = TListEnumerator<T>;
   private
     FOwnsObjects: Boolean;
   protected
@@ -177,6 +190,13 @@ type
     arrays are full or the index is rebuilt); the index table (a power of two, linear probing, load <= 0.75)
     holds entry numbers, -1 = empty; removal shifts the probe run back (no tombstones) }
   TDictionary<K, V> = class(TEnumerable<TPair<K, V>>)
+  public
+    type
+      TKeyCollection = TKeyCollection<K, V>;
+      TValueCollection = TValueCollection<K, V>;
+      TPairEnumerator = TDictionaryEnumerator<K, V>;
+      TKeyEnumerator = TKeyEnumerator<K, V>;
+      TValueEnumerator = TValueEnumerator<K, V>;
   private
     FKeys: TArray<K>;
     FValues: TArray<V>;
@@ -239,7 +259,15 @@ type
     constructor Create(ADictionary: TDictionary<K, V>);
   end;
 
+  { the nested names of the ancestor, repeated: the compiler does not yet find nested types through an ancestor }
   TObjectDictionary<K, V> = class(TDictionary<K, V>)
+  public
+    type
+      TKeyCollection = TKeyCollection<K, V>;
+      TValueCollection = TValueCollection<K, V>;
+      TPairEnumerator = TDictionaryEnumerator<K, V>;
+      TKeyEnumerator = TKeyEnumerator<K, V>;
+      TValueEnumerator = TValueEnumerator<K, V>;
   private
     FOwnerships: TDictionaryOwnerships;
   protected
@@ -251,6 +279,9 @@ type
   end;
 
   TQueue<T> = class(TEnumerable<T>)
+  public
+    type
+      TEnumerator = TQueueEnumerator<T>;
   private
     FItems: TArray<T>;
     FHead: Integer;
@@ -285,6 +316,9 @@ type
   end;
 
   TStack<T> = class(TEnumerable<T>)
+  public
+    type
+      TEnumerator = TStackEnumerator<T>;
   private
     FItems: TArray<T>;
     FCount: Integer;
@@ -318,7 +352,11 @@ type
     constructor Create(AStack: TStack<T>);
   end;
 
+  { the nested names of the ancestor, repeated: the compiler does not yet find nested types through an ancestor }
   TObjectQueue<T: class> = class(TQueue<T>)
+  public
+    type
+      TEnumerator = TQueueEnumerator<T>;
   private
     FOwnsObjects: Boolean;
   protected
@@ -329,7 +367,11 @@ type
     property OwnsObjects: Boolean read FOwnsObjects write FOwnsObjects;
   end;
 
+  { the nested names of the ancestor, repeated: the compiler does not yet find nested types through an ancestor }
   TObjectStack<T: class> = class(TStack<T>)
+  public
+    type
+      TEnumerator = TStackEnumerator<T>;
   private
     FOwnsObjects: Boolean;
   protected

@@ -1,0 +1,37 @@
+# TList<T>.TEnumerator
+ok list walk through the nested type
+ok is nested name
+ok is top-level name
+ok nested name = top-level class
+ok instances differ
+ok equal instances share the class
+ok not a queue enumerator
+# TDictionary<K, V> nested names
+ok Keys is TKeyCollection
+ok Values is TValueCollection
+ok TKeyCollection alias
+ok TValueCollection alias
+ok TPairEnumerator alias
+ok TKeyEnumerator alias
+ok TValueEnumerator alias
+ok pair walk
+ok is TPairEnumerator
+ok key walk
+ok key enumerator is not a value enumerator
+ok value walk
+ok is TValueEnumerator
+# TQueue<T>.TEnumerator, TStack<T>.TEnumerator
+ok queue walk
+ok queue alias
+ok stack walk
+ok stack alias
+ok stack enumerator is not a list enumerator
+# object-owning containers inherit the names
+ok object list walk
+ok object list alias
+ok object dictionary keys
+ok object dictionary alias
+ok object queue walk
+ok object stack walk
+ok object stack alias
+# passed 32 failed 0
