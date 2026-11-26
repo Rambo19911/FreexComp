@@ -969,12 +969,14 @@ begin
   end;
 end;
 
+{ U-163: answered as long as the grid exists, also for a cell outside a shrunk grid: the system asks a cell it
+  raised an event on for its runtime id and fragment root when the grid disconnects it (UIF-1426) }
 function TGridCellProvider.GetRuntimeId(out pRetVal: PSafeArray): HResult;
 var
   I, V: Integer;
 begin
   pRetVal := nil;
-  if not Live(Result) then
+  if not Alive(Result) then
     Exit;
   pRetVal := SafeArrayCreateVector(VT_I4, 0, 3);
   if pRetVal = nil then
@@ -1036,10 +1038,11 @@ begin
   Result := Select;
 end;
 
+{ U-163: as GetRuntimeId }
 function TGridCellProvider.get_FragmentRoot(out pRetVal: IRawElementProviderFragmentRoot): HResult;
 begin
   PPointer(@pRetVal)^ := nil;
-  if Live(Result) then
+  if Alive(Result) then
     pRetVal := FOwner;
 end;
 

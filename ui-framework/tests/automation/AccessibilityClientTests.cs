@@ -30,6 +30,8 @@ public sealed class AccessibilityClientTests
     private const uint WM_PROBE_RELEASE = WM_APP + 5;
     private const uint WM_PROBE_CHANGE = WM_APP + 6;
     private const uint WM_PROBE_REMOVE = WM_APP + 7;
+    private const uint WM_PROBE_LISTENING = WM_APP + 11;
+    private const uint WM_PROBE_DETACHED = WM_APP + 12;
 
     public static string ProbeSource => Path.Combine(UiCorpus.AreaDirectory, "tests", "gui", "AccessibilityProbe.pas");
 
@@ -164,15 +166,72 @@ public sealed class AccessibilityClientTests
     /// Card F05-009 acceptance 4 (UIF-1425, UIF-1426): the probe opens and frees a second form 1 000 times; each tenth
     /// form is read by the client, which keeps the elements it took (the form, a panel and graphic controls) until
     /// the end. The GDI and USER object counts of the probe (bound of <c>HelloForm_NoGdiLeakOnResize</c>) and its count
-    /// of live provider objects are the same before and after.
+    /// of live provider objects are the same before and after, and no provider object without its control is left.
+    /// U-163: the client listens (<see cref="Listen"/>) before the first count, so the counts do not depend on whether
+    /// a client of another process starts listening during the cycles (the system then creates the providers of the
+    /// probe's live windows and objects of its own: before U-163 the test failed whenever that happened).
     /// </summary>
     [Fact]
     [Trait("Req", "UIF-1425")]
     [Trait("Req", "UIF-1426")]
+    [Trait("Req", "UIF-1440")]
     public void Uia_ProvidersReleasedOverThousandFormCycles()
     {
         Harness.RequireDesktop();
         using var probe = Probe.Start();
+        Listen(probe);
+        var failure = ThousandFormCycles(probe, null);
+        probe.RemoveHandlers();
+        Assert.True(failure is null, failure);
+        probe.Close();
+    }
+
+    /// <summary>
+    /// U-163 (UIF-1425, UIF-1426, UIF-1440): the cycles of <see cref="Uia_ProvidersReleasedOverThousandFormCycles"/>
+    /// with no listening client of the test during the first 500 forms and one from then on (the failure of the
+    /// lead's run, deterministic: a client of another process started listening). Each half keeps its counts (the
+    /// second one counted once the client listens, when the system has created the providers of the probe's live
+    /// windows), and across both no provider object is left without its control.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "UIF-1425")]
+    [Trait("Req", "UIF-1426")]
+    [Trait("Req", "UIF-1440")]
+    public void Uia_ProvidersReleasedWhenAClientStartsListening()
+    {
+        Harness.RequireDesktop();
+        using var probe = Probe.Start();
+        var failure = ThousandFormCycles(probe, () => Listen(probe));
+        probe.RemoveHandlers();
+        Assert.True(failure is null, failure);
+        probe.Close();
+    }
+
+    /// <summary>
+    /// U-163: makes the test's client a listening one (a desktop focus-changed handler and a structure-changed
+    /// handler on the probe's tree, removed by <see cref="Probe.RemoveHandlers"/>) and waits until the probe's
+    /// <c>UiaClientsAreListening</c> is True.
+    /// </summary>
+    internal static void Listen(Probe probe)
+    {
+        probe.Client.AddFocusChangedEventHandler(ListeningSink.Prefetch(probe.Client), new ListeningSink());
+        probe.Client.AddStructureChangedEventHandler(
+            probe.Root, TreeScope.Element | TreeScope.Descendants, IntPtr.Zero, new EventSink());
+        Assert.True(
+            probe.WaitUntil(() => probe.Request(WM_PROBE_LISTENING, "listening ") == "listening True"),
+            "the probe does not see a listening client");
+    }
+
+    /// <summary>
+    /// The probe opens and frees a second form 1 000 times; each tenth form is read by the client, which keeps the
+    /// elements it took (the form, a panel and graphic controls) until the end. Null when the GDI and USER object
+    /// counts of the probe (bound of <c>HelloForm_NoGdiLeakOnResize</c>) and its count of live provider objects are
+    /// the same before and after and no provider object without its control is left; else the failure. With
+    /// <paramref name="midway"/> (U-163) the first 500 forms are compared, <paramref name="midway"/> runs, and the last
+    /// 500 are compared with the counts taken after it and one more form.
+    /// </summary>
+    private static string? ThousandFormCycles(Probe probe, Action? midway)
+    {
         var held = new List<IUIAutomationElement>();
 
         void Round(int unheld)
@@ -192,25 +251,45 @@ public sealed class AccessibilityClientTests
             probe.Request(WM_PROBE_FREE, "freed ");
         }
 
+        Counts Take()
+        {
+            Gui.WaitIdle(probe.Window);
+            return new(probe.Request(WM_PROBE_COUNT, "providers "), probe.Request(WM_PROBE_DETACHED, "detached "),
+                Gui.GuiResources(probe.App.Process, Gui.GR_GDIOBJECTS), Gui.GuiResources(probe.App.Process, Gui.GR_USEROBJECTS));
+        }
+
+        string? Compare(string what, Counts a, Counts b) =>
+            a.Providers == b.Providers && b.Detached == "detached 0" && b.Gdi - a.Gdi <= 2 && b.User - a.User <= 2
+                ? null
+                : $"after {what} ({held.Count} elements held by the client): {a.Providers} -> {b.Providers}, "
+                    + $"{a.Detached} -> {b.Detached}, GDI {a.Gdi} -> {b.Gdi}, USER {a.User} -> {b.User}";
+
         Round(0);                                                        // warm-up: first use of the client
-        Gui.WaitIdle(probe.Window);
-        var providers0 = probe.Request(WM_PROBE_COUNT, "providers ");
-        var gdi0 = Gui.GuiResources(probe.App.Process, Gui.GR_GDIOBJECTS);
-        var user0 = Gui.GuiResources(probe.App.Process, Gui.GR_USEROBJECTS);
+        var before = Take();
         for (var i = 0; i < 100; i++)
         {
+            if (i == 50 && midway is not null)
+            {
+                if (Compare("the first 500 forms", before, Take()) is { } first)
+                {
+                    return first;
+                }
+
+                midway();
+                Round(0);                                                // the first form with the client listening
+                before = Take();
+            }
+
             Round(9);
         }
 
-        Gui.WaitIdle(probe.Window);
-        var providers1 = probe.Request(WM_PROBE_COUNT, "providers ");
-        var gdi1 = Gui.GuiResources(probe.App.Process, Gui.GR_GDIOBJECTS);
-        var user1 = Gui.GuiResources(probe.App.Process, Gui.GR_USEROBJECTS);
-        Assert.True(providers0 == providers1 && gdi1 - gdi0 <= 2 && user1 - user0 <= 2,
-            $"after 1000 forms ({held.Count} elements held by the client): {providers0} -> {providers1}, GDI {gdi0} -> {gdi1}, USER {user0} -> {user1}");
+        var failure = Compare(midway is null ? "1000 forms" : "the last 500 forms", before, Take());
         GC.KeepAlive(held);
-        probe.Close();
+        return failure;
     }
+
+    /// <summary>The counts of the probe a leak check compares: its provider and detached-provider lines, GDI and USER objects.</summary>
+    private sealed record Counts(string Providers, string Detached, int Gdi, int User);
 
     /// <summary>
     /// Card F05-009 acceptance 2 (UIF-1430, UIF-1444): the framework-drawn button is a tool button; its Invoke pattern
@@ -437,6 +516,29 @@ public sealed class AccessibilityClientTests
             {
                 events.Add(e);
             }
+        }
+    }
+
+    /// <summary>
+    /// U-163: a desktop focus-changed handler that only makes the client a listening one: it records nothing and
+    /// never calls into the sender's process (the system fills the cache request's properties before the call; the
+    /// request is the one of the data area's client test, whose listening made the cycles fail before U-163).
+    /// </summary>
+    [ComVisible(true)]
+    internal sealed class ListeningSink : IUIAutomationFocusChangedEventHandler
+    {
+        public static IUIAutomationCacheRequest Prefetch(IUIAutomation client)
+        {
+            var request = client.CreateCacheRequest();
+            request.AddProperty(UiaIds.ProcessIdProperty);
+            request.AddProperty(UiaIds.ControlTypeProperty);
+            request.AddProperty(UiaIds.NameProperty);
+            request.TreeFilter = client.CreateTrueCondition();
+            return request;
+        }
+
+        public void HandleFocusChangedEvent(IUIAutomationElement sender)
+        {
         }
     }
 

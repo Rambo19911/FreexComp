@@ -23,10 +23,16 @@ program AccessibilityProbe;
       of the probe's thread (no foreground change) and the grid takes the focus, then 'focused grid <True|False>'
       (whether the grid's window has the focus); on WM_APP + 10 (wParam = a virtual key): WM_KEYDOWN with that key is
       sent to the grid's window, then 'grid <Col> <Row>';
+    U-163: on WM_APP + 11: 'listening <True|False>' (UiaClientsAreListening: a client of any process has an event
+      handler); on WM_APP + 12: 'detached <provider objects alive without their control>'
+      (AutomationDetachedProviderCount); on WM_APP + 13: a form with a 6 x 8 string grid is shown and made the active
+      window of the probe's thread, the grid takes the focus, the program takes the provider of cell (3, 6) and makes
+      it the current cell (AutomationFocusChanged and SelectionItem_ElementSelected on it when a client listens),
+      lets the cell go, shrinks the grid to 4 rows and frees the form, then 'shrunk';
     WM_CLOSE ends the program ('probe: close' on stderr, exit code 0). }
 uses
   Windows, Messages, Types, SysUtils, Classes, Graphics, Controls, Forms, StdCtrls, ExtCtrls, ComCtrls, Grids,
-  Accessibility;
+  UIAutomation, Accessibility;
 
 const
   WM_PROBE_RENAME = WM_APP + 1;
@@ -39,6 +45,9 @@ const
   WM_PROBE_GRID = WM_APP + 8;
   WM_PROBE_GRID_FOCUS = WM_APP + 9;
   WM_PROBE_GRID_KEY = WM_APP + 10;
+  WM_PROBE_LISTENING = WM_APP + 11;
+  WM_PROBE_DETACHED = WM_APP + 12;
+  WM_PROBE_SHRINK = WM_APP + 13;
 
 type
   TProbeForm = class(TForm)
@@ -48,6 +57,7 @@ type
     procedure Clicked(Sender: TObject);
     function NewSecondForm: TForm;
     procedure SayGrid;
+    procedure ShrinkGrid;
   protected
     procedure WndProc(var Message: TMessage); override;
   end;
@@ -112,6 +122,42 @@ var
 begin
   Grid := TStringGrid(FindComponent('DataGrid'));
   Say('grid ' + IntToStr(Grid.Col) + ' ' + IntToStr(Grid.Row));
+end;
+
+{ U-163: an event raised on a cell that a shrunk grid no longer has; the grid then goes (WM_APP + 13) }
+procedure TProbeForm.ShrinkGrid;
+var
+  F: TForm;
+  G: TStringGrid;
+  U: IUnknown;
+  Cell: IRawElementProviderSimple;
+begin
+  F := TForm.CreateNew(nil);
+  F.Name := 'ShrinkForm';
+  F.Caption := 'Shrink Form';
+  F.SetBounds(Left + 40, Top + 40, 320, 200);
+  G := TStringGrid.Create(F);
+  G.Name := 'ShrinkGrid';
+  G.Parent := F;
+  G.SetBounds(8, 8, 300, 150);
+  G.ColCount := 6;
+  G.RowCount := 8;
+  F.Show;
+  Application.ProcessMessages;
+  SetActiveWindow(F.Handle);
+  G.SetFocus;
+  U := nil;
+  Cell := nil;
+  if GetAutomationProvider(G).GetPatternProvider(UIA_GridPatternId, U) = S_OK then
+    (U as IGridProvider).GetItem(6, 3, Cell);
+  U := nil;
+  G.Col := 3;
+  G.Row := 6;                                                { the current cell: the events on (3, 6) }
+  Cell := nil;
+  G.RowCount := 4;
+  Application.ProcessMessages;
+  F.Free;
+  Application.ProcessMessages;
 end;
 
 procedure TProbeForm.WndProc(var Message: TMessage);
@@ -186,6 +232,18 @@ begin
       begin
         SendMessage(TStringGrid(FindComponent('DataGrid')).Handle, WM_KEYDOWN, Message.WParam, 0);
         SayGrid;
+      end;
+    WM_PROBE_LISTENING:
+      if UiaClientsAreListening then
+        Say('listening True')
+      else
+        Say('listening False');
+    WM_PROBE_DETACHED:
+      Say('detached ' + IntToStr(AutomationDetachedProviderCount));
+    WM_PROBE_SHRINK:
+      begin
+        ShrinkGrid;
+        Say('shrunk');
       end;
     WM_CLOSE:
       begin

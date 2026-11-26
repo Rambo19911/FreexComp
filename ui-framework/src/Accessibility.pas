@@ -107,6 +107,10 @@ function AutomationProviderClassOf(Control: TControl): TAutomationProviderClass;
 function GetAutomationProvider(Control: TControl): IRawElementProviderSimple;
 { UIF-1425: the provider objects alive in the process (tests) }
 function AutomationProviderCount: Integer;
+{ U-163: the provider objects alive whose control let them go (held by the system or a client after the control,
+  its window or its element went; tests: a leak check that does not count the providers of live controls, which a
+  listening client may make the system create at any time) }
+function AutomationDetachedProviderCount: Integer;
 
 { UIF-1411, UIF-1412: the name of a control }
 function AccessibleNameOf(Control: TControl): string;
@@ -136,6 +140,13 @@ procedure RaiseFragmentEvent(Control: TControl; const Fragment: IRawElementProvi
   when AutomationEventsWanted(Control) }
 procedure RaiseFragmentStrPropertyChanged(Control: TControl; const Fragment: IRawElementProviderSimple;
   PropertyId: Integer; const OldValue, NewValue: string);
+{ UIF-1445 (U-163): the same for a Boolean property (a PROPERTYID, e.g. IsEnabled of a drawn button) }
+procedure RaiseFragmentBoolPropertyChanged(Control: TControl; const Fragment: IRawElementProviderSimple;
+  PropertyId: Integer; OldValue, NewValue: Boolean);
+{ UIF-1446 (U-163): the children of the window's element changed (elements that are no controls came or went):
+  structure changed, children invalidated, on the control's provider with its window's runtime id, when
+  AutomationEventsWanted(Control) and the window exists and is not being destroyed }
+procedure RaiseChildrenInvalidated(Control: TWinControl);
 
 implementation
 
@@ -165,6 +176,7 @@ const
 var
   Registrations: array of TRegistration;
   LiveProviders: Integer;
+  AttachedProviders: Integer;                                { the live providers that still have their control }
   NextNumber: Integer;
   AnnotatedWindows: Integer;
 
@@ -402,6 +414,11 @@ begin
   Result := LiveProviders;
 end;
 
+function AutomationDetachedProviderCount: Integer;
+begin
+  Result := LiveProviders - AttachedProviders;
+end;
+
 { the provider of C as a fragment (nil when C has none) }
 function FragmentOf(C: TControl): IRawElementProviderFragment;
 var
@@ -431,7 +448,7 @@ begin
   if Disconnect then
     UiaDisconnectProvider(Keep);
   Control.AutomationObject := nil;
-  P.FControl := nil;
+  P.ForgetControl;
   P.FKeep := nil;
   Keep := nil;
 end;
@@ -468,11 +485,15 @@ begin
   Inc(NextNumber);
   FNumber := NextNumber;
   Inc(LiveProviders);
+  if AControl <> nil then
+    Inc(AttachedProviders);
   FLastName := AccessibleNameOf(AControl);
 end;
 
 destructor TAutomationProvider.Destroy;
 begin
+  if FControl <> nil then
+    Dec(AttachedProviders);                                  { e.g. a grid cell the clients released }
   Dec(LiveProviders);
   inherited Destroy;
 end;
@@ -497,6 +518,8 @@ end;
 
 procedure TAutomationProvider.ForgetControl;
 begin
+  if FControl <> nil then
+    Dec(AttachedProviders);
   FControl := nil;
 end;
 
@@ -1012,6 +1035,21 @@ begin
   VariantClear(NewV);
 end;
 
+procedure RaiseFragmentBoolPropertyChanged(Control: TControl; const Fragment: IRawElementProviderSimple;
+  PropertyId: Integer; OldValue, NewValue: Boolean);
+var
+  OldV, NewV: TVariantArg;
+begin
+  if (Fragment = nil) or not AutomationEventsWanted(Control) then
+    Exit;
+  FillChar(OldV, SizeOf(OldV), 0);
+  FillChar(NewV, SizeOf(NewV), 0);
+  PutBool(OldV, OldValue);
+  PutBool(NewV, NewValue);
+  TAutomationProvider(Control.AutomationObject).FRaised := True;
+  UiaRaiseAutomationPropertyChangedEvent(Fragment, PropertyId, OldV, NewV);
+end;
+
 { UIF-1445: Enabled of a control with a provider changed; IsEnabled changes only when every parent is enabled }
 procedure EnabledChanged(Control: TControl);
 var
@@ -1042,6 +1080,11 @@ begin
   TAutomationProvider(Parent.AutomationObject).FRaised := True;
   UiaRaiseStructureChangedEvent(TAutomationProvider(Parent.AutomationObject).FKeep,
     StructureChangeType_ChildrenInvalidated, @Ids[0], 2);
+end;
+
+procedure RaiseChildrenInvalidated(Control: TWinControl);
+begin
+  ChildrenChanged(Control);
 end;
 
 { UIF-1415: re-annotation of an annotated window; UIF-1445: name events }

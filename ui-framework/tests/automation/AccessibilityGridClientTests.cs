@@ -22,6 +22,8 @@ public sealed class AccessibilityGridClientTests
     private const uint WM_PROBE_GRID = WM_APP + 8;
     private const uint WM_PROBE_GRID_FOCUS = WM_APP + 9;
     private const uint WM_PROBE_GRID_KEY = WM_APP + 10;
+    private const uint WM_PROBE_DETACHED = WM_APP + 12;
+    private const uint WM_PROBE_SHRINK = WM_APP + 13;
     private const int VK_RIGHT = 0x27;
     private const int VK_DOWN = 0x28;
 
@@ -75,6 +77,30 @@ public sealed class AccessibilityGridClientTests
             probe.WaitUntil(() => sink.Cells().Contains("Delta")),
             "no focus-changed event on cell (2, 3); seen: " + sink);
         Assert.Equal("Gamma Delta", string.Join(" ", sink.Cells()));
+        probe.RemoveHandlers();
+        probe.Close();
+    }
+
+    /// <summary>
+    /// U-163 (UIF-1426, UIF-1436, UIF-1444): with a client listening, the probe raises SelectionItem_ElementSelected
+    /// on cell (3, 6) of a grid of its own, shrinks the grid to 4 rows and frees it: the system, which keeps a provider
+    /// it raised an event on until it is disconnected, can disconnect the cell (it still answers its runtime id and
+    /// fragment root while the grid exists), so no provider object without its control is left. Before U-163 the cell
+    /// answered neither, its disconnect failed and the cell stayed held by the system ('detached 1').
+    /// </summary>
+    [Fact]
+    [Trait("Req", "UIF-1426")]
+    [Trait("Req", "UIF-1436")]
+    [Trait("Req", "UIF-1444")]
+    public void Uia_ShrunkGridCellReleased()
+    {
+        Harness.RequireDesktop();
+        using var probe = AccessibilityClientTests.Probe.Start();
+        AccessibilityClientTests.Listen(probe);
+        Assert.Equal("detached 0", probe.Request(WM_PROBE_DETACHED, "detached "));
+        probe.Request(WM_PROBE_SHRINK, "shrunk");
+        Gui.WaitIdle(probe.Window);
+        Assert.Equal("detached 0", probe.Request(WM_PROBE_DETACHED, "detached "));
         probe.RemoveHandlers();
         probe.Close();
     }

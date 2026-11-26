@@ -1,0 +1,20 @@
+# the exported raisers (UIF-1440, UIF-1445, UIF-1446)
+ok a control without a provider: no provider is created
+ok and the panel still has none
+ok the panel gets its provider
+ok children invalidated of a window with a provider: no fault
+ok a cell of the grid
+ok a Boolean property change of the cell: no fault
+ok no element: nothing raised, no fault
+ok the controls freed: their provider objects are released
+ok no provider object without its control is left
+# a cell outside a shrunk grid (UIF-1426, UIF-1436)
+ok the runtime id of cell (3, 6)
+ok outside the shrunk grid: no name
+ok but its runtime id is answered while the grid exists
+ok and its fragment root
+ok the grid's provider
+ok the grid freed: its provider and the cell are released
+ok no provider object without its control is left
+ok every provider object is released (UIF-1425)
+# passed 17 failed 0
