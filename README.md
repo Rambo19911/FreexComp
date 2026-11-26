@@ -204,7 +204,7 @@ Help pages (also shown inside the IDE with F1):
 | Forms | [Frames](help/frames.md) · [Form inheritance](help/form-inheritance.md) · [Actions](help/actions.md) · [Accessibility](help/accessibility.md) |
 | Projects | [Project groups](help/project-groups.md) · [Platforms](help/platforms.md) · [Build events](help/build-events.md) · [Trusting a project](help/project-trust.md) |
 | Resources | [Resource files](help/resource-files.md) · [Image files](help/image-files.md) |
-| Libraries | [Writing and calling a library](help/libraries.md) · [Library source](help/library-source.md) |
+| Libraries | [Writing and calling a library](help/libraries.md) · [Library source](help/library-source.md) · [Debugging and optimised builds](help/debugging.md) |
 | Distribution | [Your applications](help/your-applications.md) · [Supported platforms](help/supported-platforms.md) |
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
