@@ -15,6 +15,7 @@ ok the pixels of the store
 ok the handle is kept
 ok the Handle value
 ok the native list
+ok the native background colour
 ok the overlay table
 ok no source handle
 ok the source is unchanged
@@ -35,6 +36,7 @@ ok the pixels of the store
 ok the handle is kept
 ok the Handle value
 ok the native list
+ok the native background colour
 ok the overlay table
 # Assign without a handle needs no native list
 ok no exception
@@ -51,5 +53,6 @@ ok AllocBy
 ok the cells
 ok a handle
 ok the native list
+ok the native background colour
 ok the overlay table
-# passed 50 failed 0
+# passed 53 failed 0

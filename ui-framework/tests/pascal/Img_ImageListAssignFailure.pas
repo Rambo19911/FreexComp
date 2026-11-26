@@ -4,13 +4,14 @@
 // needs: desktop
 // opc: --app-type gui
 program Img_ImageListAssignFailure;
-{ U-169, phase8/image-list.md UIF-1482 for Assign: with the creation of a native list failing (the protected seam
-  makes ImageList_Create return 0), Assign to a list with a handle raises EOutOfResources and leaves the target
-  exactly as before the call: Width, Height, Count, the other copied properties, the pixels of the store, the
-  overlay table, the Handle value and the native list; no Change fires. Both for a source of another format and of
-  the same format. Without a handle Assign needs no native list and succeeds; with the seam off Assign to a list
-  with a handle succeeds with one Change and a native list of the copied cells. Built as a GUI program (common
-  controls of version 6, as a real application). }
+{ U-169, U-171, phase8/image-list.md UIF-1482 for Assign: with the creation of a native list failing (the
+  protected seam makes ImageList_Create return 0), Assign to a list with a handle raises EOutOfResources and
+  leaves the target exactly as before the call: Width, Height, Count, the other copied properties, the pixels of
+  the store, the overlay table, the Handle value, the native list and its background colour; no Change fires.
+  Both for a source of another format and of the same format. Without a handle Assign needs no native list and
+  succeeds; with the seam off Assign to a list with a handle succeeds with one Change and a native list of the
+  copied cells with the source's background colour. Built as a GUI program (common controls of version 6, as a
+  real application). }
 uses
   Windows, Messages, SysUtils, Classes, CommCtrl, Graphics, Controls, Forms, ImgList, TestKit, WicTestKit,
   ImgTestKit;
@@ -163,6 +164,7 @@ begin
   CheckEqB(True, M.HandleAllocated, 'the handle is kept');
   Check(M.Handle = H, 'the Handle value');
   CheckEqS('2:RG', NativeOrder(M.Handle), 'the native list');
+  CheckEqI(ColorToRGB(clBlue), ImageList_GetBkColor(M.Handle), 'the native background colour');
   CheckEqS('G', OverlayDrawn(M), 'the overlay table');
 end;
 
@@ -263,6 +265,7 @@ begin
     CheckEqS('CMB', StoreOrder(M), 'the cells');
     CheckEqB(True, M.HandleAllocated, 'a handle');
     CheckEqS('3:CMB', NativeOrder(M.Handle), 'the native list');
+    CheckEqI(ColorToRGB(clRed), ImageList_GetBkColor(M.Handle), 'the native background colour');
     CheckEqS('B', OverlayDrawn(M), 'the overlay table');
   finally
     L.Free;
