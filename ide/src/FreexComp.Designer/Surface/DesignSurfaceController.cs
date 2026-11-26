@@ -825,7 +825,7 @@ public sealed partial class DesignSurfaceController
         ResetPress();
         if (changed)
         {
-            AddCopies(placements, UndoTitles.Copy);
+            AddCopies(placements, UndoTitles.Copy, Document.Root.Name); // D-146: the source root is this form's
         }
     }
 

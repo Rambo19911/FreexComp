@@ -1,5 +1,7 @@
+using FreexComp.Designer.Catalog;
 using FreexComp.Designer.Model;
 using FreexComp.Designer.Surface;
+using FreexComp.Designer.Tests.Catalog;
 using FreexComp.Designer.Tests.Support;
 using static FreexComp.Designer.Tests.Support.FrameFixtures;
 
@@ -309,7 +311,8 @@ public sealed class ReferenceClearingTests
         Assert.Equal(Q("BillingAddress", "StreetEdit"), Reference(h, "Label3"));
         Assert.Equal(Q("CustomerForm", "StreetEdit"), Reference(h, "Label4"));
 
-        // In a form with an instance of another name and another root name neither resolves: both are removed.
+        // In a form with an instance of another name and another root name: the reference through the instance does not
+        // resolve and is removed; the one qualified by the source root names the target's StreetEdit (D-146).
         using var other = Open(form.Replace("CustomerForm", "OrderForm", StringComparison.Ordinal)
             .Replace("BillingAddress", "ShippingAddress", StringComparison.Ordinal));
         other.Host.Clipboard.SetData(new Dictionary<string, string>
@@ -320,7 +323,7 @@ public sealed class ReferenceClearingTests
         other.Execute(Commands.Paste);
         Assert.Equal(["Label3", "Label4"], other.Selected);
         Assert.Null(Reference(other, "Label3"));
-        Assert.Null(Reference(other, "Label4"));
+        Assert.Equal(Q("OrderForm", "StreetEdit"), Reference(other, "Label4"));
     }
 
     /// <summary>Pastes the custom clipboard content of <paramref name="source"/> into the form of <paramref name="target"/>.</summary>
@@ -594,6 +597,298 @@ public sealed class ReferenceClearingTests
 
     [Fact]
     [Trait("Phase", "8")]
+    [Trait("Req", "DSG-SUR-111")]
+    [Trait("Req", "DSG-SUR-123")]
+    public void PasteRootQualifiedReferenceOutsideTheSet()
+    {
+        // D-146: references qualified by the source root to components that are not copied.
+        using var h = Open("""
+            object CustomerForm: TCustomerForm
+              Left = 200
+              Top = 120
+              Caption = 'Customer'
+              ClientWidth = 640
+              ClientHeight = 420
+              PixelsPerInch = 96
+              inline BillingAddress: TAddressFrame
+                Left = 8
+                Top = 8
+                Width = 320
+                Height = 180
+                TabOrder = 0
+              end
+              object Edit1: TEdit
+                Left = 340
+                Top = 8
+                Width = 120
+                Height = 23
+                TabOrder = 1
+              end
+              object Memo1: TMemo
+                Left = 340
+                Top = 40
+                Width = 120
+                Height = 60
+                TabOrder = 2
+              end
+              object Label1: TLabel
+                Left = 340
+                Top = 120
+                Width = 40
+                Height = 15
+                FocusControl = CustomerForm.Edit1
+              end
+              object Label2: TLabel
+                Left = 340
+                Top = 140
+                Width = 40
+                Height = 15
+                FocusControl = CustomerForm.Memo1
+              end
+              object Label3: TLabel
+                Left = 340
+                Top = 160
+                Width = 40
+                Height = 15
+                FocusControl = CustomerForm.BillingAddress.StreetEdit
+              end
+            end
+
+            """);
+        h.Select("Label1", "Label2", "Label3");
+        h.Execute(Commands.Copy);
+        const string order = """
+            object OrderForm: TOrderForm
+              Left = 200
+              Top = 120
+              Caption = 'Order'
+              ClientWidth = 640
+              ClientHeight = 420
+              PixelsPerInch = 96
+              inline BillingAddress: TAddressFrame
+                Left = 8
+                Top = 8
+                Width = 320
+                Height = 180
+                TabOrder = 0
+              end
+              object Edit1: TEdit
+                Left = 340
+                Top = 8
+                Width = 120
+                Height = 23
+                TabOrder = 1
+              end
+            end
+
+            """;
+
+        // The target resolves Edit1 and BillingAddress.StreetEdit: kept, qualified by the target root; Memo1 it does
+        // not resolve: removed.
+        using var other = Open(order);
+        PasteInto(h, other, "OrderForm");
+        Assert.Equal(["Label1", "Label2", "Label3"], other.Selected);
+        Assert.Equal(Q("OrderForm", "Edit1"), Reference(other, "Label1"));
+        Assert.Null(Reference(other, "Label2"));
+        Assert.Equal(Q("OrderForm", "BillingAddress", "StreetEdit"), Reference(other, "Label3"));
+
+        // In the source form itself every one resolves and is kept as written.
+        h.Select("CustomerForm");
+        h.Execute(Commands.Paste);
+        Assert.Equal(["Label4", "Label5", "Label6"], h.Selected);
+        Assert.Equal(Q("CustomerForm", "Edit1"), Reference(h, "Label4"));
+        Assert.Equal(Q("CustomerForm", "Memo1"), Reference(h, "Label5"));
+        Assert.Equal(Q("CustomerForm", "BillingAddress", "StreetEdit"), Reference(h, "Label6"));
+
+        // Plain text names no source root: a qualified reference outside the set is kept only as written (D-143).
+        using var plain = Open(order);
+        plain.Host.Clipboard.SetText(h.Host.Clipboard.GetData(ClipboardFormats.Text)!);
+        plain.Select("OrderForm");
+        plain.Execute(Commands.Paste);
+        Assert.Equal(["Label1", "Label2", "Label3"], plain.Selected);
+        Assert.Null(Reference(plain, "Label1"));
+        Assert.Null(Reference(plain, "Label2"));
+        Assert.Null(Reference(plain, "Label3"));
+    }
+
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "DSG-SUR-057")]
+    [Trait("Req", "DSG-SUR-123")]
+    public void CtrlDragCopyUsesTheSourceRoot()
+    {
+        // D-146: a Ctrl-drag copy knows its source root (this form), as a clipboard with the source-root header does:
+        // Ghost.Edit1 names nothing in the source and is not taken for the root (the D-143 guess would).
+        using var h = Open("""
+            object CustomerForm: TCustomerForm
+              Left = 200
+              Top = 120
+              Caption = 'Customer'
+              ClientWidth = 640
+              ClientHeight = 420
+              PixelsPerInch = 96
+              object Edit1: TEdit
+                Left = 8
+                Top = 8
+                Width = 120
+                Height = 23
+                TabOrder = 0
+              end
+              object Label1: TLabel
+                Left = 8
+                Top = 40
+                Width = 40
+                Height = 15
+                FocusControl = CustomerForm.Edit1
+              end
+              object Label2: TLabel
+                Left = 8
+                Top = 60
+                Width = 40
+                Height = 15
+                FocusControl = Ghost.Edit1
+              end
+            end
+
+            """);
+        h.Settings.NoSnapping();
+        h.Select("Edit1", "Label1", "Label2");
+        h.Press("Edit1");
+        h.MoveBy(0, 200);
+        h.Release(InputModifiers.Ctrl);
+        Assert.Equal(["Edit2", "Label3", "Label4"], h.Selected);
+        Assert.Equal(Q("CustomerForm", "Edit2"), Reference(h, "Label3"));
+        Assert.Null(Reference(h, "Label4"));
+        Assert.Equal(Q("Ghost", "Edit1"), Reference(h, "Label2")); // the original is unchanged
+    }
+
+    /// <summary>
+    /// The test metadata plus a header whose sections hold a collection of parts, each naming a partner header (a
+    /// collection inside collection items).
+    /// </summary>
+    private static ComponentCatalog NestedCatalog()
+    {
+        var files = new CatalogLoaderTests.MemoryFiles
+        {
+            [@"C:\extra\index.json"] = """{ "formatVersion": 1, "files": ["Nested.components.json"] }""",
+            [@"C:\extra\Nested.components.json"] = """
+                {
+                  "formatVersion": 1,
+                  "unit": "ComCtrls",
+                  "types": {
+                    "THeaderPart": { "kind": "object", "properties": [
+                      { "name": "Partner", "type": "THeader", "kind": "component" }
+                    ] },
+                    "THeaderSection": { "kind": "object", "properties": [
+                      { "name": "Width", "type": "Integer", "default": 50, "min": 0 },
+                      { "name": "Parts", "type": "THeaderParts", "kind": "collection", "itemClass": "THeaderPart" }
+                    ] }
+                  },
+                  "components": [
+                    { "class": "THeader", "ancestor": "TWinControl", "kind": "wincontrol", "defaultSize": { "width": 200, "height": 20 },
+                      "properties": [
+                        { "name": "Sections", "type": "THeaderSections", "kind": "collection", "itemClass": "THeaderSection", "category": "Data" }
+                      ] }
+                  ]
+                }
+                """,
+        };
+        var result = CatalogLoader.Load([TestPaths.MetadataIndex, @"C:\extra\index.json"],
+            path => files.Read(path) ?? (System.IO.File.Exists(path) ? System.IO.File.ReadAllBytes(path) : null));
+        Assert.Empty(result.Problems);
+        return result.Catalog;
+    }
+
+    /// <summary>The Partner values of the parts of each section of <paramref name="owner"/> (empty: the part has none).</summary>
+    private static List<List<List<FormValue>>> PartPartners(DesignerHarness h, string owner) =>
+        [.. ((CollectionValue)h.Object(owner).FindProperty("Sections")!.Value).Items
+            .Select(section => section.Properties.Where(p => p.Path == "Parts").SelectMany(p => ((CollectionValue)p.Value).Items)
+                .Select(part => part.Properties.Where(p => p.Path == "Partner").Select(p => p.Value).ToList()).ToList())];
+
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "DSG-SUR-123")]
+    [Trait("Req", "DSG-SUR-131")]
+    public void PasteFiltersNestedCollectionReferences()
+    {
+        // D-146: references in collections inside collection items follow the paste rule and are cleared on delete.
+        var catalog = NestedCatalog();
+        const string form = """
+            object F: TForm
+              Left = 0
+              Top = 0
+              ClientWidth = 640
+              ClientHeight = 420
+              object Header1: THeader
+                Left = 8
+                Top = 8
+                Width = 200
+                Height = 20
+                Sections = <
+                  item
+                    Width = 10
+                    Parts = <
+                      item
+                        Partner = Header1
+                      end
+                      item
+                        Partner = Header2
+                      end
+                      item
+                        Partner = F.Header1
+                      end
+                    >
+                  end
+                >
+              end
+              object Header2: THeader
+                Left = 8
+                Top = 40
+                Width = 200
+                Height = 20
+              end
+            end
+
+            """;
+        using var h = DesignerHarness.FromText(form, "f.form", catalog: catalog);
+        h.Select("Header1");
+        h.Execute(Commands.Copy);
+
+        // Same form: the reference into the set names the copy; the one outside it resolves and is kept.
+        h.Select("F");
+        h.Execute(Commands.Paste);
+        Assert.Equal(["Header3"], h.Selected);
+        Assert.Equal([[[new IdentValue("Header3")], [new IdentValue("Header2")], [Q("F", "Header3")]]], PartPartners(h, "Header3"));
+        Assert.Equal([[[new IdentValue("Header1")], [new IdentValue("Header2")], [Q("F", "Header1")]]], PartPartners(h, "Header1"));
+
+        // Another form without Header2: that reference is removed (the part stays), the source root becomes the target's.
+        using var other = DesignerHarness.FromText("""
+            object G: TForm
+              Left = 0
+              Top = 0
+              ClientWidth = 640
+              ClientHeight = 420
+            end
+
+            """, "g.form", catalog: catalog);
+        PasteInto(h, other, "G");
+        Assert.Equal(["Header1"], other.Selected);
+        Assert.Equal([[[new IdentValue("Header1")], [], [Q("G", "Header1")]]], PartPartners(other, "Header1"));
+        var section = ((CollectionValue)other.Object("Header1").FindProperty("Sections")!.Value).Items.Single();
+        Assert.Equal(new IntegerValue(10, false), section.Properties.Single(p => p.Path == "Width").Value);
+
+        // Delete: the reference to the deleted header inside the nested collection is cleared (the part stays); undo
+        // restores it.
+        using var d = DesignerHarness.FromText(form, "f.form", catalog: catalog);
+        var original = d.Text;
+        Delete(d, "Header2");
+        Assert.Equal([[[new IdentValue("Header1")], [], [Q("F", "Header1")]]], PartPartners(d, "Header1"));
+        d.ExecuteUndo();
+        Assert.Equal(original, d.Text);
+    }
+
+    [Fact]
+    [Trait("Phase", "8")]
     [Trait("Req", "DSG-SUR-123")]
     [Trait("Req", "DSG-SUR-230")]
     [Trait("Req", "DSG-FD-108")]
@@ -685,16 +980,17 @@ public sealed class ReferenceClearingTests
         Assert.Equal(["Outer2"], other.Selected);
 
         // Kept: a file-scope name of the target, names the instance's scopes resolve, a reference qualified by another
-        // instance of the target; the instance's own name in its lines names the pasted copy.
+        // instance of the target, a name qualified by the source root that the target resolves (as the target's, D-146);
+        // the instance's own name in its lines names the pasted copy.
         Assert.Equal(new IdentValue("PopupMenu1"), Reference(other, "Outer2", "PopupMenu"));
+        Assert.Equal(Q("OrderForm", "PopupMenu1"), Reference(other, "Outer2.Home.CityPanel", "PopupMenu"));
         Assert.Equal(new IdentValue("StreetEdit"), Reference(other, "Outer2.Home.StreetLabel"));
         Assert.Equal(Q("ShippingAddress", "StreetEdit"), Reference(other, "Outer2.Home.CityLabel"));
         Assert.Equal(Q("Home", "CityPicker", "CityEdit"), Reference(other, "Outer2.HomeLabel"));
         Assert.Equal(Q("Outer2", "Home", "StreetEdit"), Reference(other, "Outer2.RootLabel"));
 
-        // Removed: a component the target does not have, and a name qualified by the source form's root name.
+        // Removed: a component the target does not have.
         Assert.Null(Reference(other, "Outer2.Home.StreetEdit", "PopupMenu"));
-        Assert.Null(Reference(other, "Outer2.Home.CityPanel", "PopupMenu"));
         Assert.Equal("street", Effective(other.Object("Outer2.Home.StreetEdit"), "Text"));
 
         Assert.Equal(1, other.Undo.UndoCount);

@@ -168,16 +168,7 @@ public sealed partial class DesignSurfaceController
                 ? slots[slot++]
                 : (Coordinate(d.Object, "Left") + offsets[d.Object].Dx, Coordinate(d.Object, "Top") + offsets[d.Object].Dy)))
             .ToList();
-        _pasteSourceRoot = SourceRoot(text);
-        try
-        {
-            AddCopies(placements, UndoTitles.Paste);
-        }
-        finally
-        {
-            _pasteSourceRoot = null;
-        }
-
+        AddCopies(placements, UndoTitles.Paste, SourceRoot(text));
         _lastPaste = (sequence, target.QualifiedName, k);
     }
 
@@ -208,9 +199,23 @@ public sealed partial class DesignSurfaceController
     /// Creates copies of the sources as one undo unit (paste DSG-SUR-127, Ctrl-drag copy DSG-SUR-057): named by
     /// DSG-SUR-123, references and events filtered by DSG-SUR-123/124, appended to their parents in the given order,
     /// focusable ones numbered after the existing siblings (DSG-SUR-096), the layout committed; the copies become the
-    /// selection (last = primary).
+    /// selection (last = primary). <paramref name="sourceRoot"/>: the root name of the form the sources came from (the
+    /// clipboard's <c>; source-root</c> line, this form's for a Ctrl-drag copy, D-146); null = not known (the D-143 rule).
     /// </summary>
-    private void AddCopies(IReadOnlyList<Placement> placements, string title)
+    private void AddCopies(IReadOnlyList<Placement> placements, string title, string? sourceRoot)
+    {
+        _pasteSourceRoot = sourceRoot;
+        try
+        {
+            AddCopiesFrom(placements, title);
+        }
+        finally
+        {
+            _pasteSourceRoot = null;
+        }
+    }
+
+    private void AddCopiesFrom(IReadOnlyList<Placement> placements, string title)
     {
         if (placements.Select(p => p.Parent).FirstOrDefault(RefusesNewChildren) is { } fixedParent)
         {
@@ -457,7 +462,8 @@ public sealed partial class DesignSurfaceController
 
     /// <summary>
     /// D-145: the items of a pasted collection with their component references as <see cref="PastedReference"/> makes
-    /// them (a removed one leaves its item without that line), or null when none changes. Nested collections: unchanged.
+    /// them (a removed one leaves its item without that line), collections inside the items likewise (D-146), or null
+    /// when none changes.
     /// </summary>
     private CollectionValue? PastedItems(FormObject? scope, Catalog.TypeInfo itemType, CollectionValue collection,
         Dictionary<FormObject, string> names, Dictionary<string, FormObject> pasted)
@@ -469,9 +475,15 @@ public sealed partial class DesignSurfaceController
             var properties = new List<(string Path, FormValue Value, string? RawText)>();
             foreach (var line in item.Properties)
             {
-                var reference = line.Value is IdentValue or QualifiedIdentValue
-                    && itemType.Properties.Any(p => p.Kind == PropertyKind.Component && p.Name.Equals(line.Path, StringComparison.OrdinalIgnoreCase));
-                var value = reference ? PastedReference(scope, line.Value, names, pasted) : line.Value;
+                var lineInfo = itemType.Properties.FirstOrDefault(p => p.Name.Equals(line.Path, StringComparison.OrdinalIgnoreCase));
+                var value = line.Value switch
+                {
+                    IdentValue or QualifiedIdentValue when lineInfo is { Kind: PropertyKind.Component } => PastedReference(scope, line.Value, names, pasted),
+                    CollectionValue nested when lineInfo is { Kind: PropertyKind.Collection, ItemClass: { } nestedClass }
+                        && Catalog.FindType(nestedClass) is { Kind: TypeKind.Object } nestedType =>
+                        PastedItems(scope, nestedType, nested, names, pasted) ?? line.Value,
+                    _ => line.Value,
+                };
                 if (ReferenceEquals(value, line.Value))
                 {
                     properties.Add(line);
@@ -498,8 +510,9 @@ public sealed partial class DesignSurfaceController
     /// (the instance by name, its components) or that names a pasted object reaches the pasted set; so does a qualified
     /// name whose second part names a pasted object after a first part that names the source form's root
     /// (<see cref="NamesSourceRoot"/>: it becomes this form's). A reference into the pasted set names the copies (renamed parts
-    /// replaced; removed when a further part does not resolve); any other reference is kept only when it resolves in this
-    /// form's file scope. Null = removed.
+    /// replaced; removed when a further part does not resolve); one qualified by the known source root to something else
+    /// is kept, qualified by this form's root, when this form's file scope resolves the rest (D-146); any other reference
+    /// is kept only when it resolves in this form's file scope. Null = removed.
     /// </summary>
     private FormValue? PastedReference(FormObject? scope, FormValue value, Dictionary<FormObject, string> names, Dictionary<string, FormObject> pasted)
     {
@@ -524,6 +537,16 @@ public sealed partial class DesignSurfaceController
         if (current is null && pasted.GetValueOrDefault(parts[1]) is { } afterRoot && NamesSourceRoot(parts[0]))
         {
             (current, first) = (afterRoot, 1);
+        }
+
+        if (current is null && _pasteSourceRoot is { } sourceRoot && parts[0].Equals(sourceRoot, StringComparison.OrdinalIgnoreCase))
+        {
+            // D-146: qualified by the source root, outside the pasted set: as the name without the root, qualified by this root.
+            var rest = parts[1..];
+            var resolves = rest.Length == 1 ? ReferenceLookup.ResolvePlain(Document, null, rest[0]) : ReferenceLookup.ResolveQualified(Document, null, rest);
+            return resolves is null ? null
+                : parts[0] == Document.Root.Name ? value
+                : new QualifiedIdentValue(parts.SetItem(0, Document.Root.Name));
         }
 
         if (current is null)

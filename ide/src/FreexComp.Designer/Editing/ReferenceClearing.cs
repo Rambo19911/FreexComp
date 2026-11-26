@@ -6,7 +6,8 @@ namespace FreexComp.Designer.Editing;
 /// <summary>
 /// The changes that set every component reference to one of a set of components to <c>nil</c> (design-surface.md
 /// DSG-SUR-131: delete): the plain names and qualified names (any part: first, middle or last) that resolve to a removed
-/// component by the scope rules of the line's owner (<see cref="ReferenceLookup"/>; D-142), also inside collection items.
+/// component by the scope rules of the line's owner (<see cref="ReferenceLookup"/>; D-142), also inside collection items
+/// (and collections inside them, D-146).
 /// Owners in the set and preserved properties are left alone.
 /// </summary>
 public static class ReferenceClearing
@@ -58,14 +59,31 @@ public static class ReferenceClearing
                 && ReferenceLookup.PartReaching(document, scope, parts, removed.Contains) is not null:
                 return value;
             case CollectionValue collection when info.ItemClass is { } itemClass && catalog.FindType(itemClass) is { Kind: TypeKind.Object } itemType:
+                // A cleared reference leaves its item without that line; a nested collection gets its cleared items (D-146).
                 var changed = false;
-                var items = collection.Items.Select(item => new CollectionItem([.. item.Properties.Where(p =>
+                var items = new List<CollectionItem>();
+                foreach (var item in collection.Items)
                 {
-                    var hit = itemType.Properties.FirstOrDefault(i => i.Name.Equals(p.Path, StringComparison.OrdinalIgnoreCase)) is { } itemInfo
-                        && Cleared(document, scope, catalog, p.Value, itemInfo, removed) is { } r && r is not CollectionValue; // nested collections: not handled
-                    changed |= hit;
-                    return !hit;
-                })])).ToList();
+                    var lines = new List<(string Path, FormValue Value, string? RawText)>();
+                    foreach (var line in item.Properties)
+                    {
+                        var cleared = itemType.Properties.FirstOrDefault(i => i.Name.Equals(line.Path, StringComparison.OrdinalIgnoreCase)) is { } itemInfo
+                            ? Cleared(document, scope, catalog, line.Value, itemInfo, removed)
+                            : null;
+                        changed |= cleared is not null;
+                        if (cleared is null)
+                        {
+                            lines.Add(line);
+                        }
+                        else if (cleared is CollectionValue nested)
+                        {
+                            lines.Add((line.Path, nested, null));
+                        }
+                    }
+
+                    items.Add(new CollectionItem([.. lines]));
+                }
+
                 return changed ? new CollectionValue([.. items]) : null;
             default:
                 return null;
