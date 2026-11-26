@@ -125,6 +125,7 @@ public sealed class DebugCommandTests
         await commands.ExecuteAsync("run.start");
         await bed.WaitForStateAsync(IdeState.Idle);
         Assert.Equal(3, sent.SentRequests("continue").Count); // Run to Cursor and the two F5
+        await bed.WaitForScenarioCompleteAsync();
         Assert.Contains("SCENARIO-COMPLETE", sent.AdapterStderr());
 
         // DBG-232: Run to Cursor without a session starts the program (no stop on entry) with a temporary breakpoint on
@@ -148,6 +149,7 @@ public sealed class DebugCommandTests
 
         await bed.Debug.StopAsync();
         Assert.Equal(IdeState.Idle, bed.State);
+        await bed.WaitForScenarioCompleteAsync(count: 2); // the second session of the test
         Assert.Contains("SCENARIO-COMPLETE", sent.AdapterStderr().Skip(1));
     }
 
@@ -256,6 +258,7 @@ public sealed class DebugCommandTests
 
         await bed.Debug.StopAsync();
         Assert.Equal(IdeState.Idle, bed.State);
+        await bed.WaitForScenarioCompleteAsync();
         Assert.Contains("SCENARIO-COMPLETE", bed.Sessions.AdapterStderr());
     }
 
@@ -302,6 +305,7 @@ public sealed class DebugCommandTests
 
         await commands.ExecuteAsync("run.start");
         await bed.WaitForStateAsync(IdeState.Idle);
+        await bed.WaitForScenarioCompleteAsync();
         Assert.Contains("SCENARIO-COMPLETE", bed.Sessions.AdapterStderr());
     }
 
@@ -341,6 +345,7 @@ public sealed class DebugCommandTests
 
         await bed.Debug.StopAsync();
         Assert.Equal(IdeState.Idle, bed.State);
+        await bed.WaitForScenarioCompleteAsync();
         Assert.Contains("SCENARIO-COMPLETE", bed.Sessions.AdapterStderr());
     }
 
@@ -470,6 +475,7 @@ public sealed class DebugCommandTests
         // Continue: the host runs to its end.
         await commands.ExecuteAsync("run.start");
         await bed.WaitForStateAsync(IdeState.Idle);
+        await bed.WaitForScenarioCompleteAsync();
         Assert.Contains("SCENARIO-COMPLETE", bed.Sessions.AdapterStderr());
 
         // Step Into as the first command starts the host too, stopping at its entry.

@@ -93,6 +93,7 @@ public sealed class BreakpointSyncTests
 
         // A breakpoint added during the session loses its id and state when the session ends; later ones are not sent.
         await bed.Debug.StopAsync();
+        await bed.WaitForScenarioCompleteAsync();
         Assert.Contains("SCENARIO-COMPLETE", bed.Sessions.AdapterStderr());
         breakpoints.Toggle(bed.UnitPath, 7);
         Assert.True(breakpoints.WhenSyncedAsync().IsCompleted);

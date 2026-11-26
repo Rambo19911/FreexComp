@@ -171,6 +171,15 @@ internal sealed class DebugTestBed : IDisposable
     /// <summary>Waits for a task of the product, bounded by the test's own timeout.</summary>
     public static Task WaitAsync(Task task, string step) => CurrentTest.Deadline.WaitAsync(task, step);
 
+    /// <summary>
+    /// I-303: waits, up to the test's own timeout, until the scripted adapter of the <paramref name="count"/>-th session
+    /// of the test has reported on its error stream that every step of its scenario was consumed
+    /// (<c>SCENARIO-COMPLETE</c>): the session reads that stream on a thread of its own, so the line can arrive after the
+    /// session has ended.
+    /// </summary>
+    public Task WaitForScenarioCompleteAsync(int count = 1) =>
+        WaitAsync(Sessions.WaitForStderrLineAsync("SCENARIO-COMPLETE", count), "the scripted adapter's SCENARIO-COMPLETE");
+
     /// <summary>The lines of an Output channel, after letting batched output reach it (50 ms, IDE-P3-070).</summary>
     public IReadOnlyList<OutputLine> Output(string channel)
     {

@@ -62,12 +62,18 @@ public sealed class TestSupportTests
         Assert.Same(asked, Assert.Single(sessions.Requested));
         Assert.Equal((TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(30)), (asked.RequestTimeout, asked.LaunchTimeout));
         Assert.Equal((FakeAdapterSessions.AdapterExe, net, net), (sessions.Created[0].AdapterPath, sessions.Created[0].RequestTimeout, sessions.Created[0].LaunchTimeout));
+        // G-089 / I-303: the shutdown waits (disconnect, adapter exit, end of its error stream) are lifted to the same net.
+        Assert.Equal(new ShutdownWaits(), asked.ShutdownWaits);
+        Assert.Equal((TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(2)),
+            (asked.ShutdownWaits.Disconnect, asked.ShutdownWaits.AdapterExit, asked.ShutdownWaits.StderrEnd));
+        Assert.Equal(new ShutdownWaits { Disconnect = net, AdapterExit = net, StderrEnd = net }, sessions.Created[0].ShutdownWaits);
 
         // Without the scripted adapter the options stay the product's own.
         sessions.UseNoAdapter();
         sessions.Create(asked);
         Assert.Equal((asked.AdapterPath, asked.RequestTimeout, asked.LaunchTimeout),
             (sessions.Created[1].AdapterPath, sessions.Created[1].RequestTimeout, sessions.Created[1].LaunchTimeout));
+        Assert.Equal(new ShutdownWaits(), sessions.Created[1].ShutdownWaits);
     }
 
     /// <summary>

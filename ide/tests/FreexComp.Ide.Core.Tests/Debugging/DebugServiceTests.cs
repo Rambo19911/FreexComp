@@ -78,6 +78,7 @@ public sealed class DebugServiceTests
         Assert.Equal(DebugState.Terminated, session.State);
         Assert.Equal(2, sessionChanges);
         Assert.Contains(bed.Output(OutputChannels.Program), l => l == new OutputLine(Strings.Msg_Run_Terminated, OutputKind.Ide));
+        await bed.WaitForScenarioCompleteAsync();
         Assert.Contains("SCENARIO-COMPLETE", bed.Sessions.AdapterStderr());
         Assert.False(bed.Services.Commands.CanExecute("run.stop"));
 
@@ -156,6 +157,7 @@ public sealed class DebugServiceTests
         Assert.Null(bed.Debug.Session);
         Assert.False(bed.Debug.IsPaused);
         Assert.Contains(bed.Output(OutputChannels.Program), l => l == new OutputLine(F(Strings.Msg_Run_Exited, "3", 0.0.ToString("0.0", CultureInfo.CurrentCulture)), OutputKind.Ide));
+        await bed.WaitForScenarioCompleteAsync();
         Assert.Contains("SCENARIO-COMPLETE", bed.Sessions.AdapterStderr());
         Assert.Equal(Strings.ResourceManager.GetString("Cmd_run_start", CultureInfo.CurrentCulture), bed.Services.Commands.Get("run.start").Title);
     }
@@ -326,7 +328,7 @@ public sealed class DebugServiceTests
         Assert.True(await bed.Debug.StartAsync());
         var on = bed.Sessions.Requested[^1];
         Assert.Equal([bed.Dir, lib, searched, framework, winapi], on.UserSourceRoots);
-        Assert.Equal((off.AdapterPath, off.RequestTimeout, off.LaunchTimeout, off.Format), (on.AdapterPath, on.RequestTimeout, on.LaunchTimeout, on.Format)); // IDE-LIB-025: the only input that differs
+        Assert.Equal((off.AdapterPath, off.RequestTimeout, off.LaunchTimeout, off.ShutdownWaits, off.Format), (on.AdapterPath, on.RequestTimeout, on.LaunchTimeout, on.ShutdownWaits, on.Format)); // IDE-LIB-025: the only input that differs
         await bed.Debug.StopAsync();
 
         // IDE-LIB-024: the same with a configuration without debug information (the roots are passed; no extra message).

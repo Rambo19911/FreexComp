@@ -73,6 +73,7 @@ public sealed class DebugFeatureRowTests
         Assert.True(await bed.Debug.StartAsync());
         await bed.WaitForStateAsync(IdeState.Idle);
 
+        await bed.WaitForScenarioCompleteAsync();
         Assert.True(bed.Sessions.AdapterStderr().Contains("SCENARIO-COMPLETE"), string.Join("\n", bed.Sessions.AdapterStderr()));
         Assert.Equal(0, stops);
         Assert.Contains(bed.Debug.Log, row => row.Kind == DebugLogKind.Breakpoint && row.Message == "reached Run");

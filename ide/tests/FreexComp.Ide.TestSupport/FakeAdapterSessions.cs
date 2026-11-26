@@ -76,10 +76,12 @@ public sealed class FakeAdapterSessions : IDebugSessionFactory, IDisposable
         Requested.Add(options);
         // I-258: the product's wall-clock limits (10 s per request, 30 s for the launch) are not what a scripted session
         // is about, and a machine that runs every test project at once does not keep them (the adapter is a process to
-        // start); the test's own timeout is the only bound.
+        // start); the test's own timeout is the only bound. G-089 / I-303: so are the shutdown waits; a starved
+        // scripted adapter would otherwise be killed before it writes its last error-stream line.
         var net = TimeSpan.FromMilliseconds(TestDeadline.DebugTestTimeout);
         var actual = ScenarioPath is { } scenario
-            ? options with { AdapterPath = AdapterExe, AdapterArguments = [scenario], Trace = Record, RequestTimeout = net, LaunchTimeout = net }
+            ? options with { AdapterPath = AdapterExe, AdapterArguments = [scenario], Trace = Record, RequestTimeout = net, LaunchTimeout = net,
+                ShutdownWaits = new ShutdownWaits { Disconnect = net, AdapterExit = net, StderrEnd = net } }
             : options with { Trace = Record };
         Created.Add(actual);
         var session = _inner.Create(actual);
@@ -108,20 +110,22 @@ public sealed class FakeAdapterSessions : IDebugSessionFactory, IDisposable
     }
 
     /// <summary>
-    /// I-301: completes when the adapter has written <paramref name="line"/> to its error stream (a line already written
-    /// counts). No polling: completed by the trace callback. The session reads that stream on a thread of its own and
-    /// gives up on it 2 s of wall time after the adapter's exit, so on a loaded machine a line (the scripted adapter's
-    /// <c>SCENARIO-COMPLETE</c>) can arrive after the session has ended and the IDE is idle again.
+    /// I-301: completes when the adapter has written <paramref name="line"/> to its error stream for the
+    /// <paramref name="count"/>-th time (lines already written count; I-303: one per session of the test). No polling:
+    /// completed by the trace callback. The session reads that stream on a thread of its own and stops waiting for its end
+    /// after <see cref="ShutdownWaits.StderrEnd"/> (lifted to the test's net here, 2 s in the product), so a line (the
+    /// scripted adapter's <c>SCENARIO-COMPLETE</c>) can arrive after the session has ended and the IDE is idle again.
     /// </summary>
-    public Task WaitForStderrLineAsync(string line)
+    public Task WaitForStderrLineAsync(string line, int count = 1)
     {
         bool Match(DapTraceEntry e) => e.Direction == DapDirection.AdapterStderr && e.Json == line;
         var found = new TaskCompletionSource<DapTraceEntry>(TaskCreationOptions.RunContinuationsAsynchronously);
         lock (_gate)
         {
-            if (_trace.Any(Match))
+            var seen = _trace.Count(Match);
+            if (seen >= count)
                 return Task.CompletedTask;
-            _waiters.Add((Match, found));
+            _waiters.Add((e => Match(e) && ++seen >= count, found));
         }
 
         return found.Task;
