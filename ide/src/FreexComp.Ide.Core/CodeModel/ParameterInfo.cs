@@ -171,7 +171,10 @@ public sealed record HoverContent(int Offset, int Length, string Declaration, st
 public sealed record HoverInfo(int Offset, int Length, HoverContent? Content, IReadOnlyList<TextMarker> Markers, bool AtCaret)
 {
     /// <summary>UI-ED-130, from P6 while paused: the value of the hovered variable, shown as <c>= value</c> first; null = none.</summary>
-    public string? Value { get; init; }
+    public string? Value => ValueNode?.Info?.Value;
+
+    /// <summary>DBG-258: the evaluated designator as an expandable node; null = no value.</summary>
+    public Debugging.HoverValueNode? ValueNode { get; init; }
 }
 
 /// <summary>
@@ -193,10 +196,10 @@ public sealed class HoverSession
     private readonly Func<TimeSpan> _delay;
 
     /// <summary>
-    /// Asks the debugger for the value of the identifier at an offset while the program is paused (UI-ED-130,
-    /// <c>debugger.evaluateTooltips</c>): the identifier's range and its value text; null = none. Null before Phase 6.
+    /// Asks the debugger for the value under an offset while the program is paused (UI-ED-130, DBG-258,
+    /// <c>debugger.evaluateTooltips</c>): the hovered token's range and the value node; null = none. Null before Phase 6.
     /// </summary>
-    public Func<int, Task<(int Offset, int Length, string Value)?>>? ValueFetch { get; set; }
+    public Func<int, Task<Debugging.HoverValue?>>? ValueFetch { get; set; }
 
     private IDisposable? _timer;
     private IDisposable? _closing;
@@ -318,8 +321,8 @@ public sealed class HoverSession
         }
 
         KeepOpen();
-        Current = content is not null ? new HoverInfo(content.Offset, content.Length, content, markers, atCaret) { Value = value?.Value }
-            : value is { } evaluated ? new HoverInfo(evaluated.Offset, evaluated.Length, null, markers, atCaret) { Value = evaluated.Value }
+        Current = content is not null ? new HoverInfo(content.Offset, content.Length, content, markers, atCaret) { ValueNode = value?.Node }
+            : value is { } evaluated ? new HoverInfo(evaluated.Offset, evaluated.Length, null, markers, atCaret) { ValueNode = evaluated.Node }
             : new HoverInfo(markers[0].Offset, Math.Max(1, markers[0].Length), null, markers, atCaret);
         Changed?.Invoke(this, EventArgs.Empty);
     }
@@ -359,7 +362,7 @@ public sealed class ParameterInfoController
     /// Phase 6 (UI-ED-130): the debugger's value of the identifier at an offset of a document while the program is paused;
     /// set before documents open. Null = no value line.
     /// </summary>
-    public Func<TextDocumentViewModel, int, Task<(int Offset, int Length, string Value)?>>? DebugValue { get; set; }
+    public Func<TextDocumentViewModel, int, Task<Debugging.HoverValue?>>? DebugValue { get; set; }
 
     public void RegisterCommands(ICommandService commands)
     {

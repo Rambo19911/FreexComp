@@ -5469,6 +5469,10 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
     <value>= {0}</value>
     <comment>UI-ED-130: first line of the hover tooltip of a variable while paused; 0 = value</comment>
   </data>
+  <data name="Debug_Hover_Child" xml:space="preserve">
+    <value>{0} = {1}</value>
+    <comment>DBG-258: a line of an expanded hover value (field, element); 0 = name, 1 = value</comment>
+  </data>
   <data name="Button_RebuildAndRestart" xml:space="preserve">
     <value>Rebuild and Restart</value>
     <comment>Msg.Debug.SourceChanged action</comment>

@@ -120,4 +120,57 @@ public sealed class ExceptionDialogTests
         // An operating-system exception: the class text is its description, the message its code in hexadecimal.
         Assert.Equal(("Access violation", "$C0000005"), DebugService.Describe(new ExceptionInfo(ExceptionKind.Os, "", "Access violation", 0xC0000005, 0x7FF6A1B21234)));
     }
+
+    /// <summary>
+    /// DBG-200 (I-223): the launch request carries the exception settings of the moment the session starts. Both are
+    /// changed while no session exists, so nothing but the launch request can take them to the session: an ignored class
+    /// does not stop (the session continues by itself), and with <c>debugger.breakOnExceptions</c> off the session sets
+    /// no function breakpoint on the raise routine.
+    /// </summary>
+    [AvaloniaFact(Timeout = TestDeadline.DebugTestTimeout)]
+    [Trait("Req", "DBG-200")]
+    public async Task LaunchRequestCarriesExceptionSettings()
+    {
+        await using var h = await DebugScenario.StartAsync();
+        var unitPath = DebugScenario.UnitPath(h);
+        var settings = h.Services.Settings;
+        File.WriteAllText(Path.ChangeExtension(BuildScenario.ExePath(h), ".pdi"), DebugRaises.TypeInfo(unitPath));
+        settings.Set(SettingsCatalog.DebuggerIgnoredExceptions, ["EAbort", "EFirst"]);
+        Assert.Empty(h.DebugSessions.Sessions);
+
+        // EFirst (ignored) is raised, then ESecond.
+        h.DebugSessions.UseScenario($$"""
+            { {{DebugRaises.Capabilities}}, {{DebugRaises.Memory}}, "steps": [
+              {{DebugRaises.HookSet}},
+              { "on": "configurationDone", "respond": {}, "thenEvents": [ {{DebugRaises.HookHit}} ] },
+              {{DebugRaises.AtRaise(unitPath, 5, DebugRaises.FirstSlot)}},
+              {{DebugScenarios.Continue(DebugRaises.HookHit)}},
+              {{DebugRaises.AtRaiseStop(unitPath, 6, DebugRaises.SecondSlot)}},
+              {{DebugScenarios.Continue()}} ] }
+            """);
+        h.Press("F5");
+        var dialog = await h.WaitForDialogAsync("Message");
+        Assert.Equal(["ESecond", "second"], Assert.Single(h.Messages.Requests).Args);
+        Assert.Single(h.DebugSessions.SentRequests("continue")); // the session continued after EFirst by itself
+        Assert.Single(h.DebugSessions.SentRequests("setFunctionBreakpoints"));
+        dialog.Click("Button.Continue");
+        await h.WaitForAsync(() => !dialog.Window.IsVisible, "the dialog closed");
+        await DebugScenario.WaitForStateAsync(h, IdeState.DebugRunning);
+        h.Press("Shift+F5");
+        await DebugScenario.WaitForStateAsync(h, IdeState.Idle);
+        await DebugScenario.WaitForScenarioCompleteAsync(h); // I-301: the line may be read after the session ended
+
+        // debugger.breakOnExceptions off before the start: the session sets no function breakpoint on the raise routine.
+        settings.Set(SettingsCatalog.DebuggerBreakOnExceptions, false);
+        h.DebugSessions.UseScenario($$"""
+            { {{DebugRaises.Capabilities}}, {{DebugRaises.Memory}}, "steps": [
+              { "on": "configurationDone", "respond": {}, "thenEvents": [ {{DebugScenarios.Exit()}} ] } ] }
+            """);
+        h.Press("F5");
+        await h.WaitForAsync(() => h.DebugSessions.Sessions.Count == 2 && h.DebugSessions.Last.State == DebugState.Terminated
+            && h.Services.State.Current.State == IdeState.Idle, "the second session ended");
+        await h.Deadline.WaitAsync(h.DebugSessions.WaitForStderrLineAsync("SCENARIO-COMPLETE", 2), "the second scenario's SCENARIO-COMPLETE");
+        Assert.Single(h.DebugSessions.SentRequests("setFunctionBreakpoints")); // the first session's only
+        Assert.Single(h.Messages.Requests);
+    }
 }

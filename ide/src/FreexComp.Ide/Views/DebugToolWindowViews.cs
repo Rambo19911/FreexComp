@@ -9,6 +9,7 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Styling;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using FreexComp.Ide.Core.Editing;
 using FreexComp.Ide.Core.ViewModels;
 using FreexComp.Ide.Editor;
@@ -41,6 +42,8 @@ public abstract class DebugToolWindowView : UserControl
     private DebugToolWindowViewModel? _model;
     private DebugGridViewModel? _grid;
     private bool _syncingSelection;
+    private ScrollViewer? _scroller;
+    private bool _followsEnd = true; // UI-TW-504 (Event Log, UI-TW-1300)
 
     protected DebugToolWindowView(string toolName)
     {
@@ -64,6 +67,12 @@ public abstract class DebugToolWindowView : UserControl
         _list.Tapped += OnTapped;
         _list.AddHandler(KeyDownEvent, OnKeyDown, RoutingStrategies.Tunnel);
         _list.ContextRequested += OnContextRequested;
+        _list.TemplateApplied += (_, e) =>
+        {
+            _scroller?.ScrollChanged -= OnScrollChanged;
+            _scroller = e.NameScope.Find<ScrollViewer>("PART_ScrollViewer");
+            _scroller?.ScrollChanged += OnScrollChanged;
+        };
         Input.ListBehaviors.FocusOnRightPress(_list); // UI-TW-014 (I-283)
 
         var rows = new DockPanel();
@@ -79,6 +88,16 @@ public abstract class DebugToolWindowView : UserControl
         _root = new Panel { Focusable = true, Background = Brushes.Transparent, Children = { ContentHost, placed } };
         Content = _root;
         DataContextChanged += (_, _) => Attach(DataContext as DebugToolWindowViewModel);
+        // UI-TW-504: Ctrl+End resumes following the end, wherever the focus is in the window (the list moves its focus to
+        // the last row as well when it has it).
+        AddHandler(KeyDownEvent, (_, e) =>
+        {
+            if (e is { Key: Key.End, KeyModifiers: KeyModifiers.Control } && e.Source is not TextBox)
+            {
+                _followsEnd = true;
+                ScrollToEnd();
+            }
+        }, RoutingStrategies.Tunnel);
         Update();
     }
 
@@ -93,6 +112,7 @@ public abstract class DebugToolWindowView : UserControl
         {
             _grid.SelectionRequested -= OnSelectionRequested;
             _grid.ScrollToEndRequested -= OnScrollToEndRequested;
+            _grid.ColumnWidthsChanged -= OnColumnWidthsChanged;
         }
 
         _model = model;
@@ -103,6 +123,7 @@ public abstract class DebugToolWindowView : UserControl
         {
             _grid.SelectionRequested += OnSelectionRequested;
             _grid.ScrollToEndRequested += OnScrollToEndRequested;
+            _grid.ColumnWidthsChanged += OnColumnWidthsChanged;
             _list.SelectionMode = _grid.MultiSelect ? SelectionMode.Multiple : SelectionMode.Single;
             AutomationProperties.SetName(_list, _grid.Title);
             BuildHeader();
@@ -152,13 +173,100 @@ public abstract class DebugToolWindowView : UserControl
     /// columns of Locals ask for 320 plus the value) the columns share the width in proportion, so that the remaining-width
     /// column never disappears; glyph and check-box columns keep their fixed width.
     /// </summary>
-    private static ColumnDefinition Definition(DebugGridColumn column) =>
-        column.Width <= 0 ? new ColumnDefinition(RemainingWeight, GridUnitType.Star)
-        : column.Width <= FixedColumnLimit ? new ColumnDefinition(column.Width, GridUnitType.Pixel)
-        : new ColumnDefinition(column.Width, GridUnitType.Star) { MaxWidth = column.Width };
+    private ColumnDefinition Definition(DebugGridColumn column)
+    {
+        var definition = new ColumnDefinition();
+        SizeColumn(definition, column);
+        return definition;
+    }
+
+    /// <summary>UI-TW-011/012: a resizable column at the user's width (<see cref="DebugGridViewModel.WidthOf"/>).</summary>
+    private void SizeColumn(ColumnDefinition definition, DebugGridColumn column)
+    {
+        var width = _grid?.WidthOf(column) ?? column.Width;
+        (definition.Width, definition.MaxWidth) = column.Width <= 0 ? (new GridLength(RemainingWeight, GridUnitType.Star), double.PositiveInfinity)
+            : !DebugGridViewModel.IsResizable(column) ? (new GridLength(width, GridUnitType.Pixel), double.PositiveInfinity)
+            : (new GridLength(width, GridUnitType.Star), width);
+    }
 
     private const double RemainingWeight = 200;
-    private const double FixedColumnLimit = 32;
+    private const double DividerWidth = 6;
+
+    /// <summary>A column got another width: the header and the rows shown take it at once (no new rows are made).</summary>
+    private void OnColumnWidthsChanged(object? sender, EventArgs e)
+    {
+        var columns = _grid?.Columns ?? [];
+        IEnumerable<Grid> grids = [_header, .. _list.GetRealizedContainers().SelectMany(c => c.GetVisualDescendants().OfType<Grid>().Where(g => g.Tag is DebugGridRow).Take(1))];
+        foreach (var grid in grids)
+        {
+            for (var i = 0; i < columns.Count && i < grid.ColumnDefinitions.Count; i++)
+                SizeColumn(grid.ColumnDefinitions[i], columns[i]);
+        }
+    }
+
+    /// <summary>
+    /// UI-TW-011: the divider at the right edge of a resizable header cell — dragging it resizes the column (min 32),
+    /// double-clicking it fits the column to its widest content (header and the rows shown).
+    /// </summary>
+    private Border CreateDivider(DebugGridColumn column, int index)
+    {
+        var divider = new Border
+        {
+            Width = DividerWidth,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Background = Brushes.Transparent,
+            Cursor = new Cursor(StandardCursorType.SizeWestEast),
+        };
+        AutomationProperties.SetAutomationId(divider, $"{_prefix}.Column.{column.Id}.Divider");
+        (double X, double Width)? drag = null;
+        divider.PointerPressed += (_, e) =>
+        {
+            if (!e.GetCurrentPoint(divider).Properties.IsLeftButtonPressed)
+                return;
+            e.Handled = true;
+            if (e.ClickCount >= 2)
+            {
+                drag = null;
+                AutoFit(column, index);
+                return;
+            }
+
+            drag = (e.GetPosition(_header).X, _header.ColumnDefinitions[index].ActualWidth);
+            e.Pointer.Capture(divider);
+        };
+        divider.PointerMoved += (_, e) =>
+        {
+            if (drag is { } start)
+                _grid?.ResizeColumn(column.Id, start.Width + e.GetPosition(_header).X - start.X);
+        };
+        divider.PointerReleased += (_, e) =>
+        {
+            e.Handled = true; // not a click on the header cell: the sort stays
+            drag = null;
+            e.Pointer.Capture(null);
+        };
+        divider.PointerCaptureLost += (_, _) => drag = null;
+        return divider;
+    }
+
+    /// <summary>UI-TW-011: the widest of the header text and the column's cells of the rows shown, measured without limit.</summary>
+    private void AutoFit(DebugGridColumn column, int index)
+    {
+        var header = _headerLabels[column.Id].Label;
+        header.Measure(Size.Infinity);
+        var width = header.DesiredSize.Width + DividerWidth;
+        foreach (var grid in _list.GetRealizedContainers().SelectMany(c => c.GetVisualDescendants().OfType<Grid>().Where(g => g.Tag is DebugGridRow).Take(1)))
+        {
+            foreach (var cell in grid.Children.Where(c => Grid.GetColumn(c) == index))
+            {
+                cell.Measure(Size.Infinity);
+                width = Math.Max(width, cell.DesiredSize.Width);
+            }
+        }
+
+        _grid?.ResizeColumn(column.Id, Math.Ceiling(width));
+        InvalidateMeasure();
+    }
 
     private void BuildHeader()
     {
@@ -190,6 +298,12 @@ public abstract class DebugToolWindowView : UserControl
             _headerLabels[column.Id] = (label, column.Header);
             Grid.SetColumn(cell, i);
             _header.Children.Add(cell);
+            if (DebugGridViewModel.IsResizable(column))
+            {
+                var divider = CreateDivider(column, i);
+                Grid.SetColumn(divider, i);
+                _header.Children.Add(divider);
+            }
         }
     }
 
@@ -234,10 +348,28 @@ public abstract class DebugToolWindowView : UserControl
             _list.ScrollIntoView(first);
     }
 
+    /// <summary>UI-TW-504 / UI-TW-1300: appended rows keep the list at its end only while it follows the end.</summary>
     private void OnScrollToEndRequested(object? sender, EventArgs e)
+    {
+        if (_followsEnd)
+            ScrollToEnd();
+    }
+
+    private void ScrollToEnd()
     {
         if (_grid is { Rows: [.., var last] })
             _list.ScrollIntoView(last);
+    }
+
+    /// <summary>
+    /// UI-TW-504: the user's scrolling decides whether the list follows the end — scrolled up it stops, scrolled back to
+    /// the end it resumes. A change of the content alone (rows appended, the offset unchanged) decides nothing.
+    /// </summary>
+    private void OnScrollChanged(object? sender, ScrollChangedEventArgs e)
+    {
+        if (e.OffsetDelta.Y == 0 || _scroller is not { } scroller)
+            return;
+        _followsEnd = scroller.Offset.Y + scroller.Viewport.Height >= scroller.Extent.Height - 1;
     }
 
     private void OnSelectionChanged(object? sender, SelectionChangedEventArgs e)

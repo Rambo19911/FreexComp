@@ -486,10 +486,10 @@ public sealed class WatchesViewModel : VariableTreeViewModel
 
     public override bool ShowsContentWhenEmpty => true;
 
-    // The catalogue of toolbars.md §4 has no plus / pencil / x / x-all yet: the nearest catalogue icons stand in.
+    // tool-windows.md §13 names no icons: those of the same commands of Breakpoints, and pencil for Edit (I-223).
     public override IReadOnlyList<ToolWindowToolBarItem> ToolBarCommands { get; } =
     [
-        new("watches.add", "new-file"), new("watches.edit", "settings"), new("watches.delete", "close"), new("watches.deleteAll", "clear"),
+        new("watches.add", "plus"), new("watches.edit", "pencil"), new("watches.delete", "x"), new("watches.deleteAll", "x-all"),
     ];
 
     public override IReadOnlyList<string?> ContextCommands { get; } =

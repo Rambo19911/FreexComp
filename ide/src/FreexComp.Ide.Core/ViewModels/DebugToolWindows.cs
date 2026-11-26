@@ -102,11 +102,11 @@ public sealed class BreakpointsViewModel : DebugGridViewModel
 
     public override bool MultiSelect => true;
 
-    // The catalogue of toolbars.md §4 has no plus / x / x-all / check-all / uncheck-all yet: the nearest catalogue icons stand in.
+    // tool-windows.md §10 (I-223: own icons of the toolbars.md §4 catalogue).
     public override IReadOnlyList<ToolWindowToolBarItem> ToolBarCommands { get; } =
     [
-        new("run.addBreakpoint", "breakpoint"), new("breakpoints.delete", "close"), new("run.deleteAllBreakpoints", "clear"),
-        new("breakpoints.enableAll", "success"), new("breakpoints.disableAll", "minus"),
+        new("run.addBreakpoint", "plus"), new("breakpoints.delete", "x"), new("run.deleteAllBreakpoints", "x-all"),
+        new("breakpoints.enableAll", "check-all"), new("breakpoints.disableAll", "uncheck-all"),
     ];
 
     public override IReadOnlyList<string?> ContextCommands { get; } =

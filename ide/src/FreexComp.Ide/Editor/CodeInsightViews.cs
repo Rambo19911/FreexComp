@@ -7,6 +7,7 @@ using Avalonia.Media;
 using AvaloniaEdit.Document;
 using AvaloniaEdit.Rendering;
 using FreexComp.Ide.Core.CodeModel;
+using FreexComp.Ide.Icons;
 
 namespace FreexComp.Ide.Editor;
 
@@ -112,6 +113,7 @@ public sealed class HoverView : Border
 {
     private readonly StackPanel _content = new() { Spacing = 4 };
     private HoverSession? _session;
+    private Core.Debugging.HoverValueNode? _node;
 
     public HoverView()
     {
@@ -183,11 +185,21 @@ public sealed class HoverView : Border
             }
         }
 
-        if (ValueLine is { } valueLine)
+        if (_node != info.ValueNode)
+        {
+            _node?.Changed -= OnChanged;
+            _node = info.ValueNode;
+            _node?.Changed += OnChanged; // DBG-258: expanding a node draws the tooltip again
+        }
+
+        if (ValueLine is { } valueLine && info.ValueNode is { } node)
         {
             var line = new TextBlock { Text = valueLine, Classes = { "codeSmall" }, TextWrapping = TextWrapping.Wrap };
             AutomationProperties.SetAutomationId(line, "Editor.Hover.Value");
-            _content.Children.Add(line);
+            var tree = new StackPanel();
+            tree.Children.Add(ValueRow(node, line, "Editor.Hover.Value.Expander"));
+            AddChildren(tree, node);
+            _content.Children.Add(new ScrollViewer { Content = tree, MaxHeight = ValueTreeMaxHeight, HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled });
         }
 
         if (info.Content is { } content)
@@ -206,6 +218,71 @@ public sealed class HoverView : Border
 
         IsVisible = true;
         PlacementRequested?.Invoke(this, EventArgs.Empty);
+    }
+
+    private const double ValueTreeMaxHeight = 320;
+    private const double ValueIndent = 16; // space.6 per level, as the debug tool windows' trees
+
+    /// <summary>
+    /// DBG-258: a line of the value tree — the expander (chevron, <c>Editor.Hover.Row.&lt;key&gt;.Expander</c>) of an
+    /// expandable node or the space of one, then the text; indented per level.
+    /// </summary>
+    private static DockPanel ValueRow(Core.Debugging.HoverValueNode node, TextBlock text, string expanderId)
+    {
+        var row = new DockPanel { Margin = new Thickness(node.Level * ValueIndent, 0, 0, 0) };
+        var expander = new Border { Width = 16, MinHeight = 16, Background = Brushes.Transparent, Focusable = false };
+        if (node.CanExpand)
+        {
+            expander.Child = new IdeIcon
+            {
+                IconName = node.IsExpanded ? "chevron-down" : "chevron-right", Width = 8, Height = 8,
+                HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
+            };
+            AutomationProperties.SetAutomationId(expander, expanderId);
+            // Every press toggles (two quick presses are a double tap, not two taps).
+            expander.PointerPressed += (_, e) =>
+            {
+                if (!e.GetCurrentPoint(expander).Properties.IsLeftButtonPressed)
+                    return;
+                e.Handled = true;
+                _ = node.ToggleAsync(); // never faults: what cannot be read shows no children
+            };
+        }
+
+        DockPanel.SetDock(expander, Dock.Left);
+        row.Children.Add(expander);
+        row.Children.Add(text);
+        return row;
+    }
+
+    /// <summary>The lines of the expanded children of <paramref name="node"/>, depth first; "Loading…" while they are read.</summary>
+    private static void AddChildren(StackPanel tree, Core.Debugging.HoverValueNode node)
+    {
+        if (!node.IsExpanded)
+            return;
+        if (node.Children is not { } children)
+        {
+            var loading = new TextBlock { Text = Core.Resources.Strings.Msg_Debug_Loading, Classes = { "caption" }, Margin = new Thickness((node.Level + 1) * ValueIndent + 16, 0, 0, 0) };
+            loading.Bind(TextBlock.ForegroundProperty, loading.GetResourceObservable("FxcTextTertiaryBrush"));
+            tree.Children.Add(loading);
+            return;
+        }
+
+        foreach (var child in children)
+        {
+            var id = "Editor.Hover.Row." + child.Key;
+            var text = new TextBlock
+            {
+                Text = child.Info is { } info
+                    ? string.Format(System.Globalization.CultureInfo.CurrentCulture, Core.Resources.Strings.Debug_Hover_Child, child.Name, info.Value)
+                    : child.Name,
+                Classes = { "codeSmall" },
+                TextWrapping = TextWrapping.Wrap,
+            };
+            AutomationProperties.SetAutomationId(text, id);
+            tree.Children.Add(ValueRow(child, text, id + ".Expander"));
+            AddChildren(tree, child);
+        }
     }
 }
 

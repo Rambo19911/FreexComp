@@ -2,6 +2,7 @@ using System.Text.RegularExpressions;
 using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using FreexComp.Ide.Core.Debugging;
 using FreexComp.Ide.Core.Models;
 using FreexComp.Ide.Core.Resources;
@@ -167,5 +168,92 @@ public sealed partial class EventLogViewTests
         Assert.Equal(["Process: " + Strings.Msg_Run_Terminated], log.Rows.Select(Row));
         Assert.Equal("0", log.Rows[0].Key);
         Assert.Same(debug.Log[0], log.Rows[0].Tag);
+    }
+
+    /// <summary>
+    /// UI-TW-504 for the Event Log (I-223, UI-TW-1300 "auto-scrolling as Output"): at the end, appended rows keep the list
+    /// at the end; scrolled up, it stays where the user put it while rows are appended; scrolled back to the end, or with
+    /// Ctrl+End, it follows again. The debugger's messages of each stop are the appended rows.
+    /// </summary>
+    [AvaloniaFact(Timeout = TestDeadline.DebugTestTimeout)]
+    [Trait("Req", "UI-TW-504")]
+    [Trait("Req", "UI-TW-1300")]
+    public async Task AutoScrollPausesWhenScrolledUp()
+    {
+        await using var h = await DebugScenario.StartAsync();
+        var unitPath = DebugScenario.UnitPath(h);
+        var log = h.Services.DebugShell!.EventLog;
+        static string Lines(string name, int count) =>
+            $$"""{ "event": "output", "body": { "category": "console", "output": {{DebugScenarios.Json(string.Concat(Enumerable.Range(1, count).Select(i => $"{name} {i}\n")))}} } }""";
+        string RunTo(int line, int count) =>
+            DebugScenarios.Continue(Lines("line " + line, count) + ", " + DebugScenarios.StoppedEvent()) + ", " + DebugScenarios.AtStop([("Run", unitPath, line)]);
+        h.DebugSessions.UseScenario($$"""
+            { "steps": [
+              { "on": "configurationDone", "respond": {}, "thenEvents": [ {{Lines("start", 60)}}, {{DebugScenarios.StoppedEvent()}} ] },
+              {{DebugScenarios.AtStop([("Run", unitPath, 5)])}},
+              {{RunTo(6, 5)}},
+              {{RunTo(7, 5)}},
+              {{RunTo(8, 5)}},
+              {{RunTo(9, 5)}},
+              {{DebugScenarios.Continue(Lines("end", 5) + ", " + DebugScenarios.Exit())}} ] }
+            """);
+        void Show()
+        {
+            h.Services.Layout.Layout.BottomSize = 200; // fewer rows than the log has
+            Assert.True(h.Services.ToolWindows.Show(EventLogViewModel.ToolName, focus: true));
+            Dispatcher.UIThread.RunJobs();
+        }
+
+        ScrollViewer? scroller = null;
+        bool AtEnd() => scroller!.Offset.Y + scroller.Viewport.Height >= scroller.Extent.Height - 1;
+        async Task ContinueToAsync(int line)
+        {
+            var rows = log.Rows.Count;
+            h.Press("F5");
+            await DebugScenario.WaitForStopAsync(h, line);
+            Show();
+            Assert.True(log.Rows.Count > rows);
+        }
+
+        h.Press("F5");
+        await DebugScenario.WaitForStopAsync(h, 5);
+        Show();
+        scroller = h.Find<ListBox>("Tool.EventLog.List").GetVisualDescendants().OfType<ScrollViewer>().First();
+        Assert.True(scroller.Extent.Height > 2 * scroller.Viewport.Height, $"{scroller.Extent} in {scroller.Viewport}");
+        h.Press("Ctrl+End"); // the focus is in the window, not necessarily in the list
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(AtEnd());
+
+        // At the end: appended rows keep it there.
+        await ContinueToAsync(6);
+        Assert.True(AtEnd());
+
+        // Scrolled up: it stays there while rows are appended.
+        scroller.Offset = new Avalonia.Vector(0, 100); // as the wheel does
+        Dispatcher.UIThread.RunJobs();
+        await ContinueToAsync(7);
+        Assert.Equal(100, scroller.Offset.Y);
+        Assert.False(AtEnd());
+
+        // Scrolled back to the end: it follows again.
+        scroller.Offset = new Avalonia.Vector(0, scroller.Extent.Height - scroller.Viewport.Height);
+        Dispatcher.UIThread.RunJobs();
+        await ContinueToAsync(8);
+        Assert.True(AtEnd());
+
+        // Scrolled up, then Ctrl+End: it follows again.
+        scroller.Offset = new Avalonia.Vector(0, 50);
+        Dispatcher.UIThread.RunJobs();
+        await ContinueToAsync(9);
+        Assert.Equal(50, scroller.Offset.Y);
+        h.Press("Ctrl+End");
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(AtEnd());
+        h.Press("F5");
+        await DebugScenario.WaitForStateAsync(h, IdeState.Idle);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal("Process: Process 0 exited with code 0", Row(log.Rows[^1]));
+        Assert.True(AtEnd());
+        await DebugScenario.WaitForScenarioCompleteAsync(h);
     }
 }

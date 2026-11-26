@@ -319,30 +319,40 @@ public sealed partial class DebugService
     // ---- value tooltips (editor.md UI-ED-130) ----
 
     /// <summary>
-    /// The value of the identifier at <paramref name="offset"/> of <paramref name="document"/> while paused
-    /// (<c>debugger.evaluateTooltips</c>, <c>EvaluateContext.Hover</c>): its range and value text; null when there is
-    /// none — errors are not shown (DBG-412).
+    /// The value under the pointer at <paramref name="offset"/> of <paramref name="document"/> while paused
+    /// (<c>debugger.evaluateTooltips</c>, <c>EvaluateContext.Hover</c>): the identifier or the full designator up to the
+    /// hovered token, from the syntax tree (DBG-258, <see cref="HoverExpression"/>), with the hovered token's range and
+    /// an expandable value node; null when there is none — errors are not shown (DBG-412).
     /// </summary>
-    public async Task<(int Offset, int Length, string Value)?> HoverValueAsync(TextDocumentViewModel document, int offset)
+    public async Task<HoverValue?> HoverValueAsync(TextDocumentViewModel document, int offset)
     {
         ArgumentNullException.ThrowIfNull(document);
-        if (!IsPaused || !_settings.Get(SettingsCatalog.DebuggerEvaluateTooltips) || offset < 0 || offset > document.Buffer.Length)
+        if (!IsPaused || !_settings.Get(SettingsCatalog.DebuggerEvaluateTooltips) || offset < 0 || offset >= document.Buffer.Length)
             return null;
-        var (start, end) = EditorOperations.WordAt(document.Buffer, offset);
-        var word = document.Buffer.GetText(start, end - start);
-        if (word.Length == 0 || !(char.IsLetter(word[0]) || word[0] == '_'))
+        if (HoverExpression.At(document.FilePath ?? "", document.Buffer.Text, offset) is not { } hovered)
             return null;
-        var evaluation = EvaluateAsync(word, EvaluateContext.Hover);
+        var evaluation = EvaluateAsync(hovered.Expression, EvaluateContext.Hover);
         _ = Track(evaluation);
         try
         {
             var value = (await evaluation).Value;
-            return value.Kind == ValueKind.Error ? null : (start, end - start, value.Value);
+            return value.Kind == ValueKind.Error ? null
+                : new HoverValue(hovered.Start, hovered.Length, HoverValueNode.Root(hovered.Expression, value, ReadHoverChildrenAsync));
         }
         catch (Exception e) when (e is DebuggerException or ObjectDisposedException or OperationCanceledException)
         {
             return null;
         }
+    }
+
+    /// <summary>The children of a tooltip's value node, read in the session they belong to; tracked like every view's request.</summary>
+    private Task<IReadOnlyList<VariableInfo>> ReadHoverChildrenAsync(VariableHandle handle, int start, int count)
+    {
+        if (_active is not { Finishing: false } active || !IsPaused)
+            return Task.FromException<IReadOnlyList<VariableInfo>>(new ObjectDisposedException(nameof(IDebugSession)));
+        var children = active.Session.GetChildrenAsync(handle, start, count);
+        _ = Track(children);
+        return children;
     }
 
     // ---- Msg.Debug.SourceChanged (IDE-P3-006) ----

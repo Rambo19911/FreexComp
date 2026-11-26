@@ -3,6 +3,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
 using Avalonia.Media;
+using Avalonia.VisualTree;
 using FreexComp.Ide.Core.Tests.Infrastructure;
 using FreexComp.Ide.Icons;
 
@@ -103,6 +104,46 @@ public sealed partial class IconTests
         Assert.True(Px(dot.Width) >= 1.99 && Px(dot.Height) >= 0.99, $"dot {dot}");
         Assert.True(Px(dot.Top - bar.Bottom) >= 0.99, $"bar {bar} and dot {dot} run together");
         Assert.Equal(8.0, (bar.Left + bar.Right) / 2, 3); // centred under the apex
+    }
+
+    /// <summary>
+    /// I-223 (tool-windows.md §10 and §13, toolbars.md §4): the tool bars of Breakpoints and Watches show their own icons —
+    /// <c>plus</c>, <c>x</c>, <c>x-all</c>, <c>check-all</c>, <c>uncheck-all</c> and <c>pencil</c> — instead of the nearest
+    /// catalogue icons that stood in for them; each is an outline drawing in <c>text.primary</c> on the 16 grid.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Phase", "8")]
+    [Trait("Req", "UI-TW-008")]
+    [Trait("Req", "UI-TOK-040")]
+    [Trait("Req", "UI-TW-1107")]
+    public async Task DebugToolBarsShowTheirOwnIcons()
+    {
+        await using var h = await Infrastructure.DebugScenario.StartAsync();
+        string Icon(string tool, string command) =>
+            h.Find<Button>($"Tool.{tool}.ToolBar.{command}").GetVisualDescendants().OfType<IdeIcon>().Single().IconName!;
+
+        Assert.True(h.Services.ToolWindows.Show(Core.ViewModels.BreakpointsViewModel.ToolName, focus: false));
+        Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+        Assert.Equal(["plus", "x", "x-all", "check-all", "uncheck-all"],
+            ((string[])["run.addBreakpoint", "breakpoints.delete", "run.deleteAllBreakpoints", "breakpoints.enableAll", "breakpoints.disableAll"]).Select(c => Icon("Breakpoints", c)));
+        Assert.True(h.Services.ToolWindows.Show(Core.ViewModels.WatchesViewModel.ToolName, focus: false));
+        Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+        Assert.Equal(["plus", "pencil", "x", "x-all"],
+            ((string[])["watches.add", "watches.edit", "watches.delete", "watches.deleteAll"]).Select(c => Icon("Watches", c)));
+
+        foreach (var name in (string[])["plus", "x", "x-all", "check-all", "uncheck-all", "pencil"])
+        {
+            var icon = IconCatalog.Get(name);
+            Assert.Equal("text.primary", icon.ColorToken);
+            Assert.All(icon.Layers, layer =>
+            {
+                var bounds = layer.Geometry.Bounds;
+                Assert.True((bounds.Width > 0 || bounds.Height > 0) && bounds.X >= 0 && bounds.Y >= 0 && bounds.Right <= 16 && bounds.Bottom <= 16, $"{name}: {bounds}");
+                Assert.False(layer.IsFilled, $"{name}: an outline drawing");
+            });
+        }
+
+        Assert.NotEqual(IconCatalog.Get("x").Layers[0].Geometry.Bounds, IconCatalog.Get("close").Layers[0].Geometry.Bounds); // 10 × 10, not the 8 × 8 close
     }
 
     /// <summary>toolbars.md §4: icon name → colour token (the brief's "; token" suffix, else <c>text.primary</c>).</summary>

@@ -106,6 +106,13 @@ public sealed class DebugGridEdit(string rowKey, string column, string text, Fun
 /// </summary>
 public abstract class DebugGridViewModel : DebugToolWindowViewModel, ICommandTarget
 {
+    /// <summary>UI-TW-011: the narrowest a resized column gets.</summary>
+    public const double MinColumnWidth = 32;
+
+    /// <summary>Glyph and check-box columns (24, 28) are at most this wide; they keep their width.</summary>
+    private const double FixedColumnWidth = 32;
+
+    private readonly Dictionary<string, double> _widths = new(StringComparer.Ordinal);
     private IReadOnlyList<DebugGridRow> _rows = [];
     private IReadOnlyList<string> _selectedKeys = [];
     private DebugGridEdit? _edit;
@@ -195,7 +202,50 @@ public abstract class DebugGridViewModel : DebugToolWindowViewModel, ICommandTar
         else if (!SortDescending)
             SortDescending = true;
         else
-            SortColumn = null;
+            (SortColumn, SortDescending) = (null, false);
+        StoreSort(SortColumn is { } sorted ? new Layout.ColumnSort(sorted, SortDescending) : null); // UI-TW-012
+        OnPropertyChanged(nameof(SortColumn));
+        OnSortChanged();
+    }
+
+    /// <summary>
+    /// UI-TW-011: a column the user can resize by dragging its header divider — one with a width of its own wider than a
+    /// glyph or check-box column; the remaining-width column (<c>*</c>) and the fixed glyph columns are not.
+    /// </summary>
+    public static bool IsResizable(DebugGridColumn column) => column?.Width > FixedColumnWidth;
+
+    /// <summary>The width of a column: the user's (UI-TW-012, persisted) or the specified one.</summary>
+    public double WidthOf(DebugGridColumn column)
+    {
+        ArgumentNullException.ThrowIfNull(column);
+        if (!IsResizable(column))
+            return column.Width;
+        var width = _widths.TryGetValue(column.Id, out var set) ? set : ColumnWidth(column.Id) ?? column.Width;
+        return Math.Max(MinColumnWidth, width);
+    }
+
+    /// <summary>The user dragged a header divider or auto-fitted a column (UI-TW-011): at least 32 wide; persisted (UI-TW-012).</summary>
+    public void ResizeColumn(string columnId, double width)
+    {
+        if (Columns.FirstOrDefault(c => c.Id == columnId) is not { } column || !IsResizable(column))
+            return;
+        width = Math.Max(MinColumnWidth, Math.Round(width));
+        if (WidthOf(column) == width)
+            return;
+        _widths[columnId] = width;
+        SetColumnWidth(columnId, width);
+        ColumnWidthsChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>A column got another width (<see cref="ResizeColumn"/>).</summary>
+    public event EventHandler? ColumnWidthsChanged;
+
+    /// <summary>UI-TW-012: the sort of the last session; a column that is not sortable (any more) is ignored.</summary>
+    protected override void OnAttached()
+    {
+        if (StoredSort is not { } sort || Columns.FirstOrDefault(c => c.Id == sort.Column) is not { Sortable: true })
+            return;
+        (SortColumn, SortDescending) = (sort.Column, sort.Descending);
         OnPropertyChanged(nameof(SortColumn));
         OnSortChanged();
     }

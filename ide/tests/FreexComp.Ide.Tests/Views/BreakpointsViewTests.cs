@@ -214,4 +214,82 @@ public sealed class BreakpointsViewTests
         Assert.Equal(Strings.Msg_Debug_BreakpointsEmpty, view.EmptyHeading);
         Assert.False(commands.CanExecute("breakpoints.delete"));
     }
+
+    /// <summary>
+    /// UI-TW-011 / UI-TW-012 (I-223): a column with a width of its own is resized by dragging its header divider (never
+    /// below 32) and fitted to its widest content by double-clicking it; the rows follow at once. The widths and the sort
+    /// are stored in <c>toolWindows.Breakpoints</c> and restored at the next start. The remaining-width column and the
+    /// glyph and check-box columns have no divider.
+    /// </summary>
+    [AvaloniaFact(Timeout = TestDeadline.DebugTestTimeout)]
+    [Trait("Req", "UI-TW-011")]
+    [Trait("Req", "UI-TW-012")]
+    public async Task ColumnWidthAndSortArePersisted()
+    {
+        const string divider = "Tool.Breakpoints.Column.Location.Divider";
+        static void Show(HeadlessHarness h)
+        {
+            var unitPath = DebugScenario.UnitPath(h);
+            h.Services.Breakpoints!.Toggle(unitPath, 5);
+            h.Services.Breakpoints.Toggle(unitPath, 6);
+            h.Services.Layout.Layout.BottomSize = 400;
+            Assert.True(h.Services.ToolWindows.Show(BreakpointsViewModel.ToolName, focus: true));
+            Dispatcher.UIThread.RunJobs();
+        }
+
+        static double Header(HeadlessHarness h, string column) => h.Find<Control>($"Tool.Breakpoints.Column.{column}").Bounds.Width;
+        static double RowColumn(HeadlessHarness h, string key, int column) => h.Find<Grid>($"Tool.Breakpoints.Row.{key}").ColumnDefinitions[column].ActualWidth;
+
+        byte[] saved;
+        await using (var h = await DebugScenario.StartAsync())
+        {
+            var view = h.Services.DebugShell!.Breakpoints;
+            Show(h);
+            var location = view.Columns.Single(c => c.Id == "Location");
+            Assert.Equal((220, 220, 220), (view.WidthOf(location), Header(h, "Location"), RowColumn(h, "Unit1.pas:5", 2)));
+            Assert.NotNull(h.TryFind<Control>("Tool.Breakpoints.Column.PassCount.Divider"));
+            Assert.Null(h.TryFind<Control>("Tool.Breakpoints.Column.Condition.Divider")); // the remaining width
+            Assert.Null(h.TryFind<Control>("Tool.Breakpoints.Column.State.Divider")); // a glyph column
+            Assert.Null(h.TryFind<Control>("Tool.Breakpoints.Column.Enabled.Divider")); // the check box
+
+            // Dragging the divider: the header and the rows at once; no sort.
+            h.Drag(divider, 40, 0);
+            Assert.Equal((260, 260, 260), (view.WidthOf(location), Header(h, "Location"), RowColumn(h, "Unit1.pas:5", 2)));
+            Assert.Null(view.SortColumn);
+            h.Drag(divider, -1000, 0);
+            Assert.Equal((32, 32), (Header(h, "Location"), RowColumn(h, "Unit1.pas:6", 2)));
+
+            // Double-click: as wide as the widest of the header and the cells, all shown in full.
+            h.DoubleClick(divider);
+            var fitted = Header(h, "Location");
+            Assert.InRange(fitted, 40, 200);
+            Assert.Equal(fitted, RowColumn(h, "Unit1.pas:5", 2));
+            var cell = h.Find<TextBlock>("Tool.Breakpoints.Row.Unit1.pas:5.Location");
+            Assert.True(cell.Bounds.Width + cell.Margin.Left + cell.Margin.Right <= fitted, $"{cell.Bounds.Width} in {fitted}");
+            Assert.False(cell.TextLayout.TextLines.Any(l => l.HasCollapsed), "the cell text is trimmed");
+            h.Drag(divider, 250 - fitted, 0);
+            Assert.Equal(250, Header(h, "Location"));
+
+            h.Click("Tool.Breakpoints.Column.Location");
+            h.Click("Tool.Breakpoints.Column.Location"); // descending
+            Assert.Equal(["Unit1.pas:6", "Unit1.pas:5"], view.Rows.Select(r => r.Key));
+            h.Window.Close();
+            Dispatcher.UIThread.RunJobs();
+            saved = File.ReadAllBytes(Path.Combine(h.UserDir, "roaming", "uistate.json"));
+        }
+
+        var text = System.Text.Encoding.UTF8.GetString(saved);
+        Assert.Contains("\"Location\": 250", text, StringComparison.Ordinal);
+        Assert.Contains("\"sort\": {\n        \"column\": \"Location\",\n        \"direction\": \"descending\"\n      }", text, StringComparison.Ordinal);
+
+        await using (var h = await DebugScenario.StartAsync(o => o.UserFiles["roaming/uistate.json"] = saved))
+        {
+            var view = h.Services.DebugShell!.Breakpoints;
+            Assert.Equal(("Location", true), (view.SortColumn, view.SortDescending));
+            Show(h);
+            Assert.Equal((250, 250), (Header(h, "Location"), RowColumn(h, "Unit1.pas:5", 2)));
+            Assert.Equal(["Unit1.pas:6", "Unit1.pas:5"], view.Rows.Select(r => r.Key));
+            Assert.Equal(80, Header(h, "PassCount")); // the others keep theirs
+        }
+    }
 }
