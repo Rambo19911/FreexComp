@@ -175,6 +175,8 @@ public sealed class AccessibilityClientTests
     /// probe's live windows and objects of its own: before U-163 the test failed whenever that happened).
     /// U-164: the counts do not depend either on whether another process gives the probe the foreground during the
     /// cycles (<see cref="ThousandFormCycles"/>: warm-up with the foreground, counts with no window of the probe active).
+    /// U-168: before the first count the client also asks every framework window of the probe for its provider
+    /// (<see cref="ProvideEveryWindow"/>), and the first count must be exactly those providers.
     /// </summary>
     [Fact]
     [Trait("Req", "UIF-1425")]
@@ -196,8 +198,12 @@ public sealed class AccessibilityClientTests
     /// U-163 (UIF-1425, UIF-1426, UIF-1440): the cycles of <see cref="Uia_ProvidersReleasedOverThousandFormCycles"/>
     /// with no listening client of the test during the first 500 forms and one from then on (the failure of the
     /// lead's run, deterministic: a client of another process started listening). Each half keeps its counts (the
-    /// second one counted once the client listens, when the system has created the providers of the probe's live
-    /// windows), and across both no provider object is left without its control.
+    /// second one counted once the client listens), and across both no provider object is left without its control.
+    /// U-168: the providers of the probe's framework windows exist before the first count (<see cref="ProvideEveryWindow"/>),
+    /// so the first half does not depend on a client of another process that starts listening (the lead's full verify
+    /// failed with <c>providers 1 -> providers 8</c> beside the data area's client test; reproduced by
+    /// <see cref="Uia_ProvidersReleasedWhenAnotherProcessStartsListening"/>), and the provider count once the test's
+    /// client listens must equal the first one.
     /// </summary>
     [Fact]
     [Trait("Req", "UIF-1425")]
@@ -212,6 +218,87 @@ public sealed class AccessibilityClientTests
         probe.RemoveHandlers();
         Assert.True(failure is null, failure);
         probe.Close();
+    }
+
+    /// <summary>
+    /// U-168 (UIF-1425, UIF-1426, UIF-1440): the cycles of <see cref="Uia_ProvidersReleasedWhenAClientStartsListening"/>
+    /// while a client of another process (<see cref="OutsideListener"/>) starts listening before the 250th form, in the
+    /// half in which the test's own client does not listen yet (the failure of the lead's full verify beside the data
+    /// area's client test, deterministic). The counts are those of the other cycle tests.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "UIF-1425")]
+    [Trait("Req", "UIF-1426")]
+    [Trait("Req", "UIF-1440")]
+    public void Uia_ProvidersReleasedWhenAnotherProcessStartsListening()
+    {
+        Harness.RequireDesktop();
+        using var probe = Probe.Start();
+        using var turns = new ForegroundTurns(probe);
+        Gui.GuiProcess? outside = null;
+        try
+        {
+            var failure = ThousandFormCycles(probe, turns, () => Listen(probe), round =>
+            {
+                if (round == 25)
+                {
+                    outside = OutsideListener.Start(probe);
+                }
+            });
+            probe.RemoveHandlers();
+            Assert.True(outside is not null, "the outside listener was not started");
+            OutsideListener.Close(outside, probe.Remaining);
+            Assert.True(failure is null, failure);
+            probe.Close();
+        }
+        finally
+        {
+            outside?.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// U-168: <c>tests/gui/OutsideListener.pas</c>, a UI Automation client of another process with a desktop
+    /// focus-changed handler (what a client test of another area running beside this project has). It is closed with
+    /// <c>WM_CLOSE</c>, so that it removes its handler as such a test does (a killed client leaves its registration to
+    /// the system's clean-up, which the next test of this project would meet).
+    /// </summary>
+    internal static class OutsideListener
+    {
+        public static string Source => Path.Combine(UiCorpus.AreaDirectory, "tests", "gui", "OutsideListener.pas");
+
+        /// <summary>
+        /// Starts the listener (in the job object of the test host; the caller closes it with <see cref="Close"/> and
+        /// disposes it: killed if it still runs) and waits until it has registered its handler and the probe's
+        /// <c>UiaClientsAreListening</c> is True.
+        /// </summary>
+        public static Gui.GuiProcess Start(Probe probe)
+        {
+            var listener = Gui.StartGui(Gui.BuildProgram(Source), [], new Dictionary<string, string>());
+            try
+            {
+                Assert.True(listener.WaitForOutputLine("listening", probe.Remaining),
+                    $"the outside listener did not listen\n--- stdout\n{listener.StdOut}\n--- stderr\n{listener.StdErr}");
+                Assert.True(
+                    probe.WaitUntil(() => probe.Request(WM_PROBE_LISTENING, "listening ") == "listening True"),
+                    "the probe does not see the outside listener");
+                return listener;
+            }
+            catch
+            {
+                listener.Dispose();
+                throw;
+            }
+        }
+
+        /// <summary>Posts <c>WM_CLOSE</c> to the listener's window (its line <c>window &lt;hex&gt;</c>): it removes its handler and exits with 0.</summary>
+        public static void Close(Gui.GuiProcess listener, TimeSpan limit)
+        {
+            var line = listener.StdOut.Split('\n').Select(l => l.TrimEnd('\r')).Single(l => l.StartsWith("window ", StringComparison.Ordinal));
+            Gui.Post(new IntPtr(Convert.ToInt64(line[7..], 16)), Gui.WM_CLOSE);
+            Assert.True(listener.WaitForExit(limit), listener.ExitFailure("the outside listener, after WM_CLOSE,"));
+            Assert.Equal(0, listener.Process.ExitCode);
+        }
     }
 
     /// <summary>
@@ -266,6 +353,50 @@ public sealed class AccessibilityClientTests
     }
 
     /// <summary>
+    /// U-168: the client asks every framework window of the probe (top-level windows of its thread, shown or hidden,
+    /// and their child windows; class name <c>PN.</c>…) for its element, so that the provider of each one exists
+    /// (UIF-1425: kept with its control). Those are the providers the system creates when a client of any process
+    /// starts listening (UIF-1425, amended U-163); once they exist, a count of live providers no longer depends on
+    /// whether a client listens. Returns how many windows were asked.
+    /// </summary>
+    internal static int ProvideEveryWindow(Probe probe)
+    {
+        var thread = ThreadWindows.ThreadOf(probe.Window);
+        var windows = new List<IntPtr>();
+        ThreadWindows.EnumThreadWindows(thread, (h, _) =>
+        {
+            windows.Add(h);
+            return true;
+        }, IntPtr.Zero);
+        var asked = 0;
+        foreach (var window in windows.SelectMany(w => new[] { w }.Concat(Gui.Descendants(w))))
+        {
+            if (Gui.ClassName(window).StartsWith("PN.", StringComparison.Ordinal))
+            {
+                Assert.NotNull(probe.Client.ElementFromHandle(window));
+                asked++;
+            }
+        }
+
+        return asked;
+    }
+
+    /// <summary>U-168: the top-level windows of a thread (<c>EnumThreadWindows</c>).</summary>
+    private static class ThreadWindows
+    {
+        public delegate bool EnumProc(IntPtr hwnd, IntPtr lParam);
+
+        public static uint ThreadOf(IntPtr hwnd) => GetWindowThreadProcessId(hwnd, out _);
+
+        [DllImport("user32.dll", ExactSpelling = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool EnumThreadWindows(uint thread, EnumProc callback, IntPtr lParam);
+
+        [DllImport("user32.dll", ExactSpelling = true)]
+        private static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint process);
+    }
+
+    /// <summary>
     /// The probe opens and frees a second form 1 000 times; each tenth form is read by the client, which keeps the
     /// elements it took (the form, a panel and graphic controls) until the end. Null when the GDI and USER object
     /// counts of the probe (bound of <c>HelloForm_NoGdiLeakOnResize</c>) and its count of live provider objects are
@@ -281,6 +412,11 @@ public sealed class AccessibilityClientTests
     /// in front when a window of the probe has the foreground; then the foreground goes back to the window that had it
     /// before the test. The edits that take the focus are borderless (<c>WM_APP + 14</c> of the probe: the system's
     /// border animations of themed edits keep a varying number of objects, see the probe). The bounds are unchanged.
+    /// U-168, the same providers at every count whether or not a client of any process listens: after the warm-up the
+    /// client asks every framework window of the probe for its provider (<see cref="ProvideEveryWindow"/>; the providers
+    /// the system creates when a client starts listening, kept with their controls), and the first count must be
+    /// exactly one provider per framework window (no provider of a warm-up form left); with <paramref name="midway"/>
+    /// the provider count taken after it must be the first one (listening adds none).
     /// </summary>
     private static string? ThousandFormCycles(Probe probe, ForegroundTurns turns, Action? midway, Action<int>? everyRound = null)
     {
@@ -329,7 +465,14 @@ public sealed class AccessibilityClientTests
         Round(0);                                                        // warm-up: a form activated, its edit focused
         turns.ToHolder();
         Round(0);                                                        // warm-up: a form of the inactive probe
+        var windows = $"providers {ProvideEveryWindow(probe)}";        // U-168: from here on no listener adds one
         var before = Take();
+        if (before.Providers != windows)
+        {
+            return $"before the cycles: {before.Providers}, but the probe has {windows[10..]} framework windows "
+                + "(a provider of a freed warm-up form is left, or one of a persistent window is missing)";
+        }
+
         for (var i = 0; i < 100; i++)
         {
             if (i == 50 && midway is not null)
@@ -341,7 +484,13 @@ public sealed class AccessibilityClientTests
 
                 midway();
                 Round(0);                                                // the first form with the client listening
-                before = Take();
+                var listening = Take();
+                if (listening.Providers != before.Providers)
+                {
+                    return $"once the client listens: {before.Providers} -> {listening.Providers}";
+                }
+
+                before = listening;
             }
 
             everyRound?.Invoke(i);
