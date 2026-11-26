@@ -17,7 +17,12 @@ namespace FreexComp.Ide.Core.Designer;
 /// stay). The descendants change before the ancestor and in the same undo unit (<see cref="ILinkedEdits"/>), deepest
 /// first, so that every re-merge (DSG-FD-134) finds the names it expects and no block is preserved with <c>F0109</c>. A
 /// descendant open in the IDE follows in its tab (modified, saved with the document); a closed one is written at once and
-/// written back on undo. The field rename in code is not part of this (DSG-CS-045). No Avalonia types.
+/// written back on undo. The field rename in code is not part of this (DSG-CS-045). D-139: a renamed frame component is
+/// renamed the same way inside every frame instance of the project that shows it (an instance of the frame or of a frame
+/// derived from it, placed by a form or frame, inherited by a descendant or nested in another frame): its override block
+/// and the references of the placing file to it (the instance scope's plain names and the names qualified by the
+/// instance). A document changes before every document it depends on (its ancestor, the frames it contains). No Avalonia
+/// types.
 /// </summary>
 public sealed class AncestorRename
 {
@@ -43,34 +48,92 @@ public sealed class AncestorRename
     public string? LastFailure { get; private set; }
 
     /// <summary>
-    /// The class names of the project's descendants of <paramref name="ancestor"/>'s form class, deepest first; empty when
+    /// The class of <paramref name="ancestor"/>'s document and the class names of the project's documents that depend on it
+    /// (descendants, documents showing an instance of it, any depth), each before the documents it depends on; null when
     /// the document is not the project's definition of its class (not a project unit) or <paramref name="obj"/> is its root.
     /// </summary>
-    private List<string> Descendants(FormDesignerViewModel ancestor, FormObject obj)
+    private (string Own, List<string> Classes)? Followers(FormDesignerViewModel ancestor, FormObject obj)
     {
         if (obj.Parent is null || ancestor.Model is not { } model || _catalog.Ancestors.Find(model.Root.TypeName) is not { } own
             || !ReferenceEquals(own.Document, model))
         {
-            return [];
+            return null;
         }
 
-        var found = new List<(string ClassName, int Depth)>();
-        foreach (var definition in _catalog.Ancestors.All)
+        // The rank of a document: 0 for the renamed one, else 1 + the highest rank of what it depends on (none: unaffected).
+        var ranks = new Dictionary<string, int?>(Names);
+        var visiting = new HashSet<string>(Names);
+        int? Rank(FrameDefinition definition)
         {
-            var seen = new HashSet<FormDocument>(ReferenceEqualityComparer.Instance) { definition.Document };
-            var depth = 0;
-            for (var level = definition.Document.Ancestor; level is not null && seen.Add(level.Document); level = level.Document.Ancestor)
+            if (Names.Equals(definition.ClassName, own.ClassName))
             {
-                depth++;
-                if (Names.Equals(level.ClassName, own.ClassName))
+                return 0;
+            }
+
+            if (ranks.TryGetValue(definition.ClassName, out var known) || !visiting.Add(definition.ClassName))
+            {
+                return known; // a cycle is shown read-only (F0111, F0113): it does not follow
+            }
+
+            int? rank = null;
+            var document = definition.Document;
+            var dependencies = document.AllObjects().Where(o => o.Frame is not null).Select(o => o.Frame!.ClassName)
+                .Prepend(document.Ancestor?.ClassName).OfType<string>().Distinct(Names);
+            foreach (var dependency in dependencies)
+            {
+                if (_catalog.Ancestors.Find(dependency) is { } found && Rank(found) is { } level)
                 {
-                    found.Add((definition.ClassName, depth));
-                    break;
+                    rank = Math.Max(rank ?? 0, level + 1);
                 }
+            }
+
+            visiting.Remove(definition.ClassName);
+            ranks[definition.ClassName] = rank;
+            return rank;
+        }
+
+        var followers = _catalog.Ancestors.All.Select(d => (d.ClassName, Rank: Rank(d))).Where(f => f.Rank > 0).ToList();
+        return (own.ClassName, [.. followers.OrderByDescending(f => f.Rank).Select(f => f.ClassName)]);
+    }
+
+    /// <summary>True when <paramref name="definition"/> is the class <paramref name="own"/> or inherits from it.</summary>
+    private static bool Derives(FrameDefinition? definition, string own)
+    {
+        var seen = new HashSet<FormDocument>(ReferenceEqualityComparer.Instance);
+        for (var level = definition; level is not null && seen.Add(level.Document); level = level.Document.Ancestor)
+        {
+            if (Names.Equals(level.ClassName, own))
+            {
+                return true;
             }
         }
 
-        return [.. found.OrderByDescending(f => f.Depth).Select(f => f.ClassName)];
+        return false;
+    }
+
+    /// <summary>
+    /// The renames that make <paramref name="document"/> follow: its inherited file-scope component when it descends from
+    /// <paramref name="own"/> (D-137), and the component inside each instance of <paramref name="own"/> or of a frame derived
+    /// from it (D-139), by qualified name.
+    /// </summary>
+    private static List<FormChange> Renames(FormDocument document, string own, string oldName, string newName)
+    {
+        var changes = new List<FormChange>();
+        if (Derives(document.Ancestor, own) && Inherited(document, oldName) is not null)
+        {
+            changes.Add(new RenameObject(oldName, newName) { FollowsAncestor = true });
+        }
+
+        foreach (var instance in document.AllObjects().Where(o => !o.IsPreserved && Derives(o.Frame, own)))
+        {
+            var name = instance.QualifiedName + "." + oldName;
+            if (document.FindByQualifiedName(name) is { IsInherited: true, IsPreserved: false, Info: not null })
+            {
+                changes.Add(new RenameObject(name, newName) { FollowsAncestor = true });
+            }
+        }
+
+        return changes;
     }
 
     /// <summary>The inherited object of a descendant's file scope named <paramref name="name"/>, or null.</summary>
@@ -86,14 +149,15 @@ public sealed class AncestorRename
         ArgumentNullException.ThrowIfNull(ancestor);
         ArgumentNullException.ThrowIfNull(obj);
         ArgumentNullException.ThrowIfNull(newName);
-        return Descendants(ancestor, obj).Any(className => _catalog.Ancestors.Find(className)?.Document.FindByName(newName) is { } other
-            && !Names.Equals(other.Name, obj.Name));
+        return Followers(ancestor, obj) is (var own, var classes) && classes.Any(className => _catalog.Ancestors.Find(className)?.Document is { } document
+            && Derives(document.Ancestor, own) && document.FindByName(newName) is { } other && !Names.Equals(other.Name, obj.Name));
     }
 
     /// <summary>
     /// The edits that rename <paramref name="obj"/> of <paramref name="ancestor"/> to <paramref name="newName"/> in every
-    /// descendant, to be applied with the ancestor's rename (<see cref="FreexComp.Designer.Surface.DesignSurfaceController.Commit"/>);
-    /// null when the project has no descendant of the document's class.
+    /// descendant and frame instance, to be applied with the ancestor's rename
+    /// (<see cref="FreexComp.Designer.Surface.DesignSurfaceController.Commit"/>); null when no project document depends on the
+    /// document's class.
     /// </summary>
     public ILinkedEdits? Prepare(FormDesignerViewModel ancestor, FormObject obj, string newName)
     {
@@ -101,15 +165,14 @@ public sealed class AncestorRename
         ArgumentNullException.ThrowIfNull(obj);
         ArgumentNullException.ThrowIfNull(newName);
         LastFailure = null;
-        var descendants = Descendants(ancestor, obj);
-        return descendants.Count == 0 ? null : new Edits(this, ancestor, descendants, obj.Name, newName);
+        return Followers(ancestor, obj) is (var own, var classes) && classes.Count > 0 ? new Edits(this, ancestor, own, classes, obj.Name, newName) : null;
     }
 
     /// <summary>One descendant changed by the last apply or revert: how to undo that step.</summary>
     private sealed record Step(string ClassName, IReadOnlyList<FormChange> Inverse, byte[]? Before, byte[]? After);
 
-    private sealed class Edits(AncestorRename owner, FormDesignerViewModel ancestor, IReadOnlyList<string> classes, string oldName, string newName)
-        : ILinkedEdits
+    private sealed class Edits(AncestorRename owner, FormDesignerViewModel ancestor, string own, IReadOnlyList<string> classes, string oldName,
+        string newName) : ILinkedEdits
     {
         private List<Step> _applied = [];
 
@@ -119,14 +182,15 @@ public sealed class AncestorRename
             var steps = new List<Step>();
             foreach (var className in classes)
             {
-                if (owner._catalog.Ancestors.Find(className) is not { } definition || Inherited(definition.Document, oldName) is null)
+                if (owner._catalog.Ancestors.Find(className) is not { } definition
+                    || Renames(definition.Document, own, oldName, newName) is not { Count: > 0 } renames)
                 {
                     continue;
                 }
 
                 try
                 {
-                    steps.Add(owner.Change(definition, [new RenameObject(oldName, newName) { FollowsAncestor = true }], null));
+                    steps.Add(owner.Change(definition, renames, null));
                 }
                 catch (Exception e) when (e is IOException or UnauthorizedAccessException)
                 {
@@ -151,7 +215,8 @@ public sealed class AncestorRename
         {
             foreach (var step in steps)
             {
-                if (owner._catalog.Ancestors.Find(step.ClassName) is { } definition && Inherited(definition.Document, newName) is not null)
+                if (owner._catalog.Ancestors.Find(step.ClassName) is { } definition
+                    && step.Inverse.OfType<RenameObject>().All(r => definition.Document.FindByQualifiedName(r.OldName) is { IsInherited: true }))
                 {
                     try
                     {

@@ -221,18 +221,21 @@ public sealed class FormEditor(FormDocument document, ComponentCatalog catalog)
         {
             RejectInherited(obj, "renamed");
         }
-        else if (!obj.IsInherited || obj.Parent is null || obj.InheritedFrame is not null)
+        else if (!obj.IsInherited || obj.Parent is null)
         {
-            throw new InvalidFormChangeException($"{obj.QualifiedName} is no inherited component of the file scope"); // D-137
+            throw new InvalidFormChangeException($"{obj.QualifiedName} is no inherited component"); // D-137, D-139
         }
 
+        // D-139: an inherited object inside a frame instance is renamed within the instance's scope (DSG-FD-108).
+        var scope = obj.Scope;
         CheckIdentifier(change.NewName);
-        if (document.FindByName(change.NewName) is { } other && !ReferenceEquals(other, obj))
+        if ((scope is null ? document.FindByName(change.NewName) : scope.FindInScope(change.NewName)) is { } other && !ReferenceEquals(other, obj))
         {
             throw new InvalidFormChangeException($"A component named {change.NewName} already exists");
         }
 
         var oldName = obj.Name;
+        var oldQualifiedName = obj.QualifiedName;
         var isRoot = obj.Parent is null;
         List<(FormObject Owner, ImmutableArray<PropertySlot> Slots)> before = [];
         if (!change.RestoreReferences.IsDefault)
@@ -246,14 +249,17 @@ public sealed class FormEditor(FormDocument document, ComponentCatalog catalog)
         }
         else
         {
-            // DSG-FD-082: plain references to the old name, and Root.Name references of this form; handler names stay.
+            // DSG-FD-082: plain references to the old name, and Root.Name references of this form; handler names stay. D-139:
+            // for an object of an instance scope, the plain names of that scope's lines and the names qualified by the
+            // instance (RTL-1093).
             foreach (var owner in document.AllObjects().Where(o => !o.IsPreserved && o.Info is not null).ToList())
             {
+                var plain = scope is null || ReferenceEquals(owner.IsFrameInstance ? owner : owner.IsInherited ? owner.Scope : null, scope);
                 var updates = new List<FormProperty>();
                 foreach (var property in owner.Properties)
                 {
                     if (!property.IsPreserved && property.Info is { } info
-                        && RenameReferences(property.Value, info, oldName, change.NewName, isRoot) is { } renamed)
+                        && RenameReferences(property.Value, info, oldName, change.NewName, isRoot, plain, scope?.QualifiedName) is { } renamed)
                     {
                         updates.Add(new FormProperty(property.Path, renamed, info, null, null, default));
                     }
@@ -271,8 +277,8 @@ public sealed class FormEditor(FormDocument document, ComponentCatalog catalog)
         }
 
         document.Rename(obj, change.NewName);
-        effects.Name(oldName);
-        effects.Name(obj.Name);
+        effects.Name(oldQualifiedName);
+        effects.Name(obj.QualifiedName);
         foreach (var (owner, _) in before)
         {
             effects.Name(owner.QualifiedName);
@@ -282,21 +288,29 @@ public sealed class FormEditor(FormDocument document, ComponentCatalog catalog)
 
         // DSG-FD-134: the owners by their names after this rename, so that the inverse still applies after a re-merge has
         // replaced the objects of a descendant.
-        return new RenameObject(obj.Name, oldName)
+        return new RenameObject(obj.QualifiedName, oldName)
         {
             RestoreReferences = [.. before.Select(b => (b.Owner.QualifiedName, b.Slots))],
             FollowsAncestor = change.FollowsAncestor,
         };
     }
 
-    /// <summary>The value with references to <paramref name="oldName"/> renamed, or null when it has none.</summary>
-    private FormValue? RenameReferences(FormValue value, PropertyInfo info, string oldName, string newName, bool isRoot)
+    /// <summary>
+    /// The value with references to <paramref name="oldName"/> renamed, or null when it has none. <paramref name="plain"/>:
+    /// a plain name refers to the renamed object; <paramref name="scope"/>: the qualified name of the instance whose scope
+    /// holds the renamed object (D-139), whose qualified references are <c>&lt;scope&gt;.&lt;old&gt;</c>.
+    /// </summary>
+    private FormValue? RenameReferences(FormValue value, PropertyInfo info, string oldName, string newName, bool isRoot, bool plain, string? scope)
     {
         var rootName = document.Root.Name;
         switch (value)
         {
-            case IdentValue ident when info.Kind == PropertyKind.Component && Same(ident.Name, oldName):
+            case IdentValue ident when info.Kind == PropertyKind.Component && plain && Same(ident.Name, oldName):
                 return new IdentValue(newName);
+            case QualifiedIdentValue { Parts: var parts } when info.Kind == PropertyKind.Component && scope is not null:
+                return parts.Length > 1 && Same(parts[^1], oldName) && Same(string.Join('.', parts[..^1]), scope)
+                    ? new QualifiedIdentValue(parts.SetItem(parts.Length - 1, newName))
+                    : null;
             case QualifiedIdentValue { Parts: [var form, var component] } when info.Kind == PropertyKind.Component:
                 if (isRoot && Same(form, oldName))
                 {
@@ -309,7 +323,7 @@ public sealed class FormEditor(FormDocument document, ComponentCatalog catalog)
                 var items = collection.Items.Select(item => new CollectionItem([.. item.Properties.Select(p =>
                 {
                     if (itemType.Properties.FirstOrDefault(i => Same(i.Name, p.Path)) is { } itemInfo
-                        && RenameReferences(p.Value, itemInfo, oldName, newName, isRoot) is { } renamed)
+                        && RenameReferences(p.Value, itemInfo, oldName, newName, isRoot, plain, scope) is { } renamed)
                     {
                         changed = true;
                         return (p.Path, renamed, (string?)null);

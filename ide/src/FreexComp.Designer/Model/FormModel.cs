@@ -240,7 +240,10 @@ public sealed class FormDocument
         }
 
         obj.Name = newName;
-        _byName[newName] = obj;
+        if (obj.Scope is null)
+        {
+            _byName[newName] = obj; // DSG-FD-108: the names of an instance scope are not file names (D-139)
+        }
     }
 
     /// <summary>The object of a plain or qualified name (<see cref="FindByQualifiedName"/>).</summary>

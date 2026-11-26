@@ -296,4 +296,210 @@ public sealed class AncestorRenameTests
         Assert.Equal(Renamed(InheritedDesign.Form), Disk(MainFormPath));
         Assert.False(main.IsModified);
     }
+
+    // ---- D-139: the instances of a renamed frame follow -----------------------------------------------------------
+
+    private const string FrameUnitPath = Dir + @"\AddressFrameUnit.pas";
+    private const string FrameFormPath = Dir + @"\AddressFrameUnit.form";
+    private const string OuterUnitPath = Dir + @"\OuterFrameUnit.pas";
+    private const string OuterFormPath = Dir + @"\OuterFrameUnit.form";
+    private const string OrderUnitPath = Dir + @"\OrderForm.pas";
+    private const string OrderFormPath = Dir + @"\OrderForm.form";
+
+    /// <summary>
+    /// The customer form placing the address frame: the root's <c>ActiveControl</c> names the instance's edit, the label's
+    /// override points its <c>FocusControl</c> at it (a plain name of the instance scope) and the edit has an override.
+    /// </summary>
+    private static readonly string PlacingForm = FrameDesign.Form
+        .Replace("  Caption = 'Customer'\n", "  ActiveControl = BillingAddress.StreetEdit\n  Caption = 'Customer'\n", StringComparison.Ordinal)
+        .Replace("      Caption = 'Billing street'\n    end\n", "      Caption = 'Billing street'\n      FocusControl = StreetEdit\n    end\n"
+            + "    inherited StreetEdit: TEdit\n      Width = 200\n    end\n", StringComparison.Ordinal);
+
+    /// <summary>A descendant of the customer form overriding the inherited instance's edit.</summary>
+    private const string PlacingLeaf = "inherited Main2: TMain2\n  inherited BillingAddress: TAddressFrame\n    inherited StreetEdit: TEdit\n"
+        + "      Width = 180\n    end\n  end\nend\n";
+
+    /// <summary>A frame placing the address frame (a frame inside a frame) and overriding its edit.</summary>
+    private const string OuterFrame = "object OuterFrame: TOuterFrame\n  Left = 0\n  Top = 0\n  Width = 340\n  Height = 140\n"
+        + "  inline Home: TAddressFrame\n    Left = 8\n    Top = 8\n    Width = 320\n    Height = 120\n    TabOrder = 0\n"
+        + "    inherited StreetEdit: TEdit\n      Width = 150\n    end\n  end\nend\n";
+
+    /// <summary>A form placing the outer frame: an override of the nested instance's edit and a three-part reference to it.</summary>
+    private const string OrderForm = "object OrderForm: TOrderForm\n  Left = 200\n  Top = 120\n  Caption = 'Order'\n  ClientWidth = 400\n"
+        + "  ClientHeight = 300\n  PixelsPerInch = 96\n  object NoteLabel: TLabel\n    Left = 8\n    Top = 160\n    Width = 30\n    Height = 15\n"
+        + "    Caption = 'Note'\n    FocusControl = Outer1.Home.StreetEdit\n  end\n  inline Outer1: TOuterFrame\n    Left = 8\n    Top = 8\n"
+        + "    Width = 340\n    Height = 140\n    TabOrder = 0\n    inherited Home: TAddressFrame\n      inherited StreetEdit: TEdit\n"
+        + "        Width = 100\n      end\n    end\n  end\nend\n";
+
+    private static readonly string[] PlacingFiles = [MainFormPath, LeafFormPath, OuterFormPath, OrderFormPath];
+
+    private static string Moved(string text) => text.Replace("StreetEdit", "AddressEdit", StringComparison.Ordinal);
+
+    /// <summary>
+    /// The address frame, the customer form placing it, a descendant of that form, a frame placing the address frame and a
+    /// form placing that frame.
+    /// </summary>
+    private void FrameProject()
+    {
+        File(ProjectPath, """
+            { "formatVersion": 1, "name": "Hello", "appType": "gui", "mainSource": "Hello.pas", "files": [
+              { "path": "Hello.pas" },
+              { "path": "AddressFrameUnit.pas", "form": "AddressFrameUnit.form" },
+              { "path": "MainForm.pas", "form": "MainForm.form" },
+              { "path": "Main2.pas", "form": "Main2.form" },
+              { "path": "OuterFrameUnit.pas", "form": "OuterFrameUnit.form" },
+              { "path": "OrderForm.pas", "form": "OrderForm.form" } ] }
+            """);
+        File(Dir + @"\Hello.pas", "program Hello;\nuses Forms, MainForm;\nbegin\nend.\n");
+        File(FrameUnitPath, ProjectFrameCatalogTests.FrameUnit);
+        File(FrameFormPath, FrameDesign.AddressFrame);
+        File(MainUnitPath, FrameDesign.Unit);
+        File(MainFormPath, PlacingForm);
+        File(LeafUnitPath, BareUnit("Main2", "TMainForm"));
+        File(LeafFormPath, PlacingLeaf);
+        File(OuterUnitPath, BareUnit("OuterFrameUnit", "TFrame", "Home: TAddressFrame;").Replace("TOuterFrameUnit", "TOuterFrame", StringComparison.Ordinal));
+        File(OuterFormPath, OuterFrame);
+        File(OrderUnitPath, BareUnit("OrderForm", "TForm", "NoteLabel: TLabel;", "Outer1: TOuterFrame;"));
+        File(OrderFormPath, OrderForm);
+    }
+
+    /// <summary>
+    /// Opens the address frame in the Design view (after <paramref name="beforeRename"/>) and renames its edit through the
+    /// Object Inspector.
+    /// </summary>
+    private async Task<FormDocumentViewModel> RenameFrameEditAsync(Func<Task>? beforeRename = null)
+    {
+        Assert.True(await _services.Projects.OpenAsync(ProjectPath));
+        var frame = Assert.IsType<FormDocumentViewModel>((await _services.Documents.OpenAsync(FrameUnitPath)).Value);
+        Assert.True(frame.ShowView(DocumentView.Design));
+        if (beforeRename is not null)
+        {
+            await beforeRename();
+        }
+
+        var inspector = new ObjectInspectorViewModel(_services.Status);
+        inspector.Bind(frame.Designer);
+        frame.Designer.Surface!.Selection.Set(["StreetEdit"]);
+        inspector.Page = InspectorPage.Properties;
+        inspector.CurrentPath = "Name";
+        Assert.True(inspector.BeginEdit());
+        inspector.EditText = "AddressEdit";
+        Assert.True(inspector.Commit());
+        return frame;
+    }
+
+    /// <summary>
+    /// Merged without diagnostics or preserved blocks; every instance named by <paramref name="instances"/> has an inherited
+    /// <paramref name="name"/> and no <paramref name="gone"/>.
+    /// </summary>
+    private static void AssertInstances(FormDocument document, string name, string gone, params string[] instances)
+    {
+        Assert.Empty(document.Diagnostics.Select(d => d.ToString()));
+        Assert.DoesNotContain(document.AllObjects(), o => o.IsPreserved || o.PreservedBlocks.Count > 0);
+        foreach (var instance in instances)
+        {
+            Assert.True(document.FindByQualifiedName(instance + "." + name)!.IsInherited);
+            Assert.Null(document.FindByQualifiedName(instance + "." + gone));
+        }
+    }
+
+    private static FormValue Value(FormDocument document, string qualifiedName, string path) =>
+        PropertyAccess.GetEffective(document.FindByQualifiedName(qualifiedName)!, path);
+
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "DSG-FD-082")]
+    [Trait("Req", "DSG-FD-134")]
+    public Task FrameInstancesFollow() => TestUiThread.RunAsync(InstancesFollowOnUiThread);
+
+    private async Task InstancesFollowOnUiThread()
+    {
+        FrameProject();
+        var frame = await RenameFrameEditAsync();
+
+        // The frame and its field are renamed; its handler keeps its name (DSG-FD-082, DSG-CS-045).
+        var edit = frame.Designer.Model!.FindByName("AddressEdit")!;
+        Assert.Contains("    AddressEdit: TEdit;", frame.Buffer.Text, StringComparison.Ordinal);
+        Assert.Equal(new IdentValue("StreetEditChange"), edit.FindProperty("OnChange")!.Value);
+
+        // Every file placing an instance — directly, through a descendant, inside another frame — names the edit by its
+        // new name in its override blocks and its references; nothing else changed.
+        foreach (var (path, text) in new[] { (MainFormPath, PlacingForm), (LeafFormPath, PlacingLeaf), (OuterFormPath, OuterFrame), (OrderFormPath, OrderForm) })
+        {
+            Assert.Equal(Moved(text), Disk(path));
+        }
+
+        // The project's catalog merges them against the renamed frame without F0109 blocks; the overrides are kept.
+        Frames.Refresh();
+        var main = Frames.Ancestors.Find("TMainForm")!.Document;
+        AssertInstances(main, "AddressEdit", "StreetEdit", "BillingAddress");
+        Assert.Equal(new QualifiedIdentValue(["BillingAddress", "AddressEdit"]), main.Root.FindProperty("ActiveControl")!.Value);
+        Assert.Equal(new IdentValue("AddressEdit"), main.FindByQualifiedName("BillingAddress.StreetLabel")!.FindProperty("FocusControl")!.Value);
+        Assert.Equal(new IntegerValue(200, false), Value(main, "BillingAddress.AddressEdit", "Width"));
+        var leaf = Frames.Ancestors.Find("TMain2")!.Document;
+        AssertInstances(leaf, "AddressEdit", "StreetEdit", "BillingAddress");
+        Assert.Equal(new IntegerValue(180, false), Value(leaf, "BillingAddress.AddressEdit", "Width"));
+        var outer = Frames.Ancestors.Find("TOuterFrame")!.Document;
+        AssertInstances(outer, "AddressEdit", "StreetEdit", "Home");
+        Assert.Equal(new IntegerValue(150, false), Value(outer, "Home.AddressEdit", "Width"));
+        var order = Frames.Ancestors.Find("TOrderForm")!.Document;
+        AssertInstances(order, "AddressEdit", "StreetEdit", "Outer1.Home");
+        Assert.Equal(new IntegerValue(100, false), Value(order, "Outer1.Home.AddressEdit", "Width"));
+        Assert.Equal(new QualifiedIdentValue(["Outer1", "Home", "AddressEdit"]), order.FindByName("NoteLabel")!.FindProperty("FocusControl")!.Value);
+    }
+
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "DSG-FD-134")]
+    public Task FrameInstanceUndoRestoresEveryFile() => TestUiThread.RunAsync(InstanceUndoOnUiThread);
+
+    private async Task InstanceUndoOnUiThread()
+    {
+        FrameProject();
+        var files = PlacingFiles.ToDictionary(p => p, _fs.ReadAllBytes);
+        FormDocumentViewModel? main = null;
+        var preserved = 0;
+        var frame = await RenameFrameEditAsync(async () =>
+        {
+            main = Assert.IsType<FormDocumentViewModel>((await _services.Documents.OpenAsync(MainUnitPath)).Value);
+            Assert.True(main.ShowView(DocumentView.Design));
+            var model = main.Designer.Model!;
+            AssertInstances(model, "StreetEdit", "AddressEdit", "BillingAddress");
+            model.Changed += (_, _) => preserved += model.AllObjects().Count(o => o.IsPreserved || o.PreservedBlocks.Count > 0);
+        });
+        var unitText = frame.Buffer.Text;
+        Assert.Contains("    AddressEdit: TEdit;", unitText, StringComparison.Ordinal);
+        Assert.Equal(Moved(PlacingForm), main!.Designer.CurrentFormText()); // open: follows in its tab
+        Assert.True(main.IsModified);
+        Assert.Equal(files[MainFormPath], _fs.ReadAllBytes(MainFormPath));
+        Assert.Equal(Moved(OrderForm), Disk(OrderFormPath)); // closed: written at once
+
+        // One undo in the frame: the frame, every placing file and the open placing form are back.
+        Execute(frame, FreexComp.Designer.Surface.Commands.Undo);
+        Assert.NotNull(frame.Designer.Model!.FindByName("StreetEdit"));
+        Assert.Null(frame.Designer.Model.FindByName("AddressEdit"));
+        Assert.Contains("    StreetEdit: TEdit;", frame.Buffer.Text, StringComparison.Ordinal);
+        Assert.DoesNotContain("AddressEdit", frame.Buffer.Text, StringComparison.Ordinal);
+        foreach (var (path, bytes) in files)
+        {
+            Assert.Equal(bytes, _fs.ReadAllBytes(path));
+        }
+
+        Assert.Equal(PlacingForm, main.Designer.CurrentFormText());
+        AssertInstances(main.Designer.Model!, "StreetEdit", "AddressEdit", "BillingAddress");
+        Frames.Refresh();
+        AssertInstances(Frames.Ancestors.Find("TMain2")!.Document, "StreetEdit", "AddressEdit", "BillingAddress");
+        AssertInstances(Frames.Ancestors.Find("TOuterFrame")!.Document, "StreetEdit", "AddressEdit", "Home");
+        AssertInstances(Frames.Ancestors.Find("TOrderForm")!.Document, "StreetEdit", "AddressEdit", "Outer1.Home");
+
+        // Redo renames every file again; the open form never showed a preserved block on the way.
+        Execute(frame, FreexComp.Designer.Surface.Commands.Redo);
+        Assert.NotNull(frame.Designer.Model!.FindByName("AddressEdit"));
+        Assert.Equal(unitText, frame.Buffer.Text);
+        Assert.Equal(Moved(PlacingLeaf), Disk(LeafFormPath));
+        Assert.Equal(Moved(OuterFrame), Disk(OuterFormPath));
+        Assert.Equal(Moved(OrderForm), Disk(OrderFormPath));
+        Assert.Equal(files[MainFormPath], _fs.ReadAllBytes(MainFormPath));
+        Assert.Equal(Moved(PlacingForm), main.Designer.CurrentFormText());
+        AssertInstances(main.Designer.Model!, "AddressEdit", "StreetEdit", "BillingAddress");
+        Assert.Equal(0, preserved);
+    }
 }
