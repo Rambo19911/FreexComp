@@ -236,7 +236,6 @@ public sealed class FormEditor(FormDocument document, ComponentCatalog catalog)
 
         var oldName = obj.Name;
         var oldQualifiedName = obj.QualifiedName;
-        var isRoot = obj.Parent is null;
         List<(FormObject Owner, ImmutableArray<PropertySlot> Slots)> before = [];
         if (!change.RestoreReferences.IsDefault)
         {
@@ -249,17 +248,15 @@ public sealed class FormEditor(FormDocument document, ComponentCatalog catalog)
         }
         else
         {
-            // DSG-FD-082: plain references to the old name, and Root.Name references of this form; handler names stay. D-139:
-            // for an object of an instance scope, the plain names of that scope's lines and the names qualified by the
-            // instance (RTL-1093).
+            // DSG-FD-082: the references that name the renamed object, plain or as any part of a qualified name; handler names
+            // stay. D-139, D-141: each reference is resolved by the scope rules of its owner's lines (RTL-1093, RTL-1104).
             foreach (var owner in document.AllObjects().Where(o => !o.IsPreserved && o.Info is not null).ToList())
             {
-                var plain = scope is null || ReferenceEquals(owner.IsFrameInstance ? owner : owner.IsInherited ? owner.Scope : null, scope);
                 var updates = new List<FormProperty>();
                 foreach (var property in owner.Properties)
                 {
                     if (!property.IsPreserved && property.Info is { } info
-                        && RenameReferences(property.Value, info, oldName, change.NewName, isRoot, plain, scope?.QualifiedName) is { } renamed)
+                        && RenameReferences(property.Value, info, owner, obj, change.NewName) is { } renamed)
                     {
                         updates.Add(new FormProperty(property.Path, renamed, info, null, null, default));
                     }
@@ -296,37 +293,26 @@ public sealed class FormEditor(FormDocument document, ComponentCatalog catalog)
     }
 
     /// <summary>
-    /// The value with references to <paramref name="oldName"/> renamed, or null when it has none. <paramref name="plain"/>:
-    /// a plain name refers to the renamed object; <paramref name="scope"/>: the qualified name of the instance whose scope
-    /// holds the renamed object (D-139), whose qualified references are <c>&lt;scope&gt;.&lt;old&gt;</c>.
+    /// The value of a line of <paramref name="owner"/> with the references that resolve to <paramref name="renamed"/> renamed
+    /// (a plain name, or the part of a qualified name that reaches it: first, middle or last), or null when it has none.
     /// </summary>
-    private FormValue? RenameReferences(FormValue value, PropertyInfo info, string oldName, string newName, bool isRoot, bool plain, string? scope)
+    private FormValue? RenameReferences(FormValue value, PropertyInfo info, FormObject owner, FormObject renamed, string newName)
     {
-        var rootName = document.Root.Name;
         switch (value)
         {
-            case IdentValue ident when info.Kind == PropertyKind.Component && plain && Same(ident.Name, oldName):
+            case IdentValue ident when info.Kind == PropertyKind.Component && ReferenceEquals(ResolvePlain(owner, ident.Name), renamed):
                 return new IdentValue(newName);
-            case QualifiedIdentValue { Parts: var parts } when info.Kind == PropertyKind.Component && scope is not null:
-                return parts.Length > 1 && Same(parts[^1], oldName) && Same(string.Join('.', parts[..^1]), scope)
-                    ? new QualifiedIdentValue(parts.SetItem(parts.Length - 1, newName))
-                    : null;
-            case QualifiedIdentValue { Parts: [var form, var component] } when info.Kind == PropertyKind.Component:
-                if (isRoot && Same(form, oldName))
-                {
-                    return new QualifiedIdentValue([newName, component]);
-                }
-
-                return Same(form, rootName) && Same(component, oldName) ? new QualifiedIdentValue([form, newName]) : null;
+            case QualifiedIdentValue { Parts: var parts } when info.Kind == PropertyKind.Component && PartNaming(owner, parts, renamed) is { } index:
+                return new QualifiedIdentValue(parts.SetItem(index, newName));
             case CollectionValue collection when info.ItemClass is { } itemClass && catalog.FindType(itemClass) is { Kind: TypeKind.Object } itemType:
                 var changed = false;
                 var items = collection.Items.Select(item => new CollectionItem([.. item.Properties.Select(p =>
                 {
                     if (itemType.Properties.FirstOrDefault(i => Same(i.Name, p.Path)) is { } itemInfo
-                        && RenameReferences(p.Value, itemInfo, oldName, newName, isRoot, plain, scope) is { } renamed)
+                        && RenameReferences(p.Value, itemInfo, owner, renamed, newName) is { } itemValue)
                     {
                         changed = true;
-                        return (p.Path, renamed, (string?)null);
+                        return (p.Path, itemValue, (string?)null);
                     }
 
                     return p;
@@ -335,6 +321,51 @@ public sealed class FormEditor(FormDocument document, ComponentCatalog catalog)
             default:
                 return null;
         }
+    }
+
+    /// <summary>
+    /// The scope the lines of <paramref name="owner"/> resolve names in first (RTL-1093): an instance's own lines and the
+    /// lines of the inherited objects of its scope; null for the file scope (also the inherited objects of a descendant's
+    /// file scope, DSG-FD-126).
+    /// </summary>
+    private static FormObject? ReferenceScope(FormObject owner) => owner.IsFrameInstance ? owner : owner.IsInherited ? owner.Scope : null;
+
+    /// <summary>
+    /// The object a plain name in a line of <paramref name="owner"/> names (RTL-1093, RTL-1104): the innermost scope (its
+    /// instance by name, then its components), then the file scope (the root by name included).
+    /// </summary>
+    private FormObject? ResolvePlain(FormObject owner, string name) =>
+        ReferenceScope(owner) is { } scope && (Same(scope.Name, name) ? scope : scope.FindInScope(name)) is { } inScope
+            ? inScope
+            : document.FindByName(name);
+
+    /// <summary>
+    /// The index of the part of the qualified name <paramref name="parts"/> in a line of <paramref name="owner"/> that reaches
+    /// <paramref name="target"/>, or null. The first part is resolved like a plain name (this file's root name names the
+    /// root; a frame's header name is no name of a placing file, also in an instance's lines: RTL-1104); each further part is
+    /// a component of the root (the file scope) or of an instance's scope (DSG-FD-108).
+    /// </summary>
+    private int? PartNaming(FormObject owner, ImmutableArray<string> parts, FormObject target)
+    {
+        var current = ResolvePlain(owner, parts[0]);
+        for (var i = 0; current is not null; i++)
+        {
+            if (ReferenceEquals(current, target))
+            {
+                return i;
+            }
+
+            if (i + 1 == parts.Length)
+            {
+                break;
+            }
+
+            current = ReferenceEquals(current, document.Root) ? document.FindByName(parts[i + 1])
+                : current.IsFrameInstance ? current.FindInScope(parts[i + 1])
+                : null;
+        }
+
+        return null;
     }
 
     /// <summary>form-format.md §1: <c>[A-Za-z_][A-Za-z0-9_]*</c>, and usable as a field name (not a reserved word).</summary>

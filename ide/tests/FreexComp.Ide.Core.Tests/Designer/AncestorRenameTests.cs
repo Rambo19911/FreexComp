@@ -367,25 +367,37 @@ public sealed class AncestorRenameTests
     /// Opens the address frame in the Design view (after <paramref name="beforeRename"/>) and renames its edit through the
     /// Object Inspector.
     /// </summary>
-    private async Task<FormDocumentViewModel> RenameFrameEditAsync(Func<Task>? beforeRename = null)
+    private Task<FormDocumentViewModel> RenameFrameEditAsync(Func<Task>? beforeRename = null) =>
+        RenameInDesignerAsync(FrameUnitPath, "StreetEdit", "AddressEdit", beforeRename);
+
+    /// <summary>
+    /// Opens the project and <paramref name="unitPath"/> in the Design view (after <paramref name="beforeRename"/>) and
+    /// renames its component <paramref name="oldName"/> to <paramref name="newName"/> through the Object Inspector.
+    /// </summary>
+    private async Task<FormDocumentViewModel> RenameInDesignerAsync(string unitPath, string oldName, string newName, Func<Task>? beforeRename = null)
     {
         Assert.True(await _services.Projects.OpenAsync(ProjectPath));
-        var frame = Assert.IsType<FormDocumentViewModel>((await _services.Documents.OpenAsync(FrameUnitPath)).Value);
-        Assert.True(frame.ShowView(DocumentView.Design));
+        var document = Assert.IsType<FormDocumentViewModel>((await _services.Documents.OpenAsync(unitPath)).Value);
+        Assert.True(document.ShowView(DocumentView.Design));
         if (beforeRename is not null)
         {
             await beforeRename();
         }
 
+        RenameInDesigner(document, oldName, newName);
+        return document;
+    }
+
+    private void RenameInDesigner(FormDocumentViewModel document, string oldName, string newName)
+    {
         var inspector = new ObjectInspectorViewModel(_services.Status);
-        inspector.Bind(frame.Designer);
-        frame.Designer.Surface!.Selection.Set(["StreetEdit"]);
+        inspector.Bind(document.Designer);
+        document.Designer.Surface!.Selection.Set([oldName]);
         inspector.Page = InspectorPage.Properties;
         inspector.CurrentPath = "Name";
         Assert.True(inspector.BeginEdit());
-        inspector.EditText = "AddressEdit";
+        inspector.EditText = newName;
         Assert.True(inspector.Commit());
-        return frame;
     }
 
     /// <summary>
@@ -501,5 +513,153 @@ public sealed class AncestorRenameTests
         Assert.Equal(Moved(PlacingForm), main.Designer.CurrentFormText());
         AssertInstances(main.Designer.Model!, "AddressEdit", "StreetEdit", "BillingAddress");
         Assert.Equal(0, preserved);
+    }
+
+    // ---- D-141: references follow every rename exactly by scope ---------------------------------------------------
+
+    /// <summary>The outer frame with an own label pointing at the nested instance's edit (<c>Home.StreetEdit</c>).</summary>
+    private const string OuterWithLabel = "object OuterFrame: TOuterFrame\n  Left = 0\n  Top = 0\n  Width = 340\n  Height = 140\n"
+        + "  object HomeLabel: TLabel\n    Left = 8\n    Top = 128\n    Width = 36\n    Height = 15\n    Caption = 'Street'\n"
+        + "    FocusControl = Home.StreetEdit\n  end\n"
+        + "  inline Home: TAddressFrame\n    Left = 8\n    Top = 8\n    Width = 320\n    Height = 120\n    TabOrder = 0\n"
+        + "    inherited StreetEdit: TEdit\n      Width = 150\n    end\n  end\nend\n";
+
+    /// <summary>The order form with an override of the outer frame's label in the outer instance's scope.</summary>
+    private static readonly string OrderWithLabel = OrderForm.Replace("    inherited Home: TAddressFrame\n",
+        "    inherited HomeLabel: TLabel\n      FocusControl = Home.StreetEdit\n    end\n    inherited Home: TAddressFrame\n", StringComparison.Ordinal);
+
+    /// <summary>The outer frame's unit with the label's field.</summary>
+    private static readonly string OuterWithLabelUnit = BareUnit("OuterFrameUnit", "TFrame", "HomeLabel: TLabel;", "Home: TAddressFrame;")
+        .Replace("TOuterFrameUnit", "TOuterFrame", StringComparison.Ordinal);
+
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "DSG-FD-082")]
+    [Trait("Req", "DSG-FD-108")]
+    public Task NestedInstanceRenameRewritesMiddleParts() => TestUiThread.RunAsync(MiddlePartsOnUiThread);
+
+    private async Task MiddlePartsOnUiThread()
+    {
+        FrameProject();
+        File(OuterUnitPath, OuterWithLabelUnit);
+        File(OuterFormPath, OuterWithLabel);
+        File(OrderFormPath, OrderWithLabel);
+
+        // Renaming the address frame instance inside the outer frame.
+        var outer = await RenameInDesignerAsync(OuterUnitPath, "Home", "House");
+
+        // The outer frame's own reference through the instance (first part) follows.
+        Assert.Contains("    House: TAddressFrame;", outer.Buffer.Text, StringComparison.Ordinal);
+        Assert.Equal(OuterWithLabel.Replace("inline Home:", "inline House:", StringComparison.Ordinal)
+            .Replace("= Home.StreetEdit", "= House.StreetEdit", StringComparison.Ordinal), outer.Designer.CurrentFormText());
+
+        // The order form placing the outer frame: the override block's header, the reference through the nested instance as
+        // a middle part, and the reference of the outer instance's scope that starts with the nested instance.
+        Assert.Equal(OrderWithLabel.Replace("inherited Home:", "inherited House:", StringComparison.Ordinal)
+            .Replace("= Outer1.Home.StreetEdit", "= Outer1.House.StreetEdit", StringComparison.Ordinal)
+            .Replace("= Home.StreetEdit", "= House.StreetEdit", StringComparison.Ordinal), Disk(OrderFormPath));
+        Frames.Refresh();
+        var order = Frames.Ancestors.Find("TOrderForm")!.Document;
+        AssertInstances(order, "StreetEdit", "AddressEdit", "Outer1.House");
+        Assert.Null(order.FindByQualifiedName("Outer1.Home"));
+        Assert.Equal(new QualifiedIdentValue(["Outer1", "House", "StreetEdit"]), order.FindByName("NoteLabel")!.FindProperty("FocusControl")!.Value);
+        Assert.Equal(new QualifiedIdentValue(["House", "StreetEdit"]), order.FindByQualifiedName("Outer1.HomeLabel")!.FindProperty("FocusControl")!.Value);
+        Assert.Equal(new IntegerValue(100, false), Value(order, "Outer1.House.StreetEdit", "Width"));
+    }
+
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "DSG-FD-082")]
+    [Trait("Req", "DSG-FD-108")]
+    public Task RootQualifiedReferencesFollow() => TestUiThread.RunAsync(RootQualifiedOnUiThread);
+
+    private async Task RootQualifiedOnUiThread()
+    {
+        // The frame's label names the edit by the frame's root name: in the frame's own file the root name names the root
+        // (RTL-1104). The placing files hold references qualified by a frame's root name in instance lines: the address
+        // frame's in the customer form's instance and in the nested instance, the outer frame's in the outer instance. In
+        // another file a frame's header name is no name of that file (RTL-1104), so they do not name the instance.
+        var frameText = FrameDesign.AddressFrame.Replace("    Caption = 'Street'\n",
+            "    Caption = 'Street'\n    FocusControl = AddressFrame.StreetEdit\n", StringComparison.Ordinal);
+        var main = PlacingForm.Replace("    inherited StreetEdit: TEdit\n      Width = 200\n    end\n",
+            "    inherited StreetEdit: TEdit\n      Width = 200\n    end\n    inherited CityPanel: TPanel\n      inherited CityLabel: TLabel\n"
+            + "        FocusControl = AddressFrame.StreetEdit\n      end\n    end\n", StringComparison.Ordinal);
+        var order = OrderWithLabel.Replace("      FocusControl = Home.StreetEdit\n", "      FocusControl = OuterFrame.Home.StreetEdit\n", StringComparison.Ordinal)
+            .Replace("    inherited Home: TAddressFrame\n      inherited StreetEdit: TEdit\n", "    inherited Home: TAddressFrame\n"
+                + "      inherited StreetLabel: TLabel\n        FocusControl = AddressFrame.StreetEdit\n      end\n      inherited StreetEdit: TEdit\n",
+                StringComparison.Ordinal);
+        FrameProject();
+        File(FrameFormPath, frameText);
+        File(MainFormPath, main);
+        File(OuterUnitPath, OuterWithLabelUnit);
+        File(OuterFormPath, OuterWithLabel);
+        File(OrderFormPath, order);
+
+        var frame = await RenameFrameEditAsync();
+
+        Assert.Equal(new QualifiedIdentValue(["AddressFrame", "AddressEdit"]),
+            frame.Designer.Model!.FindByName("StreetLabel")!.FindProperty("FocusControl")!.Value);
+        // Every placing file follows the rename except its root-qualified references, which stay byte-identical.
+        static string Kept(string text) => Moved(text).Replace("AddressFrame.AddressEdit", "AddressFrame.StreetEdit", StringComparison.Ordinal)
+            .Replace("OuterFrame.Home.AddressEdit", "OuterFrame.Home.StreetEdit", StringComparison.Ordinal);
+        foreach (var (path, text) in new[] { (MainFormPath, main), (LeafFormPath, PlacingLeaf), (OuterFormPath, OuterWithLabel), (OrderFormPath, order) })
+        {
+            Assert.Equal(Kept(text), Disk(path));
+        }
+
+        Assert.Contains("        FocusControl = AddressFrame.StreetEdit\n", Disk(MainFormPath), StringComparison.Ordinal);
+        Assert.Contains("      FocusControl = OuterFrame.Home.StreetEdit\n", Disk(OrderFormPath), StringComparison.Ordinal);
+        Assert.Contains("        FocusControl = AddressFrame.StreetEdit\n", Disk(OrderFormPath), StringComparison.Ordinal);
+
+        Frames.Refresh();
+        var placing = Frames.Ancestors.Find("TMainForm")!.Document;
+        AssertInstances(placing, "AddressEdit", "StreetEdit", "BillingAddress");
+        Assert.Equal(new QualifiedIdentValue(["AddressFrame", "StreetEdit"]),
+            placing.FindByQualifiedName("BillingAddress.CityLabel")!.FindProperty("FocusControl")!.Value);
+        var ordering = Frames.Ancestors.Find("TOrderForm")!.Document;
+        AssertInstances(ordering, "AddressEdit", "StreetEdit", "Outer1.Home");
+        Assert.Equal(new QualifiedIdentValue(["OuterFrame", "Home", "StreetEdit"]),
+            ordering.FindByQualifiedName("Outer1.HomeLabel")!.FindProperty("FocusControl")!.Value);
+        Assert.Equal(new QualifiedIdentValue(["AddressFrame", "StreetEdit"]),
+            ordering.FindByQualifiedName("Outer1.Home.StreetLabel")!.FindProperty("FocusControl")!.Value);
+    }
+
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "DSG-FD-082")]
+    [Trait("Req", "DSG-FD-108")]
+    public Task FileScopeRenameLeavesInstanceScopeNames() => TestUiThread.RunAsync(FileScopeOnUiThread);
+
+    private async Task FileScopeOnUiThread()
+    {
+        // The customer form has an own StreetEdit beside the instance's: the instance's label names the instance's edit
+        // (its scope resolves the plain name first), the form's own label names the form's edit. The instance's city label
+        // names a form component its scope does not hold.
+        const string S = "{S}", N = "{N}";
+        var template = PlacingForm
+            .Replace("    inherited StreetEdit: TEdit\n      Width = 200\n    end\n", "    inherited StreetEdit: TEdit\n      Width = 200\n    end\n"
+                + "    inherited CityPanel: TPanel\n      inherited CityLabel: TLabel\n        FocusControl = " + N + "\n      end\n    end\n", StringComparison.Ordinal)
+            .Replace("    TabOrder = 1\n  end\n", "    TabOrder = 1\n"
+                + "    object " + S + ": TEdit\n      Left = 8\n      Top = 8\n      Width = 120\n      Height = 23\n      TabOrder = 0\n    end\n"
+                + "    object " + N + ": TEdit\n      Left = 8\n      Top = 40\n      Width = 120\n      Height = 23\n      TabOrder = 1\n    end\n"
+                + "    object OwnLabel: TLabel\n      Left = 8\n      Top = 72\n      Width = 36\n      Height = 15\n      Caption = 'Street'\n"
+                + "      FocusControl = " + S + "\n    end\n  end\n", StringComparison.Ordinal);
+        string Form(string street, string name) => template.Replace(S, street, StringComparison.Ordinal).Replace(N, name, StringComparison.Ordinal);
+        var unit = FrameDesign.Unit.Replace("    OwnPanel: TPanel;\r\n",
+            "    OwnPanel: TPanel;\r\n    StreetEdit: TEdit;\r\n    NameEdit: TEdit;\r\n    OwnLabel: TLabel;\r\n", StringComparison.Ordinal);
+        FrameProject();
+        File(MainUnitPath, unit);
+        File(MainFormPath, Form("StreetEdit", "NameEdit"));
+        var leafBytes = _fs.ReadAllBytes(LeafFormPath);
+
+        var document = await RenameInDesignerAsync(MainUnitPath, "StreetEdit", "PostEdit");
+        Assert.Equal(Form("PostEdit", "NameEdit"), document.Designer.CurrentFormText());
+        RenameInDesigner(document, "NameEdit", "FullNameEdit");
+        Assert.Equal(Form("PostEdit", "FullNameEdit"), document.Designer.CurrentFormText());
+
+        var model = document.Designer.Model!;
+        Assert.Empty(model.Diagnostics.Select(d => d.ToString()));
+        Assert.Equal(new IdentValue("StreetEdit"), model.FindByQualifiedName("BillingAddress.StreetLabel")!.FindProperty("FocusControl")!.Value);
+        Assert.Equal(new IdentValue("FullNameEdit"), model.FindByQualifiedName("BillingAddress.CityLabel")!.FindProperty("FocusControl")!.Value);
+        Assert.Equal(new IdentValue("PostEdit"), model.FindByName("OwnLabel")!.FindProperty("FocusControl")!.Value);
+        Assert.Equal(new QualifiedIdentValue(["BillingAddress", "StreetEdit"]), model.Root.FindProperty("ActiveControl")!.Value);
+        Assert.Equal(leafBytes, _fs.ReadAllBytes(LeafFormPath)); // the descendant's instance override keeps its name
     }
 }
