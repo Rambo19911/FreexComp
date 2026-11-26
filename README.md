@@ -106,9 +106,9 @@ RAD Studio is a trademark of its respective owner and is named here only to desc
 |---|---|
 | IDE | Main window with docking tool windows, light and dark themes, projects and project groups, build configurations |
 | Code editor | Syntax highlighting, code completion, parameter hints, code templates, Go to Declaration, back/forward navigation, find and replace, bookmarks, folding, error markers |
-| Compiler | Object Pascal for Windows x64: console and GUI programs, units, DLLs, generics, interfaces, COM support, Unicode strings, inline variables, parallel code generation and an on-disk unit cache |
+| Compiler | Object Pascal for Windows x64: console and GUI programs, units, DLLs, generics (also nested in classes and records, qualified names such as `TList<Integer>.TEnumerator`), nested class types, interfaces, COM support, Unicode strings, inline variables, parallel code generation and an on-disk unit cache |
 | Form designer | Visual design with Object Inspector; the saved form compiles to the same layout at run time |
-| UI framework | Native Windows controls written in Object Pascal on top of Win32, including a rich text editor control |
+| UI framework | Native Windows controls written in Object Pascal on top of Win32, including a rich text editor control and image lists with 32-bit alpha icons, overlays and disabled drawing |
 | Debugger | Breakpoints with conditions and pass counts, stepping (also into the library source), Run to Cursor, locals, watches, Evaluate, call stack and threads |
 | Data access | Datasets with SQLite and in-memory tables, filters, data-aware controls including a data grid and a navigator |
 | Build | Build configurations, pre-build and post-build commands with macros; commands of a project run only after you have trusted it |
