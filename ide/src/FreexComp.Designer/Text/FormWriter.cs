@@ -101,9 +101,10 @@ public static class FormWriter
     }
 
     /// <summary>
-    /// DSG-FD-113…115: inside an instance or an override block, an <c>inherited</c> block for each inherited child (in the
-    /// definition's order) that has overrides or preserved lines in its subtree, and the preserved blocks where they were
-    /// read: those read first, then each after the block (or the place) of the child that preceded it.
+    /// DSG-FD-113…115, 129, 130: inside an instance, an override block or a descendant's root, an <c>inherited</c> block for
+    /// each inherited child (in the definition's order) that has overrides, preserved lines or new components in its
+    /// subtree, then the new children (a descendant's own components, always after the inherited ones), and the preserved
+    /// blocks where they were read: those read first, then each after the block (or the place) of the child that preceded it.
     /// </summary>
     private static void WriteOverrideBlocks(StringBuilder output, FormObject container, int level)
     {
@@ -125,7 +126,7 @@ public static class FormWriter
         WriteAfter(null);
         foreach (var child in container.Children)
         {
-            if (HasOverrides(child))
+            if (!child.IsInherited || HasOverrides(child))
             {
                 WriteObject(output, child, level);
             }
@@ -142,9 +143,12 @@ public static class FormWriter
         }
     }
 
-    /// <summary>An inherited object writes a block when it or an inherited descendant stores a line or a preserved block.</summary>
+    /// <summary>
+    /// An inherited object writes a block when it or an inherited descendant stores a line or a preserved block, or when its
+    /// subtree holds a new component (DSG-FD-129).
+    /// </summary>
     private static bool HasOverrides(FormObject obj) =>
-        obj.Properties.Count > 0 || obj.PreservedBlockSlots.Count > 0 || obj.Children.Any(HasOverrides);
+        obj.Properties.Count > 0 || obj.PreservedBlockSlots.Count > 0 || obj.Children.Any(c => !c.IsInherited || HasOverrides(c));
 
     /// <summary>DSG-FD-042…046: the property lines of an object in canonical order.</summary>
     private static List<(string Path, IReadOnlyList<(int Level, string Text)> Lines)> PropertyLines(FormObject obj)
@@ -211,9 +215,9 @@ public static class FormWriter
     private static List<(string Path, FormValue Value)> AlwaysWritten(FormObject obj)
     {
         var result = new List<(string, FormValue)>();
-        if (obj.Info is not { } info || obj.IsInherited)
+        if (obj.Info is not { } info || obj.IsInherited || obj.IsInheritedRoot)
         {
-            return result; // DSG-FD-114: the geometry of inherited objects appears only as overrides
+            return result; // DSG-FD-114, 128: the geometry of inherited objects and roots appears only as overrides
         }
 
         void Add(string path, long value)

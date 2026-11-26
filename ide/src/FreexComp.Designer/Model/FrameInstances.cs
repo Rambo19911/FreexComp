@@ -129,6 +129,17 @@ internal static class FrameInstances
     /// </summary>
     public static void Remerge(FormDocument document, IFrameCatalog frames, ComponentCatalog catalog, IReadOnlyCollection<string> changed)
     {
+        if (document.FollowsAncestor)
+        {
+            // DSG-FD-134: a descendant contains inherited instances too; it is merged again from its root.
+            if (document.ContainsFrame(changed))
+            {
+                RemergeRoot(document, catalog);
+            }
+
+            return;
+        }
+
         var instances = document.AllObjects()
             .Where(o => o.Kind == FormObjectKind.Inline && !o.IsInherited && o.Parent is not null && !InsidePreserved(o)
                 && Affected(frames, o.TypeName, changed, new HashSet<string>(StringComparer.OrdinalIgnoreCase)))
@@ -172,6 +183,28 @@ internal static class FrameInstances
         document.RaiseChanged(new FormChangedEventArgs(names, FormChangeFlags.Structure, isRemerge: true));
     }
 
+    /// <summary>
+    /// DSG-FD-134: the whole document is merged again with the current ancestor and frame catalogs — written as it is and
+    /// read back, so its own lines, override blocks and new components are kept, blocks that no longer match become
+    /// <c>F0109</c> preserved blocks, a new component whose name an ancestor component now has becomes <c>F0106</c>, and a
+    /// descendant whose ancestor is no longer listed becomes read-only (<c>F0112</c>). The file model does not change: the
+    /// document raises <see cref="FormDocument.Changed"/> once with <see cref="FormChangeFlags.Structure"/> and
+    /// <see cref="FormChangedEventArgs.IsRemerge"/>; changes recorded before still apply (they name objects by name).
+    /// </summary>
+    public static void RemergeRoot(FormDocument document, ComponentCatalog catalog)
+    {
+        var parsed = FormParser.ParseAgain(FormWriter.Write(document), document.SourcePath, catalog, document.RootAncestorClass,
+            document.Frames, document.Ancestors);
+        if (parsed is null)
+        {
+            return; // the writer's text always reads back; nothing is replaced otherwise
+        }
+
+        document.ReplaceTree(parsed);
+        FormValidator.Validate(document, catalog);
+        document.RaiseChanged(new FormChangedEventArgs([document.Root.Name], FormChangeFlags.Structure, isRemerge: true));
+    }
+
     private static bool InsidePreserved(FormObject obj)
     {
         for (var p = obj.Parent; p is not null; p = p.Parent)
@@ -196,6 +229,37 @@ internal static class FrameInstances
         }
 
         return false;
+    }
+}
+
+/// <summary>
+/// A descendant document's link to its ancestor catalog (DSG-FD-134), held like <see cref="FrameSubscription"/>: when a
+/// class of the document's ancestor chain or a frame it contains changes, the document is merged again from its root.
+/// </summary>
+internal sealed class AncestorSubscription
+{
+    private readonly WeakReference<FormDocument> _document;
+    private readonly IFrameCatalog _ancestors;
+    private readonly ComponentCatalog _catalog;
+
+    public AncestorSubscription(FormDocument document, IFrameCatalog ancestors, ComponentCatalog catalog)
+    {
+        _document = new WeakReference<FormDocument>(document);
+        _ancestors = ancestors;
+        _catalog = catalog;
+        ancestors.Changed += OnChanged;
+    }
+
+    private void OnChanged(object? sender, FrameCatalogChangedEventArgs e)
+    {
+        if (!_document.TryGetTarget(out var document))
+        {
+            _ancestors.Changed -= OnChanged;
+        }
+        else if (document.Root.Kind == FormObjectKind.Inherited && document.DependsOn(e.ClassNames))
+        {
+            FrameInstances.RemergeRoot(document, _catalog);
+        }
     }
 }
 

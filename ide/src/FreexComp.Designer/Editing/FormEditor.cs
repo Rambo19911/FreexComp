@@ -86,13 +86,16 @@ public sealed class FormEditor(FormDocument document, ComponentCatalog catalog)
             throw new InvalidFormChangeException($"Index {change.Index} is outside 0..{parent.Children.Count} of {parent.Name}");
         }
 
+        // DSG-FD-132, 133: in a descendant, new components follow the inherited children of their container.
+        var index = Math.Max(change.Index, InheritedCount(parent));
+
         var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         CheckNewNames(change.Data, names);
         var obj = change.Data.Original is { Parent: null } original ? original
             : change.Data.Kind == FormObjectKind.Inline && document.Frames is not null
                 && FrameCopies.BuildInstance(change.Data, document, catalog) is { } instance ? instance
             : Build(change.Data, parentPreserved: false);
-        parent.InsertChild(change.Index, obj);
+        parent.InsertChild(index, obj);
         document.Register(obj);
         effects.Structure(obj.Name, parent.Name);
         return new RemoveObject(obj.Name);
@@ -150,29 +153,56 @@ public sealed class FormEditor(FormDocument document, ComponentCatalog catalog)
             throw new InvalidFormChangeException($"Index {change.NewIndex} is outside 0..{count} of {newParent.Name}");
         }
 
+        // DSG-FD-133: a new child is not placed before the inherited children. An inverse recorded before a re-merge in
+        // which the ancestor added children to the container is clamped instead (DSG-FD-134: the undo stack stays valid).
+        var inherited = InheritedCount(newParent);
+        if (change.NewIndex < inherited && !change.IsInverse)
+        {
+            throw new InvalidFormChangeException($"{obj.Name} cannot be placed before the inherited components of {newParent.Name}");
+        }
+
         var oldIndex = oldParent.RemoveChild(obj);
-        newParent.InsertChild(change.NewIndex, obj);
+        newParent.InsertChild(Math.Max(change.NewIndex, inherited), obj);
         effects.Structure(obj.Name, oldParent.Name, newParent.Name);
         effects.Flags |= FormChangeFlags.Geometry;
-        return new MoveObject(obj.Name, oldParent.Name, oldIndex);
+        return new MoveObject(obj.Name, oldParent.Name, oldIndex) { IsInverse = true };
+    }
+
+    /// <summary>The number of inherited children of <paramref name="parent"/>: they come first (DSG-FD-133).</summary>
+    private static int InheritedCount(FormObject parent)
+    {
+        var count = 0;
+        while (count < parent.Children.Count && parent.Children[count].IsInherited)
+        {
+            count++;
+        }
+
+        return count;
     }
 
     /// <summary>
-    /// DSG-FD-109: the structure inside a frame instance is fixed — inherited objects are not removed, moved, reordered or
-    /// renamed (card F05-006 "Out of scope").
+    /// DSG-FD-109, 132: the structure of inherited objects is fixed: in a frame instance and in a descendant they are not
+    /// removed, moved, reordered or renamed (cards F05-006, F05-007 "Out of scope").
     /// </summary>
     private static void RejectInherited(FormObject obj, string what)
     {
-        if (obj.IsInherited)
+        if (!obj.IsInherited)
         {
-            throw new InvalidFormChangeException($"{obj.QualifiedName} is part of a frame and cannot be {what}");
+            return;
         }
+
+        throw new InvalidFormChangeException(obj.InheritedFrame is null && obj.InheritedSource is { } source
+            ? $"{obj.QualifiedName} is inherited from {source.ClassName} and cannot be {what}"
+            : $"{obj.QualifiedName} is part of a frame and cannot be {what}");
     }
 
-    /// <summary>DSG-FD-109: nothing is added into a frame instance or into one of its inherited objects (<c>F0110</c>).</summary>
+    /// <summary>
+    /// DSG-FD-109, 132: nothing is added into a frame instance or into an object inside one (<c>F0110</c>); the root of a
+    /// descendant and its other inherited objects accept new components.
+    /// </summary>
     private static void RejectInsideInstance(FormObject parent, string what)
     {
-        if (parent.IsInherited || parent.IsFrameInstance)
+        if (!parent.AcceptsNewChildren)
         {
             throw new InvalidFormChangeException($"Components cannot be {what} frame instance {parent.QualifiedName}");
         }
@@ -199,8 +229,9 @@ public sealed class FormEditor(FormDocument document, ComponentCatalog catalog)
         List<(FormObject Owner, ImmutableArray<PropertySlot> Slots)> before = [];
         if (!change.RestoreReferences.IsDefault)
         {
-            foreach (var (owner, slots) in change.RestoreReferences)
+            foreach (var (ownerName, slots) in change.RestoreReferences)
             {
+                var owner = document.Find(ownerName) ?? throw NotFound(ownerName);
                 before.Add((owner, Snapshot(owner, slots.Select(s => s.Path))));
                 Restore(owner, slots);
             }
@@ -240,7 +271,10 @@ public sealed class FormEditor(FormDocument document, ComponentCatalog catalog)
         }
 
         effects.Flags |= FormChangeFlags.Name;
-        return new RenameObject(obj.Name, oldName) { RestoreReferences = [.. before] };
+
+        // DSG-FD-134: the owners by their names after this rename, so that the inverse still applies after a re-merge has
+        // replaced the objects of a descendant.
+        return new RenameObject(obj.Name, oldName) { RestoreReferences = [.. before.Select(b => (b.Owner.QualifiedName, b.Slots))] };
     }
 
     /// <summary>The value with references to <paramref name="oldName"/> renamed, or null when it has none.</summary>
@@ -458,9 +492,9 @@ public sealed class FormEditor(FormDocument document, ComponentCatalog catalog)
     /// </summary>
     private static bool IsAlwaysWritten(FormObject obj, string path)
     {
-        if (obj.IsInherited)
+        if (obj.IsInherited || obj.IsInheritedRoot)
         {
-            return false;
+            return false; // DSG-FD-114, 128: overrides only
         }
 
         string[] always = PropertyAccess.IsFrameRoot(obj) ? ["Left", "Top", "Width", "Height"]

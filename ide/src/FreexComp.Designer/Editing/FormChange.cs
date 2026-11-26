@@ -27,13 +27,28 @@ public sealed record AddObject(string ParentName, int Index, FormObjectData Data
 public sealed record RemoveObject(string ObjectName) : FormChange;
 
 /// <summary>Re-parents and/or reorders an object; <paramref name="NewIndex"/> counts after removal from the old position (DSG-FD-085).</summary>
-public sealed record MoveObject(string ObjectName, string NewParentName, int NewIndex) : FormChange;
+public sealed record MoveObject(string ObjectName, string NewParentName, int NewIndex) : FormChange
+{
+    /// <summary>
+    /// Set on inverses only: an index below the inherited children of the new parent is clamped, not rejected (DSG-FD-134).
+    /// Not part of equality: an inverse equals the move a caller would write.
+    /// </summary>
+    internal bool IsInverse { get; init; }
+
+    public bool Equals(MoveObject? other) =>
+        other is not null && ObjectName == other.ObjectName && NewParentName == other.NewParentName && NewIndex == other.NewIndex;
+
+    public override int GetHashCode() => HashCode.Combine(ObjectName, NewParentName, NewIndex);
+}
 
 /// <summary>Renames an object and updates the component references to it (DSG-FD-082).</summary>
 public sealed record RenameObject(string OldName, string NewName) : FormChange
 {
-    /// <summary>Set on inverses only: the exact reference lines to put back instead of re-deriving them.</summary>
-    internal ImmutableArray<(FormObject Owner, ImmutableArray<PropertySlot> Slots)> RestoreReferences { get; init; }
+    /// <summary>
+    /// Set on inverses only: the exact reference lines to put back instead of re-deriving them, by the owners' qualified
+    /// names (a re-merge replaces the objects of a descendant, DSG-FD-134).
+    /// </summary>
+    internal ImmutableArray<(string Owner, ImmutableArray<PropertySlot> Slots)> RestoreReferences { get; init; }
 }
 
 /// <summary>

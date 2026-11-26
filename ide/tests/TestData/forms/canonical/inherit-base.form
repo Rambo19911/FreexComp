@@ -1,0 +1,39 @@
+object BaseForm: TBaseForm
+  Left = 200
+  Top = 120
+  Caption = 'Base'
+  ClientWidth = 400
+  ClientHeight = 240
+  PixelsPerInch = 96
+  object TitleLabel: TLabel
+    Left = 8
+    Top = 8
+    Width = 60
+    Height = 15
+    Caption = 'Title'
+  end
+  object ButtonPanel: TPanel
+    Left = 0
+    Top = 200
+    Width = 400
+    Height = 40
+    TabOrder = 0
+    object OkButton: TButton
+      Left = 230
+      Top = 8
+      Width = 75
+      Height = 25
+      Caption = 'OK'
+      TabOrder = 0
+      OnClick = OkButtonClick
+    end
+    object CancelButton: TButton
+      Left = 315
+      Top = 8
+      Width = 75
+      Height = 25
+      Caption = 'Cancel'
+      TabOrder = 1
+    end
+  end
+end

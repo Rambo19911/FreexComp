@@ -41,7 +41,7 @@ public static class FormParser
         try
         {
             var document = parser.ParseFile();
-            document.AttachFrames(frames, catalog, ancestors);
+            document.AttachFrames(frames, catalog, ancestors, rootAncestorClass);
             FormValidator.Validate(document, catalog); // DSG-FD-070: validation runs after the parse
             return new FormParseResult(document, [.. document.Diagnostics]);
         }
@@ -71,6 +71,24 @@ public static class FormParser
         catch (SyntaxErrorException error)
         {
             return new FormFragmentResult([], [parser.SyntaxDiagnostic(error)]);
+        }
+    }
+
+    /// <summary>
+    /// A whole document written by the writer, parsed again against the current catalogs (DSG-FD-134): not attached to the
+    /// catalogs and not validated (the caller takes over its tree); null on a syntax error.
+    /// </summary>
+    internal static FormDocument? ParseAgain(string text, string path, ComponentCatalog catalog, string? rootAncestorClass,
+        IFrameCatalog? frames, IFrameCatalog? ancestors)
+    {
+        var parser = new Parser(text, path, catalog, rootAncestorClass, frames, ancestors: ancestors);
+        try
+        {
+            return parser.ParseFile();
+        }
+        catch (SyntaxErrorException)
+        {
+            return null;
         }
     }
 

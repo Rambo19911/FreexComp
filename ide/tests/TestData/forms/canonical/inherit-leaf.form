@@ -1,0 +1,25 @@
+inherited LeafForm: TLeafForm
+  Caption = 'Leaf'
+  inherited ButtonPanel: TPanel
+    inherited OkButton: TButton
+      Left = 220
+      Caption = 'Save'
+    end
+    inherited HelpButton: TButton
+      Caption = '?'
+    end
+  end
+  inherited NameEdit: TEdit
+    Width = 240
+  end
+  inline Address: TAddressFrame
+    Left = 8
+    Top = 64
+    Width = 320
+    Height = 120
+    TabOrder = 2
+    inherited StreetLabel: TLabel
+      Caption = 'Road'
+    end
+  end
+end

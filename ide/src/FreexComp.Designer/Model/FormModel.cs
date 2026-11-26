@@ -94,14 +94,83 @@ public sealed class FormDocument
     /// <summary>The ancestor catalog the document was parsed with (DSG-FD-122); null: none.</summary>
     public IFrameCatalog? Ancestors { get; private set; }
 
-    internal void AttachFrames(IFrameCatalog? frames, ComponentCatalog catalog, IFrameCatalog? ancestors = null)
+    /// <summary>The ancestor class the root was parsed with (code sync's <c>class(…)</c>); a re-merge parses with it again.</summary>
+    internal string? RootAncestorClass { get; private set; }
+
+    /// <summary>The weak link to <see cref="Ancestors"/>' <c>Changed</c> event (DSG-FD-134).</summary>
+    internal AncestorSubscription? AncestorLink { get; private set; }
+
+    /// <summary>
+    /// True for a document whose root is declared <c>inherited</c> and that follows an ancestor catalog — resolved or
+    /// shown read-only (<c>F0112</c>) until its ancestor is listed: it is re-merged from its root (DSG-FD-134).
+    /// </summary>
+    internal bool FollowsAncestor => AncestorLink is not null && Root.Kind == FormObjectKind.Inherited;
+
+    internal void AttachFrames(IFrameCatalog? frames, ComponentCatalog catalog, IFrameCatalog? ancestors = null, string? rootAncestorClass = null)
     {
         Frames = frames;
         Ancestors = ancestors;
+        RootAncestorClass = rootAncestorClass;
         if (frames is not null)
         {
             FrameLink = new FrameSubscription(this, frames, catalog);
         }
+
+        if (ancestors is not null && rootAncestorClass is not null)
+        {
+            AncestorLink = new AncestorSubscription(this, ancestors, catalog);
+        }
+    }
+
+    /// <summary>
+    /// DSG-FD-134: true when one of <paramref name="changed"/> is a class of the ancestor chain (the class the root was
+    /// parsed with, then each resolved level's) or a frame contained anywhere in the merged tree.
+    /// </summary>
+    internal bool DependsOn(IReadOnlyCollection<string> changed)
+    {
+        bool Listed(string? className) => className is not null && changed.Contains(className, StringComparer.OrdinalIgnoreCase);
+
+        if (Listed(RootAncestorClass))
+        {
+            return true;
+        }
+
+        var seen = new HashSet<FormDocument>(ReferenceEqualityComparer.Instance) { this };
+        for (var level = Ancestor; level is not null && seen.Add(level.Document); level = level.Document.Ancestor)
+        {
+            if (Listed(level.ClassName) || Listed(level.Document.RootAncestorClass))
+            {
+                return true;
+            }
+        }
+
+        return ContainsFrame(changed);
+    }
+
+    /// <summary>True when an instance anywhere in the tree (inherited copies included) is of one of <paramref name="changed"/>.</summary>
+    internal bool ContainsFrame(IReadOnlyCollection<string> changed) =>
+        AllObjects().Any(o => (o.Frame?.ClassName ?? (o.Kind == FormObjectKind.Inline ? o.TypeName : null)) is { } frame
+            && changed.Contains(frame, StringComparer.OrdinalIgnoreCase));
+
+    /// <summary>
+    /// DSG-FD-134: takes over the tree of <paramref name="parsed"/> (this document's text parsed again): the root object
+    /// stays and receives the new contents, names, parser diagnostics and line map.
+    /// </summary>
+    internal void ReplaceTree(FormDocument parsed)
+    {
+        Root.ReplaceContents(parsed.Root);
+        Root.SourceSpan = parsed.Root.SourceSpan;
+        Root.HeaderSpan = parsed.Root.HeaderSpan;
+        FormObject Map(FormObject obj) => ReferenceEquals(obj, parsed.Root) ? Root : obj;
+        _byName.Clear();
+        foreach (var (name, obj) in parsed._byName)
+        {
+            _byName[name] = Map(obj);
+        }
+
+        ParseDiagnostics.Clear();
+        ParseDiagnostics.AddRange(parsed.ParseDiagnostics.Select(d => d with { Owner = Map(d.Owner) }));
+        Lines = parsed.Lines;
     }
 
     /// <summary>Every object in pre-order, the root first.</summary>
@@ -122,7 +191,7 @@ public sealed class FormDocument
     internal string SourcePath { get; init; } = "";
 
     /// <summary>Line map of the last parsed text (validation diagnostics point into it, DSG-FD-071).</summary>
-    internal SourceLines Lines { get; init; } = SourceLines.Empty;
+    internal SourceLines Lines { get; set; } = SourceLines.Empty;
 
     /// <summary>The parser's semantic diagnostics with the items they are about (kept by validation while those exist).</summary>
     internal List<ParseDiagnostic> ParseDiagnostics { get; } = [];
@@ -427,9 +496,13 @@ public sealed class FormObject
         return null;
     }
 
-    /// <summary>Takes over the contents of <paramref name="other"/> (a re-parsed copy of this instance, DSG-FD-111).</summary>
+    /// <summary>
+    /// Takes over the contents of <paramref name="other"/> (a re-parsed copy of this instance, DSG-FD-111, or of this
+    /// document's root, DSG-FD-134).
+    /// </summary>
     internal void ReplaceContents(FormObject other)
     {
+        _ancestor = other._ancestor;
         Info = other.Info;
         Frame = other.Frame;
         InheritedFrom = other.InheritedFrom;

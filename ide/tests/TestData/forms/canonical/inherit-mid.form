@@ -1,0 +1,27 @@
+inherited MidForm: TMidForm
+  Caption = 'Mid'
+  inherited TitleLabel: TLabel
+    Caption = 'Mid title'
+  end
+  inherited ButtonPanel: TPanel
+    BevelOuter = bvNone
+    inherited OkButton: TButton
+      Caption = 'Apply'
+    end
+    object HelpButton: TButton
+      Left = 8
+      Top = 8
+      Width = 75
+      Height = 25
+      Caption = 'Help'
+      TabOrder = 2
+    end
+  end
+  object NameEdit: TEdit
+    Left = 8
+    Top = 32
+    Width = 200
+    Height = 23
+    TabOrder = 1
+  end
+end
