@@ -115,6 +115,7 @@ KillTimer
 LoadCursorW
 LoadIconW
 LoadImageW
+LoadStringW
 MapVirtualKeyW
 MapWindowPoints
 MessageBeep

@@ -9,7 +9,8 @@
     GlobalAddAtomW, GlobalDeleteAtom),
     errhandlingapi.h, debugapi.h, consoleapi.h, fileapi.h,
     handleapi.h, timezoneapi.h, profileapi.h, synchapi.h, stringapiset.h, winnls.h, wdm.h RtlGetVersion;
-    libloaderapi.h FindResourceW, LoadResource, LockResource, SizeofResource and the "Resource Types" page);
+    libloaderapi.h FindResourceW, FindResourceExW, LoadResource, LockResource, SizeofResource and the "Resource
+    Types" page);
   - the structure pages SYSTEMTIME, FILETIME, WIN32_FIND_DATAW, WIN32_FILE_ATTRIBUTE_DATA, RTL_CRITICAL_SECTION,
     EXCEPTION_RECORD, TIME_ZONE_INFORMATION, SECURITY_ATTRIBUTES, OVERLAPPED, SYSTEM_INFO, OSVERSIONINFOW,
     OSVERSIONINFOEXW, ACTCTXW;
@@ -20,7 +21,7 @@
     NONCLIENTMETRICSW, LOGFONTW, DRAWITEMSTRUCT, MEASUREITEMSTRUCT, WINDOWPLACEMENT, MONITORINFO, TRACKMOUSEEVENT, ICONINFO, ACCEL;
     Window Styles, Extended Window Styles, Window Class Styles, Button Styles, Edit Control Styles, List Box Styles,
     Combo Box Styles, Static Control Styles, Scroll Bar Control Styles, Virtual-Key Codes, GetSystemMetrics,
-    SystemParametersInfoW, GetSysColor, LoadCursorW/LoadIconW, MessageBox, DPI_AWARENESS_CONTEXT handle pages;
+    SystemParametersInfoW, GetSysColor, LoadCursorW/LoadIconW, LoadStringW, MessageBox, DPI_AWARENESS_CONTEXT handle pages;
   - gdi32 (wingdi.h): the reference page of every gdi32 function declared below; the structure pages TEXTMETRICW,
     LOGBRUSH, BITMAPINFOHEADER, RGBQUAD, BITMAPINFO, BITMAP, BITMAPFILEHEADER, BLENDFUNCTION; Ternary Raster Operations, Binary
     Raster Operations, GetDeviceCaps, GetStockObject, LOGFONTW member pages.
@@ -2113,6 +2114,12 @@ function DisableThreadLibraryCalls(hLibModule: HMODULE): BOOL; stdcall; external
   MakeIntResource(number). }
 function FindResourceW(hModule: HMODULE; lpName, lpType: LPCWSTR): HRSRC; stdcall; external kernel32 name 'FindResourceW';
 function FindResource(hModule: HMODULE; lpName, lpType: LPCWSTR): HRSRC; stdcall; external kernel32 name 'FindResourceW';
+{ FindResourceExW takes the type before the name (unlike FindResourceW) and the language as a LANGID word: a
+  language the module has no entry for gives 0. }
+function FindResourceExW(hModule: HMODULE; lpType, lpName: LPCWSTR; wLanguage: Word): HRSRC; stdcall;
+  external kernel32 name 'FindResourceExW';
+function FindResourceEx(hModule: HMODULE; lpType, lpName: LPCWSTR; wLanguage: Word): HRSRC; stdcall;
+  external kernel32 name 'FindResourceExW';
 function LoadResource(hModule: HMODULE; hResInfo: HRSRC): HGLOBAL; stdcall; external kernel32 name 'LoadResource';
 function LockResource(hResData: HGLOBAL): Pointer; stdcall; external kernel32 name 'LockResource';
 function SizeofResource(hModule: HMODULE; hResInfo: HRSRC): DWORD; stdcall; external kernel32 name 'SizeofResource';
@@ -2671,6 +2678,13 @@ function GetNextDlgTabItem(hDlg, hCtl: HWND; bPrevious: BOOL): HWND; stdcall; ex
   The parameter "type" of LoadImageW is named uType (type is a reserved word). }
 function LoadIconW(hInstance: HINST; lpIconName: LPCWSTR): HICON; stdcall; external user32 name 'LoadIconW';
 function LoadIcon(hInstance: HINST; lpIconName: LPCWSTR): HICON; stdcall; external user32 name 'LoadIconW';
+{ LoadStringW copies string uID into lpBuffer (cchBufferMax characters with the null) and returns the characters
+  copied, 0 for a missing string; with cchBufferMax 0 it stores a read-only pointer to the resource text (not
+  null-terminated) in the pointer lpBuffer points to and returns its length. }
+function LoadStringW(hInstance: HINST; uID: UINT; lpBuffer: LPWSTR; cchBufferMax: Integer): Integer; stdcall;
+  external user32 name 'LoadStringW';
+function LoadString(hInstance: HINST; uID: UINT; lpBuffer: LPWSTR; cchBufferMax: Integer): Integer; stdcall;
+  external user32 name 'LoadStringW';
 function LoadImageW(hInst: HINST; name: LPCWSTR; uType: UINT; cx, cy: Integer; fuLoad: UINT): THandle; stdcall;
   external user32 name 'LoadImageW';
 function LoadImage(hInst: HINST; name: LPCWSTR; uType: UINT; cx, cy: Integer; fuLoad: UINT): THandle; stdcall;

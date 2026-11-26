@@ -9,6 +9,7 @@ ImageList_Create
 ImageList_Destroy
 ImageList_Draw
 ImageList_DrawEx
+ImageList_GetBkColor
 ImageList_GetIcon
 ImageList_GetIconSize
 ImageList_GetImageCount

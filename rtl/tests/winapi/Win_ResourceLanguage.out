@@ -1,0 +1,18 @@
+# FindResourceExW
+ok RCDATA 1 in 1033
+ok RCDATA 1 in 1031
+ok RCDATA 1 has no entry in 1036
+ok FindResourceEx, module 0 is the program
+ok RCDATA 2 does not exist
+# LoadStringW
+ok string 7: characters copied
+ok string 7
+ok LoadString, string 20: characters copied
+ok string 20
+ok string 20 truncated to a 4-character buffer
+ok the truncated string ends with a null
+ok buffer size 0: the length of the resource
+ok buffer size 0: a pointer to the resource
+ok the resource the pointer names
+ok a missing string gives 0
+# passed 15 failed 0

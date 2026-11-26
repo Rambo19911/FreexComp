@@ -26,6 +26,7 @@ FileTimeToSystemTime
 FindClose
 FindFirstFileW
 FindNextFileW
+FindResourceExW
 FindResourceW
 FlushFileBuffers
 FlushInstructionCache

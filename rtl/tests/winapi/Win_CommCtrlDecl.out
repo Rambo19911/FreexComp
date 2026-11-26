@@ -1,0 +1,11 @@
+# import
+ok the loaded comctl32 exports ImageList_GetBkColor
+# ImageList_GetBkColor
+ok a masked 32-bit 4 x 4 image list
+ok SetBkColor returns the colour GetBkColor read
+ok GetBkColor reads the colour that was set
+ok SetBkColor returns the colour set before
+ok GetBkColor reads CLR_NONE
+# cleanup
+ok ImageList_Destroy
+# passed 7 failed 0

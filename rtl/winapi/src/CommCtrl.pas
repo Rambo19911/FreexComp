@@ -4,7 +4,8 @@
   header controls (rtl/winapi.md sections 1 and 5.5; task R-112). Uses Windows and Messages (WM_USER).
   Written by hand from the Win32 reference on learn.microsoft.com (RTL-800):
   - the reference page of every comctl32 function declared below (InitCommonControlsEx, ImageList_* in
-    commctrl.h, among them ImageList_Replace and ImageList_SetOverlayImage, task R-249) and the ImageList_AddIcon
+    commctrl.h, among them ImageList_Replace and ImageList_SetOverlayImage, task R-249, and ImageList_GetBkColor,
+    task R-253) and the ImageList_AddIcon
     and INDEXTOOVERLAYMASK macro pages;
   - the structure pages INITCOMMONCONTROLSEX, NMCUSTOMDRAW, NMLVCUSTOMDRAW, NMTVCUSTOMDRAW, TCITEMW,
     TCHITTESTINFO, TBBUTTON, TBADDBITMAP, TBBUTTONINFOW, NMTOOLBARW, PBRANGE, UDACCEL, NMUPDOWN, TTTOOLINFOW,
@@ -1673,6 +1674,7 @@ function ImageList_DrawEx(himl: HIMAGELIST; i: Integer; hdcDst: HDC; x, y, dx, d
   fStyle: UINT): BOOL; stdcall; external comctl32 name 'ImageList_DrawEx';
 function ImageList_SetBkColor(himl: HIMAGELIST; clrBk: COLORREF): COLORREF; stdcall;
   external comctl32 name 'ImageList_SetBkColor';
+function ImageList_GetBkColor(himl: HIMAGELIST): COLORREF; stdcall; external comctl32 name 'ImageList_GetBkColor';
 function ImageList_GetIconSize(himl: HIMAGELIST; var cx, cy: Integer): BOOL; stdcall;
   external comctl32 name 'ImageList_GetIconSize';
 function ImageList_SetIconSize(himl: HIMAGELIST; cx, cy: Integer): BOOL; stdcall;
