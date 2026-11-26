@@ -3,8 +3,8 @@ using System.Runtime.InteropServices;
 namespace FreexComp.UiFramework.Automation.Tests;
 
 // Test-only interop slice of the operating system's UI Automation COM client (decision Q-P8A-16): the coclass
-// CUIAutomation and the parts of IUIAutomation and IUIAutomationElement the client tests call, current values only,
-// no cache requests. Interface GUIDs, CLSID and the vtable order are those of the published interface definitions
+// CUIAutomation and the parts of IUIAutomation and IUIAutomationElement the client tests call, current values (and the
+// one cache request of U-161). Interface GUIDs, CLSID and the vtable order are those of the published interface definitions
 // (UIAutomationClient.idl on the reference pages, read back from the type library embedded in the system's
 // UIAutomationCore.dll); property and control-type ids from the reference pages "Automation Element Property IDs" and
 // "Control Type Identifiers" (the values the rtl binding unit UIAutomation declares, RTL-1115). Each interface declares
@@ -18,6 +18,11 @@ namespace FreexComp.UiFramework.Automation.Tests;
 // property ids from the reference pages "Control Pattern Identifiers", "Event Identifiers" and "Property IDs".
 // U-157 added AddFocusChangedEventHandler of IUIAutomation (slot 39), the Grid, SelectionItem and Value pattern
 // interfaces and the focus-changed handler interface, read back from the type library the same way.
+// U-161 added CreateCacheRequest and CreateTrueCondition of IUIAutomation (slots 20, 21), the cache request of the
+// focus-changed handler (slot 39), RemoveFocusChangedEventHandler (slot 40), GetCachedPropertyValue of
+// IUIAutomationElement (slot 12) and IUIAutomationCacheRequest (AddProperty, put_TreeFilter), read back the same way:
+// the focus-changed handler gets the process id, control type and name of each sender prefetched, so it never calls
+// into another process from its callback.
 
 /// <summary>CLSID_CUIAutomation.</summary>
 [ComImport]
@@ -34,7 +39,7 @@ internal interface IUIAutomationCondition
 {
 }
 
-/// <summary>IUIAutomation, slots 3 (after IUnknown) to 23.</summary>
+/// <summary>IUIAutomation, slots 3 (after IUnknown) to 41.</summary>
 [ComImport]
 [Guid("30CBE57D-D9D0-452A-AB13-7AC5AC4825EE")]
 [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
@@ -59,8 +64,11 @@ internal interface IUIAutomation
     void Slot17_get_RawViewCondition();
     void Slot18_get_ControlViewCondition();
     void Slot19_get_ContentViewCondition();
-    void Slot20_CreateCacheRequest();
-    void Slot21_CreateTrueCondition();
+
+    IUIAutomationCacheRequest CreateCacheRequest();                                         // slot 20
+
+    IUIAutomationCondition CreateTrueCondition();                                           // slot 21
+
     void Slot22_CreateFalseCondition();
 
     IUIAutomationCondition CreatePropertyCondition(int propertyId, [MarshalAs(UnmanagedType.Struct)] object value); // slot 23
@@ -91,9 +99,10 @@ internal interface IUIAutomation
 
     void Slot38_RemoveStructureChangedEventHandler();
 
-    void AddFocusChangedEventHandler(IntPtr cacheRequest, IUIAutomationFocusChangedEventHandler handler); // slot 39
+    void AddFocusChangedEventHandler(IUIAutomationCacheRequest? cacheRequest,
+        IUIAutomationFocusChangedEventHandler handler);                                    // slot 39
 
-    void Slot40_RemoveFocusChangedEventHandler();
+    void RemoveFocusChangedEventHandler(IUIAutomationFocusChangedEventHandler handler);   // slot 40
 
     void RemoveAllEventHandlers();                                                          // slot 41
 }
@@ -119,7 +128,9 @@ internal interface IUIAutomationElement
     object? GetCurrentPropertyValue(int propertyId);                                        // slot 10
 
     void Slot11_GetCurrentPropertyValueEx();
-    void Slot12_GetCachedPropertyValue();
+    [return: MarshalAs(UnmanagedType.Struct)]
+    object? GetCachedPropertyValue(int propertyId);                                         // slot 12
+
     void Slot13_GetCachedPropertyValueEx();
     void Slot14_GetCurrentPatternAs();
     void Slot15_GetCachedPatternAs();
@@ -259,6 +270,23 @@ internal interface IUIAutomationStructureChangedEventHandler
         [MarshalAs(UnmanagedType.SafeArray, SafeArraySubType = VarEnum.VT_I4)] int[]? runtimeId); // slot 3
 }
 
+/// <summary>IUIAutomationCacheRequest, slots 3 to 9.</summary>
+[ComImport]
+[Guid("B32A92B5-BC25-4078-9C08-D7EE95C48E03")]
+[InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+internal interface IUIAutomationCacheRequest
+{
+    void AddProperty(int propertyId);                                                      // slot 3
+
+    void Slot4_AddPattern();
+    void Slot5_Clone();
+    void Slot6_get_TreeScope();
+    void Slot7_put_TreeScope();
+    void Slot8_get_TreeFilter();
+
+    IUIAutomationCondition TreeFilter { set; }                                              // slot 9 (put)
+}
+
 /// <summary>TreeScope.</summary>
 [Flags]
 internal enum TreeScope
@@ -271,6 +299,8 @@ internal enum TreeScope
 /// <summary>The ids the tests use (reference pages; UIA_*PropertyId, UIA_*ControlTypeId).</summary>
 internal static class UiaIds
 {
+    public const int ProcessIdProperty = 30002;
+    public const int ControlTypeProperty = 30003;
     public const int NameProperty = 30005;
     public const int IsEnabledProperty = 30010;
     public const int AutomationIdProperty = 30011;

@@ -6,9 +6,9 @@ namespace FreexComp.UiFramework.Automation.Tests;
 /// <summary>
 /// U-157 (accessibility.md §7, §9): the string grid of <c>tests/gui/AccessibilityProbe.pas</c> as the operating
 /// system's COM client sees it. The probe sets the focus inside its own thread (its form becomes the active window of
-/// that thread, no foreground change), so the class runs in the <c>Desktop</c> collection, one test at a time with the
-/// other foreground tests of that collection. Keys reach the grid as messages the probe sends to its own window: no
-/// input is injected and nothing outside the probe is touched.
+/// that thread, no foreground change); like every test of this project (U-161: no parallel test runs in the
+/// assembly) it runs alone. Keys reach the grid as messages the probe sends to its own window: no input is injected
+/// and nothing outside the probe is touched.
 /// </summary>
 [Collection(DesktopCollection.Name)]
 [Trait("Phase", "8")]
@@ -67,47 +67,69 @@ public sealed class AccessibilityGridClientTests
         Assert.NotEqual(0, selection.CurrentIsSelected);
 
         Assert.Equal("focused grid True", probe.Request(WM_PROBE_GRID_FOCUS, "focused grid "));
-        var sink = new FocusSink();
-        probe.Client.AddFocusChangedEventHandler(IntPtr.Zero, sink);
+        var sink = new FocusSink(probe.App.Process.Id);
+        probe.Client.AddFocusChangedEventHandler(FocusSink.Prefetch(probe.Client), sink);
         Assert.Equal("grid 1 3", probe.Request(WM_PROBE_GRID_KEY, "grid ", VK_DOWN));
         Assert.Equal("grid 2 3", probe.Request(WM_PROBE_GRID_KEY, "grid ", VK_RIGHT));
         Assert.True(
-            Gui.WaitUntil(() => sink.Cells().Contains("Delta")),
+            probe.WaitUntil(() => sink.Cells().Contains("Delta")),
             "no focus-changed event on cell (2, 3); seen: " + sink);
         Assert.Equal("Gamma Delta", string.Join(" ", sink.Cells()));
-        probe.Client.RemoveAllEventHandlers();
+        probe.RemoveHandlers();
         probe.Close();
     }
 
     /// <summary>
-    /// The client's focus-changed handler (a COM callable wrapper the system calls on its own threads): it records
-    /// the name and control type of each sender; focus changes of other programs on the desktop are recorded too and
-    /// filtered by <see cref="Cells"/>.
+    /// The client's focus-changed handler (a COM callable wrapper the system calls on its own threads). Focus-changed
+    /// events come from the whole desktop (other programs, the user's activity); U-161: the handler keeps only those
+    /// whose sender belongs to the probe's process, and reads the sender's process id, control type and name from the
+    /// cache the system filled before the call (<see cref="Prefetch"/>), so it never calls into another process.
     /// </summary>
     [ComVisible(true)]
-    private sealed class FocusSink : IUIAutomationFocusChangedEventHandler
+    private sealed class FocusSink(int processId) : IUIAutomationFocusChangedEventHandler
     {
         private readonly List<(string Name, int Type)> events = [];
+        private int others;
+
+        /// <summary>The cache request of the handler: process id, control type and name of the sender itself.</summary>
+        public static IUIAutomationCacheRequest Prefetch(IUIAutomation client)
+        {
+            var request = client.CreateCacheRequest();
+            request.AddProperty(UiaIds.ProcessIdProperty);
+            request.AddProperty(UiaIds.ControlTypeProperty);
+            request.AddProperty(UiaIds.NameProperty);
+            request.TreeFilter = client.CreateTrueCondition();              // every sender, control view or not
+            return request;
+        }
 
         public void HandleFocusChangedEvent(IUIAutomationElement sender)
         {
-            (string, int) e;
+            (string, int)? e;
             try
             {
-                e = (sender.CurrentName, sender.CurrentControlType);
+                e = sender.GetCachedPropertyValue(UiaIds.ProcessIdProperty) is int pid && pid == processId
+                    ? (sender.GetCachedPropertyValue(UiaIds.NameProperty) as string ?? "", sender.GetCachedPropertyValue(UiaIds.ControlTypeProperty) is int type ? type : 0)
+                    : null;
             }
             catch (COMException)
             {
-                e = ("<gone>", 0);
+                e = null;                                                   // nothing cached: not one of the probe's
             }
 
             lock (events)
             {
-                events.Add(e);
+                if (e is { } own)
+                {
+                    events.Add(own);
+                }
+                else
+                {
+                    others++;
+                }
             }
         }
 
-        /// <summary>The names of the grid cells (DataItem senders) that received the focus, in order.</summary>
+        /// <summary>The names of the probe's grid cells (DataItem senders) that received the focus, in order.</summary>
         public string[] Cells()
         {
             lock (events)
@@ -120,7 +142,8 @@ public sealed class AccessibilityGridClientTests
         {
             lock (events)
             {
-                return string.Join("; ", events.Select(e => $"{UiaIds.Name(e.Type)} '{e.Name}'"));
+                return string.Join("; ", events.Select(e => $"{UiaIds.Name(e.Type)} '{e.Name}'"))
+                    + $" (and {others} of other processes)";
             }
         }
     }

@@ -1,6 +1,11 @@
 using System.Runtime.InteropServices;
 using FreexComp.UiFramework.Tests;
 
+// U-161: the tests of this project run one at a time (xUnit runs the test classes in parallel otherwise). With two
+// probes started at once the client's ElementFromHandle failed with E_FAIL, and after RemoveAllEventHandlers of one
+// test the focus-changed handler of the grid test received no further events, so its wait ran to the limit.
+[assembly: CollectionBehavior(DisableTestParallelization = true)]
+
 namespace FreexComp.UiFramework.Automation.Tests;
 
 /// <summary>
@@ -149,7 +154,7 @@ public sealed class AccessibilityClientTests
         Assert.Equal("OK", button.CurrentName);                         // its own text, from the system
         Assert.Equal("Confirms the dialog", button.CurrentHelpText);    // AccessibleDescription
         probe.Post(WM_PROBE_RENAME);
-        Assert.True(probe.App.WaitForOutputLine("renamed"), probe.Output("the rename marker"));
+        Assert.True(probe.WaitForLine("renamed"), probe.Output("the rename marker"));
         Assert.Equal("Renamed fruit list", list.CurrentName);
         Assert.Equal("Full name:", edit.CurrentName);                   // the caption of its label changed
         probe.Close();
@@ -225,13 +230,13 @@ public sealed class AccessibilityClientTests
         Assert.Null(button.GetCurrentPattern(UiaIds.TogglePattern));                    // a plain button: no Toggle
         var invoke = (IUIAutomationInvokePattern)button.GetCurrentPattern(UiaIds.InvokePattern)!;
         invoke.Invoke();
-        Assert.True(probe.App.WaitForOutputLine("click PlainButton"), probe.Output("the click marker"));
+        Assert.True(probe.WaitForLine("click PlainButton"), probe.Output("the click marker"));
         Assert.True(
-            Gui.WaitUntil(() => sink.Has(e => e.Kind == "event" && e.Id == UiaIds.InvokeInvokedEvent)),
+            probe.WaitUntil(() => sink.Has(e => e.Kind == "event" && e.Id == UiaIds.InvokeInvokedEvent)),
             "no Invoke_Invoked event; seen: " + sink);
         probe.Request(WM_PROBE_COUNT, "providers ");                                    // every earlier post handled
         Assert.Equal(1, probe.Lines("click PlainButton"));
-        probe.Client.RemoveAllEventHandlers();
+        probe.RemoveHandlers();
         probe.Close();
     }
 
@@ -257,18 +262,18 @@ public sealed class AccessibilityClientTests
         probe.Client.AddPropertyChangedEventHandlerNativeArray(
             check, TreeScope.Element, IntPtr.Zero, sink, [UiaIds.ToggleStateProperty], 1);
         toggle.Toggle();
-        Assert.True(probe.App.WaitForOutputLine("click CheckButton"), probe.Output("the click marker"));
+        Assert.True(probe.WaitForLine("click CheckButton"), probe.Output("the click marker"));
         Assert.True(
-            Gui.WaitUntil(() => sink.Has(e => e.Id == UiaIds.ToggleStateProperty && Equals(e.Value, UiaIds.ToggleOn))),
+            probe.WaitUntil(() => sink.Has(e => e.Id == UiaIds.ToggleStateProperty && Equals(e.Value, UiaIds.ToggleOn))),
             "no ToggleState On event after Toggle; seen: " + sink);
         Assert.Equal(UiaIds.ToggleOn, toggle.CurrentToggleState);
         probe.Request(WM_PROBE_RELEASE, "released");
         Assert.True(
-            Gui.WaitUntil(() => sink.Has(e => e.Id == UiaIds.ToggleStateProperty && Equals(e.Value, UiaIds.ToggleOff))),
+            probe.WaitUntil(() => sink.Has(e => e.Id == UiaIds.ToggleStateProperty && Equals(e.Value, UiaIds.ToggleOff))),
             "no ToggleState Off event after Down := False; seen: " + sink);
         Assert.Equal(UiaIds.ToggleOff, toggle.CurrentToggleState);
         Assert.Equal("1 0", sink.Values(UiaIds.ToggleStateProperty));                  // On, then Off: one event each
-        probe.Client.RemoveAllEventHandlers();
+        probe.RemoveHandlers();
         probe.Close();
     }
 
@@ -359,20 +364,20 @@ public sealed class AccessibilityClientTests
         probe.Client.AddStructureChangedEventHandler(panel, TreeScope.Element, IntPtr.Zero, panelSink);
         probe.Request(WM_PROBE_CHANGE, "changed");
         Assert.True(
-            Gui.WaitUntil(() => labelSink.Has(e => e.Id == UiaIds.NameProperty && Equals(e.Value, "Changed label"))),
+            probe.WaitUntil(() => labelSink.Has(e => e.Id == UiaIds.NameProperty && Equals(e.Value, "Changed label"))),
             "no Name event of the label; seen: " + labelSink);
         Assert.True(
-            Gui.WaitUntil(() => imageSink.Has(e => e.Id == UiaIds.IsEnabledProperty && Equals(e.Value, false))),
+            probe.WaitUntil(() => imageSink.Has(e => e.Id == UiaIds.IsEnabledProperty && Equals(e.Value, false))),
             "no IsEnabled event of the image; seen: " + imageSink);
         Assert.True(
-            Gui.WaitUntil(() => panelSink.Count(e => e.Kind == "structure") >= 1),
+            probe.WaitUntil(() => panelSink.Count(e => e.Kind == "structure") >= 1),
             "no structure-changed event of the panel after the insertion; seen: " + panelSink);
         Assert.Equal("Changed label", label.CurrentName);
         Assert.Equal(false, image.GetCurrentPropertyValue(UiaIds.IsEnabledProperty));
         Assert.NotNull(panel.FindFirst(TreeScope.Children, probe.IdCondition("InsertedLabel")));
         probe.Request(WM_PROBE_REMOVE, "removed");
         Assert.True(
-            Gui.WaitUntil(() => panelSink.Count(e => e.Kind == "structure") >= 2),
+            probe.WaitUntil(() => panelSink.Count(e => e.Kind == "structure") >= 2),
             "no structure-changed event of the panel after the removal; seen: " + panelSink);
         Assert.Null(panel.FindFirst(TreeScope.Children, probe.IdCondition("InsertedLabel")));
         Assert.All(panelSink.All(), e =>
@@ -380,7 +385,7 @@ public sealed class AccessibilityClientTests
             Assert.Equal(UiaIds.ChildrenInvalidated, e.Id);
             Assert.Equal(panelId, e.Value as string);
         });
-        probe.Client.RemoveAllEventHandlers();
+        probe.RemoveHandlers();
         probe.Close();
     }
 
@@ -438,17 +443,40 @@ public sealed class AccessibilityClientTests
     /// <summary>
     /// A started probe: its main window, the COM client and the window's element, the marker protocol of the program
     /// (internal: U-157's <see cref="AccessibilityGridClientTests"/> uses it too).
+    /// U-161: one test with a probe lasts at most <see cref="Budget"/> (build, start and every wait included): every
+    /// wait of the probe ends at that deadline, where a watchdog kills the probe so that a wait inside a call to it
+    /// ends too. The probe is in a job object of the test host that kills it when the host ends (also when the host
+    /// is stopped); <see cref="Dispose"/> kills it and removes the client's event handlers, also after a failure.
     /// </summary>
     internal sealed class Probe : IDisposable
     {
+        /// <summary>
+        /// The time a test with a probe may take from <see cref="Start"/> to <see cref="Close"/>: 0.4 of the shared net
+        /// (48 s), so that a test of this project, its handler removal and the kill included, ends within 60 s (U-161).
+        /// </summary>
+        public static readonly TimeSpan Budget = Gui.SafetyNet * 0.4;
+
+        private const uint JobObjectLimitKillOnJobClose = 0x2000;
+        private const int JobObjectExtendedLimitInformationClass = 9;
+
+        /// <summary>How long the removal of the client's event handlers may take (1/24 of the shared net: 5 s).</summary>
+        private static readonly TimeSpan RemovalLimit = Gui.SafetyNet / 24;
+
+        private static readonly Lazy<IntPtr> HostJob = new(CreateHostJob);
+
+        private readonly DateTime deadline;
+        private readonly Timer watchdog;
+        private bool handlersRemoved;
         private int linesSeen;
 
-        private Probe(Gui.GuiProcess app, IntPtr window)
+        private Probe(Gui.GuiProcess app, IntPtr window, DateTime deadline)
         {
             App = app;
             Window = window;
+            this.deadline = deadline;
             Client = (IUIAutomation)new CUIAutomation();
             Root = Client.ElementFromHandle(window);
+            watchdog = new Timer(_ => App.Dispose(), null, Remaining, Timeout.InfiniteTimeSpan);
         }
 
         public Gui.GuiProcess App { get; }
@@ -459,21 +487,38 @@ public sealed class AccessibilityClientTests
 
         public IUIAutomationElement Root { get; }
 
+        /// <summary>The time left until the deadline of the test (never negative).</summary>
+        public TimeSpan Remaining => Until(deadline);
+
         public static Probe Start()
         {
+            var deadline = DateTime.UtcNow + Budget;
             var exe = Gui.BuildProgram(ProbeSource);
             var app = Gui.StartGui(exe, [], new Dictionary<string, string>());
-            var window = Gui.WaitForMainWindow(app, "PN.TForm", "Accessibility Probe");
-            if (window == IntPtr.Zero)
+            try
             {
-                var output = app.StdOut + app.StdErr;
-                app.Dispose();
-                Assert.Fail("the probe window was not found\n" + output);
-            }
+                if (!AssignProcessToJobObject(HostJob.Value, app.Process.Handle))
+                {
+                    Assert.Fail($"the probe was not put into the job of the test host (error {Marshal.GetLastPInvokeError()})");
+                }
 
-            var probe = new Probe(app, window);
-            Assert.True(app.WaitForOutputLine("ready " + window.ToString("X")), probe.Output("the ready line"));
-            return probe;
+                var window = Gui.WaitForMainWindow(app, "PN.TForm", "Accessibility Probe", Until(deadline));
+                if (window == IntPtr.Zero)
+                {
+                    Assert.Fail("the probe window was not found\n" + app.StdOut + app.StdErr);
+                }
+
+                // the client reads the window only once the probe is ready (U-161: never during its start)
+                Assert.True(
+                    app.WaitForOutputLine("ready " + window.ToString("X"), Until(deadline)),
+                    $"the ready line did not come\n--- stdout\n{app.StdOut}\n--- stderr\n{app.StdErr}");
+                return new Probe(app, window, deadline);
+            }
+            catch
+            {
+                app.Dispose();                                      // also when the client failed on the window
+                throw;
+            }
         }
 
         /// <summary>The element of the probe whose AutomationId is <paramref name="id"/> (the form itself included); null when none.</summary>
@@ -483,6 +528,13 @@ public sealed class AccessibilityClientTests
         public IUIAutomationCondition IdCondition(string id) => Client.CreatePropertyCondition(UiaIds.AutomationIdProperty, id);
 
         public void Post(uint message, nuint wParam = 0) => Gui.Post(Window, message, wParam);
+
+        /// <summary>Re-evaluates <paramref name="condition"/> until it holds, the probe exited or the deadline passed.</summary>
+        public bool WaitUntil(Func<bool> condition) =>
+            Gui.WaitUntil(() => condition() || App.Process.HasExited, Remaining) && condition();
+
+        /// <summary>Waits until the probe's stdout holds the line <paramref name="line"/> (at most until the deadline).</summary>
+        public bool WaitForLine(string line) => App.WaitForOutputLine(line, Remaining);
 
         /// <summary>Posts a marker message and returns the next new stdout line that starts with <paramref name="prefix"/>.</summary>
         public string Request(uint message, string prefix, nuint wParam = 0)
@@ -503,22 +555,108 @@ public sealed class AccessibilityClientTests
                 }
 
                 return App.Process.HasExited;
-            }) && found is not null, Output($"a line '{prefix}…'"));
+            }, Remaining) && found is not null, Output($"a line '{prefix}…'"));
             return found!;
         }
 
         /// <summary>How many lines of the probe's stdout are exactly <paramref name="line"/>.</summary>
         public int Lines(string line) => App.StdOut.Split('\n').Count(l => l.TrimEnd('\r') == line);
 
-        public string Output(string what) => $"{what} did not come\n--- stdout\n{App.StdOut}\n--- stderr\n{App.StdErr}";
+        public string Output(string what) =>
+            $"{what} did not come (test budget {Budget.TotalSeconds:F0} s, {Remaining.TotalSeconds:F1} s left, "
+            + $"probe {(App.Process.HasExited ? "exited" : "running")})\n--- stdout\n{App.StdOut}\n--- stderr\n{App.StdErr}";
+
+        /// <summary>
+        /// Removes every event handler of the client (all of them are the test's own: the tests of the project run one
+        /// at a time). The removal waits for handler calls under way, so it runs on a thread of its own and may take
+        /// at most <see cref="RemovalLimit"/>.
+        /// </summary>
+        public void RemoveHandlers()
+        {
+            handlersRemoved = true;
+            Assert.True(RemoveAllBounded(), $"RemoveAllEventHandlers did not return within {RemovalLimit.TotalSeconds:F0} s");
+        }
 
         public void Close()
         {
             Gui.Post(Window, Gui.WM_CLOSE);
-            Assert.True(App.WaitForExit(), App.ExitFailure("the probe, after WM_CLOSE,"));
+            Assert.True(
+                App.WaitForExit(Remaining),
+                App.ExitFailure($"the probe, after WM_CLOSE ({Remaining.TotalSeconds:F1} s of the test budget left),"));
             Assert.Equal(0, App.Process.ExitCode);
         }
 
-        public void Dispose() => App.Dispose();
+        /// <summary>Kills the probe if it still runs, then removes the client's event handlers if the test did not.</summary>
+        public void Dispose()
+        {
+            watchdog.Dispose();
+            App.Dispose();
+            if (!handlersRemoved)
+            {
+                handlersRemoved = true;
+                RemoveAllBounded();                                 // after a failure: must not hide the test's own one
+            }
+        }
+
+        private static TimeSpan Until(DateTime deadline)
+        {
+            var left = deadline - DateTime.UtcNow;
+            return left > TimeSpan.Zero ? left : TimeSpan.Zero;
+        }
+
+        /// <summary>A job of the test host whose last handle (held until the host ends) kills every probe in it.</summary>
+        private static IntPtr CreateHostJob()
+        {
+            var job = CreateJobObjectW(IntPtr.Zero, null);
+            Assert.True(job != IntPtr.Zero, $"CreateJobObject failed (error {Marshal.GetLastPInvokeError()})");
+            var info = new JobObjectExtendedLimitInformation { LimitFlags = JobObjectLimitKillOnJobClose };
+            Assert.True(
+                SetInformationJobObject(job, JobObjectExtendedLimitInformationClass, ref info, (uint)Marshal.SizeOf<JobObjectExtendedLimitInformation>()),
+                $"SetInformationJobObject failed (error {Marshal.GetLastPInvokeError()})");
+            return job;
+        }
+
+        [DllImport("kernel32.dll", ExactSpelling = true, SetLastError = true, CharSet = CharSet.Unicode)]
+        private static extern IntPtr CreateJobObjectW(IntPtr attributes, string? name);
+
+        [DllImport("kernel32.dll", ExactSpelling = true, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool SetInformationJobObject(IntPtr job, int infoClass, ref JobObjectExtendedLimitInformation info, uint length);
+
+        [DllImport("kernel32.dll", ExactSpelling = true, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool AssignProcessToJobObject(IntPtr job, IntPtr process);
+
+        private bool RemoveAllBounded()
+        {
+            var removal = new Thread(Client.RemoveAllEventHandlers) { IsBackground = true, Name = "client handler removal" };
+            removal.Start();
+            return removal.Join(RemovalLimit);
+        }
+
+        /// <summary>JOBOBJECT_EXTENDED_LIMIT_INFORMATION (the basic limits, the I/O counters, four sizes).</summary>
+        [StructLayout(LayoutKind.Sequential)]
+        private struct JobObjectExtendedLimitInformation
+        {
+            public long PerProcessUserTimeLimit;
+            public long PerJobUserTimeLimit;
+            public uint LimitFlags;
+            public UIntPtr MinimumWorkingSetSize;
+            public UIntPtr MaximumWorkingSetSize;
+            public uint ActiveProcessLimit;
+            public UIntPtr Affinity;
+            public uint PriorityClass;
+            public uint SchedulingClass;
+            public ulong ReadOperationCount;
+            public ulong WriteOperationCount;
+            public ulong OtherOperationCount;
+            public ulong ReadTransferCount;
+            public ulong WriteTransferCount;
+            public ulong OtherTransferCount;
+            public UIntPtr ProcessMemoryLimit;
+            public UIntPtr JobMemoryLimit;
+            public UIntPtr PeakProcessMemoryUsed;
+            public UIntPtr PeakJobMemoryUsed;
+        }
     }
 }
