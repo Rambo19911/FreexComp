@@ -705,6 +705,7 @@ type
     procedure ReadReference(Instance: TPersistent; PropInfo: PPropInfo);
     function ResolveReference(const Name: string; Scope: TComponent): TComponent;
     function NamesRoot(const Name: string): Boolean;
+    function FieldClass(const Name, TypeName: string): TPersistentClass;
     procedure ResolveFixups;
     procedure ReadStringsValue(Strings: TStrings);
     procedure ReadComponentObject;
@@ -5002,6 +5003,45 @@ begin
   ExpectLineEnd;
 end;
 
+{ RTL-1105: the component class of an object line whose class GetClass does not know, from the published fields
+  (Visibility 3, ABI-144) of the class chain of the root of this file (a form, or a frame instance reading its own
+  file): the field named Name whose class is named TypeName first, then the first field whose class is named
+  TypeName; nil when there is none. Override blocks create nothing and nested object lines in an instance are F0110,
+  so the root is the component that owns every file scope this lookup is asked from. }
+function TReader.FieldClass(const Name, TypeName: string): TPersistentClass;
+var
+  Pass, I, Count: Integer;
+  VMT: TClass;
+  F: PFieldInfo;
+  C: TClass;
+begin
+  Result := nil;
+  if FRoot = nil then
+    Exit;
+  for Pass := 0 to 1 do
+  begin
+    VMT := FRoot.ClassType;
+    while VMT <> nil do
+    begin
+      F := GetFieldTable(PTypeInfo(VMT.ClassInfo), Count);
+      for I := 0 to Count - 1 do
+      begin
+        if (F[I].Visibility = mvPublished) and (F[I].FieldType^.Kind = tkClass) and
+          ((Pass = 1) or (CompareText(F[I].Name, Name) = 0)) then
+        begin
+          C := GetTypeData(F[I].FieldType)^.ClassType;
+          if (C <> nil) and C.InheritsFrom(TComponent) and (CompareText(C.ClassName, TypeName) = 0) then
+          begin
+            Result := TPersistentClass(C);
+            Exit;
+          end;
+        end;
+      end;
+      VMT := VMT.ClassParent;
+    end;
+  end;
+end;
+
 { RTL-497; an "inline" object is a frame instance (RTL-1090), an "inherited" one an override block (RTL-1091);
   inside an instance nothing can be added (F0110, RTL-1094) }
 procedure TReader.ReadComponentObject;
@@ -5037,6 +5077,8 @@ begin
   TypeName := ReadIdentToken;
   ExpectLineEnd;
   Cls := GetClass(TypeName);
+  if Cls = nil then
+    Cls := FieldClass(Name, TypeName);
   CompClass := nil;
   if (Cls <> nil) and Cls.InheritsFrom(TComponent) then
     CompClass := TComponentClass(Cls);

@@ -1,0 +1,10 @@
+object OuterFrame: TOuterFrame
+  object Pad: TPart
+    Caption = 'pad'
+  end
+  inline Sub: TInnerFrame
+    inherited Lbl: TPart
+      Caption = 'set by the outer frame'
+    end
+  end
+end

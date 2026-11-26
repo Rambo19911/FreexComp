@@ -1,0 +1,42 @@
+ok TPart is not registered
+ok TOuterFrame is not registered
+ok TInnerFrame is not registered
+# a frame created in code: its file, and the nested frame through the frame's own fields
+OuterFrame: TOuterFrame unit=ReadFieldClassKit owner=nil parent=nil caption=''
+  Pad: TPart unit=ReadFieldClassKit owner=OuterFrame parent=OuterFrame caption='pad'
+  Sub: TInnerFrame unit=ReadFieldClassKit owner=OuterFrame parent=OuterFrame caption='' inline
+    Lbl: TPart unit=ReadFieldClassKit owner=Sub parent=Sub caption='set by the outer frame'
+# a form: a frame instance, components and an ancestor's field, none registered
+Main: TMainRoot unit=ReadFieldClassKit owner=nil
+  Frame1: TOuterFrame unit=ReadFieldClassKit owner=Main parent=Main caption='' inline
+    Pad: TPart unit=ReadFieldClassKit owner=Frame1 parent=Frame1 caption='pad'
+    Sub: TInnerFrame unit=ReadFieldClassKit owner=Frame1 parent=Frame1 caption='' inline
+      Lbl: TPart unit=ReadFieldClassKit owner=Sub parent=Sub caption='set by the form'
+  Edit1: TPart unit=ReadFieldClassKit owner=Main parent=Main caption='edit1'
+  edit2: TPart unit=ReadFieldClassKit owner=Main parent=Main caption=''
+  Zed: TPart unit=ReadFieldClassOther owner=Main
+  BaseItem: TBaseOnly unit=ReadFieldClassKit owner=Main parent=Main caption=''
+ok the nested frame keeps its child
+ok Edit1: the class of the field of that name
+ok edit2: field and class names compared case-insensitively
+ok BaseItem: a field of an ancestor of the root
+ok Zed: no field of that name, the first field whose class has the name
+# no published field: the error as before
+ok a class in no field (class)
+ok a class in no field
+ok a class in no field: nothing left in the owner
+ok a protected field (class)
+ok a protected field
+ok a protected field: nothing left in the owner
+ok a public field (class)
+ok a public field
+ok a public field: nothing left in the owner
+ok a published field whose class is no component (class)
+ok a published field whose class is no component
+ok a published field whose class is no component: nothing left in the owner
+ok after a frame instance (class)
+ok after a frame instance
+ok after a frame instance: nothing left in the owner
+# GetClass stays first
+ok the registered class, not the class of the field
+# passed 24 failed 0
