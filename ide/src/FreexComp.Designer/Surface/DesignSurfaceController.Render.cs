@@ -220,11 +220,28 @@ public sealed partial class DesignSurfaceController
             canvas.FillHatch(b, gray with { A = 89 }, 6); // form.grayText at 35 %
         }
 
-        if (!obj.IsPreserved && obj.Properties.Any(pr => pr.IsPreserved))
+        if (!obj.IsPreserved && HasUnreadableLine(obj))
         {
             var (x, y) = (b.Left + 2, b.Top + 2);
             canvas.FillPolygon([new(x, y + 12), new(x + 12, y + 12), new(x + 6, y)], Palette.Warning);
         }
+    }
+
+    /// <summary>
+    /// A preserved (unreadable) line gives <paramref name="obj"/> a value: one of its own, or for an inherited object or an
+    /// instance one of its frame definition chain that no nearer level overrides (DSG-FD-106; D-128).
+    /// </summary>
+    private static bool HasUnreadableLine(FormObject obj)
+    {
+        for (var o = obj; o is not null; o = o.InheritedFrom)
+        {
+            if (o.Properties.Any(pr => pr.IsPreserved && (ReferenceEquals(o, obj) || ReferenceEquals(PropertyAccess.EffectiveLine(obj, pr.Path)?.Line, pr))))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>UI-DSG-060 … 062: background, border, the tiles with their names, or the empty-tray text.</summary>

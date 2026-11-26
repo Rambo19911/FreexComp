@@ -230,15 +230,28 @@ public sealed class PageControlRenderer : DesignRenderer
     public static FormObject? ActiveSheet(FormObject pageControl)
     {
         ArgumentNullException.ThrowIfNull(pageControl);
+        return SheetNamedBy(pageControl, pageControl);
+    }
+
+    /// <summary>
+    /// The sheet that is active when <paramref name="pageControl"/> stores no <c>ActivePage</c> line of its own: the one
+    /// its frame definition's effective <c>ActivePage</c> names (DSG-FD-106; D-128), else the first tab-visible sheet.
+    /// </summary>
+    public static FormObject? DefaultSheet(FormObject pageControl)
+    {
+        ArgumentNullException.ThrowIfNull(pageControl);
+        return SheetNamedBy(pageControl, pageControl.InheritedFrom);
+    }
+
+    // The tab-visible sheet of pageControl named by the effective ActivePage of source, else the first tab-visible one.
+    private static FormObject? SheetNamedBy(FormObject pageControl, FormObject? source)
+    {
         var sheets = Sheets(pageControl).Where(TabVisible).ToList();
-        return PropertyAccess.ReferencedName(pageControl, "ActivePage") is { } name
+        return source is not null && PropertyAccess.ReferencedName(source, "ActivePage") is { } name
                && sheets.FirstOrDefault(s => s.Name.Equals(name, StringComparison.OrdinalIgnoreCase)) is { } named
             ? named
             : sheets.FirstOrDefault();
     }
-
-    /// <summary>The first tab-visible sheet: the one that is active without a stored <c>ActivePage</c> (its default).</summary>
-    public static FormObject? DefaultSheet(FormObject pageControl) => Sheets(pageControl).FirstOrDefault(TabVisible);
 
     /// <summary>
     /// The tabs in control coordinates, left to right from x = 0, each <c>TabWidth</c> wide (or its caption's width

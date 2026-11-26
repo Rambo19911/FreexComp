@@ -620,6 +620,18 @@ public sealed class PropertyGridViewModel : ObservableObject
             ? CurrentEvent is { } name ? EventRows.FirstOrDefault(r => Names.Equals(r.Name, name))?.Value : null
             : CurrentRow?.Display;
 
+    /// <summary>
+    /// DSG-OI-032 (D-128): the entry the opened value list starts at — the current value text, or for a component reference
+    /// written qualified with the header name of the file that stores it (<c>FooterFrame.Note</c>, RTL-1104) its target
+    /// (<c>Note</c>).
+    /// </summary>
+    public string? CurrentValueListEntry =>
+        Page == InspectorPage.Properties && CurrentRow is { Info.Kind: PropertyKind.Component } row && Selection is [var obj]
+        && PropertyAccess.EffectiveLine(obj, row.Path)?.Line.Value is QualifiedIdentValue
+        && PropertyAccess.ReferencedName(obj, row.Path) is { } name
+            ? name
+            : CurrentValueText;
+
     /// <summary><c>objectInspector.copyPropertyName</c>: the current row's path; null without one.</summary>
     public string? CurrentPropertyName => Page == InspectorPage.Events ? CurrentEvent : CurrentRow?.Path;
 

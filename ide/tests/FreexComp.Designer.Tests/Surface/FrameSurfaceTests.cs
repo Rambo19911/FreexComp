@@ -611,6 +611,127 @@ public sealed class FrameSurfaceTests
         Assert.Contains(RenderOps(h), op => op.Kind == "DrawText" && op.Text.StartsWith("DrawText \"Ready\"", StringComparison.Ordinal));
     }
 
+    /// <summary>A frame whose page control stores <c>ActivePage = S2</c>, and an edit with an unknown property (D-128).</summary>
+    private const string PagesFrame = """
+        object PagesFrame: TPagesFrame
+          Left = 0
+          Top = 0
+          Width = 300
+          Height = 200
+          object Book: TPageControl
+            Left = 0
+            Top = 0
+            Width = 300
+            Height = 160
+            ActivePage = S2
+            TabOrder = 0
+            object S1: TTabSheet
+              Caption = 'First'
+            end
+            object S2: TTabSheet
+              Caption = 'Second'
+            end
+            object S3: TTabSheet
+              Caption = 'Third'
+            end
+          end
+          object OddEdit: TEdit
+            Left = 8
+            Top = 168
+            Width = 120
+            Height = 23
+            TabOrder = 1
+            NoSuchProperty = 1
+          end
+        end
+
+        """;
+
+    private const string PagesForm = """
+        object PagesForm: TPagesForm
+          Left = 200
+          Top = 120
+          Caption = 'Pages'
+          ClientWidth = 640
+          ClientHeight = 420
+          PixelsPerInch = 96
+          inline Wizard: TPagesFrame
+            Left = 8
+            Top = 8
+            Width = 300
+            Height = 200
+            TabOrder = 0
+          end
+        end
+
+        """;
+
+    private static DesignerHarness OpenPagesForm()
+    {
+        var frames = new FrameCatalog();
+        AddFrame(frames, PagesFrame, "PagesFrameUnit");
+        return Open(PagesForm, frames);
+    }
+
+    /// <summary>
+    /// D-128 (DSG-FD-106, DSG-SUR-194): in an instance the page verbs read the effective <c>ActivePage</c> — the frame's
+    /// <c>S2</c> while the instance stores none: going back to <c>S2</c> removes the override, and the first page (the
+    /// default without any line) is stored, since removing the line would show the frame's <c>S2</c>.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "DSG-FD-106")]
+    [Trait("Req", "DSG-SUR-194")]
+    public void ActivePageChange_UsesInheritedValue()
+    {
+        using var h = OpenPagesForm();
+        var book = h.Object("Wizard.Book");
+        Assert.Null(book.FindProperty("ActivePage"));
+        Assert.Equal("S2", PageControlRenderer.ActiveSheet(book)!.Name);
+        var original = h.Text;
+
+        h.Select("Wizard.Book");
+        h.Execute(Commands.NextPage);
+        Assert.Equal("S3", PageControlRenderer.ActiveSheet(book)!.Name);
+        Assert.Equal(new IdentValue("S3"), book.FindProperty("ActivePage")?.Value);
+
+        // Back to the frame's page: the override goes, the instance writes nothing for the page control again.
+        h.Execute(Commands.PreviousPage);
+        Assert.Equal("S2", PageControlRenderer.ActiveSheet(book)!.Name);
+        Assert.Null(book.FindProperty("ActivePage"));
+        Assert.Equal(original, h.Text);
+
+        // The first page is stored as an override: without the line the frame's S2 would be active.
+        h.Execute(Commands.PreviousPage);
+        Assert.Equal(["Wizard.S1"], h.Selected);
+        Assert.Equal("S1", PageControlRenderer.ActiveSheet(book)!.Name);
+        Assert.Equal(new IdentValue("S1"), book.FindProperty("ActivePage")?.Value);
+    }
+
+    /// <summary>
+    /// D-128 (UI-DSG §10, F0102): the warning triangle of an inherited object also reflects an unreadable line of its frame
+    /// definition (here an unknown property), which the instance does not store itself.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "DSG-FD-106")]
+    public void InheritedWarningFromDefinition()
+    {
+        using var h = OpenPagesForm();
+        var odd = h.Object("Wizard.OddEdit");
+        Assert.True(odd.IsInherited);
+        Assert.DoesNotContain(odd.Properties, p => p.IsPreserved); // the instance stores nothing of its own
+        var b = h.Controller.Geometry.GetBounds(odd);
+
+        // ui/designer.md §10: the 12 px triangle at (2, 2) of the control in the warning colour.
+        static string Triangle(Rect r, SurfacePalette p) =>
+            $"FillPolygon {r.Left + 2},{r.Top + 14} {r.Left + 14},{r.Top + 14} {r.Left + 8},{r.Top + 2} {p.Warning}";
+        var ops = RenderOps(h);
+        Assert.Contains(ops, op => op.Text == Triangle(b, h.Controller.Palette));
+        var book = h.Controller.Geometry.GetBounds(h.Object("Wizard.Book")); // a clean inherited object gets none
+        Assert.DoesNotContain(ops, op => op.Text == Triangle(book, h.Controller.Palette));
+    }
+
     /// <summary>Status entries compared by id and argument values.</summary>
     private sealed class StatusComparer : IEqualityComparer<(string Id, object[] Args)>
     {

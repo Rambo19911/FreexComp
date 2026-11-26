@@ -9,8 +9,9 @@ public sealed partial class DesignSurfaceController
 {
     /// <summary>
     /// DSG-RND-017: a plain left press on a tab of a <c>pagecontrol</c> selects that sheet and, when it is not the
-    /// design-active one, stores <c>ActivePage</c> — removing the line when the sheet is the default (the first tab-visible
-    /// one) — in one undo unit "Property". The tabs are those the renderer draws, measured with <see cref="MeasureCanvas"/>.
+    /// design-active one, stores <c>ActivePage</c> — removing the line when the sheet is the default (the frame
+    /// definition's, else the first tab-visible one; D-128) — in one undo unit "Property". The tabs are those the renderer
+    /// draws, measured with <see cref="MeasureCanvas"/>.
     /// False when the press is not on a tab (the normal press handling applies).
     /// </summary>
     private bool TryActivateTab(HitResult hit, PointerInput input)

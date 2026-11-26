@@ -786,16 +786,11 @@ public sealed class ObjectInspectorViewTests
         Assert.Equal(200, scroll.Offset.Y);
     }
 
-    /// <summary>
-    /// D-126 (RTL-1104): in a frame document the component-reference list offers the frame itself (its header name) after
-    /// <c>(none)</c>; a reference written qualified with the header name (<c>FooterFrame.Note</c>) is shown and entered as written.
-    /// </summary>
-    [AvaloniaFact(Timeout = 30000)]
-    [Trait("Req", "DSG-OI-032")]
-    [Trait("Req", "DSG-FD-102")]
-    public async Task ReferenceDropDownOffersRootInFrameDocument()
+    /// <summary>D-126/D-128: the frame <c>FooterFrame</c> (a label whose <c>FocusControl = FooterFrame.Note</c>) opened in
+    /// the designer with <c>NoteLabel</c> selected and the Object Inspector focused.</summary>
+    private static async Task<(HeadlessHarness H, FormDocumentViewModel D)> OpenFooterFrameAsync()
     {
-        await using var h = await HeadlessHarness.StartAsync(o =>
+        var h = await HeadlessHarness.StartAsync(o =>
         {
             o.InitialFiles["FooterFrame.pas"] = """
                 unit FooterFrame;
@@ -851,6 +846,20 @@ public sealed class ObjectInspectorViewTests
         d.Designer.Surface!.Selection.Select(d.Designer.Model!.FindByName("NoteLabel")!);
         Dispatcher.UIThread.RunJobs();
         h.Press("F4");
+        return (h, d);
+    }
+
+    /// <summary>
+    /// D-126 (RTL-1104): in a frame document the component-reference list offers the frame itself (its header name) after
+    /// <c>(none)</c>; a reference written qualified with the header name (<c>FooterFrame.Note</c>) is shown and entered as written.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "DSG-OI-032")]
+    [Trait("Req", "DSG-FD-102")]
+    public async Task ReferenceDropDownOffersRootInFrameDocument()
+    {
+        var (h, d) = await OpenFooterFrameAsync();
+        await using var _ = h;
 
         // The qualified reference is shown as written; the list starts (none), the frame itself, then the candidates.
         GoTo(h, "FocusControl");
@@ -859,8 +868,9 @@ public sealed class ObjectInspectorViewTests
         var list = h.Find<ListBox>(Row("FocusControl") + ".List");
         Assert.Equal(["(none)", "FooterFrame", "Note"], list.ItemsSource!.Cast<string>());
 
-        // Choosing the frame stores its header name; typing the qualified form stores it qualified, as written.
-        h.Press("Down");
+        // Choosing the frame (above the pre-selected target, D-128) stores its header name; typing the qualified form
+        // stores it qualified, as written.
+        h.Press("Up");
         Assert.Equal("FooterFrame", list.SelectedItem);
         h.Press("Enter");
         Assert.Equal(new IdentValue("FooterFrame"), Stored(d, "NoteLabel", "FocusControl"));
@@ -869,6 +879,45 @@ public sealed class ObjectInspectorViewTests
         h.Press("Enter");
         Assert.Equal(new QualifiedIdentValue(["FooterFrame", "Note"]), Stored(d, "NoteLabel", "FocusControl"));
         Assert.Equal("FooterFrame.Note", ValueText(h, "FocusControl"));
+    }
+
+    /// <summary>
+    /// D-128 (DSG-OI-032, RTL-1104): a reference stored qualified with the file's header name (<c>FooterFrame.Note</c>)
+    /// opens the list at its target (<c>Note</c>), not at <c>(none)</c>.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "DSG-OI-032")]
+    [Trait("Req", "DSG-FD-102")]
+    public async Task ReferenceDropDown_PreselectsQualifiedTarget()
+    {
+        var (h, _) = await OpenFooterFrameAsync();
+        await using var _h = h;
+        GoTo(h, "FocusControl");
+        Assert.Equal("FooterFrame.Note", ValueText(h, "FocusControl"));
+        h.Press("Alt+Down");
+        Assert.Equal("Note", h.Find<ListBox>(Row("FocusControl") + ".List").SelectedItem);
+        h.Press("Escape");
+
+        // From edit mode the typed qualified text selects its target as well.
+        h.Press("Enter");
+        h.Press("Alt+Down");
+        Assert.Equal("Note", h.Find<ListBox>(Row("FocusControl") + ".List").SelectedItem);
+    }
+
+    /// <summary>D-128 (UI-DSG-103, UI-DSG-107): the items of an open value list have the grid's compact row height (22).</summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-DSG-103")]
+    [Trait("Req", "UI-DSG-107")]
+    public async Task ValueList_ItemsUseGridRowHeight()
+    {
+        await using var h = await HeadlessHarness.StartAsync(Phase5);
+        await OpenDesignAsync(h, "NameEdit");
+        h.Press("F4");
+        GoTo(h, "CharCase");
+        h.Press("Alt+Down");
+        var items = h.Find<ListBox>(Row("CharCase") + ".List").GetVisualDescendants().OfType<ListBoxItem>().ToList();
+        Assert.Equal(3, items.Count);
+        Assert.All(items, i => Assert.Equal(22, i.Bounds.Height));
     }
 
     /// <summary>

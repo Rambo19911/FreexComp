@@ -7,6 +7,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Styling;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using FreexComp.Designer.Inspector;
@@ -33,7 +34,22 @@ public sealed class PropertyGridView : Border
     private readonly ScrollViewer _scroll;
     private readonly Panel _layers;
     private readonly TextBox _editor = new() { BorderThickness = new Thickness(0), Padding = new Thickness(4, 0), MinHeight = 0, VerticalContentAlignment = VerticalAlignment.Center };
-    private readonly ListBox _list = new() { MaxHeight = 220, MinWidth = 120, Focusable = true };
+    private readonly ListBox _list = new()
+    {
+        MaxHeight = 220, MinWidth = 120, Focusable = true,
+        Styles =
+        {
+            // D-128: the items have the grid's compact row height (UI-DSG-103), not the default list-item height.
+            new Style(x => x.OfType<ListBoxItem>())
+            {
+                Setters =
+                {
+                    new Setter(HeightProperty, RowHeight), new Setter(MinHeightProperty, 0d),
+                    new Setter(ListBoxItem.PaddingProperty, new Thickness(4, 0)), new Setter(ListBoxItem.VerticalContentAlignmentProperty, VerticalAlignment.Center),
+                },
+            },
+        },
+    };
     private readonly Popup _listPopup;
     private PropertyGridViewModel? _grid;
     private Control? _currentRow;
@@ -889,7 +905,7 @@ public sealed class PropertyGridView : Border
             return;
         }
 
-        var current = grid.CurrentValueText;
+        var current = grid.CurrentValueListEntry; // a qualified reference starts at its target (D-128)
         var width = _currentRow.Bounds.Width;
         if (grid.IsEditing)
         {
