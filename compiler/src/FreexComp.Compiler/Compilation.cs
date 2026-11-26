@@ -1126,15 +1126,34 @@ public sealed class Compilation
         unitBinder.BindAll(systemPath, mainPath, MaxParallelism);
         var initOrder = unitBinder.InitializationOrder();
         CheckPrecompiledDependencies(new FrontEnd(unitBinder, initOrder, systemPath));
-        foreach (var loaded in unitBinder.Units.Where(u => u.Result is not null && !u.IsPartial && !unitBinder.Reused.Contains(u)))
+        // C-114, C-343: every unit's {$FORM} files are scanned before any is checked, as the root keyword of a descendant's form
+        // depends on which classes have a form (LANG-959: this run's scans, the forms of a unit taken over, a .pcu's key)
+        var scans = new Dictionary<LoadedUnit, ImmutableArray<Forms.ScannedForm>>();
+        foreach (var loaded in unitBinder.Units.Where(u => u.Result is not null && !unitBinder.Reused.Contains(u)))
         {
-            loaded.LinkInputs = UnitLinkInputs.Collect(loaded.Result!.Unit, loaded.Tree!, FileSystem, loaded.Diagnostics);
-            loaded.Forms = Forms.FormEmbedding.Collect(loaded.Result!, loaded.Tree!, FileSystem, loaded.Diagnostics);    // C-114
+            scans[loaded] = Forms.FormEmbedding.Scan(loaded.Result!, loaded.Tree!, FileSystem);
+            loaded.FormClasses = Forms.FormEmbedding.FormClasses(scans[loaded]);
         }
 
         foreach (var loaded in unitBinder.Units.Where(u => u.IsPrecompiled))
         {
             loaded.LinkInputs = PcuReader.LinkInputs(loaded.Pcu!);                // as recorded (C-074)
+            loaded.FormClasses = PcuReader.Forms(loaded.Pcu!);                    // CMP-1381
+        }
+
+        var formClasses = new Dictionary<Symbols.UnitSymbol, ImmutableArray<string>>();
+        foreach (var loaded in unitBinder.Units.Where(u => u.Symbol is not null))
+        {
+            formClasses[loaded.Symbol!] = loaded.FormClasses;
+        }
+
+        bool HasForm(Types.ClassTypeSymbol @class) =>
+            @class.ContainingUnit is { } unit && formClasses.TryGetValue(unit, out var names) && names.Contains(@class.Name, IdentifierComparer.Instance);
+
+        foreach (var loaded in unitBinder.Units.Where(u => u.Result is not null && !u.IsPartial && !unitBinder.Reused.Contains(u)))
+        {
+            loaded.LinkInputs = UnitLinkInputs.Collect(loaded.Result!.Unit, loaded.Tree!, FileSystem, loaded.Diagnostics);
+            loaded.Forms = Forms.FormEmbedding.Collect(loaded.Result!, scans[loaded], HasForm, loaded.Diagnostics);    // C-114
         }
 
         // CMP-156: diagnostics in unit init order (the main file last), then by position

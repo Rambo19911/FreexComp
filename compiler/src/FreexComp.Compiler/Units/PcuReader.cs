@@ -61,6 +61,10 @@ internal static class PcuReader
         static ImmutableArray<string> Strings(JsonNode owner, string key) => [.. Array(owner, key).Select(v => v!.GetValue<string>())];
     }
 
+    /// <summary>CMP-1381: the classes whose forms the unit embeds (declared casing, directive order); a missing key = no forms.</summary>
+    public static ImmutableArray<string> Forms(JsonObject pcu) =>
+        pcu["forms"] is null ? [] : [.. Array(pcu, "forms").Select(v => v!.GetValue<string>())];
+
     /// <summary>The unit's dependencies as recorded: canonical name and section (<c>interface</c> | <c>implementation</c>).</summary>
     public static ImmutableArray<(string Unit, string Section)> Dependencies(JsonObject pcu) =>
         [.. Array(pcu, "dependencies").Select(d => (Text(d, "unit"), Text(d, "section")))];

@@ -4,7 +4,7 @@ namespace FreexComp.Compiler.Tests.Forms;
 
 /// <summary>C-114: <c>{$FORM}</c> through <see cref="Compilation.Emit"/> — E3100…E3104, F0001 pass-through, the CMP-415 table and its registration.</summary>
 [Trait("Phase", "2")]
-public sealed class FormEmbeddingTests
+public sealed partial class FormEmbeddingTests
 {
     private static (EmitResult Result, InMemoryFileSystem Fs) Emit(string main, params (string Name, string Text)[] files)
     {

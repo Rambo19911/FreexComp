@@ -1,0 +1,12 @@
+descendant found TRUE
+descendant differs from ancestor TRUE
+name OkClick
+rename OkClick before inherited
+base OkClick on TRenameDialog sender TBaseDialog
+rename OkClick after inherited
+base OkClick on TBaseDialog sender TRenameDialog
+static call
+base OkClick on TRenameDialog sender TRenameDialog
+rename OkClick before inherited
+base OkClick on TRenameDialog sender TBaseDialog
+rename OkClick after inherited

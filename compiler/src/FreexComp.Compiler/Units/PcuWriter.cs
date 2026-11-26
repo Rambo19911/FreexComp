@@ -101,6 +101,12 @@ internal sealed class PcuWriter(PcuContext context)
             root["linkInputs"]!["resources"] = Strings(unit.LinkInputs.Resources);
         }
 
+        if (!unit.FormClasses.IsEmpty)
+        {
+            // CMP-1381: written only when not empty, so formatVersion stays 1 and the file of a unit without forms is unchanged
+            root["forms"] = Strings(unit.FormClasses);
+        }
+
         if (unit.IsProgram)
         {
             root["unitOrder"] = Strings(context.InitOrder.Select(u => u.Name));          // CMP-163

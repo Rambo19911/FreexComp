@@ -53,6 +53,12 @@ internal sealed class LoadedUnit(string path)
     /// <summary>The unit's <c>{$FORM}</c> blobs (C-114).</summary>
     public ImmutableArray<Forms.EmbeddedForm> Forms { get; set; } = [];
 
+    /// <summary>
+    /// LANG-959, CMP-1381: the classes whose forms the unit embeds (declared casing, directive order) — from the scan of its
+    /// <c>{$FORM}</c> files, or a precompiled unit's <c>.pcu</c> key <c>forms</c>; set by the compilation after binding.
+    /// </summary>
+    public ImmutableArray<string> FormClasses { get; set; } = [];
+
     /// <summary>The <c>.pcu</c> a precompiled unit (no source in this compilation, C-074) was imported from; null for source units.</summary>
     public System.Text.Json.Nodes.JsonObject? Pcu { get; set; }
 

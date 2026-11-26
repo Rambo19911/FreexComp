@@ -10,7 +10,9 @@ public sealed record FormEvent(string Property, string Handler, int Line, int Co
 /// <summary>
 /// One object of a <c>.form</c> file (form-format.md §1): keyword (<c>object</c> / <c>inherited</c> / <c>inline</c>), name, class
 /// name, the 1-based position of its name, its event properties and its child objects. The contents of a nested <c>inherited</c>
-/// object outside a frame instance are skipped (form-format.md §2.6), so they are empty. A nested <c>inline</c> object (a frame
+/// object outside a frame instance are skipped (form-format.md §2.6), so they are empty — except in a file whose root is
+/// <c>inherited</c> (a descendant file, LANG-956): there the root's <c>inherited</c> children, and theirs, are override blocks of
+/// inherited components and keep their events and children like <c>object</c>s. A nested <c>inline</c> object (a frame
 /// instance, LANG-952…954) keeps its events and, as children, its <c>inherited</c> override blocks (<see cref="IsOverride"/>, nested
 /// ones too, each with its events); an <c>object</c> or <c>inline</c> inside an instance is skipped (the reader reports F0110).
 /// </summary>
@@ -117,7 +119,7 @@ public static class FormFileScanner
         public FormObject File()
         {
             SkipNewLines();
-            var root = Object(Contents.Ordinary, isOverride: false);
+            var root = Object(IsKeyword("inherited") ? Contents.Descendant : Contents.Ordinary, isOverride: false);
             SkipNewLines();
             if (Current.Kind != TokenKind.End)
             {
@@ -173,6 +175,7 @@ public static class FormFileScanner
         private enum Contents
         {
             Ordinary,       // events and every child: an object's children are objects, an inline child an instance, an inherited child skipped
+            Descendant,     // the inherited root of a descendant file or one of its override blocks: as Ordinary, but an inherited child is again Descendant (LANG-956)
             Instance,       // a frame instance or one of its override blocks: events and the inherited override blocks
             Skipped,        // nothing: an inherited object outside an instance, an object added to an instance, and what they contain
         }
@@ -202,6 +205,9 @@ public static class FormFileScanner
                         (Contents.Ordinary, "object") => (Contents.Ordinary, true),
                         (Contents.Ordinary, "inline") => (Contents.Instance, true),
                         (Contents.Ordinary, _) => (Contents.Skipped, true),
+                        (Contents.Descendant, "object") => (Contents.Ordinary, true),
+                        (Contents.Descendant, "inline") => (Contents.Instance, true),
+                        (Contents.Descendant, _) => (Contents.Descendant, true),
                         (Contents.Instance, "inherited") => (Contents.Instance, true),
                         _ => (Contents.Skipped, false),
                     };
