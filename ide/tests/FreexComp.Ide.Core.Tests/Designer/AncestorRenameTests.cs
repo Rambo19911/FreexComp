@@ -297,6 +297,164 @@ public sealed class AncestorRenameTests
         Assert.False(main.IsModified);
     }
 
+    // ---- D-140: open descendants keep their history, Text-view edits follow, undo write failures ------------------
+
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "DSG-FD-134")]
+    public Task OpenDescendantKeepsItsUndoHistory() => TestUiThread.RunAsync(KeepsHistoryOnUiThread);
+
+    private async Task KeepsHistoryOnUiThread()
+    {
+        Project();
+        var (document, inspector) = await OpenBaseAsync();
+        var main = Assert.IsType<FormDocumentViewModel>((await _services.Documents.OpenAsync(MainUnitPath)).Value);
+        Assert.True(main.ShowView(DocumentView.Design));
+
+        // The descendant's own edit names the OK button twice: its caption and the form's ActiveControl.
+        Assert.True(main.Designer.Surface!.Commit(FreexComp.Designer.Surface.UndoTitles.Property,
+            [new FreexComp.Designer.Editing.SetProperty("OkButton", "Caption", new StringValue("Go")),
+                new FreexComp.Designer.Editing.SetProperty("MainForm", "ActiveControl", new IdentValue("OkButton"))]));
+        var edited = main.Designer.CurrentFormText();
+        Assert.Contains("ActiveControl = OkButton", edited, StringComparison.Ordinal);
+        var renamed = edited.Replace("OkButton", "YesButton", StringComparison.Ordinal);
+
+        RenameOkButton(document, inspector);
+        Assert.Equal(renamed, main.Designer.CurrentFormText());
+        Assert.True(main.Designer.Undo.CanUndo); // the history is kept, rewritten to the new name
+        Assert.True(main.IsModified);
+
+        // The descendant's own undo reverts its edit on the renamed component; redo makes it again under the new name.
+        Execute(main, FreexComp.Designer.Surface.Commands.Undo);
+        Assert.Equal(Renamed(InheritedDesign.Form), main.Designer.CurrentFormText());
+        AssertResolved(main.Designer.Model!, "YesButton");
+        Execute(main, FreexComp.Designer.Surface.Commands.Redo);
+        Assert.Equal(renamed, main.Designer.CurrentFormText());
+        Assert.Equal(new IdentValue("YesButton"), main.Designer.Model!.Root.FindProperty("ActiveControl")!.Value);
+        Assert.Equal("Go", Caption(main.Designer.Model, "YesButton"));
+
+        // Undoing the ancestor's rename takes the descendant back with its history: undo and redo name the old name again.
+        Execute(document, FreexComp.Designer.Surface.Commands.Undo);
+        Assert.Equal(edited, main.Designer.CurrentFormText());
+        Execute(main, FreexComp.Designer.Surface.Commands.Undo);
+        Assert.Equal(InheritedDesign.Form, main.Designer.CurrentFormText());
+        AssertResolved(main.Designer.Model!, "OkButton", gone: "YesButton");
+        Execute(main, FreexComp.Designer.Surface.Commands.Redo);
+        Assert.Equal(edited, main.Designer.CurrentFormText());
+        AssertResolved(main.Designer.Model!, "OkButton", gone: "YesButton");
+        Assert.Equal(new IdentValue("OkButton"), main.Designer.Model!.Root.FindProperty("ActiveControl")!.Value);
+    }
+
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "DSG-FD-134")]
+    public Task TextViewEditGetsTheRename() => TestUiThread.RunAsync(TextViewOnUiThread);
+
+    private async Task TextViewOnUiThread()
+    {
+        Project();
+        var (document, inspector) = await OpenBaseAsync();
+        var main = Assert.IsType<FormDocumentViewModel>((await _services.Documents.OpenAsync(MainUnitPath)).Value);
+        Assert.True(main.ShowView(DocumentView.Text));
+        var mainBytes = _fs.ReadAllBytes(MainFormPath);
+
+        // An edit of the descendant's text the model does not have yet.
+        var edited = InheritedDesign.Form.Replace("      Caption = 'Apply'\n", "      Caption = 'Go'\n", StringComparison.Ordinal);
+        main.FormBuffer.ReplaceAll(edited, resetUndo: false);
+
+        RenameOkButton(document, inspector);
+
+        // The pending text gets the rename and stays pending (modified, not saved); leaving the Text view reads it.
+        Assert.Equal(Renamed(edited), main.FormBuffer.Text);
+        Assert.True(main.IsModified);
+        Assert.Equal(mainBytes, _fs.ReadAllBytes(MainFormPath));
+        Assert.True(main.ShowView(DocumentView.Design));
+        AssertResolved(main.Designer.Model!, "YesButton");
+        Assert.Equal("Go", Caption(main.Designer.Model!, "YesButton"));
+
+        // A pending text that no longer parses refuses the rename, naming the file; nothing changes anywhere.
+        Assert.True(main.ShowView(DocumentView.Text));
+        var broken = Renamed(edited).Replace("  object NameEdit: TEdit\n", "  object NameEdit TEdit\n", StringComparison.Ordinal);
+        main.FormBuffer.ReplaceAll(broken, resetUndo: false);
+        var files = new[] { MainFormPath, LeafFormPath, OtherFormPath, PlainFormPath }.ToDictionary(p => p, _fs.ReadAllBytes);
+        var unitText = document.Buffer.Text;
+        document.Designer.Surface!.Selection.Set(["YesButton"]);
+        inspector.Page = InspectorPage.Properties;
+        inspector.CurrentPath = "Name";
+        Assert.True(inspector.BeginEdit());
+        inspector.EditText = "AcceptButton";
+        Assert.False(inspector.Commit());
+        Assert.Contains(MainFormPath, inspector.EditError, StringComparison.Ordinal);
+        Assert.NotNull(document.Designer.Model!.FindByName("YesButton"));
+        Assert.Null(document.Designer.Model.FindByName("AcceptButton"));
+        Assert.Equal(unitText, document.Buffer.Text);
+        Assert.Equal(broken, main.FormBuffer.Text);
+        foreach (var (path, bytes) in files)
+        {
+            Assert.Equal(bytes, _fs.ReadAllBytes(path)); // the leaf, written first, was written back
+        }
+    }
+
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "DSG-FD-134")]
+    public Task UndoWriteFailureIsReported() => TestUiThread.RunAsync(UndoFailureOnUiThread);
+
+    private async Task UndoFailureOnUiThread()
+    {
+        Project();
+        var (document, inspector) = await OpenBaseAsync();
+        var dialogs = Assert.IsType<FakeDialogService>(_services.Dialogs);
+        dialogs.Answer("Msg.File.SaveFailed", "Cancel");
+        var original = new[] { MainFormPath, LeafFormPath, OtherFormPath }.ToDictionary(p => p, _fs.ReadAllBytes);
+        RenameOkButton(document, inspector);
+        var renamed = original.Keys.ToDictionary(p => p, _fs.ReadAllBytes);
+
+        // Undo: the other descendant cannot be written back. The dialog names it and the step is not taken: the ancestor
+        // keeps the new name and every descendant file stays renamed (the leaf, reverted first, is written again).
+        _fs.SetReadOnly(OtherFormPath, true);
+        Execute(document, FreexComp.Designer.Surface.Commands.Undo);
+        var request = Assert.Single(dialogs.Requests);
+        Assert.Equal("Msg.File.SaveFailed", request.MessageId);
+        Assert.Equal(OtherFormPath, request.Args[0]);
+        Assert.NotNull(document.Designer.Model!.FindByName("YesButton"));
+        Assert.True(document.Designer.Undo.CanUndo);
+        Assert.False(document.Designer.Undo.CanRedo);
+        Assert.Contains("    YesButton: TButton;", document.Buffer.Text, StringComparison.Ordinal);
+        foreach (var (path, bytes) in renamed)
+        {
+            Assert.Equal(bytes, _fs.ReadAllBytes(path));
+        }
+
+        // Writable again: the undo goes through.
+        _fs.SetReadOnly(OtherFormPath, false);
+        Execute(document, FreexComp.Designer.Surface.Commands.Undo);
+        Assert.NotNull(document.Designer.Model!.FindByName("OkButton"));
+        foreach (var (path, bytes) in original)
+        {
+            Assert.Equal(bytes, _fs.ReadAllBytes(path));
+        }
+
+        // Redo: the same failure leaves everything at the old name, the unit stays redoable.
+        _fs.SetReadOnly(OtherFormPath, true);
+        Execute(document, FreexComp.Designer.Surface.Commands.Redo);
+        Assert.Equal(2, dialogs.Requests.Count);
+        Assert.Equal("Msg.File.SaveFailed", dialogs.Requests[1].MessageId);
+        Assert.Equal(OtherFormPath, dialogs.Requests[1].Args[0]);
+        Assert.NotNull(document.Designer.Model!.FindByName("OkButton"));
+        Assert.True(document.Designer.Undo.CanRedo);
+        Assert.False(document.Designer.Undo.CanUndo);
+        foreach (var (path, bytes) in original)
+        {
+            Assert.Equal(bytes, _fs.ReadAllBytes(path));
+        }
+
+        _fs.SetReadOnly(OtherFormPath, false);
+        Execute(document, FreexComp.Designer.Surface.Commands.Redo);
+        Assert.NotNull(document.Designer.Model!.FindByName("YesButton"));
+        foreach (var (path, bytes) in renamed)
+        {
+            Assert.Equal(bytes, _fs.ReadAllBytes(path));
+        }
+    }
+
     // ---- D-139: the instances of a renamed frame follow -----------------------------------------------------------
 
     private const string FrameUnitPath = Dir + @"\AddressFrameUnit.pas";

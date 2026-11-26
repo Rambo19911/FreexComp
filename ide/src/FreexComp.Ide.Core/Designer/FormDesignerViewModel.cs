@@ -341,15 +341,31 @@ public sealed class FormDesignerViewModel
     /// <summary>
     /// D-137: an ancestor renamed one of its components: <paramref name="changes"/> (renames of inherited components that
     /// follow, <see cref="RenameObject.FollowsAncestor"/>) are applied to this descendant's model, which stays the same
-    /// object. The changes belong to the ancestor's undo unit, not to this document's: its own undo stack is cleared (its
-    /// units name components by their old names; the document is modified until saved). A Text view without an edit of
-    /// its own shows the new text. Returns the inverses.
+    /// object. The changes belong to the ancestor's undo unit, not to this document's; D-140: this document's own undo
+    /// history is kept, its units rewritten to the new names (the document is modified until saved). A Text view without
+    /// an edit of its own shows the new text; one with an own edit shows <paramref name="pendingText"/> (that edit with the
+    /// renames applied, still to be read). Returns the inverses.
     /// </summary>
-    internal IReadOnlyList<FormChange> FollowAncestor(IReadOnlyList<FormChange> changes)
+    internal IReadOnlyList<FormChange> FollowAncestor(IReadOnlyList<FormChange> changes, string? pendingText = null)
     {
+        foreach (var rename in changes.OfType<RenameObject>())
+        {
+            Undo.FollowRename(Model!, rename.OldName, rename.NewName); // resolved in the model before the rename
+        }
+
         var inverse = Editor!.Apply(changes);
-        Undo.Clear();
-        if (_activeView == DocumentView.Text && !HasPendingText)
+        if (_activeView == DocumentView.Text && pendingText is not null)
+        {
+            _syncedText = FormWriter.Write(Model!);
+            _syncedVersion = Model!.Version;
+            if (!string.Equals(_formText.Buffer.Text, pendingText, StringComparison.Ordinal))
+            {
+                _formText.Buffer.ReplaceAll(pendingText, resetUndo: false);
+            }
+
+            _pending = (_formText.Buffer.Version, !string.Equals(pendingText, _syncedText, StringComparison.Ordinal));
+        }
+        else if (_activeView == DocumentView.Text && !HasPendingText)
         {
             WriteText();
         }
@@ -357,6 +373,12 @@ public sealed class FormDesignerViewModel
         ModifiedChanged?.Invoke(this, EventArgs.Empty);
         return inverse;
     }
+
+    /// <summary>D-140: the Text view's own edit the model does not have yet, or null.</summary>
+    internal string? PendingText => _activeView == DocumentView.Text && HasPendingText ? _formText.Buffer.Text : null;
+
+    /// <summary>D-140: <paramref name="text"/> parsed as this document's form text (as leaving the Text view would).</summary>
+    internal FormParseResult ParseText(string text) => Parse(text);
 
     /// <summary>The <c>.form</c> text as it would be saved now (the Text view's text, or the model written).</summary>
     public string CurrentFormText() =>

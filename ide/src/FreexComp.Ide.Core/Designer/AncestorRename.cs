@@ -171,14 +171,20 @@ public sealed class AncestorRename
     /// <summary>One descendant changed by the last apply or revert: how to undo that step.</summary>
     private sealed record Step(string ClassName, IReadOnlyList<FormChange> Inverse, byte[]? Before, byte[]? After);
 
+    /// <summary>D-140: a descendant cannot follow (its Text view's own edit does not parse or takes no rename); the message says why.</summary>
+    private sealed class RefusedException(string message) : Exception(message);
+
     private sealed class Edits(AncestorRename owner, FormDesignerViewModel ancestor, string own, IReadOnlyList<string> classes, string oldName,
         string newName) : ILinkedEdits
     {
         private List<Step> _applied = [];
 
+        public (string MessageId, object[] Args)? Failure { get; private set; }
+
         public bool Apply()
         {
             owner.LastFailure = null;
+            Failure = null;
             var steps = new List<Step>();
             foreach (var className in classes)
             {
@@ -190,12 +196,16 @@ public sealed class AncestorRename
 
                 try
                 {
-                    steps.Add(owner.Change(definition, renames, null));
+                    steps.Add(owner.Change(definition, renames, null, Forward));
                 }
-                catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException or RefusedException)
                 {
-                    owner.LastFailure = string.Format(CultureInfo.CurrentCulture, Strings.Msg_File_SaveFailed, definition.FormPath, e.Message);
-                    Undo(steps);
+                    Fail(definition.FormPath, e.Message);
+                    foreach (var step in steps)
+                    {
+                        TryChange(step, Backward, out _);
+                    }
+
                     return false;
                 }
             }
@@ -204,44 +214,131 @@ public sealed class AncestorRename
             return true;
         }
 
-        public void Revert()
+        /// <summary>
+        /// The steps reverted, deepest descendant first (the order they were applied in). D-140: when one cannot be reverted,
+        /// the ones reverted before it are applied again and nothing is changed.
+        /// </summary>
+        public bool Revert()
         {
-            Undo(_applied);
-            _applied = [];
-        }
-
-        /// <summary>The steps reverted, deepest descendant first (the order they were applied in).</summary>
-        private void Undo(List<Step> steps)
-        {
-            foreach (var step in steps)
+            owner.LastFailure = null;
+            Failure = null;
+            var reverted = new List<(int Index, Step Step)>();
+            for (var i = 0; i < _applied.Count; i++)
             {
-                if (owner._catalog.Ancestors.Find(step.ClassName) is { } definition
-                    && step.Inverse.OfType<RenameObject>().All(r => definition.Document.FindByQualifiedName(r.OldName) is { IsInherited: true }))
+                try
                 {
-                    try
+                    if (TryChange(_applied[i], Backward, out var step, rethrow: true))
                     {
-                        owner.Change(definition, step.Inverse, step);
-                    }
-                    catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-                    {
-                        ancestor.ShowStatus("Msg.File.SaveFailed", [definition.FormPath, e.Message]); // the file keeps the new name
+                        reverted.Add((i, step!));
                     }
                 }
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException or RefusedException)
+                {
+                    Fail(owner._catalog.Ancestors.Find(_applied[i].ClassName)?.FormPath ?? _applied[i].ClassName, e.Message);
+                    foreach (var (index, back) in reverted)
+                    {
+                        if (TryChange(back, Forward, out var again))
+                        {
+                            _applied[index] = again!;
+                        }
+                    }
+
+                    return false;
+                }
+            }
+
+            _applied = [];
+            return true;
+        }
+
+        /// <summary>The renames that make a document follow the rename.</summary>
+        private List<FormChange> Forward(FormDocument document) => Renames(document, own, oldName, newName);
+
+        /// <summary>The renames that take a document back.</summary>
+        private List<FormChange> Backward(FormDocument document) => Renames(document, own, newName, oldName);
+
+        private void Fail(string path, string reason)
+        {
+            owner.LastFailure = string.Format(CultureInfo.CurrentCulture, Strings.Msg_File_SaveFailed, path, reason);
+            Failure = ("Msg.File.SaveFailed", [path, reason]);
+        }
+
+        /// <summary>
+        /// Applies the inverse of <paramref name="step"/> when its descendant still has the names it expects (the result:
+        /// how to undo that); false when skipped. A failure is shown in the status bar, or rethrown.
+        /// </summary>
+        private bool TryChange(Step step, Func<FormDocument, List<FormChange>> pendingRenames, out Step? result, bool rethrow = false)
+        {
+            result = null;
+            if (owner._catalog.Ancestors.Find(step.ClassName) is not { } definition
+                || !step.Inverse.OfType<RenameObject>().All(r => definition.Document.FindByQualifiedName(r.OldName) is { IsInherited: true }))
+            {
+                return false;
+            }
+
+            try
+            {
+                result = owner.Change(definition, step.Inverse, step, pendingRenames);
+                return true;
+            }
+            catch (Exception e) when (!rethrow && e is IOException or UnauthorizedAccessException or RefusedException)
+            {
+                ancestor.ShowStatus("Msg.File.SaveFailed", [definition.FormPath, e.Message]); // the file keeps what it has
+                return false;
             }
         }
     }
 
     /// <summary>
-    /// Applies <paramref name="changes"/> to a descendant: in its tab when it is open, else to the project's definition and
-    /// to its file (written only when the written text changes; on a revert the file's earlier bytes when the file still
-    /// holds what the apply wrote).
+    /// D-140: the Text view's own edit of an open descendant with <paramref name="renames"/> applied, or null when it has
+    /// none; refused (<see cref="RefusedException"/>) when the text does not parse or the renames cannot be made in it.
     /// </summary>
-    private Step Change(FrameDefinition definition, IReadOnlyList<FormChange> changes, Step? reverting)
+    private static string? PendingText(FormDesignerViewModel designer, Func<FormDocument, List<FormChange>> renames)
+    {
+        if (designer.PendingText is not { } text)
+        {
+            return null;
+        }
+
+        var parsed = designer.ParseText(text);
+        if (parsed.Document is not { } edited)
+        {
+            var error = parsed.Diagnostics[0];
+            throw new RefusedException(string.Format(CultureInfo.CurrentCulture, Strings.Msg_Designer_FormSyntaxError, error.Message, error.Line, error.Col));
+        }
+
+        var changes = renames(edited);
+        if (changes.Count == 0)
+        {
+            return text;
+        }
+
+        try
+        {
+            new FormEditor(edited, designer.Catalog).Apply(changes);
+        }
+        catch (InvalidFormChangeException)
+        {
+            var name = ((RenameObject)changes[0]).NewName;
+            throw new RefusedException(string.Format(CultureInfo.CurrentCulture, Strings.Msg_Designer_NameDuplicate, name));
+        }
+
+        return FormWriter.Write(edited);
+    }
+
+    /// <summary>
+    /// Applies <paramref name="changes"/> to a descendant: in its tab when it is open (D-140: a Text view's own edit gets
+    /// <paramref name="pendingRenames"/>; refused when it does not parse), else to the project's definition and to its file
+    /// (written only when the written text changes; on a revert the file's earlier bytes when the file still holds what the
+    /// apply wrote).
+    /// </summary>
+    private Step Change(FrameDefinition definition, IReadOnlyList<FormChange> changes, Step? reverting,
+        Func<FormDocument, List<FormChange>> pendingRenames)
     {
         var document = definition.Document;
         if (_open(document) is { } designer)
         {
-            return new Step(definition.ClassName, designer.FollowAncestor(changes), null, null);
+            return new Step(definition.ClassName, designer.FollowAncestor(changes, PendingText(designer, pendingRenames)), null, null);
         }
 
         var path = definition.FormPath;

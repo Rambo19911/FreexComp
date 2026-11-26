@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using FreexComp.Designer.Model;
 
 namespace FreexComp.Designer.Editing;
 
@@ -21,11 +22,17 @@ public sealed record SelectionSnapshot(ImmutableArray<string> Names, string? Pri
 /// </summary>
 public interface ILinkedEdits
 {
-    /// <summary>Applies the edits; false when they could not be made (nothing is changed then).</summary>
+    /// <summary>Applies the edits; false when they could not be made (nothing is changed then, <see cref="Failure"/> says why).</summary>
     bool Apply();
 
-    /// <summary>Reverts the edits of the last <see cref="Apply"/>.</summary>
-    void Revert();
+    /// <summary>
+    /// Reverts the edits of the last <see cref="Apply"/>; false when they could not be reverted (D-140: nothing is changed
+    /// then, <see cref="Failure"/> says why, the undo step is not taken).
+    /// </summary>
+    bool Revert();
+
+    /// <summary>D-140: the error dialog of the last failed <see cref="Apply"/> or <see cref="Revert"/> (message id and arguments), else null.</summary>
+    (string MessageId, object[] Args)? Failure { get; }
 }
 
 /// <summary>One undoable designer interaction (granularity: design-surface.md §12, object-inspector.md §9).</summary>
@@ -163,4 +170,37 @@ public sealed class DesignerUndoStack
     }
 
     public void MarkSaved() => SavePoint = Current;
+
+    /// <summary>
+    /// D-140: the object <paramref name="oldName"/> (qualified name) of <paramref name="document"/> is about to be renamed to
+    /// <paramref name="newName"/> because the ancestor renamed it (<see cref="RenameObject.FollowsAncestor"/>): every unit is
+    /// rewritten to the new name — the object names of its changes and selections and the component references that resolve
+    /// to the object in the document as it is now (before the rename) — so that the history stays usable. The save point
+    /// is lost (the document differs from every state the units lead to before the rename).
+    /// </summary>
+    public void FollowRename(FormDocument document, string oldName, string newName)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+        ArgumentNullException.ThrowIfNull(oldName);
+        ArgumentNullException.ThrowIfNull(newName);
+        if (document.FindByQualifiedName(oldName) is not { } renamed)
+        {
+            return;
+        }
+
+        var rename = new UndoRename(document, renamed, oldName, newName);
+        for (var node = _undo.First; node is not null; node = node.Next)
+        {
+            node.Value = rename.Unit(node.Value);
+        }
+
+        var redo = _redo.ToArray(); // the next unit to redo first
+        _redo.Clear();
+        for (var i = redo.Length - 1; i >= 0; i--)
+        {
+            _redo.Push(rename.Unit(redo[i]));
+        }
+
+        SavePoint = new object();
+    }
 }
