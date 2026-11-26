@@ -42,6 +42,10 @@ function CornerCell(Body, Corner: Cardinal): TBitmap;
 function Differences(A, B: TBitmap): Integer;
 { U-166: ColorToRGB(Color) as $00RRGGBB }
 function RGBOf(Color: TColor): Cardinal;
+{ U-167: a canonical pixel drawn with dsSelected (Style = dsSelected, 50 %) or dsFocus (25 %) and the blend colour
+  Color (UIF-1486): each colour byte c of the pixel of alpha a with the byte f of Color, p = (f a + 127) div 255;
+  50 %: (c + p + 1) shr 1, 25 %: (3 c + p + 2) shr 2; alpha kept }
+function BlendedPixel(P: Cardinal; Color: TColor; Style: TDrawingStyle): Cardinal;
 
 implementation
 
@@ -209,6 +213,26 @@ var
 begin
   V := Cardinal(ColorToRGB(Color));
   Result := ((V and $FF) shl 16) or (V and $FF00) or ((V shr 16) and $FF);
+end;
+
+function BlendedPixel(P: Cardinal; Color: TColor; Style: TDrawingStyle): Cardinal;
+var
+  I: Integer;
+  A, C, F, Q: Cardinal;
+begin
+  A := P shr 24;
+  Result := A shl 24;
+  for I := 0 to 2 do
+  begin
+    C := (P shr (I * 8)) and $FF;
+    F := (RGBOf(Color) shr (I * 8)) and $FF;
+    Q := (F * A + 127) div 255;
+    if Style = dsSelected then
+      C := (C + Q + 1) shr 1
+    else
+      C := (3 * C + Q + 2) shr 2;
+    Result := Result or (C shl (I * 8));
+  end;
 end;
 
 end.

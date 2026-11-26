@@ -1,0 +1,86 @@
+# the blend formula (UIF-1486)
+ok opaque, clRed, 50 % (computed here)
+ok opaque, clRed, 25 % (computed here)
+ok alpha 128, clRed, 50 % (computed here)
+ok alpha 128, clBlue, 50 % (computed here)
+ok cell 0, dsFocus, clRed on white: every pixel within 1
+ok cell 0, dsFocus, clRed: nothing outside the cell
+ok cell 0, dsFocus, clRed on black: every pixel within 1
+ok cell 1, dsFocus, clRed on white: every pixel within 1
+ok cell 1, dsFocus, clRed: nothing outside the cell
+ok cell 1, dsFocus, clRed on black: every pixel within 1
+ok cell 2, dsFocus, clRed on white: every pixel within 1
+ok cell 2, dsFocus, clRed: nothing outside the cell
+ok cell 2, dsFocus, clRed on black: every pixel within 1
+ok cell 0, dsSelected, clRed on white: every pixel within 1
+ok cell 0, dsSelected, clRed: nothing outside the cell
+ok cell 0, dsSelected, clRed on black: every pixel within 1
+ok cell 1, dsSelected, clRed on white: every pixel within 1
+ok cell 1, dsSelected, clRed: nothing outside the cell
+ok cell 1, dsSelected, clRed on black: every pixel within 1
+ok cell 2, dsSelected, clRed on white: every pixel within 1
+ok cell 2, dsSelected, clRed: nothing outside the cell
+ok cell 2, dsSelected, clRed on black: every pixel within 1
+ok cell 0, dsFocus, clBlue on white: every pixel within 1
+ok cell 0, dsFocus, clBlue: nothing outside the cell
+ok cell 0, dsFocus, clBlue on black: every pixel within 1
+ok cell 1, dsFocus, clBlue on white: every pixel within 1
+ok cell 1, dsFocus, clBlue: nothing outside the cell
+ok cell 1, dsFocus, clBlue on black: every pixel within 1
+ok cell 2, dsFocus, clBlue on white: every pixel within 1
+ok cell 2, dsFocus, clBlue: nothing outside the cell
+ok cell 2, dsFocus, clBlue on black: every pixel within 1
+ok cell 0, dsSelected, clBlue on white: every pixel within 1
+ok cell 0, dsSelected, clBlue: nothing outside the cell
+ok cell 0, dsSelected, clBlue on black: every pixel within 1
+ok cell 1, dsSelected, clBlue on white: every pixel within 1
+ok cell 1, dsSelected, clBlue: nothing outside the cell
+ok cell 1, dsSelected, clBlue on black: every pixel within 1
+ok cell 2, dsSelected, clBlue on white: every pixel within 1
+ok cell 2, dsSelected, clBlue: nothing outside the cell
+ok cell 2, dsSelected, clBlue on black: every pixel within 1
+ok opaque cell, dsSelected, clBlue: the pixel
+ok alpha 128 cell, dsFocus, clBlue: the pixel over white
+# the colour matters (UIF-1486)
+ok cell 0, dsFocus: clRed differs from clBlue
+ok cell 1, dsFocus: clRed differs from clBlue
+ok cell 0, dsSelected: clRed differs from clBlue
+ok cell 1, dsSelected: clRed differs from clBlue
+ok dsSelected differs from dsFocus
+# the short Draw and the other cases
+ok short Draw with DrawingStyle dsSelected: the formula
+ok itMask, dsSelected, clRed: the native call
+ok disabled: BlendColor ignored (UIF-1477)
+ok clNone: cell 0, dsFocus equals ImageList_DrawEx with CLR_DEFAULT
+ok clNone, BkColor clYellow: cell 0, dsFocus equals the native call
+ok clNone: cell 1, dsFocus equals ImageList_DrawEx with CLR_DEFAULT
+ok clNone, BkColor clYellow: cell 1, dsFocus equals the native call
+ok clNone: cell 2, dsFocus equals ImageList_DrawEx with CLR_DEFAULT
+ok clNone, BkColor clYellow: cell 2, dsFocus equals the native call
+ok clNone: cell 0, dsSelected equals ImageList_DrawEx with CLR_DEFAULT
+ok clNone, BkColor clYellow: cell 0, dsSelected equals the native call
+ok clNone: cell 1, dsSelected equals ImageList_DrawEx with CLR_DEFAULT
+ok clNone, BkColor clYellow: cell 1, dsSelected equals the native call
+ok clNone: cell 2, dsSelected equals ImageList_DrawEx with CLR_DEFAULT
+ok clNone, BkColor clYellow: cell 2, dsSelected equals the native call
+# BkColor under the blended cell (UIF-1486)
+ok dsFocus: every pixel within 1 over the BkColor
+ok dsFocus: the transparent block shows the BkColor
+ok dsFocus: the alpha 128 block blended over the BkColor
+ok dsFocus: nothing outside the cell
+ok dsSelected: every pixel within 1 over the BkColor
+ok dsSelected: the transparent block shows the BkColor
+ok dsSelected: the alpha 128 block blended over the BkColor
+ok dsSelected: nothing outside the cell
+# a cd24Bit list keeps the native call (UIF-1475)
+ok cd24Bit, dsFocus, clRed equals ImageList_DrawEx
+ok cd24Bit, dsSelected, clRed equals ImageList_DrawEx
+ok cd24Bit, dsFocus, clBlue equals ImageList_DrawEx
+ok cd24Bit, dsSelected, clBlue equals ImageList_DrawEx
+# DrawOverlay with dsSelected (UIF-1486)
+ok Overlay(1, 0)
+ok the overlay pixel blended
+ok the base pixel blended
+ok every pixel: overlay over base, both blended (within 2)
+ok DrawOverlay: clRed differs from clBlue
+# passed 79 failed 0

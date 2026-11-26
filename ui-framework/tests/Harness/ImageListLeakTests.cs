@@ -5,7 +5,8 @@ namespace FreexComp.UiFramework.Tests;
 /// <summary>
 /// phase8/image-list.md UIF-1483 (card F05-062a): editing and drawing an image list leaks nothing.
 /// <c>ui-framework/tests/gui/Img_NoLeak.pas</c> runs 1 000 cycles of insert, replace, replace by an icon, move, delete,
-/// icon and bitmap read-back, enabled and disabled drawing of an alpha cell and of an overlay on one list with a
+/// icon and bitmap read-back, enabled and disabled drawing of an alpha cell, a <c>dsSelected</c> draw with
+/// <c>BlendColor = clRed</c> (UIF-1486, U-167) and enabled and disabled drawing of an overlay on one list with a
 /// handle after a warm-up, and prints its GDI object, USER object and live allocation counts at both points; this
 /// fact compiles and runs it, waits for its end and compares the numbers.
 /// </summary>

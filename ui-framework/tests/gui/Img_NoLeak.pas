@@ -3,9 +3,10 @@
 program Img_NoLeak;
 { U-166, phase8/image-list.md UIF-1483: on one image list with a handle and an overlay, 1 000 cycles of Insert (in
   the middle: a rebuild of the native list), Replace, ReplaceIcon, Move, Delete, GetIcon (the icon freed),
-  GetAlphaBitmap, Draw of an alpha cell enabled and disabled and DrawOverlay enabled and disabled, after a warm-up
-  of 10 cycles. Prints the GDI and USER object counts (GetGuiResources) and the count of live allocations of the
-  process after the warm-up and at the end, the number of cycles whose results were as expected and the elapsed
+  GetAlphaBitmap, Draw of an alpha cell enabled and disabled, Draw with dsSelected and BlendColor clRed (the
+  framework's blend of UIF-1486, U-167) and DrawOverlay enabled and disabled, after a warm-up of 10 cycles.
+  Prints the GDI and USER object counts (GetGuiResources) and the count of live allocations of the process after
+  the warm-up and at the end, the number of cycles whose results were as expected and the elapsed
   time of the 1 000 cycles in milliseconds. ImageListLeakTests compiles and runs this program and compares the
   counts. }
 uses
@@ -56,6 +57,7 @@ begin
   end;
   List.Draw(Target.Canvas, 0, 0, 0);
   List.Draw(Target.Canvas, 0, 0, 0, False);
+  List.Draw(Target.Canvas, 0, 0, 0, dsSelected, itImage);
   List.DrawOverlay(Target.Canvas, 0, 0, 0, 0);
   List.DrawOverlay(Target.Canvas, 0, 0, 0, 0, False);
   if Ok and (List.Count = 2) then
@@ -81,6 +83,7 @@ begin
   List.Add(Alpha, nil);
   List.Add(Alpha, nil);
   List.GetIcon(0, Icon);
+  List.BlendColor := clRed;
   if (List.Handle = 0) or not List.Overlay(1, 0) then
   begin
     Writeln('setup failed');

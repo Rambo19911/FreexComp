@@ -7,7 +7,7 @@ program Img_ImageListDraw;
 { U-166, phase8/image-list.md section 6: every drawing style and image type of the Draw overload maps to its
   ImageList_DrawEx flags, background and foreground colour (each result compared with a direct ImageList_DrawEx
   call into a second bitmap), the short Draw uses the list's DrawingStyle and ImageType, BlendColor changes the
-  dsSelected result; BlendColor and ImageType are stored values that fire Change; a disabled alpha cell is the
+  dsSelected result, which with a colour is the framework's blend of UIF-1486 (U-167); BlendColor and ImageType are stored values that fire Change; a disabled alpha cell is the
   grey, halved conversion of its pixels composited over the background (within 1), style and image type ignored,
   itMask drawn as when enabled; a disabled cell without partial alpha keeps the 50 % blend with clBtnFace
   (UIF-566); an index outside the list draws nothing. Built as a GUI program: the common controls of version 6,
@@ -84,6 +84,38 @@ begin
   finally
     A.Free;
     B.Free;
+  end;
+end;
+
+{ U-167: the pixels of cell Index drawn with Style at (2, 3) on white that miss the blend of UIF-1486 with Color
+  composited over white by more than 1 }
+function FormulaMisses(L: TImageList; Index: Integer; Color: TColor; S: TDrawingStyle): Integer;
+var
+  A: TBitmap;
+  X, Y, I, D: Integer;
+  E, V: Cardinal;
+begin
+  Result := 0;
+  A := Surface(20, 20, White);
+  try
+    L.Draw(A.Canvas, 2, 3, Index, S, itImage);
+    for Y := 0 to 15 do
+      for X := 0 to 15 do
+      begin
+        E := Blend(BlendedPixel(CellQuad(L, Index, X, Y), Color, S), White);
+        V := Quad(A, 2 + X, 3 + Y);
+        for I := 0 to 2 do
+        begin
+          D := Integer((E shr (I * 8)) and $FF) - Integer((V shr (I * 8)) and $FF);
+          if (D > 1) or (D < -1) then
+          begin
+            Inc(Result);
+            Break;
+          end;
+        end;
+      end;
+  finally
+    A.Free;
   end;
 end;
 
@@ -186,12 +218,12 @@ begin
     CheckEqI(2, C.Count, 'the same ImageType fires nothing');
     L.ImageType := itImage;
     L.OnChange := nil;
-    Compare(L, 1, dsSelected, itImage, 'BlendColor clRed: dsSelected with foreground red');
-    Compare(L, 0, dsSelected, itImage, 'BlendColor clRed: dsSelected of the alpha cell');
+    CheckEqI(0, FormulaMisses(L, 1, clRed, dsSelected), 'BlendColor clRed: dsSelected with foreground red');
+    CheckEqI(0, FormulaMisses(L, 0, clRed, dsSelected), 'BlendColor clRed: dsSelected of the alpha cell');
     A := Surface(20, 20, White);
     L.Draw(A.Canvas, 2, 3, 1, dsSelected, itImage);
     L.BlendColor := clBlue;
-    Compare(L, 1, dsSelected, itImage, 'BlendColor clBlue: dsSelected with foreground blue');
+    CheckEqI(0, FormulaMisses(L, 1, clBlue, dsSelected), 'BlendColor clBlue: dsSelected with foreground blue');
     L.BlendColor := clNone;
     B := Surface(20, 20, White);
     L.Draw(B.Canvas, 2, 3, 1, dsSelected, itImage);

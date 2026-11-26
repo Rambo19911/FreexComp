@@ -76,7 +76,7 @@ type
     procedure SetBlendColor(Value: TColor);
     procedure SetImageType(Value: TImageType);
     function PartialAlpha(Index: Integer): Boolean;
-    procedure DrawDisabled(Canvas: TCanvas; X, Y, Index: Integer);
+    procedure DrawFromStore(Canvas: TCanvas; X, Y, Index: Integer; Style: TDrawingStyle; Disabled: Boolean);
     procedure DrawCell(Canvas: TCanvas; X, Y, Index: Integer; ADrawingStyle: TDrawingStyle; AImageType: TImageType;
       Enabled: Boolean; Ov: Integer);
     procedure SetColorDepth(Value: TColorDepth);
@@ -1159,16 +1159,22 @@ begin
   Result := False;
 end;
 
-{ UIF-1477: the cell's pixels grey ((77 r + 150 g + 29 b + 128) shr 8), all four bytes halved, blended over the
-  canvas by their alpha }
-procedure TCustomImageList.DrawDisabled(Canvas: TCanvas; X, Y, Index: Integer);
+{ UIF-1477 (Disabled): the cell's pixels grey ((77 r + 150 g + 29 b + 128) shr 8), all four bytes halved.
+  UIF-1486 (else): each colour byte c blended with the byte f of BlendColor premultiplied by the pixel's alpha a,
+  p = (f a + 127) div 255: dsSelected (c + p + 1) shr 1, dsFocus (3 c + p + 2) shr 2, alpha kept.
+  Both drawn over the canvas by their alpha. }
+procedure TCustomImageList.DrawFromStore(Canvas: TCanvas; X, Y, Index: Integer; Style: TDrawingStyle;
+  Disabled: Boolean);
 var
   B: TBitmap;
   Row: Pointer;
-  I, J: Integer;
-  V, G: Cardinal;
+  I, J, K: Integer;
+  V, G, A, C, F, P, Fg: Cardinal;
   Blend: TBlendFunction;
 begin
+  Fg := 0;
+  if not Disabled then
+    Fg := Cardinal(ColorToRGB(FBlendColor));                    { COLORREF: red in the low byte }
   B := TBitmap.Create;
   try
     B.PixelFormat := pf32bit;
@@ -1179,9 +1185,29 @@ begin
       for I := 0 to FWidth - 1 do
       begin
         V := At(@FCells[0], (Index * FHeight + J) * FWidth + I)^;
-        G := (77 * ((V shr 16) and $FF) + 150 * ((V shr 8) and $FF) + 29 * (V and $FF) + 128) shr 8;
-        G := G shr 1;
-        At(Row, I)^ := ((V shr 25) shl 24) or (G shl 16) or (G shl 8) or G;
+        if Disabled then
+        begin
+          G := (77 * ((V shr 16) and $FF) + 150 * ((V shr 8) and $FF) + 29 * (V and $FF) + 128) shr 8;
+          G := G shr 1;
+          At(Row, I)^ := ((V shr 25) shl 24) or (G shl 16) or (G shl 8) or G;
+        end
+        else
+        begin
+          A := V shr 24;
+          G := A shl 24;
+          for K := 0 to 2 do                                    { K: blue, green, red byte of the pixel }
+          begin
+            C := (V shr (K * 8)) and $FF;
+            F := (Fg shr ((2 - K) * 8)) and $FF;
+            P := (F * A + 127) div 255;
+            if Style = dsSelected then
+              C := (C + P + 1) shr 1
+            else
+              C := (3 * C + P + 2) shr 2;
+            G := G or (C shl (K * 8));
+          end;
+          At(Row, I)^ := G;
+        end;
       end;
     end;
     Blend.BlendOp := AC_SRC_OVER;
@@ -1194,13 +1220,14 @@ begin
   end;
 end;
 
-{ UIF-1475, UIF-1477, UIF-1480: Ov is the overlay drawn over the cell, -1 for none }
+{ UIF-1475, UIF-1477, UIF-1480, UIF-1486: Ov is the overlay drawn over the cell, -1 for none }
 procedure TCustomImageList.DrawCell(Canvas: TCanvas; X, Y, Index: Integer; ADrawingStyle: TDrawingStyle;
   AImageType: TImageType; Enabled: Boolean; Ov: Integer);
 var
   Bk, Fg: COLORREF;
   Flags, Extra: UINT;
   OvCell: Integer;
+  Brush: HBRUSH;
 begin
   if (Index < 0) or (Index >= FCount) then
     Exit;
@@ -1211,7 +1238,20 @@ begin
     OvCell := FOverlays[Ov];
     Extra := IndexToOverlayMask(Ov + 1);
   end;
-  if Enabled or (AImageType = itMask) then
+  if Enabled and (AImageType = itImage) and (ADrawingStyle in [dsFocus, dsSelected]) and (FBlendColor <> clNone) and
+    (FColorDepth <> cd24Bit) then
+  begin                                    { UIF-1486: the platform ignores the blend colour on 32-bit lists }
+    if FBkColor <> clNone then
+    begin
+      Brush := CreateSolidBrush(COLORREF(ColorToRGB(FBkColor)));
+      FillRect(Canvas.Handle, Rect(X, Y, X + FWidth, Y + FHeight), Brush);
+      DeleteObject(Brush);
+    end;
+    DrawFromStore(Canvas, X, Y, Index, ADrawingStyle, False);
+    if OvCell >= 0 then
+      DrawFromStore(Canvas, X, Y, OvCell, ADrawingStyle, False);
+  end
+  else if Enabled or (AImageType = itMask) then
   begin
     if FBkColor = clNone then
       Bk := CLR_NONE
@@ -1228,9 +1268,9 @@ begin
   end
   else if PartialAlpha(Index) then
   begin
-    DrawDisabled(Canvas, X, Y, Index);
+    DrawFromStore(Canvas, X, Y, Index, dsNormal, True);
     if OvCell >= 0 then
-      DrawDisabled(Canvas, X, Y, OvCell);
+      DrawFromStore(Canvas, X, Y, OvCell, dsNormal, True);
   end
   else                                                       { UIF-566: blended 50 % with clBtnFace }
     ImageList_DrawEx(Handle, Index, Canvas.Handle, X, Y, 0, 0, CLR_NONE, COLORREF(ColorToRGB(clBtnFace)),
