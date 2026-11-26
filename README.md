@@ -75,6 +75,8 @@
   <summary>More screenshots</summary>
   <br />
   <img src="assets/screenshots/ide-code.png" alt="FreexComp code editor with the project manager" />
+  <br /><br />
+  <img src="assets/screenshots/ide-form-inheritance.png" alt="A descendant form in the designer: inherited controls marked in the corner, the Structure window showing the ancestor, and an overridden caption in bold in the Object Inspector" />
 </details>
 
 FreexComp is a rapid application development environment for native Windows programs. You design a form
