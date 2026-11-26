@@ -123,7 +123,7 @@ internal static class PcuReader
                     scope.TryDeclare(member, out _);
                 }
 
-                foreach (var (name, target) in TypeMembers.NestedAliases(type))
+                foreach (var (name, target, _) in TypeMembers.NestedAliases(type))
                 {
                     scope.TryDeclare(name, target, out _);
                 }
@@ -479,13 +479,14 @@ internal static class PcuReader
             while (_nested.TryDequeue(out var pending))
             {
                 var members = ImmutableArray.CreateBuilder<Symbol>();
-                var aliases = ImmutableArray.CreateBuilder<(string Name, TypeSymbol Target)>();
+                var aliases = ImmutableArray.CreateBuilder<(string Name, TypeSymbol Target, Visibility Visibility)>();
                 foreach (var item in pending.Nested)
                 {
                     var type = Type(item!, "type");
                     if (item!["alias"] is JsonValue alias && alias.GetValue<bool>())
                     {
-                        aliases.Add((Text(item, "name"), type));
+                        // C-359: the section's visibility; a .pcu written before has none and reads as public
+                        aliases.Add((Text(item, "name"), type, item["visibility"] is JsonValue v ? VisibilityOf(v.GetValue<string>()) : Visibility.Public));
                         continue;
                     }
 
@@ -500,7 +501,7 @@ internal static class PcuReader
                         memberScope.TryDeclare(member, out _);                      // C-345: seen by the generics nested in the owner
                     }
 
-                    foreach (var (name, target) in aliases)
+                    foreach (var (name, target, _) in aliases)
                     {
                         memberScope.TryDeclare(name, target, out _);
                     }

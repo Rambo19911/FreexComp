@@ -417,7 +417,7 @@ internal static class Binder
             }
         }
 
-        foreach (var (name, target) in TypeMembers.NestedAliases(type))
+        foreach (var (name, target, _) in TypeMembers.NestedAliases(type))
         {
             scope.TryDeclare(name, target, out _);                                  // C-311 (LANG-770)
         }

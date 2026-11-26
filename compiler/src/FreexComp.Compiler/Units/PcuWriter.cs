@@ -690,6 +690,7 @@ internal sealed class PcuWriter(PcuContext context)
                     ["name"] = a.Name,
                     ["type"] = TypeId(a.Target),
                     ["alias"] = true,
+                    ["visibility"] = VisibilityName(a.Visibility),            // C-359
                 })]);
             }
 

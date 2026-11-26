@@ -42,7 +42,7 @@ internal sealed partial class DeclarationBinder
         var properties = new List<(PropertyDeclarationSyntax Syntax, Visibility Visibility)>();
         var classVarSections = new List<(ClassVarSectionSyntax Syntax, Visibility Visibility)>();
         var nested = ImmutableArray.CreateBuilder<Symbol>();
-        var nestedAliases = ImmutableArray.CreateBuilder<(string Name, TypeSymbol Target)>();
+        var nestedAliases = ImmutableArray.CreateBuilder<(string Name, TypeSymbol Target, Visibility Visibility)>();
         var failed = false;
         foreach (var (member, visibility) in Members(syntax.Members, Visibility.Public))
         {
@@ -191,7 +191,7 @@ internal sealed partial class DeclarationBinder
     }
 
     /// <summary>A nested <c>const</c> or <c>type</c> section of a class or record (LANG-770): its symbols, in this member scope.</summary>
-    private ImmutableArray<Symbol> BindNestedSection(SyntaxNode section, ImmutableArray<(string Name, TypeSymbol Target)>.Builder aliases,
+    private ImmutableArray<Symbol> BindNestedSection(SyntaxNode section, ImmutableArray<(string Name, TypeSymbol Target, Visibility Visibility)>.Builder aliases,
         Visibility visibility)
     {
         var declared = ImmutableArray.CreateBuilder<Symbol>();
@@ -221,7 +221,7 @@ internal sealed partial class DeclarationBinder
                         declared.RemoveAt(index);
                     }
 
-                    aliases.Add((NameOf(declaration.Identifier), target));
+                    aliases.Add((NameOf(declaration.Identifier), target, visibility));     // LANG-774 (C-359): the section's visibility
                 }
 
                 foreach (var type in declared.OfType<TypeSymbol>().Where(t => ReferenceEquals(t.ContainingSymbol, _container)))
@@ -394,7 +394,7 @@ internal sealed partial class DeclarationBinder
                 scope.TryDeclare(member, out _);
             }
 
-            foreach (var (name, target) in TypeMembers.NestedAliases(owner))
+            foreach (var (name, target, _) in TypeMembers.NestedAliases(owner))
             {
                 scope.TryDeclare(name, target, out _);                              // C-311
             }
@@ -442,9 +442,10 @@ internal sealed partial class DeclarationBinder
         var text = NameOf(name.Identifier);
         if (TypeMembers.MemberNestedType(outer, text) is { } inner)                         // C-354: inherited too
         {
-            if (NestedNames.InaccessibleNestedType(_scope, inner) is { } visibility)
+            if (NestedNames.InaccessibleNestedType(_scope, outer, text) is { } denied)
             {
-                _diagnostics.Report(name, "E2610", visibility, inner.Name, TypeMembers.DisplayName(TypeMembers.EnclosingTypes(inner).First()));   // LANG-774 (C-344, C-354: the declaring type)
+                // LANG-774 (C-344; C-354: the declaring type; C-359: a nested alias has its own section's visibility)
+                _diagnostics.Report(name, "E2610", denied.Visibility, denied.Name, TypeMembers.DisplayName(denied.Declaring));
                 return _types.Error;
             }
 
@@ -515,9 +516,9 @@ internal sealed partial class DeclarationBinder
 
                 if ((implementationPath ? TypeMembers.NestedType(outer, NameOf(right)) : TypeMembers.MemberNestedType(outer, NameOf(right))) is { } inner)
                 {
-                    if (!implementationPath && NestedNames.InaccessibleNestedType(_scope, inner) is { } visibility)
+                    if (!implementationPath && NestedNames.InaccessibleNestedType(_scope, outer, NameOf(right)) is { } denied)
                     {
-                        _diagnostics.Report(rightName, "E2610", visibility, inner.Name, TypeMembers.DisplayName(TypeMembers.EnclosingTypes(inner).First()));   // LANG-774 (C-354)
+                        _diagnostics.Report(rightName, "E2610", denied.Visibility, denied.Name, TypeMembers.DisplayName(denied.Declaring));   // LANG-774 (C-354, C-359)
                         return null;
                     }
 

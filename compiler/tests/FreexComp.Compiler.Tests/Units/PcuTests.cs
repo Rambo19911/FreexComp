@@ -1173,6 +1173,71 @@ public sealed partial class PcuTests
         Assert.Equal(sources.ReadAllText(@"C:\p\obj\P.ll"), fs.ReadAllText(@"C:\p\obj\P.ll"));
     }
 
+    /// <summary>
+    /// CMP-1392, LANG-774 (C-359): a nested type alias is written with its section's visibility and read back with it, so naming a
+    /// private or strict protected alias from another unit is E2610 against the <c>.pcu</c> as against the source; a <c>.pcu</c> written
+    /// before (alias entries without <c>visibility</c>) reads the aliases as public.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1392")]
+    [Trait("Req", "LANG-774")]
+    public void NestedAliasVisibilityFromPcu()
+    {
+        const string Unit = """
+            unit U;
+            interface
+            type
+              TOuter = class
+              private
+                type TPriv = Byte;
+              strict protected
+                type TProt = Word;
+              public
+                type TOpen = Integer;
+              end;
+            implementation
+            end.
+            """;
+        const string Program = "program P;\nuses U;\nvar\n  A: TOuter.TPriv;\n  B: TOuter.TProt;\n  C: TOuter.TOpen;\nbegin\n  Writeln(SizeOf(TOuter.TPriv) + SizeOf(B) + SizeOf(C));\nend.\n";
+        string[] expected =
+        [
+            "P.pas(4,13): E2610 Cannot access private member 'TPriv' of 'TOuter'",
+            "P.pas(5,13): E2610 Cannot access strict protected member 'TProt' of 'TOuter'",
+            "P.pas(8,25): E2610 Cannot access private member 'TPriv' of 'TOuter'",
+        ];
+        var sources = Files(u: Unit, program: Program);
+        Assert.Equal(expected, Errors(Compilation.Create(Options(), [], sources).Emit(new EmitOptions { Stage = EmitStage.Check }, TestContext.Current.CancellationToken)));
+
+        var pcu = Pcu("U", Files(u: Unit, program: "program P;\nuses U;\nbegin\nend.\n"));
+        var outer = ((JsonArray)pcu["interface"]!["types"]!).Single(t => (string?)t!["name"] == "TOuter")!;
+        var nested = ((JsonArray)outer["nested"]!).Select(n => ((string)n!["name"]!, (bool?)n["alias"], (string?)n["visibility"])).ToList();
+        Assert.Equal([("TPriv", true, "private"), ("TProt", true, "strict protected"), ("TOpen", true, "public")], nested);
+        Assert.Equal(expected, Errors(AgainstPcu(pcu.ToJsonString())));
+
+        foreach (var entry in ((JsonArray)outer["nested"]!).OfType<JsonObject>())
+        {
+            entry.Remove("visibility");
+        }
+
+        var old = AgainstPcu(pcu.ToJsonString());
+        Assert.True(old.Success, string.Join("\n", old.Diagnostics.Select(d => d.ToText())));     // U.pcu only: no U.pas in that file system
+
+        EmitResult AgainstPcu(string text)
+        {
+            var fs = new InMemoryFileSystem().Add(@"C:\p\P.pas", Program).AddSystem()
+                .Add(Path.Combine(PcuImportTests.Lib, "U.pcu"), text + "\n").Add(Path.Combine(PcuImportTests.Lib, "U.obj"), "");
+            return Compilation.Create(Options() with { SearchPaths = [PcuImportTests.Lib] }, [], fs)
+                .Emit(new EmitOptions { Stage = EmitStage.Check }, TestContext.Current.CancellationToken);
+        }
+
+        static string[] Errors(EmitResult result) =>
+        [
+            .. result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error)
+                .Select(d => $"{Path.GetFileName(d.Location.Path)}({d.Location.LineSpan.Start.Line + 1},{d.Location.LineSpan.Start.Column + 1}): {d.Code} {d.Message}"),
+        ];
+    }
+
     // ------------------------------------------------------------------ Emit writes it (CMP-141, toolchain.md §6)
 
     [Fact]

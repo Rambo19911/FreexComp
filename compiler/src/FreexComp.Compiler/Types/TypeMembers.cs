@@ -49,7 +49,7 @@ internal static class TypeMembers
         _ => [],
     };
 
-    public static ImmutableArray<(string Name, TypeSymbol Target)> NestedAliases(TypeSymbol type) => type switch
+    public static ImmutableArray<(string Name, TypeSymbol Target, Visibility Visibility)> NestedAliases(TypeSymbol type) => type switch
     {
         ClassTypeSymbol c => c.NestedAliases,
         RecordTypeSymbol r => r.NestedAliases,
@@ -58,15 +58,24 @@ internal static class TypeMembers
     };
 
     /// <summary>The nested type <paramref name="name"/> of <paramref name="type"/>: declared there, or a nested alias (C-311).</summary>
-    public static TypeSymbol? NestedType(TypeSymbol type, string name)
+    public static TypeSymbol? NestedType(TypeSymbol type, string name) => NestedTypeEntry(type, name)?.Type;
+
+    /// <summary>
+    /// LANG-774 (C-359): the nested type or alias <paramref name="name"/> of <paramref name="type"/> with its declared name, the type that declares
+    /// it and the visibility of its section (an alias has its own; it is not the visibility of the type it names).
+    /// </summary>
+    public static (TypeSymbol Type, string Name, TypeSymbol Declaring, Visibility Visibility)? NestedTypeEntry(TypeSymbol type, string name)
     {
         if (NestedMembers(type).FirstOrDefault(m => m is not GenericTypeSymbol && IdentifierComparer.Instance.Equals(m.Name, name)) is { } member)
         {
-            return member as TypeSymbol;
+            // a nested type outside a class or record (a helper's) has no visibility check, as before C-359
+            return member is not TypeSymbol nested ? null
+                : EnclosingTypes(nested).FirstOrDefault() is { } enclosing ? (nested, nested.Name, enclosing, nested.NestedVisibility)
+                : (nested, nested.Name, type, Visibility.Public);
         }
 
         var alias = NestedAliases(type).FirstOrDefault(a => IdentifierComparer.Instance.Equals(a.Name, name));
-        return alias.Target;
+        return alias.Target is null ? null : (alias.Target, alias.Name, type, type is ClassTypeSymbol or RecordTypeSymbol ? alias.Visibility : Visibility.Public);
     }
 
     /// <summary>LANG-778 (C-345): the generic types named <paramref name="name"/> nested in <paramref name="type"/> (any arity).</summary>
@@ -77,8 +86,11 @@ internal static class TypeMembers
     /// LANG-780 amendment (C-354): the nested type <paramref name="name"/> in the type member scope of <paramref name="type"/> — its
     /// own, else the nearest ancestor's (a class's own nested type hides a same-named inherited one).
     /// </summary>
-    public static TypeSymbol? MemberNestedType(TypeSymbol type, string name) =>
-        SelfAndAncestors(type).Select(t => NestedType(t, name)).FirstOrDefault(t => t is not null);
+    public static TypeSymbol? MemberNestedType(TypeSymbol type, string name) => MemberNestedTypeEntry(type, name)?.Type;
+
+    /// <summary><see cref="MemberNestedType"/> with its declared name, the type that declares it and its section's visibility (LANG-774, C-359).</summary>
+    public static (TypeSymbol Type, string Name, TypeSymbol Declaring, Visibility Visibility)? MemberNestedTypeEntry(TypeSymbol type, string name) =>
+        SelfAndAncestors(type).Select(t => NestedTypeEntry(t, name)).FirstOrDefault(e => e is not null);
 
     /// <summary>LANG-780 amendment (C-354): the generic types <paramref name="name"/> of the nearest of <paramref name="type"/> and its ancestors that declares any.</summary>
     public static IEnumerable<GenericTypeSymbol> MemberNestedGenerics(TypeSymbol type, string name) =>

@@ -18,7 +18,22 @@ internal static class NestedNames
     /// <paramref name="generic"/> also names with generic segments (LANG-780, C-345: <c>TList&lt;Integer&gt;.TNode</c>,
     /// <c>U.TBox&lt;Integer&gt;</c>, <c>TOuter.TBox&lt;Integer&gt;</c>); the error type when such a segment was reported.
     /// </summary>
-    public static TypeSymbol? TypeNamedBy(Scope scope, ExpressionSyntax expression, GenericSegment? generic = null)
+    public static TypeSymbol? TypeNamedBy(Scope scope, ExpressionSyntax expression, GenericSegment? generic = null) =>
+        Named(scope, expression, generic, access: null);
+
+    /// <summary>
+    /// <see cref="TypeNamedBy"/> with LANG-774 visibility for every segment of a qualified name <c>O.N.M</c> (LANG-780 item 2):
+    /// E2610 at the first segment this code may not access, a nested type or a nested alias (C-359, C-360), naming the type that
+    /// declares it (C-354), and the error type then (C-344; C-356, C-357: the arguments of type-taking intrinsics and typecast
+    /// callees too). Generic segments report their own visibility.
+    /// </summary>
+    public static TypeSymbol? AccessibleTypeNamedBy(Scope scope, ExpressionSyntax expression, GenericSegment? generic, DiagnosticBag diagnostics, BuiltInTypes types) =>
+        Named(scope, expression, generic, new Access(diagnostics, types));
+
+    /// <summary>Where <see cref="AccessibleTypeNamedBy"/> reports an inaccessible segment, and the error type it returns then.</summary>
+    private sealed record Access(DiagnosticBag Diagnostics, BuiltInTypes Types);
+
+    private static TypeSymbol? Named(Scope scope, ExpressionSyntax expression, GenericSegment? generic, Access? access)
     {
         while (expression is ParenthesizedExpressionSyntax parenthesized)
         {
@@ -31,56 +46,59 @@ internal static class NestedNames
                 return scope.For(name).Lookup(token.Value as string ?? token.Text) as TypeSymbol;
             case GenericNameSyntax name when generic is not null:
                 return generic(name, null, null);
-            case MemberAccessExpressionSyntax { Name: GenericNameSyntax { Identifier: { IsMissing: false } member } name } access when generic is not null:
-                if (UnitQualifiers.Qualifier(scope, access.Expression) is { } unit)
+            case MemberAccessExpressionSyntax { Name: GenericNameSyntax { Identifier: { IsMissing: false } member } name } qualified when generic is not null:
+                if (UnitQualifiers.Qualifier(scope, qualified.Expression) is { } unit)
                 {
                     return generic(name, unit.Qualified, null);
                 }
 
-                return TypeNamedBy(scope, access.Expression, generic) switch
+                return Named(scope, qualified.Expression, generic, access) switch
                 {
                     ErrorTypeSymbol error => error,
                     { } outer when TypeMembers.MemberNestedGenerics(outer, member.Value as string ?? member.Text).Any() => generic(name, null, outer),   // C-354: inherited too
                     _ => null,                                          // a generic method TUtil.Max<Integer>
                 };
-            case MemberAccessExpressionSyntax { Name.Identifier: { IsMissing: false } member } access
-                when TypeNamedBy(scope, access.Expression, generic) is { } outer:
-                return outer is ErrorTypeSymbol ? outer : TypeMembers.MemberNestedType(outer, member.Value as string ?? member.Text);   // C-354
+            case MemberAccessExpressionSyntax { Name: { Identifier: { IsMissing: false } member } nestedName } qualified
+                when Named(scope, qualified.Expression, generic, access) is { } outer:
+                if (outer is ErrorTypeSymbol)
+                {
+                    return outer;
+                }
+
+                var text = member.Value as string ?? member.Text;
+                if (access is not null && InaccessibleNestedType(scope, outer, text) is { } denied)
+                {
+                    access.Diagnostics.Report(nestedName, "E2610", denied.Visibility, denied.Name, TypeMembers.DisplayName(denied.Declaring));   // LANG-774
+                    return access.Types.Error;
+                }
+
+                return TypeMembers.MemberNestedType(outer, text);                // C-354
             default:
                 return null;
         }
     }
 
     /// <summary>
-    /// <see cref="TypeNamedBy"/> with LANG-774 visibility for a qualified name <c>O.N</c>: E2610 at <c>N</c> (naming the type that
-    /// declares <c>N</c>, C-354) and the error type when this code may not access the nested type (C-344; C-356, C-357: the
-    /// arguments of type-taking intrinsics and typecast callees too). Generic segments report their own visibility.
+    /// LANG-774 (C-344, C-359): the visibility word, declared name and declaring type of the nested type or alias <paramref name="name"/>
+    /// in the type member scope of <paramref name="outer"/> when code at <paramref name="scope"/> may not access it; null when it may or
+    /// there is none.
     /// </summary>
-    public static TypeSymbol? AccessibleTypeNamedBy(Scope scope, ExpressionSyntax expression, GenericSegment? generic, DiagnosticBag diagnostics, BuiltInTypes types)
-    {
-        while (expression is ParenthesizedExpressionSyntax parenthesized)
-        {
-            expression = parenthesized.Expression;
-        }
-
-        var type = TypeNamedBy(scope, expression, generic);
-        if (type is not null && expression is MemberAccessExpressionSyntax { Name: var nestedName } && scope.Unqualified(expression) is not IdentifierNameSyntax
-            && InaccessibleNestedType(scope, type) is { } visibility && TypeMembers.EnclosingTypes(type).FirstOrDefault() is { } outer)
-        {
-            diagnostics.Report(nestedName, "E2610", visibility, type.Name, TypeMembers.DisplayName(outer));      // LANG-774 (C-344)
-            return types.Error;
-        }
-
-        return type;
-    }
+    public static (string Visibility, string Name, TypeSymbol Declaring)? InaccessibleNestedType(Scope scope, TypeSymbol outer, string name) =>
+        TypeMembers.MemberNestedTypeEntry(outer, name) is var (_, declared, declaring, visibility) && Inaccessible(scope, visibility, declaring) is { } word
+            ? (word, declared, declaring)
+            : null;
 
     /// <summary>
     /// LANG-774 (C-344): the visibility word of a nested type named from code at <paramref name="scope"/> that may not access it
     /// (<c>private</c>: other units; <c>strict private</c> / <c>strict protected</c>: code outside its enclosing type), else null.
     /// </summary>
-    public static string? InaccessibleNestedType(Scope scope, TypeSymbol nested)
+    public static string? InaccessibleNestedType(Scope scope, TypeSymbol nested) =>
+        TypeMembers.EnclosingTypes(nested).FirstOrDefault() is { } outer ? Inaccessible(scope, nested.NestedVisibility, outer) : null;
+
+    /// <summary>LANG-774: the visibility word of a member of <paramref name="outer"/> declared in a <paramref name="visibility"/> section when code at <paramref name="scope"/> may not access it, else null.</summary>
+    private static string? Inaccessible(Scope scope, Visibility visibility, TypeSymbol outer)
     {
-        if (nested.NestedVisibility is Visibility.Public or Visibility.Published || TypeMembers.EnclosingTypes(nested).FirstOrDefault() is not { } outer)
+        if (visibility is Visibility.Public or Visibility.Published)
         {
             return null;
         }
@@ -105,14 +123,14 @@ internal static class NestedNames
 
         selves = [.. selves.SelectMany(t => new[] { t }.Concat(TypeMembers.EnclosingTypes(t)))];
         var sameUnit = TypeMembers.Outermost(outer).ContainingSymbol is UnitSymbol own && ReferenceEquals(own, unit);
-        var allowed = nested.NestedVisibility switch
+        var allowed = visibility switch
         {
             Visibility.Private => sameUnit,
             Visibility.Protected => sameUnit || selves.Any(t => TypeMembers.SelfAndAncestors(t).Contains(outer)),
             Visibility.StrictPrivate => selves.Contains(outer),
             _ => selves.Any(t => TypeMembers.SelfAndAncestors(t).Contains(outer)),
         };
-        return allowed ? null : nested.NestedVisibility switch
+        return allowed ? null : visibility switch
         {
             Visibility.Private => "private",
             Visibility.StrictPrivate => "strict private",

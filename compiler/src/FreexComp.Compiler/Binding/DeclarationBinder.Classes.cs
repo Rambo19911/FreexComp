@@ -131,7 +131,7 @@ internal sealed partial class DeclarationBinder
         var properties = new List<(PropertyDeclarationSyntax Syntax, Visibility Visibility)>();
         var classVariables = ImmutableArray.CreateBuilder<VariableSymbol>();
         var nested = ImmutableArray.CreateBuilder<Symbol>();
-        var nestedAliases = ImmutableArray.CreateBuilder<(string Name, TypeSymbol Target)>();
+        var nestedAliases = ImmutableArray.CreateBuilder<(string Name, TypeSymbol Target, Visibility Visibility)>();
         var genericMethods = ImmutableArray.CreateBuilder<GenericMethodSymbol>();
         var end = type.Parent?.InstanceSize ?? 8;                              // offset 0: the VMT pointer (ABI §7.1)
         foreach (var (member, visibility) in Members(syntax.Members, type.IsTypeInfo ? Visibility.Published : Visibility.Public))
@@ -242,7 +242,7 @@ internal sealed partial class DeclarationBinder
                 scope.TryDeclare(member, out _);                                // the nearest ancestor's declaration wins
             }
 
-            foreach (var (name, target) in ancestor.NestedAliases)
+            foreach (var (name, target, _) in ancestor.NestedAliases)
             {
                 scope.TryDeclare(name, target, out _);
             }

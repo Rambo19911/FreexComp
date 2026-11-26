@@ -548,6 +548,138 @@ public sealed class NestedTypeBindingTests
             end.
             """).Where(d => !d.StartsWith('H') && !d.StartsWith('W')));
 
+    /// <summary>
+    /// LANG-774, C-311 (C-359): a nested type alias keeps the visibility of its section — as a type, as the argument of a
+    /// type-taking intrinsic and as a typecast callee, in constants and statements, own and inherited; E2610 names the declaring
+    /// type. Code of the declaring type may name it; public aliases stay usable.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "LANG-774")]
+    [Trait("Req", "LANG-770")]
+    public void NestedAlias_Visibility_E2610() =>
+        Assert.Equal(
+        [
+            "E2610(15,22): Cannot access strict private member 'TSmall' of 'TOuter'",
+            "E2610(16,17): Cannot access strict protected member 'TCount' of 'TOuter'",
+            "E2610(17,20): Cannot access strict private member 'TSmall' of 'TOuter'",
+            "E2610(20,13): Cannot access strict private member 'TSmall' of 'TOuter'",
+            "E2610(21,15): Cannot access strict protected member 'TCount' of 'TOuter'",
+            "E2610(33,22): Cannot access strict private member 'TSmall' of 'TOuter'",
+            "E2610(34,15): Cannot access strict private member 'TSmall' of 'TOuter'",
+            "E2610(35,25): Cannot access strict protected member 'TCount' of 'TOuter'",
+        ], BindDiagnostics("""
+            program P;
+            type
+              TOuter = class
+              strict private
+                type TSmall = Byte;
+              strict protected
+                type TCount = Integer;
+              public
+                type TOpen = Word;
+                procedure Use;
+              end;
+              TDerived = class(TOuter)
+              end;
+            const
+              C1 = SizeOf(TOuter.TSmall);
+              C2 = TDerived.TCount(7);
+              C3 = High(TOuter.TSmall) - 1;
+              C4 = SizeOf(TOuter.TOpen) + TDerived.TOpen(1);
+            var
+              A: TOuter.TSmall;
+              B: TDerived.TCount;
+              N: Integer;
+            procedure TOuter.Use;
+            const
+              K = SizeOf(TOuter.TSmall) + TOuter.TCount(2) + High(TDerived.TSmall);
+            var
+              L: TOuter.TSmall;
+            begin
+              L := TOuter.TSmall(N) + K;
+              N := SizeOf(TDerived.TCount) + Default(TOuter.TSmall);
+            end;
+            begin
+              N := SizeOf(TOuter.TSmall);
+              N := TOuter.TSmall(N);
+              N := Default(TDerived.TCount);
+              N := TOuter.TOpen(N) + SizeOf(TDerived.TOpen) + High(TOuter.TOpen);
+            end.
+            """).Where(d => !d.StartsWith('H') && !d.StartsWith('W')));
+
+    /// <summary>
+    /// LANG-774, LANG-780 item 2 (C-360): every segment of a nested path obeys the visibility of its section, not only the last —
+    /// <c>TOuter.TSecret.TInner</c> and <c>TOuter.TSecret.Limit</c> give one E2610 at <c>TSecret</c> as a type, a constant (also inside
+    /// a constant expression), a typecast callee and an intrinsic argument, in constants and statements, own and inherited.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "LANG-774")]
+    [Trait("Req", "LANG-780")]
+    public void InnerSegment_Visibility_E2610() =>
+        Assert.Equal(
+        [
+            "E2610(23,15): Cannot access strict private member 'TSecret' of 'TOuter'",
+            "E2610(24,22): Cannot access strict private member 'TSecret' of 'TOuter'",
+            "E2610(25,15): Cannot access strict private member 'TSecret' of 'TOuter'",
+            "E2610(26,15): Cannot access strict private member 'TSecret' of 'TOuter'",
+            "E2610(26,51): Cannot access strict private member 'TSecret' of 'TOuter'",
+            "E2610(28,13): Cannot access strict private member 'TSecret' of 'TOuter'",
+            "E2610(29,15): Cannot access strict private member 'TSecret' of 'TOuter'",
+            "E2610(42,15): Cannot access strict private member 'TSecret' of 'TOuter'",
+            "E2610(43,24): Cannot access strict private member 'TSecret' of 'TOuter'",
+            "E2610(44,19): Cannot access strict private member 'TSecret' of 'TOuter'",
+            "E2610(45,24): Cannot access strict private member 'TSecret' of 'TOuter'",
+            "E2610(46,24): Cannot access strict private member 'TSecret' of 'TOuter'",
+        ], BindDiagnostics("""
+            program P;
+            type
+              TOuter = class
+              strict private
+                type
+                  TSecret = class
+                  public
+                    type
+                      TInner = (iA, iB);
+                      TDeep = class
+                      public
+                        type TX = Byte;
+                      end;
+                    const
+                      Limit = 5;
+                  end;
+              public
+                procedure Use;
+              end;
+              TDerived = class(TOuter)
+              end;
+            const
+              C1 = TOuter.TSecret.Limit;
+              C2 = SizeOf(TOuter.TSecret.TInner) + 1;
+              C3 = TOuter.TSecret.TInner(1);
+              C4 = TOuter.TSecret.Limit * 2 + SizeOf(TDerived.TSecret.TDeep.TX);
+            var
+              X: TOuter.TSecret.TInner;
+              Y: TDerived.TSecret.TDeep.TX;
+              N: Integer;
+              Q: Pointer;
+            procedure TOuter.Use;
+            const
+              K = TOuter.TSecret.Limit + Ord(High(TOuter.TSecret.TInner)) + SizeOf(TOuter.TSecret.TDeep.TX);
+            var
+              L: TOuter.TSecret.TInner;
+            begin
+              L := TOuter.TSecret.TInner(K);
+              N := TOuter.TSecret.Limit + SizeOf(TDerived.TSecret.TDeep.TX);
+            end;
+            begin
+              N := TOuter.TSecret.Limit;
+              N := Ord(High(TOuter.TSecret.TInner));
+              N := Ord(TOuter.TSecret.TInner(N));
+              N := SizeOf(TDerived.TSecret.TDeep.TX);
+              Q := TypeInfo(TOuter.TSecret.TInner);
+            end.
+            """).Where(d => !d.StartsWith('H') && !d.StartsWith('W')));
+
     /// <summary>LANG-780 amendment (C-354): through a generic instance the inherited name is the ancestor instance's nested type.</summary>
     [Fact]
     [Trait("Req", "LANG-780")]

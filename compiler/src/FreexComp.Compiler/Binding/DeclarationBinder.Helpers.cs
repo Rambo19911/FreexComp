@@ -79,7 +79,7 @@ internal sealed partial class DeclarationBinder
         var properties = new List<(PropertyDeclarationSyntax Syntax, Visibility Visibility)>();
         var classVariables = ImmutableArray.CreateBuilder<VariableSymbol>();
         var nested = ImmutableArray.CreateBuilder<Symbol>();
-        var nestedAliases = ImmutableArray.CreateBuilder<(string Name, TypeSymbol Target)>();
+        var nestedAliases = ImmutableArray.CreateBuilder<(string Name, TypeSymbol Target, Visibility Visibility)>();
         foreach (var (member, visibility) in Members(syntax.Members, Visibility.Public))
         {
             switch (member)

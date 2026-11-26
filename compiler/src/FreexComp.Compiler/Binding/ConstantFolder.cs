@@ -92,9 +92,10 @@ internal sealed class ConstantFolder
                 return FoldInvocation(invocation);
             case MemberAccessExpressionSyntax memberAccess when _scope.Unqualified(memberAccess) is IdentifierNameSyntax qualified:
                 return FoldName(qualified);                                     // U.Name (LANG-311, 538)
-            case MemberAccessExpressionSyntax memberAccess when Generic is not null && NestedNames.TypeNamedBy(_scope, memberAccess.Expression, Generic) is { } outer
+            case MemberAccessExpressionSyntax memberAccess when (Generic is not null || memberAccess.Expression is MemberAccessExpressionSyntax)
+                && NestedNames.AccessibleTypeNamedBy(_scope, memberAccess.Expression, Generic, _diagnostics, _types) is { } outer
                 && (outer is ErrorTypeSymbol || IncompleteInstance(memberAccess.Expression, outer)):
-                return null;                                                    // C-353: reported at the generic segment
+                return null;                                                    // C-353: reported at the generic segment; C-360: E2610 at an inaccessible one
             case MemberAccessExpressionSyntax memberAccess when NestedNames.NestedMember(_scope, memberAccess, Generic) is { } nested:
                 return nested switch                                            // LANG-770 (C-122): TOuter.Limit
                 {
