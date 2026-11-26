@@ -101,11 +101,12 @@ internal static class IrEmitter
         ImmutableArray<TypeSymbol> instances;
         lock (unit.Unit.UsedInstances)
         {
-            instances = [.. unit.Unit.UsedInstances.OfType<TypeSymbol>()];
+            // C-344 (LANG-775): the types nested in an instance belong to it and are emitted with it
+            instances = [.. unit.Unit.UsedInstances.OfType<TypeSymbol>().SelectMany(TypeMembers.SelfAndNestedTypes)];
         }
 
-        IrLinkage LinkageOf(TypeSymbol type) => type.IsGenericInstance ? IrLinkage.LinkOnceOdr
-            : interfaceMembers.Contains(type) ? IrLinkage.External : IrLinkage.Internal;
+        IrLinkage LinkageOf(TypeSymbol type) => TypeMembers.Outermost(type).IsGenericInstance ? IrLinkage.LinkOnceOdr
+            : interfaceMembers.Contains(TypeMembers.Outermost(type)) ? IrLinkage.External : IrLinkage.Internal;     // CMP-1391: nested types too
         var classes = Binding.DeclarationBinder.ClassesOf(unit.Unit).Concat(instances.OfType<ClassTypeSymbol>()).Distinct().ToImmutableArray();
         var module = new ModuleState(writer)
         {
@@ -296,7 +297,7 @@ internal static class IrEmitter
         {
             var layout = TypeLayout.Allocated(variable.Type);
             var name = Mangler.GlobalVariable(variable);
-            var linkage = variable.ContainingSymbol is TypeSymbol { IsGenericInstance: true } ? IrLinkage.LinkOnceOdr
+            var linkage = variable.ContainingSymbol is TypeSymbol owningType && TypeMembers.Outermost(owningType).IsGenericInstance ? IrLinkage.LinkOnceOdr
                 : interfaceMembers.Contains(variable) || variable.ExplicitLinkName is not null
                 || variable.ContainingSymbol is (ClassTypeSymbol or RecordTypeSymbol or HelperTypeSymbol) and TypeSymbol owner && interfaceMembers.Contains(TypeMembers.Outermost(owner)) ? IrLinkage.External : IrLinkage.Internal;
             writer.DefineGlobal(new IrGlobalDefinition(name, linkage, IsConstant: variable.IsReadOnly, initializer, layout.Alignment)
@@ -2098,7 +2099,7 @@ internal sealed class FunctionEmitter
             Syntax.TryFinallyStatementSyntax => _name.Text,
             _ => _module.UnitName,
         },
-        MethodSymbol method => method.Owner.Name + "." + method.Name,
+        MethodSymbol method => TypeMembers.DisplayName(method.Owner) + "." + method.Name,       // CMP-1393: TOuter.TInner.M
         { ContainingSymbol: RoutineSymbol parent } => DisplayName(parent, source) + "." + routine.Name,
         _ => routine.Name,
     };

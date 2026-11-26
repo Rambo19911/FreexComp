@@ -426,6 +426,8 @@ type TFoo<T: class, record> = class end; begin end.
 type TFoo<T> = class(T) end; begin end.
 === E2704 1,53
 type TFoo<T: class> = record X: T; end; var V: TFoo<Integer>; begin end.
+=== E2707 1,89
+type O = class F: Integer; type N = class procedure M; end; end; procedure O.N.M; begin F := 1 end; begin end.
 === E2710 1,142
 type TS<T> = record class function L(const A, B: T): Boolean; static; end; class function TS<T>.L(const A, B: T): Boolean; begin Result := A < B; end; type TR = record X: Integer; end; var R: TR; begin TS<TR>.L(R, R); end.
 === E2720 1,108

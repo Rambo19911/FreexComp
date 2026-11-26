@@ -110,7 +110,7 @@ internal sealed partial class DeclarationBinder
                     properties.Add((property, visibility));
                     break;
                 case ConstSectionSyntax or TypeSectionSyntax:
-                    nested.AddRange(inner.BindNestedSection(member, nestedAliases));
+                    nested.AddRange(inner.BindNestedSection(member, nestedAliases, visibility));
                     break;
                 default:
                     Unsupported(member, "helper " + FeatureName(member.Kind));

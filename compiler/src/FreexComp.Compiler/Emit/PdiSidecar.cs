@@ -96,7 +96,7 @@ internal sealed class PdiFragmentBuilder(TargetInfo target, string unitName, str
 
         var id = _types.Count + 1;
         _ids[type] = id;
-        var entry = new JsonObject { ["id"] = id, ["name"] = IsNamed(type) ? type.Name : "" };
+        var entry = new JsonObject { ["id"] = id, ["name"] = IsNamed(type) ? TypeMembers.DisplayName(type) : "" };     // CMP-1393: TOuter.TInner
         if (IsNamed(type) && UnitOf(type) is { } unit)
         {
             entry["unit"] = unit;

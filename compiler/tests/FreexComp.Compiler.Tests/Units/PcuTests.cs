@@ -1041,6 +1041,138 @@ public sealed partial class PcuTests
         PcuImportTests.AssertSameIrAgainstPcu(Unit, Program);
     }
 
+    internal const string NestedClassUnit = """
+        unit U;
+        interface
+        type
+          TOuter = class
+          strict private
+            class var FCount: Integer;
+          public
+            type
+              IInner = interface
+                ['{6B2D3C41-7E0A-4F55-9C1B-2A7D8E9F0A11}']
+                function Get: Integer;
+              end;
+              TInner = class(TInterfacedObject, IInner)
+              private
+                FValue: Integer;
+              public
+                constructor Create(AValue: Integer);
+                function Get: Integer;
+                class function Total: Integer;
+              end;
+              TPoint = record
+                X, Y: Integer;
+              end;
+              TA = class
+              public
+                type
+                  TB = class
+                    function Deep: string;
+                  end;
+              end;
+            function Make(N: Integer): TInner;
+          end;
+        implementation
+        constructor TOuter.TInner.Create(AValue: Integer);
+        begin
+          inherited Create;
+          FValue := AValue;
+          Inc(FCount);
+        end;
+        function TOuter.TInner.Get: Integer;
+        begin
+          Result := FValue;
+        end;
+        class function TOuter.TInner.Total: Integer;
+        begin
+          Result := FCount;
+        end;
+        function TOuter.TA.TB.Deep: string;
+        begin
+          Result := ClassName;
+        end;
+        function TOuter.Make(N: Integer): TInner;
+        begin
+          Result := TInner.Create(N);
+        end;
+        end.
+        """;
+
+    /// <summary>
+    /// CMP-1392 a (C-344): the nested class, interface and record types of an interface-part class are written as type entries
+    /// attached to their enclosing type and read back so that <c>TOuter.TInner</c> binds and links as against the source.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1392")]
+    [Trait("Req", "LANG-775")]
+    public void NestedClassOfInterfaceClassFromPcu()
+    {
+        const string Program = """
+            program P;
+            uses U;
+            var
+              O: TOuter;
+              I: TOuter.TInner;
+              X: U.TOuter.IInner;
+              Pt: TOuter.TPoint;
+              B: TOuter.TA.TB;
+              Obj: TObject;
+            begin
+              O := TOuter.Create;
+              I := O.Make(3);
+              Obj := I;
+              Writeln(Obj is TOuter.TInner, I.Get, TOuter.TInner.Total, I.ClassName);
+              X := TOuter.TInner.Create(4);
+              Writeln(X.Get);
+              Pt.X := 1;
+              B := TOuter.TA.TB.Create;
+              Writeln(B.Deep);
+            end.
+            """;
+
+        var pcu = Pcu("U", Files(u: NestedClassUnit, program: Program));
+        var types = (JsonArray)pcu["interface"]!["types"]!;
+        var outer = types.Single(t => (string?)t!["name"] == "TOuter")!;
+        var nested = ((JsonArray)outer["nested"]!).Select(n => ((string)n!["name"]!, (string)types[(int)n["type"]!]!["kind"]!)).ToList();
+        Assert.Equal([("IInner", "interface"), ("TInner", "class"), ("TPoint", "record"), ("TA", "class")], nested);
+        PcuImportTests.AssertSameIrAgainstPcu(NestedClassUnit, Program);
+    }
+
+    /// <summary>
+    /// CMP-1392 c (C-344): a <c>.pcu</c> as written before this card — the same file without the <c>nested</c> keys — is still read;
+    /// a program that names no nested type compiles against it to the same IR as against the source.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1392")]
+    public void OldPcuWithoutNestedClasses_StillReads()
+    {
+        const string Program = "program P;\nuses U;\nvar\n  O: TOuter;\nbegin\n  O := TOuter.Create;\n  Writeln(O.Make(2).Get);\nend.\n";
+        var sources = Files(u: NestedClassUnit, program: Program);
+        var reference = Compilation.Create(Options(), [], sources).Emit(new EmitOptions { Stage = EmitStage.Ll }, TestContext.Current.CancellationToken);
+        Assert.True(reference.Success, string.Join("\n", reference.Diagnostics.Select(d => d.ToText())));
+        var old = Pcu("U", Files(u: NestedClassUnit, program: Program));
+        var stripped = 0;
+        foreach (var type in ((JsonArray)old["interface"]!["types"]!).OfType<JsonObject>())
+        {
+            stripped += type.Remove("nested") ? 1 : 0;
+        }
+
+        Assert.Equal(2, stripped);                                                     // TOuter and TOuter.TA
+        var fs = new InMemoryFileSystem().Add(@"C:\p\P.pas", Program).AddSystem()
+            .Add(Path.Combine(PcuImportTests.Lib, "U.pcu"), old.ToJsonString() + "\n").Add(Path.Combine(PcuImportTests.Lib, "U.obj"), "");
+
+        var result = Compilation.Create(Options() with { SearchPaths = [PcuImportTests.Lib] }, [], fs)
+            .Emit(new EmitOptions { Stage = EmitStage.Ll }, TestContext.Current.CancellationToken);
+
+        Assert.True(result.Success, string.Join("\n", result.Diagnostics.Select(d => d.ToText())));
+        Assert.Equal(["P", "System"], result.CompiledUnits);
+        Assert.Equal(sources.ReadAllText(@"C:\p\obj\P.ll"), fs.ReadAllText(@"C:\p\obj\P.ll"));
+    }
+
     // ------------------------------------------------------------------ Emit writes it (CMP-141, toolchain.md §6)
 
     [Fact]

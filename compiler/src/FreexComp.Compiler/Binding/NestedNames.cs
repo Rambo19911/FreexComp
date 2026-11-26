@@ -28,6 +28,53 @@ internal static class NestedNames
         }
     }
 
+    /// <summary>
+    /// LANG-774 (C-344): the visibility word of a nested type named from code at <paramref name="scope"/> that may not access it
+    /// (<c>private</c>: other units; <c>strict private</c> / <c>strict protected</c>: code outside its enclosing type), else null.
+    /// </summary>
+    public static string? InaccessibleNestedType(Scope scope, TypeSymbol nested)
+    {
+        if (nested.NestedVisibility is Visibility.Public or Visibility.Published || TypeMembers.EnclosingTypes(nested).FirstOrDefault() is not { } outer)
+        {
+            return null;
+        }
+
+        UnitSymbol? unit = null;
+        var selves = new List<TypeSymbol>();
+        for (var s = scope; s is not null; s = s.Parent)
+        {
+            switch (s.Owner)
+            {
+                case UnitSymbol u when s.Kind == ScopeKind.Unit:
+                    unit ??= u;
+                    break;
+                case TypeSymbol type when s.Kind == ScopeKind.TypeMember:
+                    selves.Add(type);
+                    break;
+                case MethodSymbol method:
+                    selves.Add(method.Owner);
+                    break;
+            }
+        }
+
+        selves = [.. selves.SelectMany(t => new[] { t }.Concat(TypeMembers.EnclosingTypes(t)))];
+        var sameUnit = TypeMembers.Outermost(outer).ContainingSymbol is UnitSymbol own && ReferenceEquals(own, unit);
+        var allowed = nested.NestedVisibility switch
+        {
+            Visibility.Private => sameUnit,
+            Visibility.Protected => sameUnit || selves.Any(t => TypeMembers.SelfAndAncestors(t).Contains(outer)),
+            Visibility.StrictPrivate => selves.Contains(outer),
+            _ => selves.Any(t => TypeMembers.SelfAndAncestors(t).Contains(outer)),
+        };
+        return allowed ? null : nested.NestedVisibility switch
+        {
+            Visibility.Private => "private",
+            Visibility.StrictPrivate => "strict private",
+            Visibility.Protected => "protected",
+            _ => "strict protected",
+        };
+    }
+
     /// <summary>The nested member <c>T.Name</c> of a class or record named by the qualifier; null when the qualifier names none.</summary>
     public static Symbol? NestedMember(Scope scope, MemberAccessExpressionSyntax access)
     {

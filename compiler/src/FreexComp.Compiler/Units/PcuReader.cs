@@ -102,6 +102,9 @@ internal static class PcuReader
         /// <summary>C-227: the interface scope seen below the interface uses (the scope generic declarations bind in).</summary>
         private Scope _declarations = null!;
 
+        /// <summary>CMP-1392 (C-344): the classes and records whose <c>nested</c> lists are attached once every type entry is read.</summary>
+        private readonly Queue<(TypeSymbol Owner, JsonArray Nested)> _nested = [];
+
         /// <summary>The method implementations of the generics and of the plain classes' generic methods (C-119, C-227).</summary>
         private readonly List<ImmutableArray<RoutineDeclarationSyntax>> _generics = [];
 
@@ -165,6 +168,7 @@ internal static class PcuReader
             }
 
             _unit.InterfaceMembers = [.. members];
+            AttachNested();
             ImportGenericSupport();
             return new PcuInterface(_unit, scope);
         }
@@ -195,6 +199,7 @@ internal static class PcuReader
                 }
             }
 
+            AttachNested();
             _unit.ImplementationMembers = [.. support];
             foreach (var implementations in _generics)
             {
@@ -436,6 +441,45 @@ internal static class PcuReader
 
         // -------------------------------------------------------------- types
 
+        /// <summary>
+        /// CMP-1392 (C-344): the nested types and type aliases of the classes and records read so far, with their section's visibility
+        /// (a <c>.pcu</c> written before this card has no <c>nested</c> keys).
+        /// </summary>
+        private void AttachNested()
+        {
+            while (_nested.TryDequeue(out var pending))
+            {
+                var members = ImmutableArray.CreateBuilder<Symbol>();
+                var aliases = ImmutableArray.CreateBuilder<(string Name, TypeSymbol Target)>();
+                foreach (var item in pending.Nested)
+                {
+                    var type = Type(item!, "type");
+                    if (item!["alias"] is JsonValue alias && alias.GetValue<bool>())
+                    {
+                        aliases.Add((Text(item, "name"), type));
+                        continue;
+                    }
+
+                    type.NestedVisibility = VisibilityOf(Text(item, "visibility"));
+                    members.Add(type);
+                }
+
+                switch (pending.Owner)
+                {
+                    case ClassTypeSymbol c:
+                        c.NestedMembers = [.. c.NestedMembers, .. members];
+                        c.NestedAliases = [.. c.NestedAliases, .. aliases];
+                        break;
+                    case RecordTypeSymbol r:
+                        r.NestedMembers = [.. r.NestedMembers, .. members];
+                        r.NestedAliases = [.. r.NestedAliases, .. aliases];
+                        break;
+                    default:
+                        throw new PcuFormatException($"'{pending.Owner.Name}' cannot have nested types");
+                }
+            }
+        }
+
         private TypeSymbol Type(JsonNode owner, string key) =>
             owner[key] is JsonValue id && id.TryGetValue<int>(out var number) ? TypeById(number) : throw new PcuFormatException($"'{key}' is not a type id");
 
@@ -453,6 +497,27 @@ internal static class PcuReader
 
             var name = entry["name"] is JsonValue n ? n.GetValue<string>() : "";
             var kind = Text(entry, "kind");
+            Symbol container = _unit;
+            if (entry["outer"] is not null)
+            {
+                container = Type(entry, "outer");                               // CMP-1392 (C-344): a nested type
+                if (_byId.TryGetValue(id, out var made))
+                {
+                    return made;                                                // reached while its enclosing type was read
+                }
+            }
+
+            var read = TypeByIdIn(id, entry, name, kind, container);
+            if (entry["nested"] is JsonArray nested)
+            {
+                _nested.Enqueue((read, nested));
+            }
+
+            return read;
+        }
+
+        private TypeSymbol TypeByIdIn(int id, JsonObject entry, string name, string kind, Symbol container)
+        {
             switch (kind)
             {
                 case "builtin":
@@ -460,13 +525,19 @@ internal static class PcuReader
                 case "ref":
                 {
                     var unit = Text(entry, "unit");
-                    return _byId[id] = unitInterface(unit)?.LookupLocal(name) as TypeSymbol
-                        ?? throw new PcuFormatException($"type '{unit}.{name}' not found");
+                    var path = name.Split('.');                                     // CMP-1392 (C-344): TOuter.TInner
+                    var found = unitInterface(unit)?.LookupLocal(path[0]) as TypeSymbol;
+                    foreach (var segment in path.Skip(1))
+                    {
+                        found = found is null ? null : TypeMembers.NestedType(found, segment);
+                    }
+
+                    return _byId[id] = found ?? throw new PcuFormatException($"type '{unit}.{name}' not found");
                 }
 
                 case "enum":
                 {
-                    var type = new EnumTypeSymbol(name, entry["size"]!.GetValue<int>(), entry["scoped"]!.GetValue<bool>(), _unit, []);
+                    var type = new EnumTypeSymbol(name, entry["size"]!.GetValue<int>(), entry["scoped"]!.GetValue<bool>(), container, []);
                     type.SetMembers([.. Array(entry, "members").Select(m => new EnumMemberSymbol(Text(m, "name"), type, m!["ordinal"]!.GetValue<long>(), []))]);
                     return _byId[id] = type;
                 }
@@ -535,7 +606,7 @@ internal static class PcuReader
                 case "record":
                 {
                     var record = new RecordTypeSymbol(types.Target, name, entry["size"]!.GetValue<long>(), entry["align"]!.GetValue<int>(), entry["packed"]!.GetValue<bool>(),
-                        entry["packing"]!.GetValue<int>(), entry["anonymous"]!.GetValue<bool>(), _unit, [])
+                        entry["packing"]!.GetValue<int>(), entry["anonymous"]!.GetValue<bool>(), container, [])
                     {
                         HasVariantPart = entry["variant"] is JsonValue variant && variant.GetValue<bool>(),
                     };
@@ -582,9 +653,9 @@ internal static class PcuReader
                 }
 
                 case "class":
-                    return Class(id, entry, name);
+                    return Class(id, entry, name, container);
                 case "interface":
-                    return Interface(id, entry, name);
+                    return Interface(id, entry, name, container);
                 case "generic":
                     return Generic(id, entry, name);
                 case "instance":
@@ -609,9 +680,9 @@ internal static class PcuReader
         /// C-189: a class of architecture.md §6 — parent, layout, fields, class vars, methods (with <c>Self</c> and the
         /// constructor/destructor flag as the binder creates them), VMT slots and properties.
         /// </summary>
-        private ClassTypeSymbol Class(int id, JsonObject entry, string name)
+        private ClassTypeSymbol Class(int id, JsonObject entry, string name, Symbol container)
         {
-            var type = new ClassTypeSymbol(types.Target, name, _unit, []) { IsForward = false };
+            var type = new ClassTypeSymbol(types.Target, name, container, []) { IsForward = false };
             _byId[id] = type;                                                   // before the members: they may name the class
             if (string.Equals(_unit.Name, "System", StringComparison.OrdinalIgnoreCase) && string.Equals(name, "TObject", StringComparison.OrdinalIgnoreCase))
             {
@@ -677,9 +748,9 @@ internal static class PcuReader
         }
 
         /// <summary>C-205: an interface of architecture.md §6 — parent, GUID, methods with their IMT slots, properties.</summary>
-        private InterfaceTypeSymbol Interface(int id, JsonObject entry, string name)
+        private InterfaceTypeSymbol Interface(int id, JsonObject entry, string name, Symbol container)
         {
-            var type = new InterfaceTypeSymbol(types.Target, name, _unit, []) { IsForward = false };
+            var type = new InterfaceTypeSymbol(types.Target, name, container, []) { IsForward = false };
             _byId[id] = type;                                                   // before the members: they may name the interface
             if (string.Equals(_unit.Name, "System", StringComparison.OrdinalIgnoreCase) && string.Equals(name, "IInterface", StringComparison.OrdinalIgnoreCase))
             {

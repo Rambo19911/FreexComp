@@ -212,7 +212,7 @@ internal sealed class DebugInfoEmitter
                 var underlying = Basic(UnsignedName(enumeration.Size), enumeration.Size, "DW_ATE_unsigned");
                 var elements = Tuple([.. enumeration.EnumMembers.Select(m =>
                     "!" + N(Unique($"!DIEnumerator(name: {Quote(m.Name)}, value: {m.Ordinal.ToString(CultureInfo.InvariantCulture)}, isUnsigned: true)")))]);
-                _nodes[node] = $"!DICompositeType(tag: DW_TAG_enumeration_type, name: {Quote(enumeration.Name)}, baseType: !{N(underlying)}, "
+                _nodes[node] = $"!DICompositeType(tag: DW_TAG_enumeration_type, name: {Quote(TypeMembers.DisplayName(enumeration))}, baseType: !{N(underlying)}, "
                     + $"size: {Bits(enumeration.Size)}, elements: !{N(elements)})";
                 _enums.Add(node);
                 return node;
@@ -223,7 +223,7 @@ internal sealed class DebugInfoEmitter
                 var node = Reserve();
                 _types[type] = node;
                 var members = record.Fields.Select(f => "!" + N(Member(node, f.Name, Type(f.Type), f.Type.Size, f.Offset))).ToImmutableArray();
-                _nodes[node] = Structure(record.IsAnonymous ? null : record.Name, record.Size, members);
+                _nodes[node] = Structure(record.IsAnonymous ? null : TypeMembers.DisplayName(record), record.Size, members);
                 return node;
             }
 
@@ -318,7 +318,7 @@ internal sealed class DebugInfoEmitter
         }
 
         members.AddRange(@class.Fields.Select(f => "!" + N(Member(node, f.Name, Type(f.Type), f.Type.Size, f.Offset))));
-        _nodes[node] = Structure(@class.Name, @class.InstanceSize, [.. members]);
+        _nodes[node] = Structure(TypeMembers.DisplayName(@class), @class.InstanceSize, [.. members]);     // CMP-1393
         return node;
     }
 

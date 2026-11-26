@@ -90,4 +90,8 @@ internal sealed record TypeParameterConstraints(bool Class, bool Record, bool Co
 }
 
 internal sealed record GenericMethodImplementation(RoutineDeclarationSyntax Declaration, SyntaxToken Identifier, ImmutableArray<string> ParameterNames,
-    Scope Scope, int VisibleCount, Symbol Container);
+    Scope Scope, int VisibleCount, Symbol Container)
+{
+    /// <summary>LANG-776 (C-344): the nested types after the generic in the heading's path, <c>TList&lt;T&gt;.TEnumerator.MoveNext</c>.</summary>
+    public ImmutableArray<SyntaxToken> NestedPath { get; init; } = [];
+}

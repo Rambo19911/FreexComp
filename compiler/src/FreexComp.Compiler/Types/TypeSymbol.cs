@@ -72,6 +72,9 @@ public abstract class TypeSymbol : Symbol
     /// <summary>An instance of a generic type (CMP-385: its code and data are emitted <c>linkonce_odr</c> by every unit using it).</summary>
     public bool IsGenericInstance => GenericDefinition is not null;
 
+    /// <summary>LANG-774 (C-344): the visibility of the section of the enclosing class or record that declares this nested type.</summary>
+    internal Visibility NestedVisibility { get; set; } = Visibility.Public;
+
     /// <summary>True for the type itself and its ancestors (classes and interfaces).</summary>
     public bool InheritsFrom(TypeSymbol other)
     {

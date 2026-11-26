@@ -13,13 +13,14 @@ internal sealed partial class DeclarationBinder
     /// <summary>
     /// <c>T = class …</c> in a type section. The symbol is declared before its body is bound so that members may refer to the
     /// class itself. A forward declaration (<c>T = class;</c>) is completed by a later full declaration in the same section
-    /// (LANG-601; E2015 at the end of the section otherwise). Only at unit/program level (E2602, LANG-603).
+    /// (LANG-601; E2015 at the end of the section otherwise). At unit/program level or nested in a class or record (LANG-771);
+    /// E2602 inside a routine (LANG-603).
     /// </summary>
     private void BindClassDeclaration(SyntaxToken identifier, ClassTypeSyntax syntax, ImmutableArray<Symbol>.Builder declared,
         List<(ClassTypeSymbol Type, SyntaxToken Identifier)> forwardClasses)
     {
         var name = NameOf(identifier);
-        if (!IsGlobalLevel)
+        if (!IsTypeLevel)
         {
             _diagnostics.Report(syntax.ClassKeyword, "E2602");
             _scope.TryDeclare(name, _types.Error, out _);
@@ -68,13 +69,18 @@ internal sealed partial class DeclarationBinder
     /// <summary>Parent, modifiers, fields (ABI §7.1 layout), methods and the VMT slots of one class.</summary>
     private void BindClassBody(ClassTypeSymbol type, ClassTypeSyntax syntax)
     {
-        if (_scope.Kind != ScopeKind.TypeMember && Members(syntax.Members, Visibility.Public).Any(m => m.Member is ConstSectionSyntax or TypeSectionSyntax))
+        if (!(_scope.Kind == ScopeKind.TypeMember && ReferenceEquals(_scope.Owner, type))
+            && Members(syntax.Members, Visibility.Public).Any(m => m.Member is ConstSectionSyntax or TypeSectionSyntax))
         {
-            // LANG-770 (C-122): nested types and constants live in a member scope that the whole body is bound in
-            var inner = new DeclarationBinder(_types, new Scope(ScopeKind.TypeMember, _scope, type), type, _diagnostics)
+            // LANG-770 (C-122): nested types and constants live in a member scope that the whole body is bound in (C-344: also
+            // the body of a nested class, whose binder's scope is the enclosing type's member scope)
+            // LANG-772 (C-344): the ancestors' nested types and constants are seen below the class's own (filled once the parent is known)
+            var inherited = new Scope(ScopeKind.TypeMember, _scope, type);
+            var inner = new DeclarationBinder(_types, new Scope(ScopeKind.TypeMember, inherited, type), type, _diagnostics)
             {
                 _sectionTypeNames = _sectionTypeNames,
                 _forwardPointers = _forwardPointers,
+                _inheritedNested = inherited,
             };
             inner.BindClassBody(type, syntax);
             return;
@@ -86,6 +92,22 @@ internal sealed partial class DeclarationBinder
         var listed = new List<(InterfaceTypeSymbol Interface, TypeSyntax Syntax)>();
         var resolutions = new List<MethodResolutionSyntax>();
         type.Parent = BindParent(type, syntax.Heritage, listed);
+        if (_inheritedNested is { } inheritedNested)
+        {
+            _inheritedNested = null;
+            foreach (var ancestor in type.Parent?.SelfAndAncestors() ?? [])
+            {
+                foreach (var member in ancestor.NestedMembers)
+                {
+                    inheritedNested.TryDeclare(member, out _);                  // the nearest ancestor's declaration wins
+                }
+
+                foreach (var (name, target) in ancestor.NestedAliases)
+                {
+                    inheritedNested.TryDeclare(name, target, out _);
+                }
+            }
+        }
         var state = syntax.ClassKeyword.DirectiveState;
         type.IsTypeInfo = state.TypeInfo || type.Parent?.IsTypeInfo == true;                 // LANG-611, ABI-142
         type.RttiScope = state.Rtti switch                                                  // LANG-882 (C-169)
@@ -152,7 +174,7 @@ internal sealed partial class DeclarationBinder
                     resolutions.Add(resolution);                                // LANG-661, bound with the listed interfaces
                     break;
                 case ConstSectionSyntax or TypeSectionSyntax:
-                    nested.AddRange(BindNestedSection(member, nestedAliases));  // LANG-770 (C-122)
+                    nested.AddRange(BindNestedSection(member, nestedAliases, visibility));  // LANG-770 (C-122)
                     break;
                 default:
                     Unsupported(member, "class " + FeatureName(member.Kind));
@@ -243,7 +265,8 @@ internal sealed partial class DeclarationBinder
         {
             case InterfaceTypeSymbol:
                 return ReferenceEquals(root, type) ? null : root;
-            case ClassTypeSymbol parent when ReferenceEquals(parent, type) || parent.IsForward:
+            case ClassTypeSymbol parent when ReferenceEquals(parent, type) || parent.IsForward
+                || TypeMembers.EnclosingTypes(type).Contains(parent):                  // LANG-777 (C-344): an enclosing type is incomplete
                 _diagnostics.Report(first, "E2007", parent.Name);
                 return root;
             case ClassTypeSymbol { IsSealed: true } parent:
@@ -299,6 +322,12 @@ internal sealed partial class DeclarationBinder
         var fieldType = BindType(field.Type);
         if (fieldType.TypeKind == TypeKind.Error)
         {
+            return end;
+        }
+
+        if (IsEnclosingRecordUnderConstruction(fieldType))
+        {
+            _diagnostics.Report(field.Type, "E2007", fieldType.Name);          // LANG-777 (C-344): its size is not known yet
             return end;
         }
 
@@ -571,7 +600,21 @@ internal sealed partial class DeclarationBinder
             return;
         }
 
-        switch (ResolveTypeQualifier(className))
+        var path = new List<SyntaxToken>();
+        var leftmost = className;
+        while (leftmost is QualifiedNameSyntax { Right: IdentifierNameSyntax { Identifier: var segment } } step)
+        {
+            path.Insert(0, segment);
+            leftmost = step.Left;
+        }
+
+        if (leftmost is GenericNameSyntax nestedIn)
+        {
+            BindGenericMethodImplementation(declaration, nestedIn, identifier, [.. path]);   // LANG-776 (C-344): TList<T>.TEnumerator.M
+            return;
+        }
+
+        switch (ResolveTypeQualifier(className, implementationPath: true))
         {
             case null:
                 return;
@@ -622,7 +665,7 @@ internal sealed partial class DeclarationBinder
 
         if (method is null)
         {
-            _diagnostics.Report(identifier, "E2606", name, type.Name);
+            _diagnostics.Report(identifier, "E2606", name, TypeMembers.DisplayName(type));          // LANG-775: TOuter.TInner
             return;
         }
 
@@ -644,10 +687,9 @@ internal sealed partial class DeclarationBinder
         method.AddLocation(DiagnosticBag.LocationOf(identifier));
     }
 
-    /// <summary>The classes a unit declares (its own, each once), in declaration order.</summary>
+    /// <summary>The classes a unit declares (its own, each once; nested ones after their enclosing type, LANG-771), in declaration order.</summary>
     internal static IEnumerable<ClassTypeSymbol> ClassesOf(UnitSymbol unit) =>
-        unit.InterfaceMembers.Concat(unit.ImplementationMembers).OfType<ClassTypeSymbol>()
-            .Where(c => ReferenceEquals(c.ContainingSymbol, unit)).Distinct().Concat(ClosureInfo.Of(unit));
+        OwnTypesOf(unit).OfType<ClassTypeSymbol>().Concat(ClosureInfo.Of(unit));
 
     /// <summary>E2605 at the declaration of every non-abstract method of the unit's classes without implementation.</summary>
     private static void ReportUnimplementedMethods(UnitSymbol unit, DiagnosticBag diagnostics)

@@ -1067,12 +1067,39 @@ internal sealed partial class ExpressionBinder
         {
             _diagnostics.ReportUndeclared(name, text);
         }
+        else if (EnclosingInstanceMember(symbol) is { } enclosing && (_withs.Count == 0 || WithOf(text, symbol) is null))
+        {
+            _diagnostics.Report(name, "E2707", symbol.Name, TypeMembers.DisplayName(enclosing));   // LANG-773 (C-344)
+            return null;
+        }
         else
         {
             HintChecks.CheckName(_diagnostics, _types, _scope, name, text, symbol);                // LANG-472 (C-232)
         }
 
         return symbol;
+    }
+
+    /// <summary>
+    /// LANG-773 (C-344): an instance member (field, method, property) of a type enclosing the current method's type, found by simple
+    /// name — it has no object there. Returns that enclosing type; null for anything else.
+    /// </summary>
+    private TypeSymbol? EnclosingInstanceMember(Symbol symbol)
+    {
+        var isInstanceMember = symbol switch
+        {
+            FieldSymbol => true,
+            MethodSymbol method => !method.IsClassMethod && method.ContainingInterface is null,
+            PropertySymbol property => !property.IsClassProperty,
+            _ => false,
+        };
+        if (!isInstanceMember || CurrentMethod?.Owner is not { } current || symbol.ContainingSymbol is not TypeSymbol owner
+            || TypeMembers.SelfAndAncestors(current).Contains(owner))
+        {
+            return null;
+        }
+
+        return TypeMembers.EnclosingTypes(current).FirstOrDefault(e => TypeMembers.SelfAndAncestors(e).Contains(owner));
     }
 
     /// <summary>

@@ -145,8 +145,7 @@ internal static class Binder
 
                 ImmutableArray<MethodSymbol> methods = instance switch
                 {
-                    ClassTypeSymbol c => c.Methods,
-                    RecordTypeSymbol r => r.Methods,
+                    TypeSymbol type => [.. TypeMembers.SelfAndNestedTypes(type).SelectMany(t => TypeMembers.Methods(t))],   // C-344: nested types too (LANG-776)
                     MethodSymbol genericMethod => [genericMethod],                   // C-117: a generic method instance
                     _ => [],
                 };
@@ -335,7 +334,8 @@ internal static class Binder
             // C-124 (LANG-751): a helper method sees the helped type's members, then the helper's (innermost)
             var chain = method.Owner is HelperTypeSymbol helper
                 ? TypeMembers.SelfAndAncestors(helper.ExtendedType).Reverse().Concat(TypeMembers.SelfAndAncestors(helper).Reverse())
-                : TypeMembers.EnclosingTypes(method.Owner).Reverse().Concat(TypeMembers.SelfAndAncestors(method.Owner).Reverse());
+                : TypeMembers.EnclosingTypes(method.Owner).Reverse().SelectMany(e => TypeMembers.SelfAndAncestors(e).Reverse())   // LANG-772
+                    .Concat(TypeMembers.SelfAndAncestors(method.Owner).Reverse());
             foreach (var type in chain)
             {
                 members = MemberScope(type, members, visible);

@@ -1,0 +1,5 @@
+ErrNestedTypes.pas(14,20): error E2007: Type 'TOuter' is not yet completely defined
+ErrNestedTypes.pas(17,7): error E2015: Unsatisfied forward declaration of type 'TNever'
+ErrNestedTypes.pas(22,13): error E2707: Instance member 'FValue' of 'TOuter' cannot be used without an object
+ErrNestedTypes.pas(25,18): error E2606: 'TMissing' is not a member of class 'TOuter'
+ErrNestedTypes.pas(31,12): error E2602: Class and interface types must be declared at unit level or nested in a type

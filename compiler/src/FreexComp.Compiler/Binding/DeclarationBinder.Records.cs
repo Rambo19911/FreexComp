@@ -71,7 +71,7 @@ internal sealed partial class DeclarationBinder
                     properties.Add((property, visibility));
                     break;
                 case ConstSectionSyntax or TypeSectionSyntax:
-                    nested.AddRange(inner.BindNestedSection(member, nestedAliases));    // LANG-770
+                    nested.AddRange(inner.BindNestedSection(member, nestedAliases, visibility));    // LANG-770
                     break;
                 default:
                     Unsupported(member, "record " + FeatureName(member.Kind));
@@ -161,9 +161,9 @@ internal sealed partial class DeclarationBinder
             return false;
         }
 
-        if (ReferenceEquals(type, record))
+        if (ReferenceEquals(type, record) || IsEnclosingRecordUnderConstruction(type))
         {
-            _diagnostics.Report(field.Type, "E2007", record.Name);
+            _diagnostics.Report(field.Type, "E2007", type.Name);                    // C-344: also an enclosing record (LANG-777)
             return false;
         }
 
@@ -191,7 +191,8 @@ internal sealed partial class DeclarationBinder
     }
 
     /// <summary>A nested <c>const</c> or <c>type</c> section of a class or record (LANG-770): its symbols, in this member scope.</summary>
-    private ImmutableArray<Symbol> BindNestedSection(SyntaxNode section, ImmutableArray<(string Name, TypeSymbol Target)>.Builder aliases)
+    private ImmutableArray<Symbol> BindNestedSection(SyntaxNode section, ImmutableArray<(string Name, TypeSymbol Target)>.Builder aliases,
+        Visibility visibility)
     {
         var declared = ImmutableArray.CreateBuilder<Symbol>();
         switch (section)
@@ -221,6 +222,11 @@ internal sealed partial class DeclarationBinder
                     }
 
                     aliases.Add((NameOf(declaration.Identifier), target));
+                }
+
+                foreach (var type in declared.OfType<TypeSymbol>().Where(t => ReferenceEquals(t.ContainingSymbol, _container)))
+                {
+                    type.NestedVisibility = visibility;                         // LANG-774 (C-344): the section's visibility
                 }
 
                 break;
@@ -403,6 +409,12 @@ internal sealed partial class DeclarationBinder
         NameSyntax left = qualified;
         while (left is QualifiedNameSyntax q)
         {
+            if (UnitQualifiers.Qualifier(_scope, q.Left) is not null)
+            {
+                // C-344: U.TOuter.TInner — the segment after the (longest) unit qualifier names the type
+                return q.Right is IdentifierNameSyntax { Identifier: { IsMissing: false } first } firstName && _scope.For(firstName).Lookup(NameOf(first)) is TypeSymbol;
+            }
+
             left = q.Left;
         }
 
@@ -413,7 +425,7 @@ internal sealed partial class DeclarationBinder
     /// The class or record a method implementation's qualifier names: <c>TFoo</c>, a nested <c>TOuter.TInner</c> (LANG-770), or a
     /// unit-qualified name. Null after a reported error.
     /// </summary>
-    private TypeSymbol? ResolveTypeQualifier(NameSyntax qualifier)
+    private TypeSymbol? ResolveTypeQualifier(NameSyntax qualifier, bool implementationPath = false)
     {
         switch (qualifier)
         {
@@ -435,17 +447,29 @@ internal sealed partial class DeclarationBinder
             case QualifiedNameSyntax { Right: IdentifierNameSyntax { Identifier: { IsMissing: false } right } rightName } qualified:
                 if (UnitQualifiers.Qualifier(_scope, qualified.Left) is not null)
                 {
-                    return ResolveTypeQualifier(rightName);
+                    return ResolveTypeQualifier(rightName, implementationPath);
                 }
 
-                if (ResolveTypeQualifier(qualified.Left) is not { } outer)
+                if (ResolveTypeQualifier(qualified.Left, implementationPath) is not { } outer)
                 {
                     return null;
                 }
 
                 if (TypeMembers.NestedType(outer, NameOf(right)) is { } inner)
                 {
+                    if (!implementationPath && NestedNames.InaccessibleNestedType(_scope, inner) is { } visibility)
+                    {
+                        _diagnostics.Report(rightName, "E2610", visibility, inner.Name, TypeMembers.DisplayName(outer));    // LANG-774 (C-344)
+                        return null;
+                    }
+
                     return inner;
+                }
+
+                if (implementationPath)
+                {
+                    _diagnostics.Report(rightName, "E2606", NameOf(right), TypeMembers.DisplayName(outer));   // LANG-776 (C-344)
+                    return null;
                 }
 
                 _diagnostics.Report(rightName, "E2005", outer.Name, NameOf(right));

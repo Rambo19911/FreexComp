@@ -630,7 +630,19 @@ internal sealed class PcuWriter(PcuContext context)
                 }
             }
 
-            return _owners.TryGetValue(type, out var owner) ? owner : null;
+            if (_owners.TryGetValue(type, out var owner))
+            {
+                return owner;
+            }
+
+            // CMP-1392 (C-344): a nested type of another unit's interface type is named by its path, TOuter.TInner
+            if (TypeMembers.EnclosingTypes(type).FirstOrDefault() is { } outer && !outer.IsGenericInstance
+                && ReferenceEquals(TypeMembers.NestedType(outer, type.Name), type) && Owner(outer) is { } outerOwner)
+            {
+                return (outerOwner.Unit, outerOwner.Name + "." + type.Name);
+            }
+
+            return null;
         }
 
         private int TypeId(TypeSymbol type)
@@ -660,6 +672,27 @@ internal sealed class PcuWriter(PcuContext context)
             }
 
             Describe(entry, type);
+            if (TypeMembers.EnclosingTypes(type).FirstOrDefault() is { } outer && !TypeMembers.Outermost(type).IsGenericInstance)
+            {
+                entry["outer"] = TypeId(outer);                                    // CMP-1392 (C-344): created inside its enclosing type
+            }
+
+            if (!type.IsGenericInstance && (TypeMembers.NestedMembers(type).OfType<TypeSymbol>().Any() || !TypeMembers.NestedAliases(type).IsEmpty))
+            {
+                // CMP-1392 (C-344): the nested types (and type aliases) of a class or record, with their section's visibility
+                entry["nested"] = new JsonArray([.. TypeMembers.NestedMembers(type).OfType<TypeSymbol>().Select(t => (JsonNode?)new JsonObject
+                {
+                    ["name"] = t.Name,
+                    ["type"] = TypeId(t),
+                    ["visibility"] = VisibilityName(t.NestedVisibility),
+                }), .. TypeMembers.NestedAliases(type).Select(a => (JsonNode?)new JsonObject
+                {
+                    ["name"] = a.Name,
+                    ["type"] = TypeId(a.Target),
+                    ["alias"] = true,
+                })]);
+            }
+
             return id;
         }
 

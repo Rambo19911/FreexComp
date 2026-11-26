@@ -51,6 +51,29 @@ internal sealed partial class DeclarationBinder
     private bool IsGlobalLevel => _scope.Kind == ScopeKind.Unit;
 
     /// <summary>
+    /// LANG-777 (C-344): <paramref name="type"/> is a record whose member list is being bound around this declaration (a nested
+    /// record's field of the enclosing record's own type: E2007). Method bodies, below a routine scope, see complete records.
+    /// </summary>
+    private bool IsEnclosingRecordUnderConstruction(TypeSymbol type)
+    {
+        for (var scope = _scope; scope is { Kind: not ScopeKind.Routine }; scope = scope.Parent)
+        {
+            if (scope.Kind == ScopeKind.TypeMember && type is RecordTypeSymbol && ReferenceEquals(scope.Owner, type))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>C-344: the scope that receives the nested names of a class's ancestors once its parent is bound (LANG-772).</summary>
+    private Scope? _inheritedNested;
+
+    /// <summary>Unit level or a type section of a class or record (LANG-771: nested class and interface types; not of helpers, F10-027).</summary>
+    private bool IsTypeLevel => IsGlobalLevel || _scope is { Kind: ScopeKind.TypeMember, Owner: ClassTypeSymbol or RecordTypeSymbol };
+
+    /// <summary>
     /// The unit-level scopes of a program (one scope) or unit (interface scope, then implementation scope inside it;
     /// LANG-310), chained to the built-in scope. Uses clauses and System are bound by later tasks.
     /// </summary>
@@ -692,6 +715,12 @@ internal sealed partial class DeclarationBinder
                 continue;
             }
 
+            if (IsEnclosingRecordUnderConstruction(type))
+            {
+                _diagnostics.Report(field.Type, "E2007", type.Name);                // LANG-777 (C-344): the enclosing record's own type
+                failed = true;
+                continue;
+            }
 
             if (type.Size < 0 || type is TextTypeSymbol)
             {

@@ -84,9 +84,11 @@ internal sealed partial class ExpressionBinder
         member.IsReferenced = true;                                                     // H2003 (C-096)
         var current = CurrentMethod?.Owner;
         var sameUnit = TypeMembers.Outermost(owner).ContainingSymbol is UnitSymbol unit && ReferenceEquals(unit, CurrentUnit);
-        var own = ReferenceEquals(current, owner);
-        var descendant = current is ClassTypeSymbol currentClass && !own && currentClass.SelfAndAncestors().Contains(owner)
-            && receiver is ClassTypeSymbol r && r.SelfAndAncestors().Contains(currentClass);
+        // LANG-774 (C-344): code of a nested type counts as code of every enclosing type
+        var selves = current is null ? [] : new[] { current }.Concat(TypeMembers.EnclosingTypes(current)).ToList();
+        var own = selves.Contains(owner);
+        var descendant = !own && selves.OfType<ClassTypeSymbol>().Any(currentClass => currentClass.SelfAndAncestors().Contains(owner)
+            && receiver is ClassTypeSymbol r && r.SelfAndAncestors().Contains(currentClass));
         var allowed = visibility switch
         {
             Visibility.Private => sameUnit,
@@ -103,7 +105,7 @@ internal sealed partial class ExpressionBinder
                 Visibility.Protected => "protected",
                 _ => "strict protected",
             };
-            _diagnostics.Report(at, "E2610", text, member.Name, owner.Name);
+            _diagnostics.Report(at, "E2610", text, member.Name, TypeMembers.DisplayName(owner));       // LANG-775: TOuter.TInner
         }
 
         return allowed;
@@ -252,6 +254,10 @@ internal sealed partial class ExpressionBinder
                 return Error(binary, operand);
             }
         }
+        else if (Unparenthesized(binary.Right) is MemberAccessExpressionSyntax nested)
+        {
+            target = NestedNames.TypeNamedBy(_scope, nested);                  // LANG-771 (C-344): o is TOuter.TInner
+        }
 
         if (operand.HasErrors || target is ErrorTypeSymbol)
         {
@@ -342,6 +348,13 @@ internal sealed partial class ExpressionBinder
         {
             _diagnostics.Report(call, "E2608", method.Name);
             return null;
+        }
+
+        if (kind == ReceiverKind.Implicit && method.Owner is ClassTypeSymbol owner && !TypeMembers.SelfAndAncestors(current.Owner).Contains(owner)
+            && TypeMembers.EnclosingTypes(current.Owner).OfType<ClassTypeSymbol>().FirstOrDefault(e => e.SelfAndAncestors().Contains(owner)) is { } enclosing)
+        {
+            // LANG-773 (C-344): a class method of an enclosing type named in a nested type's method is called as through that type
+            return new BoundReceiver(new BoundClassReferenceExpression(call, enclosing, enclosing.Reference), IsVirtual: false, Flag: null);
         }
 
         var inherited = kind == ReceiverKind.Inherited;
@@ -785,6 +798,13 @@ internal sealed partial class ExpressionBinder
     private TypeSymbol? TypeNamedBy(ExpressionSyntax expression)
     {
         var type = expression is GenericNameSyntax generic ? GenericType(generic) : NestedNames.TypeNamedBy(_scope, expression);
+        if (type is not null && Unparenthesized(expression) is MemberAccessExpressionSyntax { Name: var nestedName } && _scope.Unqualified(Unparenthesized(expression)) is not IdentifierNameSyntax
+            && NestedNames.InaccessibleNestedType(_scope, type) is { } visibility && TypeMembers.EnclosingTypes(type).FirstOrDefault() is { } outer)
+        {
+            _diagnostics.Report(nestedName, "E2610", visibility, type.Name, TypeMembers.DisplayName(outer));      // LANG-774 (C-344)
+            return _types.Error;
+        }
+
         if (type is not null && _types.HasTypeHints
             && _scope.Unqualified(Unparenthesized(expression)) is IdentifierNameSyntax { Identifier: { IsMissing: false } token } name)
         {

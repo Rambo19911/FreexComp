@@ -357,7 +357,8 @@ internal sealed partial class DeclarationBinder
     /// far and later (its heading is bound per instance, with its type parameter names declared as the instance's arguments).
     /// Diagnostics of the matching are reported for the first instance only.
     /// </summary>
-    private void BindGenericMethodImplementation(RoutineDeclarationSyntax declaration, GenericNameSyntax qualifier, SyntaxToken identifier)
+    private void BindGenericMethodImplementation(RoutineDeclarationSyntax declaration, GenericNameSyntax qualifier, SyntaxToken identifier,
+        ImmutableArray<SyntaxToken> nestedPath = default)
     {
         var text = NameOf(qualifier.Identifier);
         var arguments = qualifier.TypeArgumentList.Arguments;
@@ -374,7 +375,10 @@ internal sealed partial class DeclarationBinder
         }
 
         var names = arguments.Select(a => a is NamedTypeSyntax { Name: IdentifierNameSyntax { Identifier: var token } } ? NameOf(token) : "").ToImmutableArray();
-        var implementation = new GenericMethodImplementation(declaration, identifier, names, _scope, _scope.Count, _container);
+        var implementation = new GenericMethodImplementation(declaration, identifier, names, _scope, _scope.Count, _container)
+        {
+            NestedPath = nestedPath.IsDefault ? [] : nestedPath,
+        };
         lock (_types.GenericGate)
         {
             generic.Implementations.Add(implementation);
@@ -401,7 +405,21 @@ internal sealed partial class DeclarationBinder
         }
 
         var diagnostics = report ? _diagnostics : new DiagnosticBag();
-        new DeclarationBinder(_types, scope, implementation.Container, diagnostics).DefineMethod(instance, implementation.Declaration, implementation.Identifier);
+        var owner = instance;
+        foreach (var segment in implementation.NestedPath)
+        {
+            // LANG-776 (C-344): the instance's own nested type (each instance has its nested types, LANG-775)
+            if (TypeMembers.NestedType(owner, NameOf(segment)) is not ({ } nested and (ClassTypeSymbol or RecordTypeSymbol))
+                || !ReferenceEquals(nested.ContainingSymbol, owner))
+            {
+                diagnostics.Report(segment, "E2606", NameOf(segment), TypeMembers.DisplayName(owner));
+                return;
+            }
+
+            owner = nested;
+        }
+
+        new DeclarationBinder(_types, scope, implementation.Container, diagnostics).DefineMethod(owner, implementation.Declaration, implementation.Identifier);
     }
 
     /// <summary>The binder binds the heading of a generic method instance (its type parameter list is expected then).</summary>

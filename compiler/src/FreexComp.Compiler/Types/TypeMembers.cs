@@ -78,6 +78,15 @@ internal static class TypeMembers
         }
     }
 
+    /// <summary>C-344: <paramref name="type"/> and, depth first, the class and record types nested in it (LANG-771), each declared there.</summary>
+    public static IEnumerable<TypeSymbol> SelfAndNestedTypes(TypeSymbol type) =>
+        new[] { type }.Concat(NestedMembers(type).OfType<TypeSymbol>().Where(t => t is ClassTypeSymbol or RecordTypeSymbol && ReferenceEquals(t.ContainingSymbol, type))
+            .SelectMany(SelfAndNestedTypes));
+
+    /// <summary>LANG-775 (C-344): the display name of a type — for a nested type its enclosing types' names first, <c>TOuter.TInner</c>.</summary>
+    public static string DisplayName(TypeSymbol type) =>
+        string.Join(".", EnclosingTypes(type).Reverse().Select(t => t.Name).Append(type.Name));
+
     /// <summary>The unit-level type a (possibly nested) type belongs to.</summary>
     public static TypeSymbol Outermost(TypeSymbol type) => EnclosingTypes(type).LastOrDefault() ?? type;
 }

@@ -1,0 +1,11 @@
+first count=1
+TRUE
+FALSE
+TInner
+NestedClassTypes
+TLater 42 first count=1
+TRUE
+deep TB
+impl TImpl
+42 TBox
+leaks 0
