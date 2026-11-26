@@ -39,6 +39,12 @@ type
     { False (and Res = UIA_E_ELEMENTNOTAVAILABLE) when the control is gone (UIF-1425, UIF-1427) }
     function Alive(out Res: HResult): Boolean;
     function IsOffscreen: Boolean; virtual;
+    { UIF-1426: disconnects the providers of the elements of the control that are no controls (grid cells, U-157);
+      called while this provider still answers for its control, before the control lets it go }
+    procedure DisconnectFragments; virtual;
+    { the element is gone: every later call answers UIA_E_ELEMENTNOTAVAILABLE (U-157: a grid cell whose grid let
+      its provider go) }
+    procedure ForgetControl;
   public
     constructor Create(AControl: TControl); virtual;
     destructor Destroy; override;
@@ -123,6 +129,13 @@ procedure RaiseAutomationEventOf(Control: TControl; EventId: Integer);
 { UIF-1445: raises the property-changed event of an integer property (a PROPERTYID; old and new value) on the
   control's provider when AutomationEventsWanted }
 procedure RaiseIntPropertyChanged(Control: TControl; PropertyId, OldValue, NewValue: Integer);
+{ UIF-1444 (U-157): raises an automation event on Fragment, an element of the control that is not a control (a grid
+  cell), when AutomationEventsWanted(Control) }
+procedure RaiseFragmentEvent(Control: TControl; const Fragment: IRawElementProviderSimple; EventId: Integer);
+{ UIF-1445 (U-157): raises the property-changed event of a string property on such an element (old and new value)
+  when AutomationEventsWanted(Control) }
+procedure RaiseFragmentStrPropertyChanged(Control: TControl; const Fragment: IRawElementProviderSimple;
+  PropertyId: Integer; const OldValue, NewValue: string);
 
 implementation
 
@@ -414,6 +427,7 @@ begin
   if P = nil then
     Exit;
   Keep := P.FKeep;
+  P.DisconnectFragments;
   if Disconnect then
     UiaDisconnectProvider(Keep);
   Control.AutomationObject := nil;
@@ -475,6 +489,15 @@ end;
 function TAutomationProvider.IsOffscreen: Boolean;
 begin
   Result := not FControl.Showing;
+end;
+
+procedure TAutomationProvider.DisconnectFragments;
+begin
+end;
+
+procedure TAutomationProvider.ForgetControl;
+begin
+  FControl := nil;
 end;
 
 class function TAutomationProvider.OwnText(Control: TControl): string;
@@ -964,6 +987,31 @@ begin
   UiaRaiseAutomationPropertyChangedEvent(TAutomationProvider(Control.AutomationObject).FKeep, PropertyId, OldV, NewV);
 end;
 
+procedure RaiseFragmentEvent(Control: TControl; const Fragment: IRawElementProviderSimple; EventId: Integer);
+begin
+  if (Fragment = nil) or not AutomationEventsWanted(Control) then
+    Exit;
+  TAutomationProvider(Control.AutomationObject).FRaised := True;
+  UiaRaiseAutomationEvent(Fragment, EventId);
+end;
+
+procedure RaiseFragmentStrPropertyChanged(Control: TControl; const Fragment: IRawElementProviderSimple;
+  PropertyId: Integer; const OldValue, NewValue: string);
+var
+  OldV, NewV: TVariantArg;
+begin
+  if (Fragment = nil) or not AutomationEventsWanted(Control) then
+    Exit;
+  FillChar(OldV, SizeOf(OldV), 0);
+  FillChar(NewV, SizeOf(NewV), 0);
+  PutStr(OldV, OldValue);
+  PutStr(NewV, NewValue);
+  TAutomationProvider(Control.AutomationObject).FRaised := True;
+  UiaRaiseAutomationPropertyChangedEvent(Fragment, PropertyId, OldV, NewV);
+  VariantClear(OldV);
+  VariantClear(NewV);
+end;
+
 { UIF-1445: Enabled of a control with a provider changed; IsEnabled changes only when every parent is enabled }
 procedure EnabledChanged(Control: TControl);
 var
@@ -1015,7 +1063,8 @@ begin
 end;
 
 { UIF-1415, UIF-1426: the window is being destroyed (its handle is still valid). The fragments of its graphic
-  controls are disconnected first, while their fragment root still answers: the system finds a fragment's window
+  controls, then those of its other elements (grid cells, U-157), are disconnected first, while their fragment root
+  still answers: the system finds a fragment's window
   through its root, and a disconnect after the window is gone fails (E_FAIL) and leaves the provider held by the
   client's elements. A graphic control that outlives the window gets a new provider on the next request. The
   window's provider is disconnected when it was returned to a client or an event was raised on it (the system keeps
@@ -1033,6 +1082,7 @@ begin
   for I := 0 to Control.ControlCount - 1 do
     if not (Control.Controls[I] is TWinControl) then
       DetachProvider(Control.Controls[I], True);
+  P.DisconnectFragments;
   if P.FReturned then
     UiaReturnRawElementProvider(Control.Handle, 0, 0, nil);
   DetachProvider(Control, P.FReturned or P.FRaised);

@@ -19,6 +19,10 @@ program AccessibilityProbe;
     on WM_APP + 6: the label in the scroll box gets the caption 'Changed label', the image is disabled and a label
       InsertedLabel is inserted into the info panel, then 'changed'; on WM_APP + 7: InsertedLabel is freed, then
       'removed';
+    U-157: on WM_APP + 8: 'grid <Col> <Row>' of the string grid; on WM_APP + 9: the form becomes the active window
+      of the probe's thread (no foreground change) and the grid takes the focus, then 'focused grid <True|False>'
+      (whether the grid's window has the focus); on WM_APP + 10 (wParam = a virtual key): WM_KEYDOWN with that key is
+      sent to the grid's window, then 'grid <Col> <Row>';
     WM_CLOSE ends the program ('probe: close' on stderr, exit code 0). }
 uses
   Windows, Messages, Types, SysUtils, Classes, Graphics, Controls, Forms, StdCtrls, ExtCtrls, ComCtrls, Grids,
@@ -32,6 +36,9 @@ const
   WM_PROBE_RELEASE = WM_APP + 5;
   WM_PROBE_CHANGE = WM_APP + 6;
   WM_PROBE_REMOVE = WM_APP + 7;
+  WM_PROBE_GRID = WM_APP + 8;
+  WM_PROBE_GRID_FOCUS = WM_APP + 9;
+  WM_PROBE_GRID_KEY = WM_APP + 10;
 
 type
   TProbeForm = class(TForm)
@@ -40,6 +47,7 @@ type
     FCycles: Integer;
     procedure Clicked(Sender: TObject);
     function NewSecondForm: TForm;
+    procedure SayGrid;
   protected
     procedure WndProc(var Message: TMessage); override;
   end;
@@ -98,11 +106,20 @@ begin
   Result.Show;
 end;
 
+procedure TProbeForm.SayGrid;
+var
+  Grid: TStringGrid;
+begin
+  Grid := TStringGrid(FindComponent('DataGrid'));
+  Say('grid ' + IntToStr(Grid.Col) + ' ' + IntToStr(Grid.Row));
+end;
+
 procedure TProbeForm.WndProc(var Message: TMessage);
 var
   I: Integer;
   F: TForm;
   L: TLabel;
+  Grid: TStringGrid;
 begin
   case Message.Msg of
     WM_PROBE_RENAME:
@@ -152,6 +169,23 @@ begin
       begin
         FindComponent('InsertedLabel').Free;
         Say('removed');
+      end;
+    WM_PROBE_GRID:
+      SayGrid;
+    WM_PROBE_GRID_FOCUS:
+      begin
+        Grid := TStringGrid(FindComponent('DataGrid'));
+        SetActiveWindow(Handle);
+        Grid.SetFocus;
+        if GetFocus = Grid.Handle then
+          Say('focused grid True')
+        else
+          Say('focused grid False');
+      end;
+    WM_PROBE_GRID_KEY:
+      begin
+        SendMessage(TStringGrid(FindComponent('DataGrid')).Handle, WM_KEYDOWN, Message.WParam, 0);
+        SayGrid;
       end;
     WM_CLOSE:
       begin
@@ -267,6 +301,9 @@ begin
   Grid.Options := Grid.Options + [goEditing];
   Grid.Cells[1, 0] := 'Name';
   Grid.Cells[1, 1] := 'Alpha';
+  Grid.Cells[1, 2] := 'Beta';                                { U-157: the cells the client test reads }
+  Grid.Cells[1, 3] := 'Gamma';
+  Grid.Cells[2, 3] := 'Delta';
   Grid.AccessibleName := 'Data';
   Frame := TFrame.Create(F);
   Frame.Name := 'AddressFrame';

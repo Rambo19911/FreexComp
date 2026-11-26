@@ -1,0 +1,167 @@
+# the grid: Grid, Table and Selection (UIF-1435)
+ok control type DataGrid
+ok Grid pattern
+ok Table pattern
+ok Selection pattern
+ok no other pattern
+ok get_RowCount
+ok RowCount = RowCount
+ok get_ColumnCount
+ok ColumnCount = ColCount
+ok GetItem(2, 1)
+ok GetItem(row 2, column 1) is cell (1, 2)
+ok its name is the cell text
+ok the same cell twice: the same provider
+ok GetItem of a cell outside the visible range
+ok it is cell (11, 29)
+ok row -1: E_INVALIDARG
+ok and no element
+ok row RowCount: E_INVALIDARG
+ok column ColCount: E_INVALIDARG
+ok column -1: E_INVALIDARG
+ok get_RowOrColumnMajor
+ok row-major
+ok GetColumnHeaders
+ok column headers: every cell of fixed row 0
+ok their names, column by column
+ok GetRowHeaders
+ok row headers: every cell of fixed column 0
+ok row by row
+ok no fixed row: GetColumnHeaders
+ok no column headers
+ok no fixed column: no row headers
+ok goRangeSelect: CanSelectMultiple
+ok without goRangeSelect: not
+ok IsSelectionRequired
+ok GetSelection
+ok the selection: the current cell
+# cells: fragments of the grid (UIF-1436, UIF-1438)
+ok a cell: DataItem
+ok a cell of the fixed column: HeaderItem
+ok a cell of the fixed row: HeaderItem
+ok AutomationId empty
+ok FrameworkId
+ok a content element
+ok enabled
+ok TStringGrid: GetAccessibleCellText = Cells
+ok a grid class overriding GetAccessibleCellText names its cells
+ok TCustomGrid: an empty name
+ok runtime id [UiaAppendRuntimeId, ACol, ARow]
+ok another cell: another runtime id
+ok get_FragmentRoot
+ok the fragment root is the grid
+ok the parent is the grid
+ok a cell has no children
+ok get_HostRawElementProvider
+ok no host provider
+ok FirstChild: a cell
+ok FirstChild, NextSibling: the visible cells, row-major, fixed ones included
+ok LastChild, PreviousSibling: the same cells backwards
+ok the first child is cell (0, 0)
+ok a cell outside the visible range: no next
+ok and no previous sibling
+ok a visible cell is not offscreen
+ok its bounding rectangle: CellRect in screen coordinates
+ok a cell outside the visible range: offscreen
+ok and an empty rectangle
+ok ElementProviderFromPoint: the cell under the point
+ok scrolled: the visible cells, the fixed ones first in each row
+ok after fixed (0, 0) comes (LeftCol, 0)
+ok and back
+ok a scrolled-away cell is offscreen
+ok and has no siblings
+# GridItem and TableItem (UIF-1437)
+ok GridItem
+ok get_Row
+ok Row
+ok Column
+ok RowSpan 1
+ok ColumnSpan 1
+ok get_ContainingGrid
+ok the containing grid is the grid
+ok TableItem
+ok GetRowHeaderItems
+ok the row header: the fixed cell of the row
+ok GetColumnHeaderItems
+ok the column header: the fixed cell of the column
+ok a fixed cell: GridItem
+ok and TableItem
+ok a cell of the fixed column has no row header
+ok but its column header (the corner cell)
+ok a grid without fixed cells: no header items
+# SelectionItem and Value (UIF-1437)
+ok a fixed cell: no SelectionItem
+ok and no Value
+ok a cell: Value
+ok get_Value
+ok Value = the cell text
+ok goEditing: not read-only
+ok SetValue
+ok the cell has the new text
+ok through SetEditText (OnSetEditText ran once)
+ok the name follows
+ok without goEditing: read-only
+ok SetValue on a read-only grid: refused
+ok a cell: SelectionItem
+ok not the current cell: not selected
+ok Select
+ok Col follows
+ok Row follows
+ok now selected
+ok the previous cell is not
+ok SelectionContainer is the grid
+ok cell (9, 25) is offscreen
+ok Select it
+ok the grid scrolled it into view
+ok OnSelectCell refuses: refused
+ok the current cell stays
+ok a disabled grid: refused
+ok AddToSelection of the right neighbour
+ok the selection grows to a rectangle
+ok the current cell stays
+ok GetSelection: both cells
+ok AddToSelection of a selected cell: S_OK
+ok a cell whose addition is no rectangle: refused
+ok unchanged
+ok RemoveFromSelection of the end cell
+ok the selection shrinks
+ok removing the only cell: refused
+ok removing a cell not selected: S_OK
+ok AddToSelection below
+ok a column of two
+ok removing the focused cell: refused
+ok a new row of two from (2, 2)
+ok extending on the side of the focused cell: refused (it would not be a corner)
+ok without goRangeSelect: the selected cell
+ok without goRangeSelect: a neighbour is refused
+# focus (UIF-1439)
+ok the grid has the focus
+ok the current cell has the keyboard focus
+ok a cell is focusable
+ok a fixed cell is not
+ok another cell has not
+ok GetFocus
+ok GetFocus returns the current cell
+ok the new current cell has the focus
+ok SetFocus of a cell
+ok it is the current cell (Col)
+ok it is the current cell (Row)
+ok and has the keyboard focus
+ok SetFocus of a fixed cell: refused
+ok the focus elsewhere: the cell has not
+ok GetFocus returns nil
+ok SetFocus of the cell again
+ok focuses the grid
+# lifetime (UIF-1425, UIF-1426)
+ok a new cell: one provider object more
+ok released: one less
+ok a cell outside the shrunk grid: not available
+ok a cell inside it still answers
+ok back inside the grid: available again
+ok a cell of a destroyed window: not available
+ok the new window has new cells
+ok a cell of another grid
+ok its grid destroyed: not available
+ok and no parent
+ok every provider object is released (UIF-1425)
+# passed 160 failed 0

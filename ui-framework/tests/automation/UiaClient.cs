@@ -16,6 +16,8 @@ namespace FreexComp.UiFramework.Automation.Tests;
 // interfaces the client implements (classic COM interop: a managed class implementing a [ComImport] interface is
 // handed to the system as a COM callable wrapper); GUIDs and slots read back the same way, pattern, event and
 // property ids from the reference pages "Control Pattern Identifiers", "Event Identifiers" and "Property IDs".
+// U-157 added AddFocusChangedEventHandler of IUIAutomation (slot 39), the Grid, SelectionItem and Value pattern
+// interfaces and the focus-changed handler interface, read back from the type library the same way.
 
 /// <summary>CLSID_CUIAutomation.</summary>
 [ComImport]
@@ -88,7 +90,9 @@ internal interface IUIAutomation
         IUIAutomationStructureChangedEventHandler handler);                                 // slot 37
 
     void Slot38_RemoveStructureChangedEventHandler();
-    void Slot39_AddFocusChangedEventHandler();
+
+    void AddFocusChangedEventHandler(IntPtr cacheRequest, IUIAutomationFocusChangedEventHandler handler); // slot 39
+
     void Slot40_RemoveFocusChangedEventHandler();
 
     void RemoveAllEventHandlers();                                                          // slot 41
@@ -179,6 +183,53 @@ internal interface IUIAutomationTogglePattern
     int CurrentToggleState { get; }                                                         // slot 4 (ToggleState)
 }
 
+/// <summary>IUIAutomationGridPattern, slots 3 to 5.</summary>
+[ComImport]
+[Guid("414C3CDC-856B-4F5B-8538-3131C6302550")]
+[InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+internal interface IUIAutomationGridPattern
+{
+    IUIAutomationElement GetItem(int row, int column);                                      // slot 3
+
+    int CurrentRowCount { get; }                                                            // slot 4
+
+    int CurrentColumnCount { get; }                                                         // slot 5
+}
+
+/// <summary>IUIAutomationSelectionItemPattern, slots 3 to 6.</summary>
+[ComImport]
+[Guid("A8EFA66A-0FDA-421A-9194-38021F3578EA")]
+[InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+internal interface IUIAutomationSelectionItemPattern
+{
+    void Select();                                                                          // slot 3
+
+    void Slot4_AddToSelection();
+    void Slot5_RemoveFromSelection();
+
+    int CurrentIsSelected { get; }                                                          // slot 6 (BOOL)
+}
+
+/// <summary>IUIAutomationValuePattern, slots 3 and 4.</summary>
+[ComImport]
+[Guid("A94CD8B1-0844-4CD6-9D2D-640537AB39E9")]
+[InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+internal interface IUIAutomationValuePattern
+{
+    void Slot3_SetValue();
+
+    string CurrentValue { [return: MarshalAs(UnmanagedType.BStr)] get; }                   // slot 4
+}
+
+/// <summary>IUIAutomationFocusChangedEventHandler (implemented by the client), slot 3.</summary>
+[ComImport]
+[Guid("C270F6B5-5C69-4290-9745-7A7F97169468")]
+[InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+internal interface IUIAutomationFocusChangedEventHandler
+{
+    void HandleFocusChangedEvent(IUIAutomationElement sender);                              // slot 3
+}
+
 /// <summary>IUIAutomationEventHandler (implemented by the client), slot 3.</summary>
 [ComImport]
 [Guid("146C3C17-F12E-4E22-8C27-F894B9B79C69")]
@@ -235,6 +286,7 @@ internal static class UiaIds
     public const int ValuePattern = 10002;
     public const int RangeValuePattern = 10003;
     public const int ExpandCollapsePattern = 10005;
+    public const int GridPattern = 10006;
     public const int SelectionItemPattern = 10010;
     public const int TextPattern = 10014;
     public const int TogglePattern = 10015;
@@ -264,9 +316,11 @@ internal static class UiaIds
     public const int Group = 50026;
     public const int Thumb = 50027;
     public const int DataGrid = 50028;
+    public const int DataItem = 50029;
     public const int Document = 50030;
     public const int Window = 50032;
     public const int Pane = 50033;
+    public const int HeaderItem = 50035;
 
     /// <summary>The programmatic name of a control-type id the tests know (for messages).</summary>
     public static string Name(int controlType) => controlType switch
@@ -274,7 +328,7 @@ internal static class UiaIds
         Button => "Button", CheckBox => "CheckBox", ComboBox => "ComboBox", Edit => "Edit", Image => "Image",
         List => "List", ProgressBar => "ProgressBar", RadioButton => "RadioButton", ScrollBar => "ScrollBar",
         Slider => "Slider", StatusBar => "StatusBar", Tab => "Tab", Text => "Text", ToolBar => "ToolBar",
-        Tree => "Tree", Group => "Group", Thumb => "Thumb", DataGrid => "DataGrid", Document => "Document", Window => "Window",
-        Pane => "Pane", _ => controlType.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        Tree => "Tree", Group => "Group", Thumb => "Thumb", DataGrid => "DataGrid", DataItem => "DataItem",
+        Document => "Document", Window => "Window", Pane => "Pane", HeaderItem => "HeaderItem", _ => controlType.ToString(System.Globalization.CultureInfo.InvariantCulture),
     };
 }

@@ -51,7 +51,8 @@ type
     constructor Create(AOwner: TComponent); override;
   end;
 
-  { controls-standard.md section 27: geometry (UIF-841), painting (UIF-842), scrolling (UIF-845) }
+  { controls-standard.md section 27: geometry (UIF-841), painting (UIF-842), scrolling (UIF-845); UI Automation
+    (phase8/ui-automation.md section 7): the grid provider with its cells }
   TCustomGrid = class(TCustomControl)
   private
     FBorderStyle: TBorderStyle;
@@ -212,6 +213,9 @@ type
     function CellRect(ACol, ARow: Integer): TRect;
     { the cell under a client point (a grid line belongs to the cell before it); -1 outside the cells }
     procedure MouseToCell(X, Y: Integer; var ACol, ARow: Integer);
+    { ui-automation.md UIF-1438: the text of a cell as UI Automation clients read it (its Name and Value); '' here,
+      a descendant with cell texts overrides it }
+    function GetAccessibleCellText(ACol, ARow: Integer): string; virtual;
     property Canvas;
     property ColWidths[Index: Integer]: Integer read GetColWidths write SetColWidths;
     property RowHeights[Index: Integer]: Integer read GetRowHeights write SetRowHeights;
@@ -251,6 +255,8 @@ type
   public
     constructor Create(AOwner: TComponent); override;
     destructor Destroy; override;
+    { UIF-1438: Cells[ACol, ARow] }
+    function GetAccessibleCellText(ACol, ARow: Integer): string; override;
     property Cells[ACol, ARow: Integer]: string read GetCells write SetCells;
     property Objects[ACol, ARow: Integer]: TObject read GetObjects write SetObjects;
     property Cols[Index: Integer]: TStrings read GetCols;
@@ -296,21 +302,97 @@ type
 implementation
 
 uses
-  UIConsts, UIAutomation, Accessibility;
+  ActiveX, UIConsts, UIAutomation, Accessibility;
 
 type
   TFormAccess = class(TCustomForm);
 
-  { ui-automation.md UIF-1417, UIF-1421 (the patterns of the grid come with U-157) }
-  TGridAutomationProvider = class(TWindowAutomationProvider)
+  TGridCellProvider = class;
+
+  { ui-automation.md UIF-1417, UIF-1421, UIF-1435...1439: the grid, a fragment root with the Grid, Table and
+    Selection patterns; its cells are its fragments, created on demand, one provider object per cell while one is
+    alive (the identity a client compares is the runtime id) }
+  TGridAutomationProvider = class(TWindowAutomationProvider, IGridProvider, ITableProvider, ISelectionProvider)
+  private
+    FCells: TList;                                           { the live cell providers (no counted references) }
+    function Grid: TCustomGrid;
+    { the live provider of a cell or a new one (a new one has no reference yet: the caller takes one at once) }
+    function CellObject(ACol, ARow: Integer): TGridCellProvider;
+    { the cells of a rectangle, row-major, as a safe array of provider references; nil for an empty rectangle }
+    function CellArray(ALeft, ATop, ARight, ABottom: Integer; out pRetVal: PSafeArray): HResult;
+  protected
+    procedure DisconnectFragments; override;
   public
+    destructor Destroy; override;
     class function DefaultControlType(Control: TControl): Integer; override;
+    function GetPatternProvider(patternId: Integer; out pRetVal: IUnknown): HResult; override; stdcall;
+    function Navigate(direction: Integer; out pRetVal: IRawElementProviderFragment): HResult; override; stdcall;
+    function ElementProviderFromPoint(x, y: Double; out pRetVal: IRawElementProviderFragment): HResult; override;
+      stdcall;
+    function GetFocus(out pRetVal: IRawElementProviderFragment): HResult; override; stdcall;
+    { IGridProvider }
+    function GetItem(row, column: Integer; out pRetVal: IRawElementProviderSimple): HResult; stdcall;
+    function get_RowCount(out pRetVal: Integer): HResult; stdcall;
+    function get_ColumnCount(out pRetVal: Integer): HResult; stdcall;
+    { ITableProvider }
+    function GetRowHeaders(out pRetVal: PSafeArray): HResult; stdcall;
+    function GetColumnHeaders(out pRetVal: PSafeArray): HResult; stdcall;
+    function get_RowOrColumnMajor(out pRetVal: Integer): HResult; stdcall;
+    { ISelectionProvider }
+    function GetSelection(out pRetVal: PSafeArray): HResult; stdcall;
+    function get_CanSelectMultiple(out pRetVal: BOOL): HResult; stdcall;
+    function get_IsSelectionRequired(out pRetVal: BOOL): HResult; stdcall;
   end;
 
-class function TGridAutomationProvider.DefaultControlType(Control: TControl): Integer;
-begin
-  Result := UIA_DataGridControlTypeId;
-end;
+  { UIF-1436, UIF-1437, UIF-1439: a cell, a fragment of its grid; GridItem and TableItem, and for a cell that is
+    not fixed SelectionItem and Value. Counted by AutomationProviderCount like every provider object. }
+  TGridCellProvider = class(TAutomationProvider, IGridItemProvider, ITableItemProvider, ISelectionItemProvider,
+    IValueProvider)
+  private
+    FOwner: TGridAutomationProvider;                         { nil once the grid let its provider go }
+    FCol: Integer;
+    FRow: Integer;
+    { Alive, and the cell is still inside the grid }
+    function Live(out Res: HResult): Boolean;
+    function Grid: TCustomGrid;
+    function Fixed: Boolean;
+    { the grid lets its provider go: every later call answers UIA_E_ELEMENTNOTAVAILABLE }
+    procedure Forget;
+    { makes the selection the rectangle (ALeft, ATop)-(ARight, ABottom) when goRangeSelect allows it (the focused
+      cell a corner, the result what Selection reports) }
+    function TryRange(ALeft, ATop, ARight, ABottom: Integer): HResult;
+  protected
+    function IsOffscreen: Boolean; override;
+  public
+    constructor CreateCell(AOwner: TGridAutomationProvider; ACol, ARow: Integer);
+    destructor Destroy; override;
+    function GetPatternProvider(patternId: Integer; out pRetVal: IUnknown): HResult; override; stdcall;
+    function GetPropertyValue(propertyId: Integer; out pRetVal: TVariantArg): HResult; override; stdcall;
+    function Navigate(direction: Integer; out pRetVal: IRawElementProviderFragment): HResult; override; stdcall;
+    function GetRuntimeId(out pRetVal: PSafeArray): HResult; override; stdcall;
+    function get_BoundingRectangle(out pRetVal: TUiaRect): HResult; override; stdcall;
+    function SetFocus: HResult; override; stdcall;
+    function get_FragmentRoot(out pRetVal: IRawElementProviderFragmentRoot): HResult; override; stdcall;
+    { IGridItemProvider }
+    function get_Row(out pRetVal: Integer): HResult; stdcall;
+    function get_Column(out pRetVal: Integer): HResult; stdcall;
+    function get_RowSpan(out pRetVal: Integer): HResult; stdcall;
+    function get_ColumnSpan(out pRetVal: Integer): HResult; stdcall;
+    function get_ContainingGrid(out pRetVal: IRawElementProviderSimple): HResult; stdcall;
+    { ITableItemProvider }
+    function GetRowHeaderItems(out pRetVal: PSafeArray): HResult; stdcall;
+    function GetColumnHeaderItems(out pRetVal: PSafeArray): HResult; stdcall;
+    { ISelectionItemProvider }
+    function Select: HResult; stdcall;
+    function AddToSelection: HResult; stdcall;
+    function RemoveFromSelection: HResult; stdcall;
+    function get_IsSelected(out pRetVal: BOOL): HResult; stdcall;
+    function get_SelectionContainer(out pRetVal: IRawElementProviderSimple): HResult; stdcall;
+    { IValueProvider }
+    function SetValue(val: PWideChar): HResult; stdcall;
+    function get_Value(out pRetVal: TBStr): HResult; stdcall;
+    function get_IsReadOnly(out pRetVal: BOOL): HResult; stdcall;
+  end;
 
 procedure GridError(const Msg: string);
 begin
@@ -321,6 +403,896 @@ function Coord(X, Y: Integer): TGridCoord;
 begin
   Result.X := X;
   Result.Y := Y;
+end;
+
+{ ---------------------------------------------------------------- UI Automation (ui-automation.md section 7) }
+
+procedure PutStr(var V: TVariantArg; const S: string);
+begin
+  V.vt := VT_BSTR;
+  V.bstrVal := SysAllocStringLen(PWideChar(S), Length(S));
+end;
+
+procedure PutInt(var V: TVariantArg; I: Integer);
+begin
+  V.vt := VT_I4;
+  V.lVal := I;
+end;
+
+procedure PutBool(var V: TVariantArg; B: Boolean);
+begin
+  V.vt := VT_BOOL;
+  if B then
+    V.boolVal := -1
+  else
+    V.boolVal := 0;
+end;
+
+{ UIF-1436: the visible range = the cells whose column and row start inside the client area (fixed ones included) }
+function ColShown(G: TCustomGrid; ACol: Integer): Boolean;
+var
+  X: Integer;
+begin
+  Result := False;
+  if (ACol < 0) or (ACol >= G.FColCount) then
+    Exit;
+  X := G.ColumnX(ACol);
+  Result := (X >= 0) and (X < G.ClientRect.Right);
+end;
+
+function RowShown(G: TCustomGrid; ARow: Integer): Boolean;
+var
+  Y: Integer;
+begin
+  Result := False;
+  if (ARow < 0) or (ARow >= G.FRowCount) then
+    Exit;
+  Y := G.RowY(ARow);
+  Result := (Y >= 0) and (Y < G.ClientRect.Bottom);
+end;
+
+function CellShown(G: TCustomGrid; ACol, ARow: Integer): Boolean;
+begin
+  Result := ColShown(G, ACol) and RowShown(G, ARow);
+end;
+
+{ the shown column before ACol in screen order; -1 = none }
+function PrevShownCol(G: TCustomGrid; ACol: Integer): Integer;
+begin
+  if (ACol = G.FLeftCol) and (ACol >= G.FFixedCols) then
+    Result := G.FFixedCols - 1
+  else
+    Result := ACol - 1;
+end;
+
+function PrevShownRow(G: TCustomGrid; ARow: Integer): Integer;
+begin
+  if (ARow = G.FTopRow) and (ARow >= G.FFixedRows) then
+    Result := G.FFixedRows - 1
+  else
+    Result := ARow - 1;
+end;
+
+{ the last visible column / row; -1 = none }
+function LastShownCol(G: TCustomGrid): Integer;
+var
+  N: Integer;
+begin
+  Result := G.FirstShownCol;
+  if not ColShown(G, Result) then
+  begin
+    Result := -1;
+    Exit;
+  end;
+  N := G.NextShownCol(Result);
+  while ColShown(G, N) do
+  begin
+    Result := N;
+    N := G.NextShownCol(N);
+  end;
+end;
+
+function LastShownRow(G: TCustomGrid): Integer;
+var
+  N: Integer;
+begin
+  Result := G.FirstShownRow;
+  if not RowShown(G, Result) then
+  begin
+    Result := -1;
+    Exit;
+  end;
+  N := G.NextShownRow(Result);
+  while RowShown(G, N) do
+  begin
+    Result := N;
+    N := G.NextShownRow(N);
+  end;
+end;
+
+{ the visible cell after / before (C, R) in row-major order; False = none }
+function NextVisibleCell(G: TCustomGrid; var C, R: Integer): Boolean;
+var
+  N: Integer;
+begin
+  N := G.NextShownCol(C);
+  Result := ColShown(G, N);
+  if Result then
+  begin
+    C := N;
+    Exit;
+  end;
+  N := G.NextShownRow(R);
+  Result := RowShown(G, N) and ColShown(G, G.FirstShownCol);
+  if Result then
+  begin
+    R := N;
+    C := G.FirstShownCol;
+  end;
+end;
+
+function PrevVisibleCell(G: TCustomGrid; var C, R: Integer): Boolean;
+var
+  N: Integer;
+begin
+  N := PrevShownCol(G, C);
+  Result := ColShown(G, N);
+  if Result then
+  begin
+    C := N;
+    Exit;
+  end;
+  N := PrevShownRow(G, R);
+  Result := RowShown(G, N) and (LastShownCol(G) >= 0);
+  if Result then
+  begin
+    R := N;
+    C := LastShownCol(G);
+  end;
+end;
+
+{ UIF-1439: the grid window itself has the keyboard focus }
+function GridFocused(G: TCustomGrid): Boolean;
+begin
+  Result := G.HandleAllocated and (Windows.GetFocus = G.Handle);
+end;
+
+{ UIF-1439, UIF-1440, UIF-1444: the current cell changed: AutomationFocusChanged on it while the grid has the focus,
+  and SelectionItem_ElementSelected, when the grid has a provider and a client listens }
+procedure CurrentCellChanged(G: TCustomGrid);
+var
+  P: TGridAutomationProvider;
+  Cell: IRawElementProviderSimple;
+begin
+  if not AutomationEventsWanted(G) or not (G.AutomationObject is TGridAutomationProvider) then
+    Exit;
+  P := TGridAutomationProvider(G.AutomationObject);
+  Cell := P.CellObject(G.FAnchor.X, G.FAnchor.Y);
+  if GridFocused(G) then
+    RaiseFragmentEvent(G, Cell, UIA_AutomationFocusChangedEventId);
+  RaiseFragmentEvent(G, Cell, UIA_SelectionItem_ElementSelectedEventId);
+end;
+
+{ ---------------------------------------------------------------- TGridAutomationProvider }
+
+destructor TGridAutomationProvider.Destroy;
+begin
+  FCells.Free;
+  inherited Destroy;
+end;
+
+class function TGridAutomationProvider.DefaultControlType(Control: TControl): Integer;
+begin
+  Result := UIA_DataGridControlTypeId;
+end;
+
+function TGridAutomationProvider.Grid: TCustomGrid;
+begin
+  Result := TCustomGrid(Control);
+end;
+
+function TGridAutomationProvider.CellObject(ACol, ARow: Integer): TGridCellProvider;
+var
+  I: Integer;
+begin
+  if FCells = nil then
+    FCells := TList.Create;
+  for I := 0 to FCells.Count - 1 do
+  begin
+    Result := TGridCellProvider(FCells[I]);
+    if (Result.FCol = ACol) and (Result.FRow = ARow) then
+      Exit;
+  end;
+  Result := TGridCellProvider.CreateCell(Self, ACol, ARow);
+end;
+
+function TGridAutomationProvider.CellArray(ALeft, ATop, ARight, ABottom: Integer; out pRetVal: PSafeArray): HResult;
+var
+  I, C, R: Integer;
+  S: IRawElementProviderSimple;
+begin
+  pRetVal := nil;
+  Result := S_OK;
+  if (ARight < ALeft) or (ABottom < ATop) then
+    Exit;
+  pRetVal := SafeArrayCreateVector(VT_UNKNOWN, 0, (ARight - ALeft + 1) * (ABottom - ATop + 1));
+  if pRetVal = nil then
+  begin
+    Result := E_OUTOFMEMORY;
+    Exit;
+  end;
+  I := 0;
+  for R := ATop to ABottom do
+    for C := ALeft to ARight do
+    begin
+      S := CellObject(C, R);
+      SafeArrayPutElement(pRetVal, @I, Pointer(S));        { the array takes its own reference }
+      Inc(I);
+    end;
+  S := nil;
+end;
+
+{ UIF-1426: the cells are disconnected while the grid's provider still answers for the grid (their fragment root),
+  each kept alive by a reference of its own through its disconnect }
+procedure TGridAutomationProvider.DisconnectFragments;
+var
+  Held: array of IRawElementProviderSimple;
+  I: Integer;
+begin
+  if (FCells = nil) or (FCells.Count = 0) then
+    Exit;
+  SetLength(Held, FCells.Count);
+  for I := 0 to FCells.Count - 1 do
+    Held[I] := TGridCellProvider(FCells[I]);
+  for I := 0 to Length(Held) - 1 do
+    UiaDisconnectProvider(Held[I]);
+  for I := 0 to FCells.Count - 1 do
+    TGridCellProvider(FCells[I]).Forget;
+  FCells.Clear;
+  Held := nil;
+end;
+
+function TGridAutomationProvider.GetPatternProvider(patternId: Integer; out pRetVal: IUnknown): HResult;
+var
+  Gp: IGridProvider;
+  Tp: ITableProvider;
+  Sp: ISelectionProvider;
+begin
+  PPointer(@pRetVal)^ := nil;
+  if not Alive(Result) then
+    Exit;
+  case patternId of
+    UIA_GridPatternId:
+      begin
+        Gp := Self;
+        pRetVal := Gp;
+      end;
+    UIA_TablePatternId:
+      begin
+        Tp := Self;
+        pRetVal := Tp;
+      end;
+    UIA_SelectionPatternId:
+      begin
+        Sp := Self;
+        pRetVal := Sp;
+      end;
+  end;
+end;
+
+{ UIF-1436: the children are the visible cells in row-major order }
+function TGridAutomationProvider.Navigate(direction: Integer; out pRetVal: IRawElementProviderFragment): HResult;
+var
+  G: TCustomGrid;
+  C, R: Integer;
+begin
+  PPointer(@pRetVal)^ := nil;
+  if not Alive(Result) then
+    Exit;
+  G := Grid;
+  case direction of
+    NavigateDirection_FirstChild:
+      begin
+        C := G.FirstShownCol;
+        R := G.FirstShownRow;
+        if CellShown(G, C, R) then
+          pRetVal := CellObject(C, R);
+      end;
+    NavigateDirection_LastChild:
+      begin
+        C := LastShownCol(G);
+        R := LastShownRow(G);
+        if (C >= 0) and (R >= 0) then
+          pRetVal := CellObject(C, R);
+      end;
+  end;
+end;
+
+{ the cell under the point, else the grid }
+function TGridAutomationProvider.ElementProviderFromPoint(x, y: Double;
+  out pRetVal: IRawElementProviderFragment): HResult;
+var
+  G: TCustomGrid;
+  P: TPoint;
+  C, R: Integer;
+begin
+  PPointer(@pRetVal)^ := nil;
+  if not Alive(Result) then
+    Exit;
+  G := Grid;
+  if G.HandleAllocated then
+  begin
+    P := Point(Round(x), Round(y));
+    ScreenToClient(G.Handle, P);
+    C := -1;
+    R := -1;
+    G.MouseToCell(P.X, P.Y, C, R);
+    if (C >= 0) and (R >= 0) then
+    begin
+      pRetVal := CellObject(C, R);
+      Exit;
+    end;
+  end;
+  pRetVal := Self;
+end;
+
+{ UIF-1439: the current cell while the grid has the focus }
+function TGridAutomationProvider.GetFocus(out pRetVal: IRawElementProviderFragment): HResult;
+var
+  G: TCustomGrid;
+begin
+  PPointer(@pRetVal)^ := nil;
+  if not Alive(Result) then
+    Exit;
+  G := Grid;
+  if GridFocused(G) then
+    pRetVal := CellObject(G.FAnchor.X, G.FAnchor.Y);
+end;
+
+function TGridAutomationProvider.GetItem(row, column: Integer; out pRetVal: IRawElementProviderSimple): HResult;
+var
+  G: TCustomGrid;
+begin
+  PPointer(@pRetVal)^ := nil;
+  if not Alive(Result) then
+    Exit;
+  G := Grid;
+  if (row < 0) or (row >= G.FRowCount) or (column < 0) or (column >= G.FColCount) then
+    Result := E_INVALIDARG
+  else
+    pRetVal := CellObject(column, row);
+end;
+
+function TGridAutomationProvider.get_RowCount(out pRetVal: Integer): HResult;
+begin
+  pRetVal := 0;
+  if Alive(Result) then
+    pRetVal := Grid.FRowCount;
+end;
+
+function TGridAutomationProvider.get_ColumnCount(out pRetVal: Integer): HResult;
+begin
+  pRetVal := 0;
+  if Alive(Result) then
+    pRetVal := Grid.FColCount;
+end;
+
+{ UIF-1435: the cells of fixed column 0 / fixed row 0 }
+function TGridAutomationProvider.GetRowHeaders(out pRetVal: PSafeArray): HResult;
+begin
+  pRetVal := nil;
+  if Alive(Result) and (Grid.FFixedCols >= 1) then
+    Result := CellArray(0, 0, 0, Grid.FRowCount - 1, pRetVal);
+end;
+
+function TGridAutomationProvider.GetColumnHeaders(out pRetVal: PSafeArray): HResult;
+begin
+  pRetVal := nil;
+  if Alive(Result) and (Grid.FFixedRows >= 1) then
+    Result := CellArray(0, 0, Grid.FColCount - 1, 0, pRetVal);
+end;
+
+function TGridAutomationProvider.get_RowOrColumnMajor(out pRetVal: Integer): HResult;
+begin
+  pRetVal := RowOrColumnMajor_RowMajor;
+  Alive(Result);
+end;
+
+function TGridAutomationProvider.GetSelection(out pRetVal: PSafeArray): HResult;
+var
+  S: TGridRect;
+begin
+  pRetVal := nil;
+  if not Alive(Result) then
+    Exit;
+  S := Grid.Selection;
+  Result := CellArray(S.Left, S.Top, S.Right, S.Bottom, pRetVal);
+end;
+
+function TGridAutomationProvider.get_CanSelectMultiple(out pRetVal: BOOL): HResult;
+begin
+  pRetVal := False;
+  if Alive(Result) then
+    pRetVal := goRangeSelect in Grid.FOptions;
+end;
+
+function TGridAutomationProvider.get_IsSelectionRequired(out pRetVal: BOOL): HResult;
+begin
+  pRetVal := True;
+  Alive(Result);
+end;
+
+{ ---------------------------------------------------------------- TGridCellProvider }
+
+constructor TGridCellProvider.CreateCell(AOwner: TGridAutomationProvider; ACol, ARow: Integer);
+begin
+  inherited Create(AOwner.Control);
+  FOwner := AOwner;
+  FCol := ACol;
+  FRow := ARow;
+  AOwner.FCells.Add(Self);
+end;
+
+destructor TGridCellProvider.Destroy;
+begin
+  if FOwner <> nil then
+    FOwner.FCells.Remove(Self);
+  inherited Destroy;
+end;
+
+procedure TGridCellProvider.Forget;
+begin
+  FOwner := nil;
+  ForgetControl;
+end;
+
+function TGridCellProvider.Grid: TCustomGrid;
+begin
+  Result := TCustomGrid(Control);
+end;
+
+function TGridCellProvider.Live(out Res: HResult): Boolean;
+begin
+  Result := Alive(Res);
+  if Result and ((FCol >= Grid.FColCount) or (FRow >= Grid.FRowCount)) then
+  begin
+    Result := False;
+    Res := UIA_E_ELEMENTNOTAVAILABLE;
+  end;
+end;
+
+function TGridCellProvider.Fixed: Boolean;
+begin
+  Result := (FCol < Grid.FFixedCols) or (FRow < Grid.FFixedRows);
+end;
+
+function TGridCellProvider.IsOffscreen: Boolean;
+begin
+  Result := not Grid.Showing or not CellShown(Grid, FCol, FRow);
+end;
+
+function TGridCellProvider.GetPatternProvider(patternId: Integer; out pRetVal: IUnknown): HResult;
+var
+  Gi: IGridItemProvider;
+  Ti: ITableItemProvider;
+  Si: ISelectionItemProvider;
+  Vp: IValueProvider;
+begin
+  PPointer(@pRetVal)^ := nil;
+  if not Live(Result) then
+    Exit;
+  case patternId of
+    UIA_GridItemPatternId:
+      begin
+        Gi := Self;
+        pRetVal := Gi;
+      end;
+    UIA_TableItemPatternId:
+      begin
+        Ti := Self;
+        pRetVal := Ti;
+      end;
+    UIA_SelectionItemPatternId:
+      if not Fixed then
+      begin
+        Si := Self;
+        pRetVal := Si;
+      end;
+    UIA_ValuePatternId:
+      if not Fixed then
+      begin
+        Vp := Self;
+        pRetVal := Vp;
+      end;
+  end;
+end;
+
+function TGridCellProvider.GetPropertyValue(propertyId: Integer; out pRetVal: TVariantArg): HResult;
+var
+  G: TCustomGrid;
+begin
+  FillChar(pRetVal, SizeOf(pRetVal), 0);
+  if not Live(Result) then
+    Exit;
+  G := Grid;
+  try
+    case propertyId of
+      UIA_NamePropertyId:
+        PutStr(pRetVal, G.GetAccessibleCellText(FCol, FRow));
+      UIA_AutomationIdPropertyId:
+        PutStr(pRetVal, '');
+      UIA_FrameworkIdPropertyId:
+        PutStr(pRetVal, 'FreexComp');
+      UIA_ControlTypePropertyId:
+        if Fixed then
+          PutInt(pRetVal, UIA_HeaderItemControlTypeId)
+        else
+          PutInt(pRetVal, UIA_DataItemControlTypeId);
+      UIA_IsEnabledPropertyId:
+        PutBool(pRetVal, AccessibleEnabledOf(G));
+      UIA_IsOffscreenPropertyId:
+        PutBool(pRetVal, IsOffscreen);
+      UIA_IsKeyboardFocusablePropertyId:
+        PutBool(pRetVal, not Fixed);
+      UIA_HasKeyboardFocusPropertyId:
+        PutBool(pRetVal, GridFocused(G) and (G.FAnchor.X = FCol) and (G.FAnchor.Y = FRow));
+      UIA_IsControlElementPropertyId, UIA_IsContentElementPropertyId:
+        PutBool(pRetVal, True);
+    end;
+  except
+    FillChar(pRetVal, SizeOf(pRetVal), 0);
+    Result := E_FAIL;
+  end;
+end;
+
+{ UIF-1436: siblings within the visible range in row-major order; none for a cell outside it }
+function TGridCellProvider.Navigate(direction: Integer; out pRetVal: IRawElementProviderFragment): HResult;
+var
+  G: TCustomGrid;
+  C, R: Integer;
+begin
+  PPointer(@pRetVal)^ := nil;
+  if not Live(Result) then
+    Exit;
+  G := Grid;
+  C := FCol;
+  R := FRow;
+  case direction of
+    NavigateDirection_Parent:
+      pRetVal := FOwner;
+    NavigateDirection_NextSibling:
+      if CellShown(G, C, R) and NextVisibleCell(G, C, R) then
+        pRetVal := FOwner.CellObject(C, R);
+    NavigateDirection_PreviousSibling:
+      if CellShown(G, C, R) and PrevVisibleCell(G, C, R) then
+        pRetVal := FOwner.CellObject(C, R);
+  end;
+end;
+
+function TGridCellProvider.GetRuntimeId(out pRetVal: PSafeArray): HResult;
+var
+  I, V: Integer;
+begin
+  pRetVal := nil;
+  if not Live(Result) then
+    Exit;
+  pRetVal := SafeArrayCreateVector(VT_I4, 0, 3);
+  if pRetVal = nil then
+  begin
+    Result := E_OUTOFMEMORY;
+    Exit;
+  end;
+  I := 0;
+  V := UiaAppendRuntimeId;
+  SafeArrayPutElement(pRetVal, @I, @V);
+  I := 1;
+  V := FCol;
+  SafeArrayPutElement(pRetVal, @I, @V);
+  I := 2;
+  V := FRow;
+  SafeArrayPutElement(pRetVal, @I, @V);
+end;
+
+function TGridCellProvider.get_BoundingRectangle(out pRetVal: TUiaRect): HResult;
+var
+  G: TCustomGrid;
+  R: TRect;
+  P: TPoint;
+begin
+  FillChar(pRetVal, SizeOf(pRetVal), 0);
+  if not Live(Result) then
+    Exit;
+  G := Grid;
+  if not G.HandleAllocated or IsOffscreen then
+    Exit;
+  R := G.CellRect(FCol, FRow);
+  P := Point(R.Left, R.Top);
+  ClientToScreen(G.Handle, P);
+  pRetVal.left := P.X;
+  pRetVal.top := P.Y;
+  pRetVal.width := R.Right - R.Left;
+  pRetVal.height := R.Bottom - R.Top;
+end;
+
+{ UIF-1439: focuses the grid, then Select }
+function TGridCellProvider.SetFocus: HResult;
+var
+  G: TCustomGrid;
+begin
+  if not Live(Result) then
+    Exit;
+  G := Grid;
+  if Fixed or not G.CanFocus then
+  begin
+    Result := UIA_E_INVALIDOPERATION;
+    Exit;
+  end;
+  try
+    G.SetFocus;
+  except
+    Result := E_FAIL;
+    Exit;
+  end;
+  Result := Select;
+end;
+
+function TGridCellProvider.get_FragmentRoot(out pRetVal: IRawElementProviderFragmentRoot): HResult;
+begin
+  PPointer(@pRetVal)^ := nil;
+  if Live(Result) then
+    pRetVal := FOwner;
+end;
+
+function TGridCellProvider.get_Row(out pRetVal: Integer): HResult;
+begin
+  pRetVal := FRow;
+  Live(Result);
+end;
+
+function TGridCellProvider.get_Column(out pRetVal: Integer): HResult;
+begin
+  pRetVal := FCol;
+  Live(Result);
+end;
+
+function TGridCellProvider.get_RowSpan(out pRetVal: Integer): HResult;
+begin
+  pRetVal := 1;
+  Live(Result);
+end;
+
+function TGridCellProvider.get_ColumnSpan(out pRetVal: Integer): HResult;
+begin
+  pRetVal := 1;
+  Live(Result);
+end;
+
+function TGridCellProvider.get_ContainingGrid(out pRetVal: IRawElementProviderSimple): HResult;
+begin
+  PPointer(@pRetVal)^ := nil;
+  if Live(Result) then
+    pRetVal := FOwner;
+end;
+
+{ UIF-1435, UIF-1437: the cell of fixed column 0 in the same row (for a cell of a column that is not fixed) }
+function TGridCellProvider.GetRowHeaderItems(out pRetVal: PSafeArray): HResult;
+begin
+  pRetVal := nil;
+  if Live(Result) and (Grid.FFixedCols >= 1) and (FCol >= Grid.FFixedCols) then
+    Result := FOwner.CellArray(0, FRow, 0, FRow, pRetVal);
+end;
+
+{ the cell of fixed row 0 in the same column (for a cell of a row that is not fixed) }
+function TGridCellProvider.GetColumnHeaderItems(out pRetVal: PSafeArray): HResult;
+begin
+  pRetVal := nil;
+  if Live(Result) and (Grid.FFixedRows >= 1) and (FRow >= Grid.FFixedRows) then
+    Result := FOwner.CellArray(FCol, 0, FCol, 0, pRetVal);
+end;
+
+{ UIF-1437: the cell becomes the current cell as by a click (OnSelectCell may refuse; the grid scrolls it into
+  view) }
+function TGridCellProvider.Select: HResult;
+var
+  G: TCustomGrid;
+begin
+  if not Live(Result) then
+    Exit;
+  G := Grid;
+  if Fixed then
+    Result := UIA_E_INVALIDOPERATION
+  else if not AccessibleEnabledOf(G) then
+    Result := UIA_E_ELEMENTNOTENABLED
+  else
+    try
+      G.MoveFocus(FCol, FRow, False);
+      if (G.FAnchor.X <> FCol) or (G.FAnchor.Y <> FRow) then
+        Result := UIA_E_INVALIDOPERATION;
+    except
+      Result := E_FAIL;
+    end;
+end;
+
+function TGridCellProvider.TryRange(ALeft, ATop, ARight, ABottom: Integer): HResult;
+var
+  G: TCustomGrid;
+  A, Old, Cur: TGridCoord;
+  S: TGridRect;
+begin
+  Result := UIA_E_INVALIDOPERATION;
+  G := Grid;
+  if not (goRangeSelect in G.FOptions) then
+    Exit;
+  A := G.FAnchor;
+  if ((A.X <> ALeft) and (A.X <> ARight)) or ((A.Y <> ATop) and (A.Y <> ABottom)) then
+    Exit;
+  Old := G.FCurrent;
+  Cur := Old;
+  if A.X = ALeft then
+    Cur.X := ARight
+  else
+    Cur.X := ALeft;
+  if A.Y = ATop then
+    Cur.Y := ABottom
+  else
+    Cur.Y := ATop;
+  G.FCurrent := Cur;
+  S := G.Selection;
+  if (S.Left <> ALeft) or (S.Top <> ATop) or (S.Right <> ARight) or (S.Bottom <> ABottom) then
+  begin
+    G.FCurrent := Old;
+    Exit;
+  end;
+  G.Invalidate;
+  Result := S_OK;
+end;
+
+{ UIF-1437: only when the selection with the cell is a rectangle goRangeSelect allows }
+function TGridCellProvider.AddToSelection: HResult;
+var
+  G: TCustomGrid;
+  S: TGridRect;
+  L, T, R, B: Integer;
+begin
+  if not Live(Result) then
+    Exit;
+  G := Grid;
+  if Fixed then
+  begin
+    Result := UIA_E_INVALIDOPERATION;
+    Exit;
+  end;
+  if not AccessibleEnabledOf(G) then
+  begin
+    Result := UIA_E_ELEMENTNOTENABLED;
+    Exit;
+  end;
+  if G.InSelection(FCol, FRow) then
+    Exit;
+  S := G.Selection;
+  L := S.Left;
+  T := S.Top;
+  R := S.Right;
+  B := S.Bottom;
+  if FCol < L then
+    L := FCol;
+  if FCol > R then
+    R := FCol;
+  if FRow < T then
+    T := FRow;
+  if FRow > B then
+    B := FRow;
+  if (R - L + 1) * (B - T + 1) <> (S.Right - S.Left + 1) * (S.Bottom - S.Top + 1) + 1 then
+    Result := UIA_E_INVALIDOPERATION
+  else
+    Result := TryRange(L, T, R, B);
+end;
+
+{ UIF-1437: only an end cell of a selection one row high or one column wide, not the focused cell }
+function TGridCellProvider.RemoveFromSelection: HResult;
+var
+  G: TCustomGrid;
+  S: TGridRect;
+  L, T, R, B: Integer;
+begin
+  if not Live(Result) then
+    Exit;
+  G := Grid;
+  if Fixed then
+  begin
+    Result := UIA_E_INVALIDOPERATION;
+    Exit;
+  end;
+  if not AccessibleEnabledOf(G) then
+  begin
+    Result := UIA_E_ELEMENTNOTENABLED;
+    Exit;
+  end;
+  if not G.InSelection(FCol, FRow) then
+    Exit;
+  S := G.Selection;
+  L := S.Left;
+  T := S.Top;
+  R := S.Right;
+  B := S.Bottom;
+  if (T = B) and (L < R) and (FCol = L) then
+    Inc(L)
+  else if (T = B) and (L < R) and (FCol = R) then
+    Dec(R)
+  else if (L = R) and (T < B) and (FRow = T) then
+    Inc(T)
+  else if (L = R) and (T < B) and (FRow = B) then
+    Dec(B)
+  else
+  begin
+    Result := UIA_E_INVALIDOPERATION;
+    Exit;
+  end;
+  Result := TryRange(L, T, R, B);
+end;
+
+function TGridCellProvider.get_IsSelected(out pRetVal: BOOL): HResult;
+begin
+  pRetVal := False;
+  if Live(Result) then
+    pRetVal := Grid.InSelection(FCol, FRow);
+end;
+
+function TGridCellProvider.get_SelectionContainer(out pRetVal: IRawElementProviderSimple): HResult;
+begin
+  PPointer(@pRetVal)^ := nil;
+  if Live(Result) then
+    pRetVal := FOwner;
+end;
+
+{ UIF-1437: SetEditText as an edit by the user, then ValueValue property-changed (UIF-1445) }
+function TGridCellProvider.SetValue(val: PWideChar): HResult;
+var
+  G: TCustomGrid;
+  OldText, NewText: string;
+  Me: IRawElementProviderSimple;
+begin
+  if not Live(Result) then
+    Exit;
+  G := Grid;
+  if Fixed or not (goEditing in G.FOptions) or not AccessibleEnabledOf(G) then
+  begin
+    Result := UIA_E_ELEMENTNOTENABLED;
+    Exit;
+  end;
+  try
+    OldText := G.GetAccessibleCellText(FCol, FRow);
+    NewText := string(val);
+    G.SetEditText(FCol, FRow, NewText);
+    if G.FEditing and (G.FEditor <> nil) and (G.FAnchor.X = FCol) and (G.FAnchor.Y = FRow) then
+      G.FEditor.Text := NewText;
+    NewText := G.GetAccessibleCellText(FCol, FRow);
+    if NewText <> OldText then
+    begin
+      Me := Self;
+      RaiseFragmentStrPropertyChanged(G, Me, UIA_ValueValuePropertyId, OldText, NewText);
+    end;
+  except
+    Result := E_FAIL;
+  end;
+end;
+
+function TGridCellProvider.get_Value(out pRetVal: TBStr): HResult;
+var
+  S: string;
+begin
+  pRetVal := nil;
+  if not Live(Result) then
+    Exit;
+  S := Grid.GetAccessibleCellText(FCol, FRow);
+  pRetVal := SysAllocStringLen(PWideChar(S), Length(S));
+end;
+
+function TGridCellProvider.get_IsReadOnly(out pRetVal: BOOL): HResult;
+begin
+  pRetVal := True;
+  if Live(Result) then
+    pRetVal := not (goEditing in Grid.FOptions);
 end;
 
 { ---------------------------------------------------------------- TCustomGrid }
@@ -1197,6 +2169,7 @@ end;
 procedure TCustomGrid.SetSelection(const Value: TGridRect);
 var
   L, T, R, B: Integer;
+  Moved: Boolean;
 begin
   L := Value.Left;
   R := Value.Right;
@@ -1214,12 +2187,15 @@ begin
   end;
   if (L < FFixedCols) or (R >= FColCount) or (T < FFixedRows) or (B >= FRowCount) then
     GridError(SGridIndexOutOfRange);
+  Moved := (FAnchor.X <> L) or (FAnchor.Y <> T);
   FAnchor := Coord(L, T);
   if goRangeSelect in FOptions then
     FCurrent := Coord(R, B)
   else
     FCurrent := FAnchor;
   Invalidate;
+  if Moved then
+    CurrentCellChanged(Self);                                { ui-automation.md UIF-1439 }
 end;
 
 function TCustomGrid.InSelection(ACol, ARow: Integer): Boolean;
@@ -1286,7 +2262,10 @@ end;
 { Extend (goRangeSelect): the moving corner goes to the cell, the focused cell stays; else the focused cell moves
   there after OnSelectCell allowed it (no event when it is already there) and the range collapses }
 procedure TCustomGrid.MoveFocus(ACol, ARow: Integer; Extend: Boolean);
+var
+  Moved: Boolean;
 begin
+  Moved := False;
   if Extend and (goRangeSelect in FOptions) then
   begin
     if (FCurrent.X = ACol) and (FCurrent.Y = ARow) then
@@ -1310,6 +2289,7 @@ begin
         Exit;
       end;
       FAnchor := Coord(ACol, ARow);
+      Moved := True;
     end;
     FCurrent := FAnchor;
   end;
@@ -1317,6 +2297,8 @@ begin
   Invalidate;
   if (goAlwaysShowEditor in FOptions) and not FEditing then
     ShowEditor;
+  if Moved then
+    CurrentCellChanged(Self);                                { ui-automation.md UIF-1439 }
 end;
 
 procedure TCustomGrid.KeyDown(var Key: Word; Shift: TShiftState);
@@ -1720,6 +2702,11 @@ end;
 { ---------------------------------------------------------------- painting (UIF-842) }
 
 function TCustomGrid.GetCellText(ACol, ARow: Integer): string;
+begin
+  Result := '';
+end;
+
+function TCustomGrid.GetAccessibleCellText(ACol, ARow: Integer): string;
 begin
   Result := '';
 end;
@@ -2165,6 +3152,11 @@ begin
     Result := ''
   else
     Result := FData[ARow][ACol];
+end;
+
+function TStringGrid.GetAccessibleCellText(ACol, ARow: Integer): string;
+begin
+  Result := GetCells(ACol, ARow);
 end;
 
 procedure TStringGrid.SetEditText(ACol, ARow: Integer; const Value: string);

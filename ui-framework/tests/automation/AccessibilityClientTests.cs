@@ -435,8 +435,11 @@ public sealed class AccessibilityClientTests
         }
     }
 
-    /// <summary>A started probe: its main window, the COM client and the window's element, the marker protocol of the program.</summary>
-    private sealed class Probe : IDisposable
+    /// <summary>
+    /// A started probe: its main window, the COM client and the window's element, the marker protocol of the program
+    /// (internal: U-157's <see cref="AccessibilityGridClientTests"/> uses it too).
+    /// </summary>
+    internal sealed class Probe : IDisposable
     {
         private int linesSeen;
 
