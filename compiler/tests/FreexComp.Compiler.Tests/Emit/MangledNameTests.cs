@@ -159,6 +159,71 @@ public sealed class MangledNameTests
         }
     }
 
+    /// <summary>
+    /// C-368 (CMP-361, CMP-362): a type local to an overloaded routine is qualified by the routine's link name, so the types
+    /// <c>TLocal</c> of <c>P(Integer)</c> and <c>P(string)</c> give two generic instances and two type infos (and two
+    /// <c>.pdi</c> routine entries for the instances' methods) instead of one shared <c>Q.P.TLocal</c>; each overload sees its own.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "Toolchain")]
+    [Trait("Req", "CMP-362")]
+    public async Task LocalTypesOfTwoOverloads_MangleApart()
+    {
+        const string Main = """
+            program Q;
+            uses TypInfo;
+            type
+              TBox<T> = class
+                class function Size: Integer;
+              end;
+            class function TBox<T>.Size: Integer;
+            begin
+              Result := SizeOf(T);
+            end;
+            procedure P(A: Integer); overload;
+            type
+              TLocal = record
+                X: Integer;
+              end;
+            begin
+              WriteLn('int ', A, ' ', TBox<TLocal>.Size, ' ', PTypeInfo(TypeInfo(TLocal))^.Name, ' ', PInteger(NativeInt(TypeInfo(TLocal)) + 16)^);
+            end;
+            procedure P(A: string); overload;
+            type
+              TLocal = record
+                X, Y, Z: Int64;
+              end;
+            begin
+              WriteLn('str ', A, ' ', TBox<TLocal>.Size, ' ', PTypeInfo(TypeInfo(TLocal))^.Name, ' ', PInteger(NativeInt(TypeInfo(TLocal)) + 16)^);
+            end;
+            begin
+              P(1);
+              P('s');
+            end.
+
+            """;
+        var dir = PathUtil.Normalize(Path.Combine(Path.GetTempPath(), "FreexComp.Tests", Guid.NewGuid().ToString("N")));
+        try
+        {
+            Put(dir, "Q", Main);
+            var result = Build(dir, "Q", debugInfo: true);
+            var ir = File.ReadAllText(Path.Combine(dir, "obj", "Q.ll"));
+            Assert.Contains("@\"Q.TBox<Q.P$Integer.TLocal>.Size\"(", ir, StringComparison.Ordinal);
+            Assert.Contains("@\"Q.TBox<Q.P$string.TLocal>.Size\"(", ir, StringComparison.Ordinal);
+            Assert.Contains("@\"Q.P$Integer.TLocal.$rtti\" =", ir, StringComparison.Ordinal);
+            Assert.Contains("@\"Q.P$string.TLocal.$rtti\" =", ir, StringComparison.Ordinal);
+            Assert.DoesNotContain("\"Q.P.TLocal", ir, StringComparison.Ordinal);
+            var pdi = File.ReadAllText(Path.ChangeExtension(result.OutputPath!, ".pdi"));
+            Assert.Contains("\"Q.TBox<Q.P$Integer.TLocal>.Size\"", pdi, StringComparison.Ordinal);
+            Assert.Contains("\"Q.TBox<Q.P$string.TLocal>.Size\"", pdi, StringComparison.Ordinal);
+            Assert.Equal(["int 1 4 TLocal 4", "str s 24 TLocal 24"], await Run(result));
+        }
+        finally
+        {
+            TestDirectories.Delete(dir);
+        }
+    }
+
     private static void Put(string dir, string name, string text) =>
         PhysicalFileSystem.Instance.WriteAllBytes(Path.Combine(dir, name + ".pas"), Encoding.UTF8.GetBytes(text.ReplaceLineEndings("\n")));
 
@@ -180,7 +245,7 @@ public sealed class MangledNameTests
         return lib;
     }
 
-    private static EmitResult Build(string dir, string program, string? lib = null)
+    private static EmitResult Build(string dir, string program, string? lib = null, bool debugInfo = false)
     {
         Assert.True(File.Exists(Clang.Path), $"Pinned toolchain missing: {Clang.Path} (run scripts/bootstrap.ps1).");
         var options = new CompilationOptions
@@ -190,6 +255,7 @@ public sealed class MangledNameTests
             ToolchainDirectory = Path.GetDirectoryName(Clang.Path)!,
             ObjectDirectory = Path.Combine(dir, "obj"),
             SearchPaths = lib is null ? [] : [lib],
+            DebugInfo = debugInfo,
         };
         var result = Compilation.Create(options, [], PhysicalFileSystem.Instance)
             .Emit(new EmitOptions { OutputPath = Path.Combine(dir, program + ".exe") }, TestContext.Current.CancellationToken);

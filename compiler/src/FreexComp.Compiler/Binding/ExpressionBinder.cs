@@ -1949,10 +1949,11 @@ internal sealed partial class ExpressionBinder
                 : new BoundConversionExpression(node, operand, target, ConversionKind.ImplicitString, isExplicit: true, constantValue: null);
         }
 
+        // C-369 (LANG-133): a string literal or constant cast to PAnsiChar is its static ANSI data, as the implicit conversion gives
         var toData = source is StringTypeSymbol { Variant: not StringVariant.Short } && target is PointerTypeSymbol pointer
             && (pointer.PointedType is null && pointer != _types.Nil
                 || Strings.IsCharPointer(target, wide: true) && Strings.IsUnicode(source)
-                || Strings.IsCharPointer(target, wide: false) && Strings.IsAnsi(source));
+                || Strings.IsCharPointer(target, wide: false) && (Strings.IsAnsi(source) || operand.ConstantValue is not null));
         var toInteger = source is StringTypeSymbol { Variant: not StringVariant.Short } && target is IntegerTypeSymbol { Bits: 64 };
         if ((toData || toInteger) && operand.ConstantValue is { } literal)
         {

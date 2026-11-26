@@ -342,9 +342,16 @@ internal sealed class ConstantFolder
         static string NameOf(IdentifierNameSyntax name) => name.Identifier.Value as string ?? name.Identifier.Text;
     }
 
-    /// <summary>An ordinal typecast of a constant (LANG-290 row 1); E2040 at <paramref name="node"/> otherwise.</summary>
+    /// <summary>An ordinal typecast of a constant (LANG-290 row 1), a string constant to a character pointer (C-369); E2040 at <paramref name="node"/> otherwise.</summary>
     internal ConstantValue? FoldTypecast(SyntaxNode node, TypeSymbol target, ConstantValue operand)
     {
+        if ((Strings.IsCharPointer(target, wide: true) || Strings.IsCharPointer(target, wide: false))
+            && (operand.Value is string || operand.Type is CharTypeSymbol && operand.Value is BigInteger))
+        {
+            // C-369 (LANG-133, LANG-290): a string or character constant cast to PChar / PAnsiChar is its static zero-terminated data
+            return new ConstantValue(operand.Value as string ?? ((char)(int)(BigInteger)operand.Value!).ToString(), target);
+        }
+
         if (target is PointerTypeSymbol { Name: not "nil" } && operand.Type is IntegerTypeSymbol && operand.Value is BigInteger address)
         {
             // C-185 (LANG-340): integer → pointer is a constant address (pointer-sized, unsigned); 0 is nil

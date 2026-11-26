@@ -1796,12 +1796,42 @@ internal sealed partial class DeclarationBinder
         }
 
         var sameNames = match.Parameters.Select(p => p.Name).SequenceEqual(probe.Parameters.Select(p => p.Name), IdentifierComparer.Instance);
-        if (!sameNames || !ReferenceEquals(match.ReturnType, probe.ReturnType) || !SameRefParameters(match, probe))
+        var defaultsDiffer = RepeatedDefaultsDiffer(match, heading);
+        if (!sameNames || !ReferenceEquals(match.ReturnType, probe.ReturnType) || !SameRefParameters(match, probe) || defaultsDiffer)
         {
             _diagnostics.Report(identifier, "E2101", NameOf(identifier));
         }
 
         return match;
+    }
+
+    /// <summary>
+    /// LANG-401 (C-365): the default values a definition's heading repeats, bound in this binder's scope with their diagnostics
+    /// (E2610 for an inaccessible constant, as in the declaration); true when one differs from the declaration's value or the
+    /// declaration has none there (the caller reports E2101). A default that does not fold is no mismatch (its error suffices).
+    /// </summary>
+    internal bool RepeatedDefaultsDiffer(RoutineSymbol declared, RoutineHeadingSyntax heading)
+    {
+        if (heading.ParameterList is not { } list)
+        {
+            return false;
+        }
+
+        var differs = false;
+        var index = 0;
+        foreach (var parameter in list.Parameters)
+        {
+            if (parameter.DefaultValue is { } value && index < declared.Parameters.Length)
+            {
+                var declaredParameter = declared.Parameters[index];
+                var repeated = BindDefaultValue(parameter, value, declaredParameter.Mode, declaredParameter.Type, declared, report: true);
+                differs |= repeated is not null && (declaredParameter.DefaultValue is not { } expected || !Equals(expected.Value, repeated.Value));
+            }
+
+            index += parameter.Identifiers.Count;
+        }
+
+        return differs;
     }
 
     /// <summary>

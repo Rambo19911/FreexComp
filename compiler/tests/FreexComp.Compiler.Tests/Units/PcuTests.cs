@@ -1388,6 +1388,62 @@ public sealed partial class PcuTests
         ];
     }
 
+    /// <summary>
+    /// CMP-1392 (C-365): a helper's nested type used by another unit's interface is written there as a reference by its path
+    /// (<c>"kind": "ref"</c>, <c>TIntHelper.TOpen</c>), as for the nested types of classes and records, not described a second time;
+    /// read back, it is the helper's own type, so values pass between the two units' declarations.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1392")]
+    public void HelperNestedTypeReferencedByPath()
+    {
+        const string Unit = """
+            unit U;
+            interface
+            type
+              TIntHelper = record helper for Integer
+              public
+                type
+                  TOpen = (oA, oB, oC);
+                  TCell = record
+                    V: Integer;
+                  end;
+              end;
+            implementation
+            end.
+            """;
+        const string User = """
+            unit V;
+            interface
+            uses U;
+            var
+              Pick: TIntHelper.TOpen;
+            function Make(N: Integer): TIntHelper.TCell;
+            implementation
+            function Make(N: Integer): TIntHelper.TCell;
+            begin
+              Result.V := N;
+            end;
+            end.
+            """;
+        const string Program = "program P;\nuses U, V;\nvar\n  B: TIntHelper.TOpen;\n  C: TIntHelper.TCell;\nbegin\n"
+            + "  Pick := High(TIntHelper.TOpen);\n  B := Pick;\n  C := Make(3);\n  Writeln(Ord(B), C.V);\nend.\n";
+        var pcus = Pcus(Files(u: Unit, v: User, program: Program));
+        var types = (JsonArray)JsonNode.Parse(pcus["V"])!["interface"]!["types"]!;
+        var refs = types.OfType<JsonObject>().Where(t => (string?)t["kind"] == "ref").Select(t => ((string)t["unit"]!, (string)t["name"]!)).ToList();
+        Assert.Contains(("U", "TIntHelper.TOpen"), refs);
+        Assert.Contains(("U", "TIntHelper.TCell"), refs);
+        Assert.DoesNotContain(types.OfType<JsonObject>(), t => (string?)t["kind"] != "ref" && (string?)t["name"] is "TOpen" or "TCell");
+
+        var fs = new InMemoryFileSystem().Add(@"C:\p\P.pas", Program).AddSystem()
+            .Add(Path.Combine(PcuImportTests.Lib, "U.pcu"), pcus["U"]).Add(Path.Combine(PcuImportTests.Lib, "U.obj"), "")
+            .Add(Path.Combine(PcuImportTests.Lib, "V.pcu"), pcus["V"]).Add(Path.Combine(PcuImportTests.Lib, "V.obj"), "");
+        var result = Compilation.Create(Options() with { SearchPaths = [PcuImportTests.Lib] }, [], fs)
+            .Emit(new EmitOptions { Stage = EmitStage.Check }, TestContext.Current.CancellationToken);
+        Assert.True(result.Success, string.Join("\n", result.Diagnostics.Select(d => d.ToText())));
+    }
+
     // ------------------------------------------------------------------ Emit writes it (CMP-141, toolchain.md §6)
 
     [Fact]

@@ -966,6 +966,73 @@ public sealed class NestedTypeBindingTests
             end.
             """).Where(d => !d.StartsWith('H') && !d.StartsWith('W')));
 
+    /// <summary>
+    /// LANG-401, LANG-774 (C-365): a default value repeated in a definition's heading is bound with its diagnostics — an ancestor's
+    /// strict private constant (<c>= Limit</c>, <c>= TBase.Limit</c>) is E2610 there as in the class declaration — and must equal the
+    /// declaration's value: a different value (or a default the declaration lacks) is E2101; an equal repeat (also through an accessible
+    /// constant) is accepted, for methods and for forward-declared routines.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "LANG-401")]
+    [Trait("Req", "LANG-774")]
+    public void ImplementationHeadingDefault_InaccessibleConstant_E2610() =>
+        Assert.Equal(
+        [
+            "E2610(17,34): Cannot access strict private member 'Limit' of 'TBase'",
+            "E2610(21,40): Cannot access strict private member 'Limit' of 'TBase'",
+            "E2101(25,19): Declaration of 'N' differs from its previous declaration",
+            "E2101(29,19): Declaration of 'K' differs from its previous declaration",
+            "E2101(42,11): Declaration of 'R' differs from its previous declaration",
+        ], BindDiagnostics("""
+            program P;
+            type
+              TBase = class
+              strict private
+                const Limit = 3;
+              strict protected
+                const Shared = 5;
+              end;
+              TDerived = class(TBase)
+              public
+                function M(Y: Integer = 3): Integer;
+                function L(Y: Integer = 3): Integer;
+                function N(Y: Integer = 1): Integer;
+                function K(Y: Integer): Integer;
+                function S(Y: Integer = 5; const T: string = 'x'): Integer;
+              end;
+            function TDerived.M(Y: Integer = Limit): Integer;
+            begin
+              Result := Y;
+            end;
+            function TDerived.L(Y: Integer = TBase.Limit): Integer;
+            begin
+              Result := Y;
+            end;
+            function TDerived.N(Y: Integer = 2): Integer;
+            begin
+              Result := Y;
+            end;
+            function TDerived.K(Y: Integer = 1): Integer;
+            begin
+              Result := Y;
+            end;
+            function TDerived.S(Y: Integer = Shared; const T: string = 'x'): Integer;
+            begin
+              Result := Y;
+            end;
+            procedure Q(A: Integer = 7); forward;
+            procedure R(A: Integer = 7); forward;
+            procedure Q(A: Integer = 7);
+            begin
+            end;
+            procedure R(A: Integer = 8);
+            begin
+            end;
+            begin
+            end.
+            """).Where(d => !d.StartsWith('H') && !d.StartsWith('W')));
+
     /// <summary>LANG-780 amendment (C-354): through a generic instance the inherited name is the ancestor instance's nested type.</summary>
     [Fact]
     [Trait("Req", "LANG-780")]

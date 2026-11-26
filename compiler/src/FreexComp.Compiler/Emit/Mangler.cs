@@ -37,7 +37,7 @@ internal static class Mangler
             return explicitName;
         }
 
-        var prefix = routine.ContainingSymbol is RoutineSymbol outer ? RoutineText(outer) : routine.ContainingSymbol?.QualifiedName;
+        var prefix = routine.ContainingSymbol is { } container ? Qualified(container) : null;     // a nested routine: its parent's link name
         var name = (prefix is null ? routine.Name : prefix + "." + routine.Name) + routine.GenericSuffix;
         // C-123: conversion operators may differ in their result only (Implicit to Integer and to Double), so operators add it
         return routine is MethodSymbol { OperatorName: not null, ReturnType: { } result } ? name + "$" + Signature(routine.Parameters) + "$" + TypeName(result)
@@ -47,8 +47,7 @@ internal static class Mangler
     /// <summary>Global variable or typed constant: <c>U.Name</c>; a typed constant of a routine: <c>&lt;routine link name&gt;.Name</c>.</summary>
     public static LinkName GlobalVariable(VariableSymbol variable) =>
         variable.ExplicitLinkName is { } explicitName ? new LinkName(explicitName, AlwaysQuote: false)
-        : variable.ContainingSymbol is RoutineSymbol routine ? new(RoutineText(routine) + "." + variable.Name, AlwaysQuote: true)
-        : new(variable.QualifiedName, AlwaysQuote: true);
+        : new(Qualified(variable), AlwaysQuote: true);
 
     /// <summary>CMP-1209: call descriptor number <paramref name="number"/> (from 1) of a module: <c>U.$disp.n</c>.</summary>
     public static LinkName DispDescriptor(string unitName, int number) =>
@@ -71,35 +70,34 @@ internal static class Mangler
 
     /// <summary>
     /// Struct type of a declared record (CMP-306): <c>U.TRec</c>; a record declared in a routine is qualified by the routine's
-    /// link name (<c>U.Proc.TRec</c>).
+    /// link name (<c>U.Proc.TRec</c>, <c>U.P$Integer.TRec</c> in an overload), also when nested in a routine's type (C-368).
     /// </summary>
-    public static LinkName RecordType(RecordTypeSymbol record) => new(
-        record.ContainingSymbol is RoutineSymbol routine ? RoutineText(routine) + "." + record.Name : record.QualifiedName, AlwaysQuote: true);
+    public static LinkName RecordType(RecordTypeSymbol record) => new(Qualified(record), AlwaysQuote: true);
 
     /// <summary>The VMT constant of a class (rtl-abi.md §7.2, CMP-360): <c>U.TFoo.$vmt</c>.</summary>
-    public static LinkName Vmt(ClassTypeSymbol type) => new(type.QualifiedName + ".$vmt", AlwaysQuote: true);
+    public static LinkName Vmt(ClassTypeSymbol type) => new(Qualified(type) + ".$vmt", AlwaysQuote: true);
 
     /// <summary>The <c>InitTable</c> of a class (ABI §7.2 VMT+48): <c>U.TFoo.$inittable</c>.</summary>
-    public static LinkName InitTable(ClassTypeSymbol type) => new(type.QualifiedName + ".$inittable", AlwaysQuote: true);
+    public static LinkName InitTable(ClassTypeSymbol type) => new(Qualified(type) + ".$inittable", AlwaysQuote: true);
 
     /// <summary>The IMT of a class for one listed interface (ABI-091, CMP-371): <c>U.TFoo.$imt.IU.IBar</c>.</summary>
-    public static LinkName Imt(ClassTypeSymbol type, InterfaceTypeSymbol intf) => new(type.QualifiedName + ".$imt." + intf.QualifiedName, AlwaysQuote: true);
+    public static LinkName Imt(ClassTypeSymbol type, InterfaceTypeSymbol intf) => new(Qualified(type) + ".$imt." + Qualified(intf), AlwaysQuote: true);
 
     /// <summary>
     /// The thunk of IMT slot <paramref name="slot"/> (CMP-372, codegen.md §12): <c>U.TFoo.$thunk.IU.IBar.Method</c>; an overloaded
     /// interface method adds <c>$</c> and its parameter signature like a routine (C-098).
     /// </summary>
     public static LinkName Thunk(ClassTypeSymbol type, InterfaceTypeSymbol intf, MethodSymbol method) =>
-        new(type.QualifiedName + ".$thunk." + intf.QualifiedName + "." + method.Name + (method.IsOverload ? "$" + Signature(method.Parameters) : ""), AlwaysQuote: true);
+        new(Qualified(type) + ".$thunk." + Qualified(intf) + "." + method.Name + (method.IsOverload ? "$" + Signature(method.Parameters) : ""), AlwaysQuote: true);
 
     /// <summary>The <c>MsgTable</c> of a class (ABI §7.2, VMT+40, C-113): <c>U.TFoo.$msgtable</c>.</summary>
-    public static LinkName MsgTable(ClassTypeSymbol type) => new(type.QualifiedName + ".$msgtable", AlwaysQuote: true);
+    public static LinkName MsgTable(ClassTypeSymbol type) => new(Qualified(type) + ".$msgtable", AlwaysQuote: true);
 
     /// <summary>The <c>IntfTable</c> of a class (ABI-095, VMT+32): <c>U.TFoo.$intftable</c>.</summary>
-    public static LinkName IntfTable(ClassTypeSymbol type) => new(type.QualifiedName + ".$intftable", AlwaysQuote: true);
+    public static LinkName IntfTable(ClassTypeSymbol type) => new(Qualified(type) + ".$intftable", AlwaysQuote: true);
 
     /// <summary>The GUID constant of an interface (CMP-373): <c>U.IBar.$guid</c>.</summary>
-    public static LinkName Guid(InterfaceTypeSymbol intf) => new(intf.QualifiedName + ".$guid", AlwaysQuote: true);
+    public static LinkName Guid(InterfaceTypeSymbol intf) => new(Qualified(intf) + ".$guid", AlwaysQuote: true);
 
     /// <summary>A runtime helper of unit System (rtl-abi.md §9): <c>System._Name</c>.</summary>
     public static LinkName RuntimeHelper(string name) => new("System." + name, AlwaysQuote: true);
@@ -127,7 +125,7 @@ internal static class Mangler
     {
         if (type is PointerTypeSymbol { DeclaredIn: { } declaredIn } && type.Name.Length > 0 && !type.Name.StartsWith('^'))
         {
-            return declaredIn.QualifiedName + "." + type.Name;
+            return Qualified(declaredIn) + "." + type.Name;
         }
 
         if (type.ContainingSymbol is null)
@@ -140,8 +138,16 @@ internal static class Mangler
             throw new NotSupportedException("Structural names of anonymous types (CMP-361) are not implemented yet.");
         }
 
-        return type.QualifiedName;
+        return Qualified(type);
     }
+
+    /// <summary>
+    /// <see cref="Symbol.QualifiedName"/> for link names: a routine is its link name, so a symbol declared in a routine is qualified
+    /// by the routine's link name (C-368: overload-distinct, <c>U.P$Integer.TLocal</c>), and so is everything nested in it.
+    /// </summary>
+    public static string Qualified(Symbol symbol) =>
+        symbol is RoutineSymbol routine ? RoutineText(routine)
+        : symbol.QualifiedNameOverride ?? (symbol.ContainingSymbol is { } container ? Qualified(container) + "." + symbol.Name : symbol.Name);
 
     private static string ModePrefix(ParameterMode mode, bool isOpenArray)
     {

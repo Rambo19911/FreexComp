@@ -649,6 +649,13 @@ internal sealed class PcuWriter(PcuContext context)
                 return (outerOwner.Unit, outerOwner.Name + "." + type.Name);
             }
 
+            // C-365: a helper's nested type of another unit by its path as well, THelper.TInner (the reader looks it up in the helper)
+            if (type.ContainingSymbol is HelperTypeSymbol helper && ReferenceEquals(TypeMembers.NestedType(helper, type.Name), type)
+                && Owner(helper) is { } helperOwner)
+            {
+                return (helperOwner.Unit, helperOwner.Name + "." + type.Name);
+            }
+
             return null;
         }
 

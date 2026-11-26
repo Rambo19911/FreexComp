@@ -1,0 +1,11 @@
+A[abc] 3 1
+W[abc] 3 2
+A[hello] 5 1
+W[hello] 5 2
+A[] 0 1
+W[] 0 2
+A[abcd] 4 1
+W[wide] 4 2
+A[typed] 5 1
+W[typed] 5 2
+0 0

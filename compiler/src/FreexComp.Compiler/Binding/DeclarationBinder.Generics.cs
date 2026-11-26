@@ -553,7 +553,7 @@ internal sealed partial class DeclarationBinder
     {
         var declaration = generic.Declaration!;
         var display = generic.Name + "<" + string.Join(", ", arguments.Select(a => a.Name)) + ">";
-        var canonical = (generic.ContainingSymbol is { } owner ? owner.QualifiedName + "." : "") + generic.Name
+        var canonical = (generic.ContainingSymbol is { } owner ? Emit.Mangler.Qualified(owner) + "." : "") + generic.Name
             + "<" + string.Join(",", arguments.Select(Emit.Mangler.TypeName)) + ">";
         var scope = new Scope(ScopeKind.Unit, generic.DeclaringScope, generic.ContainingSymbol, generic.VisibleCount) { DeclaresTypeParameters = true };
         for (var i = 0; i < arguments.Length; i++)

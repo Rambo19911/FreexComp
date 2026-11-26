@@ -1330,7 +1330,7 @@ internal sealed class ModuleState(IIrWriter writer)
     /// </summary>
     private IrGlobal ClassInfo(ClassTypeSymbol type)
     {
-        var name = new LinkName(type.QualifiedName + ".$rtti", AlwaysQuote: true);
+        var name = new LinkName(Mangler.Qualified(type) + ".$rtti", AlwaysQuote: true);
         var global = new IrGlobal(name);
         _typeInfoReferences.Add(type, global);
         if (!OwnClasses.Contains(type))
@@ -1465,8 +1465,7 @@ internal sealed class ModuleState(IIrWriter writer)
     {
         if (!type.IsPredefined && IsDeclared(type))                     // before the strings: a distinct string type (C-262)
         {
-            var prefix = type.ContainingSymbol is RoutineSymbol routine ? Mangler.Routine(routine).Text + "." + type.Name : type.QualifiedName;
-            return new LinkName(prefix + ".$rtti", AlwaysQuote: true);
+            return new LinkName(Mangler.Qualified(type) + ".$rtti", AlwaysQuote: true);     // C-368: also a type nested in a routine's type
         }
 
         if (type is StringTypeSymbol { Variant: not StringVariant.Short } || type.IsPredefined)

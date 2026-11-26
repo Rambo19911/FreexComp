@@ -687,10 +687,12 @@ internal sealed partial class DeclarationBinder
         else if (candidates.Count > 0)
         {
             var probe = new RoutineSymbol(name, _container, [], declaration);
-            NestedNamesBinder(type).BindSignature(probe, heading, identifier, report: false);
+            var headingBinder = NestedNamesBinder(type);
+            headingBinder.BindSignature(probe, heading, identifier, report: false);
             method = candidates.FirstOrDefault(m => SameParameterTypes(m, probe) && (m.OperatorName is null || ReferenceEquals(m.ReturnType, probe.ReturnType)));
+            var defaultsDiffer = method is not null && headingBinder.RepeatedDefaultsDiffer(method, heading);          // LANG-401 (C-365)
             if (method is not null && (!method.Parameters.Select(p => p.Name).SequenceEqual(probe.Parameters.Select(p => p.Name), IdentifierComparer.Instance)
-                || !SameRefParameters(method, probe)))                                                  // LANG-763 (C-232)
+                || !SameRefParameters(method, probe) || defaultsDiffer))                                // LANG-763 (C-232)
             {
                 _diagnostics.Report(identifier, "E2101", name);
             }
