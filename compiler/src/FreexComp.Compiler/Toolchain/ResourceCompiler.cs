@@ -169,9 +169,19 @@ internal sealed partial class ResourceCompiler(ToolRunner runner, ToolchainPaths
         if (step2.ExitCode != 0 || !fs.FileExists(temporary))
         {
             var errors = ToolErrors(step2.Output, script);
-            return Failed(errors.IsEmpty
-                ? [step2.Failure ?? ToolRunner.WithOutput(Diagnostic.Create("E4004", script, ToolchainLocator.ResourceToolName, step2.ExitCode), step2.Output)]
-                : errors);
+            if (errors.IsEmpty)
+            {
+                return Failed(step2.Failure ?? ToolRunner.WithOutput(Diagnostic.Create("E4004", script, ToolchainLocator.ResourceToolName, step2.ExitCode), step2.Output));
+            }
+
+            // C-348: the tool names no line; the first statement whose prefix fails gives one
+            if (await FailingStatementAsync(request, text, ct).ConfigureAwait(false) is { } statement
+                && StatementLocation(statement, map) is { } location)
+            {
+                errors = [.. errors.Select(e => e.Location.HasPosition ? e : e with { Location = location })];
+            }
+
+            return Failed(errors);
         }
 
         fs.WriteAllBytes(request.OutputPath, fs.ReadAllBytes(temporary));  // CMP-141: replaced atomically
@@ -180,6 +190,70 @@ internal sealed partial class ResourceCompiler(ToolRunner runner, ToolchainPaths
     }
 
     private static ResourceCompileResult Failed(params ImmutableArray<Diagnostic> diagnostics) => new(false, diagnostics, [], []);
+
+    /// <summary><c>&lt;objdir&gt;\&lt;base&gt;.rc.part.i</c>: a prefix of the tool input while a failing statement is looked for (C-348).</summary>
+    public static string PrefixInputPath(ResourceCompileRequest request) =>
+        Path.Combine(request.ObjectDirectory, Path.GetFileNameWithoutExtension(request.ScriptPath) + ".rc.part.i");
+
+    /// <summary>
+    /// C-348: the smallest k such that the tool fails on the first k top-level statements of <paramref name="toolInput"/>
+    /// (bisection, the whole input being known to fail). The statement k, or null when no statement can be named: the empty
+    /// prefix fails already, the error lies in text after the last complete statement, or a run is not conclusive.
+    /// With n statements (an unfinished last one counted) it needs at most ceil(log2 n) + 1 runs.
+    /// </summary>
+    private async Task<ResourceStatement?> FailingStatementAsync(ResourceCompileRequest request, string toolInput, CancellationToken ct)
+    {
+        var statements = ResourceStatements.Split(toolInput);
+        if (statements.IsEmpty)
+        {
+            return null;
+        }
+
+        var complete = toolInput.AsSpan(statements[^1].End).IsWhiteSpace();
+        var (low, high) = (0, complete ? statements.Length : statements.Length + 1);   // prefix(high) fails
+        var input = PrefixInputPath(request);
+        ImmutableArray<string> arguments = [.. CompileArguments(request)[..^1], input];
+        try
+        {
+            while (low < high)
+            {
+                var middle = (low + high) / 2;
+                fs.WriteAllBytes(input, Utf8.GetBytes(middle == 0 ? "" : toolInput[..statements[middle - 1].End] + "\n"));
+                var run = await runner.RunAsync(toolchain.ResourceTool, arguments, Path.GetDirectoryName(request.ScriptPath)!, ct).ConfigureAwait(false);
+                if (run.Failure is { Code: "E4003" })
+                {
+                    return null;
+                }
+
+                if (run.ExitCode != 0)
+                {
+                    high = middle;
+                }
+                else
+                {
+                    low = middle + 1;
+                }
+            }
+        }
+        finally
+        {
+            fs.Delete(input);
+        }
+
+        return low >= 1 && low <= statements.Length ? statements[low - 1] : null;
+    }
+
+    /// <summary>The statement's first token in the script or header it came from (CMP-1304 line map); null for a built-in text.</summary>
+    private static Location? StatementLocation(ResourceStatement statement, ImmutableArray<ResourceLineOrigin> map)
+    {
+        if (statement.Line > map.Length || map[statement.Line - 1].File.StartsWith('<'))
+        {
+            return null;
+        }
+
+        var position = new LinePosition(map[statement.Line - 1].Line - 1, statement.Column - 1);
+        return new Location(map[statement.Line - 1].File, default, new LinePositionSpan(position, position));
+    }
 
     /// <summary>
     /// CMP-1303: each <c>&lt;path&gt;:&lt;line&gt;:&lt;col&gt;: error: &lt;text&gt;</c> or <c>… fatal error: &lt;text&gt;</c> line is one E3111 at that position;
@@ -213,7 +287,8 @@ internal sealed partial class ResourceCompiler(ToolRunner runner, ToolchainPaths
 
     /// <summary>
     /// CMP-1306: each line that starts with the tool's name is one E3112 with the text after the name; a following
-    /// <c>error : …</c> line belongs to it. The pinned tool names no line of its input, so the position is the script, (0,0).
+    /// <c>error : …</c> line belongs to it. The pinned tool names no line of its input, so the position is the script, (0,0);
+    /// the caller then looks for the failing statement (C-348).
     /// </summary>
     internal static ImmutableArray<Diagnostic> ToolErrors(IReadOnlyList<string> output, Location script)
     {

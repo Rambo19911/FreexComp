@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using FreexComp.Compiler.Text;
 using FreexComp.Compiler.Toolchain;
@@ -184,6 +185,225 @@ public sealed class ResourceCompilerTests
 
         Assert.False(result.Success);
         Assert.Equal([@"C:\p\res\app.rc(0,0): error E3112: Resource script error: " + message], result.Diagnostics.Select(d => d.ToText()));
+    }
+
+    /// <summary>
+    /// C-348: the tool names no line for a syntax error, so the compiler runs it again on prefixes of the top-level
+    /// statements (bisection) and reports the first statement whose prefix fails, at its line in the script or header.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "CMP-1306")]
+    public async Task SyntaxError_ReportsTheStatementLine()
+    {
+        const string Preprocessed = """
+            # 1 "C:\\p\\res\\app.rc"
+            1 RCDATA "a.bin"
+
+            2 RCDATA
+            BEGIN
+              1, 2
+            END
+            # 1 "C:\\p\\res\\inc.h" 1
+            3 DIALOG 0, 0, 10, 10
+            STYLE 0
+            CAPTION "BEGIN"
+            BEGIN
+              PUSHBUTTON "END", 1, 0, 0, 1, 1
+            END
+            # 6 "C:\\p\\res\\app.rc" 2
+            LANGUAGE 9, 1
+            4 RCDATA BEGIN 1 END   5 RCDATA BEGIN {0} END
+            STRINGTABLE
+            BEGIN
+              1 "x"
+            END
+            6 ICON icon.ico
+
+            """;
+        const string ParseError = "llvm-rc: Error parsing file: expected int or string, got BAD";
+
+        // the bad text in statement 5 (script line 7, column of the "5"), in the dialog of the header, in the string table
+        foreach (var (bad, expected) in new[]
+        {
+            (Preprocessed.Replace("{0}", "BAD", StringComparison.Ordinal), @"C:\p\res\app.rc(7,24)"),
+            (Preprocessed.Replace("{0}", "1", StringComparison.Ordinal).Replace("STYLE 0", "STYLE BAD", StringComparison.Ordinal), @"C:\p\res\inc.h(1,1)"),
+            (Preprocessed.Replace("{0}", "1", StringComparison.Ordinal).Replace("1 \"x\"", "BAD \"x\"", StringComparison.Ordinal), @"C:\p\res\app.rc(8,1)"),
+        })
+        {
+            var fs = Fs();
+            var inputs = new List<string>();
+            var tools = new FakeProcessRunner((call, _) =>
+            {
+                if (call.FileName.EndsWith("clang.exe", StringComparison.Ordinal))
+                {
+                    fs.Add(call.Arguments[Array.IndexOf(call.Arguments, "-o") + 1], bad.ReplaceLineEndings("\r\n"));
+                    return Task.FromResult((0, Array.Empty<string>(), Array.Empty<string>()));
+                }
+
+                var input = Encoding.UTF8.GetString(fs.ReadAllBytes(call.Arguments[^1]));
+                inputs.Add(input);
+                var fails = input.Contains("BAD", StringComparison.Ordinal);
+                fs.WriteAllBytes(call.Arguments[Array.IndexOf(call.Arguments, "/fo") + 1], fails ? [0] : Compiled);
+                return Task.FromResult((fails ? 1 : 0, Array.Empty<string>(), fails ? new[] { ParseError } : []));
+            });
+
+            var result = await Compile(fs, tools);
+
+            Assert.False(result.Success);
+            Assert.Equal([expected + ": error E3112: Resource script error: Error parsing file: expected int or string, got BAD"], result.Diagnostics.Select(d => d.ToText()));
+
+            // 8 top-level statements: at most ceil(log2 8) + 1 = 4 runs after the first, each on a prefix of whole statements
+            var full = Encoding.UTF8.GetString(fs.ReadAllBytes(Obj + @"\app.rc.i"));
+            Assert.Equal(full, inputs[0]);
+            Assert.InRange(inputs.Count - 1, 1, 4);
+            Assert.All(inputs.Skip(1), prefix => Assert.True(
+                prefix.Length == 0 || (full.StartsWith(prefix[..^1], StringComparison.Ordinal) && prefix[^1] == '\n' && prefix[^2] is 'D' or 'o' or '1' or '"'),
+                "a prefix of whole statements: " + prefix));
+            Assert.False(fs.FileExists(Obj + @"\app.rc.part.i"));            // the bisection input is removed
+            Assert.False(fs.FileExists(Output + ".tmp"));
+        }
+
+        // the error lies in a statement that runs to the end of the input: no statement ends after it, so (0,0) as before
+        var eof = Fs();
+        var eofResult = await Compile(eof, new FakeProcessRunner((call, _) =>
+        {
+            if (call.FileName.EndsWith("clang.exe", StringComparison.Ordinal))
+            {
+                eof.Add(call.Arguments[Array.IndexOf(call.Arguments, "-o") + 1], "# 1 \"C:\\\\p\\\\res\\\\app.rc\"\n1 RCDATA BEGIN 1 END\n2 RCDATA\nBEGIN\n  1, 2\n");
+                return Task.FromResult((0, Array.Empty<string>(), Array.Empty<string>()));
+            }
+
+            var unfinished = Encoding.UTF8.GetString(eof.ReadAllBytes(call.Arguments[^1])).Contains("2 RCDATA", StringComparison.Ordinal);
+            return Task.FromResult((unfinished ? 1 : 0, Array.Empty<string>(), unfinished ? new[] { "llvm-rc: Error parsing file: expected int or string, got <EOF>" } : []));
+        }));
+
+        Assert.Equal(
+            [@"C:\p\res\app.rc(0,0): error E3112: Resource script error: Error parsing file: expected int or string, got <EOF>"],
+            eofResult.Diagnostics.Select(d => d.ToText()));
+    }
+
+    /// <summary>
+    /// C-349: the language constants of <c>rcdefs.h</c> against the Open Specifications document [MS-LCID] (a sample of its LCID
+    /// table, written here from the document: the primary language is the low 10 bits, the sublanguage the high 6 bits), and
+    /// <c>MAKELANGID</c> evaluated from its definition with the operators the resource tool accepts.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "CMP-1328")]
+    public void RcDefs_LanguageConstantsMatchTheLcidTable()
+    {
+        var header = Encoding.UTF8.GetString(ResourceHeaders.Files.Single(f => f.Name == "rcdefs.h").Content).Split('\n');
+        Assert.Contains("[MS-LCID]", header[0], StringComparison.Ordinal);
+        var defines = header.Where(l => l.StartsWith("#define ", StringComparison.Ordinal) && !l.Contains('(', StringComparison.Ordinal))
+            .Select(l => l.Split(' '))
+            .Where(p => p[1].StartsWith("LANG_", StringComparison.Ordinal) || p[1].StartsWith("SUBLANG_", StringComparison.Ordinal))
+            .ToDictionary(p => p[1], p => Evaluate(p[2]), StringComparer.Ordinal);
+
+        (string Primary, string Sub, int Lcid)[] sample =
+        [
+            ("NEUTRAL", "NEUTRAL", 0x0000), ("NEUTRAL", "DEFAULT", 0x0400), ("NEUTRAL", "SYS_DEFAULT", 0x0800),
+            ("ENGLISH", "ENGLISH_US", 0x0409), ("ENGLISH", "ENGLISH_UK", 0x0809), ("ENGLISH", "ENGLISH_AUS", 0x0C09), ("ENGLISH", "ENGLISH_CAN", 0x1009),
+            ("GERMAN", "GERMAN", 0x0407), ("GERMAN", "GERMAN_SWISS", 0x0807), ("GERMAN", "GERMAN_AUSTRIAN", 0x0C07),
+            ("FRENCH", "FRENCH", 0x040C), ("FRENCH", "FRENCH_BELGIAN", 0x080C), ("FRENCH", "FRENCH_CANADIAN", 0x0C0C),
+            ("SPANISH", "SPANISH", 0x040A), ("SPANISH", "SPANISH_MEXICAN", 0x080A), ("SPANISH", "SPANISH_MODERN", 0x0C0A), ("SPANISH", "SPANISH_US", 0x540A),
+            ("ITALIAN", "ITALIAN", 0x0410), ("JAPANESE", "JAPANESE_JAPAN", 0x0411), ("KOREAN", "KOREAN", 0x0412),
+            ("CHINESE", "CHINESE_TRADITIONAL", 0x0404), ("CHINESE", "CHINESE_SIMPLIFIED", 0x0804), ("CHINESE", "CHINESE_HONGKONG", 0x0C04),
+            ("RUSSIAN", "RUSSIAN_RUSSIA", 0x0419), ("LATVIAN", "LATVIAN_LATVIA", 0x0426), ("LITHUANIAN", "LITHUANIAN", 0x0427),
+            ("ESTONIAN", "ESTONIAN_ESTONIA", 0x0425), ("POLISH", "POLISH_POLAND", 0x0415), ("PORTUGUESE", "PORTUGUESE_BRAZILIAN", 0x0416),
+            ("PORTUGUESE", "PORTUGUESE", 0x0816), ("DUTCH", "DUTCH_BELGIAN", 0x0813), ("SWEDISH", "SWEDISH_FINLAND", 0x081D),
+            ("NORWEGIAN", "NORWEGIAN_NYNORSK", 0x0814), ("SERBIAN", "SERBIAN_SERBIA_LATIN", 0x241A), ("CROATIAN", "CROATIAN_CROATIA", 0x041A),
+            ("ARABIC", "ARABIC_QATAR", 0x4001), ("UKRAINIAN", "UKRAINIAN_UKRAINE", 0x0422), ("TURKISH", "TURKISH_TURKEY", 0x041F),
+        ];
+
+        const string Macro = "#define MAKELANGID(p, s) ";
+        var body = Assert.Single(header, l => l.StartsWith(Macro, StringComparison.Ordinal))[Macro.Length..];
+        foreach (var (primary, sub, lcid) in sample)
+        {
+            Assert.Equal(lcid & 0x3FF, defines["LANG_" + primary]);
+            Assert.Equal(lcid >> 10, defines["SUBLANG_" + sub]);
+            var expanded = body
+                .Replace("(p)", "(" + defines["LANG_" + primary].ToString(CultureInfo.InvariantCulture) + ")", StringComparison.Ordinal)
+                .Replace("(s)", "(" + defines["SUBLANG_" + sub].ToString(CultureInfo.InvariantCulture) + ")", StringComparison.Ordinal);
+            Assert.Equal(lcid, Evaluate(expanded));
+        }
+
+        // every primary id fits in 10 bits, every sublanguage in 6
+        Assert.All(defines.Where(d => d.Key.StartsWith("LANG_", StringComparison.Ordinal)), d => Assert.InRange(d.Value, 0, 0x3FF));
+        Assert.All(defines.Where(d => d.Key.StartsWith("SUBLANG_", StringComparison.Ordinal)), d => Assert.InRange(d.Value, 0, 0x3F));
+        Assert.True(defines.Keys.Count(k => k.StartsWith("LANG_", StringComparison.Ordinal)) >= 100);
+    }
+
+    /// <summary>Numbers (decimal or <c>0x</c>), parentheses, <c>*</c> and <c>|</c>: expression forms the resource tool reads.</summary>
+    private static int Evaluate(string expression)
+    {
+        var position = 0;
+        var result = Or();
+        Skip();
+        Assert.Equal(expression.Length, position);
+        return result;
+
+        int Or()
+        {
+            var value = Product();
+            while (Next('|'))
+            {
+                value |= Product();
+            }
+
+            return value;
+        }
+
+        int Product()
+        {
+            var value = Primary();
+            while (Next('*'))
+            {
+                value *= Primary();
+            }
+
+            return value;
+        }
+
+        int Primary()
+        {
+            if (Next('('))
+            {
+                var inner = Or();
+                Assert.True(Next(')'), "')' expected in " + expression);
+                return inner;
+            }
+
+            Skip();
+            var start = position;
+            while (position < expression.Length && (char.IsAsciiHexDigit(expression[position]) || expression[position] is 'x' or 'X'))
+            {
+                position++;
+            }
+
+            var text = expression[start..position];
+            return text.StartsWith("0x", StringComparison.OrdinalIgnoreCase)
+                ? int.Parse(text[2..], NumberStyles.HexNumber, CultureInfo.InvariantCulture)
+                : int.Parse(text, CultureInfo.InvariantCulture);
+        }
+
+        bool Next(char c)
+        {
+            Skip();
+            if (position < expression.Length && expression[position] == c)
+            {
+                position++;
+                return true;
+            }
+
+            return false;
+        }
+
+        void Skip()
+        {
+            while (position < expression.Length && expression[position] == ' ')
+            {
+                position++;
+            }
+        }
     }
 
     [Fact]

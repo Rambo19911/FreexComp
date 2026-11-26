@@ -1,0 +1,14 @@
+// The resources of the golden test ResLanguageNames: languages named by the constants of the product's definitions header.
+#include <windows.h>
+
+LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_US
+1 RCDATA BEGIN "en" END
+
+LANGUAGE LANG_GERMAN, SUBLANG_GERMAN
+2 RCDATA BEGIN "de" END
+
+LANGUAGE LANG_NEUTRAL, SUBLANG_NEUTRAL
+STRINGTABLE
+BEGIN
+  MAKELANGID(LANG_LATVIAN, SUBLANG_LATVIAN_LATVIA) "lv"
+END

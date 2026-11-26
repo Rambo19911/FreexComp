@@ -61,7 +61,19 @@ public sealed class RcHeaderTests
         var defined = new Dictionary<string, long>(StringComparer.Ordinal);
         foreach (var line in lines[1..])
         {
+            // C-349: the one function-like macro and the language identifiers are checked against [MS-LCID] by
+            // ResourceCompilerTests.RcDefs_LanguageConstantsMatchTheLcidTable
+            if (line.StartsWith("#define MAKELANGID(", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
             var parts = line.Split(' ');
+            if (parts is ["#define", var name, _] && (name.StartsWith("LANG_", StringComparison.Ordinal) || name.StartsWith("SUBLANG_", StringComparison.Ordinal)))
+            {
+                continue;
+            }
+
             Assert.True(parts.Length == 3 && parts[0] == "#define", "only #define lines: " + line);
             var value = parts[2].TrimEnd('L');
             defined.Add(parts[1], value.StartsWith("0x", StringComparison.Ordinal)
