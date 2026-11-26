@@ -155,7 +155,8 @@ public sealed class SurfaceGeometry
     /// <summary>The stored <c>DesignLeft</c>/<c>DesignTop</c> of a tray item (0 when absent or malformed).</summary>
     public static (int X, int Y) TrayPosition(FormObject item)
     {
-        static int Get(FormObject o, string path) => o.FindProperty(path) is { Value: IntegerValue i } ? (int)Math.Clamp(i.Value, 0, int.MaxValue) : 0;
+        static int Get(FormObject o, string path) =>
+            PropertyAccess.EffectiveLine(o, path)?.Line.Value is IntegerValue i ? (int)Math.Clamp(i.Value, 0, int.MaxValue) : 0; // D-125
         return (Get(item, "DesignLeft"), Get(item, "DesignTop"));
     }
 

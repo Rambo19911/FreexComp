@@ -695,7 +695,7 @@ public sealed partial class DesignSurfaceController
             // a malformed metadata default is a metadata error, not a reason to fail a drag
         }
 
-        var value = obj?.FindProperty(path) is { Value: IntegerValue stored } ? stored.Value : standard;
+        var value = (obj is null ? null : PropertyAccess.EffectiveLine(obj, path))?.Line.Value is IntegerValue stored ? stored.Value : standard; // D-125
         return ((int)Math.Clamp(value, 0, int.MaxValue), value != standard);
     }
 
@@ -958,7 +958,8 @@ public sealed partial class DesignSurfaceController
     /// <summary>DSG-SUR-082: width/height ≥ 1 and within <c>Constraints</c> (when &gt; 0); only the dragged edge of an axis moves.</summary>
     private static Rect Clamp(FormObject obj, Rect r, SnapEdges edges)
     {
-        static int Limit(FormObject o, string path) => o.FindProperty(path) is { Value: IntegerValue { Value: > 0 and <= int.MaxValue } v } ? (int)v.Value : 0;
+        static int Limit(FormObject o, string path) =>
+            PropertyAccess.EffectiveLine(o, path)?.Line.Value is IntegerValue { Value: > 0 and <= int.MaxValue } v ? (int)v.Value : 0; // D-125
         static int Size(int value, int min, int max) => Math.Max(Math.Max(1, min), max > 0 ? Math.Min(value, max) : value);
 
         if ((edges & (SnapEdges.Left | SnapEdges.Right)) != 0)

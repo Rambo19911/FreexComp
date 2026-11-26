@@ -513,6 +513,104 @@ public sealed class FrameSurfaceTests
         Assert.DoesNotContain(canvas.Ops, op => op.Kind == "DrawText" && op.Text.Contains("\"AddressFrame\"", StringComparison.Ordinal));
     }
 
+    /// <summary>A frame with a hidden edit and a status bar with one panel (D-125).</summary>
+    private const string StatusFrame = """
+        object StatusFrame: TStatusFrame
+          Left = 0
+          Top = 0
+          Width = 300
+          Height = 100
+          object HiddenEdit: TEdit
+            Left = 8
+            Top = 8
+            Width = 120
+            Height = 23
+            TabOrder = 0
+            Visible = False
+          end
+          object Status: TStatusBar
+            Left = 0
+            Top = 77
+            Width = 300
+            Height = 23
+            Panels = <
+              item
+                Text = 'Ready'
+                Width = 120
+              end
+            >
+          end
+        end
+
+        """;
+
+    private const string StatusForm = """
+        object StatusForm: TStatusForm
+          Left = 200
+          Top = 120
+          Caption = 'Status'
+          ClientWidth = 640
+          ClientHeight = 420
+          PixelsPerInch = 96
+          inline Footer: TStatusFrame
+            Left = 8
+            Top = 8
+            Width = 300
+            Height = 100
+            TabOrder = 0
+          end
+        end
+
+        """;
+
+    private static DesignerHarness OpenStatusForm()
+    {
+        var frames = new FrameCatalog();
+        AddFrame(frames, StatusFrame, "StatusFrameUnit");
+        return Open(StatusForm, frames);
+    }
+
+    private static List<DrawOp> RenderOps(DesignerHarness h)
+    {
+        var canvas = new RecordingCanvas();
+        h.Controller.Render(canvas, new Rect(0, 0, 1000, 800));
+        return [.. canvas.Ops];
+    }
+
+    /// <summary>
+    /// D-125 (DSG-FD-106, UI-DSG §10): an inherited control whose frame stores <c>Visible = False</c> is not drawn as a
+    /// visible control in an instance: it gets the hatch of a hidden control, as in the frame's own document.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "DSG-FD-106")]
+    [Trait("Req", "DSG-RND-007")]
+    public void InheritedHiddenControlDrawnHatched()
+    {
+        using var h = OpenStatusForm();
+        var hidden = h.Object("Footer.HiddenEdit");
+        Assert.True(hidden.IsInherited);
+        Assert.Null(hidden.FindProperty("Visible")); // the instance stores nothing: the frame's line applies
+        var b = h.Controller.Geometry.GetBounds(hidden);
+
+        Assert.Contains(RenderOps(h), op => op.Kind == "FillHatch" && op.Extent is { } e && e.Left == b.Left && e.Top == b.Top);
+    }
+
+    /// <summary>
+    /// D-125: a collection-based control of the frame (a status bar's <c>Panels</c>) shows the frame's items in an instance
+    /// that stores no collection of its own.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "DSG-FD-106")]
+    public void InheritedCollectionItemsShownInInstance()
+    {
+        using var h = OpenStatusForm();
+        Assert.Null(h.Object("Footer.Status").FindProperty("Panels"));
+
+        Assert.Contains(RenderOps(h), op => op.Kind == "DrawText" && op.Text.StartsWith("DrawText \"Ready\"", StringComparison.Ordinal));
+    }
+
     /// <summary>Status entries compared by id and argument values.</summary>
     private sealed class StatusComparer : IEqualityComparer<(string Id, object[] Args)>
     {

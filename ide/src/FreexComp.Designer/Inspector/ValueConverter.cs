@@ -96,10 +96,12 @@ public sealed class ValueConverter(ComponentCatalog catalog)
     /// <summary>
     /// Parses an entry for <paramref name="property"/>. <paramref name="current"/>: the component's own current value, needed
     /// by relative integer edits (DSG-OI-041). <paramref name="references"/>: the component names a <c>kind: component</c>
-    /// property may name (§5.1; computed by the caller with <c>ComponentCatalog.IsAssignable</c>).
+    /// property may name (§5.1; computed by the caller with <c>ComponentCatalog.IsAssignable</c>). <paramref name="qualifier"/>:
+    /// in a frame document the header name of its root, with which a reference may be written qualified (RTL-1104, D-126).
     /// </summary>
     /// <exception cref="NotSupportedException">The property is not text-editable (object, strings, collection, picture).</exception>
-    public ParseResult Parse(PropertyInfo property, string text, FormValue? current = null, IReadOnlyList<string>? references = null)
+    public ParseResult Parse(PropertyInfo property, string text, FormValue? current = null, IReadOnlyList<string>? references = null,
+        string? qualifier = null)
     {
         ArgumentNullException.ThrowIfNull(text);
         var trimmed = text.Trim();
@@ -116,7 +118,7 @@ public sealed class ValueConverter(ComponentCatalog catalog)
             Editor.ShortCut => ShortCutText.TryParse(trimmed, out var shortCut)
                 ? ParseResult.Ok(new IntegerValue(shortCut, false))
                 : ParseResult.Fail(ValueMessages.InvalidEnum, trimmed),
-            Editor.Component => ParseReference(trimmed, references ?? []),
+            Editor.Component => ParseReference(trimmed, references ?? [], qualifier),
             Editor.String => ParseResult.Ok(new StringValue(FirstLine(text))),
             var other => throw new NotSupportedException($"{property.Name} ({other}) is not edited as text"),
         };
@@ -340,12 +342,22 @@ public sealed class ValueConverter(ComponentCatalog catalog)
             : ParseResult.Fail(ValueMessages.InvalidEnum, text);
     }
 
-    /// <summary>§5.1 component reference: empty or <c>(none)</c> = <c>nil</c>; else one of the candidates (case-insensitive).</summary>
-    private static ParseResult ParseReference(string text, IReadOnlyList<string> references)
+    /// <summary>
+    /// §5.1 component reference: empty or <c>(none)</c> = <c>nil</c>; else one of the candidates (case-insensitive), or in a
+    /// frame document a candidate qualified with the root's header name, kept qualified as written (<c>Frame.Child</c>, D-126).
+    /// </summary>
+    private static ParseResult ParseReference(string text, IReadOnlyList<string> references, string? qualifier)
     {
         if (text.Length == 0 || text.Equals("(none)", StringComparison.OrdinalIgnoreCase))
         {
             return ParseResult.Ok(new IdentValue("nil"));
+        }
+
+        if (qualifier is not null && text.Split('.') is [var head, var tail] && head.Trim().Equals(qualifier, StringComparison.OrdinalIgnoreCase)
+            && !tail.Trim().Equals(qualifier, StringComparison.OrdinalIgnoreCase)
+            && references.FirstOrDefault(r => r.Equals(tail.Trim(), StringComparison.OrdinalIgnoreCase)) is { } member)
+        {
+            return ParseResult.Ok(new QualifiedIdentValue([qualifier, member]));
         }
 
         var match = references.FirstOrDefault(r => r.Equals(text, StringComparison.OrdinalIgnoreCase));

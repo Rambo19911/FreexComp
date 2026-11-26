@@ -97,7 +97,7 @@ public sealed class DesignerViewTests
 
         """;
 
-    private static readonly Lazy<ComponentCatalog> Catalog = new(() =>
+    internal static readonly Lazy<ComponentCatalog> Catalog = new(() =>
         CatalogLoader.Load([Path.Combine(AppContext.BaseDirectory, "TestData", "metadata", "index.json")]).Catalog);
 
     private sealed record Session(HeadlessHarness H, FormDocumentViewModel Document, DesignSurfaceControl Control)

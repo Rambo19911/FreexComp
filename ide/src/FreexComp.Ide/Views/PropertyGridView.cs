@@ -249,6 +249,9 @@ public sealed class PropertyGridView : Border
         {
             if (editorHadFocus || IsKeyboardFocusWithin || IsFocused || _currentRow is not null)
             {
+                // D-127: lay the new rows out first; a focus on the unarranged editor brings (0, 0) into view, which
+                // scrolled the grid to the top whenever edit mode began.
+                UpdateLayout();
                 FocusEditor(selectAll: false);
             }
         }
@@ -300,6 +303,8 @@ public sealed class PropertyGridView : Border
 
         Control valueContent;
         var editing = isCurrent && grid.IsEditing;
+        // UI-DSG-107 (D-127): the current row of a combo (a row with a value list) shows the chevron button at the right.
+        var dropDown = isCurrent && !isReadOnly && grid.CurrentValueList().Count > 0 ? DropDownButton(grid, id, name) : null;
         if (editing)
         {
             AutomationProperties.SetAutomationId(_editor, id + ".Editor");
@@ -315,7 +320,17 @@ public sealed class PropertyGridView : Border
                 _editor.BorderThickness = new Thickness(0);
             }
 
-            valueContent = _editor;
+            if (dropDown is null)
+            {
+                valueContent = _editor;
+            }
+            else
+            {
+                var combo = new DockPanel { LastChildFill = true };
+                combo.Children.Add(dropDown);
+                combo.Children.Add(_editor);
+                valueContent = combo;
+            }
         }
         else
         {
@@ -361,6 +376,11 @@ public sealed class PropertyGridView : Border
                 };
                 DockPanel.SetDock(button, Dock.Right);
                 cell.Children.Add(button);
+            }
+
+            if (dropDown is not null)
+            {
+                cell.Children.Add(dropDown);
             }
 
             cell.Children.Add(valueText);
@@ -413,6 +433,30 @@ public sealed class PropertyGridView : Border
         }
     }
 
+    /// <summary>UI-DSG-107: the 16 DIP chevron button of a combo row; a click opens the value list (DSG-OI-032).</summary>
+    private Button DropDownButton(PropertyGridViewModel grid, string id, string name)
+    {
+        var chevron = new Avalonia.Controls.Shapes.Path
+        {
+            Data = Geometry.Parse("M2.5,4.5 L6,8 L9.5,4.5"), Width = 12, Height = 12, StrokeThickness = 1.5, StrokeLineCap = PenLineCap.Round,
+            StrokeJoin = PenLineJoin.Round, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
+            IsHitTestVisible = false,
+        };
+        Bind(chevron, Avalonia.Controls.Shapes.Shape.StrokeProperty, "FxcTextPrimaryBrush");
+        var button = new Button
+        {
+            Content = chevron, Width = 16, MinWidth = 0, MinHeight = 0, Padding = new Thickness(0), Focusable = false,
+            VerticalAlignment = VerticalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center,
+            VerticalContentAlignment = VerticalAlignment.Center,
+        };
+        AutomationProperties.SetAutomationId(button, id + ".DropDown");
+        AutomationProperties.SetName(button, name);
+        button.Tag = new DropDownTag();
+        button.Click += (_, _) => OpenValueList(grid); // keyboard / automation invoke; a press opens it in OnPointerPressedTunnel
+        DockPanel.SetDock(button, Dock.Right);
+        return button;
+    }
+
     private void UpdateCurrentBackground()
     {
         if (_currentRow is Border border)
@@ -444,9 +488,15 @@ public sealed class PropertyGridView : Border
         }
     }
 
+    /// <summary>
+    /// D-127: input from the value list. Its popup's events route through the popup to this grid, so the grid's own
+    /// handlers must leave them to the list (a press on an item would otherwise move focus and swallow the selection).
+    /// </summary>
+    private bool FromList(RoutedEventArgs e) => (e.Source as Visual)?.FindAncestorOfType<ListBox>(includeSelf: true) == _list;
+
     private void OnKeyDownHere(object? sender, KeyEventArgs e)
     {
-        if (Blank || _grid is not { } grid || e.Handled || _editor.IsFocused)
+        if (Blank || _grid is not { } grid || e.Handled || _editor.IsFocused || FromList(e))
         {
             return;
         }
@@ -537,7 +587,7 @@ public sealed class PropertyGridView : Border
     /// <summary>DSG-OI-032: a printable character on a text-editable row replaces the value with that character.</summary>
     private void OnTextInputHere(object? sender, TextInputEventArgs e)
     {
-        if (_editor.IsFocused || string.IsNullOrWhiteSpace(e.Text) || e.Text.Any(char.IsControl))
+        if (_editor.IsFocused || FromList(e) || string.IsNullOrWhiteSpace(e.Text) || e.Text.Any(char.IsControl))
         {
             return;
         }
@@ -569,6 +619,10 @@ public sealed class PropertyGridView : Border
                 grid.Cancel();
                 Focus();
                 break;
+            case (Key.Down, KeyModifiers.Alt): // DSG-OI-032 (D-127): also while editing
+                e.Handled = true;
+                OpenValueList(grid);
+                break;
             case (Key.Tab, KeyModifiers.None or KeyModifiers.Shift):
             case (Key.Up, KeyModifiers.None):
             case (Key.Down, KeyModifiers.None):
@@ -591,7 +645,7 @@ public sealed class PropertyGridView : Border
     /// </summary>
     private void OnPointerPressedTunnel(object? sender, PointerPressedEventArgs e)
     {
-        if (Blank || _grid is not { } grid)
+        if (Blank || _grid is not { } grid || FromList(e))
         {
             return;
         }
@@ -616,6 +670,15 @@ public sealed class PropertyGridView : Border
             grid.Commit(InspectorCommitCause.FocusLost);
             _draggingDivider = true;
             e.Pointer.Capture(this);
+            return;
+        }
+
+        if (source?.FindAncestorOfType<Button>(includeSelf: true) is { Tag: DropDownTag })
+        {
+            // D-127: the chevron opens the list on the press, before the press moves focus from the editor to the grid
+            // (which ends the edit and rebuilds the row, so a click would never reach the button).
+            e.Handled = true;
+            OpenValueList(grid);
             return;
         }
 
@@ -767,7 +830,7 @@ public sealed class PropertyGridView : Border
 
     private void OnContextRequestedHere(object? sender, ContextRequestedEventArgs e)
     {
-        if (ContextMenuItems is null || (e.Source as Visual)?.FindAncestorOfType<TextBox>(includeSelf: true) == _editor)
+        if (ContextMenuItems is null || FromList(e) || (e.Source as Visual)?.FindAncestorOfType<TextBox>(includeSelf: true) == _editor)
         {
             return;
         }
@@ -808,22 +871,46 @@ public sealed class PropertyGridView : Border
         menu.Open(this);
     }
 
-    /// <summary>DSG-OI-032: Alt+Down opens the drop-down list of a row that has one; other text rows enter edit mode.</summary>
+    /// <summary>
+    /// DSG-OI-032: Alt+Down or the chevron button opens the drop-down list of a row that has one; other text rows enter
+    /// edit mode. From edit mode the edit ends first (the list enters and commits its choice); the typed text, when it
+    /// names an entry, is the one selected.
+    /// </summary>
     private void OpenValueList(PropertyGridViewModel grid)
     {
         var values = grid.CurrentValueList();
         if (values.Count == 0 || _currentRow is null)
         {
-            BeginEdit();
+            if (!grid.IsEditing)
+            {
+                BeginEdit();
+            }
+
             return;
         }
 
         var current = grid.CurrentValueText;
+        var width = _currentRow.Bounds.Width;
+        if (grid.IsEditing)
+        {
+            if (values.FirstOrDefault(v => string.Equals(v, grid.EditText, StringComparison.OrdinalIgnoreCase)) is { } typed)
+            {
+                current = typed;
+            }
+
+            grid.Cancel(); // rebuilds the rows: the new current row is laid out before the list is placed under it
+            UpdateLayout();
+            if (_currentRow is null)
+            {
+                return;
+            }
+        }
+
         _list.ItemsSource = values;
         _list.SelectedIndex = Math.Max(0, values.ToList().FindIndex(v => string.Equals(v, current, StringComparison.OrdinalIgnoreCase)));
         AutomationProperties.SetAutomationId(_list, AutomationProperties.GetAutomationId(_currentRow) + ".List");
         _listPopup.PlacementTarget = _currentRow;
-        _listPopup.Width = Math.Max(_list.MinWidth, _currentRow.Bounds.Width);
+        _listPopup.Width = Math.Max(_list.MinWidth, Math.Max(width, _currentRow.Bounds.Width));
         _listPopup.IsOpen = true;
         if (!_list.Focus(NavigationMethod.Tab))
         {
@@ -952,4 +1039,6 @@ public sealed class PropertyGridView : Border
     private sealed record CategoryTag(string Name);
 
     private sealed record DividerTag;
+
+    private sealed record DropDownTag;
 }

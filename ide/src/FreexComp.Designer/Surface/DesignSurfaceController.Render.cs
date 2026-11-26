@@ -191,7 +191,8 @@ public sealed partial class DesignSurfaceController
     /// <summary>ui/designer.md §10: the hatch of <c>Visible = False</c>; the warning triangle of an unknown property or bad value (F0102, F0103).</summary>
     private void DrawStateOverlays(IDesignCanvas canvas, FormObject obj, Rect b)
     {
-        if (obj.FindProperty("Visible") is { Value: IdentValue { Name: var visible } } && visible.Equals("False", StringComparison.OrdinalIgnoreCase))
+        // D-125: an inherited object or an instance takes the frame's line when it stores none (DSG-FD-106).
+        if (PropertyAccess.EffectiveLine(obj, "Visible")?.Line.Value is IdentValue { Name: var visible } && visible.Equals("False", StringComparison.OrdinalIgnoreCase))
         {
             var gray = Palette.Renderers.GrayText;
             canvas.FillHatch(b, gray with { A = 89 }, 6); // form.grayText at 35 %
@@ -455,7 +456,8 @@ public sealed partial class DesignSurfaceController
             var width = Math.Max(18, canvas.MeasureText(number, bold).Width + 8);
             var badge = new Rect(b.Left, b.Top, width, 16);
             var clicked = _tabClicked.Contains(obj);
-            var tabStop = !(obj.FindProperty("TabStop") is { Value: IdentValue { Name: var stop } } && stop.Equals("False", StringComparison.OrdinalIgnoreCase));
+            var tabStop = !(PropertyAccess.EffectiveLine(obj, "TabStop")?.Line.Value is IdentValue { Name: var stop }
+                && stop.Equals("False", StringComparison.OrdinalIgnoreCase));
             using (tabStop ? null : canvas.PushOpacity(0.5))
             {
                 canvas.FillRect(badge, clicked ? p.Accent : p.TabBadgeBackground);

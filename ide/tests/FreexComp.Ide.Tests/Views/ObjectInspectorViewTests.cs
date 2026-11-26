@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
+using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
@@ -693,6 +694,181 @@ public sealed class ObjectInspectorViewTests
         Assert.Equal(["GreetButtonClick"], list.ItemsSource!.Cast<string>());
         h.Press("Enter");
         Assert.Equal("GreetButtonClick", ValueText(h, "OnChange"));
+    }
+
+    /// <summary>
+    /// D-127 (UI-DSG-107, DSG-OI-032): the current row of an enum shows a 16 DIP chevron button at the right end of its
+    /// value cell, inside the grid (not clipped), also in edit mode; a real click on it opens the list and a click on an
+    /// item commits it; Alt+Down in the editor opens the list as well (the editor had no button and took Alt+Down).
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "DSG-OI-032")]
+    [Trait("Req", "UI-DSG-107")]
+    public async Task EnumRow_DropDownButtonVisible_OpensListByClickAndAltDown()
+    {
+        await using var h = await HeadlessHarness.StartAsync(Phase5);
+        var d = await OpenDesignAsync(h, "NameEdit");
+        h.Press("F4");
+        GoTo(h, "CharCase");
+        var grid = h.Find<Control>(Grid);
+
+        void AssertButtonShown()
+        {
+            var button = h.Find<Button>(Row("CharCase") + ".DropDown");
+            Assert.True(button.IsEffectivelyVisible);
+            Assert.Equal(16, button.Bounds.Width);
+            var box = button.TranslatePoint(default, grid)!.Value;
+            var cell = h.Find<Control>(Row("CharCase")).TranslatePoint(default, grid)!.Value.X + h.Find<Control>(Row("CharCase")).Bounds.Width;
+            Assert.InRange(box.X, 0, grid.Bounds.Width - button.Bounds.Width); // fully inside the grid
+            Assert.Equal(cell, box.X + button.Bounds.Width, 1); // at the right end of the row
+        }
+
+        // Not editing, then a click on the value enters edit mode: the button stays at the right of the editor.
+        AssertButtonShown();
+        h.Click(Row("CharCase") + ".Value");
+        Assert.True(h.Find<TextBox>(Row("CharCase") + ".Editor").IsFocused);
+        AssertButtonShown();
+        Assert.Null(h.TryFind<Button>(Row("Text") + ".DropDown")); // other rows show none
+
+        // A click on the chevron opens the list at the current value; a click on an item enters and commits it.
+        h.Click(Row("CharCase") + ".DropDown");
+        var list = h.Find<ListBox>(Row("CharCase") + ".List");
+        Assert.True(list.IsEffectivelyVisible);
+        Assert.Equal("ecNormal", list.SelectedItem);
+        Assert.Null(h.TryFind<TextBox>(Row("CharCase") + ".Editor"));
+        var item = list.GetVisualDescendants().OfType<ListBoxItem>().Single(i => Equals(i.Content, "ecLowerCase"));
+        var point = item.TranslatePoint(new Point(item.Bounds.Width / 2, item.Bounds.Height / 2), h.Window)!.Value;
+        h.Window.MouseDown(point, Avalonia.Input.MouseButton.Left);
+        h.Window.MouseUp(point, Avalonia.Input.MouseButton.Left);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(new IdentValue("ecLowerCase"), Stored(d, "NameEdit", "CharCase"));
+        Assert.Equal(1, d.Designer.Undo.UndoCount);
+        Assert.Null(h.TryFind<ListBox>(Row("CharCase") + ".List"));
+        Assert.True(grid.IsFocused);
+
+        // Alt+Down in the editor opens the list too; Down and Enter choose and commit.
+        h.Press("Enter");
+        Assert.True(h.Find<TextBox>(Row("CharCase") + ".Editor").IsFocused);
+        h.Press("Alt+Down");
+        list = h.Find<ListBox>(Row("CharCase") + ".List");
+        Assert.True(list.IsKeyboardFocusWithin, h.FocusedAutomationId);
+        Assert.Equal("ecLowerCase", list.SelectedItem);
+        h.Press("Up");
+        h.Press("Enter");
+        Assert.Equal(new IdentValue("ecUpperCase"), Stored(d, "NameEdit", "CharCase"));
+        Assert.Equal(2, d.Designer.Undo.UndoCount);
+        Assert.True(grid.IsFocused);
+    }
+
+    /// <summary>
+    /// D-127 (real IDE): entering edit mode in a scrolled grid kept the scroll offset only until the editor took focus,
+    /// which brought the not yet arranged editor's (0, 0) into view and scrolled to the top, so a click on the chevron
+    /// right after landed on another row.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "DSG-OI-032")]
+    public async Task EditMode_KeepsScrollOffset()
+    {
+        await using var h = await HeadlessHarness.StartAsync(Phase5);
+        await OpenDesignAsync(h, "NameEdit");
+        h.Press("F4");
+        var scroll = h.Find<Control>(Grid).GetVisualDescendants().OfType<ScrollViewer>().First();
+        Assert.True(scroll.Extent.Height > scroll.Viewport.Height + 200, $"{scroll.Extent} / {scroll.Viewport}");
+        scroll.Offset = new Vector(0, 200);
+        Dispatcher.UIThread.RunJobs();
+        var row = h.FindAll(Row("")).Where(c => c.Classes.Count == 0 || !c.Classes.Contains("current"))
+            .Select(c => AutomationIds.Get(c)!).Where(id => id.Count(ch => ch == '.') == 3)
+            .First(id => h.Find<Control>(id).TranslatePoint(default, scroll)!.Value.Y is > 40 and < 150);
+
+        h.Click(row);
+        h.Click(row + ".Value");
+        Assert.NotNull(h.TryFind<TextBox>(row + ".Editor"));
+        Assert.Equal(200, scroll.Offset.Y);
+    }
+
+    /// <summary>
+    /// D-126 (RTL-1104): in a frame document the component-reference list offers the frame itself (its header name) after
+    /// <c>(none)</c>; a reference written qualified with the header name (<c>FooterFrame.Note</c>) is shown and entered as written.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "DSG-OI-032")]
+    [Trait("Req", "DSG-FD-102")]
+    public async Task ReferenceDropDownOffersRootInFrameDocument()
+    {
+        await using var h = await HeadlessHarness.StartAsync(o =>
+        {
+            o.InitialFiles["FooterFrame.pas"] = """
+                unit FooterFrame;
+
+                interface
+
+                uses
+                  Classes, Controls, Forms, StdCtrls;
+
+                type
+                  TFooterFrame = class(TFrame)
+                    NoteLabel: TLabel;
+                    Note: TEdit;
+                  end;
+
+                implementation
+
+                {$FORM FooterFrame.form}
+
+                end.
+
+                """.ReplaceLineEndings("\r\n");
+            o.InitialFiles["FooterFrame.form"] = """
+                object FooterFrame: TFooterFrame
+                  Left = 0
+                  Top = 0
+                  Width = 300
+                  Height = 100
+                  object NoteLabel: TLabel
+                    Left = 8
+                    Top = 8
+                    Width = 40
+                    Height = 15
+                    Caption = 'Note'
+                    FocusControl = FooterFrame.Note
+                  end
+                  object Note: TEdit
+                    Left = 64
+                    Top = 4
+                    Width = 200
+                    Height = 23
+                    TabOrder = 0
+                  end
+                end
+
+                """.ReplaceLineEndings("\r\n");
+        });
+        ((DocumentService)h.Services.Documents).DesignCatalog = DesignerViewTests.Catalog.Value;
+        var d = Assert.IsType<FormDocumentViewModel>((await h.Services.Documents.OpenAsync(Path.Combine(h.TempDir, "FooterFrame.pas"))).Value);
+        Dispatcher.UIThread.RunJobs();
+        h.Click(AutomationIds.DocumentViewTab("FooterFrame.pas", "Design"));
+        Assert.True(PropertyAccess.IsFrameRoot(d.Designer.Model!.Root));
+        d.Designer.Surface!.Selection.Select(d.Designer.Model!.FindByName("NoteLabel")!);
+        Dispatcher.UIThread.RunJobs();
+        h.Press("F4");
+
+        // The qualified reference is shown as written; the list starts (none), the frame itself, then the candidates.
+        GoTo(h, "FocusControl");
+        Assert.Equal("FooterFrame.Note", ValueText(h, "FocusControl"));
+        h.Press("Alt+Down");
+        var list = h.Find<ListBox>(Row("FocusControl") + ".List");
+        Assert.Equal(["(none)", "FooterFrame", "Note"], list.ItemsSource!.Cast<string>());
+
+        // Choosing the frame stores its header name; typing the qualified form stores it qualified, as written.
+        h.Press("Down");
+        Assert.Equal("FooterFrame", list.SelectedItem);
+        h.Press("Enter");
+        Assert.Equal(new IdentValue("FooterFrame"), Stored(d, "NoteLabel", "FocusControl"));
+        h.Press("Enter");
+        h.Type("FooterFrame.Note");
+        h.Press("Enter");
+        Assert.Equal(new QualifiedIdentValue(["FooterFrame", "Note"]), Stored(d, "NoteLabel", "FocusControl"));
+        Assert.Equal("FooterFrame.Note", ValueText(h, "FocusControl"));
     }
 
     /// <summary>

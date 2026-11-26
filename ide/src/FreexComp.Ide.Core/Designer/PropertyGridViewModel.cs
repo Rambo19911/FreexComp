@@ -1133,6 +1133,18 @@ public sealed class PropertyGridViewModel : ObservableObject
 
     // ---- commits ---------------------------------------------------------------------------------------------------
 
+    /// <summary>The header name of the root of <paramref name="obj"/>'s file when that file is a frame document (DSG-FD-117); else null.</summary>
+    private static string? FrameHeaderName(FormObject obj)
+    {
+        var root = obj;
+        while (root.Parent is { } parent)
+        {
+            root = parent;
+        }
+
+        return PropertyAccess.IsFrameRoot(root) ? root.Name : null;
+    }
+
     /// <summary>A value row (§5): parsed per object (relative edits per object, DSG-OI-041), with the special effects of §9.1.</summary>
     private string? CommitValue(PropertyRow row, string text)
     {
@@ -1141,7 +1153,9 @@ public sealed class PropertyGridViewModel : ObservableObject
         foreach (var obj in Selection)
         {
             var info = (obj.Info is { } component ? Catalog.FindPropertyPath(component, row.Path) : null) ?? row.Info!;
-            var result = converter.Parse(info, text, Effective(obj, row.Path, info), info.Kind == PropertyKind.Component ? _target.References(info) : null);
+            var result = info.Kind == PropertyKind.Component
+                ? converter.Parse(info, text, Effective(obj, row.Path, info), _target.References(info), FrameHeaderName(obj))
+                : converter.Parse(info, text, Effective(obj, row.Path, info));
             if (!result.Succeeded)
             {
                 return DesignerMessages.Format(result.MessageId!, [.. result.Args]);
@@ -1363,8 +1377,12 @@ public sealed class DesignerGridTarget(Func<FormDesignerViewModel?> designer, Fu
         }
 
         var selected = new HashSet<FormObject>(Selection, ReferenceEqualityComparer.Instance);
-        return [.. model.AllObjects()
-            .Where(o => o.Parent is not null && !selected.Contains(o) && o.Info is { } c && Catalog.IsAssignable(c.ClassName, info.Type))
+        bool Candidate(FormObject o) => !selected.Contains(o) && o.Info is { } c && Catalog.IsAssignable(c.ClassName, info.Type);
+
+        // D-126 (RTL-1104): in a frame document the frame itself can be named (by its header name), offered first.
+        IEnumerable<string> root = PropertyAccess.IsFrameRoot(model.Root) && Candidate(model.Root) ? [model.Root.Name] : [];
+        return [.. root, .. model.AllObjects()
+            .Where(o => o.Parent is not null && Candidate(o))
             .Select(o => o.Name)
             .Order(StringComparer.OrdinalIgnoreCase)];
     }

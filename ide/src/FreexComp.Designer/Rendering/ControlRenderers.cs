@@ -593,13 +593,16 @@ public sealed class ToolButtonRenderer : DesignRenderer
     }
 }
 
-/// <summary>The items of a <c>"kind": "collection"</c> property with their effective values (stored, else the item class default).</summary>
+/// <summary>
+/// The items of a <c>"kind": "collection"</c> property — stored, else for an inherited object or an instance those of the
+/// frame (DSG-FD-106, D-125) — with their effective values (stored, else the item class default).
+/// </summary>
 internal static class CollectionItems
 {
     public static IEnumerable<Item> Of(RenderContext ctx, string property)
     {
         var info = ctx.Info.FindProperty(property);
-        if (info is not { Kind: PropertyKind.Collection } || ctx.Object.FindProperty(property)?.Value is not CollectionValue collection)
+        if (info is not { Kind: PropertyKind.Collection } || PropertyAccess.EffectiveLine(ctx.Object, property)?.Line.Value is not CollectionValue collection)
         {
             yield break;
         }
