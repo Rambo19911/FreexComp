@@ -21,9 +21,11 @@ internal static class ReferenceLookup
     /// innermost scope (its instance by name, then its components), then the file scope (the root by name included).
     /// </summary>
     public static FormObject? ResolvePlain(FormDocument document, FormObject? scope, string name) =>
-        scope is not null && (Same(scope.Name, name) ? scope : scope.FindInScope(name)) is { } inScope
-            ? inScope
-            : document.FindByName(name);
+        ResolveInScope(scope, name) ?? document.FindByName(name);
+
+    /// <summary>The object a plain name names in the innermost scope <paramref name="scope"/>: the instance by name, then its components.</summary>
+    public static FormObject? ResolveInScope(FormObject? scope, string name) =>
+        scope is null ? null : Same(scope.Name, name) ? scope : scope.FindInScope(name);
 
     /// <summary>
     /// The index of the first part of the qualified name <paramref name="parts"/> (in a line whose reference scope is

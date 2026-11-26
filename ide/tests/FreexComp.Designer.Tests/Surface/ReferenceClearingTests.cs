@@ -322,4 +322,223 @@ public sealed class ReferenceClearingTests
         Assert.Null(Reference(other, "Label3"));
         Assert.Null(Reference(other, "Label4"));
     }
+
+    /// <summary>Pastes the custom clipboard content of <paramref name="source"/> into the form of <paramref name="target"/>.</summary>
+    private static void PasteInto(DesignerHarness source, DesignerHarness target, string root)
+    {
+        target.Host.Clipboard.SetData(new Dictionary<string, string>
+        {
+            [ClipboardFormats.Components] = source.Host.Clipboard.GetData(ClipboardFormats.Components)!,
+        });
+        target.Select(root);
+        target.Execute(Commands.Paste);
+    }
+
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "DSG-SUR-123")]
+    [Trait("Req", "DSG-FD-108")]
+    public void PasteRenamesQualifiedReferencesInsideTheSet()
+    {
+        const string form = """
+            object CustomerForm: TCustomerForm
+              Left = 200
+              Top = 120
+              Caption = 'Customer'
+              ClientWidth = 640
+              ClientHeight = 420
+              PixelsPerInch = 96
+              inline BillingAddress: TAddressFrame
+                Left = 8
+                Top = 8
+                Width = 320
+                Height = 180
+                TabOrder = 0
+                PopupMenu = PopupMenu1
+                inherited StreetLabel: TLabel
+                  FocusControl = CustomerForm.Edit1
+                end
+              end
+              object Edit1: TEdit
+                Left = 340
+                Top = 8
+                Width = 120
+                Height = 23
+                TabOrder = 1
+              end
+              object Label1: TLabel
+                Left = 340
+                Top = 40
+                Width = 40
+                Height = 15
+                FocusControl = CustomerForm.Edit1
+              end
+              object Label2: TLabel
+                Left = 340
+                Top = 60
+                Width = 40
+                Height = 15
+                FocusControl = BillingAddress.StreetEdit
+              end
+              object Label3: TLabel
+                Left = 340
+                Top = 80
+                Width = 40
+                Height = 15
+                FocusControl = CustomerForm.BillingAddress.StreetEdit
+              end
+              object PopupMenu1: TPopupMenu
+              end
+            end
+
+            """;
+        using var h = Open(form);
+        h.Select("BillingAddress", "Edit1", "Label1", "Label2", "Label3", "PopupMenu1");
+        h.Execute(Commands.Copy);
+
+        // In the same form every reference into the copied set names the pasted copy, in whichever part.
+        h.Select("CustomerForm");
+        h.Execute(Commands.Paste);
+        Assert.Equal(["BillingAddress1", "Edit2", "Label4", "Label5", "Label6", "PopupMenu2"], h.Selected);
+        Assert.Equal(Q("CustomerForm", "Edit2"), Reference(h, "Label4"));
+        Assert.Equal(Q("BillingAddress1", "StreetEdit"), Reference(h, "Label5"));
+        Assert.Equal(Q("CustomerForm", "BillingAddress1", "StreetEdit"), Reference(h, "Label6"));
+        Assert.Equal(new IdentValue("PopupMenu2"), Reference(h, "BillingAddress1", "PopupMenu"));
+        Assert.Equal(Q("CustomerForm", "Edit2"), Reference(h, "BillingAddress1.StreetLabel"));
+
+        // The originals keep their references.
+        Assert.Equal(Q("CustomerForm", "Edit1"), Reference(h, "Label1"));
+        Assert.Equal(Q("BillingAddress", "StreetEdit"), Reference(h, "Label2"));
+        Assert.Equal(new IdentValue("PopupMenu1"), Reference(h, "BillingAddress", "PopupMenu"));
+
+        // In another form the names are free and kept; the source form's root name becomes this form's.
+        using var other = Open("""
+            object OrderForm: TOrderForm
+              Left = 200
+              Top = 120
+              Caption = 'Order'
+              ClientWidth = 640
+              ClientHeight = 420
+              PixelsPerInch = 96
+            end
+
+            """);
+        PasteInto(h, other, "OrderForm");
+        Assert.Equal(["BillingAddress", "Edit1", "Label1", "Label2", "Label3", "PopupMenu1"], other.Selected);
+        Assert.Equal(Q("OrderForm", "Edit1"), Reference(other, "Label1"));
+        Assert.Equal(Q("BillingAddress", "StreetEdit"), Reference(other, "Label2"));
+        Assert.Equal(Q("OrderForm", "BillingAddress", "StreetEdit"), Reference(other, "Label3"));
+        Assert.Equal(new IdentValue("PopupMenu1"), Reference(other, "BillingAddress", "PopupMenu"));
+        Assert.Equal(Q("OrderForm", "Edit1"), Reference(other, "BillingAddress.StreetLabel"));
+    }
+
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "DSG-SUR-123")]
+    [Trait("Req", "DSG-SUR-230")]
+    [Trait("Req", "DSG-FD-108")]
+    public void PastedInstanceLinesKeepOnlyResolvingReferences()
+    {
+        const string form = """
+            object CustomerForm: TCustomerForm
+              Left = 200
+              Top = 120
+              Caption = 'Customer'
+              ClientWidth = 820
+              ClientHeight = 460
+              PixelsPerInch = 96
+              inline Outer1: TOuterFrame
+                Left = 8
+                Top = 8
+                Width = 340
+                Height = 240
+                TabOrder = 0
+                PopupMenu = PopupMenu1
+                inherited Home: TAddressFrame
+                  inherited StreetLabel: TLabel
+                    FocusControl = StreetEdit
+                  end
+                  inherited StreetEdit: TEdit
+                    PopupMenu = EditMenu
+                  end
+                  inherited CityPanel: TPanel
+                    PopupMenu = CustomerForm.PopupMenu1
+                    inherited CityLabel: TLabel
+                      FocusControl = ShippingAddress.StreetEdit
+                    end
+                  end
+                end
+                inherited HomeLabel: TLabel
+                  FocusControl = Home.CityPicker.CityEdit
+                end
+                inherited RootLabel: TLabel
+                  FocusControl = Outer1.Home.StreetEdit
+                end
+              end
+              inline ShippingAddress: TAddressFrame
+                Left = 360
+                Top = 8
+                Width = 320
+                Height = 180
+                TabOrder = 1
+              end
+              object PopupMenu1: TPopupMenu
+              end
+              object EditMenu: TPopupMenu
+              end
+            end
+
+            """;
+        using var h = Open(form);
+        h.Select("Outer1");
+        h.Execute(Commands.Copy);
+
+        // The target has an instance named Outer1 (the copy becomes Outer2), ShippingAddress and PopupMenu1, no EditMenu.
+        using var other = Open("""
+            object OrderForm: TOrderForm
+              Left = 200
+              Top = 120
+              Caption = 'Order'
+              ClientWidth = 820
+              ClientHeight = 520
+              PixelsPerInch = 96
+              inline Outer1: TOuterFrame
+                Left = 8
+                Top = 8
+                Width = 340
+                Height = 240
+                TabOrder = 0
+              end
+              inline ShippingAddress: TAddressFrame
+                Left = 360
+                Top = 8
+                Width = 320
+                Height = 180
+                TabOrder = 1
+              end
+              object PopupMenu1: TPopupMenu
+              end
+            end
+
+            """);
+        PasteInto(h, other, "OrderForm");
+        Assert.Equal(["Outer2"], other.Selected);
+
+        // Kept: a file-scope name of the target, names the instance's scopes resolve, a reference qualified by another
+        // instance of the target; the instance's own name in its lines names the pasted copy.
+        Assert.Equal(new IdentValue("PopupMenu1"), Reference(other, "Outer2", "PopupMenu"));
+        Assert.Equal(new IdentValue("StreetEdit"), Reference(other, "Outer2.Home.StreetLabel"));
+        Assert.Equal(Q("ShippingAddress", "StreetEdit"), Reference(other, "Outer2.Home.CityLabel"));
+        Assert.Equal(Q("Home", "CityPicker", "CityEdit"), Reference(other, "Outer2.HomeLabel"));
+        Assert.Equal(Q("Outer2", "Home", "StreetEdit"), Reference(other, "Outer2.RootLabel"));
+
+        // Removed: a component the target does not have, and a name qualified by the source form's root name.
+        Assert.Null(Reference(other, "Outer2.Home.StreetEdit", "PopupMenu"));
+        Assert.Null(Reference(other, "Outer2.Home.CityPanel", "PopupMenu"));
+        Assert.Equal("street", Effective(other.Object("Outer2.Home.StreetEdit"), "Text"));
+
+        Assert.Equal(1, other.Undo.UndoCount);
+        other.ExecuteUndo();
+        Assert.Null(other.Document.FindByQualifiedName("Outer2"));
+    }
 }
