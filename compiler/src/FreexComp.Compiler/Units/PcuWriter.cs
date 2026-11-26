@@ -676,6 +676,12 @@ internal sealed class PcuWriter(PcuContext context)
             {
                 entry["outer"] = TypeId(outer);                                    // CMP-1392 (C-344): created inside its enclosing type
             }
+            else if (type is PointerTypeSymbol { DeclaredIn: ClassTypeSymbol or RecordTypeSymbol or HelperTypeSymbol } pointer
+                     && TypeMembers.EnclosingInstance((TypeSymbol)pointer.DeclaredIn) is null)
+            {
+                // C-367: a named pointer has no containing symbol; read back in its declaring type, it keeps its link name (CMP-361)
+                entry["outer"] = TypeId((TypeSymbol)pointer.DeclaredIn);
+            }
             else if (type.ContainingSymbol is HelperTypeSymbol helper && TypeMembers.NestedMembers(helper).Contains(type))
             {
                 entry["outer"] = TypeId(helper);                                   // C-363: a helper's nested type keeps its section's visibility

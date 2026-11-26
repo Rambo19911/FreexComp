@@ -120,10 +120,16 @@ internal static class Mangler
 
     /// <summary>
     /// CMP-361: built-ins by canonical name (aliases are the same symbol, so its own name is canonical); declared types as
-    /// <c>Unit.Name</c>. Anonymous types (structural names) arrive with their type constructors.
+    /// <c>Unit.Name</c>. Anonymous types (structural names) arrive with their type constructors. C-367: a named pointer has no
+    /// containing symbol, so it is named after the unit, routine or type that declared it (<c>U.PFoo</c>, <c>U.TOuter.PItem</c>).
     /// </summary>
     public static string TypeName(TypeSymbol type)
     {
+        if (type is PointerTypeSymbol { DeclaredIn: { } declaredIn } && type.Name.Length > 0 && !type.Name.StartsWith('^'))
+        {
+            return declaredIn.QualifiedName + "." + type.Name;
+        }
+
         if (type.ContainingSymbol is null)
         {
             return type.Name;
