@@ -1,0 +1,21 @@
+unit $(UnitName);
+
+interface
+
+uses
+  Classes, Controls, Forms;
+
+type
+  T$(FrameName) = class(TFrame)
+  private
+  public
+  end;
+
+implementation
+
+{$FORM $(UnitName).form}
+
+initialization
+  RegisterClass(T$(FrameName));
+
+end.

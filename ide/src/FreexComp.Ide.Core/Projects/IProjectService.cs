@@ -139,6 +139,12 @@ public interface IProjectService
     Task<bool> AddNewFormAsync();
 
     /// <summary>
+    /// <c>project.addNewFrame</c> / <c>file.newFrame</c> (DSG-CS-114, 115): as <see cref="AddNewFormAsync"/> with the new
+    /// frame template (<c>Frame&lt;N&gt;</c>, the smallest free N ≥ 1). False without a project or on a reported failure.
+    /// </summary>
+    Task<bool> AddNewFrameAsync();
+
+    /// <summary>
     /// <c>project.addNewFile</c> (IDE-PM-118, IDE-PM-119): creates the empty file <c>File&lt;N&gt;.txt</c> in the folder
     /// <see cref="AddNewUnitAsync"/> uses, appends it to <c>files</c>, saves the project, selects the row and starts its
     /// in-place naming. The file is not opened. False without a project or on a reported failure.

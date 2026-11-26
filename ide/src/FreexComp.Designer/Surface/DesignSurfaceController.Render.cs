@@ -55,6 +55,10 @@ public sealed partial class DesignSurfaceController
             }
 
             DrawContainer(canvas, g, root, viewport, grid);
+            if (g.IsFrameRoot)
+            {
+                canvas.DrawRect(g.FrameRect, p.BorderDefault, 1); // UI-DSG-140: the frame's edge, design time only
+            }
         }
 
         DrawTray(canvas, g, p);

@@ -37,7 +37,38 @@ public sealed partial class DesignSurfaceController
         PlaceDefault(info);
     }
 
-    private ComponentInfo? PlaceableInfo(string className) => Catalog.Find(className) is { IsAbstract: false } info ? info : null;
+    /// <summary>
+    /// The class an armed or dragged palette item places: a component of the catalog that is not abstract, or a frame of
+    /// the document's frame catalog (DSG-TP-064) — then the frame root's info with the frame class, its unit, the
+    /// definition root's <c>Width</c> × <c>Height</c> as the default size and the class without its leading <c>T</c> as
+    /// the name prefix.
+    /// </summary>
+    private ComponentInfo? PlaceableInfo(string className)
+    {
+        if (Catalog.Find(className) is { } info)
+        {
+            return info.IsAbstract ? null : info;
+        }
+
+        if (Document.Frames?.Find(className) is not { Document.Root: { Info: { } root } frameRoot } frame)
+        {
+            return null;
+        }
+
+        int Dimension(string path, int fallback) => PropertyAccess.GetEffective(frameRoot, path) is IntegerValue { Value: var v } ? (int)v : fallback;
+        return root with
+        {
+            ClassName = frame.ClassName,
+            Unit = frame.UnitName,
+            IsAbstract = false,
+            Palette = null,
+            DefaultSize = new Size(Dimension("Width", root.DefaultSize.Width), Dimension("Height", root.DefaultSize.Height)),
+            NamePrefix = frame.ClassName is ['T', _, ..] ? frame.ClassName[1..] : frame.ClassName,
+        };
+    }
+
+    /// <summary>DSG-TP-064: <paramref name="info"/> is a frame of the document's frame catalog (placed as an <c>inline</c> instance).</summary>
+    private bool IsFrameClass(ComponentInfo info) => Catalog.Find(info.ClassName) is null && Document.Frames?.Find(info.ClassName) is not null;
 
     /// <summary>
     /// DSG-TP-060: a Tool Palette item dragged over the surface point (<paramref name="x"/>, <paramref name="y"/>): a ghost
@@ -326,6 +357,13 @@ public sealed partial class DesignSurfaceController
     private FormObject? CreateCore(ComponentInfo info, FormObject parent, (int X, int Y) position, (int Width, int Height)? size,
         int? index, IReadOnlyList<(string Path, FormValue Value)> extra, bool select, string? name)
     {
+        var frame = IsFrameClass(info);
+        if (frame && Document.Frames is { } frames && FrameInstances.RepeatedClass(frames, info.ClassName, Document.Root.TypeName) is not null)
+        {
+            _host.SetStatus(StatusIds.FrameCycle, info.ClassName); // DSG-SUR-232
+            return null;
+        }
+
         name ??= NewComponentName(info.NamePrefix);
         FormPropertyData Int(string path, int value) => new(path, new IntegerValue(value, false));
         var (width, height) = size ?? (info.DefaultSize.Width, info.DefaultSize.Height);
@@ -333,7 +371,8 @@ public sealed partial class DesignSurfaceController
             ? parent.Parent is null ? [Int("DesignLeft", position.X), Int("DesignTop", position.Y)] : []
             : [Int("Left", position.X), Int("Top", position.Y), Int("Width", width), Int("Height", height)];
         geometry = [.. geometry.Where(g => info.FindProperty(g.Path) is not { Stored: false })];
-        var data = new FormObjectData(FormObjectKind.Object, name, info.ClassName, [.. geometry], []);
+        // DSG-TP-064: a frame is placed as an instance, resolved at once by the editor (DSG-SUR-234).
+        var data = new FormObjectData(frame ? FormObjectKind.Inline : FormObjectKind.Object, name, info.ClassName, [.. geometry], []);
         if (!AddFieldsFor([data], out var edits, out var ops))
         {
             return null; // DSG-TP-053: code sync refused, the object is not created
@@ -341,7 +380,7 @@ public sealed partial class DesignSurfaceController
 
         var at = Math.Clamp(index ?? parent.Children.Count, 0, parent.Children.Count);
         var changes = new List<FormChange> { new AddObject(parent.QualifiedName, at, data) };
-        foreach (var property in info.Properties)
+        foreach (var property in frame ? [] : info.Properties)
         {
             if (property.Initial is { } initial && InitialValue(property, initial.Replace("$(Name)", name, StringComparison.Ordinal)) is { } value)
             {

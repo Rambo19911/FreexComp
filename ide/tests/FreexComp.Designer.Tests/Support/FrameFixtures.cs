@@ -5,14 +5,14 @@ using FreexComp.Designer.Text;
 namespace FreexComp.Designer.Tests.Support;
 
 /// <summary>
-/// Frames for the model tests (frames-designer.md §10): the test metadata plus a <c>TFrame</c> entry
-/// (<c>TestData/frame-metadata</c>, until the framework metadata has one), an in-memory frame catalog and the fixture texts.
+/// Frames for the model tests (frames-designer.md §10): the test metadata (with <c>TFrame</c>, as the framework metadata
+/// has it since U-154), an in-memory frame catalog and the fixture texts.
 /// </summary>
 internal static class FrameFixtures
 {
     private static readonly Lazy<ComponentCatalog> Loaded = new(() =>
     {
-        var result = CatalogLoader.Load([TestPaths.MetadataIndex, TestPaths.Combine("frame-metadata/index.json")]);
+        var result = CatalogLoader.Load([TestPaths.MetadataIndex]);
         Assert.Empty(result.Problems);
         return result.Catalog;
     });

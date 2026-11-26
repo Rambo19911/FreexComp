@@ -376,7 +376,7 @@ public sealed partial class ProjectManagerViewTests
         Assert.All(pm.ContextMenu().Where(m => m.Command is not null), m => Assert.Null(m.Argument));
         Assert.Equal(["project.build", "project.rebuild", "project.clean", "-", "run.start", "run.startWithoutDebugging", "-",
             "project.dependencies", "-",
-            "project.addNewUnit", "project.addNewForm", "project.addNewFile", "project.addExistingFile", "project.newFolder", "-",
+            "project.addNewUnit", "project.addNewForm", "project.addNewFrame", "project.addNewFile", "project.addExistingFile", "project.newFolder", "-",
             "project.viewSource", "file.showInExplorer", "file.openInTerminal", "project.openOutputFolder", "file.copyPath", "-",
             "project.addExistingProject", "project.addNewProject", "project.removeFromGroup", "project.moveProjectUp", "project.moveProjectDown", "-",
             "file.closeProject", "-", "project.options"], Ids(pm.ContextMenu()));

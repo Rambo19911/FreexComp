@@ -12,6 +12,7 @@ public static class CommandCatalog
         new("file.newFile", [Global], 1, ["Ctrl+N"]),
         new("file.newUnit", [Global], 1, []),
         new("file.newForm", [Global], 5, []),
+        new("file.newFrame", [Global], 8, []),
         new("file.open", [Global], 1, ["Ctrl+O"]),
         new("file.openProject", [Global], 1, ["Ctrl+Shift+O"]),
         new("file.openRecentProject", [Global], 1, [], TakesArgument: true),
@@ -156,6 +157,7 @@ public static class CommandCatalog
         // 2.5 Project
         new("project.addNewUnit", [Global], 1, []),
         new("project.addNewForm", [Global], 5, []),
+        new("project.addNewFrame", [Global], 8, []),
         new("project.addExistingFile", [Global], 1, []),
         new("project.removeFile", [ProjectManager], 1, ["Delete"]),
         new("project.renameFile", [ProjectManager], 1, ["F2"]),

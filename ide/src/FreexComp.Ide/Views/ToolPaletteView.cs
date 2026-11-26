@@ -5,6 +5,7 @@ using Avalonia.Automation.Peers;
 using Avalonia.Controls;
 using Avalonia.Controls.Documents;
 using Avalonia.Controls.Primitives;
+using Avalonia.Controls.Primitives.PopupPositioning;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
@@ -34,6 +35,11 @@ public sealed class ToolPaletteView : UserControl
     private const string Prefix = "Tool.ToolPalette";
     private const double DragThreshold = 4; // DSG-TP-060
 
+    /// <summary>UI-DSG-138: the frame picker shows at most this many rows, then scrolls.</summary>
+    public const int PickerVisibleRows = 12;
+
+    private const double PickerRowHeight = 24;
+
     /// <summary>The keys the list handles itself although they are bound to commands (search focus, Escape order of §6, context menu).</summary>
     private static readonly IReadOnlyList<KeyGesture> LocalKeys =
         [.. ((string[])["Ctrl+F", "Escape", "Shift+F10"]).Select(KeyGesture.Parse)];
@@ -50,6 +56,11 @@ public sealed class ToolPaletteView : UserControl
     private readonly TextBlock _empty = new() { HorizontalAlignment = HorizontalAlignment.Center, TextAlignment = TextAlignment.Center, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(8, 24, 8, 0) };
     private readonly TextBlock _filterEmpty = new() { HorizontalAlignment = HorizontalAlignment.Center, TextAlignment = TextAlignment.Center, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(8, 24, 8, 0) };
     private readonly Dictionary<string, Control> _rowControls = new(StringComparer.Ordinal);
+    private readonly Popup _picker;
+    private readonly StackPanel _pickerRows = new();
+    private readonly List<Border> _pickerItems = [];
+    private int _pickerIndex;
+    private bool _pickerFilled;
     private ToolPaletteViewModel? _model;
     private bool _building;
     private bool _rebuildPending;
@@ -126,10 +137,45 @@ public sealed class ToolPaletteView : UserControl
             text.IsHitTestVisible = false;
         }
 
+        // UI-DSG-138: the frame picker, a menu-style popup under the Frames item (above it when there is no room).
+        var pickerBox = new Border
+        {
+            BorderThickness = new Thickness(1), Padding = new Thickness(0, 2), MinWidth = 160, Focusable = true,
+            Child = new ScrollViewer
+            {
+                Content = _pickerRows, MaxHeight = PickerVisibleRows * PickerRowHeight,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            },
+        };
+        Bind(pickerBox, Border.BackgroundProperty, "FxcBgRaisedBrush");
+        Bind(pickerBox, Border.BorderBrushProperty, "FxcBorderDefaultBrush");
+        pickerBox.Bind(Border.CornerRadiusProperty, pickerBox.GetResourceObservable("FxcRadiusControl"));
+        AutomationProperties.SetAutomationId(pickerBox, Prefix + ".FramePicker");
+        AutomationProperties.SetName(pickerBox, Strings.Palette_FramesItem);
+        pickerBox.KeyDown += OnPickerKeyDown;
+        pickerBox.TextInput += OnPickerTextInput;
+        _picker = new Popup
+        {
+            Child = pickerBox,
+            Placement = PlacementMode.AnchorAndGravity, PlacementAnchor = PopupAnchor.BottomLeft, PlacementGravity = PopupGravity.BottomRight,
+            ShouldUseOverlayLayer = true,
+            PlacementConstraintAdjustment = PopupPositionerConstraintAdjustment.FlipY | PopupPositionerConstraintAdjustment.SlideX
+                | PopupPositionerConstraintAdjustment.SlideY | PopupPositionerConstraintAdjustment.ResizeY,
+            IsLightDismissEnabled = true,
+        };
+        _picker.Closed += (_, _) =>
+        {
+            // DSG-TP-065: a light dismiss closes without arming.
+            if (!_building)
+            {
+                _model?.CloseFramePicker();
+            }
+        };
+
         var layout = new DockPanel();
         DockPanel.SetDock(_search, Avalonia.Controls.Dock.Top);
         layout.Children.Add(_search);
-        layout.Children.Add(new Panel { Children = { _list, _empty, _filterEmpty } });
+        layout.Children.Add(new Panel { Children = { _list, _empty, _filterEmpty, _picker } });
         Content = layout;
     }
 
@@ -249,8 +295,176 @@ public sealed class ToolPaletteView : UserControl
         finally
         {
             _building = false;
+            UpdatePicker();
         }
     }
+
+    // ---- frame picker (DSG-TP-063…065, UI-DSG-138) ----
+
+    /// <summary>Opens, fills or closes the picker as the model says; it hangs under the <c>Frames…</c> item.</summary>
+    private void UpdatePicker()
+    {
+        var model = _model;
+        if (model is not { IsFramePickerOpen: true } || !_rowControls.TryGetValue("Item." + ToolPaletteViewModel.FramesKey, out var anchor))
+        {
+            _pickerFilled = false;
+            if (_picker.IsOpen)
+            {
+                _picker.IsOpen = false;
+            }
+
+            return;
+        }
+
+        var rows = model.FramePickerRows;
+        var names = rows.Select(r => r.ClassName).ToList();
+        if (!_pickerFilled || !names.SequenceEqual(_pickerItems.Select(i => (string)i.Tag!)))
+        {
+            _pickerFilled = true;
+            _pickerRows.Children.Clear();
+            _pickerItems.Clear();
+            _pickerIndex = 0;
+            if (rows.Count == 0)
+            {
+                // Msg.Palette.NoFrames: one row that cannot be chosen.
+                var empty = new TextBlock
+                {
+                    Text = model.NoFramesText, Classes = { "body" }, TextWrapping = TextWrapping.Wrap, MaxWidth = 260,
+                    Margin = new Thickness(Metric("FxcSpace4"), 4), VerticalAlignment = VerticalAlignment.Center,
+                };
+                Bind(empty, TextBlock.ForegroundProperty, "FxcTextSecondaryBrush");
+                AutomationProperties.SetAutomationId(empty, Prefix + ".FramePicker.Empty");
+                _pickerRows.Children.Add(empty);
+            }
+
+            foreach (var row in rows)
+            {
+                var item = PickerRow(row);
+                _pickerItems.Add(item);
+                _pickerRows.Children.Add(item);
+            }
+        }
+
+        if (!_picker.IsOpen)
+        {
+            // Anchored to this view at the item's rectangle (rows are rebuilt while the picker is open; the view stays).
+            UpdateLayout();
+            var origin = anchor.TranslatePoint(default, this) ?? default;
+            _picker.PlacementTarget = this;
+            _picker.PlacementRect = new Rect(origin, anchor.Bounds.Size);
+            _picker.IsOpen = true;
+            Dispatcher.UIThread.Post(() => _picker.Child?.Focus(NavigationMethod.Directional), DispatcherPriority.Loaded);
+        }
+
+        UpdatePickerStates();
+    }
+
+    /// <summary>A frame row: the class without its <c>T</c> (<c>type.body</c>), then the unit in <c>text.secondary</c> after <c>space.4</c>.</summary>
+    private Border PickerRow(FramePickerRow row)
+    {
+        var name = new TextBlock { Text = row.DisplayName, Classes = { "body" }, VerticalAlignment = VerticalAlignment.Center };
+        Bind(name, TextBlock.ForegroundProperty, "FxcTextPrimaryBrush");
+        var unit = new TextBlock { Text = row.UnitName, Classes = { "body" }, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(Metric("FxcSpace4"), 0, 0, 0) };
+        Bind(unit, TextBlock.ForegroundProperty, "FxcTextSecondaryBrush");
+        var item = new AutomationBorder(AutomationControlType.MenuItem)
+        {
+            Height = PickerRowHeight, Padding = new Thickness(Metric("FxcSpace4"), 0), Tag = row.ClassName, Background = Brushes.Transparent,
+            Child = new StackPanel { Orientation = Orientation.Horizontal, Children = { name, unit } },
+            Invoked = () => _model?.ChooseFrame(row.ClassName),
+        };
+        AutomationProperties.SetAutomationId(item, Prefix + ".FramePicker." + row.ClassName);
+        AutomationProperties.SetName(item, row.DisplayName + " " + row.UnitName);
+        item.PointerEntered += (_, _) =>
+        {
+            _pickerIndex = _pickerItems.IndexOf(item);
+            UpdatePickerStates();
+        };
+        item.PointerPressed += (_, e) =>
+        {
+            if (e.GetCurrentPoint(item).Properties.IsLeftButtonPressed)
+            {
+                e.Handled = true;
+                _model?.ChooseFrame(row.ClassName);
+            }
+        };
+        return item;
+    }
+
+    /// <summary>The highlighted row in <c>bg.selected</c>.</summary>
+    private void UpdatePickerStates()
+    {
+        for (var i = 0; i < _pickerItems.Count; i++)
+        {
+            var current = i == _pickerIndex;
+            _pickerItems[i].Classes.Set("current", current);
+            _pickerItems[i].Background = current ? Resource("FxcBgSelectedBrush") : Brushes.Transparent;
+        }
+
+        if (_pickerIndex >= 0 && _pickerIndex < _pickerItems.Count)
+        {
+            _pickerItems[_pickerIndex].BringIntoView();
+        }
+    }
+
+    /// <summary>UI-DSG-138: Up / Down move, Enter chooses, Escape closes (the picker only).</summary>
+    private void OnPickerKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (_model is not { } model || e.KeyModifiers != KeyModifiers.None)
+        {
+            return;
+        }
+
+        switch (e.Key)
+        {
+            case Key.Down when _pickerItems.Count > 0:
+                _pickerIndex = Math.Min(_pickerIndex + 1, _pickerItems.Count - 1);
+                UpdatePickerStates();
+                break;
+            case Key.Up when _pickerItems.Count > 0:
+                _pickerIndex = Math.Max(_pickerIndex - 1, 0);
+                UpdatePickerStates();
+                break;
+            case Key.Enter:
+                if (_pickerIndex >= 0 && _pickerIndex < _pickerItems.Count)
+                {
+                    model.ChooseFrame((string)_pickerItems[_pickerIndex].Tag!);
+                }
+
+                break;
+            case Key.Escape:
+                model.CloseFramePicker();
+                _list.Focus(NavigationMethod.Directional);
+                break;
+            default:
+                return;
+        }
+
+        e.Handled = true;
+    }
+
+    /// <summary>UI-DSG-138: type-ahead on the name — the next row after the highlighted one whose name starts with the character.</summary>
+    private void OnPickerTextInput(object? sender, TextInputEventArgs e)
+    {
+        if (e.Text is not [var typed] || char.IsControl(typed) || _pickerItems.Count == 0 || _model is not { } model)
+        {
+            return;
+        }
+
+        var rows = model.FramePickerRows;
+        for (var i = 1; i <= rows.Count; i++)
+        {
+            var at = (_pickerIndex + i) % rows.Count;
+            if (rows[at].DisplayName is [var initial, ..] && char.ToUpperInvariant(initial) == char.ToUpperInvariant(typed))
+            {
+                _pickerIndex = at;
+                UpdatePickerStates();
+                e.Handled = true;
+                return;
+            }
+        }
+    }
+
+    private static double Metric(string key) => Application.Current?.FindResource(key) as double? ?? 0;
 
     /// <summary>The current row's focus ring while the list has focus, and the current row scrolled into view.</summary>
     private void UpdateStates()
@@ -377,15 +591,23 @@ public sealed class ToolPaletteView : UserControl
             row.PointerExited += (_, _) => row.Background = Brushes.Transparent;
         }
 
-        if (!model.AreItemsEnabled)
+        if (!Enabled(model, item))
         {
             row.Classes.Add("disabled");
         }
 
-        // UI-DSG-126: TClassName (bodyStrong), then "unit UnitName" (caption, text.secondary), after 600 ms.
-        var unit = new TextBlock { Text = ToolPaletteViewModel.UnitText(item), Classes = { "caption" } };
-        Bind(unit, TextBlock.ForegroundProperty, "FxcTextSecondaryBrush");
-        ToolTip.SetTip(row, new StackPanel { Children = { new TextBlock { Text = item.ClassName, Classes = { "bodyStrong" } }, unit } });
+        if (item.IsFrames)
+        {
+            ToolTip.SetTip(row, model.FramesTip); // UI-DSG-137
+        }
+        else
+        {
+            // UI-DSG-126: TClassName (bodyStrong), then "unit UnitName" (caption, text.secondary), after 600 ms.
+            var unit = new TextBlock { Text = ToolPaletteViewModel.UnitText(item), Classes = { "caption" } };
+            Bind(unit, TextBlock.ForegroundProperty, "FxcTextSecondaryBrush");
+            ToolTip.SetTip(row, new StackPanel { Children = { new TextBlock { Text = item.ClassName, Classes = { "bodyStrong" } }, unit } });
+        }
+
         ToolTip.SetShowDelay(row, 600);
 
         if (row is AutomationBorder automation)
@@ -393,7 +615,7 @@ public sealed class ToolPaletteView : UserControl
             // I-219: UI Automation Invoke is a click on the item (arms it; invoking the armed item disarms it).
             automation.Invoked = () =>
             {
-                if (model.AreItemsEnabled)
+                if (Enabled(model, item))
                 {
                     model.Click(item.ClassName);
                 }
@@ -418,8 +640,18 @@ public sealed class ToolPaletteView : UserControl
         return row;
     }
 
-    private PaletteIcon Icon(ToolPaletteViewModel model, PaletteItem item)
+    private Control Icon(ToolPaletteViewModel model, PaletteItem item)
     {
+        if (item.IsFrames)
+        {
+            // UI-DSG-137: the IDE icon frame.
+            return new IdeIcon
+            {
+                IconName = "frame", Width = 24, Height = 24, VerticalAlignment = VerticalAlignment.Center, IsEnabled = model.AreFramesEnabled,
+                IsHitTestVisible = false,
+            };
+        }
+
         var bytes = model.ReadIcon(item);
         return new PaletteIcon(bytes, () => model.ReportIconFailure(item.Icon ?? item.ClassName))
         {
@@ -431,8 +663,8 @@ public sealed class ToolPaletteView : UserControl
     private TextBlock ClassText(ToolPaletteViewModel model, PaletteItem item)
     {
         var text = new TextBlock { VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, Classes = { "body" } };
-        Bind(text, TextBlock.ForegroundProperty, model.AreItemsEnabled ? "FxcTextPrimaryBrush" : "FxcTextDisabledBrush");
-        var name = item.ClassName;
+        Bind(text, TextBlock.ForegroundProperty, Enabled(model, item) ? "FxcTextPrimaryBrush" : "FxcTextDisabledBrush");
+        var name = item.IsFrames ? item.DisplayName : item.ClassName; // UI-DSG-137: "Frames…"
         var at = 0;
         foreach (var (start, length) in model.Highlights(name))
         {
@@ -452,6 +684,8 @@ public sealed class ToolPaletteView : UserControl
 
         return text;
     }
+
+    private static bool Enabled(ToolPaletteViewModel model, PaletteItem item) => item.IsFrames ? model.AreFramesEnabled : model.AreItemsEnabled;
 
     private static IdeIcon Pin() =>
         new() { IconName = "pin", Width = 12, Height = 12, VerticalAlignment = VerticalAlignment.Center, IsHitTestVisible = false };

@@ -1,5 +1,6 @@
 using System.Globalization;
 using FreexComp.Designer.Catalog;
+using FreexComp.Designer.Model;
 using FreexComp.Ide.Core.Commands;
 using FreexComp.Ide.Core.Logging;
 using FreexComp.Ide.Core.Menus;
@@ -13,7 +14,14 @@ using FreexComp.Ide.Core.ViewModels;
 namespace FreexComp.Ide.Core.Designer;
 
 /// <summary>One component of the Tool Palette: its class and the name shown (the class without the leading <c>T</c>).</summary>
-public sealed record PaletteItem(string ClassName, string DisplayName, string Unit, string? Icon);
+public sealed record PaletteItem(string ClassName, string DisplayName, string Unit, string? Icon)
+{
+    /// <summary>DSG-TP-061: the IDE item <c>Frames…</c> (not from metadata): it opens the frame picker.</summary>
+    public bool IsFrames { get; init; }
+}
+
+/// <summary>A row of the frame picker (UI-DSG-138): the frame class, its name without the leading <c>T</c>, its unit.</summary>
+public sealed record FramePickerRow(string ClassName, string DisplayName, string UnitName);
 
 /// <summary>A page of the Tool Palette as shown (DSG-TP-020 … 022): expanded or collapsed, with its visible items.</summary>
 public sealed record PalettePage(string Name, bool IsExpanded, IReadOnlyList<PaletteItem> Items);
@@ -41,6 +49,12 @@ public sealed class ToolPaletteViewModel : ToolWindowViewModel
     public const string ToolName = "ToolPalette";
 
     private const string LogCategory = "Designer";
+
+    /// <summary>DSG-TP-061: the class key of the <c>Frames…</c> item (AutomationId <c>Tool.ToolPalette.Item.Frames</c>).</summary>
+    public const string FramesKey = "Frames";
+
+    /// <summary>DSG-TP-061: the page the <c>Frames…</c> item starts.</summary>
+    public const string FramesPage = "Standard";
     private static readonly StringComparer Names = StringComparer.OrdinalIgnoreCase;
 
     private readonly HashSet<string> _collapsed = new(Names);
@@ -55,6 +69,7 @@ public sealed class ToolPaletteViewModel : ToolWindowViewModel
     private string _searchText = "";
     private string? _currentKey;
     private bool _iconView;
+    private IReadOnlyList<FramePickerRow>? _pickerRows;
 
     /// <param name="settings">The <c>toolPalette.*</c> settings (view, collapsed pages); null: in-memory state.</param>
     /// <param name="fileSystem">Reads the palette icons (DSG-TP-009); null: every item shows the generic glyph.</param>
@@ -91,11 +106,11 @@ public sealed class ToolPaletteViewModel : ToolWindowViewModel
             var words = Words;
             if (words.Length == 0)
             {
-                return [.. _all.Select(p => p with { IsExpanded = !_collapsed.Contains(p.Name) })];
+                return [.. AllPages().Select(p => p with { IsExpanded = !_collapsed.Contains(p.Name) })];
             }
 
             var pages = new List<PalettePage>();
-            foreach (var page in _all)
+            foreach (var page in AllPages())
             {
                 var matches = page.Items.Where(i => words.All(w => i.ClassName.Contains(w, StringComparison.OrdinalIgnoreCase))).ToList();
                 if (matches.Count == 0)
@@ -164,6 +179,30 @@ public sealed class ToolPaletteViewModel : ToolWindowViewModel
 
     /// <summary>The palette as a whole is enabled.</summary>
     public bool IsEnabled => AreItemsEnabled;
+
+    /// <summary>
+    /// DSG-TP-061: the <c>Frames…</c> item is shown — the bound form resolves instances with a frame catalog (the IDE's
+    /// project catalog always).
+    /// </summary>
+    public bool ShowsFrames => _designer?.Frames is not null;
+
+    /// <summary>DSG-TP-061: the <c>Frames…</c> item is enabled: the items are (DSG-TP-024) and a project is loaded.</summary>
+    public bool AreFramesEnabled => AreItemsEnabled && ShowsFrames && (HasProject?.Invoke() ?? true);
+
+    /// <summary>A project is loaded (DSG-TP-061); null: always (tests without a project service).</summary>
+    public Func<bool>? HasProject { get; set; }
+
+    /// <summary>UI-DSG-137: the tooltip of the <c>Frames…</c> item.</summary>
+    public string FramesTip => Strings.Palette_FramesItemTip;
+
+    /// <summary>DSG-TP-063: the frame picker is open.</summary>
+    public bool IsFramePickerOpen => _pickerRows is not null;
+
+    /// <summary>DSG-TP-063: the frames the picker lists (empty: the placeholder <see cref="NoFramesText"/>).</summary>
+    public IReadOnlyList<FramePickerRow> FramePickerRows => _pickerRows ?? [];
+
+    /// <summary>UI-DSG-138: the placeholder of an empty picker (<c>Msg.Palette.NoFrames</c>).</summary>
+    public string NoFramesText => Strings.Msg_Palette_NoFrames;
 
     /// <summary>The text of the disabled palette (<c>Msg.Palette.NoForm</c>).</summary>
     public string NoFormText => Strings.Msg_Palette_NoForm;
@@ -268,6 +307,55 @@ public sealed class ToolPaletteViewModel : ToolWindowViewModel
         }
     }
 
+    /// <summary>The project was opened or closed: the enablement of the <c>Frames…</c> item follows.</summary>
+    public void Refresh() => Changed();
+
+    /// <summary>
+    /// DSG-TP-063: opens the frame picker — the catalog's frames except the class of the active document and every frame
+    /// that contains it (transitively), sorted by class name. Nothing while the item is disabled.
+    /// </summary>
+    public void OpenFramePicker()
+    {
+        if (!AreFramesEnabled || _designer is not { Frames: { } frames, Model: { } model })
+        {
+            return;
+        }
+
+        var root = model.Root.TypeName;
+        _pickerRows = [.. frames.All
+            .Where(f => !Names.Equals(f.ClassName, root) && FrameCatalog.RepeatedClass(frames, f.ClassName, root) is null)
+            .OrderBy(f => f.ClassName, StringComparer.OrdinalIgnoreCase)
+            .Select(f => new FramePickerRow(f.ClassName, f.ClassName is ['T', _, ..] ? f.ClassName[1..] : f.ClassName, f.UnitName))];
+        OnPropertyChanged(nameof(IsFramePickerOpen));
+        OnPropertyChanged(nameof(FramePickerRows));
+    }
+
+    /// <summary>DSG-TP-065: Escape, another document or view, or choosing nothing closes the picker without arming.</summary>
+    public void CloseFramePicker()
+    {
+        if (_pickerRows is null)
+        {
+            return;
+        }
+
+        _pickerRows = null;
+        OnPropertyChanged(nameof(IsFramePickerOpen));
+        OnPropertyChanged(nameof(FramePickerRows));
+    }
+
+    /// <summary>DSG-TP-064: a frame chosen in the picker is armed for single-shot placement (status <c>Msg.Designer.PlacementArmed</c>).</summary>
+    public void ChooseFrame(string className)
+    {
+        ArgumentNullException.ThrowIfNull(className);
+        if (FramePickerRows.FirstOrDefault(r => Names.Equals(r.ClassName, className)) is not { } row)
+        {
+            return;
+        }
+
+        CloseFramePicker();
+        _designer!.Host.Arm(row.ClassName, false);
+    }
+
     /// <summary>DSG-TP-008: the metadata was reloaded.</summary>
     public void SetCatalog(ComponentCatalog catalog)
     {
@@ -287,6 +375,7 @@ public sealed class ToolPaletteViewModel : ToolWindowViewModel
             return;
         }
 
+        CloseFramePicker(); // DSG-TP-065
         if (_designer is { } old)
         {
             old.Host.Disarm();
@@ -408,6 +497,12 @@ public sealed class ToolPaletteViewModel : ToolWindowViewModel
             return false;
         }
 
+        if (item.IsFrames)
+        {
+            OpenFramePicker(); // the search stays: the picker opens under the item
+            return true;
+        }
+
         Place(item.ClassName);
         SearchText = "";
         return true;
@@ -418,6 +513,12 @@ public sealed class ToolPaletteViewModel : ToolWindowViewModel
     /// </summary>
     public void EscapeKey()
     {
+        if (IsFramePickerOpen)
+        {
+            CloseFramePicker();
+            return;
+        }
+
         if (Escape())
         {
             return;
@@ -439,6 +540,12 @@ public sealed class ToolPaletteViewModel : ToolWindowViewModel
     public void Click(string className, bool shift = false)
     {
         ArgumentNullException.ThrowIfNull(className);
+        if (className == FramesKey)
+        {
+            OpenFramePicker(); // DSG-TP-063
+            return;
+        }
+
         if (!AreItemsEnabled)
         {
             return;
@@ -473,6 +580,12 @@ public sealed class ToolPaletteViewModel : ToolWindowViewModel
     public void Place(string className)
     {
         ArgumentNullException.ThrowIfNull(className);
+        if (className == FramesKey)
+        {
+            OpenFramePicker(); // DSG-TP-063: Enter and double-click open the picker
+            return;
+        }
+
         if (!AreItemsEnabled)
         {
             return;
@@ -487,7 +600,7 @@ public sealed class ToolPaletteViewModel : ToolWindowViewModel
     public void DragOver(string className, double x, double y)
     {
         ArgumentNullException.ThrowIfNull(className);
-        if (AreItemsEnabled)
+        if (AreItemsEnabled && className != FramesKey)
         {
             _designer!.Surface!.PaletteDragOver(className, x, y);
         }
@@ -500,6 +613,12 @@ public sealed class ToolPaletteViewModel : ToolWindowViewModel
     public void Drop(string className, double x, double y)
     {
         ArgumentNullException.ThrowIfNull(className);
+        if (className == FramesKey)
+        {
+            OpenFramePicker(); // DSG-TP-063: dragging the item only opens the picker
+            return;
+        }
+
         if (!AreItemsEnabled)
         {
             return;
@@ -542,6 +661,20 @@ public sealed class ToolPaletteViewModel : ToolWindowViewModel
     private static bool StartsWith(PaletteItem item, string text) =>
         item.ClassName.StartsWith(text, StringComparison.OrdinalIgnoreCase) || item.DisplayName.StartsWith(text, StringComparison.OrdinalIgnoreCase);
 
+    /// <summary>The pages with the <c>Frames…</c> item first on page <see cref="FramesPage"/> when it is shown (DSG-TP-061).</summary>
+    private IEnumerable<PalettePage> AllPages()
+    {
+        if (!ShowsFrames)
+        {
+            return _all;
+        }
+
+        var frames = new PaletteItem(FramesKey, Strings.Palette_FramesItem, "", null) { IsFrames = true };
+        return _all.Exists(p => Names.Equals(p.Name, FramesPage))
+            ? _all.Select(p => Names.Equals(p.Name, FramesPage) ? p with { Items = [frames, .. p.Items] } : p)
+            : [new PalettePage(FramesPage, true, [frames]), .. _all];
+    }
+
     /// <summary>
     /// DSG-TP-020, 021: the components with a palette entry that are not abstract and not forms; the pages named by the
     /// index first, in its order, then the others by name; items by <c>order</c>, ties by class name.
@@ -571,6 +704,11 @@ public sealed class ToolPaletteViewModel : ToolWindowViewModel
 
     private void OnDesignerChanged(object? sender, EventArgs e)
     {
+        if (sender is FormDesignerViewModel)
+        {
+            CloseFramePicker(); // DSG-TP-065: another view, or the model replaced
+        }
+
         FollowCatalog();
         Changed();
     }
@@ -585,6 +723,7 @@ public sealed class ToolPaletteViewModel : ToolWindowViewModel
         OnPropertyChanged(nameof(FilterEmptyText));
         OnPropertyChanged(nameof(HasForm));
         OnPropertyChanged(nameof(AreItemsEnabled));
+        OnPropertyChanged(nameof(AreFramesEnabled));
         OnPropertyChanged(nameof(IsEnabled));
         OnPropertyChanged(nameof(ArmedClass));
         OnPropertyChanged(nameof(IsSticky));

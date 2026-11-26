@@ -129,4 +129,7 @@ public sealed record IdeServices
 
     /// <summary>The component metadata (Phase 5, D-077); null before the designer phase.</summary>
     public Designer.ComponentMetadataService? Metadata { get; init; }
+
+    /// <summary>From Phase 5: the frames of the loaded project (DSG-FD-103, 104); the form documents resolve instances with it.</summary>
+    public Designer.ProjectFrameCatalog? Frames { get; init; }
 }

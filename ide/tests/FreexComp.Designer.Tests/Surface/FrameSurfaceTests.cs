@@ -465,6 +465,54 @@ public sealed class FrameSurfaceTests
         }
     }
 
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "DSG-TP-064")]
+    [Trait("Req", "DSG-CS-112")]
+    public void ArmedFramePlacesResolvedInstance_FieldOfFrameClass()
+    {
+        using var h = Open();
+        var client = h.Controller.Geometry.FormClientRect;
+
+        // An armed frame class places an instance at the click with the definition's size, named after the class.
+        h.Host.Arm("TAddressFrame");
+        h.ClickAt(((int)client.Left + 340, (int)client.Top + 200));
+        var placed = h.Object("AddressFrame1");
+        Assert.Equal((FormObjectKind.Inline, "TAddressFrame"), (placed.Kind, placed.TypeName));
+        Assert.True(placed.IsFrameInstance); // resolved at once: the frame's children are inherited into it
+        Assert.Contains(placed.Children, c => c.IsInherited && c.Name == "StreetEdit");
+        Assert.Equal(["AddressFrame1"], h.Selected);
+        Assert.Null(h.Host.ArmedPaletteClass); // single-shot
+        Assert.Contains("  inline AddressFrame1: TAddressFrame\n    Left = 340\n    Top = 200\n    Width = 320\n    Height = 180\n", h.Text,
+            StringComparison.Ordinal);
+
+        // DSG-CS-112: one field of the frame class from the frame's unit (its uses entry), none for the inherited objects.
+        Assert.Equal([new CodeSyncField("AddressFrame1", "TAddressFrame", "AddressFrameUnit")], Assert.Single(h.Host.CodeSync.AddedFields));
+
+        // Undo removes the instance in one step.
+        h.ExecuteUndo();
+        Assert.Null(h.Document.FindByName("AddressFrame1"));
+    }
+
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "DSG-FD-121")]
+    [Trait("Req", "UI-DSG-140")]
+    public void FrameRootDrawnWithEdge_NoCaption()
+    {
+        using var h = DesignerHarness.FromText(AddressFrame, "AddressFrameUnit.form", catalog: Components, frames: AddressFrames(),
+            rootAncestorClass: "TFrame");
+        var canvas = new RecordingCanvas();
+        h.Controller.Render(canvas, new Rect(0, 0, 1000, 800));
+        var frame = h.Controller.Geometry.FrameRect;
+
+        // UI-DSG-140: the frame rectangle in its Color with a 1 px border.default edge; no caption bar, no window glyphs.
+        Assert.Equal(0, h.Controller.Geometry.CaptionRect.Height);
+        var edge = $"DrawRect {frame.Left},{frame.Top},{frame.Width},{frame.Height} {h.Controller.Palette.BorderDefault} 1 Solid";
+        Assert.Contains(canvas.Ops, op => op.Text == edge);
+        Assert.DoesNotContain(canvas.Ops, op => op.Kind == "DrawText" && op.Text.Contains("\"AddressFrame\"", StringComparison.Ordinal));
+    }
+
     /// <summary>Status entries compared by id and argument values.</summary>
     private sealed class StatusComparer : IEqualityComparer<(string Id, object[] Args)>
     {

@@ -5,15 +5,15 @@ using FreexComp.Designer.Text;
 namespace FreexComp.Ide.Core.Tests.Designer;
 
 /// <summary>
-/// Frames for the view-model tests (frames-designer.md §10): the test metadata plus the test-only <c>TFrame</c> entry
-/// (<c>TestData/frame-metadata</c>), an address frame, and a customer form with one instance of it.
+/// Frames for the view-model tests (frames-designer.md §10): the test metadata (with <c>TFrame</c>), an address frame,
+/// and a customer form with one instance of it.
 /// </summary>
 internal static class FrameDesign
 {
     private static readonly Lazy<ComponentCatalog> Loaded = new(() =>
     {
         var data = Path.Combine(AppContext.BaseDirectory, "TestData");
-        var result = CatalogLoader.Load([Path.Combine(data, "metadata", "index.json"), Path.Combine(data, "frame-metadata", "index.json")]);
+        var result = CatalogLoader.Load([Path.Combine(data, "metadata", "index.json")]);
         Assert.Empty(result.Problems);
         return result.Catalog;
     });

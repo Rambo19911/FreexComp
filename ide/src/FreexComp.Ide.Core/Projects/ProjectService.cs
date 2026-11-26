@@ -104,6 +104,8 @@ public sealed class ProjectService : IProjectService
         commands.RegisterHandler("project.addNewUnit", new Handler(_ => OnOpenProject, _ => AddNewUnitAsync()));
         commands.RegisterHandler("project.addNewForm", new Handler(_ => OnOpenProject, _ => AddNewFormAsync()));
         commands.RegisterHandler("file.newForm", new Handler(_ => Project is not null, _ => AddNewFormAsync())); // menus.md: needs a project
+        commands.RegisterHandler("project.addNewFrame", new Handler(_ => OnOpenProject, _ => AddNewFrameAsync())); // DSG-CS-115
+        commands.RegisterHandler("file.newFrame", new Handler(_ => Project is not null, _ => AddNewFrameAsync()));
         commands.RegisterHandler("file.newFile", new Handler(_ => true, _ => NewFileAsync()));
         commands.RegisterHandler("project.addExistingFile", new Handler(_ => OnOpenProject, _ => PickAndAddExistingAsync()));
         commands.RegisterHandler("project.addNewFile", new Handler(_ => OnOpenProject, _ => AddNewFileAsync()));
@@ -385,24 +387,40 @@ public sealed class ProjectService : IProjectService
         return true;
     }
 
-    public async Task<bool> AddNewFormAsync()
+    public Task<bool> AddNewFormAsync()
+    {
+        if (_project is null)
+            return Task.FromResult(false);
+
+        var projectHasForm = FilesForMutation(_project).Any(f => !string.IsNullOrEmpty(f.Form));
+        return AddNewFormUnitAsync(isTaken => Designer.NewFormTemplate.NextName(projectHasForm, isTaken),
+            name => Designer.NewFormTemplate.UnitText(name, name), Designer.NewFormTemplate.FormText);
+    }
+
+    public Task<bool> AddNewFrameAsync() => _project is null
+        ? Task.FromResult(false)
+        : AddNewFormUnitAsync(Designer.NewFrameTemplate.NextName, name => Designer.NewFrameTemplate.UnitText(name, name), Designer.NewFrameTemplate.FormText);
+
+    /// <summary>
+    /// DSG-CS-110, 115: a new unit with its form in the folder of IDE-PM-040 (a name is free when no project unit and no
+    /// file of the folder has it), the <c>{ path, form }</c> entry saved at once, the unit opened in the Design view.
+    /// </summary>
+    private async Task<bool> AddNewFormUnitAsync(Func<Func<string, bool>, string> nextName, Func<string, string> unitText, Func<string, string> formText)
     {
         if (_project is null)
             return false;
 
-        // The folder of IDE-PM-040; DSG-CS-110: a name is free when no project unit and no file of the folder has it.
         var folder = SelectedFolder?.Invoke() is { } selected && IsInside(selected, _project.Directory)
             ? Path.GetFullPath(selected)
             : Path.GetDirectoryName(Resolve(_project.MainSource))!;
         var units = UnitNames(_project);
-        var name = Designer.NewFormTemplate.NextName(
-            FilesForMutation(_project).Any(f => !string.IsNullOrEmpty(f.Form)),
+        var name = nextName(
             n => units.Contains(n) || _fileSystem.FileExists(Path.Combine(folder, n + ".pas")) || _fileSystem.FileExists(Path.Combine(folder, n + ".form")));
         var unitPath = Path.Combine(folder, name + ".pas");
         var formPath = Path.Combine(folder, name + ".form");
-        if (!await WriteNewFileAsync(unitPath, SourceBytes(Designer.NewFormTemplate.UnitText(name, name))))
+        if (!await WriteNewFileAsync(unitPath, SourceBytes(unitText(name))))
             return false;
-        if (!await WriteNewFileAsync(formPath, FileEncodings.Encode(Designer.NewFormTemplate.FormText(name), FileEncoding.Utf8)))
+        if (!await WriteNewFileAsync(formPath, FileEncodings.Encode(formText(name), FileEncoding.Utf8)))
         {
             DeleteQuietly(unitPath);
             return false;

@@ -7,10 +7,12 @@ using Avalonia.Headless.XUnit;
 using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Threading;
+using Avalonia.LogicalTree;
 using Avalonia.VisualTree;
 using FreexComp.Designer.Model;
 using FreexComp.Designer.Surface;
 using FreexComp.Ide.Core.Designer;
+using FreexComp.Ide.Core.Documents;
 using FreexComp.Ide.Core.Resources;
 using FreexComp.Ide.Core.Settings;
 using FreexComp.Ide.Core.ViewModels;
@@ -85,8 +87,8 @@ public sealed class ToolPaletteViewTests
         var search = h.Find<TextBox>("Tool.ToolPalette.Filter");
         Assert.True(search.IsFocused);
         Assert.Equal(Strings.ToolPalette_SearchPlaceholder, search.PlaceholderText);
-        Assert.Equal(["Page.Standard", "Item.TMainMenu", "Item.TPopupMenu", "Item.TLabel", "Item.TEdit", "Item.TMemo", "Item.TButton",
-            "Item.TCheckBox", "Item.TRadioButton", "Item.TListBox", "Item.TComboBox", "Item.TGroupBox", "Item.TPanel"], Shown(h).Take(13));
+        Assert.Equal(["Page.Standard", "Item.Frames", "Item.TMainMenu", "Item.TPopupMenu", "Item.TLabel", "Item.TEdit", "Item.TMemo",
+            "Item.TButton", "Item.TCheckBox", "Item.TRadioButton", "Item.TListBox", "Item.TComboBox", "Item.TGroupBox", "Item.TPanel"], Shown(h).Take(14));
         Assert.Equal(["Page.Standard", "Page.Additional", "Page.Win32", "Page.System", "Page.Dialogs"], Shown(h).Where(k => k.StartsWith("Page.", StringComparison.Ordinal)));
         Assert.Equal(22, h.Find<Control>(Page + "Standard").Bounds.Height);
         Assert.Equal(28, h.Find<Control>(Item + "TButton").Bounds.Height);
@@ -325,6 +327,174 @@ public sealed class ToolPaletteViewTests
 
         Invoker().Invoke();
         Dispatcher.UIThread.RunJobs();
+        Assert.Null(document.Designer.Host.ArmedPaletteClass);
+    }
+
+    // ---- frames (DSG-TP-061…065, UI-DSG-137, 138; D-120) ----
+
+    private const string Picker = "Tool.ToolPalette.FramePicker";
+
+    private static readonly Lazy<FreexComp.Designer.Catalog.ComponentCatalog> FrameMetadata = new(() =>
+        FreexComp.Designer.Catalog.CatalogLoader.Load([Path.Combine(AppContext.BaseDirectory, "TestData", "metadata", "index.json")]).Catalog);
+
+    private static string FrameUnit(string name, string uses, params string[] fields) => string.Join("\r\n",
+        [$"unit {name}Unit;", "", "interface", "", "uses", $"  Classes, Controls, Forms{uses};", "", "type", $"  T{name} = class(TFrame)",
+            .. fields.Select(f => "    " + f), "  end;", "", "implementation", "", $"{{$FORM {name}Unit.form}}", "", "initialization",
+            $"  RegisterClass(T{name});", "", "end.", ""]);
+
+    /// <summary>A gui project P with a main form and, with <paramref name="frames"/>, three frame units (TOuterFrame holds a TAddressFrame).</summary>
+    private static Action<HarnessOptions> FrameProject(bool frames) => o =>
+    {
+        var files = "{ \"path\": \"P.pas\" }, { \"path\": \"MainForm.pas\", \"form\": \"MainForm.form\" }";
+        if (frames)
+        {
+            files += ", { \"path\": \"AddressFrameUnit.pas\", \"form\": \"AddressFrameUnit.form\" }"
+                + ", { \"path\": \"FooterFrameUnit.pas\", \"form\": \"FooterFrameUnit.form\" }"
+                + ", { \"path\": \"OuterFrameUnit.pas\", \"form\": \"OuterFrameUnit.form\" }";
+            o.InitialFiles[@"P\AddressFrameUnit.pas"] = FrameUnit("AddressFrame", ", StdCtrls", "StreetLabel: TLabel;");
+            o.InitialFiles[@"P\AddressFrameUnit.form"] = "object AddressFrame: TAddressFrame\n  Left = 0\n  Top = 0\n  Width = 320\n  Height = 120\n"
+                + "  object StreetLabel: TLabel\n    Left = 8\n    Top = 8\n    Caption = 'Street'\n  end\nend\n";
+            o.InitialFiles[@"P\FooterFrameUnit.pas"] = FrameUnit("FooterFrame", "");
+            o.InitialFiles[@"P\FooterFrameUnit.form"] = "object FooterFrame: TFooterFrame\n  Left = 0\n  Top = 0\n  Width = 300\n  Height = 40\nend\n";
+            o.InitialFiles[@"P\OuterFrameUnit.pas"] = FrameUnit("OuterFrame", ", AddressFrameUnit", "Address1: TAddressFrame;");
+            o.InitialFiles[@"P\OuterFrameUnit.form"] = "object OuterFrame: TOuterFrame\n  Left = 0\n  Top = 0\n  Width = 340\n  Height = 140\n"
+                + "  inline Address1: TAddressFrame\n    Left = 8\n    Top = 8\n    Width = 320\n    Height = 120\n  end\nend\n";
+        }
+
+        o.InitialFiles[@"P\P.pproj"] = "{ \"formatVersion\": 1, \"name\": \"P\", \"appType\": \"gui\", \"mainSource\": \"P.pas\", \"files\": [ " + files + " ] }";
+        o.InitialFiles[@"P\P.pas"] = "program P;\r\n\r\nuses\r\n  Forms, MainForm;\r\n\r\nbegin\r\nend.\r\n";
+        o.InitialFiles[@"P\MainForm.pas"] = string.Join("\r\n", "unit MainForm;", "", "interface", "", "uses", "  Classes, Controls, Forms;", "", "type",
+            "  TMainForm = class(TForm)", "  end;", "", "var", "  MainForm: TMainForm;", "", "implementation", "", "{$FORM MainForm.form}", "", "end.", "");
+        o.InitialFiles[@"P\MainForm.form"] = "object MainForm: TMainForm\n  Left = 200\n  Top = 120\n  Caption = 'Main'\n  ClientWidth = 640\n"
+            + "  ClientHeight = 400\n  PixelsPerInch = 96\nend\n";
+    };
+
+    /// <summary>Opens the project (once) and <paramref name="unit"/> in the Design view with the Tool Palette shown.</summary>
+    private static async Task<FormDocumentViewModel> OpenFrameDesignAsync(HeadlessHarness h, string unit, bool project = true)
+    {
+        ((DocumentService)h.Services.Documents).DesignCatalog = FrameMetadata.Value;
+        if (project)
+        {
+            Assert.True(await h.Services.Projects.OpenAsync(Path.Combine(h.TempDir, "P", "P.pproj")));
+        }
+
+        var document = Assert.IsType<FormDocumentViewModel>((await h.Services.Documents.OpenAsync(Path.Combine(h.TempDir, "P", unit))).Value);
+        Dispatcher.UIThread.RunJobs();
+        h.Click(AutomationIds.DocumentViewTab(unit, "Design"));
+        Assert.Equal(DocumentView.Design, document.ActiveView);
+        await h.ExecuteAsync("view.toolPalette");
+        return document;
+    }
+
+    /// <summary>The picker's frame rows, their class names in order.</summary>
+    private static List<string> PickerRows(HeadlessHarness h) =>
+        [.. h.FindAll(Picker + ".").Distinct().Select(c => AutomationIds.Get(c)![(Picker.Length + 1)..]).Where(id => id != "Empty")]; // the overlay layer lists the popup content twice
+
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "DSG-TP-061")]
+    [Trait("Req", "DSG-TP-062")]
+    [Trait("Req", "DSG-TP-063")]
+    [Trait("Req", "DSG-TP-064")]
+    [Trait("Req", "DSG-TP-065")]
+    [Trait("Req", "DSG-TP-066")]
+    [Trait("Req", "DSG-CS-112")]
+    [Trait("Req", "UI-DSG-137")]
+    [Trait("Req", "UI-DSG-138")]
+    public async Task FramesItem_PickerListsFramesWithoutCycles_PlacesInstanceWithFieldAndUses()
+    {
+        await using var h = await HeadlessHarness.StartAsync(FrameProject(frames: true));
+        var document = await OpenFrameDesignAsync(h, "MainForm.pas");
+        var designer = document.Designer;
+
+        // UI-DSG-137: the first item of page Standard, the IDE icon frame, the text "Frames…", its own tooltip.
+        Assert.Equal(["Page.Standard", "Item.Frames", "Item.TMainMenu"], Shown(h).Take(3));
+        var item = h.Find<Control>(Item + "Frames");
+        Assert.Equal(Strings.Palette_FramesItem, Name(h, "Frames"));
+        Assert.Single(item.GetVisualDescendants().OfType<Icons.IdeIcon>(), i => i.IconName == "frame");
+        Assert.Equal(Strings.Palette_FramesItemTip, ToolTip.GetTip(item));
+        Assert.DoesNotContain("disabled", item.Classes);
+
+        // DSG-TP-063: a click opens the picker under the item: the project's frames sorted by class, name and unit; nothing armed.
+        h.Click(Item + "Frames");
+        Assert.True(h.Find<Control>(Picker).IsEffectivelyVisible);
+        Assert.Equal(["TAddressFrame", "TFooterFrame", "TOuterFrame"], PickerRows(h));
+        Assert.Equal(["FooterFrame", "FooterFrameUnit"],
+            h.Find<Control>(Picker + ".TFooterFrame").GetVisualDescendants().OfType<TextBlock>().Select(t => t.Text));
+        Assert.Null(designer.Host.ArmedPaletteClass);
+
+        // DSG-TP-065: Escape closes the picker without arming.
+        h.Press("Escape");
+        Assert.Null(h.TryFind<Control>(Picker));
+        Assert.Null(designer.Host.ArmedPaletteClass);
+
+        // UI-DSG-138: Down moves the highlight, Enter chooses; DSG-TP-064: the frame is armed single-shot.
+        h.Click(Item + "Frames");
+        h.Press("Down");
+        Assert.Contains("current", h.Find<Control>(Picker + ".TFooterFrame").Classes);
+        h.Press("Enter");
+        Assert.Null(h.TryFind<Control>(Picker));
+        Assert.Equal("TFooterFrame", designer.Host.ArmedPaletteClass);
+        Assert.False(designer.Host.ArmedSticky);
+        Assert.Equal(string.Format(CultureInfo.CurrentCulture, Strings.Msg_Designer_PlacementArmed, "TFooterFrame"), h.Status.Message);
+
+        // A click on the surface places a resolved instance of the frame's size; DSG-CS-112: a field and the frame's unit in uses.
+        var control = h.Find<DesignSurfaceControl>(AutomationIds.Designer("MainForm"));
+        var client = designer.Surface!.Geometry.FormClientRect;
+        var at = control.TranslatePoint(new Point(client.Left + 16, client.Top + 200), h.Window)!.Value;
+        h.Window.MouseDown(at, MouseButton.Left);
+        h.Window.MouseUp(at, MouseButton.Left);
+        Dispatcher.UIThread.RunJobs();
+        var instance = designer.Model!.FindByName("FooterFrame1")!;
+        Assert.Equal((FormObjectKind.Inline, "TFooterFrame"), (instance.Kind, instance.TypeName));
+        Assert.Equal((16, 200, 300, 40), (Int(instance, "Left"), Int(instance, "Top"), Int(instance, "Width"), Int(instance, "Height")));
+        Assert.Null(designer.Host.ArmedPaletteClass);
+        Assert.Contains("    FooterFrame1: TFooterFrame;\r\n", document.Buffer.Text, StringComparison.Ordinal);
+        Assert.Contains("  Classes, Controls, Forms, FooterFrameUnit;\r\n", document.Buffer.Text, StringComparison.Ordinal);
+        Assert.Contains("  inline FooterFrame1: TFooterFrame\n", designer.CurrentFormText(), StringComparison.Ordinal);
+
+        // DSG-TP-062: designing a frame, the picker leaves out the frame itself and every frame that contains it.
+        await OpenFrameDesignAsync(h, "AddressFrameUnit.pas", project: false);
+        h.Click(Item + "Frames");
+        Assert.Equal(["TFooterFrame"], PickerRows(h));
+        h.Press("Escape");
+        await OpenFrameDesignAsync(h, "OuterFrameUnit.pas", project: false);
+        h.Click(Item + "Frames");
+        Assert.Equal(["TAddressFrame", "TFooterFrame"], PickerRows(h));
+
+        // DSG-TP-065: another view closes the picker.
+        h.Click(AutomationIds.DocumentViewTab("OuterFrameUnit.pas", "Code"));
+        Assert.Null(h.TryFind<Control>(Picker));
+    }
+
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "DSG-TP-061")]
+    [Trait("Req", "DSG-TP-063")]
+    [Trait("Req", "UI-DSG-138")]
+    public async Task FramesItem_NoFrames_Placeholder()
+    {
+        // Without a project the item is shown disabled and opens nothing (DSG-TP-061).
+        await using (var none = await HeadlessHarness.StartAsync(FrameProject(frames: false)))
+        {
+            await OpenFrameDesignAsync(none, "MainForm.pas", project: false);
+            Assert.Contains("disabled", none.Find<Control>(Item + "Frames").Classes);
+            none.Click(Item + "Frames");
+            Assert.Null(none.TryFind<Control>(Picker));
+        }
+
+        await using var h = await HeadlessHarness.StartAsync(FrameProject(frames: false));
+        var document = await OpenFrameDesignAsync(h, "MainForm.pas");
+        Assert.DoesNotContain("disabled", h.Find<Control>(Item + "Frames").Classes);
+
+        // A project without frames: the picker shows Msg.Palette.NoFrames as its only row; Enter chooses nothing.
+        h.Click(Item + "Frames");
+        Assert.True(h.Find<Control>(Picker).IsEffectivelyVisible);
+        Assert.Empty(PickerRows(h));
+        var empty = h.Find<TextBlock>(Picker + ".Empty");
+        Assert.Equal(Strings.Msg_Palette_NoFrames, empty.Text);
+        h.Press("Enter");
+        Assert.Null(document.Designer.Host.ArmedPaletteClass);
+        h.Press("Escape");
+        Assert.Null(h.TryFind<Control>(Picker));
         Assert.Null(document.Designer.Host.ArmedPaletteClass);
     }
 }

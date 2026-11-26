@@ -863,6 +863,7 @@ public sealed class DocumentService : IDocumentService
                 lineEnding, formText, DesignCatalog, frames: DesignFrames) { DiskStamp = stamp };
             formDocument.Designer.Status = _status;
             BindDesignerClipboard(formDocument);
+            formDocument.Designer.FrameHandlerRequested += OnFrameHandlerRequested;
             formDocument.ActiveViewChanged += (_, _) => _commands?.InvalidateCanExecute();
             document = formDocument;
         }
@@ -936,6 +937,7 @@ public sealed class DocumentService : IDocumentService
             formText, DesignCatalog, hasUnit: false, frames: DesignFrames) { DiskStamp = stamp };
         document.Designer.Status = _status;
         BindDesignerClipboard(document);
+        document.Designer.FrameHandlerRequested += OnFrameHandlerRequested;
         document.ActiveViewChanged += (_, _) => _commands?.InvalidateCanExecute();
         Add(document);
         return OperationResult<DocumentViewModel>.Of(document);
@@ -1211,6 +1213,31 @@ public sealed class DocumentService : IDocumentService
     }
 
     /// <summary>D-078: the designer copies to and pastes from the OS clipboard (design-surface.md DSG-SUR-110, DSG-SUR-120).</summary>
+    /// <summary>
+    /// DSG-OI-120, 121: a handler a frame assigns opens the frame's unit (the project frame catalog knows its path, else the
+    /// unit beside the frame's form) in the Code view at the method.
+    /// </summary>
+    private void OnFrameHandlerRequested(object? sender, FrameHandlerRequestedEventArgs e) => FrameHandlerOpening = OpenFrameHandlerAsync(e);
+
+    /// <summary>The last opening of a frame's unit at a handler (DSG-OI-120), for tests to await.</summary>
+    internal Task FrameHandlerOpening { get; private set; } = Task.CompletedTask;
+
+    private async Task OpenFrameHandlerAsync(FrameHandlerRequestedEventArgs e)
+    {
+        var unit = (DesignFrames as ProjectFrameCatalog)?.UnitPathOf(e.Frame.ClassName)
+            ?? Path.ChangeExtension(e.Frame.FormPath, ".pas");
+        var opened = await OpenAsync(unit);
+        if (opened.Value is FormDocumentViewModel { HasUnit: true } frame)
+        {
+            frame.ShowView(DocumentView.Code);
+            frame.Designer.CodeSync.NavigateToHandler(e.Method);
+        }
+        else if (opened.NeedsMessage)
+        {
+            await _dialogs.ShowMessageAsync(new MessageRequest(opened.MessageId!, opened.Args));
+        }
+    }
+
     private void BindDesignerClipboard(FormDocumentViewModel document)
     {
         if (Clipboard is { } clipboard)

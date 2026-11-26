@@ -18,6 +18,7 @@ public static class MainMenuDefinition
                 Separator,
                 Command("file.newUnit"),
                 Command("file.newForm"),
+                Command("file.newFrame"),
             ]),
             Command("file.open"),
             Command("file.openProject"),
@@ -236,6 +237,7 @@ public static class MainMenuDefinition
         [
             Command("project.addNewUnit"),
             Command("project.addNewForm"),
+            Command("project.addNewFrame"),
             Command("project.addExistingFile"),
             Command("project.removeFile"),
             Command("project.addExistingProject"),

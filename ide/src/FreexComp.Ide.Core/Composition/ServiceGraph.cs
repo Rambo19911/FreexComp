@@ -318,11 +318,15 @@ public static class ServiceGraph
         Designer.ComponentMetadataService? metadata = null;
         Designer.ObjectInspectorViewModel? objectInspector = null;
         Designer.ToolPaletteViewModel? toolPalette = null;
+        Designer.ProjectFrameCatalog? frames = null;
         if ((toolWindowPhase ?? ImplementedPhase) >= 5)
         {
+            frames = Designer.ProjectFrameCatalog.ForIde(projects, documents, platform.FileSystem, output); // DSG-FD-103, 104
+            var projectFrames = frames;
             metadata = new Designer.ComponentMetadataService(documents, platform.FileSystem, settings, status, platform.Log, platform.ToolchainEnvironment,
                 platform.Dialogs) { Output = output }; // D-088: loaded by the start-up sequence (DSG-TP-003)
             metadata.RegisterCommands(commands);
+            metadata.CatalogChanged += (_, _) => projectFrames.Refresh(); // the frames are read with the metadata
             designerShell = new Designer.DesignerShell(commands, documents, settings, layout.Layout, toolWindowPhase ?? ImplementedPhase,
                 platform.Dialogs, layout); // D-080, I-130; D-097: the verbs' editors (their sizes: D-112)
             designerShell.ShowProblems = (form, problems) =>
@@ -344,6 +348,8 @@ public static class ServiceGraph
             var palette = new Designer.ToolPaletteViewModel(metadata.Catalog, settings, platform.FileSystem, platform.Log); // D-083
             toolPalette = palette;
             palette.RegisterCommands(commands);
+            palette.HasProject = () => projects.Project is not null; // DSG-TP-061
+            projects.ProjectChanged += (_, _) => palette.Refresh();
             metadata.CatalogChanged += (_, catalog) => palette.SetCatalog(catalog);
             shell.ActiveDesignerChanged += (_, _) => palette.Bind(shell.ActiveDesigner);
             palette.Bind(shell.ActiveDesigner);
@@ -440,6 +446,7 @@ public static class ServiceGraph
             CodeModel = codeModel,
             SemanticHighlights = semanticHighlights,
             Metadata = metadata,
+            Frames = frames,
             DesignerShell = designerShell,
             Breakpoints = breakpoints,
             Debug = debug,

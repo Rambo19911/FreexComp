@@ -46,6 +46,42 @@
         { "name": "OnCreate", "signature": "TNotifyEvent", "default": true },
         { "name": "OnKeyPress", "signature": "TKeyPressEvent" }
       ]
+    },
+    {
+      "class": "TCustomFrame",
+      "ancestor": "TWinControl",
+      "abstract": true,
+      "kind": "container",
+      "acceptsChildren": true,
+      "renderer": "generic",
+      "properties": [],
+      "events": []
+    },
+    {
+      "class": "TFrame",
+      "ancestor": "TCustomFrame",
+      "abstract": false,
+      "kind": "container",
+      "defaultSize": { "width": 320, "height": 240 },
+      "namePrefix": "Frame",
+      "acceptsChildren": true,
+      "renderer": "frame",
+      "properties": [
+        { "name": "AutoScroll", "type": "Boolean", "default": true, "category": "Behavior" },
+        { "name": "Color", "type": "TColor", "default": "clBtnFace", "category": "Appearance", "editor": "color" },
+        { "name": "Font", "type": "TFont", "kind": "object", "category": "Appearance", "editor": "font", "affectsLayout": true },
+        { "name": "Padding", "type": "TPadding", "kind": "object", "category": "Layout", "affectsLayout": true },
+        { "name": "ParentColor", "type": "Boolean", "default": true, "category": "Appearance" },
+        { "name": "ParentFont", "type": "Boolean", "default": true, "category": "Appearance" },
+        { "name": "TabOrder", "type": "Integer", "default": -1, "category": "Behavior", "min": -1, "max": 32767 },
+        { "name": "TabStop", "type": "Boolean", "default": false, "category": "Behavior" }
+      ],
+      "events": [
+        { "name": "OnClick", "signature": "TNotifyEvent", "default": true },
+        { "name": "OnDblClick", "signature": "TNotifyEvent" },
+        { "name": "OnEnter", "signature": "TNotifyEvent" },
+        { "name": "OnExit", "signature": "TNotifyEvent" }
+      ]
     }
   ],
   "eventSignatures": {

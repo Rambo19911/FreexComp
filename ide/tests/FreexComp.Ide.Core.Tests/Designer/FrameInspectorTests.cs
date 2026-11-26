@@ -153,7 +153,14 @@ public sealed class FrameInspectorTests
         designer.Surface!.Execute(FreexComp.Designer.Surface.Commands.RevertToInherited);
         Assert.Equal(("StreetEditChange", true), (OnChange().Value, OnChange().IsInherited));
 
-        // Choosing a method of the form stores an override; clearing it reverts.
+        // Choosing a method of the form stores an override; reverting it makes the now unused method a removal candidate
+        // (DSG-CS-071; D-120); clearing it reverts too.
+        Assert.True(inspector.CommitEvent("OnChange", "EditChanged"));
+        Assert.Equal(("EditChanged", false), (OnChange().Value, OnChange().IsInherited));
+        Assert.DoesNotContain("EditChanged", designer.CodeSync.HandlerCandidates);
+        designer.Surface!.Execute(FreexComp.Designer.Surface.Commands.RevertToInherited);
+        Assert.Equal(("StreetEditChange", true), (OnChange().Value, OnChange().IsInherited));
+        Assert.Contains("EditChanged", designer.CodeSync.HandlerCandidates);
         Assert.True(inspector.CommitEvent("OnChange", "EditChanged"));
         Assert.Equal(("EditChanged", false), (OnChange().Value, OnChange().IsInherited));
         Assert.True(inspector.CommitEvent("OnChange", ""));

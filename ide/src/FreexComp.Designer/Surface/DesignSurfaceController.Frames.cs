@@ -85,6 +85,17 @@ public sealed partial class DesignSurfaceController
     private void RevertToInherited()
     {
         var changes = RevertChanges();
+
+        // An event override that goes leaves its form method unreferenced: a removal candidate like any cleared handler (DSG-CS-071).
+        foreach (var remove in changes.OfType<RemoveProperty>())
+        {
+            if (Document.FindByQualifiedName(remove.ObjectName) is { } obj && obj.Info?.FindEvent(remove.Path) is not null
+                && obj.FindProperty(remove.Path)?.Value is IdentValue { Name: var method })
+            {
+                _host.CodeSync.NoteHandlerCandidate(method);
+            }
+        }
+
         var selection = Selection.ToSnapshot();
         var undo = ApplyEdit(changes);
         var (commitRedo, commitUndo) = LayoutCommit.StoreDifferences(Editor, _layout.Compute(Document));

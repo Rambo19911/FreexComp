@@ -52,6 +52,18 @@ public sealed class FrameCatalog : IFrameCatalog
 
     public IReadOnlyList<FrameDefinition> All => _all ??= [.. _definitions.Values];
 
+    /// <summary>
+    /// DSG-SUR-232, DSG-TP-063: the class that would repeat if an instance of <paramref name="frameClass"/> were placed in a
+    /// document of <paramref name="rootClass"/> (the frame is that class or contains it, directly or through other frames);
+    /// null when the instance can be placed.
+    /// </summary>
+    public static string? RepeatedClass(IFrameCatalog frames, string frameClass, string? rootClass)
+    {
+        ArgumentNullException.ThrowIfNull(frames);
+        ArgumentNullException.ThrowIfNull(frameClass);
+        return FrameInstances.RepeatedClass(frames, frameClass, rootClass);
+    }
+
     public event EventHandler<FrameCatalogChangedEventArgs>? Changed;
 
     public FrameDefinition? Find(string className) => _definitions.GetValueOrDefault(className);

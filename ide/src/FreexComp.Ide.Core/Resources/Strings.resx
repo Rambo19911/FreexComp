@@ -621,6 +621,9 @@ Set the framework folder in Tools &gt; Options &gt; Toolchain Paths.</value>
   <data name="Msg_Designer_MetadataError" xml:space="preserve">
     <value>{0}({1},{2}): component metadata error: {3}</value>
   </data>
+  <data name="Msg_Designer_FrameUnreadable" xml:space="preserve">
+    <value>{0} cannot be read for the frame list: {1}</value>
+  </data>
   <data name="Msg_Designer_Selection" xml:space="preserve">
     <value>{0}: {1} — {2}, {3} — {4} × {5}</value>
   </data>
@@ -652,6 +655,9 @@ The form change was undone.</value>
   </data>
   <data name="Msg_Palette_NoForm" xml:space="preserve">
     <value>Open a form to use the Tool Palette</value>
+  </data>
+  <data name="Msg_Palette_NoFrames" xml:space="preserve">
+    <value>This project has no frames. Create one with File › New › Frame.</value>
   </data>
   <data name="Msg_Palette_FilterEmpty" xml:space="preserve">
     <value>No component matches {0}</value>
@@ -1145,6 +1151,9 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   <data name="Cmd_file_newForm" xml:space="preserve">
     <value>New Form</value>
   </data>
+  <data name="Cmd_file_newFrame" xml:space="preserve">
+    <value>New Frame</value>
+  </data>
   <data name="Cmd_file_open" xml:space="preserve">
     <value>Open File…</value>
   </data>
@@ -1546,6 +1555,9 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   </data>
   <data name="Cmd_project_addNewForm" xml:space="preserve">
     <value>Add New Form</value>
+  </data>
+  <data name="Cmd_project_addNewFrame" xml:space="preserve">
+    <value>Add New Frame</value>
   </data>
   <data name="Cmd_project_addExistingFile" xml:space="preserve">
     <value>Add Existing File…</value>
@@ -2119,6 +2131,9 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   <data name="Menu_file_newForm" xml:space="preserve">
     <value>F&amp;orm</value>
   </data>
+  <data name="Menu_file_newFrame" xml:space="preserve">
+    <value>Fra&amp;me</value>
+  </data>
   <data name="Menu_file_open" xml:space="preserve">
     <value>&amp;Open File…</value>
   </data>
@@ -2583,8 +2598,11 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   <data name="Menu_project_addNewForm" xml:space="preserve">
     <value>Add New &amp;Form</value>
   </data>
+  <data name="Menu_project_addNewFrame" xml:space="preserve">
+    <value>Add New Fr&amp;ame</value>
+  </data>
   <data name="Menu_project_addExistingFile" xml:space="preserve">
-    <value>&amp;Add Existing File…</value>
+    <value>Add Exi&amp;sting File…</value>
   </data>
   <data name="Menu_project_newFolder" xml:space="preserve">
     <value>New Fo&amp;lder…</value>
@@ -2610,7 +2628,7 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
     <value>&amp;Clean</value>
   </data>
   <data name="Menu_project_checkSyntax" xml:space="preserve">
-    <value>Check &amp;Syntax</value>
+    <value>Chec&amp;k Syntax</value>
   </data>
   <data name="Menu_project_cancelBuild" xml:space="preserve">
     <value>Cancel Buil&amp;d</value>
@@ -5056,6 +5074,12 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   <data name="ToolPalette_TooltipUnit" xml:space="preserve">
     <value>unit {0}</value>
     <comment>designer.md §12 UI-DSG-126 tooltip line 2; 0 = unit name</comment>
+  </data>
+  <data name="Palette_FramesItem" xml:space="preserve">
+    <value>Frames…</value>
+  </data>
+  <data name="Palette_FramesItemTip" xml:space="preserve">
+    <value>Place a frame of this project</value>
   </data>
   <data name="Menu_toolPalette_placeSelected" xml:space="preserve">
     <value>&amp;Place on Form</value>

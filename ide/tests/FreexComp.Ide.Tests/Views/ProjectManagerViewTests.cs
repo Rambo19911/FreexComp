@@ -405,12 +405,12 @@ public sealed partial class ProjectManagerViewTests
         pm.Select(pm.Find("$project")!);
         Assert.Equal(["project.build", "project.rebuild", "project.clean", "-", "run.start", "run.startWithoutDebugging", "-",
             "project.dependencies", "-", // UI-TW-129 (I-277)
-            "project.addNewUnit", "project.addNewForm", "project.addNewFile", "project.addExistingFile", "project.newFolder", "-",
+            "project.addNewUnit", "project.addNewForm", "project.addNewFrame", "project.addNewFile", "project.addExistingFile", "project.newFolder", "-",
             "project.viewSource", "file.showInExplorer", "file.openInTerminal", "project.openOutputFolder", "file.copyPath", "-",
             "project.addExistingProject", "project.addNewProject", "project.removeFromGroup", "project.moveProjectUp", "project.moveProjectDown", "-", // UI-TW-129 (I-275)
             "file.closeProject", "-", "project.options"], Ids(pm.ContextMenu()));
         pm.Select(pm.Find("lib/")!);
-        Assert.Equal(["project.addNewUnit", "project.addNewForm", "project.addNewFile", "project.addExistingFile", "project.newFolder", "-",
+        Assert.Equal(["project.addNewUnit", "project.addNewForm", "project.addNewFrame", "project.addNewFile", "project.addExistingFile", "project.newFolder", "-",
             "project.removeFile", "-", "file.showInExplorer", "file.openInTerminal", "file.copyPath"], Ids(pm.ContextMenu()));
         pm.Select(pm.Find("MainForm.pas")!);
         Assert.Equal(["projectManager.open", "projectManager.openForm", "-", "file.save", "-", "project.renameFile", "project.moveFile",

@@ -43,7 +43,7 @@ public static class NewFormTemplate
             .Replace("$(FormName)", formName, StringComparison.Ordinal)
             .Replace("\r", "", StringComparison.Ordinal);
 
-    private static string Read(string file)
+    internal static string Read(string file)
     {
         var assembly = typeof(NewFormTemplate).Assembly;
         var name = assembly.GetManifestResourceNames()

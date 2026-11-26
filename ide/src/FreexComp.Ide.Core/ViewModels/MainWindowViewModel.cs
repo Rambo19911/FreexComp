@@ -134,7 +134,11 @@ public sealed class MainWindowViewModel : ObservableObject
     public void InvalidateCommands() => _services.Commands.InvalidateCanExecute();
 
     /// <summary>IDE-P1-110 (b): the main window was activated; every open file is re-checked for external changes.</summary>
-    public void OnActivated() => _services.FileChanges.CheckAll();
+    public void OnActivated()
+    {
+        _services.FileChanges.CheckAll();
+        _services.Frames?.Refresh(); // DSG-FD-104: frame units changed on disk
+    }
 
     /// <summary>IDE-ED-086: the main window was deactivated; the completion and parameter-info popups of the active editor close.</summary>
     public void OnDeactivated()

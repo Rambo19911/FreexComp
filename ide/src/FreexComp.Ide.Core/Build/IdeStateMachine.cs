@@ -139,6 +139,7 @@ public static class IdeCommandAvailability
         // File operations on the project (IDE-PM-032); opening/closing a project asks to stop a running program first.
         ["project.addNewUnit"] = IdleOnly,
         ["project.addNewForm"] = IdleOnly,
+        ["project.addNewFrame"] = IdleOnly,
         ["project.addExistingFile"] = IdleOnly,
         ["project.newFolder"] = IdleOnly,
         ["project.addNewFile"] = IdleOnly,
