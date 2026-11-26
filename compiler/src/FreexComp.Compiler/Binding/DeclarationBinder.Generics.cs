@@ -59,7 +59,27 @@ internal sealed partial class DeclarationBinder
             ReportNestedTypeParameterClashes(declaration, names.ToImmutable());
         }
 
-        var generic = new GenericTypeSymbol(NameOf(identifier), names.ToImmutable(), declaration, _scope, 0, _container, [DiagnosticBag.LocationOf(identifier)]);
+        var isForward = declaration.TypeKeyword is null
+            && declaration.Type is ClassTypeSyntax { EndKeyword: null, Heritage: null, Modifier: null } or InterfaceTypeSyntax { EndKeyword: null, Heritage: null };
+        var key = GenericTypeSymbol.KeyOf(NameOf(identifier), names.Count);
+        if (!isForward && (_sharedScope?.LookupLocal(key) ?? _scope.LookupLocal(key)) is GenericTypeSymbol { IsForward: true } pending
+            && _forwardGenerics?.FindIndex(f => ReferenceEquals(f.Generic, pending)) is >= 0 and var index)
+        {
+            _forwardGenerics.RemoveAt(index);
+            if (pending.Declaration!.Type.Kind != declaration.Type.Kind || declaration.TypeKeyword is not null)
+            {
+                _diagnostics.Report(identifier, "E2001", NameOf(identifier));     // LANG-782 (C-346): completed by another kind
+                return;
+            }
+
+            CompleteForwardGeneric(pending, declaration, typeParameters, names.ToImmutable(), identifier);
+            return;
+        }
+
+        var generic = new GenericTypeSymbol(NameOf(identifier), names.ToImmutable(), declaration, _scope, 0, _container, [DiagnosticBag.LocationOf(identifier)])
+        {
+            IsForward = isForward,
+        };
         var previous = _sharedScope?.LookupLocal(generic.ScopeName);
         if (previous is not null || !_scope.TryDeclare(generic.ScopeName, generic, out previous))
         {
@@ -70,6 +90,69 @@ internal sealed partial class DeclarationBinder
         generic.VisibleCount = _scope.Count;                                    // the declaration sees itself and what precedes it
         generic.Constraints = BindConstraints(typeParameters);
         declared.Add(generic);
+        if (isForward)
+        {
+            _forwardGenerics?.Add((generic, identifier));                       // LANG-782 (C-346)
+            return;
+        }
+
+        CheckGenericAncestor(declaration, names);
+    }
+
+    /// <summary>
+    /// LANG-782 (C-346): the completion of a forward generic — the same type parameter names in the same order with the same
+    /// constraints (E2706 otherwise, at the completion's list). It becomes the generic's declaration, seeing everything before it,
+    /// and the instances made since the forward get their bodies now.
+    /// </summary>
+    private void CompleteForwardGeneric(GenericTypeSymbol generic, TypeDeclarationSyntax declaration, TypeParameterListSyntax typeParameters,
+        ImmutableArray<string> names, SyntaxToken identifier)
+    {
+        var constraints = BindConstraints(typeParameters);
+        if (!names.SequenceEqual(generic.ParameterNames, IdentifierComparer.Instance)
+            || !constraints.Zip(generic.Constraints).All(p => SameConstraints(p.First, p.Second)))
+        {
+            _diagnostics.Report(typeParameters, "E2706", GenericDisplayName(generic));
+        }
+
+        generic.Declaration = declaration;
+        generic.Constraints = constraints;
+        generic.VisibleCount = _scope.Count;
+        generic.IsForward = false;
+        generic.AddLocation(DiagnosticBag.LocationOf(identifier));
+        CheckGenericAncestor(declaration, names);
+        var pending = generic.PendingInstances.ToList();
+        generic.PendingInstances.Clear();
+        foreach (var (instance, arguments, site, unit) in pending)
+        {
+            lock (_types.GenericGate)
+            {
+                var bag = new DiagnosticBag();
+                using (GenericUses.For(unit))
+                {
+                    new DeclarationBinder(_types, _scope, _container, bag).CreateInstance(generic, arguments, instance);
+                }
+
+                var at = DiagnosticBag.LocationOf(site);
+                foreach (var diagnostic in bag.ToImmutable())
+                {
+                    if (DiagnosticBag.InInstance(diagnostic, instance.Name, at, _types.ReportedInstanceWarnings) is { } wrapped)
+                    {
+                        _diagnostics.Add(wrapped);
+                    }
+                }
+            }
+        }
+    }
+
+    private static bool SameConstraints(TypeParameterConstraints a, TypeParameterConstraints b) =>
+        a.Class == b.Class && a.Record == b.Record && a.Constructor == b.Constructor
+        && a.Types.Length == b.Types.Length && a.Types.All(t => b.Types.Contains(t, ReferenceEqualityComparer.Instance));
+
+    /// <summary><c>TNode&lt;T&gt;</c>: a generic's name with its type parameter list (E2015, E2706).</summary>
+    private static string GenericDisplayName(GenericTypeSymbol generic) => generic.Name + "<" + string.Join(", ", generic.ParameterNames) + ">";
+
+    private void CheckGenericAncestor(TypeDeclarationSyntax declaration, IReadOnlyCollection<string> names)
+    {
         if (declaration.Type is ClassTypeSyntax { Heritage.Types: [NamedTypeSyntax { Name: IdentifierNameSyntax { Identifier: var parentToken } parentName }, ..] }
             && names.Contains(NameOf(parentToken), IdentifierComparer.Instance))
         {
@@ -369,6 +452,11 @@ internal sealed partial class DeclarationBinder
                         instance = new DeclarationBinder(_types, _scope, _container, bag).CreateInstance(generic, arguments);
                     }
 
+                    if (generic.IsForward)
+                    {
+                        generic.PendingInstances.Add((instance, arguments, at, unit));     // LANG-783 (C-346): its body comes with the completion
+                    }
+
                     var site = DiagnosticBag.LocationOf(at);
                     foreach (var diagnostic in bag.ToImmutable())
                     {
@@ -389,7 +477,8 @@ internal sealed partial class DeclarationBinder
         }
     }
 
-    private TypeSymbol CreateInstance(GenericTypeSymbol generic, ImmutableArray<TypeSymbol> arguments)
+    /// <param name="shell">C-346: the incomplete instance made while the generic was a forward declaration, completed now.</param>
+    private TypeSymbol CreateInstance(GenericTypeSymbol generic, ImmutableArray<TypeSymbol> arguments, TypeSymbol? shell = null)
     {
         var declaration = generic.Declaration!;
         var display = generic.Name + "<" + string.Join(", ", arguments.Select(a => a.Name)) + ">";
@@ -417,9 +506,17 @@ internal sealed partial class DeclarationBinder
         TypeSymbol instance;
         switch (declaration.Type)
         {
+            case ClassTypeSyntax when generic.IsForward:
+                instance = new ClassTypeSymbol(_types.Target, display, generic.ContainingSymbol, generic.Locations);     // LANG-783: incomplete
+                Register(instance);
+                return instance;
+            case InterfaceTypeSyntax when generic.IsForward:
+                instance = new InterfaceTypeSymbol(_types.Target, display, generic.ContainingSymbol, generic.Locations);
+                Register(instance);
+                return instance;
             case ClassTypeSyntax { EndKeyword: not null } classSyntax when declaration.TypeKeyword is null:
             {
-                var type = new ClassTypeSymbol(_types.Target, display, generic.ContainingSymbol, generic.Locations);
+                var type = shell as ClassTypeSymbol ?? new ClassTypeSymbol(_types.Target, display, generic.ContainingSymbol, generic.Locations);
                 Register(type);                                                 // before the body: members may name the instance
                 binder.BindClassBody(type, classSyntax);
                 instance = type;
@@ -429,7 +526,7 @@ internal sealed partial class DeclarationBinder
             case InterfaceTypeSyntax { EndKeyword: not null } interfaceSyntax when declaration.TypeKeyword is null:
             {
                 // C-222: a generic interface (LANG-700); every instance has the declared GUID, if any
-                var type = new InterfaceTypeSymbol(_types.Target, display, generic.ContainingSymbol, generic.Locations);
+                var type = shell as InterfaceTypeSymbol ?? new InterfaceTypeSymbol(_types.Target, display, generic.ContainingSymbol, generic.Locations);
                 Register(type);
                 binder.BindInterfaceBody(type, interfaceSyntax);
                 instance = type;

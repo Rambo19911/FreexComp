@@ -1,0 +1,7 @@
+ErrGenericNames.pas(23,20): error E2007: Type 'TList<Integer>' is not yet completely defined
+ErrGenericNames.pas(25,8): error E2706: Type parameters of 'TNode<T>' differ from its forward declaration
+ErrGenericNames.pas(32,8): error E2705: Generic types cannot be declared inside a routine
+ErrGenericNames.pas(39,6): error E2703: 'TBox' requires 1 type argument(s)
+ErrGenericNames.pas(40,13): error E2703: 'TBox' requires 1 type argument(s)
+ErrGenericNames.pas(41,13): error E2005: 'TOuter' does not contain a member named 'TMissing'
+ErrGenericNames.pas(45,16): error E2603: Class type required

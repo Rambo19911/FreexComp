@@ -213,6 +213,7 @@ public static class DiagnosticCatalog
         new("E2703", null, DiagnosticSeverity.Error, "'%s' requires %d type argument(s)"),
         new("E2704", null, DiagnosticSeverity.Error, "Type argument '%s' does not satisfy constraint '%s' of '%s'"),
         new("E2705", null, DiagnosticSeverity.Error, "Generic types cannot be declared inside a routine"),
+        new("E2706", null, DiagnosticSeverity.Error, "Type parameters of '%s' differ from its forward declaration"),
         new("E2707", null, DiagnosticSeverity.Error, "Instance member '%s' of '%s' cannot be used without an object"),
         new("E2710", null, DiagnosticSeverity.Error, "In instantiation '%s': %s"),
         new("E2711", null, DiagnosticSeverity.Error, "Cannot infer type arguments for '%s'; specify them explicitly"),

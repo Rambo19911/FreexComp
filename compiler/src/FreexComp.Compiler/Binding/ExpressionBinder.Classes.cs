@@ -244,21 +244,7 @@ internal sealed partial class ExpressionBinder
     private BoundExpression BindTypeTest(BinaryExpressionSyntax binary, bool isAs)
     {
         var operand = BindExpression(binary.Left);
-        TypeSymbol? target = null;
-        if (_scope.Unqualified(Unparenthesized(binary.Right)) is IdentifierNameSyntax { Identifier: { IsMissing: false } token } name)
-        {
-            target = _scope.For(name).Lookup(token.Value as string ?? token.Text) as TypeSymbol;
-            if (target is null && _scope.For(name).Lookup(token.Value as string ?? token.Text) is null)
-            {
-                _diagnostics.ReportUndeclared(name, token.Value as string ?? token.Text);
-                return Error(binary, operand);
-            }
-        }
-        else if (Unparenthesized(binary.Right) is MemberAccessExpressionSyntax nested)
-        {
-            target = NamedType(nested);                                         // LANG-771 (C-344): o is TOuter.TInner
-        }
-
+        var target = TypeOperand(binary.Right);                                // LANG-771, 784 (C-344, C-346): TOuter.TInner, TBox<Integer>
         if (operand.HasErrors || target is ErrorTypeSymbol)
         {
             return Error(binary, operand);
@@ -626,7 +612,7 @@ internal sealed partial class ExpressionBinder
 
         var name = syntax.Name.Identifier.Value as string ?? syntax.Name.Identifier.Text;
         var qualifierType = TypeNamedBy(syntax.Expression);
-        if (qualifierType is ErrorTypeSymbol)
+        if (qualifierType is ErrorTypeSymbol || qualifierType is not null && IncompleteInstance(syntax.Expression, qualifierType))
         {
             return Error(syntax);                                                   // C-116: a generic name already reported
         }
@@ -942,15 +928,71 @@ internal sealed partial class ExpressionBinder
             return known;
         }
 
-        if ((_scope.Owner ?? GenericUses.UnitOf(_scope)) is not { } container)
-        {
-            return Unsupported(generic, "generic type here").Type;
-        }
-
-        var type = new DeclarationBinder(_types, _scope, container, _diagnostics).BindGenericName(generic, scope, outer);
+        var type = new DeclarationBinder(_types, _scope, GenericContainer, _diagnostics).BindGenericName(generic, scope, outer);
         _genericSegments[generic] = type;
         return type;
     }
+
+    /// <summary>
+    /// LANG-783 (C-346): an instance of a forward generic named before the generic's completion where the complete type is needed
+    /// (a member access, <c>SizeOf</c>): E2007 and true.
+    /// </summary>
+    private bool IncompleteInstance(SyntaxNode at, TypeSymbol type)
+    {
+        if (type is not (ClassTypeSymbol { IsForward: true, IsGenericInstance: true } or InterfaceTypeSymbol { IsForward: true, IsGenericInstance: true }))
+        {
+            return false;
+        }
+
+        _diagnostics.Report(at, "E2007", type.Name);
+        return true;
+    }
+
+    /// <summary>
+    /// The container of a declaration binder that instantiates for this expression: the scope's owner, else its unit, else the first
+    /// owner up the chain (C-346: a generic name binds in every scope; an instance's own container is its generic's).
+    /// </summary>
+    private Symbol GenericContainer
+    {
+        get
+        {
+            if ((_scope.Owner ?? GenericUses.UnitOf(_scope)) is { } container)
+            {
+                return container;
+            }
+
+            for (var scope = _scope.Parent; scope is not null; scope = scope.Parent)
+            {
+                if (scope.Owner is { } owner)
+                {
+                    return owner;
+                }
+            }
+
+            return _types.Error;
+        }
+    }
+
+    /// <summary>
+    /// The type a type operand names (LANG-784, C-346): a type identifier (unit-qualified too, E2003 when undeclared), a generic
+    /// instance, a nested type, any of them qualified (LANG-780); null when the expression names no type; the error type after a
+    /// reported error.
+    /// </summary>
+    internal TypeSymbol? TypeOperand(ExpressionSyntax syntax)
+    {
+        var inner = Unparenthesized(syntax);
+        if (_scope.Unqualified(inner) is IdentifierNameSyntax { Identifier: { IsMissing: false } token } name
+            && _scope.For(name).Lookup(token.Value as string ?? token.Text) is null)
+        {
+            _diagnostics.ReportUndeclared(name, token.Value as string ?? token.Text);
+            return _types.Error;
+        }
+
+        return TypeNamedBy(inner);
+    }
+
+    /// <summary>A type written in a statement (a handler type, C-346): bound like a declared type in this scope, errors reported.</summary>
+    internal TypeSymbol BindTypeSyntax(TypeSyntax syntax) => new DeclarationBinder(_types, _scope, GenericContainer, _diagnostics).BindTypeArgument(syntax);
 
     private readonly Dictionary<GenericNameSyntax, TypeSymbol> _genericSegments = new(ReferenceEqualityComparer.Instance);
 

@@ -1,0 +1,16 @@
+is TRUE TRUE FALSE FALSE
+nil is FALSE
+as 42 42
+is intf TRUE TRUE FALSE
+as intf 42 42
+class cast 42 42
+after store 7
+intf cast 7 7
+value cast 1 2
+value cast 3 4
+EGen<Integer> int
+EGen<string>
+Exception plain FALSE
+supports TRUE TRUE FALSE
+{6A1F0C2E-3B4D-4E5F-8A9B-0C1D2E3F4A5B}
+{6A1F0C2E-3B4D-4E5F-8A9B-0C1D2E3F4A5B}

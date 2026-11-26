@@ -692,6 +692,17 @@ internal sealed partial class BodyBinder
                     return type;
             }
         }
+        else
+        {
+            // LANG-784 (C-346): on E: EGen<Integer> do, on U.EGen<Integer> do, on TOuter.EInner do
+            switch (_expressions.BindTypeSyntax(syntax))
+            {
+                case ErrorTypeSymbol:
+                    return null;
+                case ClassTypeSymbol type:
+                    return type;
+            }
+        }
 
         _diagnostics.Report(syntax, "E2802");
         return null;

@@ -260,6 +260,8 @@ internal sealed partial class DeclarationBinder
         _forwardPointers = [];
         var forwardClasses = new List<(ClassTypeSymbol Type, SyntaxToken Identifier)>();
         var forwardInterfaces = new List<(InterfaceTypeSymbol Type, SyntaxToken Identifier)>();
+        var outerForwardGenerics = _forwardGenerics;
+        _forwardGenerics = [];
         foreach (var declaration in section.Declarations)
         {
             var identifier = declaration.Identifier;
@@ -367,6 +369,13 @@ internal sealed partial class DeclarationBinder
             _diagnostics.Report(identifier, "E2015", type.Name);
         }
 
+        foreach (var (generic, identifier) in _forwardGenerics.Where(f => f.Generic.IsForward))
+        {
+            _diagnostics.Report(identifier, "E2015", GenericDisplayName(generic));     // LANG-782 (C-346)
+        }
+
+        _forwardGenerics = outerForwardGenerics;
+
         _sectionTypeNames = null;
         _forwardPointers = null;
     }
@@ -441,6 +450,9 @@ internal sealed partial class DeclarationBinder
     /// <summary>The type declaration being bound (its name and type syntax), for E2007/E2022 on self-references.</summary>
     private (string Name, TypeSyntax Type)? _declaringType;
     private List<(PointerTypeSymbol Pointer, IdentifierNameSyntax Name)>? _forwardPointers;
+
+    /// <summary>LANG-782 (C-346): the forward generic declarations of the type section being bound, completed in it or E2015.</summary>
+    private List<(GenericTypeSymbol Generic, SyntaxToken Identifier)>? _forwardGenerics;
 
     /// <summary>
     /// LANG-265 <c>^T</c>: a typed pointer named after its declaration (or <c>^T</c>). A <c>T</c> declared later in the current type

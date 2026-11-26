@@ -127,12 +127,19 @@ internal sealed partial class ExpressionBinder
         return new BoundInterfaceGuidExpression(syntax, intf, expected!);
     }
 
+    /// <summary>A generic type of the name (any arity) is in scope: <paramref name="name"/> is no generic method's name.</summary>
+    private bool NamesGenericType(GenericNameSyntax name)
+    {
+        var text = name.Identifier.Value as string ?? name.Identifier.Text;
+        return Enumerable.Range(0, 16).Any(n => _scope.Lookup(GenericTypeSymbol.KeyOf(text, n)) is GenericTypeSymbol);
+    }
+
     /// <summary>The (ordinary) interface type an expression names — <c>IFoo</c>, <c>U.IFoo</c>; null otherwise, nothing reported.</summary>
     private InterfaceTypeSymbol? InterfaceNamedBy(ExpressionSyntax syntax)
     {
         var inner = Unparenthesized(syntax);
-        return inner is IdentifierNameSyntax or MemberAccessExpressionSyntax
-            && NamedType(inner) is InterfaceTypeSymbol { IsMethodReference: false } intf ? intf : null;
+        return (inner is IdentifierNameSyntax or MemberAccessExpressionSyntax || inner is GenericNameSyntax generic && NamesGenericType(generic))
+            && NamedType(inner) is InterfaceTypeSymbol { IsMethodReference: false } intf ? intf : null;          // LANG-784 (C-346): IBox<Integer>
     }
 
     /// <summary>
@@ -1150,8 +1157,9 @@ internal sealed partial class ExpressionBinder
         {
             switch (Unparenthesized(invocation.Expression))
             {
-                case MemberAccessExpressionSyntax member when NamedType(member) is { } nestedTarget:
-                    return BindTypecastInvocation(invocation, nestedTarget, variableContext);       // C-311: TOuter.TInner(x) (LANG-770)
+                case MemberAccessExpressionSyntax or GenericNameSyntax when NamedType(invocation.Expression) is { } namedTarget:
+                    // C-311: TOuter.TInner(x) (LANG-770); LANG-785 (C-346): TBox<Integer>(o), U.TPair<Byte, Byte>(w) are typecasts
+                    return BindTypecastInvocation(invocation, namedTarget, variableContext);
                 case MemberAccessExpressionSyntax member when !(_scope.Unqualified(member.Expression) is IdentifierNameSyntax { Identifier: { IsMissing: false } q } qualifier
                                                                 && _scope.For(qualifier).Lookup(q.Value as string ?? q.Text) is EnumTypeSymbol):
                 {
@@ -1808,14 +1816,10 @@ internal sealed partial class ExpressionBinder
             return (type, null);
         }
 
-        if (syntax is GenericNameSyntax generic)
+        if (syntax is GenericNameSyntax or MemberAccessExpressionSyntax && NamedType(syntax) is { } named)
         {
-            return (GenericType(generic), null);                                    // C-116: SizeOf(TPair<K, V>), Default(TList<T>)
-        }
-
-        if (syntax is MemberAccessExpressionSyntax && NamedType(syntax) is { } nested)
-        {
-            return (nested, null);                                              // LANG-770: SizeOf(TOuter.TInner)
+            // C-116: SizeOf(TPair<K, V>), Default(TList<T>); LANG-770: SizeOf(TOuter.TInner); LANG-780: SizeOf(U.TBox<Integer>)
+            return (IncompleteInstance(syntax, named) ? _types.Error : named, null);
         }
 
         var argument = BindExpression(syntax);

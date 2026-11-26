@@ -31,8 +31,20 @@ public sealed class GenericTypeSymbol : TypeSymbol
     /// <summary>LANG-702 (C-118): the constraints of each type parameter (bound with the declaration).</summary>
     internal ImmutableArray<TypeParameterConstraints> Constraints { get; set; } = [];
 
-    /// <summary>The declaration (null for a definition imported from a <c>.pcu</c> without its body text, C-119).</summary>
-    internal TypeDeclarationSyntax? Declaration { get; }
+    /// <summary>
+    /// The declaration (null for a definition imported from a <c>.pcu</c> without its body text, C-119); for a forward declaration
+    /// <c>TNode&lt;T&gt; = class;</c> the forward until its completion replaces it (LANG-782, C-346).
+    /// </summary>
+    internal TypeDeclarationSyntax? Declaration { get; set; }
+
+    /// <summary>
+    /// LANG-782/783 (C-346): declared by <c>TNode&lt;T&gt; = class;</c> / <c>IFoo&lt;T&gt; = interface;</c> and not completed yet. Its
+    /// instances are incomplete classes (interfaces) until then: <see cref="PendingInstances"/>, completed with the declaration.
+    /// </summary>
+    internal bool IsForward { get; set; }
+
+    /// <summary>The instances made while <see cref="IsForward"/>, each with its first instantiation site and using unit.</summary>
+    internal List<(TypeSymbol Instance, ImmutableArray<TypeSymbol> Arguments, SyntaxNode Site, UnitSymbol? Unit)> PendingInstances { get; } = [];
 
     /// <summary>The scope the generic is declared in; instances are bound below it.</summary>
     internal Scope? DeclaringScope { get; }
