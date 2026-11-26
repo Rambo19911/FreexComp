@@ -177,10 +177,12 @@ internal sealed class UnitBinder : IUsesScopes
         }
 
         // C-116 (CMP-385): generic instance bodies once all implementation parts are bound; in unit order (deterministic)
-        foreach (var unit in ready.Where(u => u.Result is not null && !u.IsPartial))
+        // C-345: of a partial unit, those of its own routines the filter keeps (a position in a generic's method: the whole file)
+        foreach (var unit in ready.Where(u => u.Result is not null))
         {
             var before = unit.Result!.Diagnostics.ToHashSet();
-            unit.Result = Binder.BindInstances(unit.Result);
+            Func<SyntaxNode, bool>? partial = unit.IsPartial && PartialBodies is { } p ? node => ReferenceEquals(node.SyntaxTree, unit.Tree) && p.Filter(node) : null;
+            unit.Result = Binder.BindInstances(unit.Result, partial);
             unit.Diagnostics.AddRange(unit.Result.Diagnostics.Where(d => !before.Contains(d)));
         }
     }

@@ -594,23 +594,36 @@ internal sealed partial class DeclarationBinder
             return;
         }
 
-        if (className is GenericNameSyntax generic)
+        // the path's segments, left to right; the first generic one names the generic the implementation belongs to (LANG-704, 776, 778)
+        var segments = new List<(NameSyntax Prefix, SimpleNameSyntax Segment)>();
+        for (var node = className; ; node = ((QualifiedNameSyntax)node).Left)
         {
-            BindGenericMethodImplementation(declaration, generic, identifier);          // C-116 (LANG-704)
-            return;
+            if (node is QualifiedNameSyntax step)
+            {
+                segments.Insert(0, (step, step.Right));
+                continue;
+            }
+
+            segments.Insert(0, (node, (SimpleNameSyntax)node));
+            break;
         }
 
-        var path = new List<SyntaxToken>();
-        var leftmost = className;
-        while (leftmost is QualifiedNameSyntax { Right: IdentifierNameSyntax { Identifier: var segment } } step)
+        if (segments.FindIndex(s => s.Segment is GenericNameSyntax) is var first and >= 0)
         {
-            path.Insert(0, segment);
-            leftmost = step.Left;
-        }
+            var generic = (GenericNameSyntax)segments[first].Segment;
+            ImmutableArray<SimpleNameSyntax> rest = [.. segments.Skip(first + 1).Select(s => s.Segment)];
+            if (first == 0)
+            {
+                BindGenericMethodImplementation(declaration, generic, identifier, rest);   // C-116, C-344: TList<T>.TEnumerator.M
+                return;
+            }
 
-        if (leftmost is GenericNameSyntax nestedIn)
-        {
-            BindGenericMethodImplementation(declaration, nestedIn, identifier, [.. path]);   // LANG-776 (C-344): TList<T>.TEnumerator.M
+            // LANG-778 (C-345): TOuter.TBox<T>.M — a generic nested in a type of this unit
+            if (ResolveTypeQualifier(((QualifiedNameSyntax)segments[first].Prefix).Left, implementationPath: true) is { } outer)
+            {
+                BindGenericMethodImplementation(declaration, generic, identifier, rest, outer);
+            }
+
             return;
         }
 

@@ -172,7 +172,9 @@ internal sealed class Scope
     /// <summary>Symbols in declaration order, one entry per declared name (an aliased symbol appears once per name).</summary>
     public IEnumerable<Symbol> Symbols => _ordered.Select(e => e.Symbol);
 
-    public bool TryDeclare(Symbol symbol, out Symbol? existing) => TryDeclare(symbol.Name, symbol, out existing);
+    /// <summary>Declares <paramref name="symbol"/> under its name; a generic definition under its name and arity (LANG-703, 778).</summary>
+    public bool TryDeclare(Symbol symbol, out Symbol? existing) =>
+        TryDeclare(symbol is Types.GenericTypeSymbol generic ? generic.ScopeName : symbol.Name, symbol, out existing);
 
     /// <summary>LANG-472 (C-232): records the hint directives of the type declared here as <paramref name="name"/>.</summary>
     public void SetHints(string name, SymbolHints hints) => _hints[name] = hints;

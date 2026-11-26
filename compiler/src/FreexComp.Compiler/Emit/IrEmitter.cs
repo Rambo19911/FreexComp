@@ -105,7 +105,7 @@ internal static class IrEmitter
             instances = [.. unit.Unit.UsedInstances.OfType<TypeSymbol>().SelectMany(TypeMembers.SelfAndNestedTypes)];
         }
 
-        IrLinkage LinkageOf(TypeSymbol type) => TypeMembers.Outermost(type).IsGenericInstance ? IrLinkage.LinkOnceOdr
+        IrLinkage LinkageOf(TypeSymbol type) => TypeMembers.EnclosingInstance(type) is not null ? IrLinkage.LinkOnceOdr
             : interfaceMembers.Contains(TypeMembers.Outermost(type)) ? IrLinkage.External : IrLinkage.Internal;     // CMP-1391: nested types too
         var classes = Binding.DeclarationBinder.ClassesOf(unit.Unit).Concat(instances.OfType<ClassTypeSymbol>()).Distinct().ToImmutableArray();
         var module = new ModuleState(writer)
@@ -164,7 +164,7 @@ internal static class IrEmitter
         {
             var routine = body.Routine!;
             var linkage = routine is MethodSymbol { Owner: var owner } genericCandidate
-                && (TypeMembers.Outermost(owner).IsGenericInstance || genericCandidate.GenericMethodDefinition is not null) ? IrLinkage.LinkOnceOdr
+                && (TypeMembers.EnclosingInstance(owner) is not null || genericCandidate.GenericMethodDefinition is not null) ? IrLinkage.LinkOnceOdr
                 : routine.ExplicitLinkName is not null || (!routine.IsNested && interfaceMembers.Contains(routine))
                 || routine is MethodSymbol method && interfaceMembers.Contains(TypeMembers.Outermost(method.Owner))
                 ? IrLinkage.External
@@ -297,7 +297,7 @@ internal static class IrEmitter
         {
             var layout = TypeLayout.Allocated(variable.Type);
             var name = Mangler.GlobalVariable(variable);
-            var linkage = variable.ContainingSymbol is TypeSymbol owningType && TypeMembers.Outermost(owningType).IsGenericInstance ? IrLinkage.LinkOnceOdr
+            var linkage = variable.ContainingSymbol is TypeSymbol owningType && TypeMembers.EnclosingInstance(owningType) is not null ? IrLinkage.LinkOnceOdr
                 : interfaceMembers.Contains(variable) || variable.ExplicitLinkName is not null
                 || variable.ContainingSymbol is (ClassTypeSymbol or RecordTypeSymbol or HelperTypeSymbol) and TypeSymbol owner && interfaceMembers.Contains(TypeMembers.Outermost(owner)) ? IrLinkage.External : IrLinkage.Internal;
             writer.DefineGlobal(new IrGlobalDefinition(name, linkage, IsConstant: variable.IsReadOnly, initializer, layout.Alignment)

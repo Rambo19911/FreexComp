@@ -128,7 +128,24 @@ public sealed class DeterminismTests : IDisposable
             "m2.6/GenericClass", "m2.6/GenericInterface", "m2.6/GenericMethod", "m2.6/GenericConstraints",
             "m2.6/GenericAcrossUnits", "m2.6/GenericClassVarManaged",
             "m2.6/AnonCapture", "m2.6/AnonNested", "m2.6/AnonLoopCapture", "m2.6/AnonSelfTwoLevels", "m2.6/AnonLifetime",
+            "generics/GenericQualifiedAcrossUnits",
         ];
+
+        /// <summary>
+        /// C-345 (CMP-385, C-228 rule; LANG-775): the nested types of an instance go with it ā€” the unit that uses
+        /// <c>TList&lt;Integer&gt;.TEnumerator</c> and <c>TOuter.TCell&lt;string&gt;</c> defines them <c>linkonce_odr</c>, the declaring unit,
+        /// which uses no instance, defines none (also when a method heading of the nested type names the generic itself).
+        /// </summary>
+        [Fact]
+        [Trait("Phase", "8")]
+        [Trait("Req", "CMP-1391")]
+        public void NestedTypesOfInstances_AreDefinedByTheUsingUnitsOnly()
+        {
+            var files = EmitCase("generics/GenericQualifiedAcrossUnits", maxParallelism: 0);
+            Assert.DoesNotContain("define linkonce_odr", files["UQGen.ll"], StringComparison.Ordinal);
+            Assert.Contains("define linkonce_odr ptr @\"UQGen.TList<Integer>.TEnumerator.Create\"", files["UQUser.ll"], StringComparison.Ordinal);
+            Assert.Contains("define linkonce_odr void @\"UQGen.TOuter.TCell<string>.Show\"", files["UQUser.ll"], StringComparison.Ordinal);
+        }
 
         /// <summary>
         /// C-236 (CMP-001, CMP-156): every <c>.ll</c> of the compilation (program, its units, the RTL units) is byte-identical when

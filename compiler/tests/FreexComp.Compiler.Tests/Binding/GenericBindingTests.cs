@@ -8,7 +8,7 @@ namespace FreexComp.Compiler.Tests.Binding;
 /// <summary>C-116: generic type declarations and instances (LANG-700, 703, 704, 710…713).</summary>
 [Trait("Phase", "2")]
 [Trait("Req", "LANG-710")]
-public sealed class GenericBindingTests
+public sealed partial class GenericBindingTests
 {
     private static TypeSymbol TypeOf(BindingResult result, string variable) => ((VariableSymbol)result.Scope.Lookup(variable)!).Type;
 

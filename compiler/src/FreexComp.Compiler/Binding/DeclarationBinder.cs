@@ -1926,20 +1926,8 @@ internal sealed partial class DeclarationBinder
                 return BindType(element) is { TypeKind: not TypeKind.Error } elementType ? _types.OpenArrayOf(elementType) : _types.Error;   // LANG-430 (C-106)
             case ArrayTypeSyntax array:
                 return BindDynamicArray(array, typeName, declaredAt, declared);
-            case NamedTypeSyntax { Name: IdentifierNameSyntax name }:
-                return BindTypeName(name);
-            case NamedTypeSyntax { Name: QualifiedNameSyntax { Right: IdentifierNameSyntax right } qualified }
-                when UnitQualifiers.Qualifier(_scope, qualified.Left) is not null:
-                return BindTypeName(right);                             // U.TName (LANG-311, 538)
-            case NamedTypeSyntax { Name: QualifiedNameSyntax qualified } when LeftmostNamesType(qualified):
-                return ResolveTypeQualifier(qualified) ?? _types.Error;                  // TOuter.TInner (LANG-770, C-122)
-            case NamedTypeSyntax { Name: QualifiedNameSyntax qualified }:
-                _diagnostics.ReportUndeclared(qualified.Left, NameOf(qualified.Left));    // no used unit of that name
-                return _types.Error;
-            case NamedTypeSyntax { Name: GenericNameSyntax generic }:
-                return BindGenericName(generic);                                            // C-116 (LANG-710)
-            case NamedTypeSyntax:
-                return Unsupported(type, "qualified generic type");
+            case NamedTypeSyntax { Name: var name }:
+                return ResolveTypeName(name);                           // U.TName, TOuter.TInner, U.G<X>.TNode (LANG-311, 538, 770, 780)
             case StringTypeSyntax { Length: null }:
                 return _types.String;
             case StringTypeSyntax { Length: { } length }:
@@ -1979,8 +1967,12 @@ internal sealed partial class DeclarationBinder
         }
 
         var text = NameOf(identifier);
-        switch (_scope.For(name).Lookup(text))
+        var lookup = _scope.For(name);
+        switch (lookup.Lookup(text))
         {
+            case null when SmallestGenericArity(lookup, text) is { } arity:
+                _diagnostics.Report(name, "E2703", text, arity);                    // LANG-781 (C-345): TBox where only TBox<T> exists
+                return _types.Error;
             case null when _declaringType is { } declaring && IdentifierComparer.Instance.Equals(declaring.Name, text):
                 // C-067: a type naming itself (not through ^T, LANG-208): an alias of itself is circular, a use inside its own
                 // structure (record field, array element, set base…) needs the incomplete type
@@ -2001,6 +1993,10 @@ internal sealed partial class DeclarationBinder
                 return _types.Error;
         }
     }
+
+    /// <summary>LANG-781 (C-345): the smallest arity of the generic types named <paramref name="text"/> visible in <paramref name="scope"/>, or null.</summary>
+    internal static int? SmallestGenericArity(Scope scope, string text) =>
+        Enumerable.Range(1, 16).Select(n => scope.Lookup(GenericTypeSymbol.KeyOf(text, n))).OfType<GenericTypeSymbol>().FirstOrDefault()?.ParameterNames.Length;
 
     /// <summary>The type of an inline variable or constant (LANG-385, C-125), bound in a body's scope.</summary>
     internal TypeSymbol BindLocalType(TypeSyntax type) => BindType(type);

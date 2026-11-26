@@ -123,7 +123,8 @@ internal static class Binder
     /// bound for this unit (it emits them <c>linkonce_odr</c>) and appended to its routines and diagnostics. Run once every unit of
     /// the compilation has bound its implementation part (the generic's method implementations are known then).
     /// </summary>
-    public static BindingResult BindInstances(BindingResult result)
+    /// <param name="partial">C-244/C-345: for a position model, the routines whose instance bodies are bound (null: all).</param>
+    public static BindingResult BindInstances(BindingResult result, Func<SyntaxNode, bool>? partial = null)
     {
         var unit = result.Unit;
         var bound = result.Routines.Select(r => r.Routine).ToHashSet();
@@ -149,7 +150,17 @@ internal static class Binder
                     MethodSymbol genericMethod => [genericMethod],                   // C-117: a generic method instance
                     _ => [],
                 };
-                var pending = new Queue<RoutineSymbol>(methods.Where(m => m.Definition != null && bound.Add(m)));
+                foreach (var method in methods)
+                {
+                    // C-345 (C-228): the instances an instance's method headings name are used by this unit too
+                    GenericUses.Note(method.ReturnType, unit);
+                    foreach (var parameter in method.Parameters)
+                    {
+                        GenericUses.Note(parameter.Type, unit);
+                    }
+                }
+
+                var pending = new Queue<RoutineSymbol>(methods.Where(m => m.Definition != null && (partial is null || partial(m.Definition)) && bound.Add(m)));
                 while (pending.Count > 0)
                 {
                     var body = BindRoutineBody(result.Types, pending.Dequeue());

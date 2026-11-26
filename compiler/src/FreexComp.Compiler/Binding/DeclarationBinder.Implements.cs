@@ -79,14 +79,10 @@ internal sealed partial class DeclarationBinder
     {
         switch (value)
         {
-            case IdentifierNameSyntax name:
-                return BindTypeName(name);
-            case QualifiedNameSyntax { Right: IdentifierNameSyntax right } qualified when UnitQualifiers.Qualifier(_scope, qualified.Left) is not null:
-                return BindTypeName(right);
-            case QualifiedNameSyntax qualified when LeftmostNamesType(qualified):
-                return ResolveTypeQualifier(qualified) ?? _types.Error;
-            case GenericNameSyntax generic:
-                return BindGenericName(generic);
+            case IdentifierNameSyntax or GenericNameSyntax:
+            case QualifiedNameSyntax qualified when UnitQualifiers.Qualifier(_scope, qualified.Left) is not null || LeftmostNamesType(qualified)
+                                                   || qualified.Left is GenericNameSyntax:
+                return ResolveTypeName((NameSyntax)value);                                  // LANG-780 (C-345)
             default:
                 _diagnostics.Report(value, "E2652");
                 return _types.Error;

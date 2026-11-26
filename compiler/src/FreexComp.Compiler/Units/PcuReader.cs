@@ -105,6 +105,33 @@ internal static class PcuReader
         /// <summary>CMP-1392 (C-344): the classes and records whose <c>nested</c> lists are attached once every type entry is read.</summary>
         private readonly Queue<(TypeSymbol Owner, JsonArray Nested)> _nested = [];
 
+        /// <summary>
+        /// CMP-1392 b (C-345): the member scopes of enclosing types that generics nested in them are declared in (filled with the
+        /// nested members when they are attached), by type.
+        /// </summary>
+        private readonly Dictionary<TypeSymbol, Scope> _memberScopes = new(ReferenceEqualityComparer.Instance);
+
+        /// <summary>The member scope of <paramref name="type"/> (below those of its enclosing types) a nested generic binds in.</summary>
+        private Scope MemberScope(TypeSymbol type)
+        {
+            if (!_memberScopes.TryGetValue(type, out var scope))
+            {
+                scope = new Scope(ScopeKind.TypeMember, type.ContainingSymbol is TypeSymbol outer ? MemberScope(outer) : _declarations, type);
+                _memberScopes[type] = scope;
+                foreach (var member in TypeMembers.NestedMembers(type))
+                {
+                    scope.TryDeclare(member, out _);
+                }
+
+                foreach (var (name, target) in TypeMembers.NestedAliases(type))
+                {
+                    scope.TryDeclare(name, target, out _);
+                }
+            }
+
+            return scope;
+        }
+
         /// <summary>The method implementations of the generics and of the plain classes' generic methods (C-119, C-227).</summary>
         private readonly List<ImmutableArray<RoutineDeclarationSyntax>> _generics = [];
 
@@ -208,7 +235,7 @@ internal static class PcuReader
         }
 
         /// <summary>C-119: a generic with its body re-parsed from the pieces at their original lines and columns (CMP-162).</summary>
-        private GenericTypeSymbol Generic(int id, JsonObject entry, string name)
+        private GenericTypeSymbol Generic(int id, JsonObject entry, string name, Symbol container)
         {
             var parameters = Array(entry, "typeParams").Select(p => Text(p, "name")).ToImmutableArray();
             if (entry["body"] is not JsonValue index || !index.TryGetValue<int>(out var body))
@@ -224,9 +251,11 @@ internal static class PcuReader
                 throw new PcuFormatException($"generic body {body} does not parse");
             }
 
-            var generic = new GenericTypeSymbol(name, parameters, declaration, _declarations, int.MaxValue, _unit, Declaration(entry));
+            // CMP-1392 b (C-345): a generic nested in a type is declared in that type's member scope
+            var declaring = container is TypeSymbol outer ? MemberScope(outer) : _declarations;
+            var generic = new GenericTypeSymbol(name, parameters, declaration, declaring, int.MaxValue, container, Declaration(entry));
             _byId[id] = generic;
-            generic.Constraints = DeclarationBinder.ImportConstraints(types, _declarations, _unit, typeParameters);
+            generic.Constraints = DeclarationBinder.ImportConstraints(types, declaring, _unit, typeParameters);
             _generics.Add(implementations);
             return generic;
         }
@@ -464,6 +493,19 @@ internal static class PcuReader
                     members.Add(type);
                 }
 
+                if (_memberScopes.TryGetValue(pending.Owner, out var memberScope))
+                {
+                    foreach (var member in members)
+                    {
+                        memberScope.TryDeclare(member, out _);                      // C-345: seen by the generics nested in the owner
+                    }
+
+                    foreach (var (name, target) in aliases)
+                    {
+                        memberScope.TryDeclare(name, target, out _);
+                    }
+                }
+
                 switch (pending.Owner)
                 {
                     case ClassTypeSymbol c:
@@ -657,7 +699,7 @@ internal static class PcuReader
                 case "interface":
                     return Interface(id, entry, name, container);
                 case "generic":
-                    return Generic(id, entry, name);
+                    return Generic(id, entry, name, container);
                 case "instance":
                 {
                     // C-119: the instance of the (imported or other unit's) generic for the arguments (LANG-710 identity)

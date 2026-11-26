@@ -229,13 +229,24 @@ public sealed class Compilation
             return GetSemanticModel(normalized);
         }
 
-        var body = OutermostBody(GetSyntaxTree(normalized), position);
+        var tree = GetSyntaxTree(normalized);
+        var outermost = OutermostBodyNode(tree, position);
+        // C-345: a body bound per instance has the scopes of the instance bodies ā€” those the file's every body makes it use
+        var body = outermost is RoutineDeclarationSyntax routine && IsBoundPerInstance(routine) ? tree.Root.FullSpan : outermost?.Span ?? new TextSpan(position, 0);
         return _positionModels.GetOrAdd((normalized, body), key => new Lazy<SemanticModel>(
             () => CreatePositionModel(key.Path, key.Body), LazyThreadSafetyMode.ExecutionAndPublication)).Value;
     }
 
-    /// <summary>The span of the outermost routine declaration or unit-level body containing <paramref name="position"/>; else empty at it.</summary>
-    private static TextSpan OutermostBody(SyntaxTree tree, int position)
+    /// <summary>
+    /// C-345: a method implementation of a generic type (a generic segment in its path) or a generic method is bound per instance, by
+    /// the units that use the instances (C-116): its position model binds the whole file and those instance bodies.
+    /// </summary>
+    private static bool IsBoundPerInstance(RoutineDeclarationSyntax routine) =>
+        routine.Heading.TypeParameterList is not null
+        || routine.Heading.Name is QualifiedNameSyntax { Left: var path } && (path is GenericNameSyntax || path.DescendantNodes().OfType<GenericNameSyntax>().Any());
+
+    /// <summary>The outermost routine declaration or unit-level body containing <paramref name="position"/>, if any.</summary>
+    private static SyntaxNode? OutermostBodyNode(SyntaxTree tree, int position)
     {
         bool Contains(SyntaxNode node) => node.Span.Start <= position && position <= node.Span.End;
         var token = tree.FindToken(position);
@@ -249,7 +260,7 @@ public sealed class Compilation
             }
         }
 
-        return found?.Span ?? new TextSpan(position, 0);
+        return found;
     }
 
     private SemanticModel CreatePositionModel(string path, TextSpan body)

@@ -217,7 +217,7 @@ internal sealed partial class ExpressionBinder
             return new MethodCall(null, arguments, null);
         }
 
-        if (TypeMembers.Outermost(method.Owner) is { IsGenericInstance: true } genericOwner)
+        if (TypeMembers.EnclosingInstance(method.Owner) is { } genericOwner)
         {
             GenericUses.Note(genericOwner, GenericUses.Current ?? GenericUses.UnitOf(_scope), call);      // C-116: the caller's unit emits it (CMP-385)
         }
@@ -256,7 +256,7 @@ internal sealed partial class ExpressionBinder
         }
         else if (Unparenthesized(binary.Right) is MemberAccessExpressionSyntax nested)
         {
-            target = NestedNames.TypeNamedBy(_scope, nested);                  // LANG-771 (C-344): o is TOuter.TInner
+            target = NamedType(nested);                                         // LANG-771 (C-344): o is TOuter.TInner
         }
 
         if (operand.HasErrors || target is ErrorTypeSymbol)
@@ -797,7 +797,7 @@ internal sealed partial class ExpressionBinder
 
     private TypeSymbol? TypeNamedBy(ExpressionSyntax expression)
     {
-        var type = expression is GenericNameSyntax generic ? GenericType(generic) : NestedNames.TypeNamedBy(_scope, expression);
+        var type = NamedType(expression);                                         // LANG-780 (C-345): generic segments too
         if (type is not null && Unparenthesized(expression) is MemberAccessExpressionSyntax { Name: var nestedName } && _scope.Unqualified(Unparenthesized(expression)) is not IdentifierNameSyntax
             && NestedNames.InaccessibleNestedType(_scope, type) is { } visibility && TypeMembers.EnclosingTypes(type).FirstOrDefault() is { } outer)
         {
@@ -929,15 +929,33 @@ internal sealed partial class ExpressionBinder
     }
 
     /// <summary>C-116: <c>TList&lt;Integer&gt;</c> in an expression — the instance (bound like the type name, LANG-705/710).</summary>
-    private TypeSymbol GenericType(GenericNameSyntax generic)
+    private TypeSymbol GenericType(GenericNameSyntax generic) => GenericSegment(generic, null, null);
+
+    /// <summary>
+    /// LANG-780 (C-345): a generic segment of a name in an expression — in this scope, a unit qualifier's scope or among an outer
+    /// type's nested types; bound once per syntax node (names are probed more than once, their errors are reported once).
+    /// </summary>
+    private TypeSymbol GenericSegment(GenericNameSyntax generic, Scope? scope, TypeSymbol? outer)
     {
+        if (_genericSegments.TryGetValue(generic, out var known))
+        {
+            return known;
+        }
+
         if ((_scope.Owner ?? GenericUses.UnitOf(_scope)) is not { } container)
         {
             return Unsupported(generic, "generic type here").Type;
         }
 
-        return new DeclarationBinder(_types, _scope, container, _diagnostics).BindGenericName(generic);
+        var type = new DeclarationBinder(_types, _scope, container, _diagnostics).BindGenericName(generic, scope, outer);
+        _genericSegments[generic] = type;
+        return type;
     }
+
+    private readonly Dictionary<GenericNameSyntax, TypeSymbol> _genericSegments = new(ReferenceEqualityComparer.Instance);
+
+    /// <summary>The type an expression names, generic segments included (LANG-780); null when it names none.</summary>
+    private TypeSymbol? NamedType(ExpressionSyntax expression) => NestedNames.TypeNamedBy(_scope, expression, GenericSegment);
 
     /// <summary>A nested constant or enumeration element used as a value (LANG-770); null for other members.</summary>
     private static BoundExpression? NestedValue(SyntaxNode syntax, Symbol member) => member switch

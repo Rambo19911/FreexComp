@@ -403,6 +403,64 @@ internal sealed partial class DeclarationBinder
         return new DeclarationBinder(_types, scope, _container, _diagnostics);
     }
 
+    /// <summary>
+    /// LANG-780 (C-345): the one resolver of type names — a unit qualifier first (the longest dotted prefix naming a used unit or the
+    /// own unit), then type segments, each in the member scope of the previous one; a <c>G&lt;…&gt;</c> segment instantiates the
+    /// generic of that arity there. E2003 for an unknown first segment, E2005 for a later one, E2703 for a wrong arity.
+    /// </summary>
+    private TypeSymbol ResolveTypeName(NameSyntax name)
+    {
+        switch (name)
+        {
+            case IdentifierNameSyntax identifier:
+                return BindTypeName(identifier);
+            case GenericNameSyntax generic:
+                return BindGenericName(generic);                                            // C-116 (LANG-710)
+            case QualifiedNameSyntax { Right: GenericNameSyntax generic } qualified when UnitQualifiers.Qualifier(_scope, qualified.Left) is { } unit:
+                return BindGenericName(generic, unit.Qualified);                            // U.TBox<X>
+            case QualifiedNameSyntax { Right: IdentifierNameSyntax right } qualified when UnitQualifiers.Qualifier(_scope, qualified.Left) is not null:
+                return BindTypeName(right);                                                 // U.TName (LANG-311, 538)
+            case QualifiedNameSyntax { Right: var right } qualified when !right.Identifier.IsMissing:
+                return ResolveTypeName(qualified.Left) switch
+                {
+                    ErrorTypeSymbol error => error,
+                    var outer => NestedTypeNamed(outer, right),
+                };
+            default:
+                return _types.Error;
+        }
+    }
+
+    /// <summary>The nested type <paramref name="name"/> (plain or generic) of <paramref name="outer"/> (LANG-770, 774, 778, 780).</summary>
+    private TypeSymbol NestedTypeNamed(TypeSymbol outer, SimpleNameSyntax name)
+    {
+        if (name is GenericNameSyntax generic)
+        {
+            return BindGenericName(generic, outer: outer);
+        }
+
+        var text = NameOf(name.Identifier);
+        if (TypeMembers.NestedType(outer, text) is { } inner)
+        {
+            if (NestedNames.InaccessibleNestedType(_scope, inner) is { } visibility)
+            {
+                _diagnostics.Report(name, "E2610", visibility, inner.Name, TypeMembers.DisplayName(outer));    // LANG-774 (C-344)
+                return _types.Error;
+            }
+
+            return inner;
+        }
+
+        if (TypeMembers.NestedGenerics(outer, text).Select(g => g.ParameterNames.Length).DefaultIfEmpty(0).Min() is var arity and > 0)
+        {
+            _diagnostics.Report(name, "E2703", text, arity);                                // LANG-781
+            return _types.Error;
+        }
+
+        _diagnostics.Report(name, "E2005", TypeMembers.DisplayName(outer), text);
+        return _types.Error;
+    }
+
     /// <summary>The leftmost identifier of a qualified name names a type (a nested type follows, LANG-770).</summary>
     private bool LeftmostNamesType(QualifiedNameSyntax qualified)
     {

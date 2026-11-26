@@ -1,0 +1,14 @@
+box TBox<Integer> 7
+inner TInner
+cell TCell<string> x
+1 2 
+TEnumerator 2
+109
+TRUE TRUE
+TRUE
+TRUE TRUE
+TRUE TRUE
+TRUE TRUE
+TRUE
+TRUE
+leaks 0

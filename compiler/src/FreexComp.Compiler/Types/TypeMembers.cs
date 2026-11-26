@@ -60,7 +60,7 @@ internal static class TypeMembers
     /// <summary>The nested type <paramref name="name"/> of <paramref name="type"/>: declared there, or a nested alias (C-311).</summary>
     public static TypeSymbol? NestedType(TypeSymbol type, string name)
     {
-        if (NestedMembers(type).FirstOrDefault(m => IdentifierComparer.Instance.Equals(m.Name, name)) is { } member)
+        if (NestedMembers(type).FirstOrDefault(m => m is not GenericTypeSymbol && IdentifierComparer.Instance.Equals(m.Name, name)) is { } member)
         {
             return member as TypeSymbol;
         }
@@ -68,6 +68,10 @@ internal static class TypeMembers
         var alias = NestedAliases(type).FirstOrDefault(a => IdentifierComparer.Instance.Equals(a.Name, name));
         return alias.Target;
     }
+
+    /// <summary>LANG-778 (C-345): the generic types named <paramref name="name"/> nested in <paramref name="type"/> (any arity).</summary>
+    public static IEnumerable<GenericTypeSymbol> NestedGenerics(TypeSymbol type, string name) =>
+        NestedMembers(type).OfType<GenericTypeSymbol>().Where(g => IdentifierComparer.Instance.Equals(g.Name, name));
 
     /// <summary>The class or record a nested type is declared in, innermost first (LANG-770).</summary>
     public static IEnumerable<TypeSymbol> EnclosingTypes(Symbol symbol)
@@ -86,6 +90,12 @@ internal static class TypeMembers
     /// <summary>LANG-775 (C-344): the display name of a type — for a nested type its enclosing types' names first, <c>TOuter.TInner</c>.</summary>
     public static string DisplayName(TypeSymbol type) =>
         string.Join(".", EnclosingTypes(type).Reverse().Select(t => t.Name).Append(type.Name));
+
+    /// <summary>
+    /// CMP-1391 (C-345): the generic instance a type is part of — itself or its innermost enclosing instance (<c>TList&lt;Integer&gt;</c>
+    /// for <c>TList&lt;Integer&gt;.TEnumerator</c>; <c>TOuter.TCell&lt;string&gt;</c> itself); null for a type of no instance.
+    /// </summary>
+    public static TypeSymbol? EnclosingInstance(TypeSymbol type) => new[] { type }.Concat(EnclosingTypes(type)).FirstOrDefault(t => t.IsGenericInstance);
 
     /// <summary>The unit-level type a (possibly nested) type belongs to.</summary>
     public static TypeSymbol Outermost(TypeSymbol type) => EnclosingTypes(type).LastOrDefault() ?? type;

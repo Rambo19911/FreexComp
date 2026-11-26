@@ -132,7 +132,7 @@ internal sealed partial class ExpressionBinder
     {
         var inner = Unparenthesized(syntax);
         return inner is IdentifierNameSyntax or MemberAccessExpressionSyntax
-            && NestedNames.TypeNamedBy(_scope, inner) is InterfaceTypeSymbol { IsMethodReference: false } intf ? intf : null;
+            && NamedType(inner) is InterfaceTypeSymbol { IsMethodReference: false } intf ? intf : null;
     }
 
     /// <summary>
@@ -1008,6 +1008,17 @@ internal sealed partial class ExpressionBinder
     /// </summary>
     private BoundExpression BindMemberAccess(MemberAccessExpressionSyntax syntax)
     {
+        switch (NamedType(syntax))
+        {
+            case ErrorTypeSymbol:
+                return Error(syntax);
+            case ClassTypeSymbol classType:
+                return new BoundClassReferenceExpression(syntax, classType, classType.Reference);  // LANG-652, 784 (C-345): TList<Integer>.TEnumerator
+            case { } type:
+                _diagnostics.Report(syntax, "E2009", type.Name);                // a type is not a value
+                return Error(syntax);
+        }
+
         var value = BindMemberCall(syntax, syntax, argumentList: null, out var call);
         return call is { } method ? MethodCallExpression(syntax, method) : value!;
     }
@@ -1062,6 +1073,10 @@ internal sealed partial class ExpressionBinder
         else if (symbol is null && CurrentMethod is null && IdentifierComparer.Instance.Equals(text, "Self"))
         {
             _diagnostics.Report(name, "E2134");                                   // LANG-621
+        }
+        else if (symbol is null && DeclarationBinder.SmallestGenericArity(_scope.For(name), text) is { } arity)
+        {
+            _diagnostics.Report(name, "E2703", text, arity);                    // LANG-781 (C-345): TBox.Create where only TBox<T> exists
         }
         else if (symbol is null)
         {
@@ -1135,7 +1150,7 @@ internal sealed partial class ExpressionBinder
         {
             switch (Unparenthesized(invocation.Expression))
             {
-                case MemberAccessExpressionSyntax member when NestedNames.TypeNamedBy(_scope, member) is { } nestedTarget:
+                case MemberAccessExpressionSyntax member when NamedType(member) is { } nestedTarget:
                     return BindTypecastInvocation(invocation, nestedTarget, variableContext);       // C-311: TOuter.TInner(x) (LANG-770)
                 case MemberAccessExpressionSyntax member when !(_scope.Unqualified(member.Expression) is IdentifierNameSyntax { Identifier: { IsMissing: false } q } qualifier
                                                                 && _scope.For(qualifier).Lookup(q.Value as string ?? q.Text) is EnumTypeSymbol):
@@ -1798,7 +1813,7 @@ internal sealed partial class ExpressionBinder
             return (GenericType(generic), null);                                    // C-116: SizeOf(TPair<K, V>), Default(TList<T>)
         }
 
-        if (syntax is MemberAccessExpressionSyntax && NestedNames.TypeNamedBy(_scope, syntax) is { } nested)
+        if (syntax is MemberAccessExpressionSyntax && NamedType(syntax) is { } nested)
         {
             return (nested, null);                                              // LANG-770: SizeOf(TOuter.TInner)
         }

@@ -22,18 +22,20 @@ internal sealed partial class DeclarationBinder
     private Action<TypeSymbol>? _onTypeCreated;
 
     /// <summary>
-    /// <c>TList&lt;T&gt; = …</c> (LANG-700) at unit level: a <see cref="GenericTypeSymbol"/> declared under its name and arity
-    /// (LANG-703). Nothing of the body is bound until it is instantiated (LANG-711).
+    /// <c>TList&lt;T&gt; = …</c> (LANG-700) at unit level or in a type section of a class or record (LANG-778): a
+    /// <see cref="GenericTypeSymbol"/> declared under its name and arity (LANG-703). Nothing of the body is bound until it is
+    /// instantiated (LANG-711). Inside a routine (at any depth) E2705 and the declaration is skipped (LANG-779).
     /// </summary>
     private void BindGenericDeclaration(TypeDeclarationSyntax declaration, TypeParameterListSyntax typeParameters, ImmutableArray<Symbol>.Builder declared)
     {
         var identifier = declaration.Identifier;
-        if (!IsGlobalLevel)
+        if (!IsTypeLevel || IsInRoutine)
         {
-            Unsupported(typeParameters, "local generic type");
+            _diagnostics.Report(typeParameters, "E2705");                       // LANG-779 (C-345)
             return;
         }
 
+        var inInstance = IsInGenericInstance;
         var names = ImmutableArray.CreateBuilder<string>();
         foreach (var parameter in typeParameters.Parameters.SelectMany(p => p.Identifiers).Where(i => !i.Identifier.IsMissing))
         {
@@ -44,7 +46,17 @@ internal sealed partial class DeclarationBinder
                 return;
             }
 
+            if (inInstance && EnclosingTypeParameter(name))
+            {
+                return;                                                         // LANG-778: E2004 reported with the enclosing generic
+            }
+
             names.Add(name);
+        }
+
+        if (!inInstance)
+        {
+            ReportNestedTypeParameterClashes(declaration, names.ToImmutable());
         }
 
         var generic = new GenericTypeSymbol(NameOf(identifier), names.ToImmutable(), declaration, _scope, 0, _container, [DiagnosticBag.LocationOf(identifier)]);
@@ -62,6 +74,68 @@ internal sealed partial class DeclarationBinder
             && names.Contains(NameOf(parentToken), IdentifierComparer.Instance))
         {
             _diagnostics.Report(parentName, "E2702", NameOf(parentToken));       // LANG-717 (C-118)
+        }
+    }
+
+    /// <summary>A scope of the chain lies in a routine (LANG-779: no generic types there, also not in a routine's nested record).</summary>
+    private bool IsInRoutine
+    {
+        get
+        {
+            for (var scope = _scope; scope is not null; scope = scope.Parent)
+            {
+                if (scope.Kind == ScopeKind.Routine)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+    }
+
+    /// <summary>The binder works below the type parameter scope of a generic instance.</summary>
+    private bool IsInGenericInstance => EnclosingTypeParameterScopes().Any();
+
+    private IEnumerable<Scope> EnclosingTypeParameterScopes()
+    {
+        for (var scope = _scope; scope is not null; scope = scope.Parent)
+        {
+            if (scope.DeclaresTypeParameters)
+            {
+                yield return scope;
+            }
+        }
+    }
+
+    /// <summary>LANG-778: <paramref name="name"/> is a type parameter of an enclosing generic instance.</summary>
+    private bool EnclosingTypeParameter(string name) => EnclosingTypeParameterScopes().Any(s => s.LookupLocal(name) is not null);
+
+    /// <summary>
+    /// LANG-778 (C-345): E2004 at every type parameter of a generic nested (at any depth) in <paramref name="declaration"/> whose name
+    /// is a type parameter name of an enclosing generic — checked once with the definition (the nested generics of a generic are
+    /// bound per instance only).
+    /// </summary>
+    private void ReportNestedTypeParameterClashes(TypeDeclarationSyntax declaration, ImmutableArray<string> names)
+    {
+        foreach (var nested in declaration.Type.DescendantNodes().OfType<TypeDeclarationSyntax>().Where(d => d.TypeParameterList is not null))
+        {
+            var outer = new List<string>(names);
+            for (var node = nested.Parent; node is not null && !ReferenceEquals(node, declaration); node = node.Parent)
+            {
+                if (node is TypeDeclarationSyntax { TypeParameterList: { } list })
+                {
+                    outer.AddRange(list.Parameters.SelectMany(p => p.Identifiers).Select(i => NameOf(i.Identifier)));
+                }
+            }
+
+            foreach (var parameter in nested.TypeParameterList!.Parameters.SelectMany(p => p.Identifiers).Where(i => !i.Identifier.IsMissing))
+            {
+                if (outer.Contains(NameOf(parameter.Identifier), IdentifierComparer.Instance))
+                {
+                    _diagnostics.Report(parameter, "E2004", NameOf(parameter.Identifier));
+                }
+            }
         }
     }
 
@@ -186,9 +260,12 @@ internal sealed partial class DeclarationBinder
 
     /// <summary>
     /// <c>TList&lt;Integer&gt;</c> in a type or expression (LANG-710): the instance of the generic of that name and arity for the bound
-    /// arguments. E2703 when only another arity (or a non-generic type) has the name, E2003 when nothing has.
+    /// arguments. E2703 when only another arity (or a non-generic type) has the name, E2003 when nothing has. The generic is looked
+    /// up in <paramref name="scope"/> (a unit qualifier's scope, LANG-780; default this binder's scope) or among the nested types of
+    /// <paramref name="outer"/> (<c>TOuter.TBox&lt;X&gt;</c>, <c>TA&lt;X&gt;.TB&lt;Y&gt;</c>, LANG-778: E2005 when it has none of the
+    /// name); the type arguments are bound in this binder's scope.
     /// </summary>
-    internal TypeSymbol BindGenericName(GenericNameSyntax name)
+    internal TypeSymbol BindGenericName(GenericNameSyntax name, Scope? scope = null, TypeSymbol? outer = null)
     {
         if (name.Identifier.IsMissing || name.ContainsDiagnostics)
         {
@@ -197,24 +274,54 @@ internal sealed partial class DeclarationBinder
 
         var text = NameOf(name.Identifier);
         var arguments = name.TypeArgumentList.Arguments;
-        if (_scope.Lookup(GenericTypeSymbol.KeyOf(text, arguments.Count)) is not GenericTypeSymbol generic)
+        GenericTypeSymbol? generic;
+        if (outer is not null)
         {
-            var other = Enumerable.Range(0, 16).Select(n => _scope.Lookup(GenericTypeSymbol.KeyOf(text, n))).OfType<GenericTypeSymbol>().FirstOrDefault();
-            if (other is not null || _scope.Lookup(text) is TypeSymbol)
+            var all = TypeMembers.NestedGenerics(outer, text).ToList();
+            generic = all.FirstOrDefault(g => g.ParameterNames.Length == arguments.Count);
+            if (generic is null)
             {
-                _diagnostics.Report(name, "E2703", text, other?.ParameterNames.Length ?? 0);
-            }
-            else
-            {
-                _diagnostics.ReportUndeclared(name, text);
+                if (all.Count > 0 || TypeMembers.NestedType(outer, text) is not null)
+                {
+                    _diagnostics.Report(name, "E2703", text, all.Count > 0 ? all.Min(g => g.ParameterNames.Length) : 0);
+                }
+                else
+                {
+                    _diagnostics.Report(name, "E2005", TypeMembers.DisplayName(outer), text);
+                }
+
+                return _types.Error;
             }
 
-            return _types.Error;
+            if (NestedNames.InaccessibleNestedType(_scope, generic) is { } visibility)
+            {
+                _diagnostics.Report(name, "E2610", visibility, generic.Name, TypeMembers.DisplayName(outer));      // LANG-774
+                return _types.Error;
+            }
         }
-
-        if (_types.HasTypeHints && _scope.ImportedTypeHints(generic.ScopeName) is { } hints)
+        else
         {
-            _diagnostics.ReportHints(name, generic.Name, hints);                                   // LANG-472 (C-232)
+            scope ??= _scope;
+            generic = scope.Lookup(GenericTypeSymbol.KeyOf(text, arguments.Count)) as GenericTypeSymbol;
+            if (generic is null)
+            {
+                var other = Enumerable.Range(0, 16).Select(n => scope.Lookup(GenericTypeSymbol.KeyOf(text, n))).OfType<GenericTypeSymbol>().FirstOrDefault();
+                if (other is not null || scope.Lookup(text) is TypeSymbol)
+                {
+                    _diagnostics.Report(name, "E2703", text, other?.ParameterNames.Length ?? 0);
+                }
+                else
+                {
+                    _diagnostics.ReportUndeclared(name, text);
+                }
+
+                return _types.Error;
+            }
+
+            if (_types.HasTypeHints && scope.ImportedTypeHints(generic.ScopeName) is { } hints)
+            {
+                _diagnostics.ReportHints(name, generic.Name, hints);                                   // LANG-472 (C-232)
+            }
         }
 
         var bound = ImmutableArray.CreateBuilder<TypeSymbol>(arguments.Count);
@@ -355,37 +462,63 @@ internal sealed partial class DeclarationBinder
     /// <summary>
     /// <c>procedure TList&lt;T&gt;.Add(…)</c> (LANG-704): recorded with the generic of this unit and applied to every instance made so
     /// far and later (its heading is bound per instance, with its type parameter names declared as the instance's arguments).
-    /// Diagnostics of the matching are reported for the first instance only.
+    /// Diagnostics of the matching are reported for the first instance only. With <paramref name="outer"/> the generic is one
+    /// nested in that type of this unit (<c>TOuter.TBox&lt;T&gt;.Run</c>, LANG-778); <paramref name="nestedPath"/> are the segments
+    /// after the generic (<c>TList&lt;T&gt;.TEnumerator.MoveNext</c>, LANG-776; generic ones too, <c>TA&lt;T&gt;.TB&lt;U&gt;.M</c>).
     /// </summary>
     private void BindGenericMethodImplementation(RoutineDeclarationSyntax declaration, GenericNameSyntax qualifier, SyntaxToken identifier,
-        ImmutableArray<SyntaxToken> nestedPath = default)
+        ImmutableArray<SimpleNameSyntax> nestedPath, TypeSymbol? outer = null)
     {
         var text = NameOf(qualifier.Identifier);
         var arguments = qualifier.TypeArgumentList.Arguments;
-        if (_scope.Lookup(GenericTypeSymbol.KeyOf(text, arguments.Count)) is not GenericTypeSymbol generic)
+        var generic = outer is null ? _scope.Lookup(GenericTypeSymbol.KeyOf(text, arguments.Count)) as GenericTypeSymbol
+            : TypeMembers.NestedGenerics(outer, text).FirstOrDefault(g => g.ParameterNames.Length == arguments.Count);
+        if (generic is null)
         {
-            _diagnostics.ReportUndeclared(qualifier, text);
+            if (outer is null)
+            {
+                _diagnostics.ReportUndeclared(qualifier, text);
+            }
+            else
+            {
+                _diagnostics.Report(qualifier, "E2606", text, TypeMembers.DisplayName(outer));    // LANG-776
+            }
+
             return;
         }
 
-        if (!ReferenceEquals(generic.ContainingSymbol, _container))
+        if (!ReferenceEquals(outer is null ? generic.ContainingSymbol : TypeMembers.Outermost(outer).ContainingSymbol, _container))
         {
             _diagnostics.Report(identifier, "E2606", NameOf(identifier), generic.Name);
             return;
         }
 
-        var names = arguments.Select(a => a is NamedTypeSyntax { Name: IdentifierNameSyntax { Identifier: var token } } ? NameOf(token) : "").ToImmutableArray();
-        var implementation = new GenericMethodImplementation(declaration, identifier, names, _scope, _scope.Count, _container)
+        var implementation = new GenericMethodImplementation(declaration, identifier, ParameterNamesOf(qualifier), _scope, _scope.Count, _container)
         {
-            NestedPath = nestedPath.IsDefault ? [] : nestedPath,
+            NestedPath = nestedPath,
         };
+        AddGenericImplementation(generic, implementation, report: true);
+    }
+
+    /// <summary>The type parameter names a heading's generic segment repeats (LANG-704).</summary>
+    private static ImmutableArray<string> ParameterNamesOf(GenericNameSyntax segment) =>
+        [.. segment.TypeArgumentList.Arguments.Select(a => a is NamedTypeSyntax { Name: IdentifierNameSyntax { Identifier: var token } } ? NameOf(token) : "")];
+
+    private void AddGenericImplementation(GenericTypeSymbol generic, GenericMethodImplementation implementation, bool report)
+    {
         lock (_types.GenericGate)
         {
             generic.Implementations.Add(implementation);
-            var first = true;
+            var first = report;
             foreach (var instance in generic.Instances.Values.Where(i => i.TypeKind != TypeKind.Error).ToList())
             {
-                DefineInstanceMethod(instance, implementation, first);
+                // C-345 (C-228): an instance made earlier belongs to the units that use it ā€” they note what its headings name
+                // (Binder.BindInstances); defining the method here does not make the declaring unit a user
+                using (GenericUses.Suppress())
+                {
+                    DefineInstanceMethod(instance, implementation, first);
+                }
+
                 first = false;
             }
         }
@@ -406,13 +539,34 @@ internal sealed partial class DeclarationBinder
 
         var diagnostics = report ? _diagnostics : new DiagnosticBag();
         var owner = instance;
-        foreach (var segment in implementation.NestedPath)
+        for (var k = 0; k < implementation.NestedPath.Length; k++)
         {
+            var segment = implementation.NestedPath[k];
+            var text = NameOf(segment.Identifier);
+            if (segment is GenericNameSyntax nestedGeneric)
+            {
+                // LANG-778 (C-345): TA<T>.TB<U>.M — this instance's nested generic gets the rest of the path, bound in this scope
+                if (TypeMembers.NestedGenerics(owner, text).FirstOrDefault(g => g.ParameterNames.Length == nestedGeneric.TypeArgumentList.Arguments.Count)
+                    is not { } inner || !ReferenceEquals(inner.ContainingSymbol, owner))
+                {
+                    diagnostics.Report(segment, "E2606", text, TypeMembers.DisplayName(owner));
+                    return;
+                }
+
+                var rest = new GenericMethodImplementation(implementation.Declaration, implementation.Identifier, ParameterNamesOf(nestedGeneric), scope,
+                    scope.Count, implementation.Container)
+                {
+                    NestedPath = implementation.NestedPath[(k + 1)..],
+                };
+                new DeclarationBinder(_types, scope, implementation.Container, diagnostics).AddGenericImplementation(inner, rest, report);
+                return;
+            }
+
             // LANG-776 (C-344): the instance's own nested type (each instance has its nested types, LANG-775)
-            if (TypeMembers.NestedType(owner, NameOf(segment)) is not ({ } nested and (ClassTypeSymbol or RecordTypeSymbol))
+            if (TypeMembers.NestedType(owner, text) is not ({ } nested and (ClassTypeSymbol or RecordTypeSymbol))
                 || !ReferenceEquals(nested.ContainingSymbol, owner))
             {
-                diagnostics.Report(segment, "E2606", NameOf(segment), TypeMembers.DisplayName(owner));
+                diagnostics.Report(segment, "E2606", text, TypeMembers.DisplayName(owner));
                 return;
             }
 
@@ -669,7 +823,7 @@ internal static class GenericUses
     /// </summary>
     public static void Note(Symbol? type, UnitSymbol? unit, SyntaxNode? at = null)
     {
-        if (type is not (TypeSymbol { IsGenericInstance: true } or MethodSymbol { GenericMethodDefinition: not null }) || unit is null
+        if (t_suppressed || type is not (TypeSymbol { IsGenericInstance: true } or MethodSymbol { GenericMethodDefinition: not null }) || unit is null
             || !ArgumentsVisibleIn(type, unit))
         {
             return;
@@ -767,5 +921,21 @@ internal static class GenericUses
     internal readonly struct Restore(UnitSymbol? previous) : IDisposable
     {
         public void Dispose() => t_current = previous;
+    }
+
+    [ThreadStatic]
+    private static bool t_suppressed;
+
+    /// <summary>C-345 (C-228): while the result is not disposed, nothing is noted as used on this thread.</summary>
+    public static Suppression Suppress()
+    {
+        var previous = t_suppressed;
+        t_suppressed = true;
+        return new Suppression(previous);
+    }
+
+    internal readonly struct Suppression(bool previous) : IDisposable
+    {
+        public void Dispose() => t_suppressed = previous;
     }
 }

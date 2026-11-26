@@ -672,7 +672,7 @@ internal sealed class PcuWriter(PcuContext context)
             }
 
             Describe(entry, type);
-            if (TypeMembers.EnclosingTypes(type).FirstOrDefault() is { } outer && !TypeMembers.Outermost(type).IsGenericInstance)
+            if (TypeMembers.EnclosingTypes(type).FirstOrDefault() is { } outer && TypeMembers.EnclosingInstance(type) is null)
             {
                 entry["outer"] = TypeId(outer);                                    // CMP-1392 (C-344): created inside its enclosing type
             }

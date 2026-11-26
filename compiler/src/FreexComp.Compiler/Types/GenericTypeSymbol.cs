@@ -93,5 +93,5 @@ internal sealed record GenericMethodImplementation(RoutineDeclarationSyntax Decl
     Scope Scope, int VisibleCount, Symbol Container)
 {
     /// <summary>LANG-776 (C-344): the nested types after the generic in the heading's path, <c>TList&lt;T&gt;.TEnumerator.MoveNext</c>.</summary>
-    public ImmutableArray<SyntaxToken> NestedPath { get; init; } = [];
+    public ImmutableArray<SimpleNameSyntax> NestedPath { get; init; } = [];
 }

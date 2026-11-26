@@ -1,0 +1,14 @@
+plain box
+box of TBox<Integer> 7
+8
+TRUE TRUE
+text box of TBox<string>
+TRUE
+pair box TBox<Integer, string> 1 two
+cell 5 8
+TB<string> 3 three
+TRUE
+TRUE
+TRUE
+TRUE
+leaks 0

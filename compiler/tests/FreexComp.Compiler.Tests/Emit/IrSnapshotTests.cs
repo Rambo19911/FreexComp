@@ -2102,6 +2102,7 @@ public sealed class IrSnapshotTests
         ["IfExit"] = IfExitSource,
         ["Calls"] = CallsSource,
         ["NestedFrame"] = NestedFrameSource,
+        ["NestedTypeOfInstance"] = NestedTypeOfInstanceSource,
     };
 
     /// <summary>C-199: every <c>linkonce_odr</c> global of every snapshot module has <c>, comdat</c> and its <c>$name = comdat any</c>.</summary>
@@ -3273,6 +3274,83 @@ public sealed class IrSnapshotTests
     [Trait("Req", "CMP-1053")]
     public void LibraryModule() =>
         Snapshot.Verify("LibraryModule", ExportThunkTests.EmitLibraryIr("mathlib", ExportThunkTests.MathLibSource, ("MathUnit", ExportThunkTests.MathUnitSource)));
+
+    internal const string NestedTypeOfInstanceSource = """
+        unit M;
+        interface
+        type
+          TOuter = class
+          public
+            type
+              TInner = class
+                function Get: Integer;
+              end;
+              TCell<T> = class
+                Item: T;
+                function Get: T;
+              end;
+          end;
+          TList<T> = class
+          public
+            type
+              TEnumerator = class
+                FIndex: Integer;
+                function MoveNext: Boolean;
+              end;
+          end;
+        function Count: Integer;
+        implementation
+        function TOuter.TInner.Get: Integer;
+        begin
+          Result := 1;
+        end;
+        function TOuter.TCell<T>.Get: T;
+        begin
+          Result := Item;
+        end;
+        function TList<T>.TEnumerator.MoveNext: Boolean;
+        begin
+          Inc(FIndex);
+          Result := FIndex < 2;
+        end;
+        function Count: Integer;
+        var
+          E: TList<Integer>.TEnumerator;
+          C: TOuter.TCell<Byte>;
+        begin
+          C := nil;
+          Result := C.Get;
+          E := nil;
+          while E.MoveNext do
+            Inc(Result);
+        end;
+        end.
+        """;
+
+    /// <summary>
+    /// CMP-1390, 1391 (C-345): the VMT, RTTI and methods of <c>TList&lt;Integer&gt;.TEnumerator</c> are part of the instance —
+    /// <c>linkonce_odr</c>, each with its comdat like the instance's own symbols, named after the instance's canonical name — while the
+    /// nested class <c>TOuter.TInner</c> of a non-generic interface type has external linkage; an instance of the generic nested in it,
+    /// <c>TOuter.TCell&lt;Byte&gt;</c>, is emitted like a unit-level instance (CMP-385).
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1390")]
+    [Trait("Req", "CMP-1391")]
+    public void NestedTypeOfInstance_LinkonceComdat()
+    {
+        var text = Emit(NestedTypeOfInstanceSource);
+        Snapshot.Verify("NestedTypeOfInstance", text);
+        Assert.Contains("$\"M.TList<Integer>.TEnumerator.$vmt\" = comdat any", text);
+        Assert.Matches(@"@""M\.TList<Integer>\.TEnumerator\.\$vmt"" = linkonce_odr constant .*, comdat, align", text);
+        Assert.Matches(@"@""M\.TList<Integer>\.TEnumerator\.\$rtti"" = linkonce_odr constant .*, comdat, align", text);
+        Assert.Matches(@"define linkonce_odr i8 @""M\.TList<Integer>\.TEnumerator\.MoveNext""\(ptr %Self\) #0 comdat", text);
+        Assert.Matches(@"@""M\.TOuter\.TInner\.\$vmt"" = constant ", text);
+        Assert.Matches(@"define i32 @""M\.TOuter\.TInner\.Get""\(ptr %Self\) #0 \{", text);
+        Assert.Matches(@"@""M\.TOuter\.TCell<Byte>\.\$vmt"" = linkonce_odr constant .*, comdat, align", text);
+        Assert.Matches(@"define linkonce_odr i8 @""M\.TOuter\.TCell<Byte>\.Get""\(ptr %Self\) #0 comdat", text);
+    }
+
 
     internal static string Emit(string source)
     {
