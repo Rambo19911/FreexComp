@@ -1,5 +1,5 @@
 # Runs `dotnet <args>` with a hard wall-clock limit and leaves nothing of its own running.
-# While it waits it records every process of its tree (test hosts, programs the tests start, their children). At the
+# While it waits it records (every 0.5 s) every process of its tree (test hosts, programs the tests start, their children). At the
 # end - normal exit or limit reached - every recorded process that is still alive is killed. Processes of other runs
 # (other agents) are never touched.
 #
@@ -17,6 +17,7 @@ $runner = "$Log.runner"
 Remove-Item -LiteralPath $runner -ErrorAction SilentlyContinue
 $p = Start-Process -FilePath 'dotnet' -ArgumentList $DotnetArgs -WorkingDirectory $WorkDir -NoNewWindow -PassThru `
     -RedirectStandardOutput $Log -RedirectStandardError "$Log.err" -ErrorAction Stop
+$null = $p.Handle  # keeps the process handle open so ExitCode is available after the exit
 $tree = @{ $p.Id = 'dotnet' }
 
 function Add-Descendants {
@@ -36,7 +37,7 @@ $deadline = (Get-Date).AddSeconds($Seconds)
 $finished = $false
 while (-not $finished -and (Get-Date) -lt $deadline) {
     Add-Descendants
-    $finished = $p.WaitForExit(2000)
+    $finished = $p.WaitForExit(500)
 }
 if (-not $finished) {
     Add-Descendants
