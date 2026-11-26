@@ -58,6 +58,11 @@ The structure of an instance comes from the frame. In an instance you cannot:
 Make such changes in the frame itself; the status bar tells you so when you try. The `Name` of a control of
 the frame is read-only in the Object Inspector.
 
+When you rename a control in the frame's own designer, every instance of the frame in the project follows:
+forms and frames that place it, their descendants and instances inside other frames keep the values they
+changed for that control, and references to it from the placing form use the new name. One Undo in the frame
+takes the rename back in every file.
+
 ## Frames inside frames
 A frame can contain instances of other frames. Changes you make in an inner instance are kept in the frame
 that contains it, and an instance of that outer frame shows them in turn. Each level can change and revert
