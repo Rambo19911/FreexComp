@@ -68,8 +68,16 @@ form.
 
 ## When the ancestor changes
 Change the ancestor in its own tab, and every open descendant shows the change when you switch to it. Values
-you changed in the descendant stay. If you rename, delete or change the class of an ancestor control that a
-descendant changed, the descendant keeps those changes as text it cannot apply: the info bar names them,
+you changed in the descendant stay.
+
+When you rename an ancestor control in the designer (its `Name` in the Object Inspector), every descendant
+form and frame of the project is renamed with it, open or not, and keeps its own changes to that control.
+Descendants that are not open are saved at once; open ones show the change and are saved with their tab.
+One Undo in the ancestor takes the rename back in every file. The rename is refused when a descendant
+already has a control of the new name.
+
+If you delete or change the class of an ancestor control that a descendant changed, or rename it by editing
+the ancestor's text, the descendant keeps those changes as text it cannot apply: the info bar names them,
 and you can edit or remove them in the Text view.
 
 ## Frames and inherited forms
