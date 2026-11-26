@@ -382,6 +382,9 @@ public sealed class AncestorRenameTests
         Assert.True(inspector.BeginEdit());
         inspector.EditText = "AcceptButton";
         Assert.False(inspector.Commit());
+        var notUpdated = FreexComp.Ide.Core.Dialogs.MessageDefinitions.Get("Msg.Designer.DescendantNotUpdated"); // D-144
+        Assert.Equal(["OK"], notUpdated.Buttons);
+        Assert.StartsWith(notUpdated.Text.Split("{0}")[0] + MainFormPath + "\n", inspector.EditError, StringComparison.Ordinal);
         Assert.Contains(MainFormPath, inspector.EditError, StringComparison.Ordinal);
         Assert.NotNull(document.Designer.Model!.FindByName("YesButton"));
         Assert.Null(document.Designer.Model.FindByName("AcceptButton"));
@@ -402,7 +405,8 @@ public sealed class AncestorRenameTests
         Project();
         var (document, inspector) = await OpenBaseAsync();
         var dialogs = Assert.IsType<FakeDialogService>(_services.Dialogs);
-        dialogs.Answer("Msg.File.SaveFailed", "Cancel");
+        dialogs.Answer("Msg.Designer.DescendantNotUpdated", "OK");
+        Assert.Equal(["OK"], FreexComp.Ide.Core.Dialogs.MessageDefinitions.Get("Msg.Designer.DescendantNotUpdated").Buttons); // D-144
         var original = new[] { MainFormPath, LeafFormPath, OtherFormPath }.ToDictionary(p => p, _fs.ReadAllBytes);
         RenameOkButton(document, inspector);
         var renamed = original.Keys.ToDictionary(p => p, _fs.ReadAllBytes);
@@ -412,7 +416,7 @@ public sealed class AncestorRenameTests
         _fs.SetReadOnly(OtherFormPath, true);
         Execute(document, FreexComp.Designer.Surface.Commands.Undo);
         var request = Assert.Single(dialogs.Requests);
-        Assert.Equal("Msg.File.SaveFailed", request.MessageId);
+        Assert.Equal("Msg.Designer.DescendantNotUpdated", request.MessageId);
         Assert.Equal(OtherFormPath, request.Args[0]);
         Assert.NotNull(document.Designer.Model!.FindByName("YesButton"));
         Assert.True(document.Designer.Undo.CanUndo);
@@ -436,7 +440,7 @@ public sealed class AncestorRenameTests
         _fs.SetReadOnly(OtherFormPath, true);
         Execute(document, FreexComp.Designer.Surface.Commands.Redo);
         Assert.Equal(2, dialogs.Requests.Count);
-        Assert.Equal("Msg.File.SaveFailed", dialogs.Requests[1].MessageId);
+        Assert.Equal("Msg.Designer.DescendantNotUpdated", dialogs.Requests[1].MessageId);
         Assert.Equal(OtherFormPath, dialogs.Requests[1].Args[0]);
         Assert.NotNull(document.Designer.Model!.FindByName("OkButton"));
         Assert.True(document.Designer.Undo.CanRedo);

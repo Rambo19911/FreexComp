@@ -558,6 +558,11 @@ The unit was opened as code only.</value>
   <data name="Msg_Designer_NameDuplicate" xml:space="preserve">
     <value>The form already has a component named {0}.</value>
   </data>
+  <data name="Msg_Designer_DescendantNotUpdated" xml:space="preserve">
+    <value>The inherited form cannot be updated; nothing was changed.
+{0}
+{1}</value>
+  </data>
   <data name="Msg_Designer_NameConflictsWithMember" xml:space="preserve">
     <value>Class {0} already declares a member named {1}.</value>
   </data>

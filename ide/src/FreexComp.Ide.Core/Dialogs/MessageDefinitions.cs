@@ -90,6 +90,7 @@ public static class MessageDefinitions
         new("Msg.Designer.HandlerSignatureMismatch", E, ["OK"]),
         new("Msg.Designer.MetadataMissing", E, ["OpenOptions", "Cancel"]),
         new("Msg.Designer.CodeSyncConflict", E, ["OK"]),
+        new("Msg.Designer.DescendantNotUpdated", E, ["OK"]),
         new("Msg.Options.ResetKeysConfirm", Q, ["Reset", "Cancel"]),
         new("Msg.Options.ResetColorsConfirm", Q, ["Reset", "Cancel"]),
         new("Msg.ProjectOptions.ConfigDeleteConfirm", Q, ["Delete", "Cancel"]),

@@ -259,8 +259,8 @@ public sealed class AncestorRename
 
         private void Fail(string path, string reason)
         {
-            owner.LastFailure = string.Format(CultureInfo.CurrentCulture, Strings.Msg_File_SaveFailed, path, reason);
-            Failure = ("Msg.File.SaveFailed", [path, reason]);
+            owner.LastFailure = string.Format(CultureInfo.CurrentCulture, Strings.Msg_Designer_DescendantNotUpdated, path, reason);
+            Failure = ("Msg.Designer.DescendantNotUpdated", [path, reason]); // D-144
         }
 
         /// <summary>
@@ -283,7 +283,7 @@ public sealed class AncestorRename
             }
             catch (Exception e) when (!rethrow && e is IOException or UnauthorizedAccessException or RefusedException)
             {
-                ancestor.ShowStatus("Msg.File.SaveFailed", [definition.FormPath, e.Message]); // the file keeps what it has
+                ancestor.ShowStatus("Msg.Designer.DescendantNotUpdated", [definition.FormPath, e.Message]); // the file keeps what it has
                 return false;
             }
         }
