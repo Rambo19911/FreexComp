@@ -1,0 +1,20 @@
+inherited FrameChildForm: TFrameChildForm
+  Caption = 'Frame child'
+  inherited Address: TAddressFrame
+    Left = 24
+    inherited TitleLabel: TLabel
+      Caption = 'Home address'
+    end
+  end
+  inline Extra: TAddressFrameEx
+    Left = 344
+    Top = 8
+    TabOrder = 2
+    inherited TitleLabel: TLabel
+      Caption = 'Delivery address'
+    end
+    inherited NoteLabel: TLabel
+      Caption = 'Ring twice'
+    end
+  end
+end

@@ -1,0 +1,34 @@
+# the ancestor form alone
+FrameBaseForm: TFrameBaseForm caption='Frame base' components=2
+  Address: TAddressFrame owner=FrameBaseForm parent=FrameBaseForm bounds=16,8,320,120 inline=yes components=3
+    TitleLabel: TLabel owner=Address parent=Address bounds=8,8,120,15 caption='Postal address'
+    StreetEdit: TEdit owner=Address parent=Address bounds=8,32,200,23 text='Street'
+    CityEdit: TEdit owner=Address parent=Address bounds=8,64,200,23 text='City'
+  OkButton: TButton owner=FrameBaseForm parent=FrameBaseForm bounds=16,200,75,25 caption='OK'
+# the inherited form (form-inheritance.md section 6)
+FrameChildForm: TFrameChildForm caption='Frame child' components=3
+  Address: TAddressFrame owner=FrameChildForm parent=FrameChildForm bounds=24,8,320,120 inline=yes components=3
+    TitleLabel: TLabel owner=Address parent=Address bounds=8,8,120,15 caption='Home address'
+    StreetEdit: TEdit owner=Address parent=Address bounds=8,32,200,23 text='Street'
+    CityEdit: TEdit owner=Address parent=Address bounds=8,64,200,23 text='City'
+  OkButton: TButton owner=FrameChildForm parent=FrameChildForm bounds=16,200,75,25 caption='OK'
+  Extra: TAddressFrameEx owner=FrameChildForm parent=FrameChildForm bounds=344,8,320,150 inline=yes components=4
+    TitleLabel: TLabel owner=Extra parent=Extra bounds=8,8,120,15 caption='Delivery address'
+    StreetEdit: TEdit owner=Extra parent=Extra bounds=8,32,200,23 text='Street'
+    CityEdit: TEdit owner=Extra parent=Extra bounds=8,64,200,23 text='City'
+    NoteLabel: TLabel owner=Extra parent=Extra bounds=8,96,200,15 caption='Ring twice'
+ok override of an override: the descendant's Caption wins
+ok the descendant's Left of the inherited instance
+ok the frame's children stay owned by their instance
+ok the derived frame's instance overrides a base child
+ok and the derived frame's own label
+ok a value of the base frame in the derived frame's instance
+ok the Height of the derived frame's file
+ok the instance keeps the name of its inline object
+# the derived frame created in code (RTL-1134)
+ok alone: the header name of the most derived frame file
+ok it owns the base frame's three children and its own label
+ok the derived frame's override
+ok with an owner: no name
+ok with an owner: the same four children
+# passed 13 failed 0

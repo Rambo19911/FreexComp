@@ -1,0 +1,24 @@
+inherited ScaledChild: TScaledChild
+  ClientWidth = 601
+  inherited Box: TPanel
+    inherited First: TButton
+      Left = 31
+    end
+    object Second: TButton
+      Left = 151
+      Top = 15
+      Width = 113
+      Height = 38
+      Caption = 'Second'
+      TabOrder = 1
+    end
+  end
+  object Third: TButton
+    Left = 331
+    Top = 61
+    Width = 113
+    Height = 38
+    Caption = 'Third'
+    TabOrder = 1
+  end
+end

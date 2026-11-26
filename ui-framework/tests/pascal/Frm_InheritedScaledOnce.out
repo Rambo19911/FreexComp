@@ -1,0 +1,16 @@
+# the ancestor alone
+ok one Loaded
+ok ClientWidth
+ok ClientHeight
+ok Box
+ok First
+# the descendant without a PixelsPerInch line (UIF-1451)
+ok the run-time DPI
+ok one Loaded for both levels
+ok ClientWidth (the descendant's value), scaled once
+ok ClientHeight (inherited), scaled once
+ok Box (inherited), scaled once
+ok First (Left overridden), scaled once
+ok Second (new inside the inherited panel), scaled once
+ok Third (new at the root), scaled once
+# passed 13 failed 0

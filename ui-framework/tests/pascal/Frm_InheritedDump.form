@@ -1,0 +1,36 @@
+inherited DumpDialog: TDumpDialog
+  Caption = 'Inherited dump'
+  inherited ButtonPanel: TPanel
+    inherited OkButton: TButton
+      Left = 108
+    end
+    object ApplyButton: TButton
+      Left = 192
+      Top = 8
+      Width = 75
+      Height = 25
+      Caption = 'Apply'
+      TabOrder = 3
+    end
+  end
+  inherited Pages: TPageControl
+    inherited AdvancedPage: TTabSheet
+      object ResetButton: TButton
+        Left = 4
+        Top = 2
+        Width = 75
+        Height = 21
+        Caption = 'Reset'
+        TabOrder = 0
+      end
+    end
+  end
+  object MoreButton: TButton
+    Left = 16
+    Top = 0
+    Width = 75
+    Height = 21
+    Caption = 'More'
+    TabOrder = 3
+  end
+end

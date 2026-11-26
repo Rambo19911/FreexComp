@@ -1,0 +1,14 @@
+inherited AddressFrameEx: TAddressFrameEx
+  Height = 150
+  inherited TitleLabel: TLabel
+    Caption = 'Address (extended)'
+  end
+  object NoteLabel: TLabel
+    Left = 8
+    Top = 96
+    Width = 200
+    Height = 15
+    AutoSize = False
+    Caption = 'Note'
+  end
+end

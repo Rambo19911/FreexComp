@@ -1,0 +1,128 @@
+{
+  "formatVersion": 1,
+  "dpi": 96,
+  "forms": [
+    {
+      "class": "TDumpDialog",
+      "name": "DumpDialog",
+      "clientWidth": 360,
+      "clientHeight": 160,
+      "controls": [
+        {
+          "class": "TPanel",
+          "name": "ButtonPanel",
+          "left": 0,
+          "top": 119,
+          "width": 360,
+          "height": 41,
+          "visible": true,
+          "controls": [
+            {
+              "class": "TButton",
+              "name": "OkButton",
+              "left": 108,
+              "top": 8,
+              "width": 75,
+              "height": 25,
+              "visible": true,
+              "controls": []
+            },
+            {
+              "class": "TButton",
+              "name": "CancelButton",
+              "left": 276,
+              "top": 8,
+              "width": 75,
+              "height": 25,
+              "visible": true,
+              "controls": []
+            },
+            {
+              "class": "TButton",
+              "name": "HelpButton",
+              "left": 8,
+              "top": 8,
+              "width": 75,
+              "height": 25,
+              "visible": true,
+              "controls": []
+            },
+            {
+              "class": "TButton",
+              "name": "ApplyButton",
+              "left": 192,
+              "top": 8,
+              "width": 75,
+              "height": 25,
+              "visible": true,
+              "controls": []
+            }
+          ]
+        },
+        {
+          "class": "TPageControl",
+          "name": "Pages",
+          "left": 16,
+          "top": 56,
+          "width": 328,
+          "height": 56,
+          "visible": true,
+          "controls": [
+            {
+              "class": "TTabSheet",
+              "name": "GeneralPage",
+              "left": 4,
+              "top": 27,
+              "width": 320,
+              "height": 25,
+              "visible": false,
+              "controls": []
+            },
+            {
+              "class": "TTabSheet",
+              "name": "AdvancedPage",
+              "left": 4,
+              "top": 27,
+              "width": 320,
+              "height": 25,
+              "visible": true,
+              "controls": [
+                {
+                  "class": "TButton",
+                  "name": "ResetButton",
+                  "left": 4,
+                  "top": 2,
+                  "width": 75,
+                  "height": 21,
+                  "visible": true,
+                  "controls": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "class": "TEdit",
+          "name": "NameEdit",
+          "left": 16,
+          "top": 24,
+          "width": 328,
+          "height": 23,
+          "visible": true,
+          "controls": []
+        },
+        {
+          "class": "TButton",
+          "name": "MoreButton",
+          "left": 16,
+          "top": 0,
+          "width": 75,
+          "height": 21,
+          "visible": true,
+          "controls": []
+        }
+      ]
+    }
+  ]
+}
+exit code 0

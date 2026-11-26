@@ -1,0 +1,53 @@
+# F0112 and F0113 (RTL-1131, 1132)
+ok F0112: the constructor raises
+ok F0112: the half-built form is destroyed
+ok F0112: not left in Screen.Forms
+ok F0112: CreateForm raises
+ok F0112: CreateForm destroys the half-built form
+ok F0112: CreateForm clears the reference
+ok F0112: CreateForm leaves nothing in Screen.Forms
+ok F0112: Application owns nothing new
+ok F0113: the constructor raises
+ok F0113: the half-built form is destroyed
+ok F0113: not left in Screen.Forms
+ok F0113: CreateForm raises
+ok F0113: CreateForm destroys the half-built form
+ok F0113: CreateForm clears the reference
+ok F0113: CreateForm leaves nothing in Screen.Forms
+ok F0113: Application owns nothing new
+# F0109 and F0110 in a descendant file (RTL-1128, 1126)
+ok F0109 unknown name: the constructor raises
+ok F0109 unknown name: the half-built form is destroyed
+ok F0109 unknown name: not left in Screen.Forms
+ok F0109 unknown name: CreateForm raises
+ok F0109 unknown name: CreateForm destroys the half-built form
+ok F0109 unknown name: CreateForm clears the reference
+ok F0109 unknown name: CreateForm leaves nothing in Screen.Forms
+ok F0109 unknown name: Application owns nothing new
+ok F0109 another class: the constructor raises
+ok F0109 another class: the half-built form is destroyed
+ok F0109 another class: not left in Screen.Forms
+ok F0109 another class: CreateForm raises
+ok F0109 another class: CreateForm destroys the half-built form
+ok F0109 another class: CreateForm clears the reference
+ok F0109 another class: CreateForm leaves nothing in Screen.Forms
+ok F0109 another class: Application owns nothing new
+ok F0110 inside an inherited instance: the constructor raises
+ok F0110 inside an inherited instance: the half-built form is destroyed
+ok F0110 inside an inherited instance: not left in Screen.Forms
+ok F0110 inside an inherited instance: CreateForm raises
+ok F0110 inside an inherited instance: CreateForm destroys the half-built form
+ok F0110 inside an inherited instance: CreateForm clears the reference
+ok F0110 inside an inherited instance: CreateForm leaves nothing in Screen.Forms
+ok F0110 inside an inherited instance: Application owns nothing new
+# a valid descendant afterwards
+ok the name of its file
+ok its Caption
+ok the inherited button
+ok one form
+ok destroyed once
+ok no form
+# a frame derived from a frame (TFrame's constructor, RTL-1134)
+ok F0109 out of the frame constructor
+ok the owner keeps nothing
+# passed 48 failed 0

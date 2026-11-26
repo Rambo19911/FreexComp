@@ -1,0 +1,53 @@
+# each level created alone (UIF-1450...1454)
+construction of TBaseDialog: Loaded 1 OnCreate 1 pages 'GeneralPage show;' loading flags left no
+BaseDialog: TBaseDialog owner=<TApplication> caption='Dialog' at=200,120 client=360x160 components=6
+  ButtonPanel: TPanel owner=BaseDialog parent=BaseDialog bounds=0,119,360,41
+    OkButton: TButton owner=BaseDialog parent=ButtonPanel bounds=192,8,75,25 caption='OK'
+    CancelButton: TButton owner=BaseDialog parent=ButtonPanel bounds=276,8,75,25 caption='Cancel'
+  Pages: TPageControl owner=BaseDialog parent=BaseDialog bounds=16,56,328,56
+    GeneralPage: TTabSheet owner=BaseDialog parent=Pages caption='General' visible=yes
+    AdvancedPage: TTabSheet owner=BaseDialog parent=Pages caption='Advanced' visible=no
+  tab order: root ButtonPanel;Pages; ButtonPanel OkButton;CancelButton;
+  OkButton.Click: base;
+construction of TRenameDialog: Loaded 1 OnCreate 1 pages 'AdvancedPage show;' loading flags left no
+RenameDialog: TRenameDialog owner=<TApplication> caption='Rename' at=200,120 client=360x160 components=8
+  ButtonPanel: TPanel owner=RenameDialog parent=RenameDialog bounds=0,119,360,41
+    OkButton: TButton owner=RenameDialog parent=ButtonPanel bounds=192,8,75,25 caption='Rename'
+    CancelButton: TButton owner=RenameDialog parent=ButtonPanel bounds=276,8,75,25 caption='Cancel'
+    HelpButton: TButton owner=RenameDialog parent=ButtonPanel bounds=8,8,75,25 caption='Help'
+  Pages: TPageControl owner=RenameDialog parent=RenameDialog bounds=16,56,328,56
+    GeneralPage: TTabSheet owner=RenameDialog parent=Pages caption='General' visible=no
+    AdvancedPage: TTabSheet owner=RenameDialog parent=Pages caption='Advanced' visible=yes
+  NameEdit: TEdit owner=RenameDialog parent=RenameDialog bounds=16,24,328,23 text=''
+  tab order: root ButtonPanel;NameEdit;Pages; ButtonPanel OkButton;CancelButton;HelpButton;
+  OkButton.Click: mid>base;<mid;
+construction of TChainDialog: Loaded 1 OnCreate 1 pages 'AdvancedPage show;' loading flags left no
+ChainDialog: TChainDialog owner=<TApplication> caption='Rename item' at=200,120 client=360x160 components=10
+  ButtonPanel: TPanel owner=ChainDialog parent=ChainDialog bounds=0,119,360,41
+    OkButton: TButton owner=ChainDialog parent=ButtonPanel bounds=108,8,75,25 caption='Rename it'
+    CancelButton: TButton owner=ChainDialog parent=ButtonPanel bounds=276,8,75,25 caption='Cancel'
+    HelpButton: TButton owner=ChainDialog parent=ButtonPanel bounds=8,8,75,25 caption='?'
+    ApplyButton: TButton owner=ChainDialog parent=ButtonPanel bounds=192,8,75,25 caption='Apply'
+  Pages: TPageControl owner=ChainDialog parent=ChainDialog bounds=16,56,328,56
+    GeneralPage: TTabSheet owner=ChainDialog parent=Pages caption='General' visible=no
+    AdvancedPage: TTabSheet owner=ChainDialog parent=Pages caption='Advanced' visible=yes
+  NameEdit: TEdit owner=ChainDialog parent=ChainDialog bounds=16,24,328,23 text='new name'
+  NoteEdit: TEdit owner=ChainDialog parent=ChainDialog bounds=16,0,328,23 text=''
+  tab order: root ButtonPanel;NameEdit;Pages;NoteEdit; ButtonPanel OkButton;CancelButton;HelpButton;ApplyButton;
+  OkButton.Click: chain>mid>base;<mid;<chain;
+ok one Loaded for the three levels
+ok the root's override of an override
+ok level 3 moved OkButton
+ok OkButton's Caption of level 3 wins over level 2
+ok the active page of level 2
+ok the root's tab order: levels merged, the tie in creation order
+# the three levels coexist under Application (UIF-1453)
+construction of TBaseDialog: Loaded 1 OnCreate 1 pages 'GeneralPage show;' loading flags left no
+construction of TRenameDialog: Loaded 1 OnCreate 1 pages 'AdvancedPage show;' loading flags left no
+construction of TChainDialog: Loaded 1 OnCreate 1 pages 'AdvancedPage show;' loading flags left no
+ok level 1
+ok level 2 while BaseDialog exists
+ok level 3 while both exist
+ok owned by Application under its own name
+ok three forms
+# passed 11 failed 0

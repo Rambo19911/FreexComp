@@ -1,0 +1,27 @@
+inherited RenameDialog: TRenameDialog
+  Caption = 'Rename'
+  inherited ButtonPanel: TPanel
+    inherited OkButton: TButton
+      Caption = 'Rename'
+    end
+    object HelpButton: TButton
+      Left = 8
+      Top = 8
+      Width = 75
+      Height = 25
+      Caption = 'Help'
+      TabOrder = 2
+    end
+  end
+  inherited Pages: TPageControl
+    ActivePage = AdvancedPage
+  end
+  object NameEdit: TEdit
+    Left = 16
+    Top = 24
+    Width = 328
+    Height = 23
+    AutoSize = False
+    TabOrder = 1
+  end
+end
