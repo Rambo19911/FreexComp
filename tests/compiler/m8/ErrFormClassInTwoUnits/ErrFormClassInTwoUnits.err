@@ -1,0 +1,1 @@
+UB.pas(13,1): error E3107: Form class 'TForm1' is embedded by units 'UA' and 'UB'

@@ -233,6 +233,13 @@ internal sealed class PcuWriter(PcuContext context)
         builder.AddGenericSupport(node);
         // C-119: dependents compile the generic bodies into their instances, so the hash covers them too
         var hashed = builder.Bodies.Count == 0 ? node.ToJsonString(Compact) : node.ToJsonString(Compact) + builder.Bodies.ToJsonString(Compact);
+        if (!unit.FormClasses.IsEmpty)
+        {
+            // C-351 (CMP-1382): which classes have a form decides the root keyword of a descendant's form (E3105 / E3106), so a
+            // unit using this one is stale when the list changes; nothing is added for a unit without forms (its hash is unchanged)
+            hashed += Strings(unit.FormClasses).ToJsonString(Compact);
+        }
+
         var hash = "sha256:" + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(hashed)));
         _interfaces[unit] = (node, hash, builder.Bodies);
         return (node, hash, builder.Bodies);

@@ -242,6 +242,7 @@ public static class DiagnosticCatalog
         new("E3104", null, DiagnosticSeverity.Error, "Form class '%s' is embedded more than once"),
         new("E3105", null, DiagnosticSeverity.Error, "Form '%s': class '%s' has no ancestor with a form; the form file must start with 'object'"),
         new("E3106", null, DiagnosticSeverity.Error, "Form '%s': class '%s' inherits the form of '%s'; the form file must start with 'inherited'"),
+        new("E3107", null, DiagnosticSeverity.Error, "Form class '%s' is embedded by units '%s' and '%s'"),
         new("E3110", null, DiagnosticSeverity.Error, "Resource script '%s' not found or unreadable"),
         new("E3111", null, DiagnosticSeverity.Error, "Resource script: %s"),
         new("E3112", null, DiagnosticSeverity.Error, "Resource script error: %s"),

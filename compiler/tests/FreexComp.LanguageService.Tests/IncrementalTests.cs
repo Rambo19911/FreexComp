@@ -123,4 +123,35 @@ public sealed class IncrementalTests
         Assert.DoesNotContain(closed.GetDiagnostics(path), d => d.Code == "E2003");
         Assert.Equal(["U1"], closed.BoundUnits);
     }
+
+    /// <summary>
+    /// C-351 (CMP-1382): a unit whose implementation gains or loses a <c>{$FORM}</c> keeps its interface text, but the units using
+    /// it are not taken over: the root keyword of a descendant's form is checked again (E3105, E3106) as in a fresh compilation.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1382")]
+    public void AncestorGainsOrLosesForm_DescendantIsCheckedAgain()
+    {
+        const string ancestor = "unit UAnc;\ninterface\ntype\n  TAncForm = class\n  end;\nimplementation\n{$FORM UAnc.form}\nend.";
+        const string descendant = "unit UDesc;\ninterface\nuses UAnc;\ntype\n  TDescForm = class(TAncForm)\n  end;\nimplementation\n{$FORM UDesc.form}\nend.";
+        var withoutForm = ancestor.Replace("{$FORM UAnc.form}\n", "", StringComparison.Ordinal);
+        var path = TestFiles.PathOf("UAnc.pas");
+        InMemoryFileSystem Files(string descendantForm) => TestFiles.Files(("P.pas", "program P;\nuses UDesc;\nbegin\nend."), ("UAnc.pas", ancestor),
+            ("UAnc.form", "object AncForm: TAncForm\nend\n"), ("UDesc.pas", descendant), ("UDesc.form", descendantForm));
+
+        foreach (var (root, edited, code) in new[] { ("inherited", withoutForm, "E3105"), ("object", ancestor, "E3106") })
+        {
+            var files = Files(root + " DescForm: TDescForm\nend\n");
+            var start = root == "object" ? withoutForm : ancestor;
+            var baseline = Compilation.Create(TestFiles.Options(), [SourceText.From(path, start)], files);
+            Assert.DoesNotContain(baseline.GetDiagnostics(), d => d.Severity == DiagnosticSeverity.Error);
+
+            var changed = baseline.WithSourceText(SourceText.From(path, edited));
+            var fresh = Compilation.Create(TestFiles.Options(), [SourceText.From(path, edited)], files);
+
+            Assert.Equal([code], fresh.GetDiagnostics().Select(d => d.Code));
+            Assert.Equal(fresh.GetDiagnostics().Select(d => d.ToText()), changed.GetDiagnostics().Select(d => d.ToText()));
+        }
+    }
 }

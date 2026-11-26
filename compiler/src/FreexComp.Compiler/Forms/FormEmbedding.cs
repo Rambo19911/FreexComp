@@ -4,11 +4,15 @@ using FreexComp.Compiler.Symbols;
 using FreexComp.Compiler.Syntax;
 using FreexComp.Compiler.Text;
 using FreexComp.Compiler.Types;
+using FreexComp.Compiler.Units;
 
 namespace FreexComp.Compiler.Forms;
 
-/// <summary>One <c>{$FORM}</c> blob (ABI-150): the upper-cased root class name, the file's bytes verbatim and its path (a <c>.pcu</c> source, C-114).</summary>
-internal sealed record EmbeddedForm(string Name, byte[] Data, string Path);
+/// <summary>
+/// One <c>{$FORM}</c> blob (ABI-150): the upper-cased root class name, the file's bytes verbatim, its path (a <c>.pcu</c> source,
+/// C-114) and the directive (where E3107 points, C-350).
+/// </summary>
+internal sealed record EmbeddedForm(string Name, byte[] Data, string Path, Location At);
 
 /// <summary>One scanned <c>{$FORM}</c> directive of a unit: its location, the file's path and bytes, the root object and the root
 /// class (both null after E3100, F0001 or E3103), and the diagnostics found so far.</summary>
@@ -75,10 +79,33 @@ internal static class FormEmbedding
                 continue;
             }
 
-            forms.Add(new EmbeddedForm(UpperAscii(@class.Name), form.Bytes, form.Path));
+            forms.Add(new EmbeddedForm(UpperAscii(@class.Name), form.Bytes, form.Path, form.At));
         }
 
         return forms.ToImmutable();
+    }
+
+    /// <summary>
+    /// C-350: the form resources of a program or library are keyed by the upper-cased class name (ABI-150), so each class name may
+    /// have its form in one unit only: E3107 for every later unit (<paramref name="linked"/> in init order, the main file last) that
+    /// embeds a form of a class name an earlier unit embeds — at its directive, or at <paramref name="main"/> for a unit taken from
+    /// a <c>.pcu</c>.
+    /// </summary>
+    public static IEnumerable<Diagnostic> DuplicateClasses(IEnumerable<LoadedUnit> linked, Location main)
+    {
+        var owners = new Dictionary<string, LoadedUnit>(StringComparer.Ordinal);
+        foreach (var unit in linked)
+        {
+            foreach (var name in unit.FormClasses)
+            {
+                var key = UpperAscii(name);
+                if (!owners.TryAdd(key, unit))
+                {
+                    var at = unit.Forms.FirstOrDefault(f => f.Name == key)?.At ?? main;
+                    yield return Diagnostic.Create("E3107", at, name, owners[key].Name, unit.Name);
+                }
+            }
+        }
     }
 
     private static (byte[] Bytes, FormObject Root, ClassTypeSymbol Class)? ScanOne(BindingResult result, Location at, string argument, string name, string path,

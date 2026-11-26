@@ -106,8 +106,11 @@ public sealed class Compilation
 
     // ------------------------------------------------------------------------------------------------ snapshots (C-130, CMP-130)
 
-    /// <summary>A unit-level reuse plan: the built-in types of the earlier run and its units that may be taken over.</summary>
-    private sealed record Reuse(BuiltInTypes Types, Func<string, LoadedUnit?> Unit);
+    /// <summary>
+    /// A unit-level reuse plan: the built-in types of the earlier run, its units that may be taken over and, per unit file of the
+    /// earlier run, the classes that had a form there (C-351).
+    /// </summary>
+    private sealed record Reuse(BuiltInTypes Types, Func<string, LoadedUnit?> Unit, Func<string, ImmutableArray<string>?> FormClasses);
 
     /// <summary>The snapshot whose analysis this one may build on (its analysis exists), and the files changed since.</summary>
     private Compilation? _previous;
@@ -198,7 +201,8 @@ public sealed class Compilation
             return ok;
         }
 
-        return new Reuse(front.Binder.Types, path => units.TryGetValue(path, out var unit) && Reusable(unit) ? unit : null);
+        return new Reuse(front.Binder.Types, path => units.TryGetValue(path, out var unit) && Reusable(unit) ? unit : null,
+            path => units.TryGetValue(path, out var unit) ? unit.FormClasses : null);
     }
 
     // ------------------------------------------------------------------------------------------------ position models (C-244)
@@ -1137,7 +1141,6 @@ public sealed class Compilation
         var unitBinder = new UnitBinder(types, resolver, Parse, path => ReadPcu(path, optionsFingerprint), reuse?.Unit) { PartialBodies = partial };
         unitBinder.BindAll(systemPath, mainPath, MaxParallelism);
         var initOrder = unitBinder.InitializationOrder();
-        CheckPrecompiledDependencies(new FrontEnd(unitBinder, initOrder, systemPath));
         // C-114, C-343: every unit's {$FORM} files are scanned before any is checked, as the root keyword of a descendant's form
         // depends on which classes have a form (LANG-959: this run's scans, the forms of a unit taken over, a .pcu's key)
         var scans = new Dictionary<LoadedUnit, ImmutableArray<Forms.ScannedForm>>();
@@ -1147,11 +1150,22 @@ public sealed class Compilation
             loaded.FormClasses = Forms.FormEmbedding.FormClasses(scans[loaded]);
         }
 
+        if (reuse is not null && unitBinder.Reused.Count > 0
+            && unitBinder.Units.Any(u => !u.IsPrecompiled && !unitBinder.Reused.Contains(u) && reuse.FormClasses(u.Path) is { } before
+                                         && !before.SequenceEqual(u.FormClasses, StringComparer.Ordinal)))
+        {
+            // C-351 (CMP-1382): a unit bound anew gained or lost a form (its interface text may be unchanged): a unit taken over
+            // may hold a descendant's form checked against the earlier classes with a form (E3105, E3106), so nothing is taken over
+            return RunFrontEnd(diagnostics, reuse: null, partial);
+        }
+
         foreach (var loaded in unitBinder.Units.Where(u => u.IsPrecompiled))
         {
             loaded.LinkInputs = PcuReader.LinkInputs(loaded.Pcu!);                // as recorded (C-074)
             loaded.FormClasses = PcuReader.Forms(loaded.Pcu!);                    // CMP-1381
         }
+
+        CheckPrecompiledDependencies(new FrontEnd(unitBinder, initOrder, systemPath));     // the interface hashes cover the forms (C-351)
 
         var formClasses = new Dictionary<Symbols.UnitSymbol, ImmutableArray<string>>();
         foreach (var loaded in unitBinder.Units.Where(u => u.Symbol is not null))
@@ -1174,6 +1188,12 @@ public sealed class Compilation
                      .Where(unitBinder.Units.Contains).Distinct())
         {
             diagnostics.AddRange(loaded.Diagnostics);
+        }
+
+        if (unitBinder.Main is { IsProgram: true } linkedMain)
+        {
+            // C-350: the units linked into one module share its form resources (after the units' own diagnostics)
+            diagnostics.AddRange(Forms.FormEmbedding.DuplicateClasses(initOrder.Where(u => u != linkedMain).Append(linkedMain), Location.ForFile(mainPath)));
         }
 
         return new FrontEnd(unitBinder, initOrder, systemPath);

@@ -163,6 +163,49 @@ public sealed class IncrementalBuildMatrix
         Assert.True(File.Exists(p.Exe));
     }
 
+    /// <summary>
+    /// C-351 (CMP-1382): the classes with a form in a unit (its <c>.pcu</c> key <c>forms</c>, CMP-1381) are part of what the units
+    /// using it recorded, so a unit whose ancestor's unit gains or loses a <c>{$FORM}</c> in its implementation (its interface text
+    /// unchanged) is stale and its form's root keyword is checked again (E3105 / E3106). <c>UDesc</c> declares <c>TDescForm</c>,
+    /// a descendant of <c>UAnc</c>'s <c>TAncForm</c>, with a form; <c>UPlain</c> declares a descendant without a form, so the builds
+    /// that succeed show the staleness too.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1382")]
+    public async Task AncestorGainsOrLosesForm_MakesDescendantStale()
+    {
+        using var p = await MatrixProject.CreateBuiltAsync();
+        const string ancestor = "unit UAnc;\ninterface\ntype\n  TAncForm = class\n  end;\nimplementation\n{$FORM UAnc.form}\nend.\n";
+        p.Write("UAnc.pas", ancestor);
+        p.Write("UAnc.form", "object AncForm: TAncForm\nend\n");
+        p.Write("UDesc.pas", "unit UDesc;\ninterface\nuses UAnc;\ntype\n  TDescForm = class(TAncForm)\n  end;\nimplementation\n{$FORM UDesc.form}\nend.\n");
+        p.Write("UDesc.form", "inherited DescForm: TDescForm\nend\n");
+        p.Write("UPlain.pas", "unit UPlain;\ninterface\nuses UAnc;\ntype\n  TPlainForm = class(TAncForm)\n  end;\nimplementation\nend.\n");
+        p.Edit("Matrix.pas", "uses Mid,", "uses UDesc, UPlain, Mid,");
+        (await p.BuildAsync()).AssertWork(["Matrix", "UAnc", "UDesc", "UPlain"], link: true);
+        var descForm = Path.Combine(p.Directory, "UDesc.form");
+
+        // the ancestor loses its form: the inherited root of the descendant has no ancestor with a form
+        p.Write("UAnc.pas", ancestor.Replace("{$FORM UAnc.form}\n", "", StringComparison.Ordinal));
+        AssertOnlyError(await p.BuildAsync(), $"{descForm}(1,11): error E3105: Form 'DescForm': class 'TDescForm' has no ancestor with a form; the form file must start with 'object'");
+        p.Write("UDesc.form", "object DescForm: TDescForm\nend\n");
+        (await p.BuildAsync()).AssertWork(["Matrix", "UAnc", "UDesc", "UPlain"], link: true);   // the program records UDesc and UPlain, whose interfaces use UAnc
+
+        // the ancestor gains its form again: the object root of the descendant must be inherited
+        p.Write("UAnc.pas", ancestor);
+        AssertOnlyError(await p.BuildAsync(), $"{descForm}(1,8): error E3106: Form 'DescForm': class 'TDescForm' inherits the form of 'TAncForm'; the form file must start with 'inherited'");
+        p.Write("UDesc.form", "inherited DescForm: TDescForm\nend\n");
+        (await p.BuildAsync()).AssertWork(["Matrix", "UAnc", "UDesc", "UPlain"], link: true);   // the program records UDesc and UPlain, whose interfaces use UAnc
+        Assert.True((await p.BuildAsync()).Result.UpToDate);
+    }
+
+    private static void AssertOnlyError(MatrixBuild b, string error)
+    {
+        Assert.False(b.Result.Success, string.Join("\n", b.Log.Lines));
+        Assert.Equal([error], b.Log.Events.OfType<BuildEvent.Diagnostic>().Select(d => d.Value.ToText()));
+    }
+
     // ---------------------------------------------------------------- resource inputs (resource-compiler.md §5; build-engine.md §5)
 
     /// <summary>
