@@ -1,0 +1,59 @@
+# which button supports which pattern (UIF-1430, UIF-1431)
+ok Plain: GetPatternProvider 10000 returns S_OK
+ok a plain button: Invoke
+ok Plain: GetPatternProvider 10015 returns S_OK
+ok a plain button: no Toggle
+ok Drop: GetPatternProvider 10000 returns S_OK
+ok a drop-down button: Invoke
+ok Drop: GetPatternProvider 10015 returns S_OK
+ok a drop-down button: no Toggle
+ok Check: GetPatternProvider 10015 returns S_OK
+ok a check button: Toggle
+ok Check: GetPatternProvider 10000 returns S_OK
+ok a check button: no Invoke
+ok Separator: GetPatternProvider 10000 returns S_OK
+ok a separator: no Invoke
+ok Separator: GetPatternProvider 10015 returns S_OK
+ok a separator: no Toggle
+ok Plain: GetPatternProvider 10002 returns S_OK
+ok a plain button: no other pattern
+# Invoke (UIF-1430)
+ok Off: GetPatternProvider 10000 returns S_OK
+ok a disabled button: refused
+ok OnOffBar: GetPatternProvider 10000 returns S_OK
+ok a button on a disabled tool bar: refused
+ok a refused Invoke clicks nothing
+ok Plain: GetPatternProvider 10000 returns S_OK
+ok an enabled button: S_OK
+ok Invoke returns before OnClick runs (the click is posted)
+ok OnClick runs once the posted message is handled
+ok and only once
+ok Drop: GetPatternProvider 10000 returns S_OK
+ok a drop-down button: S_OK
+ok a drop-down button clicks as well
+# Toggle (UIF-1431)
+ok Check: GetPatternProvider 10015 returns S_OK
+ok get_ToggleState returns S_OK
+ok up: Off
+ok Toggle: S_OK
+ok Toggle returns before the click (posted)
+ok the posted click puts it down
+ok OnClick ran once
+ok get_ToggleState returns S_OK
+ok down: On
+ok a second Toggle releases it
+ok get_ToggleState returns S_OK
+ok Down set by the program: On
+ok get_ToggleState returns S_OK
+ok released by the program: Off
+ok OffCheck: GetPatternProvider 10015 returns S_OK
+ok a disabled check button: refused
+ok a refused Toggle changes nothing
+# a button freed before its posted click (UIF-1425, UIF-1427)
+ok Gone: GetPatternProvider 10000 returns S_OK
+ok Invoke: S_OK
+ok no click after the button is gone
+# changes without a provider create none (UIF-1440)
+ok Down and Enabled changed: no new provider
+ok every provider object is released (UIF-1425)
+# passed 53 failed 0

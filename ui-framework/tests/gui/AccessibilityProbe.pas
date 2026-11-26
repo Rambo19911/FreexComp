@@ -3,7 +3,8 @@ program AccessibilityProbe;
 { U-155, ui-automation.md section 9: the program the UI Automation client tests read
   (FreexComp.UiFramework.Automation.Tests). One form 'Accessibility Probe' (class PN.TProbeForm, component name
   ProbeForm) with one instance of every Phase 4 control and of a frame, a string grid with a fixed row and column
-  and goEditing, a tool bar with a plain, a check and a separator button, and labels associated by FocusControl.
+  and goEditing, a tool bar with a plain, a check and a separator button, labels associated by FocusControl, and a
+  rich edit (U-156: the system's Text pattern).
   Every content element has a name (its own text, an associated label or AccessibleName). The form is shown
   without activation; the program never initialises COM itself. stdout lines (each flushed):
     'ready <form handle in hex>' once the form is shown;
@@ -14,6 +15,10 @@ program AccessibilityProbe;
       without activation and freed N times, then created once more and kept: 'held <count> <its handle in hex>';
     on WM_APP + 3: the kept second form is freed: 'freed <count>';
     on WM_APP + 4: 'providers <live provider objects>' (AutomationProviderCount);
+    U-156: on WM_APP + 5: the check tool button is released by the program (Down := False), then 'released';
+    on WM_APP + 6: the label in the scroll box gets the caption 'Changed label', the image is disabled and a label
+      InsertedLabel is inserted into the info panel, then 'changed'; on WM_APP + 7: InsertedLabel is freed, then
+      'removed';
     WM_CLOSE ends the program ('probe: close' on stderr, exit code 0). }
 uses
   Windows, Messages, Types, SysUtils, Classes, Graphics, Controls, Forms, StdCtrls, ExtCtrls, ComCtrls, Grids,
@@ -24,6 +29,9 @@ const
   WM_PROBE_CYCLE = WM_APP + 2;
   WM_PROBE_FREE = WM_APP + 3;
   WM_PROBE_COUNT = WM_APP + 4;
+  WM_PROBE_RELEASE = WM_APP + 5;
+  WM_PROBE_CHANGE = WM_APP + 6;
+  WM_PROBE_REMOVE = WM_APP + 7;
 
 type
   TProbeForm = class(TForm)
@@ -94,6 +102,7 @@ procedure TProbeForm.WndProc(var Message: TMessage);
 var
   I: Integer;
   F: TForm;
+  L: TLabel;
 begin
   case Message.Msg of
     WM_PROBE_RENAME:
@@ -123,6 +132,27 @@ begin
       end;
     WM_PROBE_COUNT:
       Say('providers ' + IntToStr(AutomationProviderCount));
+    WM_PROBE_RELEASE:
+      begin
+        TToolButton(FindComponent('CheckButton')).Down := False;
+        Say('released');
+      end;
+    WM_PROBE_CHANGE:
+      begin
+        TLabel(FindComponent('BoxLabel')).Caption := 'Changed label';
+        TImage(FindComponent('LogoImage')).Enabled := False;
+        L := TLabel.Create(Self);
+        L.Name := 'InsertedLabel';
+        L.Caption := 'Inserted';
+        L.SetBounds(120, 4, 60, 17);
+        L.Parent := TPanel(FindComponent('InfoPanel'));
+        Say('changed');
+      end;
+    WM_PROBE_REMOVE:
+      begin
+        FindComponent('InsertedLabel').Free;
+        Say('removed');
+      end;
     WM_CLOSE:
       begin
         WriteLn(ErrOutput, 'probe: close');
@@ -225,6 +255,7 @@ begin
   List.Columns.Add.Caption := 'File';
   List.Items.Add.Caption := 'readme.txt';
   List.AccessibleName := 'Files';
+  TRichEdit(Add(TRichEdit, F, 'NotesRich', 430, 260, 170, 40)).AccessibleName := 'Rich notes';
   Tree := TTreeView(Add(TTreeView, F, 'FolderTree', 610, 150, 180, 100));
   Tree.Items.AddChild(Tree.Items.Add(nil, 'Root'), 'Child');
   Tree.AccessibleName := 'Folders';

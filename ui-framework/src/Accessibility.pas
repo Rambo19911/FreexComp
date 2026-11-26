@@ -1,14 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
-{ Accessibility - UI Automation for framework controls (phase8/ui-automation.md sections 4 and 5, UIF-1410 to
-  UIF-1427, UIF-1440): the names, help texts, automation ids and control types of controls; server-side providers
-  for framework-drawn windows (fragment roots over the system's host provider) and for graphic controls (fragments
-  of their windowed parent), one per control, created when a client first asks and disconnected when the control or
-  its window goes; the provider registry (the provider class of a control class); direct annotation of native
-  controls (windows of system classes keep the system's providers and get only what the system cannot know).
-  Controls does not use this unit: it reaches it through AccessibilityMessageHook and AccessibilityChangeHook,
-  assigned here in the initialization and cleared in the finalization. Forms uses this unit, so every program with
-  forms has providers; StdCtrls, ExtCtrls, ComCtrls, Grids and Forms register the provider classes of their
-  controls. Nothing is created and no COM call is made until a client sends WM_GETOBJECT. }
+{ Accessibility - UI Automation for framework controls (phase8/ui-automation.md sections 4, 5 and 8, UIF-1410 to
+  UIF-1427, UIF-1440, UIF-1444 to UIF-1446): the names, help texts, automation ids and control types of controls;
+  server-side providers for framework-drawn windows (fragment roots over the system's host provider) and for graphic
+  controls (fragments of their windowed parent), one per control, created when a client first asks and disconnected
+  when the control or its window goes; the provider registry (the provider class of a control class); direct
+  annotation of native controls (windows of system classes keep the system's providers and get only what the system
+  cannot know); the events of framework-drawn controls (name, IsEnabled and integer property changes, automation
+  events, children invalidated), raised only when a client listens. Controls does not use this unit: it reaches it
+  through AccessibilityMessageHook and AccessibilityChangeHook, assigned here in the initialization and cleared in the
+  finalization. Forms uses this unit, so every program with forms has providers; StdCtrls, ExtCtrls, ComCtrls, Grids
+  and Forms register the provider classes of their controls. Nothing is created and no COM call is made until a client
+  sends WM_GETOBJECT. }
 unit Accessibility;
 
 interface
@@ -30,6 +32,7 @@ type
     FControl: TControl;
     FKeep: IRawElementProviderSimple;                        { the control's reference (UIF-1425) }
     FReturned: Boolean;                                      { returned through UiaReturnRawElementProvider }
+    FRaised: Boolean;                                        { an event was raised on it (the system keeps it) }
     FNumber: Integer;                                        { unique in the process (runtime ids) }
     FLastName: string;                                       { the name last reported (UIF-1445) }
   protected
@@ -111,6 +114,15 @@ function AccessibleElementKindOf(Control: TControl): TAccessibleElementKind;
 function StripMnemonic(const S: string): string;
 { the Caption (window text) of a control, for the provider classes of other units }
 function ControlCaption(Control: TControl): string;
+{ UIF-1418: IsEnabled (the control and every parent enabled) }
+function AccessibleEnabledOf(Control: TControl): Boolean;
+{ UIF-1440: the control has a provider and a UI Automation client listens (UiaClientsAreListening) }
+function AutomationEventsWanted(Control: TControl): Boolean;
+{ UIF-1444: raises an automation event (an EVENTID) on the control's provider when AutomationEventsWanted }
+procedure RaiseAutomationEventOf(Control: TControl; EventId: Integer);
+{ UIF-1445: raises the property-changed event of an integer property (a PROPERTYID; old and new value) on the
+  control's provider when AutomationEventsWanted }
+procedure RaiseIntPropertyChanged(Control: TControl; PropertyId, OldValue, NewValue: Integer);
 
 implementation
 
@@ -124,6 +136,9 @@ type
 
 const
   FrameworkId = 'FreexComp';
+  { the first element of the runtime id of a window element (the second is the window handle): the value the
+    system's host provider reports for a window, used for the structure-changed event of UIF-1446 }
+  HwndRuntimeIdPrefix = 42;
   { UIF-1417: the control-type id of each role (the identifier of the same name on the reference page) }
   RoleControlType: array[TAccessibleRole] of Integer = (0, UIA_ButtonControlTypeId, UIA_CheckBoxControlTypeId,
     UIA_ComboBoxControlTypeId, UIA_CustomControlTypeId, UIA_DataGridControlTypeId, UIA_DataItemControlTypeId,
@@ -311,6 +326,11 @@ begin
     end;
     Control := Control.Parent;
   end;
+end;
+
+function AccessibleEnabledOf(Control: TControl): Boolean;
+begin
+  Result := EnabledChain(Control);
 end;
 
 function IsGraphicElement(C: TControl): Boolean;
@@ -908,9 +928,72 @@ begin
   FillChar(NewValue, SizeOf(NewValue), 0);
   PutStr(OldValue, OldName);
   PutStr(NewValue, NewName);
+  P.FRaised := True;
   UiaRaiseAutomationPropertyChangedEvent(P.FKeep, UIA_NamePropertyId, OldValue, NewValue);
   VariantClear(OldValue);
   VariantClear(NewValue);
+end;
+
+{ ---------------------------------------------------------------- events (UIF-1440, UIF-1444...1446) }
+
+function AutomationEventsWanted(Control: TControl): Boolean;
+begin
+  Result := (Control <> nil) and (Control.AutomationObject <> nil) and UiaClientsAreListening;
+end;
+
+procedure RaiseAutomationEventOf(Control: TControl; EventId: Integer);
+begin
+  if AutomationEventsWanted(Control) then
+  begin
+    TAutomationProvider(Control.AutomationObject).FRaised := True;
+    UiaRaiseAutomationEvent(TAutomationProvider(Control.AutomationObject).FKeep, EventId);
+  end;
+end;
+
+procedure RaiseIntPropertyChanged(Control: TControl; PropertyId, OldValue, NewValue: Integer);
+var
+  OldV, NewV: TVariantArg;
+begin
+  if not AutomationEventsWanted(Control) then
+    Exit;
+  FillChar(OldV, SizeOf(OldV), 0);
+  FillChar(NewV, SizeOf(NewV), 0);
+  PutInt(OldV, OldValue);
+  PutInt(NewV, NewValue);
+  TAutomationProvider(Control.AutomationObject).FRaised := True;
+  UiaRaiseAutomationPropertyChangedEvent(TAutomationProvider(Control.AutomationObject).FKeep, PropertyId, OldV, NewV);
+end;
+
+{ UIF-1445: Enabled of a control with a provider changed; IsEnabled changes only when every parent is enabled }
+procedure EnabledChanged(Control: TControl);
+var
+  OldV, NewV: TVariantArg;
+begin
+  if not AutomationEventsWanted(Control) or not EnabledChain(Control.Parent) then
+    Exit;
+  FillChar(OldV, SizeOf(OldV), 0);
+  FillChar(NewV, SizeOf(NewV), 0);
+  PutBool(OldV, not Control.Enabled);
+  PutBool(NewV, Control.Enabled);
+  TAutomationProvider(Control.AutomationObject).FRaised := True;
+  UiaRaiseAutomationPropertyChangedEvent(TAutomationProvider(Control.AutomationObject).FKeep, UIA_IsEnabledPropertyId,
+    OldV, NewV);
+end;
+
+{ UIF-1446: a graphic control was inserted into or removed from Parent: its children are invalidated (sender and
+  runtime id: the parent's window element) }
+procedure ChildrenChanged(Parent: TWinControl);
+var
+  Ids: array[0..1] of Integer;
+begin
+  if (Parent = nil) or (csDestroying in Parent.ComponentState) or not Parent.HandleAllocated
+    or not AutomationEventsWanted(Parent) then
+    Exit;
+  Ids[0] := HwndRuntimeIdPrefix;
+  Ids[1] := Integer(NativeUInt(Parent.Handle));
+  TAutomationProvider(Parent.AutomationObject).FRaised := True;
+  UiaRaiseStructureChangedEvent(TAutomationProvider(Parent.AutomationObject).FKeep,
+    StructureChangeType_ChildrenInvalidated, @Ids[0], 2);
 end;
 
 { UIF-1415: re-annotation of an annotated window; UIF-1445: name events }
@@ -934,7 +1017,9 @@ end;
 { UIF-1415, UIF-1426: the window is being destroyed (its handle is still valid). The fragments of its graphic
   controls are disconnected first, while their fragment root still answers: the system finds a fragment's window
   through its root, and a disconnect after the window is gone fails (E_FAIL) and leaves the provider held by the
-  client's elements. A graphic control that outlives the window gets a new provider on the next request. }
+  client's elements. A graphic control that outlives the window gets a new provider on the next request. The
+  window's provider is disconnected when it was returned to a client or an event was raised on it (the system keeps
+  a provider it raised an event for until it is disconnected; U-156). }
 procedure WindowDestroying(Control: TWinControl);
 var
   P: TAutomationProvider;
@@ -950,7 +1035,7 @@ begin
       DetachProvider(Control.Controls[I], True);
   if P.FReturned then
     UiaReturnRawElementProvider(Control.Handle, 0, 0, nil);
-  DetachProvider(Control, P.FReturned);
+  DetachProvider(Control, P.FReturned or P.FRaised);
 end;
 
 procedure ChangeHook(Control: TControl; Change: TAccessibilityChange);
@@ -959,11 +1044,19 @@ begin
     acProperties:
       PropertiesChanged(Control);
     acRemoved:
-      DetachProvider(Control, True);
+      begin
+        DetachProvider(Control, True);
+        ChildrenChanged(Control.Parent);
+      end;
     acWindowDestroying:
       WindowDestroying(TWinControl(Control));
     acDestroying:
-      DetachProvider(Control, not (Control is TWinControl));
+      DetachProvider(Control, not (Control is TWinControl)
+        or TAutomationProvider(Control.AutomationObject).FRaised);
+    acEnabled:
+      EnabledChanged(Control);
+    acInserted:
+      ChildrenChanged(Control.Parent);
   end;
 end;
 

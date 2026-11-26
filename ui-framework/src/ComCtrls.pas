@@ -359,6 +359,8 @@ type
     procedure ChangeScale(M, D: Integer); override;
     procedure Notification(AComponent: TComponent; Operation: TOperation); override;
     procedure Paint; override;
+    { ui-automation.md UIF-1430, UIF-1431: the click of a tool button posted by its Invoke or Toggle pattern }
+    procedure WndProc(var Message: TMessage); override;
   public
     constructor Create(AOwner: TComponent); override;
     destructor Destroy; override;
@@ -1264,12 +1266,28 @@ type
     class function DefaultControlType(Control: TControl): Integer; override;
   end;
 
-  TToolButtonAutomationProvider = class(TGraphicAutomationProvider)
+  { UIF-1430, UIF-1431: Invoke (tbsButton, tbsDropDown) and Toggle (tbsCheck) }
+  TToolButtonAutomationProvider = class(TGraphicAutomationProvider, IInvokeProvider, IToggleProvider)
+  private
+    { posts the click to the tool bar (Kind: ClickByInvoke or ClickByToggle) }
+    function PostClick(Kind: Integer): HResult;
   public
     class function OwnText(Control: TControl): string; override;
     class function DefaultControlType(Control: TControl): Integer; override;
     class function ElementKind(Control: TControl): TAccessibleElementKind; override;
+    function GetPatternProvider(patternId: Integer; out pRetVal: IUnknown): HResult; override; stdcall;
+    { IInvokeProvider }
+    function Invoke: HResult; stdcall;
+    { IToggleProvider }
+    function Toggle: HResult; stdcall;
+    function get_ToggleState(out pRetVal: Integer): HResult; stdcall;
   end;
+
+const
+  { UIF-1430: posted to a tool bar by a tool button's provider: WParam = the provider's Number, LParam = the kind }
+  CM_TOOLBUTTONCLICK = CM_BASE + 91;
+  ClickByInvoke = 0;
+  ClickByToggle = 1;
 
 class function TTabSheetAutomationProvider.OwnText(Control: TControl): string;
 begin
@@ -1308,6 +1326,75 @@ begin
     Result := ekNone
   else
     Result := ekContent;
+end;
+
+function TToolButtonAutomationProvider.GetPatternProvider(patternId: Integer; out pRetVal: IUnknown): HResult;
+var
+  Inv: IInvokeProvider;
+  Tog: IToggleProvider;
+begin
+  PPointer(@pRetVal)^ := nil;
+  if not Alive(Result) then
+    Exit;
+  case TToolButton(Control).Style of
+    tbsButton, tbsDropDown:
+      if patternId = UIA_InvokePatternId then
+      begin
+        Inv := Self;
+        pRetVal := Inv;
+      end;
+    tbsCheck:
+      if patternId = UIA_TogglePatternId then
+      begin
+        Tog := Self;
+        pRetVal := Tog;
+      end;
+  end;
+end;
+
+{ the click is posted, so that a click that opens a modal dialog does not block the client (UIF-1430) }
+function TToolButtonAutomationProvider.PostClick(Kind: Integer): HResult;
+var
+  Bar: TWinControl;
+begin
+  if not Alive(Result) then
+    Exit;
+  if not AccessibleEnabledOf(Control) then
+  begin
+    Result := UIA_E_ELEMENTNOTENABLED;
+    Exit;
+  end;
+  Bar := Control.Parent;
+  if not (Bar is TToolBar) or not Bar.HandleAllocated
+    or not PostMessageW(Bar.Handle, CM_TOOLBUTTONCLICK, WPARAM(Number), LPARAM(Kind)) then
+    Result := UIA_E_INVALIDOPERATION;
+end;
+
+function TToolButtonAutomationProvider.Invoke: HResult;
+begin
+  Result := PostClick(ClickByInvoke);
+end;
+
+function TToolButtonAutomationProvider.Toggle: HResult;
+begin
+  Result := PostClick(ClickByToggle);
+end;
+
+function TToolButtonAutomationProvider.get_ToggleState(out pRetVal: Integer): HResult;
+begin
+  pRetVal := ToggleState_Off;
+  if Alive(Result) and TToolButton(Control).Down then
+    pRetVal := ToggleState_On;
+end;
+
+{ UIF-1431: ToggleToggleState property-changed of a check button whose Down changed (UIF-1440 inside) }
+procedure ToolButtonDownChanged(Button: TToolButton);
+begin
+  if (Button.Style = tbsCheck) and (Button.AutomationObject <> nil) then
+    if Button.Down then
+      RaiseIntPropertyChanged(Button, UIA_ToggleToggleStatePropertyId, ToggleState_Off, ToggleState_On)
+    else
+      RaiseIntPropertyChanged(Button, UIA_ToggleToggleStatePropertyId, ToggleState_On, ToggleState_Off);
 end;
 
 { the DPI of a control: its form's current PixelsPerInch, 96 (logical) without a form }
@@ -2256,6 +2343,7 @@ begin
     begin
       TToolButton(C).FDown := False;
       C.Invalidate;
+      ToolButtonDownChanged(TToolButton(C));
     end;
   end;
   for I := Index + 1 to Parent.ControlCount - 1 do
@@ -2267,6 +2355,7 @@ begin
     begin
       TToolButton(C).FDown := False;
       C.Invalidate;
+      ToolButtonDownChanged(TToolButton(C));
     end;
   end;
 end;
@@ -2279,6 +2368,7 @@ begin
   if FDown and FGrouped and (FStyle = tbsCheck) and not (csLoading in ComponentState) then
     ReleaseGroup;
   Invalidate;
+  ToolButtonDownChanged(Self);
 end;
 
 procedure TToolButton.SetGrouped(Value: Boolean);
@@ -2550,6 +2640,40 @@ begin
   inherited Notification(AComponent, Operation);
   if (Operation = opRemove) and (AComponent = FImages) then
     Images := nil;
+end;
+
+{ UIF-1430, UIF-1431: the button whose provider posted the click is clicked as by the mouse (when it still exists
+  and is enabled); after an Invoke, Invoke_Invoked is raised when a client listens }
+procedure TToolBar.WndProc(var Message: TMessage);
+var
+  I: Integer;
+  C: TControl;
+  P: TAutomationProvider;
+  Keep: IRawElementProviderSimple;
+begin
+  if Message.Msg <> CM_TOOLBUTTONCLICK then
+  begin
+    inherited WndProc(Message);
+    Exit;
+  end;
+  for I := 0 to ControlCount - 1 do
+  begin
+    C := Controls[I];
+    if (C is TToolButton) and (C.AutomationObject <> nil)
+      and (TAutomationProvider(C.AutomationObject).Number = Integer(Message.WParam)) then
+    begin
+      Message.Result := 0;
+      if AccessibleEnabledOf(C) then
+      begin
+        P := TAutomationProvider(C.AutomationObject);
+        Keep := GetAutomationProvider(C);                    { P lives through the click, also when C goes }
+        TToolButton(C).Click;
+        if (Message.LParam = ClickByInvoke) and (P.Control <> nil) then
+          RaiseAutomationEventOf(P.Control, UIA_Invoke_InvokedEventId);
+      end;
+      Exit;
+    end;
+  end;
 end;
 
 procedure TToolBar.Paint;

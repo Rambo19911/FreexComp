@@ -728,10 +728,11 @@ function KeyDataToShiftState(KeyData: LPARAM): TShiftState;
 type
   TMouseControlHook = procedure(Control: TControl);
   { ui-automation.md UIF-1420: what Controls tells the unit Accessibility (acProperties: an accessible property,
-    the name or the text changed; acRemoved: a graphic control with a provider leaves its parent;
-    acWindowDestroying: the window of a control with a provider or annotations is being destroyed (WM_NCDESTROY,
-    the handle is still valid); acDestroying: a control with a provider is destroyed) }
-  TAccessibilityChange = (acProperties, acRemoved, acWindowDestroying, acDestroying);
+    the name or the text changed; acRemoved: a graphic control with a provider leaves its parent, or a graphic
+    control leaves a window with a provider; acWindowDestroying: the window of a control with a provider or annotations is being destroyed (WM_NCDESTROY,
+    the handle is still valid); acDestroying: a control with a provider is destroyed; acEnabled: Enabled of a
+    control with a provider changed; acInserted: a graphic control was inserted into a window with a provider) }
+  TAccessibilityChange = (acProperties, acRemoved, acWindowDestroying, acDestroying, acEnabled, acInserted);
   { UIF-1420, UIF-1422: True when the message (WM_GETOBJECT) was answered (Message.Result set) }
   TAccessibilityMessageHook = function(Control: TWinControl; var Message: TMessage): Boolean;
   TAccessibilityChangeHook = procedure(Control: TControl; Change: TAccessibilityChange);
@@ -1458,6 +1459,8 @@ begin
   begin
     FEnabled := Value;
     Perform(CM_ENABLEDCHANGED, 0, 0);
+    if (FAutomationObject <> nil) and Assigned(AccessibilityChangeHook) then
+      AccessibilityChangeHook(Self, acEnabled);                { ui-automation.md UIF-1445 }
   end;
 end;
 
@@ -3236,6 +3239,8 @@ begin
   if (AControl is TWinControl) and (FHandle <> 0) and not (csLoading in AControl.ComponentState) then
     TWinControl(AControl).HandleNeeded;                      { UIF-030 third bullet }
   AlignControl(AControl);
+  if not (AControl is TWinControl) and (FAutomationObject <> nil) and Assigned(AccessibilityChangeHook) then
+    AccessibilityChangeHook(AControl, acInserted);           { ui-automation.md UIF-1446 }
 end;
 
 { UIF-047 step 1 }
@@ -3243,8 +3248,8 @@ procedure TWinControl.RemoveControl(AControl: TControl);
 begin
   if AControl is TWinControl then
     TWinControl(AControl).DestroyHandle
-  else if (AControl.FAutomationObject <> nil) and Assigned(AccessibilityChangeHook) then
-    AccessibilityChangeHook(AControl, acRemoved);              { ui-automation.md UIF-1426 }
+  else if ((AControl.FAutomationObject <> nil) or (FAutomationObject <> nil)) and Assigned(AccessibilityChangeHook) then
+    AccessibilityChangeHook(AControl, acRemoved);              { ui-automation.md UIF-1426, UIF-1446 }
   FTabList.Remove(Pointer(AControl));
   FControls.Remove(Pointer(AControl));
   AControl.FParent := nil;
