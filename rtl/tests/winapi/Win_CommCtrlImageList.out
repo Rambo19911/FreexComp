@@ -1,0 +1,35 @@
+# setup
+ok a 32-bit 4 x 4 target bitmap
+ok three cell images
+ok two masks
+ok a masked 32-bit 4 x 4 image list
+ok cell 0 added
+ok cell 1 added
+# ImageList_Replace
+ok cell 1 drawn
+ok cell 1 is green before the replace
+ok ImageList_Replace
+ok the replace keeps the count
+ok the replaced cell drawn
+ok the replaced cell is blue (top left)
+ok the replaced cell is blue (bottom right)
+ok cell 0 drawn
+ok cell 0 is red where its mask is opaque
+ok cell 0 is transparent where its mask is set
+# ImageList_SetOverlayImage
+ok INDEXTOOVERLAYMASK(1)
+ok INDEXTOOVERLAYMASK(15) fills ILD_OVERLAYMASK
+ok ImageList_SetOverlayImage
+ok cell 1 drawn with overlay 1
+ok the overlay pixels are visible (top left)
+ok the overlay pixels are visible (bottom, column 1)
+ok cell 1 shows through the transparent part of the overlay
+ok cell 1 shows through (bottom, column 2)
+ok cell 1 drawn without overlay bits
+ok no overlay without the overlay bits
+# cleanup
+ok ImageList_Destroy
+ok the cell images are deleted
+ok the masks are deleted
+ok the target is deleted
+# passed 30 failed 0

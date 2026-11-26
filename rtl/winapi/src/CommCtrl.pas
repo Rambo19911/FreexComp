@@ -4,7 +4,8 @@
   header controls (rtl/winapi.md sections 1 and 5.5; task R-112). Uses Windows and Messages (WM_USER).
   Written by hand from the Win32 reference on learn.microsoft.com (RTL-800):
   - the reference page of every comctl32 function declared below (InitCommonControlsEx, ImageList_* in
-    commctrl.h) and the ImageList_AddIcon macro page;
+    commctrl.h, among them ImageList_Replace and ImageList_SetOverlayImage, task R-249) and the ImageList_AddIcon
+    and INDEXTOOVERLAYMASK macro pages;
   - the structure pages INITCOMMONCONTROLSEX, NMCUSTOMDRAW, NMLVCUSTOMDRAW, NMTVCUSTOMDRAW, TCITEMW,
     TCHITTESTINFO, TBBUTTON, TBADDBITMAP, TBBUTTONINFOW, NMTOOLBARW, PBRANGE, UDACCEL, NMUPDOWN, TTTOOLINFOW,
     NMTTDISPINFOW, HDITEMW, HDLAYOUT, HDHITTESTINFO, NMHEADERW, LVITEMW, LVCOLUMNW, NMLISTVIEW, NMITEMACTIVATE,
@@ -1678,6 +1679,10 @@ function ImageList_SetIconSize(himl: HIMAGELIST; cx, cy: Integer): BOOL; stdcall
   external comctl32 name 'ImageList_SetIconSize';
 function ImageList_GetIcon(himl: HIMAGELIST; i: Integer; flags: UINT): HICON; stdcall;
   external comctl32 name 'ImageList_GetIcon';
+function ImageList_Replace(himl: HIMAGELIST; i: Integer; hbmImage, hbmMask: HBITMAP): BOOL; stdcall;
+  external comctl32 name 'ImageList_Replace';
+function ImageList_SetOverlayImage(himl: HIMAGELIST; iImage, iOverlay: Integer): BOOL; stdcall;
+  external comctl32 name 'ImageList_SetOverlayImage';
 
 { ImageList_AddIcon macro: ImageList_ReplaceIcon(himl, -1, hicon) }
 function ImageList_AddIcon(himl: HIMAGELIST; Icon: HICON): Integer; inline;

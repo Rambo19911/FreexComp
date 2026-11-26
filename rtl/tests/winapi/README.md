@@ -5,8 +5,8 @@ ntdll (RTL-860), except the activation-context functions GetSystemDirectoryW, Cr
 which `Win_ActCtx` calls, and the library-loading functions LoadLibraryExW, DisableThreadLibraryCalls and SetErrorMode,
 which `Win_Kernel32Library` calls, and GetThreadTimes, which `Win_GetThreadTimes` calls. `Win_User32Smoke`, `Win_User32Input`, `Win_User32Helpers`, `Win_GetGuiResources` and `Win_ClipboardQuery` call every function it
 declares for user32 (one program grew too long and was split; the helpers, GetGuiResources and IsClipboardFormatAvailable were added later), `Win_Gdi32Smoke` every
-function it declares for gdi32. `Win_CommCtrlSmoke` and `Win_CommCtrlViews` call every function the `CommCtrl` unit
-declares for comctl32;
+function it declares for gdi32. `Win_CommCtrlSmoke`, `Win_CommCtrlViews` and `Win_CommCtrlImageList` (ImageList_Replace,
+ImageList_SetOverlayImage) call every function the `CommCtrl` unit declares for comctl32;
 `Win_CommDlgDecl` calls the functions of `CommDlg` (comdlg32) and `ShellAPI` (shell32) that run unattended.
 `LongPaths` and `LongPaths_Unaware` call the registry functions it declares for advapi32 (through the shared unit
 `rtl/tests/LongPathKit.pas`, which reads the system long-path policy with them).

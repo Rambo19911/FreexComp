@@ -13,7 +13,9 @@ ImageList_GetIcon
 ImageList_GetIconSize
 ImageList_GetImageCount
 ImageList_Remove
+ImageList_Replace
 ImageList_ReplaceIcon
 ImageList_SetBkColor
 ImageList_SetIconSize
+ImageList_SetOverlayImage
 InitCommonControlsEx
