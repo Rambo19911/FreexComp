@@ -1,0 +1,29 @@
+SizeR = 16
+SizeQ = 2
+KX = 7
+KXQ = 7
+DX = 7
+HighEn = 2
+LowSub = 2
+HighSub = 5
+SizeInner = 4
+SizeInnerQ = 16
+SizeInnerD = 2
+Mixed = 16
+TypedSize = 23
+LastEn = 2
+Length(TSized) = 4
+Length(TByEnum) = 3
+Low(TBySub) = 2
+Length(TBySub) = 4
+Twice = 30
+TG<Byte>.S = 2
+TG<Int64>.S = 16
+Length(TG<Byte>.TBytes) = 2
+Length(TG<Int64>.TBytes) = 16
+eAeBeC
+size of TR<Byte>
+TK<Integer>.X
+in TSub upper part
+in TSub upper part
+other

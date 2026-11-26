@@ -41,8 +41,11 @@ internal sealed partial class DeclarationBinder
         _container = container;
         _diagnostics = diagnostics;
         _sharedScope = sharedScope;
-        _folder = new ConstantFolder(types, scope, diagnostics);
+        _folder = new ConstantFolder(types, scope, diagnostics) { Generic = BindGenericName };     // C-353: SizeOf(G<X>), G<X>.C
     }
+
+    /// <summary>This binder's constant folder (generic instance names included, C-353).</summary>
+    internal ConstantFolder Folder => _folder;
 
     /// <summary>A unit's interface section: its routines are defined in the implementation (E2100 is checked there).</summary>
     public bool IsInterfaceSection { get; init; }
@@ -1677,7 +1680,8 @@ internal sealed partial class DeclarationBinder
             return null;
         }
 
-        return new ConstantFolder(_types, _scope, diagnostics).Fold(value) is { } constant
+        var folder = report ? _folder : new DeclarationBinder(_types, _scope, _container, diagnostics)._folder;
+        return folder.Fold(value) is { } constant
             ? _conversions.ConvertConstant(constant, type, value, diagnostics)
             : null;
     }

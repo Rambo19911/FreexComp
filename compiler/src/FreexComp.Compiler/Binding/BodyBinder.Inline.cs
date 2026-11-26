@@ -255,7 +255,7 @@ internal sealed partial class BodyBinder
                     break;
                 }
 
-                var folded = new ConstantFolder(_types, _scope, _diagnostics).Fold(syntax.Value);
+                var folded = Declarations().Folder.Fold(syntax.Value);                // C-353: generic instance names too
                 scope.TryDeclare(new ConstantSymbol(text, folded?.Type ?? _types.Error, folded, isTyped: false, Container,
                     [DiagnosticBag.LocationOf(syntax.Identifier)]), out _);
                 break;

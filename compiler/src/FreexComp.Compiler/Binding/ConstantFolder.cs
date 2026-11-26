@@ -30,6 +30,45 @@ internal sealed class ConstantFolder
     /// </summary>
     internal Func<string, bool>? IsDefined { get; init; }
 
+    /// <summary>
+    /// Binds a generic segment <c>G&lt;…&gt;</c> of a name (LANG-780, C-353: <c>SizeOf(G&lt;X&gt;)</c>, <c>G&lt;X&gt;.C</c>); without it a generic
+    /// name is not constant. Each segment is bound once per folder (its diagnostics are reported once).
+    /// </summary>
+    internal NestedNames.GenericSegment? Generic
+    {
+        get => _generic is null ? null : Segment;
+        init => _generic = value;
+    }
+
+    private readonly NestedNames.GenericSegment? _generic;
+    private readonly Dictionary<GenericNameSyntax, TypeSymbol> _segments = new(ReferenceEqualityComparer.Instance);
+
+    private TypeSymbol Segment(GenericNameSyntax name, Scope? scope, TypeSymbol? outer)
+    {
+        if (!_segments.TryGetValue(name, out var type))
+        {
+            type = _generic!(name, scope, outer);
+            _segments[name] = type;
+        }
+
+        return type;
+    }
+
+    /// <summary>
+    /// LANG-783 (C-353): an instance of a forward generic named in a constant expression before the generic's completion: E2007
+    /// at <paramref name="at"/> and true.
+    /// </summary>
+    internal bool IncompleteInstance(SyntaxNode at, TypeSymbol type)
+    {
+        if (type is not (ClassTypeSymbol { IsForward: true, IsGenericInstance: true } or InterfaceTypeSymbol { IsForward: true, IsGenericInstance: true }))
+        {
+            return false;
+        }
+
+        _diagnostics.Report(at, "E2007", type.Name);
+        return true;
+    }
+
     public ConstantValue? Fold(ExpressionSyntax expression)
     {
         if (expression.IsMissing)
@@ -53,7 +92,10 @@ internal sealed class ConstantFolder
                 return FoldInvocation(invocation);
             case MemberAccessExpressionSyntax memberAccess when _scope.Unqualified(memberAccess) is IdentifierNameSyntax qualified:
                 return FoldName(qualified);                                     // U.Name (LANG-311, 538)
-            case MemberAccessExpressionSyntax memberAccess when NestedNames.NestedMember(_scope, memberAccess) is { } nested:
+            case MemberAccessExpressionSyntax memberAccess when Generic is not null && NestedNames.TypeNamedBy(_scope, memberAccess.Expression, Generic) is { } outer
+                && (outer is ErrorTypeSymbol || IncompleteInstance(memberAccess.Expression, outer)):
+                return null;                                                    // C-353: reported at the generic segment
+            case MemberAccessExpressionSyntax memberAccess when NestedNames.NestedMember(_scope, memberAccess, Generic) is { } nested:
                 return nested switch                                            // LANG-770 (C-122): TOuter.Limit
                 {
                     ConstantSymbol { IsTyped: false } constant => constant.Value,
@@ -165,7 +207,7 @@ internal sealed class ConstantFolder
     {
         // the enumeration type may itself be unit-qualified: U.TEnum.Element
         // ... or nested in a class or record, or a nested alias: TOuter.TEnum.Element (LANG-770, C-311)
-        var type = access.Name is IdentifierNameSyntax ? NestedNames.TypeNamedBy(_scope, access.Expression) as EnumTypeSymbol : null;
+        var type = access.Name is IdentifierNameSyntax ? NestedNames.TypeNamedBy(_scope, access.Expression, Generic) as EnumTypeSymbol : null;
         isEnumAccess = type is not null;
         if (type is null)
         {
@@ -716,9 +758,15 @@ internal sealed class ConstantFolder
             {
                 (type, isTypeName) = (_types.String, true);
             }
-            else if (argument is MemberAccessExpressionSyntax && NestedNames.TypeNamedBy(_scope, argument) is { } nestedType)
+            else if (argument is MemberAccessExpressionSyntax or GenericNameSyntax && NestedNames.TypeNamedBy(_scope, argument, Generic) is { } nestedType)
             {
-                (type, isTypeName) = (nestedType, true);                        // LANG-770: SizeOf(TOuter.TInner)
+                // LANG-770: SizeOf(TOuter.TInner); LANG-784 (C-353): SizeOf(G<X>), High(U.G<X>.TEn), SizeOf(TOuter.TInner<X>)
+                if (nestedType is ErrorTypeSymbol || IncompleteInstance(argument, nestedType))
+                {
+                    return null;
+                }
+
+                (type, isTypeName) = (nestedType, true);
             }
             else if (_scope.Unqualified(argument) is IdentifierNameSyntax name && LookupName(name) is (TypeSymbol or VariableSymbol or ParameterSymbol) and var symbol)
             {
