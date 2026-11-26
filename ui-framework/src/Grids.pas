@@ -52,7 +52,7 @@ type
   end;
 
   { controls-standard.md section 27: geometry (UIF-841), painting (UIF-842), scrolling (UIF-845); UI Automation
-    (phase8/ui-automation.md section 7): the grid provider with its cells }
+    (accessibility.md section 7): the grid provider with its cells }
   TCustomGrid = class(TCustomControl)
   private
     FBorderStyle: TBorderStyle;
@@ -213,7 +213,7 @@ type
     function CellRect(ACol, ARow: Integer): TRect;
     { the cell under a client point (a grid line belongs to the cell before it); -1 outside the cells }
     procedure MouseToCell(X, Y: Integer; var ACol, ARow: Integer);
-    { ui-automation.md UIF-1438: the text of a cell as UI Automation clients read it (its Name and Value); '' here,
+    { accessibility.md UIF-1438: the text of a cell as UI Automation clients read it (its Name and Value); '' here,
       a descendant with cell texts overrides it }
     function GetAccessibleCellText(ACol, ARow: Integer): string; virtual;
     property Canvas;
@@ -309,7 +309,7 @@ type
 
   TGridCellProvider = class;
 
-  { ui-automation.md UIF-1417, UIF-1421, UIF-1435...1439: the grid, a fragment root with the Grid, Table and
+  { accessibility.md UIF-1417, UIF-1421, UIF-1435...1439: the grid, a fragment root with the Grid, Table and
     Selection patterns; its cells are its fragments, created on demand, one provider object per cell while one is
     alive (the identity a client compares is the runtime id) }
   TGridAutomationProvider = class(TWindowAutomationProvider, IGridProvider, ITableProvider, ISelectionProvider)
@@ -405,7 +405,7 @@ begin
   Result.Y := Y;
 end;
 
-{ ---------------------------------------------------------------- UI Automation (ui-automation.md section 7) }
+{ ---------------------------------------------------------------- UI Automation (accessibility.md section 7) }
 
 procedure PutStr(var V: TVariantArg; const S: string);
 begin
@@ -2195,7 +2195,7 @@ begin
     FCurrent := FAnchor;
   Invalidate;
   if Moved then
-    CurrentCellChanged(Self);                                { ui-automation.md UIF-1439 }
+    CurrentCellChanged(Self);                                { accessibility.md UIF-1439 }
 end;
 
 function TCustomGrid.InSelection(ACol, ARow: Integer): Boolean;
@@ -2298,7 +2298,7 @@ begin
   if (goAlwaysShowEditor in FOptions) and not FEditing then
     ShowEditor;
   if Moved then
-    CurrentCellChanged(Self);                                { ui-automation.md UIF-1439 }
+    CurrentCellChanged(Self);                                { accessibility.md UIF-1439 }
 end;
 
 procedure TCustomGrid.KeyDown(var Key: Word; Shift: TShiftState);

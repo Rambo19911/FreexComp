@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 unit AccKit;
-{ U-155: shared helpers of the Acc_* programs (ui-automation.md section 9): the properties of a provider read
+{ U-155: shared helpers of the Acc_* programs (accessibility.md section 9): the properties of a provider read
   through IRawElementProviderSimple.GetPropertyValue as text, control-type ids as their reference names, results
   as words. }
 

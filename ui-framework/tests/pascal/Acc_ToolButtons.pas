@@ -3,7 +3,7 @@
 // needs: desktop
 // phase: 8
 program Acc_ToolButtons;
-{ U-156, ui-automation.md section 6 (UIF-1430, UIF-1431), in process: the patterns of tool buttons. A plain and a
+{ U-156, accessibility.md section 6 (UIF-1430, UIF-1431), in process: the patterns of tool buttons. A plain and a
   drop-down button support Invoke and no Toggle; a check button supports Toggle and no Invoke; a separator supports
   neither. Invoke on a disabled button (or one on a disabled tool bar) is refused with UIA_E_ELEMENTNOTENABLED; on an
   enabled one it returns before OnClick runs, and OnClick runs once when the posted message is handled. Toggle

@@ -4,7 +4,7 @@ using FreexComp.UiFramework.Tests;
 namespace FreexComp.UiFramework.Automation.Tests;
 
 /// <summary>
-/// U-155 (ui-automation.md §9): the providers of framework controls and the annotations of native controls as a UI
+/// U-155 (accessibility.md §9): the providers of framework controls and the annotations of native controls as a UI
 /// Automation client sees them: the operating system's COM client (<c>IUIAutomation</c>, the one screen readers use;
 /// interop slice in <c>UiaClient.cs</c>, decision Q-P8A-16). Each test builds <c>tests/gui/AccessibilityProbe.pas</c>, starts it (its form is shown
 /// without activation), finds elements by <c>AutomationId</c> (= component name) under the probe's window, and closes

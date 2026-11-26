@@ -651,7 +651,7 @@ type
   { protected access to Action (local descendant) }
   TControlAccess = class(TControl);
 
-  { ui-automation.md UIF-1411, UIF-1417, UIF-1421: scroll boxes and frames are panes, forms are windows named by
+  { accessibility.md UIF-1411, UIF-1417, UIF-1421: scroll boxes and frames are panes, forms are windows named by
     their caption }
   TPaneAutomationProvider = class(TWindowAutomationProvider)
   public

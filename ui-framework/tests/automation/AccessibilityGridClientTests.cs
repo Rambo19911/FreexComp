@@ -4,7 +4,7 @@ using FreexComp.UiFramework.Tests;
 namespace FreexComp.UiFramework.Automation.Tests;
 
 /// <summary>
-/// U-157 (ui-automation.md §7, §9): the string grid of <c>tests/gui/AccessibilityProbe.pas</c> as the operating
+/// U-157 (accessibility.md §7, §9): the string grid of <c>tests/gui/AccessibilityProbe.pas</c> as the operating
 /// system's COM client sees it. The probe sets the focus inside its own thread (its form becomes the active window of
 /// that thread, no foreground change), so the class runs in the <c>Desktop</c> collection, one test at a time with the
 /// other foreground tests of that collection. Keys reach the grid as messages the probe sends to its own window: no

@@ -359,7 +359,7 @@ type
     procedure ChangeScale(M, D: Integer); override;
     procedure Notification(AComponent: TComponent; Operation: TOperation); override;
     procedure Paint; override;
-    { ui-automation.md UIF-1430, UIF-1431: the click of a tool button posted by its Invoke or Toggle pattern }
+    { accessibility.md UIF-1430, UIF-1431: the click of a tool button posted by its Invoke or Toggle pattern }
     procedure WndProc(var Message: TMessage); override;
   public
     constructor Create(AOwner: TComponent); override;
@@ -1254,7 +1254,7 @@ type
   TFormAccess = class(TCustomForm);
   TImageListAccess = class(TCustomImageList);
 
-  { ui-automation.md UIF-1411, UIF-1417, UIF-1419, UIF-1421: the rules of the classes of this unit }
+  { accessibility.md UIF-1411, UIF-1417, UIF-1419, UIF-1421: the rules of the classes of this unit }
   TTabSheetAutomationProvider = class(TWindowAutomationProvider)
   public
     class function OwnText(Control: TControl): string; override;

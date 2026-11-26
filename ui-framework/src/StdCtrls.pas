@@ -927,7 +927,7 @@ type
   { access to the protected PixelsPerInch / ActiveControl of a form }
   TFormAccess = class(TCustomForm);
 
-  { ui-automation.md UIF-1411, UIF-1417, UIF-1421: the rules of the classes of this unit }
+  { accessibility.md UIF-1411, UIF-1417, UIF-1421: the rules of the classes of this unit }
   TLabelAutomationProvider = class(TGraphicAutomationProvider)
   public
     class function OwnText(Control: TControl): string; override;

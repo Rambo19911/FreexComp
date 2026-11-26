@@ -3,7 +3,7 @@
 // needs: desktop
 // phase: 8
 program Acc_Tree;
-{ U-155, ui-automation.md section 5 (UIF-1420...1427, UIF-1440), in process: the providers of a framework window
+{ U-155, accessibility.md section 5 (UIF-1420...1427, UIF-1440), in process: the providers of a framework window
   (fragment root over the host provider) and of its graphic children (fragments): options, host, navigation of the
   graphic control elements in Controls[] order (bevels and hidden controls skipped, child windows left to the
   system), fragment roots, bounding rectangles in screen coordinates, hit testing topmost first, runtime ids

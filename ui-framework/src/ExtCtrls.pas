@@ -271,7 +271,7 @@ type
   { access to the protected Padding of a parent }
   TWinControlAccess = class(TWinControl);
 
-  { ui-automation.md UIF-1411, UIF-1417, UIF-1419, UIF-1421: the rules of the classes of this unit }
+  { accessibility.md UIF-1411, UIF-1417, UIF-1419, UIF-1421: the rules of the classes of this unit }
   TPanelAutomationProvider = class(TWindowAutomationProvider)
   public
     class function OwnText(Control: TControl): string; override;

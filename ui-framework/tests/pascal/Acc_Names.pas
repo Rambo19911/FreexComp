@@ -3,7 +3,7 @@
 // needs: desktop
 // phase: 8
 program Acc_Names;
-{ U-155, ui-automation.md sections 4 (UIF-1410...1413, UIF-1417...1419), in process through GetAutomationProvider:
+{ U-155, accessibility.md sections 4 (UIF-1410...1413, UIF-1417...1419), in process through GetAutomationProvider:
   the accessible properties of TControl (defaults, streamed as ordinary published properties); every source of
   the name (AccessibleName, the own text of each class with the mnemonic rule, the hint of an image and of a tool
   button without caption, the first associated label in creation order, none); HelpText with and without '|';

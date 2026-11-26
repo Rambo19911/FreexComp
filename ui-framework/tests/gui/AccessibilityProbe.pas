@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 program AccessibilityProbe;
-{ U-155, ui-automation.md section 9: the program the UI Automation client tests read
+{ U-155, accessibility.md section 9: the program the UI Automation client tests read
   (FreexComp.UiFramework.Automation.Tests). One form 'Accessibility Probe' (class PN.TProbeForm, component name
   ProbeForm) with one instance of every Phase 4 control and of a frame, a string grid with a fixed row and column
   and goEditing, a tool bar with a plain, a check and a separator button, labels associated by FocusControl, and a

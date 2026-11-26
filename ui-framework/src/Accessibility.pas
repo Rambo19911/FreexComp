@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
-{ Accessibility - UI Automation for framework controls (phase8/ui-automation.md sections 4, 5 and 8, UIF-1410 to
+{ Accessibility - UI Automation for framework controls (accessibility.md sections 4, 5 and 8, UIF-1410 to
   UIF-1427, UIF-1440, UIF-1444 to UIF-1446): the names, help texts, automation ids and control types of controls;
   server-side providers for framework-drawn windows (fragment roots over the system's host provider) and for graphic
   controls (fragments of their windowed parent), one per control, created when a client first asks and disconnected

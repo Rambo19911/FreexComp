@@ -3,7 +3,7 @@
 // needs: desktop
 // phase: 8
 program Acc_Grid;
-{ U-157, ui-automation.md section 7 (UIF-1435...1439), in process: the grid provider and its cells. Grid, Table and
+{ U-157, accessibility.md section 7 (UIF-1435...1439), in process: the grid provider and its cells. Grid, Table and
   Selection on the grid (counts, GetItem also outside the visible range and out of range, header arrays of fixed
   row 0 and fixed column 0, row-major order, the selection); cells as fragments of the grid (one object per cell
   while one is alive, runtime ids, navigation over the visible cells in row-major order, also after scrolling,

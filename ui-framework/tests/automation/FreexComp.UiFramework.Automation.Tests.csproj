@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <!-- UI Automation client tests (ui-automation.md section 9). The client is the operating system's COM client
+    <!-- UI Automation client tests (accessibility.md section 9). The client is the operating system's COM client
          (CUIAutomation / IUIAutomation, the one screen readers use), reached through the hand-declared interop slice
          in UiaClient.cs: no package, no framework reference (decisions Q-P8A-12, Q-P8A-16) -->
     <TargetFramework>net10.0</TargetFramework>

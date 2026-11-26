@@ -12,8 +12,9 @@ program Frm_FrameInstances;
   frame's; each instance keeps the name and the Left of its inline object. Frames created in code with the form as
   owner have no name, two of them coexist and own their children. The form's ActiveControl and the tab cycle
   enter the frames' children (the frames themselves are no tab stops). The reader finds the class of an inline
-  object by its name: the frame unit registers its class (UIF-1396); an unregistered frame class is F0101 at the
-  type name. The form is shown for the handles. }
+  object through RegisterClass/GetClass (the frame unit registers its class, UIF-1396) or, since RTL-1105, through a
+  published field of the root's class chain; this test's host TForm has no such field, so it still registers its
+  classes. A frame class found by neither is F0101 at the type name. The form is shown for the handles. }
 uses
   Windows, Messages, SysUtils, Classes, Graphics, Controls, Forms, StdCtrls, RTLConsts, TestKit, Frm_AddressFrame;
 
