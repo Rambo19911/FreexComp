@@ -300,9 +300,11 @@ public sealed class FormEditor(FormDocument document, ComponentCatalog catalog)
     {
         switch (value)
         {
-            case IdentValue ident when info.Kind == PropertyKind.Component && ReferenceEquals(ResolvePlain(owner, ident.Name), renamed):
+            case IdentValue ident when info.Kind == PropertyKind.Component
+                && ReferenceEquals(ReferenceLookup.ResolvePlain(document, ReferenceLookup.Scope(owner), ident.Name), renamed):
                 return new IdentValue(newName);
-            case QualifiedIdentValue { Parts: var parts } when info.Kind == PropertyKind.Component && PartNaming(owner, parts, renamed) is { } index:
+            case QualifiedIdentValue { Parts: var parts } when info.Kind == PropertyKind.Component
+                && ReferenceLookup.PartReaching(document, ReferenceLookup.Scope(owner), parts, o => ReferenceEquals(o, renamed)) is { } index:
                 return new QualifiedIdentValue(parts.SetItem(index, newName));
             case CollectionValue collection when info.ItemClass is { } itemClass && catalog.FindType(itemClass) is { Kind: TypeKind.Object } itemType:
                 var changed = false;
@@ -321,51 +323,6 @@ public sealed class FormEditor(FormDocument document, ComponentCatalog catalog)
             default:
                 return null;
         }
-    }
-
-    /// <summary>
-    /// The scope the lines of <paramref name="owner"/> resolve names in first (RTL-1093): an instance's own lines and the
-    /// lines of the inherited objects of its scope; null for the file scope (also the inherited objects of a descendant's
-    /// file scope, DSG-FD-126).
-    /// </summary>
-    private static FormObject? ReferenceScope(FormObject owner) => owner.IsFrameInstance ? owner : owner.IsInherited ? owner.Scope : null;
-
-    /// <summary>
-    /// The object a plain name in a line of <paramref name="owner"/> names (RTL-1093, RTL-1104): the innermost scope (its
-    /// instance by name, then its components), then the file scope (the root by name included).
-    /// </summary>
-    private FormObject? ResolvePlain(FormObject owner, string name) =>
-        ReferenceScope(owner) is { } scope && (Same(scope.Name, name) ? scope : scope.FindInScope(name)) is { } inScope
-            ? inScope
-            : document.FindByName(name);
-
-    /// <summary>
-    /// The index of the part of the qualified name <paramref name="parts"/> in a line of <paramref name="owner"/> that reaches
-    /// <paramref name="target"/>, or null. The first part is resolved like a plain name (this file's root name names the
-    /// root; a frame's header name is no name of a placing file, also in an instance's lines: RTL-1104); each further part is
-    /// a component of the root (the file scope) or of an instance's scope (DSG-FD-108).
-    /// </summary>
-    private int? PartNaming(FormObject owner, ImmutableArray<string> parts, FormObject target)
-    {
-        var current = ResolvePlain(owner, parts[0]);
-        for (var i = 0; current is not null; i++)
-        {
-            if (ReferenceEquals(current, target))
-            {
-                return i;
-            }
-
-            if (i + 1 == parts.Length)
-            {
-                break;
-            }
-
-            current = ReferenceEquals(current, document.Root) ? document.FindByName(parts[i + 1])
-                : current.IsFrameInstance ? current.FindInScope(parts[i + 1])
-                : null;
-        }
-
-        return null;
     }
 
     /// <summary>form-format.md §1: <c>[A-Za-z_][A-Za-z0-9_]*</c>, and usable as a field name (not a reserved word).</summary>

@@ -320,7 +320,8 @@ public sealed partial class DesignSurfaceController
 
     /// <summary>
     /// The snapshot to add for a pasted object: new names (DSG-SUR-123), component references inside the pasted set
-    /// renamed, references to components outside it kept only when this form has them (else removed = <c>nil</c>), event
+    /// renamed, references to components outside it (plain or qualified) kept only when they resolve in this form's file
+    /// scope (else removed = <c>nil</c>; <see cref="ReferenceLookup"/>, D-142), event
     /// properties kept only when the form class has a compatible method of that name (DSG-SUR-124), skipped children left out.
     /// </summary>
     private FormObjectData Transform(FormObject obj, Dictionary<FormObject, string> names)
@@ -358,12 +359,23 @@ public sealed partial class DesignSurfaceController
                     {
                         properties.Add(newName == target ? property : new FormPropertyData(property.Path, new IdentValue(newName)));
                     }
-                    else if (Document.FindByName(target) is not null)
+                    else if (ReferenceLookup.ResolvePlain(Document, null, target) is not null)
                     {
                         properties.Add(property);
                     }
 
                     continue; // a reference to a component this form does not have is removed
+                }
+
+                if (Catalog.FindPropertyPath(info, property.Path) is { Kind: PropertyKind.Component }
+                    && property.Value is QualifiedIdentValue { Parts: var parts })
+                {
+                    if (ReferenceLookup.ResolveQualified(Document, null, parts) is not null)
+                    {
+                        properties.Add(property); // D-142: kept when it resolves in this form's file scope, else removed
+                    }
+
+                    continue;
                 }
 
                 properties.Add(property);
