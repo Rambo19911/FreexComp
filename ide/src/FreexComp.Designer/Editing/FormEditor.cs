@@ -217,7 +217,15 @@ public sealed class FormEditor(FormDocument document, ComponentCatalog catalog)
     private FormChange Rename(RenameObject change, Effects effects)
     {
         var obj = Editable(change.OldName);
-        RejectInherited(obj, "renamed");
+        if (!change.FollowsAncestor)
+        {
+            RejectInherited(obj, "renamed");
+        }
+        else if (!obj.IsInherited || obj.Parent is null || obj.InheritedFrame is not null)
+        {
+            throw new InvalidFormChangeException($"{obj.QualifiedName} is no inherited component of the file scope"); // D-137
+        }
+
         CheckIdentifier(change.NewName);
         if (document.FindByName(change.NewName) is { } other && !ReferenceEquals(other, obj))
         {
@@ -274,7 +282,11 @@ public sealed class FormEditor(FormDocument document, ComponentCatalog catalog)
 
         // DSG-FD-134: the owners by their names after this rename, so that the inverse still applies after a re-merge has
         // replaced the objects of a descendant.
-        return new RenameObject(obj.Name, oldName) { RestoreReferences = [.. before.Select(b => (b.Owner.QualifiedName, b.Slots))] };
+        return new RenameObject(obj.Name, oldName)
+        {
+            RestoreReferences = [.. before.Select(b => (b.Owner.QualifiedName, b.Slots))],
+            FollowsAncestor = change.FollowsAncestor,
+        };
     }
 
     /// <summary>The value with references to <paramref name="oldName"/> renamed, or null when it has none.</summary>

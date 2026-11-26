@@ -346,6 +346,7 @@ public sealed partial class DesignSurfaceController
                 ExecuteVerb(commandId, argument); // DSG-SUR-192 … 196
                 break;
             case Commands.Undo when Undo.Undo() is { } unit: // DSG-SUR-170
+                unit.Linked?.Revert(); // D-137: the other files first, so that they follow the ancestor's inverse
                 Editor.Apply(unit.Undo);
                 if (unit.CodeEdits.Count > 0 && !_host.CodeSync.RevertEdits(unit.CodeEdits))
                 {
@@ -355,6 +356,7 @@ public sealed partial class DesignSurfaceController
                 Selection.Set(unit.SelectionBefore.Names);
                 break;
             case Commands.Redo when Undo.Redo() is { } unit:
+                unit.Linked?.Apply();
                 Editor.Apply(unit.Redo);
                 if (unit.CodeOps.Count > 0)
                 {

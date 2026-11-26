@@ -391,6 +391,8 @@ public sealed class ProjectFrameCatalog : IFrameCatalog
             output is null ? null : line => output.Append(OutputChannels.Designer, line, OutputKind.Error));
         documents.DesignFrames = frames;
         documents.DesignAncestors = frames.Ancestors; // DSG-FD-123 (D-132)
+        documents.DesignAncestorRename = new AncestorRename(fileSystem, frames, () => documents.DesignCatalog, model => // D-137
+            documents.Documents.OfType<FormDocumentViewModel>().FirstOrDefault(d => ReferenceEquals(d.Designer.Model, model))?.Designer);
         projects.ProjectChanged += (_, _) => frames.Refresh();
         projects.FilesAdded += (_, _) => frames.Refresh();
         projects.FileRenamed += (_, _) => frames.Refresh();

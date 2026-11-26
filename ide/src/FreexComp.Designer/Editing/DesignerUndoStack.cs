@@ -15,6 +15,19 @@ public sealed record SelectionSnapshot(ImmutableArray<string> Names, string? Pri
     public static SelectionSnapshot Empty { get; } = new([], null);
 }
 
+/// <summary>
+/// D-137: changes of other files that belong to one undo unit (the descendants of an ancestor whose component is renamed):
+/// applied before the unit's own changes, reverted before its inverses, so that every file changes with one undo.
+/// </summary>
+public interface ILinkedEdits
+{
+    /// <summary>Applies the edits; false when they could not be made (nothing is changed then).</summary>
+    bool Apply();
+
+    /// <summary>Reverts the edits of the last <see cref="Apply"/>.</summary>
+    void Revert();
+}
+
 /// <summary>One undoable designer interaction (granularity: design-surface.md §12, object-inspector.md §9).</summary>
 public sealed class DesignerUndoUnit(string titleKey, IReadOnlyList<FormChange> redo, IReadOnlyList<FormChange> undo,
     IReadOnlyList<TextEditRecord> codeEdits, SelectionSnapshot selectionBefore, SelectionSnapshot selectionAfter)
@@ -36,6 +49,9 @@ public sealed class DesignerUndoUnit(string titleKey, IReadOnlyList<FormChange> 
 
     /// <summary>The logical code-sync operations behind <see cref="CodeEdits"/>, re-executed on redo (DSG-CS-102).</summary>
     public IReadOnlyList<CodeSync.CodeSyncOp> CodeOps { get; init; } = [];
+
+    /// <summary>D-137: the edits of other files made with this unit; null when none.</summary>
+    public ILinkedEdits? Linked { get; init; }
 
     public SelectionSnapshot SelectionBefore { get; } = selectionBefore;
 

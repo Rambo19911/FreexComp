@@ -193,6 +193,9 @@ public sealed class FormDesignerViewModel
     /// <summary>Where <see cref="DesignerHost.SetStatus"/> messages go (set by the document service).</summary>
     public IStatusService? Status { get; set; }
 
+    /// <summary>D-137: renames a component of this document in the project's descendants; null: no project catalog.</summary>
+    public AncestorRename? AncestorRename { get; set; }
+
     /// <summary>The designer undo stack; cleared when the model is replaced (DSG-FD-093).</summary>
     public DesignerUndoStack Undo { get; } = new();
 
@@ -333,6 +336,26 @@ public sealed class FormDesignerViewModel
         }
 
         return new FormSavePlan(IsFormModified ? CurrentFormText() : null, removed);
+    }
+
+    /// <summary>
+    /// D-137: an ancestor renamed one of its components: <paramref name="changes"/> (renames of inherited components that
+    /// follow, <see cref="RenameObject.FollowsAncestor"/>) are applied to this descendant's model, which stays the same
+    /// object. The changes belong to the ancestor's undo unit, not to this document's: its own undo stack is cleared (its
+    /// units name components by their old names; the document is modified until saved). A Text view without an edit of
+    /// its own shows the new text. Returns the inverses.
+    /// </summary>
+    internal IReadOnlyList<FormChange> FollowAncestor(IReadOnlyList<FormChange> changes)
+    {
+        var inverse = Editor!.Apply(changes);
+        Undo.Clear();
+        if (_activeView == DocumentView.Text && !HasPendingText)
+        {
+            WriteText();
+        }
+
+        ModifiedChanged?.Invoke(this, EventArgs.Empty);
+        return inverse;
     }
 
     /// <summary>The <c>.form</c> text as it would be saved now (the Text view's text, or the model written).</summary>

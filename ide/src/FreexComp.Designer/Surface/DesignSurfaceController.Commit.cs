@@ -20,11 +20,13 @@ public sealed partial class DesignSurfaceController
     /// <paramref name="changes"/>, the measured auto-size of controls whose text-size properties changed (DSG-SUR-088) and the
     /// layout commit (DSG-LAY-040). False when the form is read-only or code sync
     /// refused the edit (DSG-CS-004: <c>Msg.Designer.CodeSyncConflict</c>; nothing is changed then). <paramref name="select"/>,
-    /// when given, becomes the selection after the changes, inside the unit (DSG-RND-017 tab click).
+    /// when given, becomes the selection after the changes, inside the unit (DSG-RND-017 tab click). <paramref name="linked"/>
+    /// (D-137), when given, is applied after the code part and before <paramref name="changes"/> and joins the unit; false
+    /// when it could not be applied (the code edits are reverted).
     /// </summary>
     /// <exception cref="InvalidFormChangeException">A change is invalid (a caller error); the code edits were reverted.</exception>
     public bool Commit(string titleKey, IReadOnlyList<FormChange> changes, Func<IReadOnlyList<TextEditRecord>>? code = null,
-        IReadOnlyList<CodeSyncOp>? codeOps = null, Model.FormObject? select = null)
+        IReadOnlyList<CodeSyncOp>? codeOps = null, Model.FormObject? select = null, ILinkedEdits? linked = null)
     {
         ArgumentNullException.ThrowIfNull(titleKey);
         ArgumentNullException.ThrowIfNull(changes);
@@ -48,6 +50,12 @@ public sealed partial class DesignSurfaceController
             }
         }
 
+        if (linked is not null && !linked.Apply())
+        {
+            _host.CodeSync.RevertEdits(edits);
+            return false;
+        }
+
         var before = Selection.ToSnapshot();
         IReadOnlyList<FormChange> undo;
         try
@@ -56,6 +64,7 @@ public sealed partial class DesignSurfaceController
         }
         catch (InvalidFormChangeException)
         {
+            linked?.Revert();
             _host.CodeSync.RevertEdits(edits);
             throw;
         }
@@ -71,6 +80,7 @@ public sealed partial class DesignSurfaceController
             Selection.ToSnapshot())
         {
             CodeOps = codeOps ?? [],
+            Linked = linked,
         });
         return true;
     }
@@ -167,6 +177,7 @@ public sealed partial class DesignSurfaceController
         {
             TitleArgument = unit.TitleArgument,
             CodeOps = [new RepairOp(), .. unit.CodeOps],
+            Linked = unit.Linked,
         };
     }
 }

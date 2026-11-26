@@ -49,6 +49,12 @@ public sealed record RenameObject(string OldName, string NewName) : FormChange
     /// names (a re-merge replaces the objects of a descendant, DSG-FD-134).
     /// </summary>
     internal ImmutableArray<(string Owner, ImmutableArray<PropertySlot> Slots)> RestoreReferences { get; init; }
+
+    /// <summary>
+    /// D-137: the object is an inherited one of a descendant's file scope whose ancestor component was renamed; it follows
+    /// (header and component references) instead of being refused (DSG-FD-132). The inverse carries the flag too.
+    /// </summary>
+    public bool FollowsAncestor { get; init; }
 }
 
 /// <summary>

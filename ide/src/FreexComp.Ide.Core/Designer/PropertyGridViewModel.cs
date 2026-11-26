@@ -1307,7 +1307,8 @@ public sealed class PropertyGridViewModel : ObservableObject
             return DesignerMessages.Format("Msg.Designer.NameReserved", name);
         }
 
-        if (designer.Model!.FindByName(name) is { } other && !ReferenceEquals(other, obj))
+        if ((designer.Model!.FindByName(name) is { } other && !ReferenceEquals(other, obj))
+            || designer.AncestorRename?.IsNameTaken(designer, obj, name) == true) // D-137: a descendant has the name
         {
             return DesignerMessages.Format("Msg.Designer.NameDuplicate", name);
         }
@@ -1323,18 +1324,25 @@ public sealed class PropertyGridViewModel : ObservableObject
             return null;
         }
 
-        return RenameUnit(designer, obj, name, [], UndoTitles.Rename) ? null : _target.FailureMessage ?? "";
+        return RenameUnit(designer, obj, name, [], UndoTitles.Rename) ? null : designer.AncestorRename?.LastFailure ?? _target.FailureMessage ?? "";
     }
 
     /// <summary>
     /// DSG-OI-071: renames <paramref name="obj"/> to <paramref name="name"/> (validated) with its field (the form root: the
     /// form class and variable) through code sync, as one unit <paramref name="titleKey"/>; a Caption or Text equal to the
     /// old name follows; <paramref name="before"/> changes are applied first in the same unit (DSG-SUR-197: the committed
-    /// caption whose text gives the name).
+    /// caption whose text gives the name). D-137: the project's descendants of the form follow in the same unit; refused
+    /// (false) when one of them has a component of that name or a descendant file cannot be written.
     /// </summary>
     internal static bool RenameUnit(FormDesignerViewModel designer, FormObject obj, string name, IReadOnlyList<FormChange> before, string titleKey)
     {
         var old = obj.Name;
+        if (designer.AncestorRename?.IsNameTaken(designer, obj, name) == true)
+        {
+            return false;
+        }
+
+        var descendants = designer.AncestorRename?.Prepare(designer, obj, name);
         var code = designer.CodeSync;
         var withCode = designer.HasUnit && code.State == CodeSyncState.Ok;
         string? newClass = null;
@@ -1377,7 +1385,7 @@ public sealed class PropertyGridViewModel : ObservableObject
 
             return list;
         });
-        return designer.Surface!.Commit(titleKey, changes, edits, ops);
+        return designer.Surface!.Commit(titleKey, changes, edits, ops, linked: descendants);
     }
 
     private FormValue Effective(FormObject obj, string path, PropertyInfo info) =>
