@@ -1,0 +1,9 @@
+object FooterFrame: TFooterFrame
+  Buddy = FooterFrame.Note
+  object Title: TPart
+    Buddy = FooterFrame
+  end
+  object Note: TPart
+    Buddy = footerframe.Title
+  end
+end

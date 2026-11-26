@@ -1,0 +1,31 @@
+# a frame without an owner: the header name is also its name
+ok root name applied
+ok alone: plain header name is the instance
+ok alone: qualified header name reaches its own child
+ok alone: qualified forward reference fixed up in the instance
+alone: Title.Buddy=FooterFrame Note.Buddy=Title Buddy=Note
+# two instances in a form: each file reference names its own instance
+ok instance names from the form
+ok F1: plain header name is the instance
+ok F1: qualified header name reaches its own child
+ok F1: qualified forward reference fixed up in the instance
+F1: Title.Buddy=F1 Note.Buddy=Title Buddy=Note
+ok F2: plain header name is the instance
+ok F2: qualified header name reaches its own child
+ok F2: qualified forward reference fixed up in the instance
+F2: Title.Buddy=F2 Note.Buddy=Title Buddy=Note
+ok the global component of the same name is not used
+# frames created in code with an owner
+ok both keep an empty name
+ok X: plain header name is the instance
+ok X: qualified header name reaches its own child
+ok X: qualified forward reference fixed up in the instance
+X: Title.Buddy=<TFooterFrame> Note.Buddy=Title Buddy=Note
+ok Y: plain header name is the instance
+ok Y: qualified header name reaches its own child
+ok Y: qualified forward reference fixed up in the instance
+Y: Title.Buddy=<TFooterFrame> Note.Buddy=Title Buddy=Note
+# in another file the frame's header name is not a name of that file
+ok plain header name of the frame in the form
+ok qualified one goes through FindGlobalComponent
+# passed 21 failed 0

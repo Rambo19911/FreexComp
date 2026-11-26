@@ -665,6 +665,7 @@ type
     FRootCreated: Boolean;
     FScope: TComponent;
     FApplyRootName: Boolean;
+    FRootHeader: string;
     FDeferRootLoaded: Boolean;
     FOnFindMethod: TFindMethodEvent;
     FOnSetName: TSetNameEvent;
@@ -703,6 +704,7 @@ type
     function ReadOrdinalValue(PropInfo: PPropInfo): Int64;
     procedure ReadReference(Instance: TPersistent; PropInfo: PPropInfo);
     function ResolveReference(const Name: string; Scope: TComponent): TComponent;
+    function NamesRoot(const Name: string): Boolean;
     procedure ResolveFixups;
     procedure ReadStringsValue(Strings: TStrings);
     procedure ReadComponentObject;
@@ -4685,7 +4687,16 @@ begin
   ExpectLineEnd;
 end;
 
-{ RTL-1093: a plain name is looked up in the innermost frame instance first (the instance itself included) }
+{ RTL-1104: the root's name or the header name of the file being read, also when the header name was not applied
+  (a frame read with an owner, RTL-1099) }
+function TReader.NamesRoot(const Name: string): Boolean;
+begin
+  Result := (FLookupRoot <> nil) and (((FLookupRoot.Name <> '') and (CompareText(FLookupRoot.Name, Name) = 0)) or
+    ((FRootHeader <> '') and (CompareText(FRootHeader, Name) = 0)));
+end;
+
+{ RTL-1093: a plain name is looked up in the innermost frame instance first (the instance itself included);
+  RTL-1104: a name or the first part of a qualified name that names the root of this file is the lookup root }
 function TReader.ResolveReference(const Name: string; Scope: TComponent): TComponent;
 var
   P: Integer;
@@ -4706,16 +4717,21 @@ begin
   begin
     if FLookupRoot = nil then
       Exit;
-    if CompareText(FLookupRoot.Name, Name) = 0 then
+    if NamesRoot(Name) then
       Result := FLookupRoot
     else
       Result := FLookupRoot.FindComponent(Name);
   end
-  else if Assigned(FindGlobalComponent) then
+  else
   begin
-    Container := FindGlobalComponent(Copy(Name, 1, P - 1));
-    if Container <> nil then
-      Result := Container.FindComponent(Copy(Name, P + 1, MaxInt));
+    if NamesRoot(Copy(Name, 1, P - 1)) then
+      Result := FLookupRoot.FindComponent(Copy(Name, P + 1, MaxInt));
+    if (Result = nil) and Assigned(FindGlobalComponent) then
+    begin
+      Container := FindGlobalComponent(Copy(Name, 1, P - 1));
+      if Container <> nil then
+        Result := Container.FindComponent(Copy(Name, P + 1, MaxInt));
+    end;
   end;
 end;
 
@@ -5188,6 +5204,7 @@ begin
     end;
     FRoot := Root;
     FLookupRoot := Root;
+    FRootHeader := Name;
     FOwner := Root;
     FParent := nil;
     FScope := nil;

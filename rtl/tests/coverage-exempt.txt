@@ -7,4 +7,3 @@ RTL-840 documentation rule: the inventory in winapi.md section 5 must list every
 RTL-904 testing-process rule: console-kind behaviour is checked by the manual checklist of testing.md section 5
 RTL-907 process rule for bug fixes (test before fix, commit message); not observable in the product
 RTL-009 process rule for the lead: when the compiler golden suite switches from the compiler area's temporary test RTL to rtl/src (task C-149, done; that RTL is deleted); it states no RTL behaviour
-RTL-1104 reserved id: the line "RTL-1104: reserved." in classes.md section 10.8 holds no rule; it leaves this list when the id gets a rule and a test
