@@ -1,0 +1,36 @@
+# tool bar draws through Draw (UIF-1475, UIF-1477)
+ok enabled button: the cell blended over clBtnFace
+ok disabled button: grey and halved over clBtnFace
+# list view and tree view draw through the native list (UIF-1466)
+ok list view item 0: the cell blended over clWindow
+ok before the edits: Handle unchanged
+ok before the edits: list view list
+ok before the edits: tree view list
+ok before the edits: list item 0 image index
+ok before the edits: list item 1 image index
+ok before the edits: tree node 0 image index
+ok before the edits: tree node 1 image index
+# the clients keep the handle through edits (UIF-1467, UIF-1478)
+ok after Add and Delete: Handle unchanged
+ok after Add and Delete: list view list
+ok after Add and Delete: tree view list
+ok after Add and Delete: list item 0 image index
+ok after Add and Delete: list item 1 image index
+ok after Add and Delete: tree node 0 image index
+ok after Add and Delete: tree node 1 image index
+ok middle Insert
+ok after a middle Insert: Handle unchanged
+ok after a middle Insert: list view list
+ok after a middle Insert: tree view list
+ok after a middle Insert: list item 0 image index
+ok after a middle Insert: list item 1 image index
+ok after a middle Insert: tree node 0 image index
+ok after a middle Insert: tree node 1 image index
+ok after Move: Handle unchanged
+ok after Move: list view list
+ok after Move: tree view list
+ok after Move: list item 0 image index
+ok after Move: list item 1 image index
+ok after Move: tree node 0 image index
+ok after Move: tree node 1 image index
+# passed 32 failed 0

@@ -1,0 +1,52 @@
+# Overlay (UIF-1479)
+ok Overlay(1, 0) without a handle
+ok one Change
+ok no handle made by Overlay
+ok Overlay(2, 14), the last entry
+ok one Change each
+ok DrawOverlay: the new native list got entry 0
+ok DrawOverlay: entry 14
+ok an unset entry draws the base only
+ok index = Count refused
+ok index -2 refused
+ok a refused call fires nothing
+ok a refused call sets nothing
+ok Overlay(-1, 14) clears
+ok clearing fires Change
+ok a cleared entry draws the base only
+ok set again with a handle
+ok the native list got it
+ok an overlay over a cell with transparent pixels
+# table kept right (UIF-1481)
+ok middle insert of two cells
+ok after the rebuild: entry 0 raised to 3
+ok after the rebuild: entry 14 raised to 4
+ok Move(3, 0): entry 0 follows its cell
+ok Move(3, 0): entry 14 unchanged
+ok Move(0, 2): entry 0 follows its cell
+ok Move(4, 1): entry 0 raised by one
+ok Move(4, 1): entry 14 follows its cell
+ok Delete below: entry 0 lowered
+ok Delete below: entry 14 lowered
+ok Delete of the overlay cell clears its entry
+ok Delete above: entry 14 unchanged
+ok insert at the end keeps the table
+ok set entry 0 again
+ok entry 0 at the new cell
+ok Clear clears entry 0
+ok Clear clears entry 14
+ok set before an emptying change
+ok an emptying property change clears the table
+# a list without a mask
+ok Masked = False: Overlay refused
+ok no Change
+ok DrawOverlay draws the base only
+# overlays of alpha cells (UIF-1480)
+ok Overlay of a half-transparent cell
+ok enabled: overlay blended over red
+ok enabled: base only outside the overlay
+ok disabled: both cells converted
+ok disabled: base only outside the overlay
+ok disabled: transparent block
+ok disabled, unset entry: base only
+# passed 47 failed 0

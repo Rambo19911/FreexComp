@@ -3,7 +3,8 @@
   "unit": "ImgList",
   "types": {
     "TColorDepth": { "kind": "enum", "values": ["cdDeviceDependent", "cd4Bit", "cd8Bit", "cd16Bit", "cd24Bit", "cd32Bit"] },
-    "TDrawingStyle": { "kind": "enum", "values": ["dsFocus", "dsSelected", "dsNormal", "dsTransparent"] }
+    "TDrawingStyle": { "kind": "enum", "values": ["dsFocus", "dsSelected", "dsNormal", "dsTransparent"] },
+    "TImageType": { "kind": "enum", "values": ["itImage", "itMask"] }
   },
   "components": [
     {
@@ -32,7 +33,9 @@
         { "name": "Masked", "type": "Boolean", "default": true, "category": "Misc" },
         { "name": "BkColor", "type": "TColor", "default": "clNone", "category": "Misc", "editor": "color" },
         { "name": "DrawingStyle", "type": "TDrawingStyle", "default": "dsNormal", "category": "Misc" },
-        { "name": "AllocBy", "type": "Integer", "default": 4, "category": "Misc" }
+        { "name": "AllocBy", "type": "Integer", "default": 4, "category": "Misc" },
+        { "name": "BlendColor", "type": "TColor", "default": "clNone", "category": "Misc", "editor": "color" },
+        { "name": "ImageType", "type": "TImageType", "default": "itImage", "category": "Misc" }
       ],
       "events": [
         { "name": "OnChange", "signature": "TNotifyEvent" }

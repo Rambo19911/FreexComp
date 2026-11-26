@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 { ImgList - image lists: an own store of premultiplied 32-bit cells from which the native image list is derived
-  (graphics.md section 5; phase8/image-list.md sections 3 to 5 and 7). }
+  (graphics.md section 5; phase8/image-list.md sections 3 to 8). }
 unit ImgList;
 
 interface
@@ -11,6 +11,8 @@ uses
 type
   TColorDepth = (cdDeviceDependent, cd4Bit, cd8Bit, cd16Bit, cd24Bit, cd32Bit);
   TDrawingStyle = (dsFocus, dsSelected, dsNormal, dsTransparent);
+  TImageType = (itImage, itMask);
+  TOverlay = 0..14;
 
   TCustomImageList = class;
 
@@ -34,6 +36,8 @@ type
     FMasked: Boolean;
     FBkColor: TColor;
     FDrawingStyle: TDrawingStyle;
+    FBlendColor: TColor;
+    FImageType: TImageType;
     FColorDepth: TColorDepth;
     FAllocBy: Integer;
     FClients: TList;
@@ -42,6 +46,7 @@ type
     FCount: Integer;
     FUpdateCount: Integer;
     FUpdateChanged: Boolean;
+    FOverlays: TIntegerDynArray;                             { UIF-1479: 15 entries, a cell index or -1 }
     procedure InitDefaults;
     function GetHandle: HIMAGELIST;
     function GetCount: Integer;
@@ -59,13 +64,21 @@ type
     function NativeImage(const Cells: TByteDynArray; First, N: Integer; var Mask: HBITMAP): TBitmap;
     function NativeAdd(const Cells: TByteDynArray; First, N: Integer): Boolean;
     function NativeReplace(const Cells: TByteDynArray; Index: Integer): Boolean;
-    procedure Commit(const Cells: TByteDynArray; NewCount, Edit, Index: Integer);
+    function Overlays(Kind, A, B: Integer): TIntegerDynArray;
+    function NativeOverlays(const Table: TIntegerDynArray): Boolean;
+    procedure Commit(const Cells: TByteDynArray; NewCount, Edit, Index: Integer; const Table: TIntegerDynArray);
     procedure InsertCells(Index: Integer; const Cells: TByteDynArray; N: Integer);
     procedure SetWidth(Value: Integer);
     procedure SetHeight(Value: Integer);
     procedure SetMasked(Value: Boolean);
     procedure SetBkColor(Value: TColor);
     procedure SetDrawingStyle(Value: TDrawingStyle);
+    procedure SetBlendColor(Value: TColor);
+    procedure SetImageType(Value: TImageType);
+    function PartialAlpha(Index: Integer): Boolean;
+    procedure DrawDisabled(Canvas: TCanvas; X, Y, Index: Integer);
+    procedure DrawCell(Canvas: TCanvas; X, Y, Index: Integer; ADrawingStyle: TDrawingStyle; AImageType: TImageType;
+      Enabled: Boolean; Ov: Integer);
     procedure SetColorDepth(Value: TColorDepth);
     procedure SetAllocBy(Value: Integer);
     procedure ReadData(Stream: TStream);
@@ -80,6 +93,8 @@ type
     property Masked: Boolean read FMasked write SetMasked default True;
     property BkColor: TColor read FBkColor write SetBkColor default clNone;
     property DrawingStyle: TDrawingStyle read FDrawingStyle write SetDrawingStyle default dsNormal;
+    property BlendColor: TColor read FBlendColor write SetBlendColor default clNone;
+    property ImageType: TImageType read FImageType write SetImageType default itImage;
     property OnChange: TNotifyEvent read FOnChange write FOnChange;
   public
     constructor Create(AOwner: TComponent); override;
@@ -105,6 +120,13 @@ type
     procedure Delete(Index: Integer);
     procedure Clear;
     procedure Draw(Canvas: TCanvas; X, Y, Index: Integer; Enabled: Boolean = True); overload;
+    procedure Draw(Canvas: TCanvas; X, Y, Index: Integer; ADrawingStyle: TDrawingStyle;
+      AImageType: TImageType; Enabled: Boolean = True); overload;
+    function Overlay(ImageIndex: Integer; Overlay: TOverlay): Boolean;
+    procedure DrawOverlay(Canvas: TCanvas; X, Y, ImageIndex: Integer; Overlay: TOverlay;
+      Enabled: Boolean = True); overload;
+    procedure DrawOverlay(Canvas: TCanvas; X, Y, ImageIndex: Integer; Overlay: TOverlay;
+      ADrawingStyle: TDrawingStyle; AImageType: TImageType; Enabled: Boolean = True); overload;
     function GetBitmap(Index: Integer; Image: TBitmap): Boolean;
     function GetAlphaBitmap(Index: Integer; Image: TBitmap): Boolean;
     procedure GetIcon(Index: Integer; Image: TIcon);
@@ -123,6 +145,8 @@ type
     property BkColor;
     property DrawingStyle;
     property AllocBy;
+    property BlendColor;
+    property ImageType;
     property OnChange;
   end;
 
@@ -134,6 +158,15 @@ const
   EditReplace = 2;                                           { ImageList_Replace of cell Index }
   EditRemove = 3;                                            { ImageList_Remove(Index) }
   EditRebuild = 4;                                           { ImageList_Remove(-1), then one ImageList_Add of all }
+
+  { how an edit changes the overlay table (UIF-1481) }
+  OvKeep = 0;
+  OvInsert = 1;                                              { B cells inserted at A }
+  OvDelete = 2;                                              { cell A deleted }
+  OvMove = 3;                                                { cell A moved to B }
+  OvClear = 4;                                               { all entries cleared }
+
+  Styles: array[TDrawingStyle] of UINT = (ILD_FOCUS, ILD_SELECTED, ILD_NORMAL, ILD_TRANSPARENT);
 
 { ---------------------------------------------------------------- pixels }
 
@@ -350,7 +383,10 @@ begin
   FDrawingStyle := dsNormal;
   FColorDepth := cd32Bit;
   FAllocBy := 4;
+  FBlendColor := clNone;
+  FImageType := itImage;
   FClients := TList.Create;
+  FOverlays := Overlays(OvClear, 0, 0);
 end;
 
 destructor TCustomImageList.Destroy;
@@ -399,7 +435,7 @@ begin
     if FHandle = 0 then
       raise EOutOfResources.Create(SOutOfResources);
     ApplyBkColor;
-    if not NativeAdd(FCells, 0, FCount) then
+    if not NativeAdd(FCells, 0, FCount) or not NativeOverlays(FOverlays) then
     begin
       FreeHandle;
       raise EOutOfResources.Create(SOutOfResources);
@@ -421,6 +457,7 @@ begin
   FreeHandle;
   SetLength(FCells, 0);
   FCount := 0;
+  FOverlays := Overlays(OvClear, 0, 0);
 end;
 
 function TCustomImageList.GetCount: Integer;
@@ -541,6 +578,25 @@ begin
   if Value <> FDrawingStyle then
   begin
     FDrawingStyle := Value;
+    Change;
+  end;
+end;
+
+{ UIF-1476: plain stored values }
+procedure TCustomImageList.SetBlendColor(Value: TColor);
+begin
+  if Value <> FBlendColor then
+  begin
+    FBlendColor := Value;
+    Change;
+  end;
+end;
+
+procedure TCustomImageList.SetImageType(Value: TImageType);
+begin
+  if Value <> FImageType then
+  begin
+    FImageType := Value;
     Change;
   end;
 end;
@@ -810,9 +866,55 @@ begin
   end;
 end;
 
-{ UIF-1467, UIF-1470: the native list follows (when there is one), then the store takes Cells, then one Change;
-  a failing native call frees the handle, keeps the store and fires nothing }
-procedure TCustomImageList.Commit(const Cells: TByteDynArray; NewCount, Edit, Index: Integer);
+{ UIF-1481: the overlay table after an edit of kind Kind, always a new array }
+function TCustomImageList.Overlays(Kind, A, B: Integer): TIntegerDynArray;
+var
+  I, E: Integer;
+begin
+  SetLength(Result, 15);
+  for I := 0 to 14 do
+  begin
+    E := -1;
+    if Kind <> OvClear then
+      E := FOverlays[I];
+    if E >= 0 then
+      case Kind of
+        OvInsert:
+          if E >= A then
+            E := E + B;
+        OvDelete:
+          if E = A then
+            E := -1
+          else if E > A then
+            E := E - 1;
+        OvMove:
+          if E = A then
+            E := B
+          else if (A < B) and (E > A) and (E <= B) then
+            E := E - 1
+          else if (A > B) and (E >= B) and (E < A) then
+            E := E + 1;
+      end;
+    Result[I] := E;
+  end;
+end;
+
+{ UIF-1479: every set entry into the native list (overlay numbers are one-based there) }
+function TCustomImageList.NativeOverlays(const Table: TIntegerDynArray): Boolean;
+var
+  I: Integer;
+begin
+  Result := True;
+  for I := 0 to 14 do
+    if (Table[I] >= 0) and not ImageList_SetOverlayImage(FHandle, Table[I], I + 1) then
+      Result := False;
+end;
+
+{ UIF-1467, UIF-1470, UIF-1481: the native list follows (when there is one; the overlay table is applied again),
+  then the store takes Cells and the table Table, then one Change; a failing native call frees the handle, keeps
+  store and table and fires nothing }
+procedure TCustomImageList.Commit(const Cells: TByteDynArray; NewCount, Edit, Index: Integer;
+  const Table: TIntegerDynArray);
 var
   Ok: Boolean;
 begin
@@ -827,6 +929,8 @@ begin
       if Ok then
         Ok := NativeAdd(Cells, 0, NewCount);
     end;
+    if Ok then
+      Ok := NativeOverlays(Table);
     if not Ok then
     begin
       FreeHandle;
@@ -835,6 +939,7 @@ begin
   end;
   FCells := Cells;
   FCount := NewCount;
+  FOverlays := Table;
   Change;
 end;
 
@@ -844,9 +949,9 @@ var
 begin
   NewCells := Spliced(FCells, FCount, Index, 0, Cells, N, CellBytes);
   if Index = FCount then
-    Commit(NewCells, FCount + N, EditAppend, Index)
+    Commit(NewCells, FCount + N, EditAppend, Index, Overlays(OvKeep, 0, 0))
   else
-    Commit(NewCells, FCount + N, EditRebuild, 0);
+    Commit(NewCells, FCount + N, EditRebuild, 0, Overlays(OvInsert, Index, N));
 end;
 
 { UIF-1463: the index of the first new cell }
@@ -948,7 +1053,8 @@ var
 begin
   CheckIndex(Index, FCount);
   Cells := SourceCells(Image, Mask, False, clNone, N);
-  Commit(Spliced(FCells, FCount, Index, 1, Cells, 1, CellBytes), FCount, EditReplace, Index);
+  Commit(Spliced(FCells, FCount, Index, 1, Cells, 1, CellBytes), FCount, EditReplace, Index,
+    Overlays(OvKeep, 0, 0));
 end;
 
 procedure TCustomImageList.ReplaceMasked(Index: Integer; NewImage: TBitmap; MaskColor: TColor);
@@ -958,7 +1064,8 @@ var
 begin
   CheckIndex(Index, FCount);
   Cells := SourceCells(NewImage, nil, True, MaskColor, N);
-  Commit(Spliced(FCells, FCount, Index, 1, Cells, 1, CellBytes), FCount, EditReplace, Index);
+  Commit(Spliced(FCells, FCount, Index, 1, Cells, 1, CellBytes), FCount, EditReplace, Index,
+    Overlays(OvKeep, 0, 0));
 end;
 
 procedure TCustomImageList.ReplaceIcon(Index: Integer; Image: TIcon);
@@ -967,7 +1074,8 @@ var
 begin
   CheckIndex(Index, FCount);
   Cells := IconCell(Image);
-  Commit(Spliced(FCells, FCount, Index, 1, Cells, 1, CellBytes), FCount, EditReplace, Index);
+  Commit(Spliced(FCells, FCount, Index, 1, Cells, 1, CellBytes), FCount, EditReplace, Index,
+    Overlays(OvKeep, 0, 0));
 end;
 
 { UIF-1468: the cell is taken out at CurIndex and put in at NewIndex }
@@ -982,7 +1090,8 @@ begin
   SetLength(None, 0);
   Taken := Slice(FCells, CurIndex, 1, CellBytes);
   Rest := Spliced(FCells, FCount, CurIndex, 1, None, 0, CellBytes);
-  Commit(Spliced(Rest, FCount - 1, NewIndex, 0, Taken, 1, CellBytes), FCount, EditRebuild, 0);
+  Commit(Spliced(Rest, FCount - 1, NewIndex, 0, Taken, 1, CellBytes), FCount, EditRebuild, 0,
+    Overlays(OvMove, CurIndex, NewIndex));
 end;
 
 procedure TCustomImageList.Delete(Index: Integer);
@@ -991,7 +1100,8 @@ var
 begin
   CheckIndex(Index, FCount);
   SetLength(None, 0);
-  Commit(Spliced(FCells, FCount, Index, 1, None, 0, CellBytes), FCount - 1, EditRemove, Index);
+  Commit(Spliced(FCells, FCount, Index, 1, None, 0, CellBytes), FCount - 1, EditRemove, Index,
+    Overlays(OvDelete, Index, 0));
 end;
 
 procedure TCustomImageList.Clear;
@@ -999,7 +1109,7 @@ var
   None: TByteDynArray;
 begin
   SetLength(None, 0);
-  Commit(None, 0, EditRebuild, 0);
+  Commit(None, 0, EditRebuild, 0, Overlays(OvClear, 0, 0));
 end;
 
 { UIF-1469: properties and cells; the handle stays when the format is the same, else it is made again on use }
@@ -1021,33 +1131,153 @@ begin
     FColorDepth := S.FColorDepth;
     FBkColor := S.FBkColor;
     FDrawingStyle := S.FDrawingStyle;
+    FBlendColor := S.FBlendColor;
+    FImageType := S.FImageType;
     FAllocBy := S.FAllocBy;
     if FHandle <> 0 then
       ApplyBkColor;
-    Commit(Slice(S.FCells, 0, S.FCount, CellBytes), S.FCount, EditRebuild, 0);
+    Commit(Slice(S.FCells, 0, S.FCount, CellBytes), S.FCount, EditRebuild, 0, S.Overlays(OvKeep, 0, 0));
   end
   else
     inherited Assign(Source);
 end;
 
-{ UIF-566: disabled images are blended 50 % with clBtnFace }
-procedure TCustomImageList.Draw(Canvas: TCanvas; X, Y, Index: Integer; Enabled: Boolean = True);
-const
-  Styles: array[TDrawingStyle] of UINT = (ILD_FOCUS, ILD_SELECTED, ILD_NORMAL, ILD_TRANSPARENT);
+{ UIF-1477: a pixel of the cell has an alpha other than 0 and 255 }
+function TCustomImageList.PartialAlpha(Index: Integer): Boolean;
 var
-  Bk: COLORREF;
+  I, First: Integer;
+  A: Cardinal;
+begin
+  Result := True;
+  First := Index * FWidth * FHeight;
+  for I := First to First + FWidth * FHeight - 1 do
+  begin
+    A := At(@FCells[0], I)^ shr 24;
+    if (A <> 0) and (A <> 255) then
+      Exit;
+  end;
+  Result := False;
+end;
+
+{ UIF-1477: the cell's pixels grey ((77 r + 150 g + 29 b + 128) shr 8), all four bytes halved, blended over the
+  canvas by their alpha }
+procedure TCustomImageList.DrawDisabled(Canvas: TCanvas; X, Y, Index: Integer);
+var
+  B: TBitmap;
+  Row: Pointer;
+  I, J: Integer;
+  V, G: Cardinal;
+  Blend: TBlendFunction;
+begin
+  B := TBitmap.Create;
+  try
+    B.PixelFormat := pf32bit;
+    B.SetSize(FWidth, FHeight);
+    for J := 0 to FHeight - 1 do
+    begin
+      Row := B.ScanLine[J];
+      for I := 0 to FWidth - 1 do
+      begin
+        V := At(@FCells[0], (Index * FHeight + J) * FWidth + I)^;
+        G := (77 * ((V shr 16) and $FF) + 150 * ((V shr 8) and $FF) + 29 * (V and $FF) + 128) shr 8;
+        G := G shr 1;
+        At(Row, I)^ := ((V shr 25) shl 24) or (G shl 16) or (G shl 8) or G;
+      end;
+    end;
+    Blend.BlendOp := AC_SRC_OVER;
+    Blend.BlendFlags := 0;
+    Blend.SourceConstantAlpha := 255;
+    Blend.AlphaFormat := AC_SRC_ALPHA;
+    GdiAlphaBlend(Canvas.Handle, X, Y, FWidth, FHeight, B.Canvas.Handle, 0, 0, FWidth, FHeight, Blend);
+  finally
+    B.Free;
+  end;
+end;
+
+{ UIF-1475, UIF-1477, UIF-1480: Ov is the overlay drawn over the cell, -1 for none }
+procedure TCustomImageList.DrawCell(Canvas: TCanvas; X, Y, Index: Integer; ADrawingStyle: TDrawingStyle;
+  AImageType: TImageType; Enabled: Boolean; Ov: Integer);
+var
+  Bk, Fg: COLORREF;
+  Flags, Extra: UINT;
+  OvCell: Integer;
 begin
   if (Index < 0) or (Index >= FCount) then
     Exit;
-  if FBkColor = clNone then
-    Bk := CLR_NONE
-  else
-    Bk := COLORREF(ColorToRGB(FBkColor));
-  if Enabled then
-    ImageList_DrawEx(Handle, Index, Canvas.Handle, X, Y, 0, 0, Bk, CLR_DEFAULT, Styles[FDrawingStyle])
-  else
+  Extra := 0;
+  OvCell := -1;
+  if (Ov >= 0) and (FOverlays[Ov] >= 0) then
+  begin
+    OvCell := FOverlays[Ov];
+    Extra := IndexToOverlayMask(Ov + 1);
+  end;
+  if Enabled or (AImageType = itMask) then
+  begin
+    if FBkColor = clNone then
+      Bk := CLR_NONE
+    else
+      Bk := COLORREF(ColorToRGB(FBkColor));
+    if FBlendColor = clNone then
+      Fg := CLR_DEFAULT
+    else
+      Fg := COLORREF(ColorToRGB(FBlendColor));
+    Flags := Styles[ADrawingStyle] or Extra;
+    if AImageType = itMask then
+      Flags := Flags or ILD_MASK;
+    ImageList_DrawEx(Handle, Index, Canvas.Handle, X, Y, 0, 0, Bk, Fg, Flags);
+  end
+  else if PartialAlpha(Index) then
+  begin
+    DrawDisabled(Canvas, X, Y, Index);
+    if OvCell >= 0 then
+      DrawDisabled(Canvas, X, Y, OvCell);
+  end
+  else                                                       { UIF-566: blended 50 % with clBtnFace }
     ImageList_DrawEx(Handle, Index, Canvas.Handle, X, Y, 0, 0, CLR_NONE, COLORREF(ColorToRGB(clBtnFace)),
-      ILD_BLEND50);
+      ILD_BLEND50 or Extra);
+end;
+
+procedure TCustomImageList.Draw(Canvas: TCanvas; X, Y, Index: Integer; Enabled: Boolean = True);
+begin
+  DrawCell(Canvas, X, Y, Index, FDrawingStyle, FImageType, Enabled, -1);
+end;
+
+procedure TCustomImageList.Draw(Canvas: TCanvas; X, Y, Index: Integer; ADrawingStyle: TDrawingStyle;
+  AImageType: TImageType; Enabled: Boolean = True);
+begin
+  DrawCell(Canvas, X, Y, Index, ADrawingStyle, AImageType, Enabled, -1);
+end;
+
+{ UIF-1479: needs a masked list; -1 clears the entry }
+function TCustomImageList.Overlay(ImageIndex: Integer; Overlay: TOverlay): Boolean;
+var
+  Table: TIntegerDynArray;
+begin
+  Result := False;
+  if (ImageIndex <> -1) and ((ImageIndex < 0) or (ImageIndex >= FCount) or not FMasked) then
+    Exit;
+  Table := Overlays(OvKeep, 0, 0);
+  Table[Overlay] := ImageIndex;
+  if (FHandle <> 0) and (ImageIndex >= 0) and not ImageList_SetOverlayImage(FHandle, ImageIndex, Overlay + 1) then
+  begin
+    FreeHandle;
+    raise EOutOfResources.Create(SOutOfResources);
+  end;
+  FOverlays := Table;
+  Change;
+  Result := True;
+end;
+
+procedure TCustomImageList.DrawOverlay(Canvas: TCanvas; X, Y, ImageIndex: Integer; Overlay: TOverlay;
+  Enabled: Boolean = True);
+begin
+  DrawCell(Canvas, X, Y, ImageIndex, FDrawingStyle, FImageType, Enabled, Overlay);
+end;
+
+procedure TCustomImageList.DrawOverlay(Canvas: TCanvas; X, Y, ImageIndex: Integer; Overlay: TOverlay;
+  ADrawingStyle: TDrawingStyle; AImageType: TImageType; Enabled: Boolean = True);
+begin
+  DrawCell(Canvas, X, Y, ImageIndex, ADrawingStyle, AImageType, Enabled, Overlay);
 end;
 
 { UIF-1471: Width x Height, each pixel the canonical pixel over white (c + 255 - a), alpha byte 0 }
@@ -1149,7 +1379,7 @@ begin
   finally
     Strip.Free;
   end;
-  Commit(Cells, N, EditRebuild, 0);
+  Commit(Cells, N, EditRebuild, 0, Overlays(OvClear, 0, 0));
 end;
 
 initialization

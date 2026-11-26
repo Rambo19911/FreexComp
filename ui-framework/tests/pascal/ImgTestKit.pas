@@ -33,6 +33,15 @@ function Surface(W, H: Integer; Background: Cardinal): TBitmap;
 procedure CheckRGB(Expected, Actual: Cardinal; Tolerance: Integer; const Name: string);
 { the centres of the four quadrants of a cell drawn at (X0, Y0) of S equal the blends of arrangement A }
 procedure CheckDrawnBlocks(S: TBitmap; X0, Y0, A: Integer; Background: Cardinal; const Name: string);
+{ U-166: the disabled look of a canonical pixel (UIF-1477): grey (77 r + 150 g + 29 b + 128) shr 8, then all four
+  bytes halved }
+function DisabledPixel(P: Cardinal): Cardinal;
+{ U-166: a pf32bit 16 x 16 bitmap whose pixels are Body except the 6 x 6 square at the top left, which is Corner }
+function CornerCell(Body, Corner: Cardinal): TBitmap;
+{ U-166: the number of pixels whose colour bytes differ between two bitmaps of the same size }
+function Differences(A, B: TBitmap): Integer;
+{ U-166: ColorToRGB(Color) as $00RRGGBB }
+function RGBOf(Color: TColor): Cardinal;
 
 implementation
 
@@ -157,6 +166,49 @@ begin
   CheckRGB(Blend(BlockPixel(A, 12, 4), Background), Quad(S, X0 + 12, Y0 + 4), 1, Name + ': top right');
   CheckRGB(Blend(BlockPixel(A, 4, 12), Background), Quad(S, X0 + 4, Y0 + 12), 1, Name + ': bottom left');
   CheckRGB(Blend(BlockPixel(A, 12, 12), Background), Quad(S, X0 + 12, Y0 + 12), 1, Name + ': bottom right');
+end;
+
+function DisabledPixel(P: Cardinal): Cardinal;
+var
+  Y: Cardinal;
+begin
+  Y := (77 * ((P shr 16) and $FF) + 150 * ((P shr 8) and $FF) + 29 * (P and $FF) + 128) shr 8;
+  Y := Y shr 1;
+  Result := ((P shr 25) shl 24) or (Y shl 16) or (Y shl 8) or Y;
+end;
+
+function CornerCell(Body, Corner: Cardinal): TBitmap;
+var
+  X, Y: Integer;
+begin
+  Result := TBitmap.Create;
+  Result.PixelFormat := pf32bit;
+  Result.SetSize(16, 16);
+  for Y := 0 to 15 do
+    for X := 0 to 15 do
+      if (X < 6) and (Y < 6) then
+        SetQuad(Result, X, Y, Corner)
+      else
+        SetQuad(Result, X, Y, Body);
+end;
+
+function Differences(A, B: TBitmap): Integer;
+var
+  X, Y: Integer;
+begin
+  Result := 0;
+  for Y := 0 to A.Height - 1 do
+    for X := 0 to A.Width - 1 do
+      if (Quad(A, X, Y) and $FFFFFF) <> (Quad(B, X, Y) and $FFFFFF) then
+        Inc(Result);
+end;
+
+function RGBOf(Color: TColor): Cardinal;
+var
+  V: Cardinal;
+begin
+  V := Cardinal(ColorToRGB(Color));
+  Result := ((V and $FF) shl 16) or (V and $FF00) or ((V shr 16) and $FF);
 end;
 
 end.

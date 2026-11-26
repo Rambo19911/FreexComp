@@ -1,0 +1,76 @@
+# style and image type map (UIF-1475)
+ok cell 0, dsFocus, itImage, BkColor clNone
+ok cell 0, dsFocus, itImage, BkColor clYellow
+ok cell 0, dsFocus, itMask, BkColor clNone
+ok cell 0, dsFocus, itMask, BkColor clYellow
+ok cell 0, dsSelected, itImage, BkColor clNone
+ok cell 0, dsSelected, itImage, BkColor clYellow
+ok cell 0, dsSelected, itMask, BkColor clNone
+ok cell 0, dsSelected, itMask, BkColor clYellow
+ok cell 0, dsNormal, itImage, BkColor clNone
+ok cell 0, dsNormal, itImage, BkColor clYellow
+ok cell 0, dsNormal, itMask, BkColor clNone
+ok cell 0, dsNormal, itMask, BkColor clYellow
+ok cell 0, dsTransparent, itImage, BkColor clNone
+ok cell 0, dsTransparent, itImage, BkColor clYellow
+ok cell 0, dsTransparent, itMask, BkColor clNone
+ok cell 0, dsTransparent, itMask, BkColor clYellow
+ok cell 1, dsFocus, itImage, BkColor clNone
+ok cell 1, dsFocus, itImage, BkColor clYellow
+ok cell 1, dsFocus, itMask, BkColor clNone
+ok cell 1, dsFocus, itMask, BkColor clYellow
+ok cell 1, dsSelected, itImage, BkColor clNone
+ok cell 1, dsSelected, itImage, BkColor clYellow
+ok cell 1, dsSelected, itMask, BkColor clNone
+ok cell 1, dsSelected, itMask, BkColor clYellow
+ok cell 1, dsNormal, itImage, BkColor clNone
+ok cell 1, dsNormal, itImage, BkColor clYellow
+ok cell 1, dsNormal, itMask, BkColor clNone
+ok cell 1, dsNormal, itMask, BkColor clYellow
+ok cell 1, dsTransparent, itImage, BkColor clNone
+ok cell 1, dsTransparent, itImage, BkColor clYellow
+ok cell 1, dsTransparent, itMask, BkColor clNone
+ok cell 1, dsTransparent, itMask, BkColor clYellow
+ok dsSelected differs from dsNormal
+ok dsFocus differs from dsNormal
+ok itMask differs from itImage
+ok with a BkColor dsTransparent differs from dsNormal
+# the short Draw uses DrawingStyle and ImageType
+ok short Draw: dsSelected, itMask
+ok short Draw: defaults dsNormal, itImage
+# BlendColor and ImageType (UIF-1475, UIF-1476)
+ok BlendColor default clNone
+ok ImageType default itImage
+ok BlendColor change fires Change once
+ok the same BlendColor fires nothing
+ok ImageType change fires Change once
+ok the same ImageType fires nothing
+ok BlendColor clRed: dsSelected with foreground red
+ok BlendColor clRed: dsSelected of the alpha cell
+ok BlendColor clBlue: dsSelected with foreground blue
+ok BlendColor changes the dsSelected result (clRed against clNone)
+ok BlendColor does not change dsNormal
+# disabled alpha cell (UIF-1477)
+ok the converted pixel of opaque red (computed here)
+ok on white: red block grey and halved
+ok on white: blue block grey and halved
+ok on white: green block
+ok on white: transparent block
+ok on white: every pixel within 1
+ok on white: nothing outside the cell
+ok on black: every pixel within 1
+ok style ignored when disabled: dsFocus
+ok style ignored when disabled: dsSelected
+ok style ignored when disabled: dsNormal
+ok style ignored when disabled: dsTransparent
+ok itMask disabled draws the mask as when enabled
+# disabled cell without partial alpha (UIF-566)
+ok ILD_BLEND50 against clBtnFace: dsFocus
+ok ILD_BLEND50 against clBtnFace: dsSelected
+ok ILD_BLEND50 against clBtnFace: dsNormal
+ok ILD_BLEND50 against clBtnFace: dsTransparent
+ok the transparent frame stays transparent
+ok the lime body is blended, not drawn plain
+# index outside the list (UIF-1475)
+ok nothing drawn
+# passed 69 failed 0
