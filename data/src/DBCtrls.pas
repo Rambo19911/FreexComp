@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 { DBCtrls - the data-aware controls: each shows (and, where it can, edits) one field of the dataset behind its
-  data source through a field data link. }
+  data source through a field data link. UI Automation clients see the drawn buttons of the navigator as Button
+  elements with the Invoke pattern (A-083). }
 unit DBCtrls;
 
 interface
@@ -336,7 +337,8 @@ type
   TNavButtonSet = set of TNavigateBtn;
   TNavClick = procedure(Sender: TObject; Button: TNavigateBtn) of object;
 
-  { A row of buttons that navigate and edit the dataset of a data source. The control draws its buttons. }
+  { A row of buttons that navigate and edit the dataset of a data source. The control draws its buttons; UI
+    Automation clients see each visible button as an element of its own (A-083). }
   TDBNavigator = class(TCustomControl)
   private
     FDataLink: TDataLink;
@@ -364,6 +366,8 @@ type
     procedure MouseUp(Button: TMouseButton; Shift: TShiftState; X, Y: Integer); override;
     procedure CMEnabledChanged(var Message: TMessage); override;
     procedure Notification(AComponent: TComponent; Operation: TOperation); override;
+    { the click a UI Automation client's Invoke posted (A-083) }
+    procedure WndProc(var Message: TMessage); override;
   public
     constructor Create(AOwner: TComponent); override;
     destructor Destroy; override;
@@ -403,6 +407,9 @@ procedure RejectBeep;
 
 implementation
 
+uses
+  ActiveX, UIAutomation, Accessibility;
+
 type
   { the link of the list dataset of a lookup combo box: data and layout changes rebuild the list, scrolling and
     field writes do not }
@@ -424,6 +431,51 @@ type
     procedure ActiveChanged; override;
     procedure EditingChanged; override;
     procedure DataSetChanged; override;
+  end;
+
+  TNavButtonProvider = class;
+
+  { A-083 (accessibility.md section 12 follow-up): the navigator, a fragment root of control type ToolBar whose
+    children are its visible buttons in the order of TNavigateBtn; one provider object per button while one is
+    alive }
+  TNavigatorAutomationProvider = class(TWindowAutomationProvider)
+  private
+    FButtons: array[TNavigateBtn] of TNavButtonProvider;    { the live button providers (no counted references) }
+    function Nav: TDBNavigator;
+    { the live provider of a button or a new one (a new one has no reference yet: the caller takes one at once) }
+    function ButtonObject(B: TNavigateBtn): TNavButtonProvider;
+  protected
+    procedure DisconnectFragments; override;
+  public
+    class function DefaultControlType(Control: TControl): Integer; override;
+    function Navigate(direction: Integer; out pRetVal: IRawElementProviderFragment): HResult; override; stdcall;
+    function ElementProviderFromPoint(x, y: Double; out pRetVal: IRawElementProviderFragment): HResult; override;
+      stdcall;
+  end;
+
+  { a drawn button of the navigator: a Button element named by its hint, enabled as the button is (the dataset's
+    state), with the Invoke pattern }
+  TNavButtonProvider = class(TAutomationProvider, IInvokeProvider)
+  private
+    FOwner: TNavigatorAutomationProvider;                    { nil once the navigator let its provider go }
+    FButton: TNavigateBtn;
+    { Alive, and the button is still visible }
+    function Live(out Res: HResult): Boolean;
+    function Nav: TDBNavigator;
+    procedure Forget;
+  protected
+    function IsOffscreen: Boolean; override;
+  public
+    constructor CreateButton(AOwner: TNavigatorAutomationProvider; AButton: TNavigateBtn);
+    destructor Destroy; override;
+    function GetPatternProvider(patternId: Integer; out pRetVal: IUnknown): HResult; override; stdcall;
+    function GetPropertyValue(propertyId: Integer; out pRetVal: TVariantArg): HResult; override; stdcall;
+    function Navigate(direction: Integer; out pRetVal: IRawElementProviderFragment): HResult; override; stdcall;
+    function GetRuntimeId(out pRetVal: PSafeArray): HResult; override; stdcall;
+    function get_BoundingRectangle(out pRetVal: TUiaRect): HResult; override; stdcall;
+    function get_FragmentRoot(out pRetVal: IRawElementProviderFragmentRoot): HResult; override; stdcall;
+    { IInvokeProvider }
+    function Invoke: HResult; stdcall;
   end;
 
 const
@@ -1573,6 +1625,372 @@ begin
   FNavigator.LinkChanged;
 end;
 
+{ ---------------------------------------------------------------- UI Automation of the navigator (A-083) }
+
+const
+  { posted to the navigator by the Invoke of a button's provider: WParam = Ord of the button (private to DBCtrls;
+    posting keeps a click that shows the delete confirmation from blocking the client, as UIF-1430) }
+  CM_NAVIGATORCLICK = CM_BASE + 200;
+  NavButtonIds: array[TNavigateBtn] of string = ('nbFirst', 'nbPrior', 'nbNext', 'nbLast', 'nbInsert', 'nbDelete',
+    'nbEdit', 'nbPost', 'nbCancel', 'nbRefresh');
+
+procedure PutStr(var V: TVariantArg; const S: string);
+begin
+  V.vt := VT_BSTR;
+  V.bstrVal := SysAllocStringLen(PWideChar(S), Length(S));
+end;
+
+procedure PutInt(var V: TVariantArg; I: Integer);
+begin
+  V.vt := VT_I4;
+  V.lVal := I;
+end;
+
+procedure PutBool(var V: TVariantArg; B: Boolean);
+begin
+  V.vt := VT_BOOL;
+  if B then
+    V.boolVal := -1
+  else
+    V.boolVal := 0;
+end;
+
+{ the visible button after / before B in the order of TNavigateBtn; False = none }
+function NextNavButton(N: TDBNavigator; var B: TNavigateBtn): Boolean;
+var
+  I: TNavigateBtn;
+begin
+  Result := False;
+  if B = High(TNavigateBtn) then
+    Exit;
+  for I := Succ(B) to High(TNavigateBtn) do
+    if I in N.FVisibleButtons then
+    begin
+      B := I;
+      Result := True;
+      Exit;
+    end;
+end;
+
+function PrevNavButton(N: TDBNavigator; var B: TNavigateBtn): Boolean;
+var
+  I: TNavigateBtn;
+begin
+  Result := False;
+  if B = Low(TNavigateBtn) then
+    Exit;
+  for I := Pred(B) downto Low(TNavigateBtn) do
+    if I in N.FVisibleButtons then
+    begin
+      B := I;
+      Result := True;
+      Exit;
+    end;
+end;
+
+{ the button is enabled for a client: the navigator and every parent enabled, and the button enabled by the
+  dataset's state }
+function NavButtonEnabled(N: TDBNavigator; B: TNavigateBtn): Boolean;
+begin
+  Result := AccessibleEnabledOf(N) and N.ButtonEnabled(B);
+end;
+
+{ the click of a button posted by its Invoke: clicked only when it is still visible and enabled; then
+  Invoke_Invoked when the navigator still has a provider and a client listens }
+procedure NavigatorClickPosted(N: TDBNavigator; B: TNavigateBtn);
+var
+  P: TNavigatorAutomationProvider;
+  Root, Button: IRawElementProviderSimple;
+begin
+  if not (B in N.FVisibleButtons) or not NavButtonEnabled(N, B) then
+    Exit;
+  if not (N.AutomationObject is TNavigatorAutomationProvider) then
+  begin
+    N.BtnClick(B);
+    Exit;
+  end;
+  P := TNavigatorAutomationProvider(N.AutomationObject);
+  Root := P;                                                 { P lives through the click, also when N goes }
+  N.BtnClick(B);
+  if (P.Control = nil) or (N.AutomationObject <> P) or not (B in N.FVisibleButtons) then
+    Exit;
+  Button := P.ButtonObject(B);
+  RaiseFragmentEvent(N, Button, UIA_Invoke_InvokedEventId);
+end;
+
+{ ---------------------------------------------------------------- TNavigatorAutomationProvider }
+
+class function TNavigatorAutomationProvider.DefaultControlType(Control: TControl): Integer;
+begin
+  Result := UIA_ToolBarControlTypeId;
+end;
+
+function TNavigatorAutomationProvider.Nav: TDBNavigator;
+begin
+  Result := TDBNavigator(Control);
+end;
+
+function TNavigatorAutomationProvider.ButtonObject(B: TNavigateBtn): TNavButtonProvider;
+begin
+  Result := FButtons[B];
+  if Result = nil then
+    Result := TNavButtonProvider.CreateButton(Self, B);
+end;
+
+{ UIF-1426 (as for grid cells): the buttons are disconnected while the navigator's provider still answers for the
+  navigator, each kept alive by a reference of its own through its disconnect }
+procedure TNavigatorAutomationProvider.DisconnectFragments;
+var
+  Held: array of IRawElementProviderSimple;
+  B: TNavigateBtn;
+  I: Integer;
+begin
+  for B := Low(TNavigateBtn) to High(TNavigateBtn) do
+    if FButtons[B] <> nil then
+    begin
+      SetLength(Held, Length(Held) + 1);
+      Held[Length(Held) - 1] := FButtons[B];
+    end;
+  for I := 0 to Length(Held) - 1 do
+    UiaDisconnectProvider(Held[I]);
+  for B := Low(TNavigateBtn) to High(TNavigateBtn) do
+    if FButtons[B] <> nil then
+    begin
+      FButtons[B].Forget;
+      FButtons[B] := nil;
+    end;
+  Held := nil;
+end;
+
+{ the children: the visible buttons }
+function TNavigatorAutomationProvider.Navigate(direction: Integer;
+  out pRetVal: IRawElementProviderFragment): HResult;
+var
+  N: TDBNavigator;
+  B: TNavigateBtn;
+begin
+  PPointer(@pRetVal)^ := nil;
+  if not Alive(Result) then
+    Exit;
+  N := Nav;
+  case direction of
+    NavigateDirection_FirstChild:
+      begin
+        B := Low(TNavigateBtn);
+        if (B in N.FVisibleButtons) or NextNavButton(N, B) then
+          pRetVal := ButtonObject(B);
+      end;
+    NavigateDirection_LastChild:
+      begin
+        B := High(TNavigateBtn);
+        if (B in N.FVisibleButtons) or PrevNavButton(N, B) then
+          pRetVal := ButtonObject(B);
+      end;
+  end;
+end;
+
+{ the button under the point, else the navigator }
+function TNavigatorAutomationProvider.ElementProviderFromPoint(x, y: Double;
+  out pRetVal: IRawElementProviderFragment): HResult;
+var
+  N: TDBNavigator;
+  P: TPoint;
+  B: TNavigateBtn;
+begin
+  PPointer(@pRetVal)^ := nil;
+  if not Alive(Result) then
+    Exit;
+  N := Nav;
+  if N.HandleAllocated then
+  begin
+    P := Point(Round(x), Round(y));
+    ScreenToClient(N.Handle, P);
+    if N.ButtonAt(P.X, P.Y, B) then
+    begin
+      pRetVal := ButtonObject(B);
+      Exit;
+    end;
+  end;
+  pRetVal := Self;
+end;
+
+{ ---------------------------------------------------------------- TNavButtonProvider }
+
+constructor TNavButtonProvider.CreateButton(AOwner: TNavigatorAutomationProvider; AButton: TNavigateBtn);
+begin
+  inherited Create(AOwner.Control);
+  FOwner := AOwner;
+  FButton := AButton;
+  AOwner.FButtons[AButton] := Self;
+end;
+
+destructor TNavButtonProvider.Destroy;
+begin
+  if (FOwner <> nil) and (FOwner.FButtons[FButton] = Self) then
+    FOwner.FButtons[FButton] := nil;
+  inherited Destroy;
+end;
+
+procedure TNavButtonProvider.Forget;
+begin
+  FOwner := nil;
+  ForgetControl;
+end;
+
+function TNavButtonProvider.Nav: TDBNavigator;
+begin
+  Result := TDBNavigator(Control);
+end;
+
+{ a button hidden by VisibleButtons answers UIA_E_ELEMENTNOTAVAILABLE (again available when it is shown again) }
+function TNavButtonProvider.Live(out Res: HResult): Boolean;
+begin
+  Result := Alive(Res);
+  if Result and not (FButton in Nav.FVisibleButtons) then
+  begin
+    Result := False;
+    Res := UIA_E_ELEMENTNOTAVAILABLE;
+  end;
+end;
+
+function TNavButtonProvider.IsOffscreen: Boolean;
+begin
+  Result := not Nav.Showing;
+end;
+
+function TNavButtonProvider.GetPatternProvider(patternId: Integer; out pRetVal: IUnknown): HResult;
+var
+  Ip: IInvokeProvider;
+begin
+  PPointer(@pRetVal)^ := nil;
+  if Live(Result) and (patternId = UIA_InvokePatternId) then
+  begin
+    Ip := Self;
+    pRetVal := Ip;
+  end;
+end;
+
+function TNavButtonProvider.GetPropertyValue(propertyId: Integer; out pRetVal: TVariantArg): HResult;
+var
+  N: TDBNavigator;
+begin
+  FillChar(pRetVal, SizeOf(pRetVal), 0);
+  if not Live(Result) then
+    Exit;
+  N := Nav;
+  try
+    case propertyId of
+      UIA_NamePropertyId:
+        PutStr(pRetVal, GetShortHint(N.ButtonHint(FButton)));
+      UIA_AutomationIdPropertyId:
+        PutStr(pRetVal, NavButtonIds[FButton]);
+      UIA_FrameworkIdPropertyId:
+        PutStr(pRetVal, 'FreexComp');
+      UIA_ControlTypePropertyId:
+        PutInt(pRetVal, UIA_ButtonControlTypeId);
+      UIA_IsEnabledPropertyId:
+        PutBool(pRetVal, NavButtonEnabled(N, FButton));
+      UIA_IsOffscreenPropertyId:
+        PutBool(pRetVal, IsOffscreen);
+      UIA_IsKeyboardFocusablePropertyId, UIA_HasKeyboardFocusPropertyId:
+        PutBool(pRetVal, False);
+      UIA_IsControlElementPropertyId, UIA_IsContentElementPropertyId:
+        PutBool(pRetVal, True);
+    end;
+  except
+    FillChar(pRetVal, SizeOf(pRetVal), 0);
+    Result := E_FAIL;
+  end;
+end;
+
+{ siblings: the neighbouring visible buttons }
+function TNavButtonProvider.Navigate(direction: Integer; out pRetVal: IRawElementProviderFragment): HResult;
+var
+  B: TNavigateBtn;
+begin
+  PPointer(@pRetVal)^ := nil;
+  if not Live(Result) then
+    Exit;
+  B := FButton;
+  case direction of
+    NavigateDirection_Parent:
+      pRetVal := FOwner;
+    NavigateDirection_NextSibling:
+      if NextNavButton(Nav, B) then
+        pRetVal := FOwner.ButtonObject(B);
+    NavigateDirection_PreviousSibling:
+      if PrevNavButton(Nav, B) then
+        pRetVal := FOwner.ButtonObject(B);
+  end;
+end;
+
+{ [UiaAppendRuntimeId, Ord of the button]. The identity (runtime id, fragment root) is answered as long as the
+  navigator exists, also for a hidden button: the disconnect of UIF-1426 asks for it }
+function TNavButtonProvider.GetRuntimeId(out pRetVal: PSafeArray): HResult;
+var
+  I, V: Integer;
+begin
+  pRetVal := nil;
+  if not Alive(Result) then
+    Exit;
+  pRetVal := SafeArrayCreateVector(VT_I4, 0, 2);
+  if pRetVal = nil then
+  begin
+    Result := E_OUTOFMEMORY;
+    Exit;
+  end;
+  I := 0;
+  V := UiaAppendRuntimeId;
+  SafeArrayPutElement(pRetVal, @I, @V);
+  I := 1;
+  V := Ord(FButton);
+  SafeArrayPutElement(pRetVal, @I, @V);
+end;
+
+{ ButtonRect in screen coordinates }
+function TNavButtonProvider.get_BoundingRectangle(out pRetVal: TUiaRect): HResult;
+var
+  N: TDBNavigator;
+  R: TRect;
+  P: TPoint;
+begin
+  FillChar(pRetVal, SizeOf(pRetVal), 0);
+  if not Live(Result) then
+    Exit;
+  N := Nav;
+  if not N.HandleAllocated or IsOffscreen then
+    Exit;
+  R := N.ButtonRect(FButton);
+  P := Point(R.Left, R.Top);
+  ClientToScreen(N.Handle, P);
+  pRetVal.left := P.X;
+  pRetVal.top := P.Y;
+  pRetVal.width := R.Right - R.Left;
+  pRetVal.height := R.Bottom - R.Top;
+end;
+
+function TNavButtonProvider.get_FragmentRoot(out pRetVal: IRawElementProviderFragmentRoot): HResult;
+begin
+  PPointer(@pRetVal)^ := nil;
+  if Alive(Result) then
+    pRetVal := FOwner;
+end;
+
+{ a disabled button answers UIA_E_ELEMENTNOTENABLED; else the click is posted to the navigator (BtnClick when the
+  message is handled, as a mouse click) }
+function TNavButtonProvider.Invoke: HResult;
+var
+  N: TDBNavigator;
+begin
+  if not Live(Result) then
+    Exit;
+  N := Nav;
+  if not NavButtonEnabled(N, FButton) then
+    Result := UIA_E_ELEMENTNOTENABLED
+  else if not N.HandleAllocated or not PostMessageW(N.Handle, CM_NAVIGATORCLICK, WPARAM(Ord(FButton)), 0) then
+    Result := UIA_E_INVALIDOPERATION;
+end;
+
 { TDBNavigator }
 
 constructor TDBNavigator.Create(AOwner: TComponent);
@@ -1887,6 +2305,18 @@ begin
   end;
 end;
 
+procedure TDBNavigator.WndProc(var Message: TMessage);
+begin
+  if Message.Msg <> CM_NAVIGATORCLICK then
+  begin
+    inherited WndProc(Message);
+    Exit;
+  end;
+  Message.Result := 0;
+  if (Message.WParam <= WPARAM(Ord(High(TNavigateBtn)))) and not (csDestroying in ComponentState) then
+    NavigatorClickPosted(Self, TNavigateBtn(Message.WParam));
+end;
+
 procedure TDBNavigator.Notification(AComponent: TComponent; Operation: TOperation);
 begin
   inherited Notification(AComponent, Operation);
@@ -1897,5 +2327,6 @@ end;
 initialization
   DataLinkFocusHook := FocusLinkControl;
   RegisterClasses([TDBEdit, TDBText, TDBMemo, TDBCheckBox, TDBComboBox, TDBLookupComboBox, TDBNavigator]);
+  RegisterAutomationProvider(TDBNavigator, TNavigatorAutomationProvider);
 
 end.

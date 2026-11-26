@@ -89,10 +89,17 @@ public static class DataCorpus
                 row.Traits["Req"] = [.. covers];
             }
 
-            // control programs need an interactive desktop (testing.md §1.1, DAT-406)
-            if (program.Name.StartsWith("Ctl", StringComparison.Ordinal) || program.Name == "FormStream")
+            // control programs need an interactive desktop (testing.md §1.1, DAT-406); so do the in-process UI
+            // Automation programs of the data-aware controls (A-083, Phase 8)
+            if (program.Name.StartsWith("Ctl", StringComparison.Ordinal) || program.Name == "FormStream"
+                || program.Name.StartsWith("DbAcc", StringComparison.Ordinal))
             {
                 row.Traits["Category"] = ["Foreground"];
+            }
+
+            if (program.Name.StartsWith("DbAcc", StringComparison.Ordinal))
+            {
+                row.Traits["Phase"] = ["8"];
             }
 
             yield return row;

@@ -1,0 +1,176 @@
+== the grid: Grid, Table and Selection
+ok control type DataGrid
+ok AutomationId: the component name
+ok Grid pattern
+ok Table pattern
+ok Selection pattern
+ok no other pattern
+ok get_RowCount
+ok RowCount: the rows of the row window
+ok get_ColumnCount
+ok ColumnCount: the shown columns
+ok GetItem(1, 1)
+ok GetItem(row 1, column 1) is cell (1, 1)
+ok its name is the text the cell shows
+ok the same cell twice: the same provider
+ok row RowCount: E_INVALIDARG
+ok and no element
+ok row -1 (the title row): E_INVALIDARG
+ok column ColumnCount: E_INVALIDARG
+ok column -1 (the indicator): E_INVALIDARG
+ok row-major
+ok GetColumnHeaders
+ok column headers: one title cell per shown column
+ok named by the column titles
+ok GetRowHeaders
+ok no row headers (the indicator has no text)
+ok CanSelectMultiple: one current cell
+ok IsSelectionRequired
+ok GetSelection
+ok the selection: the current cell
+== cells and title cells
+ok a cell: DataItem
+ok AutomationId empty
+ok FrameworkId
+ok a content element
+ok enabled
+ok keyboard focusable
+ok on screen
+ok GridItem, TableItem, SelectionItem and Value
+ok a title cell: HeaderItem
+ok named by the title
+ok a title cell has no pattern
+ok and is not keyboard focusable
+ok the column header items of a cell: one
+ok the title cell of its column
+ok no row header items
+ok the containing grid
+ok row span 1
+ok a changed display label: the new name
+ok runtime id [UiaAppendRuntimeId, column, row + 1]
+ok a title cell: row 0
+ok the fragment root is the grid
+ok the parent is the grid
+ok a cell has no children
+ok no host provider
+== navigation, geometry, hit testing
+ok FirstChild, NextSibling: title cells, then the cells, row-major
+ok every cell of this grid is shown
+ok LastChild, PreviousSibling: the same backwards
+ok a cell: CellRect in screen coordinates
+ok a title cell: its rectangle
+ok ElementProviderFromPoint: the cell under the point
+ok a title cell under the point
+ok the indicator: the grid
+ok without titles: no column headers
+ok and a title cell is not available
+ok the first child is cell (0, 0)
+ok titles back: the title cell answers again
+== the row window
+ok more records than rows: RowCount = VisibleRowCount
+ok fewer than the records
+ok row 0: the first row shown
+ok scrolled to the end: row 0 names the record shown there
+ok another record
+ok the last row: the last record
+ok navigation: the shown elements
+ok a cell of a destroyed grid: not available
+ok and no parent
+== SelectionItem
+ok the current cell is selected
+ok another is not
+ok Select
+ok the dataset moved to its row
+ok its column is selected
+ok now it is selected
+ok the former current cell is not
+ok AddToSelection of the selected cell: nothing changes
+ok of another: refused
+ok RemoveFromSelection of the selected cell: refused (a selection is required)
+ok of another: nothing changes
+ok the selection container is the grid
+ok a disabled grid: its cells are not enabled
+ok and Select is refused
+== Value
+ok Value: the text the cell shows
+ok an editable column: not read-only
+ok SetValue
+ok the record is in edit mode
+ok of the cell's row
+ok the field has the new text
+ok and the cell shows it
+ok cancelled: the old text
+ok a read-only column: read-only
+ok SetValue refused
+ok the other column is not
+ok a read-only grid: read-only
+ok SetValue refused
+ok and the dataset is untouched
+== focus
+ok the grid has the focus
+ok the current cell has the keyboard focus
+ok another has not
+ok GetFocus: the current cell
+ok SetFocus of a cell
+ok it becomes the current cell
+ok in its column
+ok a title cell cannot take the focus
+== lifetime of the grid's elements
+ok the dataset closed: the cell is not available
+ok and the grid has no rows
+ok opened again: the cell answers
+ok the grid destroyed: the cell is not available
+ok every provider object of the grids is released
+== the navigator and its buttons
+ok control type ToolBar
+ok AutomationId: the component name
+ok children: the visible buttons, named by their hints
+ok LastChild, PreviousSibling: the same backwards
+ok automation ids: the button identifiers
+ok ElementProviderFromPoint: the button under the point
+ok one provider per button
+ok a button: Button
+ok FrameworkId
+ok not keyboard focusable
+ok a content element
+ok the Invoke pattern
+ok no other pattern
+ok bounding rectangle: ButtonRect in screen coordinates
+ok runtime id [UiaAppendRuntimeId, Ord of the button]
+ok the parent is the navigator
+ok the fragment root is the navigator
+ok outside the buttons: the navigator
+ok a line of Hints: its short part names the button
+ok no line: the default hint
+== enabled from the dataset's state
+ok the first record
+ok the last record
+ok a middle record
+ok editing
+ok a disabled navigator
+ok a disabled form
+ok a closed dataset
+ok an empty dataset
+== Invoke
+ok a disabled button: refused
+ok Invoke
+ok the click is posted, not made at once
+ok handled: the button was clicked
+ok OnClick as for a mouse click
+ok Invoke of Delete
+ok the confirmation is not asked inside the call
+ok it is asked when the click is handled
+ok cancelled: nothing deleted
+ok Invoke of Last
+ok the button became disabled before the click was handled: not clicked
+== lifetime of the buttons
+ok hidden buttons are not children
+ok a hidden button is not available
+ok a visible one still answers
+ok shown again: it answers again
+ok a button of a destroyed navigator: not available
+ok and no parent
+ok and no pattern
+ok every provider object of the navigator is released
+ok every provider object is released
+failed checks: 0

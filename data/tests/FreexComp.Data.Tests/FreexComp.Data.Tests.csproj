@@ -12,4 +12,10 @@
     <!-- Crud_Form_RoundTrips parses and writes the sample form with the form library of the designer -->
     <ProjectReference Include="..\..\..\ide\src\FreexComp.Designer\FreexComp.Designer.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- A-083: the UI Automation client test of the data-aware controls uses the interop slice of the ui-framework
+         client tests and the kill-on-close job object of its harness (U-162), linked, not copied -->
+    <Compile Include="..\..\..\ui-framework\tests\automation\UiaClient.cs" Link="Automation\UiaClient.cs" />
+    <Compile Include="..\..\..\ui-framework\tests\Harness\GuiJob.cs" Link="Automation\GuiJob.cs" />
+  </ItemGroup>
 </Project>

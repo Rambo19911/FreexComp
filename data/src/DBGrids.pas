@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 { DBGrids - the data grid: the rows of a dataset as lines and its fields as columns, drawn by the control, with an
   in-place editor for the selected cell. The grid reads the rows through the row window of its data link; only
-  the visible rows are ever read. }
+  the visible rows are ever read. UI Automation clients see the grid with the Grid, Table and Selection patterns,
+  the cells of the row window as its items and the column titles as its header items (A-083). }
 unit DBGrids;
 
 interface
@@ -250,6 +251,9 @@ type
 
 implementation
 
+uses
+  ActiveX, UIAutomation, Accessibility;
+
 type
   TFormAccess = class(TCustomForm);
 
@@ -280,6 +284,97 @@ type
     constructor Create(AOwner: TComponent); override;
   end;
 
+  TDBGridCellProvider = class;
+
+  { A-083 (accessibility.md section 12 follow-up of UIF-1435...1439): the data grid, a fragment root with the Grid,
+    Table and Selection patterns. Its items are the cells of the rows of the row window (row 0 = the first row the
+    grid shows) and of the shown columns; the title cells are its header items (column headers of the Table
+    pattern); the indicator column is not exposed. One provider object per element while one is alive. }
+  TDBGridAutomationProvider = class(TWindowAutomationProvider, IGridProvider, ITableProvider, ISelectionProvider)
+  private
+    FCells: TList;                                           { the live element providers (no counted references) }
+    { the current cell last reported (events): shown column, window row, RecNo }
+    FHasLast: Boolean;
+    FLastCol: Integer;
+    FLastRow: Integer;
+    FLastRecNo: Integer;
+    function Grid: TDBGrid;
+    { the live provider of an element (ARow = -1: a title cell) or a new one (no reference yet) }
+    function CellObject(ACol, ARow: Integer): TDBGridCellProvider;
+    { the title cells of the shown columns as a safe array of provider references }
+    function TitleArray(AFirst, ALast: Integer; out pRetVal: PSafeArray): HResult;
+    procedure NoteCurrent;
+  protected
+    procedure DisconnectFragments; override;
+  public
+    constructor Create(AControl: TControl); override;
+    destructor Destroy; override;
+    class function DefaultControlType(Control: TControl): Integer; override;
+    function GetPatternProvider(patternId: Integer; out pRetVal: IUnknown): HResult; override; stdcall;
+    function Navigate(direction: Integer; out pRetVal: IRawElementProviderFragment): HResult; override; stdcall;
+    function ElementProviderFromPoint(x, y: Double; out pRetVal: IRawElementProviderFragment): HResult; override;
+      stdcall;
+    function GetFocus(out pRetVal: IRawElementProviderFragment): HResult; override; stdcall;
+    { IGridProvider }
+    function GetItem(row, column: Integer; out pRetVal: IRawElementProviderSimple): HResult; stdcall;
+    function get_RowCount(out pRetVal: Integer): HResult; stdcall;
+    function get_ColumnCount(out pRetVal: Integer): HResult; stdcall;
+    { ITableProvider }
+    function GetRowHeaders(out pRetVal: PSafeArray): HResult; stdcall;
+    function GetColumnHeaders(out pRetVal: PSafeArray): HResult; stdcall;
+    function get_RowOrColumnMajor(out pRetVal: Integer): HResult; stdcall;
+    { ISelectionProvider }
+    function GetSelection(out pRetVal: PSafeArray): HResult; stdcall;
+    function get_CanSelectMultiple(out pRetVal: BOOL): HResult; stdcall;
+    function get_IsSelectionRequired(out pRetVal: BOOL): HResult; stdcall;
+  end;
+
+  { a cell of the data grid (FRow >= 0, a window row) or a title cell (FRow = -1); data cells support GridItem,
+    TableItem, SelectionItem and Value, title cells no pattern }
+  TDBGridCellProvider = class(TAutomationProvider, IGridItemProvider, ITableItemProvider, ISelectionItemProvider,
+    IValueProvider)
+  private
+    FOwner: TDBGridAutomationProvider;                       { nil once the grid let its provider go }
+    FCol: Integer;
+    FRow: Integer;
+    { Alive, and the element is still in the grid }
+    function Live(out Res: HResult): Boolean;
+    function Grid: TDBGrid;
+    function IsTitle: Boolean;
+    procedure Forget;
+  protected
+    function IsOffscreen: Boolean; override;
+  public
+    constructor CreateCell(AOwner: TDBGridAutomationProvider; ACol, ARow: Integer);
+    destructor Destroy; override;
+    function GetPatternProvider(patternId: Integer; out pRetVal: IUnknown): HResult; override; stdcall;
+    function GetPropertyValue(propertyId: Integer; out pRetVal: TVariantArg): HResult; override; stdcall;
+    function Navigate(direction: Integer; out pRetVal: IRawElementProviderFragment): HResult; override; stdcall;
+    function GetRuntimeId(out pRetVal: PSafeArray): HResult; override; stdcall;
+    function get_BoundingRectangle(out pRetVal: TUiaRect): HResult; override; stdcall;
+    function SetFocus: HResult; override; stdcall;
+    function get_FragmentRoot(out pRetVal: IRawElementProviderFragmentRoot): HResult; override; stdcall;
+    { IGridItemProvider }
+    function get_Row(out pRetVal: Integer): HResult; stdcall;
+    function get_Column(out pRetVal: Integer): HResult; stdcall;
+    function get_RowSpan(out pRetVal: Integer): HResult; stdcall;
+    function get_ColumnSpan(out pRetVal: Integer): HResult; stdcall;
+    function get_ContainingGrid(out pRetVal: IRawElementProviderSimple): HResult; stdcall;
+    { ITableItemProvider }
+    function GetRowHeaderItems(out pRetVal: PSafeArray): HResult; stdcall;
+    function GetColumnHeaderItems(out pRetVal: PSafeArray): HResult; stdcall;
+    { ISelectionItemProvider }
+    function Select: HResult; stdcall;
+    function AddToSelection: HResult; stdcall;
+    function RemoveFromSelection: HResult; stdcall;
+    function get_IsSelected(out pRetVal: BOOL): HResult; stdcall;
+    function get_SelectionContainer(out pRetVal: IRawElementProviderSimple): HResult; stdcall;
+    { IValueProvider }
+    function SetValue(val: PWideChar): HResult; stdcall;
+    function get_Value(out pRetVal: TBStr): HResult; stdcall;
+    function get_IsReadOnly(out pRetVal: BOOL): HResult; stdcall;
+  end;
+
 const
   SDeleteRecordQuestion = 'Delete record?';
   SConfirmCaption = 'Confirm';
@@ -304,6 +399,874 @@ begin
   while (I <= Length(S)) and (I <= MaxMemoCellLength) and (S[I] <> #13) and (S[I] <> #10) do
     Inc(I);
   Result := Copy(S, 1, I - 1);
+end;
+
+{ ---------------------------------------------------------------- UI Automation (A-083) }
+
+procedure PutStr(var V: TVariantArg; const S: string);
+begin
+  V.vt := VT_BSTR;
+  V.bstrVal := SysAllocStringLen(PWideChar(S), Length(S));
+end;
+
+procedure PutInt(var V: TVariantArg; I: Integer);
+begin
+  V.vt := VT_I4;
+  V.lVal := I;
+end;
+
+procedure PutBool(var V: TVariantArg; B: Boolean);
+begin
+  V.vt := VT_BOOL;
+  if B then
+    V.boolVal := -1
+  else
+    V.boolVal := 0;
+end;
+
+{ the rows of the row window: the rows of the grid's items }
+function AccRowCount(G: TDBGrid): Integer;
+begin
+  if (G.FDataLink <> nil) and G.FDataLink.Active then
+    Result := G.FDataLink.RecordCount
+  else
+    Result := 0;
+end;
+
+function AccHasTitles(G: TDBGrid): Boolean;
+begin
+  Result := dgTitles in G.FOptions;
+end;
+
+{ the element (ACol, ARow) exists: a shown column and a row of the row window, or the title row (-1) }
+function AccElementExists(G: TDBGrid; ACol, ARow: Integer): Boolean;
+begin
+  Result := (ACol >= 0) and (ACol < G.FShown.Count)
+    and (((ARow = -1) and AccHasTitles(G)) or ((ARow >= 0) and (ARow < AccRowCount(G))));
+end;
+
+{ the column starts inside the client area (not scrolled out) }
+function AccColShown(G: TDBGrid; ACol: Integer): Boolean;
+begin
+  Result := (ACol >= 0) and (ACol < G.FShown.Count) and (G.ColumnLeft(ACol) >= 0);
+end;
+
+function AccCellShown(G: TDBGrid; ACol, ARow: Integer): Boolean;
+var
+  R: TRect;
+begin
+  Result := False;
+  if not AccElementExists(G, ACol, ARow) or not AccColShown(G, ACol) then
+    Exit;
+  R := G.CellRect(ACol, ARow);
+  Result := R.Right > R.Left;
+end;
+
+{ the first / last shown column; -1 = none }
+function AccFirstCol(G: TDBGrid): Integer;
+begin
+  Result := G.FLeftCol;
+  if not AccColShown(G, Result) then
+    Result := -1;
+end;
+
+function AccLastCol(G: TDBGrid): Integer;
+begin
+  Result := AccFirstCol(G);
+  if Result < 0 then
+    Exit;
+  while AccColShown(G, Result + 1) do
+    Inc(Result);
+end;
+
+{ the first element row: the title row when titles are shown, else window row 0 }
+function AccFirstRow(G: TDBGrid): Integer;
+begin
+  if AccHasTitles(G) then
+    Result := -1
+  else
+    Result := 0;
+end;
+
+{ the shown element after / before (C, R) in row-major order (title row first); False = none }
+function AccNextShown(G: TDBGrid; var C, R: Integer): Boolean;
+begin
+  Result := AccCellShown(G, C + 1, R);
+  if Result then
+  begin
+    Inc(C);
+    Exit;
+  end;
+  Result := AccCellShown(G, AccFirstCol(G), R + 1);
+  if Result then
+  begin
+    Inc(R);
+    C := AccFirstCol(G);
+  end;
+end;
+
+function AccPrevShown(G: TDBGrid; var C, R: Integer): Boolean;
+begin
+  Result := (C - 1 >= G.FLeftCol) and AccCellShown(G, C - 1, R);
+  if Result then
+  begin
+    Dec(C);
+    Exit;
+  end;
+  Result := (R - 1 >= AccFirstRow(G)) and AccCellShown(G, AccLastCol(G), R - 1);
+  if Result then
+  begin
+    Dec(R);
+    C := AccLastCol(G);
+  end;
+end;
+
+{ the current cell: the selected column in the active row of the row window }
+function AccCurrent(G: TDBGrid; out C, R: Integer): Boolean;
+begin
+  C := G.FSelected;
+  R := -2;
+  Result := (AccRowCount(G) > 0) and (C >= 0) and (C < G.FShown.Count);
+  if Result then
+    R := G.FDataLink.ActiveRecord;
+end;
+
+function AccIsCurrent(G: TDBGrid; ACol, ARow: Integer): Boolean;
+var
+  C, R: Integer;
+begin
+  Result := AccCurrent(G, C, R) and (C = ACol) and (R = ARow);
+end;
+
+{ the grid window itself has the keyboard focus (an open editor is a native edit with the system's provider) }
+function AccGridFocused(G: TDBGrid): Boolean;
+begin
+  Result := G.HandleAllocated and (Windows.GetFocus = G.Handle);
+end;
+
+{ the user could change the field of the column in the grid (EditingPossible for any column) }
+function AccColumnEditable(G: TDBGrid; ACol: Integer): Boolean;
+var
+  C: TColumn;
+  F: TField;
+begin
+  Result := False;
+  if not G.CanModifyData or (dgRowSelect in G.FOptions) or (ACol < 0) or (ACol >= G.FShown.Count) then
+    Exit;
+  C := TColumn(G.FShown[ACol]);
+  if C.ReadOnly then
+    Exit;
+  F := C.Field;
+  Result := (F <> nil) and F.CanModify and not IsBinaryField(F);
+end;
+
+{ the name of an element: the shown title of a title cell, the text a data cell shows }
+function AccCellText(G: TDBGrid; ACol, ARow: Integer): string;
+begin
+  if ARow = -1 then
+    Result := TColumn(G.FShown[ACol]).TitleText
+  else
+    Result := G.CellText(ACol, ARow);
+end;
+
+{ the current cell may have changed (another column, window row or record): see NoteCurrent }
+procedure AccCurrentCellChanged(G: TDBGrid);
+begin
+  if G.AutomationObject is TDBGridAutomationProvider then
+    TDBGridAutomationProvider(G.AutomationObject).NoteCurrent;
+end;
+
+{ ---------------------------------------------------------------- TDBGridAutomationProvider }
+
+constructor TDBGridAutomationProvider.Create(AControl: TControl);
+var
+  G: TDBGrid;
+begin
+  inherited Create(AControl);
+  G := TDBGrid(AControl);
+  FHasLast := AccCurrent(G, FLastCol, FLastRow);
+  if FHasLast then
+    FLastRecNo := G.FDataLink.DataSet.RecNo;
+end;
+
+destructor TDBGridAutomationProvider.Destroy;
+begin
+  FCells.Free;
+  inherited Destroy;
+end;
+
+class function TDBGridAutomationProvider.DefaultControlType(Control: TControl): Integer;
+begin
+  Result := UIA_DataGridControlTypeId;
+end;
+
+function TDBGridAutomationProvider.Grid: TDBGrid;
+begin
+  Result := TDBGrid(Control);
+end;
+
+function TDBGridAutomationProvider.CellObject(ACol, ARow: Integer): TDBGridCellProvider;
+var
+  I: Integer;
+begin
+  if FCells = nil then
+    FCells := TList.Create;
+  for I := 0 to FCells.Count - 1 do
+  begin
+    Result := TDBGridCellProvider(FCells[I]);
+    if (Result.FCol = ACol) and (Result.FRow = ARow) then
+      Exit;
+  end;
+  Result := TDBGridCellProvider.CreateCell(Self, ACol, ARow);
+end;
+
+function TDBGridAutomationProvider.TitleArray(AFirst, ALast: Integer; out pRetVal: PSafeArray): HResult;
+var
+  I, C: Integer;
+  S: IRawElementProviderSimple;
+begin
+  pRetVal := nil;
+  Result := S_OK;
+  if ALast < AFirst then
+    Exit;
+  pRetVal := SafeArrayCreateVector(VT_UNKNOWN, 0, ALast - AFirst + 1);
+  if pRetVal = nil then
+  begin
+    Result := E_OUTOFMEMORY;
+    Exit;
+  end;
+  I := 0;
+  for C := AFirst to ALast do
+  begin
+    S := CellObject(C, -1);
+    SafeArrayPutElement(pRetVal, @I, Pointer(S));          { the array takes its own reference }
+    Inc(I);
+  end;
+  S := nil;
+end;
+
+{ the current cell changed (another column, window row or record): AutomationFocusChanged on it while the grid has
+  the focus, and SelectionItem_ElementSelected, when a client listens (UIF-1440) }
+procedure TDBGridAutomationProvider.NoteCurrent;
+var
+  G: TDBGrid;
+  C, R, N: Integer;
+  Cell: IRawElementProviderSimple;
+begin
+  G := Grid;
+  if (G = nil) or (csDestroying in G.ComponentState) then
+    Exit;
+  if not AccCurrent(G, C, R) then
+  begin
+    FHasLast := False;
+    Exit;
+  end;
+  N := G.FDataLink.DataSet.RecNo;
+  if FHasLast and (C = FLastCol) and (R = FLastRow) and (N = FLastRecNo) then
+    Exit;
+  FHasLast := True;
+  FLastCol := C;
+  FLastRow := R;
+  FLastRecNo := N;
+  if not AutomationEventsWanted(G) then
+    Exit;
+  Cell := CellObject(C, R);
+  if AccGridFocused(G) then
+    RaiseFragmentEvent(G, Cell, UIA_AutomationFocusChangedEventId);
+  RaiseFragmentEvent(G, Cell, UIA_SelectionItem_ElementSelectedEventId);
+end;
+
+{ UIF-1426 (as for grid cells): the elements are disconnected while the grid's provider still answers for the
+  grid, each kept alive by a reference of its own through its disconnect }
+procedure TDBGridAutomationProvider.DisconnectFragments;
+var
+  Held: array of IRawElementProviderSimple;
+  I: Integer;
+begin
+  if (FCells = nil) or (FCells.Count = 0) then
+    Exit;
+  SetLength(Held, FCells.Count);
+  for I := 0 to FCells.Count - 1 do
+    Held[I] := TDBGridCellProvider(FCells[I]);
+  for I := 0 to Length(Held) - 1 do
+    UiaDisconnectProvider(Held[I]);
+  for I := 0 to FCells.Count - 1 do
+    TDBGridCellProvider(FCells[I]).Forget;
+  FCells.Clear;
+  Held := nil;
+end;
+
+function TDBGridAutomationProvider.GetPatternProvider(patternId: Integer; out pRetVal: IUnknown): HResult;
+var
+  Gp: IGridProvider;
+  Tp: ITableProvider;
+  Sp: ISelectionProvider;
+begin
+  PPointer(@pRetVal)^ := nil;
+  if not Alive(Result) then
+    Exit;
+  case patternId of
+    UIA_GridPatternId:
+      begin
+        Gp := Self;
+        pRetVal := Gp;
+      end;
+    UIA_TablePatternId:
+      begin
+        Tp := Self;
+        pRetVal := Tp;
+      end;
+    UIA_SelectionPatternId:
+      begin
+        Sp := Self;
+        pRetVal := Sp;
+      end;
+  end;
+end;
+
+{ the children: the shown title cells, then the shown cells of the rows, row-major }
+function TDBGridAutomationProvider.Navigate(direction: Integer; out pRetVal: IRawElementProviderFragment): HResult;
+var
+  G: TDBGrid;
+  C, R: Integer;
+begin
+  PPointer(@pRetVal)^ := nil;
+  if not Alive(Result) then
+    Exit;
+  G := Grid;
+  case direction of
+    NavigateDirection_FirstChild:
+      begin
+        C := AccFirstCol(G);
+        R := AccFirstRow(G);
+        if AccCellShown(G, C, R) then
+          pRetVal := CellObject(C, R);
+      end;
+    NavigateDirection_LastChild:
+      begin
+        C := AccLastCol(G);
+        R := AccRowCount(G) - 1;
+        if (R < 0) and AccHasTitles(G) then
+          R := -1;
+        if AccCellShown(G, C, R) then
+          pRetVal := CellObject(C, R);
+      end;
+  end;
+end;
+
+{ the cell under the point (title cells included), else the grid }
+function TDBGridAutomationProvider.ElementProviderFromPoint(x, y: Double;
+  out pRetVal: IRawElementProviderFragment): HResult;
+var
+  G: TDBGrid;
+  P: TPoint;
+  C, R: Integer;
+begin
+  PPointer(@pRetVal)^ := nil;
+  if not Alive(Result) then
+    Exit;
+  G := Grid;
+  if G.HandleAllocated then
+  begin
+    P := Point(Round(x), Round(y));
+    ScreenToClient(G.Handle, P);
+    G.HitTest(P.X, P.Y, C, R);
+    if AccElementExists(G, C, R) then
+    begin
+      pRetVal := CellObject(C, R);
+      Exit;
+    end;
+  end;
+  pRetVal := Self;
+end;
+
+{ the current cell while the grid has the focus }
+function TDBGridAutomationProvider.GetFocus(out pRetVal: IRawElementProviderFragment): HResult;
+var
+  G: TDBGrid;
+  C, R: Integer;
+begin
+  PPointer(@pRetVal)^ := nil;
+  if not Alive(Result) then
+    Exit;
+  G := Grid;
+  if AccGridFocused(G) and AccCurrent(G, C, R) then
+    pRetVal := CellObject(C, R);
+end;
+
+function TDBGridAutomationProvider.GetItem(row, column: Integer; out pRetVal: IRawElementProviderSimple): HResult;
+begin
+  PPointer(@pRetVal)^ := nil;
+  if not Alive(Result) then
+    Exit;
+  if (row < 0) or not AccElementExists(Grid, column, row) then
+    Result := E_INVALIDARG
+  else
+    pRetVal := CellObject(column, row);
+end;
+
+function TDBGridAutomationProvider.get_RowCount(out pRetVal: Integer): HResult;
+begin
+  pRetVal := 0;
+  if Alive(Result) then
+    pRetVal := AccRowCount(Grid);
+end;
+
+function TDBGridAutomationProvider.get_ColumnCount(out pRetVal: Integer): HResult;
+begin
+  pRetVal := 0;
+  if Alive(Result) then
+    pRetVal := Grid.FShown.Count;
+end;
+
+{ the indicator column has no text: no row headers }
+function TDBGridAutomationProvider.GetRowHeaders(out pRetVal: PSafeArray): HResult;
+begin
+  pRetVal := nil;
+  Alive(Result);
+end;
+
+{ the title cells of every shown column (none without dgTitles) }
+function TDBGridAutomationProvider.GetColumnHeaders(out pRetVal: PSafeArray): HResult;
+begin
+  pRetVal := nil;
+  if Alive(Result) and AccHasTitles(Grid) then
+    Result := TitleArray(0, Grid.FShown.Count - 1, pRetVal);
+end;
+
+function TDBGridAutomationProvider.get_RowOrColumnMajor(out pRetVal: Integer): HResult;
+begin
+  pRetVal := RowOrColumnMajor_RowMajor;
+  Alive(Result);
+end;
+
+{ the current cell; none while the row window is empty }
+function TDBGridAutomationProvider.GetSelection(out pRetVal: PSafeArray): HResult;
+var
+  C, R, I: Integer;
+  S: IRawElementProviderSimple;
+begin
+  pRetVal := nil;
+  if not Alive(Result) or not AccCurrent(Grid, C, R) then
+    Exit;
+  pRetVal := SafeArrayCreateVector(VT_UNKNOWN, 0, 1);
+  if pRetVal = nil then
+  begin
+    Result := E_OUTOFMEMORY;
+    Exit;
+  end;
+  I := 0;
+  S := CellObject(C, R);
+  SafeArrayPutElement(pRetVal, @I, Pointer(S));
+  S := nil;
+end;
+
+function TDBGridAutomationProvider.get_CanSelectMultiple(out pRetVal: BOOL): HResult;
+begin
+  pRetVal := False;
+  Alive(Result);
+end;
+
+function TDBGridAutomationProvider.get_IsSelectionRequired(out pRetVal: BOOL): HResult;
+begin
+  pRetVal := True;
+  Alive(Result);
+end;
+
+{ ---------------------------------------------------------------- TDBGridCellProvider }
+
+constructor TDBGridCellProvider.CreateCell(AOwner: TDBGridAutomationProvider; ACol, ARow: Integer);
+begin
+  inherited Create(AOwner.Control);
+  FOwner := AOwner;
+  FCol := ACol;
+  FRow := ARow;
+  AOwner.FCells.Add(Self);
+end;
+
+destructor TDBGridCellProvider.Destroy;
+begin
+  if FOwner <> nil then
+    FOwner.FCells.Remove(Self);
+  inherited Destroy;
+end;
+
+procedure TDBGridCellProvider.Forget;
+begin
+  FOwner := nil;
+  ForgetControl;
+end;
+
+function TDBGridCellProvider.Grid: TDBGrid;
+begin
+  Result := TDBGrid(Control);
+end;
+
+function TDBGridCellProvider.IsTitle: Boolean;
+begin
+  Result := FRow = -1;
+end;
+
+{ an element of a column that is no longer shown or of a row the row window no longer has answers
+  UIA_E_ELEMENTNOTAVAILABLE (again available when it comes back) }
+function TDBGridCellProvider.Live(out Res: HResult): Boolean;
+begin
+  Result := Alive(Res);
+  if Result and not AccElementExists(Grid, FCol, FRow) then
+  begin
+    Result := False;
+    Res := UIA_E_ELEMENTNOTAVAILABLE;
+  end;
+end;
+
+function TDBGridCellProvider.IsOffscreen: Boolean;
+begin
+  Result := not Grid.Showing or not AccCellShown(Grid, FCol, FRow);
+end;
+
+function TDBGridCellProvider.GetPatternProvider(patternId: Integer; out pRetVal: IUnknown): HResult;
+var
+  Gi: IGridItemProvider;
+  Ti: ITableItemProvider;
+  Si: ISelectionItemProvider;
+  Vp: IValueProvider;
+begin
+  PPointer(@pRetVal)^ := nil;
+  if not Live(Result) or IsTitle then
+    Exit;
+  case patternId of
+    UIA_GridItemPatternId:
+      begin
+        Gi := Self;
+        pRetVal := Gi;
+      end;
+    UIA_TableItemPatternId:
+      begin
+        Ti := Self;
+        pRetVal := Ti;
+      end;
+    UIA_SelectionItemPatternId:
+      begin
+        Si := Self;
+        pRetVal := Si;
+      end;
+    UIA_ValuePatternId:
+      begin
+        Vp := Self;
+        pRetVal := Vp;
+      end;
+  end;
+end;
+
+function TDBGridCellProvider.GetPropertyValue(propertyId: Integer; out pRetVal: TVariantArg): HResult;
+var
+  G: TDBGrid;
+begin
+  FillChar(pRetVal, SizeOf(pRetVal), 0);
+  if not Live(Result) then
+    Exit;
+  G := Grid;
+  try
+    case propertyId of
+      UIA_NamePropertyId:
+        PutStr(pRetVal, AccCellText(G, FCol, FRow));
+      UIA_AutomationIdPropertyId:
+        PutStr(pRetVal, '');
+      UIA_FrameworkIdPropertyId:
+        PutStr(pRetVal, 'FreexComp');
+      UIA_ControlTypePropertyId:
+        if IsTitle then
+          PutInt(pRetVal, UIA_HeaderItemControlTypeId)
+        else
+          PutInt(pRetVal, UIA_DataItemControlTypeId);
+      UIA_IsEnabledPropertyId:
+        PutBool(pRetVal, AccessibleEnabledOf(G));
+      UIA_IsOffscreenPropertyId:
+        PutBool(pRetVal, IsOffscreen);
+      UIA_IsKeyboardFocusablePropertyId:
+        PutBool(pRetVal, not IsTitle);
+      UIA_HasKeyboardFocusPropertyId:
+        PutBool(pRetVal, AccGridFocused(G) and AccIsCurrent(G, FCol, FRow));
+      UIA_IsControlElementPropertyId, UIA_IsContentElementPropertyId:
+        PutBool(pRetVal, True);
+    end;
+  except
+    FillChar(pRetVal, SizeOf(pRetVal), 0);
+    Result := E_FAIL;
+  end;
+end;
+
+{ siblings within the shown elements, row-major (title row first); none for an element that is not shown }
+function TDBGridCellProvider.Navigate(direction: Integer; out pRetVal: IRawElementProviderFragment): HResult;
+var
+  G: TDBGrid;
+  C, R: Integer;
+begin
+  PPointer(@pRetVal)^ := nil;
+  if not Live(Result) then
+    Exit;
+  G := Grid;
+  C := FCol;
+  R := FRow;
+  case direction of
+    NavigateDirection_Parent:
+      pRetVal := FOwner;
+    NavigateDirection_NextSibling:
+      if AccCellShown(G, C, R) and AccNextShown(G, C, R) then
+        pRetVal := FOwner.CellObject(C, R);
+    NavigateDirection_PreviousSibling:
+      if AccCellShown(G, C, R) and AccPrevShown(G, C, R) then
+        pRetVal := FOwner.CellObject(C, R);
+  end;
+end;
+
+{ [UiaAppendRuntimeId, column, row + 1]: the title row is 0. The identity (runtime id, fragment root) is answered
+  as long as the grid exists, also for an element the row window no longer has: the disconnect of UIF-1426 asks
+  for it (a provider that does not answer it stays held by the system after an event was raised on it) }
+function TDBGridCellProvider.GetRuntimeId(out pRetVal: PSafeArray): HResult;
+var
+  I, V: Integer;
+begin
+  pRetVal := nil;
+  if not Alive(Result) then
+    Exit;
+  pRetVal := SafeArrayCreateVector(VT_I4, 0, 3);
+  if pRetVal = nil then
+  begin
+    Result := E_OUTOFMEMORY;
+    Exit;
+  end;
+  I := 0;
+  V := UiaAppendRuntimeId;
+  SafeArrayPutElement(pRetVal, @I, @V);
+  I := 1;
+  V := FCol;
+  SafeArrayPutElement(pRetVal, @I, @V);
+  I := 2;
+  V := FRow + 1;
+  SafeArrayPutElement(pRetVal, @I, @V);
+end;
+
+function TDBGridCellProvider.get_BoundingRectangle(out pRetVal: TUiaRect): HResult;
+var
+  G: TDBGrid;
+  R: TRect;
+  P: TPoint;
+begin
+  FillChar(pRetVal, SizeOf(pRetVal), 0);
+  if not Live(Result) then
+    Exit;
+  G := Grid;
+  if not G.HandleAllocated or IsOffscreen then
+    Exit;
+  R := G.CellRect(FCol, FRow);
+  P := Point(R.Left, R.Top);
+  ClientToScreen(G.Handle, P);
+  pRetVal.left := P.X;
+  pRetVal.top := P.Y;
+  pRetVal.width := R.Right - R.Left;
+  pRetVal.height := R.Bottom - R.Top;
+end;
+
+{ focuses the grid, then Select; a title cell cannot take the focus }
+function TDBGridCellProvider.SetFocus: HResult;
+var
+  G: TDBGrid;
+begin
+  if not Live(Result) then
+    Exit;
+  G := Grid;
+  if IsTitle or not G.CanFocus then
+  begin
+    Result := UIA_E_INVALIDOPERATION;
+    Exit;
+  end;
+  try
+    G.SetFocus;
+  except
+    Result := E_FAIL;
+    Exit;
+  end;
+  Result := Select;
+end;
+
+function TDBGridCellProvider.get_FragmentRoot(out pRetVal: IRawElementProviderFragmentRoot): HResult;
+begin
+  PPointer(@pRetVal)^ := nil;
+  if Alive(Result) then
+    pRetVal := FOwner;
+end;
+
+function TDBGridCellProvider.get_Row(out pRetVal: Integer): HResult;
+begin
+  pRetVal := FRow;
+  Live(Result);
+end;
+
+function TDBGridCellProvider.get_Column(out pRetVal: Integer): HResult;
+begin
+  pRetVal := FCol;
+  Live(Result);
+end;
+
+function TDBGridCellProvider.get_RowSpan(out pRetVal: Integer): HResult;
+begin
+  pRetVal := 1;
+  Live(Result);
+end;
+
+function TDBGridCellProvider.get_ColumnSpan(out pRetVal: Integer): HResult;
+begin
+  pRetVal := 1;
+  Live(Result);
+end;
+
+function TDBGridCellProvider.get_ContainingGrid(out pRetVal: IRawElementProviderSimple): HResult;
+begin
+  PPointer(@pRetVal)^ := nil;
+  if Live(Result) then
+    pRetVal := FOwner;
+end;
+
+function TDBGridCellProvider.GetRowHeaderItems(out pRetVal: PSafeArray): HResult;
+begin
+  pRetVal := nil;
+  Live(Result);
+end;
+
+{ the title cell of the column }
+function TDBGridCellProvider.GetColumnHeaderItems(out pRetVal: PSafeArray): HResult;
+begin
+  pRetVal := nil;
+  if Live(Result) and AccHasTitles(Grid) then
+    Result := FOwner.TitleArray(FCol, FCol, pRetVal);
+end;
+
+{ the cell becomes the current cell as by a click: the dataset moves to its row, the column is selected (and
+  scrolled into view); an open editor is committed first }
+function TDBGridCellProvider.Select: HResult;
+var
+  G: TDBGrid;
+  Delta: Integer;
+begin
+  if not Live(Result) then
+    Exit;
+  G := Grid;
+  if not AccessibleEnabledOf(G) then
+  begin
+    Result := UIA_E_ELEMENTNOTENABLED;
+    Exit;
+  end;
+  try
+    if G.FEditorOpen then
+    begin
+      G.CommitEditor;
+      if not (dgAlwaysShowEditor in G.FOptions) then
+        G.HideEditor;
+    end;
+    Delta := FRow - G.FDataLink.ActiveRecord;
+    if Delta <> 0 then
+      G.FDataLink.DataSet.MoveBy(Delta);
+    if FCol < G.FShown.Count then
+      G.SetSelectedIndex(FCol);
+    if not AccIsCurrent(G, FCol, FRow) then
+      Result := UIA_E_INVALIDOPERATION;
+  except
+    Result := E_FAIL;
+  end;
+end;
+
+{ one cell is selected at a time: adding the selected cell changes nothing, any other is refused }
+function TDBGridCellProvider.AddToSelection: HResult;
+begin
+  if not Live(Result) then
+    Exit;
+  if not AccessibleEnabledOf(Grid) then
+    Result := UIA_E_ELEMENTNOTENABLED
+  else if not AccIsCurrent(Grid, FCol, FRow) then
+    Result := UIA_E_INVALIDOPERATION;
+end;
+
+{ a selection is required: removing the selected cell is refused, removing any other changes nothing }
+function TDBGridCellProvider.RemoveFromSelection: HResult;
+begin
+  if not Live(Result) then
+    Exit;
+  if not AccessibleEnabledOf(Grid) then
+    Result := UIA_E_ELEMENTNOTENABLED
+  else if AccIsCurrent(Grid, FCol, FRow) then
+    Result := UIA_E_INVALIDOPERATION;
+end;
+
+function TDBGridCellProvider.get_IsSelected(out pRetVal: BOOL): HResult;
+begin
+  pRetVal := False;
+  if Live(Result) then
+    pRetVal := AccIsCurrent(Grid, FCol, FRow);
+end;
+
+function TDBGridCellProvider.get_SelectionContainer(out pRetVal: IRawElementProviderSimple): HResult;
+begin
+  PPointer(@pRetVal)^ := nil;
+  if Live(Result) then
+    pRetVal := FOwner;
+end;
+
+{ Select, then the text goes into the field as typed by the user: the record is put into edit mode (AutoEdit) and
+  the field's Text is assigned; then the value property-changed event. A cell the user could not change answers
+  UIA_E_ELEMENTNOTENABLED }
+function TDBGridCellProvider.SetValue(val: PWideChar): HResult;
+var
+  G: TDBGrid;
+  OldText, NewText: string;
+  Me: IRawElementProviderSimple;
+begin
+  if not Live(Result) then
+    Exit;
+  G := Grid;
+  if not AccColumnEditable(G, FCol) or not AccessibleEnabledOf(G) then
+  begin
+    Result := UIA_E_ELEMENTNOTENABLED;
+    Exit;
+  end;
+  Result := Select;
+  if Result <> S_OK then
+    Exit;
+  try
+    OldText := G.CellText(FCol, FRow);
+    if not G.StartModify then
+    begin
+      Result := UIA_E_INVALIDOPERATION;
+      Exit;
+    end;
+    G.GetSelectedField.Text := string(val);
+    NewText := G.CellText(FCol, FRow);
+    if NewText <> OldText then
+    begin
+      Me := Self;
+      RaiseFragmentStrPropertyChanged(G, Me, UIA_ValueValuePropertyId, OldText, NewText);
+    end;
+  except
+    Result := E_FAIL;
+  end;
+end;
+
+function TDBGridCellProvider.get_Value(out pRetVal: TBStr): HResult;
+var
+  S: string;
+begin
+  pRetVal := nil;
+  if not Live(Result) then
+    Exit;
+  S := Grid.CellText(FCol, FRow);
+  pRetVal := SysAllocStringLen(PWideChar(S), Length(S));
+end;
+
+function TDBGridCellProvider.get_IsReadOnly(out pRetVal: BOOL): HResult;
+begin
+  pRetVal := True;
+  if Live(Result) then
+    pRetVal := not AccColumnEditable(Grid, FCol);
 end;
 
 { TGridDataLink }
@@ -1259,6 +2222,7 @@ begin
   else
     UpdateEditorState;
   InvalidateGrid;
+  AccCurrentCellChanged(Self);
 end;
 
 procedure TDBGrid.LinkRecordChanged(Field: TField);
@@ -1516,6 +2480,7 @@ begin
     UpdateEditorState;
   if FDataLink.Active then
     InvalidateRow(FDataLink.ActiveRecord);
+  AccCurrentCellChanged(Self);
 end;
 
 { ---------------------------------------------------------------- editing }
@@ -2053,5 +3018,6 @@ end;
 
 initialization
   RegisterClasses([TDBGrid]);
+  RegisterAutomationProvider(TDBGrid, TDBGridAutomationProvider);
 
 end.
