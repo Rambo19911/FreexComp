@@ -135,7 +135,7 @@ public static partial class Gui
     [GeneratedRegex(@"^(?<file>.+?)\(\d+,\d+\): warning ", RegexOptions.CultureInvariant)]
     private static partial Regex WarningLine();
 
-    /// <summary><c>StartGui(exe, args, env)</c>: stdout/stderr redirected, <c>FXC_UI_NONINTERACTIVE=1</c> plus <paramref name="env"/>, killed on dispose.</summary>
+    /// <summary><c>StartGui(exe, args, env)</c>: stdout/stderr redirected, <c>FXC_UI_NONINTERACTIVE=1</c> plus <paramref name="env"/>, in the job of the test host (U-162), killed on dispose.</summary>
     public static GuiProcess StartGui(string exe, IReadOnlyList<string> args, IReadOnlyDictionary<string, string> env)
     {
         var psi = new ProcessStartInfo(exe, GoldenRunner.CommandLine(args, null))
@@ -153,7 +153,9 @@ public static partial class Gui
             psi.Environment[key] = value;
         }
 
-        return new GuiProcess(Process.Start(psi)!);
+        var process = Process.Start(psi)!;
+        AssignToHostJob(process);                                   // U-162: dies with the test host
+        return new GuiProcess(process);
     }
 
     /// <summary>

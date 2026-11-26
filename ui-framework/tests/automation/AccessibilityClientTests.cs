@@ -445,7 +445,7 @@ public sealed class AccessibilityClientTests
     /// (internal: U-157's <see cref="AccessibilityGridClientTests"/> uses it too).
     /// U-161: one test with a probe lasts at most <see cref="Budget"/> (build, start and every wait included): every
     /// wait of the probe ends at that deadline, where a watchdog kills the probe so that a wait inside a call to it
-    /// ends too. The probe is in a job object of the test host that kills it when the host ends (also when the host
+    /// ends too. The probe is in the job object of the test host (<see cref="Gui.StartGui"/>, U-162) that kills it when the host ends (also when the host
     /// is stopped); <see cref="Dispose"/> kills it and removes the client's event handlers, also after a failure.
     /// </summary>
     internal sealed class Probe : IDisposable
@@ -456,13 +456,8 @@ public sealed class AccessibilityClientTests
         /// </summary>
         public static readonly TimeSpan Budget = Gui.SafetyNet * 0.4;
 
-        private const uint JobObjectLimitKillOnJobClose = 0x2000;
-        private const int JobObjectExtendedLimitInformationClass = 9;
-
         /// <summary>How long the removal of the client's event handlers may take (1/24 of the shared net: 5 s).</summary>
         private static readonly TimeSpan RemovalLimit = Gui.SafetyNet / 24;
-
-        private static readonly Lazy<IntPtr> HostJob = new(CreateHostJob);
 
         private readonly DateTime deadline;
         private readonly Timer watchdog;
@@ -497,11 +492,6 @@ public sealed class AccessibilityClientTests
             var app = Gui.StartGui(exe, [], new Dictionary<string, string>());
             try
             {
-                if (!AssignProcessToJobObject(HostJob.Value, app.Process.Handle))
-                {
-                    Assert.Fail($"the probe was not put into the job of the test host (error {Marshal.GetLastPInvokeError()})");
-                }
-
                 var window = Gui.WaitForMainWindow(app, "PN.TForm", "Accessibility Probe", Until(deadline));
                 if (window == IntPtr.Zero)
                 {
@@ -604,59 +594,11 @@ public sealed class AccessibilityClientTests
             return left > TimeSpan.Zero ? left : TimeSpan.Zero;
         }
 
-        /// <summary>A job of the test host whose last handle (held until the host ends) kills every probe in it.</summary>
-        private static IntPtr CreateHostJob()
-        {
-            var job = CreateJobObjectW(IntPtr.Zero, null);
-            Assert.True(job != IntPtr.Zero, $"CreateJobObject failed (error {Marshal.GetLastPInvokeError()})");
-            var info = new JobObjectExtendedLimitInformation { LimitFlags = JobObjectLimitKillOnJobClose };
-            Assert.True(
-                SetInformationJobObject(job, JobObjectExtendedLimitInformationClass, ref info, (uint)Marshal.SizeOf<JobObjectExtendedLimitInformation>()),
-                $"SetInformationJobObject failed (error {Marshal.GetLastPInvokeError()})");
-            return job;
-        }
-
-        [DllImport("kernel32.dll", ExactSpelling = true, SetLastError = true, CharSet = CharSet.Unicode)]
-        private static extern IntPtr CreateJobObjectW(IntPtr attributes, string? name);
-
-        [DllImport("kernel32.dll", ExactSpelling = true, SetLastError = true)]
-        [return: MarshalAs(UnmanagedType.Bool)]
-        private static extern bool SetInformationJobObject(IntPtr job, int infoClass, ref JobObjectExtendedLimitInformation info, uint length);
-
-        [DllImport("kernel32.dll", ExactSpelling = true, SetLastError = true)]
-        [return: MarshalAs(UnmanagedType.Bool)]
-        private static extern bool AssignProcessToJobObject(IntPtr job, IntPtr process);
-
         private bool RemoveAllBounded()
         {
             var removal = new Thread(Client.RemoveAllEventHandlers) { IsBackground = true, Name = "client handler removal" };
             removal.Start();
             return removal.Join(RemovalLimit);
-        }
-
-        /// <summary>JOBOBJECT_EXTENDED_LIMIT_INFORMATION (the basic limits, the I/O counters, four sizes).</summary>
-        [StructLayout(LayoutKind.Sequential)]
-        private struct JobObjectExtendedLimitInformation
-        {
-            public long PerProcessUserTimeLimit;
-            public long PerJobUserTimeLimit;
-            public uint LimitFlags;
-            public UIntPtr MinimumWorkingSetSize;
-            public UIntPtr MaximumWorkingSetSize;
-            public uint ActiveProcessLimit;
-            public UIntPtr Affinity;
-            public uint PriorityClass;
-            public uint SchedulingClass;
-            public ulong ReadOperationCount;
-            public ulong WriteOperationCount;
-            public ulong OtherOperationCount;
-            public ulong ReadTransferCount;
-            public ulong WriteTransferCount;
-            public ulong OtherTransferCount;
-            public UIntPtr ProcessMemoryLimit;
-            public UIntPtr JobMemoryLimit;
-            public UIntPtr PeakProcessMemoryUsed;
-            public UIntPtr PeakJobMemoryUsed;
         }
     }
 }

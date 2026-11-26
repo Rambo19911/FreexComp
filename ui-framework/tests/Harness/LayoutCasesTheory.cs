@@ -317,6 +317,7 @@ public static class LayoutHost
         using var stop = CancellationTokenSource.CreateLinkedTokenSource(ct);
         stop.CancelAfter(limit);
         using var process = Process.Start(psi)!;
+        Gui.AssignToHostJob(process);                               // U-162: dies with the test host
         try
         {
             process.StandardInput.Close();

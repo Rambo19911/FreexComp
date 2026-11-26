@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using System.Globalization;
 using System.Text.RegularExpressions;
 
 namespace FreexComp.UiFramework.Tests;
@@ -123,6 +125,48 @@ public sealed class GuiHarnessTests
         Assert.StartsWith("the probe did not exit by itself (safety net 120 s, session backstop 480 s); its process tree was killed", message);
         Assert.Contains("--- stdout\n", message);
         Assert.Contains("--- stderr\n", message);
+    }
+
+    /// <summary>
+    /// U-162: a test program does not outlive its test host. A second test host (this assembly in its holder mode,
+    /// <see cref="EntryPoint.HoldGui"/>) starts the probe with <see cref="Gui.StartGui"/> and is then killed alone (not
+    /// its tree, as when a test host is stopped from outside); the job object of that host must then kill the probe.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "UIF-1208")]
+    public void TestProgramDiesWithTestHost()
+    {
+        Harness.RequireDesktop();
+        var exe = Gui.BuildProgram(Path.Combine(UiCorpus.AreaDirectory, "tests", "gui", "GuiProbe.pas"));
+        var hostExe = Path.Combine(AppContext.BaseDirectory, "FreexComp.UiFramework.Tests.exe");
+        Process? probe = null;
+        try
+        {
+            using (var host = Gui.StartGui(hostExe, [EntryPoint.HoldGui, exe], new Dictionary<string, string>()))
+            {
+                string? Holding() => host.StdOut.Split('\n').FirstOrDefault(l => l.StartsWith("holding ", StringComparison.Ordinal));
+                Assert.True(
+                    Gui.WaitUntil(() => Holding() is not null || host.Process.HasExited) && Holding() is not null,
+                    $"the holder did not start the probe\n--- stdout\n{host.StdOut}\n--- stderr\n{host.StdErr}");
+                probe = Process.GetProcessById(int.Parse(Holding()!["holding ".Length..], CultureInfo.InvariantCulture));
+                Assert.False(probe.HasExited);
+
+                host.Process.Kill(entireProcessTree: false);
+                Assert.True(host.Process.WaitForExit(Gui.SafetyNet), "the holder did not end when it was killed");
+            }
+
+            Assert.True(probe.WaitForExit(Gui.SafetyNet), $"the probe {probe.Id} outlived its killed test host");
+        }
+        finally
+        {
+            if (probe is not null && !probe.HasExited)
+            {
+                probe.Kill();                                       // a red run leaves nothing behind
+                probe.WaitForExit(Gui.SafetyNet);
+            }
+
+            probe?.Dispose();
+        }
     }
 }
 
