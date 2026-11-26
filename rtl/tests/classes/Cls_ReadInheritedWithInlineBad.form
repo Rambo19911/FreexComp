@@ -1,0 +1,6 @@
+inherited HolderBad: TInlBad
+  inherited F: TTestFrame
+    object Added: TPart
+    end
+  end
+end

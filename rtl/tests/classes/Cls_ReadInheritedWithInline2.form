@@ -1,0 +1,16 @@
+inherited Holder2: TInl2
+  inherited F: TTestFrame
+    Size = 8
+    inherited Box: TPart
+      inherited Inner: TPart
+        Caption = 'inner 2'
+        Size = 2
+      end
+    end
+  end
+  inline G: TTestFrameEx
+    inherited Extra: TPart
+      Caption = 'extra on G'
+    end
+  end
+end

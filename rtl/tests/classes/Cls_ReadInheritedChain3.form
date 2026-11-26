@@ -1,0 +1,20 @@
+inherited Cls3Form: TCls3
+  Size = 3
+  inherited A: TPart
+    Caption = 'a 3'
+    Buddy = Side
+  end
+  inherited Extra: TLeaf
+    Size = 33
+  end
+  inherited Panel: TPart
+    inherited C: TPart
+      Caption = 'c 3'
+    end
+  end
+  object D: TPart
+    Caption = 'd 3'
+    Buddy = Extra
+    Probe = 1
+  end
+end

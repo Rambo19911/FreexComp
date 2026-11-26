@@ -1,0 +1,53 @@
+# F0109 in the form scope (RTL-1128)
+ok unknown name
+ok unknown name: only the components of the earlier levels are left
+ok unknown name: no loading flags
+ok unknown name: no Loaded
+ok unknown name: nothing leaked
+ok wrong class, named after the nearest ancestor with a form
+ok wrong class, named after the nearest ancestor with a form: only the components of the earlier levels are left
+ok wrong class, named after the nearest ancestor with a form: no loading flags
+ok wrong class, named after the nearest ancestor with a form: no Loaded
+ok wrong class, named after the nearest ancestor with a form: nothing leaked
+ok read outside a chain: named after the class parent
+# F0112 and F0113 (RTL-1131, 1132, 1135)
+ok F0112
+ok F0112: only the components of the earlier levels are left
+ok F0112: no loading flags
+ok F0112: no Loaded
+ok F0112: nothing leaked
+ok F0113
+ok F0113: only the components of the earlier levels are left
+ok F0113: no loading flags
+ok F0113: no Loaded
+ok F0113: nothing leaked
+# F0107 without a scope (RTL-1133)
+ok inside a new object
+ok inside a new object: only the components of the earlier levels are left
+ok inside a new object: no loading flags
+ok inside a new object: no Loaded
+ok inside a new object: nothing leaked
+ok inside a file with an object root
+ok inside a file with an object root: only the components of the earlier levels are left
+ok inside a file with an object root: no loading flags
+ok inside a file with an object root: no Loaded
+ok inside a file with an object root: nothing leaked
+# F0106 and F0105 across levels (RTL-1130)
+ok a new component named like an inherited one
+ok a new component named like an inherited one: only the components of the earlier levels are left
+ok a new component named like an inherited one: no loading flags
+ok a new component named like an inherited one: no Loaded
+ok a new component named like an inherited one: nothing leaked
+ok a level-1 reference to a component of level 2
+ok a level-1 reference to a component of level 2: only the components of the earlier levels are left
+ok a level-1 reference to a component of level 2: no loading flags
+ok a level-1 reference to a component of level 2: no Loaded
+ok a level-1 reference to a component of level 2: nothing leaked
+# a valid chain after the failures
+ok found
+ok name
+ok values
+ok one Loaded for the root and one for A
+ok no loading flags
+ok nothing leaked
+# passed 47 failed 0

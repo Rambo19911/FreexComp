@@ -1,0 +1,44 @@
+# one level behaves as before (RTL-1129 (c))
+ok found
+Cls1Form: TCls1 owner=nil parent=nil caption='root 1' size=1 buddy=nil loaded=1 kids=[Panel,Side]
+  Panel: TPart owner=Cls1Form parent=Cls1Form caption='panel 1' size=10 buddy=nil loaded=1 kids=[A,B]
+  A: TPart owner=Cls1Form parent=Panel caption='a 1' size=11 buddy=nil loaded=1 kids=[]
+  B: TPart owner=Cls1Form parent=Panel caption='b 1' size=0 buddy=nil loaded=1 kids=[]
+  Side: TPart owner=Cls1Form parent=Cls1Form caption='side 1' size=0 buddy=Cls1Form loaded=1 kids=[]
+Loaded order: Side B A Panel Cls1Form
+# two levels
+ok found
+Cls2Form: TCls2 owner=nil parent=nil caption='root 2' size=1 buddy=nil loaded=1 kids=[Panel,Side,Extra]
+  Panel: TPart owner=Cls2Form parent=Cls2Form caption='panel 1' size=20 buddy=nil loaded=1 kids=[A,B,C]
+  A: TPart owner=Cls2Form parent=Panel caption='a 2' size=11 buddy=nil loaded=1 kids=[]
+  B: TPart owner=Cls2Form parent=Panel caption='b 1' size=0 buddy=nil loaded=1 kids=[]
+  Side: TPart owner=Cls2Form parent=Cls2Form caption='side 1' size=0 buddy=Cls2Form loaded=1 kids=[]
+  C: TPart owner=Cls2Form parent=Panel caption='c 2' size=21 buddy=nil loaded=1 kids=[]
+  Extra: TLeaf owner=Cls2Form parent=Cls2Form caption='extra 2' size=22 buddy=nil loaded=1 kids=[]
+Loaded order: Extra C Side B A Panel Cls2Form
+# three levels (RTL-1125, 1126, 1127, 1129)
+ok found
+Cls3Form: TCls3 owner=<TComponent> parent=nil caption='root 2' size=3 buddy=nil loaded=1 kids=[Panel,Side,Extra,D]
+  Panel: TPart owner=Cls3Form parent=Cls3Form caption='panel 1' size=20 buddy=nil loaded=1 kids=[A,B,C]
+  A: TPart owner=Cls3Form parent=Panel caption='a 3' size=11 buddy=Side loaded=1 kids=[]
+  B: TPart owner=Cls3Form parent=Panel caption='b 1' size=0 buddy=nil loaded=1 kids=[]
+  Side: TPart owner=Cls3Form parent=Cls3Form caption='side 1' size=0 buddy=Cls3Form loaded=1 kids=[]
+  C: TPart owner=Cls3Form parent=Panel caption='c 3' size=21 buddy=nil loaded=1 kids=[]
+  Extra: TLeaf owner=Cls3Form parent=Cls3Form caption='extra 2' size=33 buddy=nil loaded=1 kids=[]
+  D: TPart owner=Cls3Form parent=Cls3Form caption='d 3' size=0 buddy=Extra loaded=1 kids=[]
+Loaded order: D Extra C Side B A Panel Cls3Form
+while level 3 reads: 8 of 8 loading
+ok the name is the header name of the last level
+ok the owner holds the level-1 header name and the instance
+ok level-1 fields bound
+ok fields of new components bound
+ok unregistered class from an ancestor's field (RTL-1105)
+ok a block not nested as in the ancestor keeps the real parent
+ok a reference of level 3 to a level-1 component
+ok a reference of level 3 to a level-2 component
+ok level 1's own header name names the root
+# an event line of level 1 binds the most derived method (RTL-1127)
+ok bound to the root
+ok the method of the most derived class
+handlers: level3(A) level1(A)
+# passed 14 failed 0

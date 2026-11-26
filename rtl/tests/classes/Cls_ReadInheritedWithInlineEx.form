@@ -1,0 +1,9 @@
+inherited TestFrameEx: TTestFrameEx
+  Size = 6
+  inherited Title: TPart
+    Caption = 'title ex'
+  end
+  object Extra: TPart
+    Caption = 'extra'
+  end
+end

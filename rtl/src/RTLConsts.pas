@@ -110,6 +110,8 @@ resourcestring
   SFormFrameChildNotFound = 'Component %s: %s is not part of %s'; { F0109 }
   SFormFrameNoNewChildren = 'Components cannot be added to frame instance %s'; { F0110 }
   SFormFrameRecursive = 'Frame %s contains itself';         { F0111 }
+  SFormNoAncestorForm = 'Class %s has no ancestor form: its form file cannot start with "inherited"'; { F0112 }
+  SFormMustInherit = 'Class %s inherits the form of %s: its form file must start with "inherited"'; { F0113 }
 
   { ---------------------------------------------------------------- other units (other-units.md section 6) }
   SInvalidArgument = 'Invalid argument';

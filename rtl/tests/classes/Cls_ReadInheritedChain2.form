@@ -1,0 +1,17 @@
+inherited Cls2Form: TCls2
+  Caption = 'root 2'
+  inherited Panel: TPart
+    Size = 20
+    inherited A: TPart
+      Caption = 'a 2'
+    end
+    object C: TPart
+      Caption = 'c 2'
+      Size = 21
+    end
+  end
+  object Extra: TLeaf
+    Caption = 'extra 2'
+    Size = 22
+  end
+end

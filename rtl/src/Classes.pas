@@ -664,9 +664,14 @@ type
     FMatched: Boolean;
     FRootCreated: Boolean;
     FScope: TComponent;
+    FFormScope: Boolean;
     FApplyRootName: Boolean;
     FRootHeader: string;
     FDeferRootLoaded: Boolean;
+    FLevel: Integer;
+    FLevelClass: TClass;
+    FAncestorClass: TClass;
+    FDeferLoaded: Boolean;
     FOnFindMethod: TFindMethodEvent;
     FOnSetName: TSetNameEvent;
     FOnError: TReaderError;
@@ -3856,7 +3861,7 @@ var
 begin
   Msg := FSourceName + '(' + IntToStr(Line) + ',' + IntToStr(Col) + '): error ' + Code + ': ' + Text;
   if (Code <> 'F0001') and (Code <> 'F0101') and (Code <> 'F0106') and (Code <> 'F0107') and (Code <> 'F0109') and
-    (Code <> 'F0110') and Assigned(FOnError) then
+    (Code <> 'F0110') and (Code <> 'F0112') and (Code <> 'F0113') and Assigned(FOnError) then
   begin
     Handled := False;
     FOnError(Self, Msg, Handled);
@@ -5006,8 +5011,9 @@ end;
 { RTL-1105: the component class of an object line whose class GetClass does not know, from the published fields
   (Visibility 3, ABI-144) of the class chain of the root of this file (a form, or a frame instance reading its own
   file): the field named Name whose class is named TypeName first, then the first field whose class is named
-  TypeName; nil when there is none. Override blocks create nothing and nested object lines in an instance are F0110,
-  so the root is the component that owns every file scope this lookup is asked from. }
+  TypeName; nil when there is none. Override blocks create nothing, nested object lines in an instance are F0110 and
+  the new components of a descendant file are owned by the root (RTL-1126), so the root is the component that owns
+  every file scope this lookup is asked from; its class chain holds the fields of every level (RTL-1129). }
 function TReader.FieldClass(const Name, TypeName: string): TPersistentClass;
 var
   Pass, I, Count: Integer;
@@ -5042,8 +5048,9 @@ begin
   end;
 end;
 
-{ RTL-497; an "inline" object is a frame instance (RTL-1090), an "inherited" one an override block (RTL-1091);
-  inside an instance nothing can be added (F0110, RTL-1094) }
+{ RTL-497; an "inline" object is a frame instance (RTL-1090), an "inherited" one an override block (RTL-1091,
+  RTL-1125); inside an instance nothing can be added (F0110, RTL-1094), the form scope of a descendant file is open
+  (RTL-1126), an "inherited" object without a scope is F0107 (RTL-1133) }
 procedure TReader.ReadComponentObject;
 var
   KeyLine, KeyCol, NameLine, NameCol, TypeLine, TypeCol: Integer;
@@ -5051,13 +5058,13 @@ var
   Cls: TPersistentClass;
   CompClass: TComponentClass;
   C, OldScope: TComponent;
-  IsInline: Boolean;
+  IsInline, OldFormScope: Boolean;
   OldPending: TReader;
   OldLine, OldCol: Integer;
 begin
   if IsKeyword('inherited') then
   begin
-    if FScope = nil then
+    if (FScope = nil) and not FFormScope then
       Error('F0107', Format(SFormObjectsNotSupported, [LowerCase(FLex.TokText)]), FLex.TokLine, FLex.TokCol);
     ReadOverrideBlock;
     Exit;
@@ -5142,22 +5149,30 @@ begin
     on E: ESkipProperty do
       ;
   end;
+  { RTL-1126: a new instance is a closed scope; the objects nested in a component this file creates with "object"
+    have no scope }
   OldScope := FScope;
+  OldFormScope := FFormScope;
   if csInline in C.FComponentState then
-    FScope := C;
+    FScope := C
+  else
+    FFormScope := False;
   try
     C.ReadState(Self);
   finally
     FScope := OldScope;
+    FFormScope := OldFormScope;
   end;
 end;
 
 { RTL-1091: "inherited Name: TypeName" inside a frame instance names a component the frame created; its lines are
-  applied, nothing is created, named or re-parented; a nested instance is the scope of its own blocks (RTL-1092) }
+  applied, nothing is created, named or re-parented; a nested instance is the scope of its own blocks (RTL-1092).
+  RTL-1125, 1127, 1128: in the form scope of a descendant file the block names a component that an earlier level
+  created (owned by the root), wherever it is nested; the form scope stays open inside the block }
 procedure TReader.ReadOverrideBlock;
 var
   NameLine, NameCol: Integer;
-  Name, TypeName: string;
+  Name, TypeName, ScopeName: string;
   C, OldScope: TComponent;
 begin
   NextToken;
@@ -5167,9 +5182,21 @@ begin
   Expect(':');
   TypeName := ReadIdentToken;
   ExpectLineEnd;
-  C := FScope.FindComponent(Name);
+  if FScope <> nil then
+  begin
+    C := FScope.FindComponent(Name);
+    ScopeName := FScope.ClassName;
+  end
+  else
+  begin
+    C := FRoot.FindComponent(Name);
+    if FAncestorClass <> nil then
+      ScopeName := FAncestorClass.ClassName
+    else
+      ScopeName := FRoot.ClassParent.ClassName;
+  end;
   if (C = nil) or (CompareText(C.ClassName, TypeName) <> 0) then
-    Error('F0109', Format(SFormFrameChildNotFound, [Name, TypeName, FScope.ClassName]), NameLine, NameCol);
+    Error('F0109', Format(SFormFrameChildNotFound, [Name, TypeName, ScopeName]), NameLine, NameCol);
   Include(C.FComponentState, csLoading);
   Include(C.FComponentState, csReading);
   if FLoaded.IndexOf(Pointer(C)) < 0 then
@@ -5212,12 +5239,15 @@ begin
   end;
 end;
 
-{ RTL-495; a nil Root is created from the header's class (GetClass) }
+{ RTL-495; a nil Root is created from the header's class (GetClass); the root of an "inherited" file is the form
+  scope (RTL-1125); a level of a chain checks its root keyword (F0112, F0113) and, unless it is the last one, leaves
+  Loaded and csLoading to the last level (RTL-1129) }
 function TReader.ReadRootComponent(Root: TComponent): TComponent;
 var
   NameLine, NameCol, TypeLine, TypeCol, I: Integer;
   Name, TypeName, Msg: string;
   Cls: TPersistentClass;
+  IsInherited: Boolean;
 begin
   try
     DecodeText;
@@ -5227,6 +5257,12 @@ begin
       Error('F0107', Format(SFormObjectsNotSupported, ['inline']), FLex.TokLine, FLex.TokCol);
     if not (IsKeyword('object') or IsKeyword('inherited')) then
       Unexpected('"object"');
+    IsInherited := IsKeyword('inherited');
+    if (FLevel > 0) and IsInherited and (FAncestorClass = nil) then
+      Error('F0112', Format(SFormNoAncestorForm, [FLevelClass.ClassName]), FLex.TokLine, FLex.TokCol);
+    if (FLevel > 1) and not IsInherited then
+      Error('F0113', Format(SFormMustInherit, [FLevelClass.ClassName, FAncestorClass.ClassName]), FLex.TokLine,
+        FLex.TokCol);
     NextToken;
     NameLine := FLex.TokLine;
     NameCol := FLex.TokCol;
@@ -5250,9 +5286,11 @@ begin
     FOwner := Root;
     FParent := nil;
     FScope := nil;
+    FFormScope := IsInherited;
     Include(Root.FComponentState, csLoading);
     Include(Root.FComponentState, csReading);
-    FLoaded.Add(Pointer(Root));
+    if FLoaded.IndexOf(Pointer(Root)) < 0 then
+      FLoaded.Add(Pointer(Root));
     { RTL-1099: a frame read with an owner keeps the name its instance gives it }
     if FApplyRootName and Assigned(FOnSetName) then
       FOnSetName(Self, Root, Name);
@@ -5275,11 +5313,15 @@ begin
     ResolveFixups;
     for I := FLoaded.Count - 1 downto 0 do
       Exclude(TComponent(FLoaded[I]).FComponentState, csReading);
-    { RTL-1097: the root of a frame constructed for an instance gets its Loaded from the reader of the instance }
-    for I := FLoaded.Count - 1 downto 0 do
-      if not FDeferRootLoaded or (TComponent(FLoaded[I]) <> Root) then
-        TComponent(FLoaded[I]).Loaded;
-    FLoaded.Clear;
+    { RTL-1129 (b): a level before the last keeps its loaded list, with csLoading, for the next level }
+    if not FDeferLoaded then
+    begin
+      { RTL-1097: the root of a frame constructed for an instance gets its Loaded from the reader of the instance }
+      for I := FLoaded.Count - 1 downto 0 do
+        if not FDeferRootLoaded or (TComponent(FLoaded[I]) <> Root) then
+          TComponent(FLoaded[I]).Loaded;
+      FLoaded.Clear;
+    end;
     FCreated.Clear;
   except
     Cleanup;
@@ -5346,17 +5388,55 @@ begin
   end;
 end;
 
-{ RTL-483: from the base-most class below RootAncestor to the most derived one }
+{ RTL-1129: level Level (1-based) of a chain, read into Instance from the form of LevelClass, whose ancestor with a
+  form is AncestorClass (nil: none). Deferred holds the components the earlier levels loaded; unless this is the
+  last level it receives this level's loaded list. Only the last level applies its header name and calls Loaded. }
+procedure ReadFormLevel(Data: Pointer; Size: NativeInt; Instance: TComponent; LevelClass, AncestorClass: TClass;
+  Level: Integer; IsLast, ApplyRootName, DeferRootLoaded: Boolean; Deferred: TList);
+var
+  S: TPointerStream;
+  R: TReader;
+  I: Integer;
+begin
+  S := TPointerStream.Create(Data, Size);
+  try
+    R := TReader.Create(S, 4096);
+    try
+      R.SourceName := LevelClass.ClassName + '.form';
+      R.FApplyRootName := ApplyRootName and IsLast;
+      R.FDeferRootLoaded := DeferRootLoaded;
+      R.FDeferLoaded := not IsLast;
+      R.FLevel := Level;
+      R.FLevelClass := LevelClass;
+      R.FAncestorClass := AncestorClass;
+      for I := 0 to Deferred.Count - 1 do
+        R.FLoaded.Add(Deferred[I]);
+      R.ReadRootComponent(Instance);
+      if not IsLast then
+      begin
+        Deferred.Clear;
+        for I := 0 to R.FLoaded.Count - 1 do
+          Deferred.Add(R.FLoaded[I]);
+      end;
+    finally
+      R.Free;
+    end;
+  finally
+    S.Free;
+  end;
+end;
+
+{ RTL-483, RTL-1129: the levels, from the base-most class below RootAncestor with a form to the most derived one }
 function ReadInheritedResources(Instance: TComponent; RootAncestor: TClass;
   ApplyRootName, DeferRootLoaded: Boolean): Boolean;
 var
-  Chain: array of TClass;
-  N, I: Integer;
-  C: TClass;
+  Chain, Levels: array of TClass;
+  N, Count, I: Integer;
+  C, Ancestor: TClass;
   Data: Pointer;
   Size: NativeInt;
+  Deferred: TList;
 begin
-  Result := False;
   N := 0;
   C := Instance.ClassType;
   while (C <> nil) and (C <> RootAncestor) do
@@ -5366,12 +5446,34 @@ begin
     N := N + 1;
     C := C.ClassParent;
   end;
+  Count := 0;
   for I := N - 1 downto 0 do
     if FindResourceData(Chain[I].ClassName, Data, Size) then
     begin
-      ReadFormData(Data, Size, Instance, Chain[I].ClassName + '.form', ApplyRootName, DeferRootLoaded);
-      Result := True;
+      SetLength(Levels, Count + 1);
+      Levels[Count] := Chain[I];
+      Count := Count + 1;
     end;
+  Result := Count > 0;
+  if not Result then
+    Exit;
+  { RTL-1128, 1131: the ancestor with a form of the first level, also one that RootAncestor excludes }
+  Ancestor := Levels[0].ClassParent;
+  while (Ancestor <> nil) and not FindResourceData(Ancestor.ClassName, Data, Size) do
+    Ancestor := Ancestor.ClassParent;
+  Deferred := TList.Create;
+  try
+    for I := 0 to Count - 1 do
+    begin
+      if I > 0 then
+        Ancestor := Levels[I - 1];
+      FindResourceData(Levels[I].ClassName, Data, Size);
+      ReadFormLevel(Data, Size, Instance, Levels[I], Ancestor, I + 1, I = Count - 1, ApplyRootName,
+        DeferRootLoaded, Deferred);
+    end;
+  finally
+    Deferred.Free;
+  end;
 end;
 
 { RTL-483; RTL-1096: a class whose resources are already being read on this thread is F0111 at the "inline" object

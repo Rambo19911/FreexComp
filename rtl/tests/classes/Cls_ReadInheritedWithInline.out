@@ -1,0 +1,34 @@
+# a frame derived from a frame (RTL-1134)
+TestFrameEx: TTestFrameEx owner=nil parent=nil caption='' size=6 buddy=nil loaded=1
+  Title: TPart owner=TestFrameEx parent=TestFrameEx caption='title ex' size=1 buddy=nil loaded=1
+  Box: TPart owner=TestFrameEx parent=TestFrameEx caption='box' size=0 buddy=nil loaded=1
+  Inner: TPart owner=TestFrameEx parent=Box caption='inner' size=0 buddy=TestFrameEx.Title loaded=1
+  Extra: TPart owner=TestFrameEx parent=TestFrameEx caption='extra' size=0 buddy=nil loaded=1
+ok with an owner no level applies its header name
+ok both levels read
+ok the root's Loaded once
+ok freed
+# an inherited form with a frame instance (RTL-1126, 1129)
+ok found
+Holder2: TInl2 owner=nil parent=nil caption='holder 1' size=0 buddy=nil loaded=1
+  F: TTestFrame owner=Holder2 parent=Holder2 caption='' size=8 buddy=nil loaded=1 inline
+    Title: TPart owner=F parent=F caption='title' size=1 buddy=nil loaded=1
+    Box: TPart owner=F parent=F caption='box' size=0 buddy=nil loaded=2
+    Inner: TPart owner=F parent=Box caption='inner 2' size=2 buddy=F.Title loaded=2
+  G: TTestFrameEx owner=Holder2 parent=Holder2 caption='' size=6 buddy=nil loaded=1 inline
+    Title: TPart owner=G parent=G caption='title ex' size=1 buddy=nil loaded=1
+    Box: TPart owner=G parent=G caption='box' size=0 buddy=nil loaded=1
+    Inner: TPart owner=G parent=Box caption='inner' size=0 buddy=G.Title loaded=1
+    Extra: TPart owner=G parent=G caption='extra on G' size=0 buddy=nil loaded=2
+ok the frame child keeps the parent the frame gave
+ok the inherited instance is still owned by the root
+ok nothing created by the block of the instance
+ok freed
+# nothing can be added inside an inherited instance (RTL-1126)
+ok F0110
+ok only the level-1 instance is left
+ok the level-1 instance has no loading flags
+ok nor the root
+ok no Loaded from the chain
+ok nothing leaked
+# passed 15 failed 0

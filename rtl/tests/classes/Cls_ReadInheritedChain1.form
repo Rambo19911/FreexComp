@@ -1,0 +1,20 @@
+object Cls1Form: TCls1
+  Caption = 'root 1'
+  Size = 1
+  object Panel: TPart
+    Caption = 'panel 1'
+    Size = 10
+    object A: TPart
+      Caption = 'a 1'
+      Size = 11
+      OnPing = PingHandler
+    end
+    object B: TPart
+      Caption = 'b 1'
+    end
+  end
+  object Side: TPart
+    Caption = 'side 1'
+    Buddy = Cls1Form
+  end
+end

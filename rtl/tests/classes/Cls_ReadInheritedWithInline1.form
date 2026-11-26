@@ -1,0 +1,9 @@
+object Holder1: TInl1
+  Caption = 'holder 1'
+  inline F: TTestFrame
+    Size = 7
+    inherited Inner: TPart
+      Caption = 'inner 1'
+    end
+  end
+end
