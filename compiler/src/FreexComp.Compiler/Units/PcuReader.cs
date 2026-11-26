@@ -571,6 +571,7 @@ internal static class PcuReader
             return read;
         }
 
+        /// <summary>A type of <paramref name="kind"/>, created in <paramref name="container"/>: the unit, or (C-363: every kind) the class, record or helper it is nested in.</summary>
         private TypeSymbol TypeByIdIn(int id, JsonObject entry, string name, string kind, Symbol container)
         {
             switch (kind)
@@ -604,15 +605,15 @@ internal static class PcuReader
                     var high = BigInteger.Parse(entry["hi"]!.ToJsonString(), NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture);
                     return _byId[id] = host switch
                     {
-                        IntegerTypeSymbol integer => new IntegerTypeSymbol(name, integer, low, high, _unit, []),
-                        CharTypeSymbol c => new CharTypeSymbol(name, c, (int)low, (int)high, _unit, []),
-                        EnumTypeSymbol e => new EnumTypeSymbol(name, e, low, high, _unit, []),
+                        IntegerTypeSymbol integer => new IntegerTypeSymbol(name, integer, low, high, container, []),
+                        CharTypeSymbol c => new CharTypeSymbol(name, c, (int)low, (int)high, container, []),
+                        EnumTypeSymbol e => new EnumTypeSymbol(name, e, low, high, container, []),
                         _ => throw new PcuFormatException($"subrange '{name}' of '{host.Name}'"),
                     };
                 }
 
                 case "boolean":
-                    return _byId[id] = new BooleanTypeSymbol(name, entry["size"]!.GetValue<int>(), entry["cStyle"]!.GetValue<bool>(), _unit, []);
+                    return _byId[id] = new BooleanTypeSymbol(name, entry["size"]!.GetValue<int>(), entry["cStyle"]!.GetValue<bool>(), container, []);
                 case "real":
                 {
                     var realKind = Text(entry, "realKind") switch
@@ -623,7 +624,7 @@ internal static class PcuReader
                         var other => throw new PcuFormatException($"unknown real kind '{other}'"),
                     };
                     var alignment = (realKind switch { RealKind.Single => types.Single, RealKind.Double => types.Double, _ => types.Currency }).Alignment;
-                    return _byId[id] = new RealTypeSymbol(name, realKind, alignment, _unit, []);
+                    return _byId[id] = new RealTypeSymbol(name, realKind, alignment, container, []);
                 }
                 case "string":
                 {
@@ -637,19 +638,19 @@ internal static class PcuReader
 
                     // C-262: a distinct long string type belongs to its unit (RTTI name); short strings stay anonymous as in source
                     return _byId[id] = new StringTypeSymbol(types.Target, name, variant, entry["codePage"]!.GetValue<int>(), entry["maxLen"]!.GetValue<int>(),
-                        variant == StringVariant.Short ? null : _unit, []);
+                        variant == StringVariant.Short ? null : container, []);
                 }
 
                 case "set":
-                    return _byId[id] = new SetTypeSymbol(name, Type(entry, "base"), _unit, []);
+                    return _byId[id] = new SetTypeSymbol(name, Type(entry, "base"), container, []);
                 case "array":
                 {
                     var index = Array(entry, "index").Single() is JsonValue i ? TypeById(i.GetValue<int>()) : throw new PcuFormatException("array index");
-                    return _byId[id] = new ArrayTypeSymbol(name, index, Type(entry, "element"), _unit, []);
+                    return _byId[id] = new ArrayTypeSymbol(name, index, Type(entry, "element"), container, []);
                 }
 
                 case "dynArray":
-                    return _byId[id] = new DynamicArrayTypeSymbol(types.Target, name, Type(entry, "element"), _unit, []);
+                    return _byId[id] = new DynamicArrayTypeSymbol(types.Target, name, Type(entry, "element"), container, []);
                 case "pointer":
                 {
                     var pointer = new PointerTypeSymbol(types.Target, name, pointedType: null, entry["pointerMath"]!.GetValue<bool>());
@@ -689,7 +690,7 @@ internal static class PcuReader
 
                 case "procedural" when entry["ofObject"] is JsonValue ofObject && ofObject.GetValue<bool>():
                 {
-                    var methodPointer = new MethodPointerTypeSymbol(types.Target, name, _unit, []);                    // C-103
+                    var methodPointer = new MethodPointerTypeSymbol(types.Target, name, container, []);                    // C-103
                     _byId[id] = methodPointer;
                     methodPointer.Signature.Parameters = Parameters(entry, methodPointer.Signature);
                     methodPointer.Signature.ReturnType = entry["result"] is null ? null : Type(entry, "result");
@@ -699,7 +700,7 @@ internal static class PcuReader
 
                 case "procedural":
                 {
-                    var procedural = new ProceduralTypeSymbol(types.Target, name, _unit, []);
+                    var procedural = new ProceduralTypeSymbol(types.Target, name, container, []);
                     _byId[id] = procedural;
                     procedural.Signature.Parameters = Parameters(entry, procedural.Signature);
                     procedural.Signature.ReturnType = entry["result"] is null ? null : Type(entry, "result");
@@ -723,7 +724,7 @@ internal static class PcuReader
                 case "classRef":
                 {
                     var target = Type(entry, "target") as ClassTypeSymbol ?? throw new PcuFormatException($"'{name}' does not refer to a class");
-                    return _byId[id] = name == target.Reference.Name ? target.Reference : new ClassRefTypeSymbol(types.Target, name, target, _unit, []);
+                    return _byId[id] = name == target.Reference.Name ? target.Reference : new ClassRefTypeSymbol(types.Target, name, target, container, []);
                 }
 
                 default:

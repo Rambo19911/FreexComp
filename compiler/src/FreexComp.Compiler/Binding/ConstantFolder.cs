@@ -97,9 +97,9 @@ internal sealed class ConstantFolder
                 && (outer is ErrorTypeSymbol || IncompleteInstance(memberAccess.Expression, outer)):
                 return null;                                                    // C-353: reported at the generic segment; C-360: E2610 at an inaccessible one
             case MemberAccessExpressionSyntax memberAccess when NestedNames.NestedMember(_scope, memberAccess, Generic) is { } nested:
-                if (NestedNames.ReportInaccessibleConstant(_scope, memberAccess.Name, nested, _diagnostics))
+                if (NestedNames.ReportInaccessibleNestedValue(_scope, memberAccess.Name, nested, _diagnostics))
                 {
-                    return null;                                                // LANG-774 (C-361): the constant's section
+                    return null;                                                // LANG-774 (C-361): the constant's section; C-363: the enumeration's
                 }
 
                 return nested switch                                            // LANG-770 (C-122): TOuter.Limit
@@ -163,9 +163,9 @@ internal sealed class ConstantFolder
             case null:
                 return null;
             case ConstantSymbol { IsTyped: false } constant:
-                return NestedNames.ReportInaccessibleConstant(_scope, name, constant, _diagnostics) ? null : constant.Value;   // LANG-774 (C-361): inherited
+                return NestedNames.ReportInaccessibleNestedValue(_scope, name, constant, _diagnostics) ? null : constant.Value;   // LANG-774 (C-361): inherited
             case EnumMemberSymbol member:
-                return member.Value;
+                return NestedNames.ReportInaccessibleNestedValue(_scope, name, member, _diagnostics) ? null : member.Value;     // LANG-774 (C-363): inherited
             case TypeSymbol type:
                 _diagnostics.Report(name, "E2009", type.Name);
                 return null;
@@ -213,7 +213,15 @@ internal sealed class ConstantFolder
     {
         // the enumeration type may itself be unit-qualified: U.TEnum.Element
         // ... or nested in a class or record, or a nested alias: TOuter.TEnum.Element (LANG-770, C-311)
-        var type = access.Name is IdentifierNameSyntax ? NestedNames.TypeNamedBy(_scope, access.Expression, Generic) as EnumTypeSymbol : null;
+        // LANG-774 (C-363): every segment of the path obeys its visibility (E2610 at the first inaccessible one), also in statements
+        var named = access.Name is IdentifierNameSyntax ? NestedNames.AccessibleTypeNamedBy(_scope, access.Expression, Generic, _diagnostics, _types) : null;
+        if (named is ErrorTypeSymbol)
+        {
+            isEnumAccess = true;                                                // reported
+            return null;
+        }
+
+        var type = named as EnumTypeSymbol;
         isEnumAccess = type is not null;
         if (type is null)
         {

@@ -524,4 +524,37 @@ public sealed class CompletionTests
         var rename = GenericNamesFixture.Offset(text, "Item.Rename") + "Item.".Length + 1;
         Assert.Equal("procedure TThing.Rename(const S: string)", QuickInfoService.GetQuickInfo(doc, rename, TestContext.Current.CancellationToken)?.Signature);
     }
+    /// <summary>
+    /// C-364: in a generic nothing instantiates, a member of a value of a constrained type parameter is bound through the constraint,
+    /// so a member of that member offers its own type's members (<c>Item.Owner.</c>, <c>Item.Parent.</c>, <c>Shape.Bounds.</c>,
+    /// <c>Larger(Item, Item).Owner.</c>) and hover shows it.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1394")]
+    public void UninstantiatedGeneric_ChainedConstraintMembers()
+    {
+        var text = GenericNamesFixture.Chained;
+        var doc = GenericNamesFixture.OpenUninstantiated(text);
+        string[] After(string piece)
+        {
+            var caret = GenericNamesFixture.Offset(text, piece) + piece.Length;
+            return [.. CompletionService.GetCompletions(doc, caret, new CompletionTrigger(CompletionTriggerKind.Character, '.'), TestContext.Current.CancellationToken)
+                .Items.Select(i => i.Label)];
+        }
+
+        string[] owner = After("  Item.Owner.");
+        string[] parent = After("Rename(Item.Parent.");
+        string[] bounds = After("  Shape.Bounds.");
+        string[] larger = After("Larger(Item, Item).Owner.");
+        Assert.Contains("Rename", owner);
+        Assert.Contains("Title", owner);
+        Assert.DoesNotContain("Owner", owner);
+        Assert.Contains("Title", parent);
+        Assert.Contains("Rename", bounds);
+        Assert.Contains("Title", larger);
+
+        var rename = GenericNamesFixture.Offset(text, "Item.Owner.Rename") + "Item.Owner.".Length + 1;
+        Assert.Equal("procedure TOwner.Rename(const S: string)", QuickInfoService.GetQuickInfo(doc, rename, TestContext.Current.CancellationToken)?.Signature);
+    }
 }

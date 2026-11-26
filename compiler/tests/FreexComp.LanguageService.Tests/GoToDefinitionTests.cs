@@ -308,4 +308,29 @@ public sealed class GoToDefinitionTests
         Assert.Equal(In("Name: string"), Go("Item.Name)", "Name"));
         Assert.Equal(In("Area: Integer"), Go("Shape.Area", "Area"));
     }
+    /// <summary>
+    /// C-364: in a generic nothing instantiates, a generic method called with inferred type arguments (the generic's own type
+    /// parameter) navigates like an explicit one — <c>TUtil.Max(A, B)</c> and the generic's own <c>Pick(A, B)</c> — and members of
+    /// members of constrained type parameters navigate.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1394")]
+    public void UninstantiatedGeneric_InferredGenericMethodCall()
+    {
+        var text = GenericNamesFixture.Chained;
+        var doc = GenericNamesFixture.OpenUninstantiated(text);
+        (string, int) In(string piece, int occurrence = 1) => (TestFiles.PathOf("UO.pas"), GenericNamesFixture.Offset(text, piece, occurrence));
+        (string, int) Go(string piece, string segment) =>
+            Single(NavigationService.GoToDefinition(doc, GenericNamesFixture.Offset(text, piece) + piece.IndexOf(segment, StringComparison.Ordinal) + 1,
+                                                    TestContext.Current.CancellationToken));
+
+        Assert.Equal(In("Max<T>(const A, B: T): T;", 2), Go("TUtil.Max(A, B)", "Max"));
+        Assert.Equal(In("TUtil = class"), Go("TUtil.Max(A, B)", "TUtil"));
+        Assert.Equal(In("Pick<U>(const A, B: U): U;", 2), Go("Pick(A, B)", "Pick"));
+        Assert.Equal(In("Rename(const S: string);", 2), Go("Item.Owner.Rename", "Rename"));
+        Assert.Equal(In("Title: string"), Go("Item.Parent.Title", "Title"));
+        Assert.Equal(In("Owner: TOwner"), Go("Larger(Item, Item).Owner", "Owner"));
+        Assert.Equal(In("Bounds: TOwner"), Go("Shape.Bounds", "Bounds"));
+    }
 }

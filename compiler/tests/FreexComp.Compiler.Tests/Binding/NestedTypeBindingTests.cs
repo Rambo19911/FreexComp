@@ -801,6 +801,171 @@ public sealed class NestedTypeBindingTests
             end.
             """).Where(d => !d.StartsWith('H') && !d.StartsWith('W')));
 
+    /// <summary>
+    /// LANG-770, 774 (C-363): a helper's nested constant is named through the helper (<c>THelper.Limit</c>, as <c>THelper.TNested</c>),
+    /// in constants, type bounds and statements, with its section's visibility; code of the helper may name its strict private ones.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "LANG-774")]
+    [Trait("Req", "LANG-770")]
+    [Trait("Req", "LANG-750")]
+    public void HelperNestedConstant_ByHelperName()
+    {
+        var (result, _) = Bind("""
+            program P;
+            type
+              TIntHelper = record helper for Integer
+              strict private
+                const Limit = 3;
+              public
+                const Open = 4;
+                function Twice: Integer;
+              end;
+              TOwn = class end;
+              TObjHelper = class helper for TOwn
+              public
+                const Size = 8;
+              end;
+            const
+              C1 = TIntHelper.Open + 1;
+              C2 = TIntHelper.Limit;
+              C3 = TObjHelper.Size * 2;
+            var
+              A: array[0..TIntHelper.Open] of Byte;
+              N: Integer;
+            function TIntHelper.Twice: Integer;
+            const
+              K = TIntHelper.Limit + 1;
+            begin
+              Result := TIntHelper.Limit * 100 + K + TIntHelper.Open + Self;
+            end;
+            begin
+              N := TIntHelper.Open + TObjHelper.Size + C1 + C3 + SizeOf(A);
+              N := TIntHelper.Limit;
+            end.
+            """);
+
+        Assert.Equal(
+        [
+            "E2610(17,19): Cannot access strict private member 'Limit' of 'TIntHelper'",
+            "E2610(30,19): Cannot access strict private member 'Limit' of 'TIntHelper'",
+        ], Format(result.Diagnostics).Where(d => !d.StartsWith('H') && !d.StartsWith('W')));
+        Assert.Equal("5", Convert.ToString(Lookup<ConstantSymbol>(result, "C1").Value!.Value, System.Globalization.CultureInfo.InvariantCulture));
+        Assert.Equal("16", Convert.ToString(Lookup<ConstantSymbol>(result, "C3").Value!.Value, System.Globalization.CultureInfo.InvariantCulture));
+        var twice = BoundDump.Of(result.Routines.Single(r => r.Routine.Name == "Twice").Body);
+        Assert.Contains("308:Integer", twice);                                           // TIntHelper.Limit in the helper's own code
+    }
+
+    /// <summary>
+    /// LANG-774 (C-363): the elements of a non-public nested enumeration obey the enumeration's visibility — <c>TOuter.eA</c> (and
+    /// <c>eA</c> by simple name in a descendant) is E2610 naming the type that declares the enumeration, in constants and statements;
+    /// a scoped one's path <c>TBox.TSc.sX</c> is E2610 at its type segment; code of the declaring type may name them.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "LANG-774")]
+    [Trait("Req", "LANG-770")]
+    public void NestedEnumElement_Visibility_E2610() =>
+        Assert.Equal(
+        [
+            "E2610(25,19): Cannot access strict private member 'eA' of 'TOuter'",
+            "E2610(26,21): Cannot access strict protected member 'pB' of 'TOuter'",
+            "E2610(27,17): Cannot access strict private member 'TSc' of 'TBox'",
+            "E2610(36,41): Cannot access strict private member 'eA' of 'TOuter'",
+            "E2610(36,60): Cannot access strict private member 'eB' of 'TOuter'",
+            "E2610(43,19): Cannot access strict private member 'eB' of 'TOuter'",
+            "E2610(44,17): Cannot access strict private member 'TSc' of 'TBox'",
+            "E2610(45,19): Cannot access strict private member 'TEn' of 'TOuter'",
+        ], BindDiagnostics("""
+            program P;
+            type
+              TOuter = class
+              strict private
+                type TEn = (eA, eB);
+              strict protected
+                type TPr = (pA, pB);
+              public
+                type TOpen = (oA, oB);
+                procedure Use;
+              end;
+              TDerived = class(TOuter)
+              public
+                procedure Go;
+              end;
+            {$SCOPEDENUMS ON}
+              TBox = class
+              strict private
+                type TSc = (sX, sY);
+              public
+                procedure Use;
+              end;
+            {$SCOPEDENUMS OFF}
+            const
+              C1 = Ord(TOuter.eA);
+              C2 = Ord(TDerived.pB) + Ord(TOuter.oA);
+              C3 = Ord(TBox.TSc.sY);
+            var
+              N: Integer;
+            procedure TOuter.Use;
+            begin
+              N := Ord(eA) + Ord(TOuter.eB) + Ord(TOuter.TEn.eA) + Ord(pA);
+            end;
+            procedure TDerived.Go;
+            begin
+              N := Ord(pA) + Ord(TDerived.pB) + Ord(eA) + Ord(TDerived.eB);
+            end;
+            procedure TBox.Use;
+            begin
+              N := Ord(TSc.sX) + Ord(TBox.TSc.sY);
+            end;
+            begin
+              N := Ord(TOuter.eB) + C1 + C2 + C3;
+              N := Ord(TBox.TSc.sX) + Ord(TOuter.oB);
+              N := Ord(TOuter.TEn.eA);
+            end.
+            """).Where(d => !d.StartsWith('H') && !d.StartsWith('W')));
+
+    /// <summary>
+    /// LANG-774 (C-363): a method implementation's heading counts as code of the method's own type (and its enclosing types) only,
+    /// not of its ancestors — an ancestor's strict private nested type named there (parameter and result types) is E2610 as in the
+    /// class declaration; a strict protected one stays usable.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "LANG-774")]
+    [Trait("Req", "LANG-776")]
+    public void ImplementationHeading_AncestorStrictMember_E2610() =>
+        Assert.Equal(
+        [
+            "E2610(12,25): Cannot access strict private member 'TSecret' of 'TBase'",
+            "E2610(12,63): Cannot access strict private member 'TSecret' of 'TBase'",
+            "E2610(15,30): Cannot access strict private member 'TSecret' of 'TBase'",
+            "E2610(15,68): Cannot access strict private member 'TSecret' of 'TBase'",
+        ], BindDiagnostics("""
+            program P;
+            type
+              TBase = class
+              strict private
+                type TSecret = (sA, sB);
+                const Limit = 3;
+              strict protected
+                type TShared = Integer;
+              end;
+              TDerived = class(TBase)
+              public
+                function M(X: TBase.TSecret; Y: TBase.TShared = 0): TBase.TSecret;
+                function N(Y: TShared = 0): Integer;
+              end;
+            function TDerived.M(X: TBase.TSecret; Y: TBase.TShared = 0): TBase.TSecret;
+            begin
+              Result := X;
+            end;
+            function TDerived.N(Y: TBase.TShared = 0): Integer;
+            begin
+              Result := Y;
+            end;
+            begin
+            end.
+            """).Where(d => !d.StartsWith('H') && !d.StartsWith('W')));
+
     /// <summary>LANG-780 amendment (C-354): through a generic instance the inherited name is the ancestor instance's nested type.</summary>
     [Fact]
     [Trait("Req", "LANG-780")]

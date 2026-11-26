@@ -676,6 +676,10 @@ internal sealed class PcuWriter(PcuContext context)
             {
                 entry["outer"] = TypeId(outer);                                    // CMP-1392 (C-344): created inside its enclosing type
             }
+            else if (type.ContainingSymbol is HelperTypeSymbol helper && TypeMembers.NestedMembers(helper).Contains(type))
+            {
+                entry["outer"] = TypeId(helper);                                   // C-363: a helper's nested type keeps its section's visibility
+            }
 
             var constants = TypeMembers.NestedMembers(type).OfType<ConstantSymbol>().Where(c => c is { IsTyped: false, Value: not null }).ToList();
             if (!type.IsGenericInstance && (TypeMembers.NestedMembers(type).OfType<TypeSymbol>().Any() || !TypeMembers.NestedAliases(type).IsEmpty || constants.Count > 0))

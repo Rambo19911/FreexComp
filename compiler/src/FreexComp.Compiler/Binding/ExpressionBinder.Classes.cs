@@ -627,6 +627,12 @@ internal sealed partial class ExpressionBinder
             return HelperMember(syntax, call, argumentList, typeHelper, instance: null, name, out methodCall);   // C-124: Integer.Parse
         }
 
+        if (qualifierType is HelperTypeSymbol helperName && TypeMembers.MemberNestedMember(helperName, name) is { } helperNested
+            && NestedValue(syntax, helperNested) is { } helperValue)
+        {
+            return helperValue;                                                     // C-363: THelper.Limit (LANG-770, 774)
+        }
+
         if (qualifierType is RecordTypeSymbol recordName)
         {
             return StaticRecordMember(syntax, call, argumentList, recordName, name, out methodCall);     // C-122 (LANG-730)
@@ -677,6 +683,12 @@ internal sealed partial class ExpressionBinder
         if (receiver.HasErrors)
         {
             return Error(syntax, receiver);
+        }
+
+        if (receiver.Type is TypeParameterTypeSymbol parameter && ConstraintReceiver(parameter, name) is { } constraint)
+        {
+            // C-364: in an open instance (the language service only) a value of a type parameter has its constraints' members (LANG-702)
+            receiver = new BoundConversionExpression(syntax.Expression, receiver, constraint, ConversionKind.ImplicitReference, isExplicit: false, constantValue: null);
         }
 
         if (HelperFor(receiver.Type, name) is { } helper)
@@ -784,6 +796,21 @@ internal sealed partial class ExpressionBinder
         }
 
         return RecordMember(syntax, receiver);
+    }
+
+    /// <summary>
+    /// C-364: the constraint (class, interface, else <c>TObject</c> for <c>class</c> / <c>constructor</c>) through which a member
+    /// <paramref name="name"/> of a value of <paramref name="parameter"/> is bound — the first that has it, else the first; null without one.
+    /// </summary>
+    private TypeSymbol? ConstraintReceiver(TypeParameterTypeSymbol parameter, string name)
+    {
+        var types = parameter.MemberTypes(_types).ToList();
+        return types.FirstOrDefault(t => t switch
+        {
+            ClassTypeSymbol c => !MemberCandidates(c, name).IsEmpty || c.GetMembers(name).Any(),
+            InterfaceTypeSymbol i => !InterfaceCandidates(i, name).IsEmpty || i.SelfAndAncestors().SelectMany(a => a.Properties).Any(p => IdentifierComparer.Instance.Equals(p.Name, name)),
+            _ => false,
+        }) ?? types.FirstOrDefault();
     }
 
     private TypeSymbol? TypeNamedBy(ExpressionSyntax expression)
@@ -999,11 +1026,12 @@ internal sealed partial class ExpressionBinder
 
     /// <summary>
     /// A nested constant or enumeration element used as a value (LANG-770); null for other members. A constant of a section this code
-    /// may not access is E2610 at the member name (LANG-774, C-361).
+    /// may not access is E2610 at the member name (LANG-774, C-361), so is an element of such an enumeration (C-363).
     /// </summary>
     private BoundExpression? NestedValue(SyntaxNode syntax, Symbol member) => member switch
     {
-        ConstantSymbol constant when NestedNames.ReportInaccessibleConstant(_scope, syntax is MemberAccessExpressionSyntax access ? access.Name : syntax, constant, _diagnostics)
+        ConstantSymbol or EnumMemberSymbol
+            when NestedNames.ReportInaccessibleNestedValue(_scope, syntax is MemberAccessExpressionSyntax access ? access.Name : syntax, member, _diagnostics)
             => Error(syntax),
         ConstantSymbol { IsTyped: false, Value: { } value } constant => new BoundConstantExpression(syntax, constant, value),
         EnumMemberSymbol element => new BoundLiteral(syntax, element.Value),

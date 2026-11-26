@@ -97,11 +97,18 @@ internal static class NestedNames
 
     /// <summary>
     /// LANG-774 (C-361): E2610 at <paramref name="at"/> when <paramref name="member"/> is a constant nested in a class, record or helper
-    /// whose section code at <paramref name="scope"/> may not access (naming the type that declares it); true when reported.
+    /// whose section code at <paramref name="scope"/> may not access (naming the type that declares it); C-363: or an element of an
+    /// enumeration nested there, which has the enumeration's visibility. True when reported.
     /// </summary>
-    public static bool ReportInaccessibleConstant(Scope scope, SyntaxNode at, Symbol member, DiagnosticBag diagnostics)
+    public static bool ReportInaccessibleNestedValue(Scope scope, SyntaxNode at, Symbol member, DiagnosticBag diagnostics)
     {
-        if (member is not ConstantSymbol { ContainingSymbol: TypeSymbol owner } || Inaccessible(scope, member.Visibility, owner) is not { } word)
+        var (owner, visibility) = member switch
+        {
+            ConstantSymbol { ContainingSymbol: TypeSymbol declaring } => (declaring, member.Visibility),
+            EnumMemberSymbol { Type: EnumTypeSymbol { ContainingSymbol: TypeSymbol declaring } enumeration } => (declaring, enumeration.NestedVisibility),
+            _ => ((TypeSymbol?)null, Visibility.Public),
+        };
+        if (owner is null || Inaccessible(scope, visibility, owner) is not { } word)
         {
             return false;
         }
@@ -109,6 +116,10 @@ internal static class NestedNames
         diagnostics.Report(at, "E2610", word, member.Name, TypeMembers.DisplayName(owner));
         return true;
     }
+
+    /// <summary><paramref name="ancestor"/> is a proper ancestor of <paramref name="type"/> (a class's or a helper's).</summary>
+    private static bool IsAncestor(TypeSymbol ancestor, TypeSymbol type) =>
+        !ReferenceEquals(ancestor, type) && TypeMembers.SelfAndAncestors(type).Contains(ancestor);
 
     /// <summary>LANG-774: the visibility word of a member of <paramref name="outer"/> declared in a <paramref name="visibility"/> section when code at <paramref name="scope"/> may not access it, else null.</summary>
     private static string? Inaccessible(Scope scope, Visibility visibility, TypeSymbol outer)
@@ -128,7 +139,8 @@ internal static class NestedNames
                 case UnitSymbol u when s.Kind == ScopeKind.Unit:
                     unit ??= u;
                     break;
-                case TypeSymbol type when s.Kind == ScopeKind.TypeMember && !inMethod:
+                case TypeSymbol type when s.Kind == ScopeKind.TypeMember && !inMethod && !selves.Any(t => IsAncestor(type, t)):
+                    // C-363: a method implementation's heading sees its type's ancestors' nested names; the code is not theirs
                     selves.Add(type);
                     break;
                 case MethodSymbol method when !inMethod:
@@ -157,12 +169,15 @@ internal static class NestedNames
         };
     }
 
-    /// <summary>The nested member <c>T.Name</c> of a class or record named by the qualifier; null when the qualifier names none.</summary>
+    /// <summary>
+    /// The nested member <c>T.Name</c> of a class, record or helper named by the qualifier (C-363: a helper's are named through it,
+    /// <c>THelper.Limit</c>); null when the qualifier names none.
+    /// </summary>
     public static Symbol? NestedMember(Scope scope, MemberAccessExpressionSyntax access, GenericSegment? generic = null)
     {
         var member = access.Name.Identifier;
         var outer = TypeNamedBy(scope, access.Expression, generic);
-        if (member.IsMissing || outer is not (ClassTypeSymbol or RecordTypeSymbol))
+        if (member.IsMissing || outer is not (ClassTypeSymbol or RecordTypeSymbol or HelperTypeSymbol))
         {
             return null;
         }

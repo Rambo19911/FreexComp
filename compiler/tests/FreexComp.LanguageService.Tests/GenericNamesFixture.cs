@@ -161,6 +161,70 @@ internal static class GenericNamesFixture
         end.
         """.ReplaceLineEndings("\n");
 
+    /// <summary>
+    /// C-364: a generic nothing instantiates whose method bodies use members of members of constrained type parameters
+    /// (<c>Item.Owner.Rename</c>, <c>Shape.Bounds.Title</c>) and call generic methods with inferred type arguments, qualified
+    /// (<c>TUtil.Max(A, B)</c>) and its own unqualified (<c>Pick(A, B)</c>).
+    /// </summary>
+    public static readonly string Chained = """
+        unit UO;
+        interface
+        type
+          TOwner = class
+          public
+            Title: string;
+            procedure Rename(const S: string);
+          end;
+          TThing = class
+          public
+            Owner: TOwner;
+            function Parent: TOwner;
+          end;
+          IShape = interface
+            function Bounds: TOwner;
+          end;
+          TUtil = class
+          public
+            class function Max<T>(const A, B: T): T;
+          end;
+          THolder<T: TThing; S: IShape> = class
+          public
+            Item: T;
+            Shape: S;
+            function Larger(const A, B: T): T;
+            function Pick<U>(const A, B: U): U;
+            procedure Use;
+          end;
+        implementation
+        procedure TOwner.Rename(const S: string);
+        begin
+          Title := S;
+        end;
+        function TThing.Parent: TOwner;
+        begin
+          Result := Owner;
+        end;
+        class function TUtil.Max<T>(const A, B: T): T;
+        begin
+          Result := A;
+        end;
+        function THolder<T, S>.Larger(const A, B: T): T;
+        begin
+          Result := TUtil.Max(A, B);
+          Result := Pick(A, B);
+        end;
+        function THolder<T, S>.Pick<U>(const A, B: U): U;
+        begin
+          Result := B;
+        end;
+        procedure THolder<T, S>.Use;
+        begin
+          Item.Owner.Rename(Item.Parent.Title);
+          Shape.Bounds.Title := Larger(Item, Item).Owner.Title;
+        end;
+        end.
+        """.ReplaceLineEndings("\n");
+
     /// <summary>C-355: the document of <c>UO.pas</c> in a project whose program uses <c>UO</c> without instantiating its generic.</summary>
     public static Document OpenUninstantiated(string? unitText = null) =>
         MarkupTestFile.Open("UO.pas", ("P.pas", "program P;\nuses UO;\nbegin\nend.\n"), ("UO.pas", unitText ?? Uninstantiated));
