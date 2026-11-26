@@ -1,0 +1,19 @@
+TA cctor
+TA.TN cctor
+TR cctor
+TUnused cctor
+UCOrdA init
+TB cctor 42
+UCOrdB init
+TP cctor
+TD cctor 42
+main 42
+TA.Create
+main end
+TP cdtor
+UCOrdB final
+TB cdtor
+UCOrdA final
+TUnused cdtor
+TA.TN cdtor
+TA cdtor

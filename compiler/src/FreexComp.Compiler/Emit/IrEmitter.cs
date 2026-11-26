@@ -165,6 +165,7 @@ internal static class IrEmitter
             var routine = body.Routine!;
             var linkage = routine is MethodSymbol { Owner: var owner } genericCandidate
                 && (TypeMembers.EnclosingInstance(owner) is not null || genericCandidate.GenericMethodDefinition is not null) ? IrLinkage.LinkOnceOdr
+                : routine is MethodSymbol { IsClassConstructorOrDestructor: true } ? IrLinkage.Internal          // CMP-1395: only the module's $init / $final / $main call them
                 : routine.ExplicitLinkName is not null || (!routine.IsNested && interfaceMembers.Contains(routine))
                 || routine is MethodSymbol method && interfaceMembers.Contains(TypeMembers.Outermost(method.Owner))
                 ? IrLinkage.External
@@ -179,9 +180,9 @@ internal static class IrEmitter
             EmitMain(module, unit);
             if (unit.Finalization is { } final)
             {
-                // C-183: the program's managed globals, released through its own (last) unit table entry
+                // C-183: the program's managed globals, released through its own (last) unit table entry; first its class destructors (CMP-1397)
                 module.DefinedRoutines.Add(Mangler.UnitFinal(unit.Unit).Text);
-                new FunctionEmitter(module, final, IrLinkage.Internal, Mangler.UnitFinal(unit.Unit)).Emit();
+                new FunctionEmitter(module, WithClassDestructors(unit, final), IrLinkage.Internal, Mangler.UnitFinal(unit.Unit)).Emit();
                 module.DeclarePending();
             }
 
@@ -202,7 +203,7 @@ internal static class IrEmitter
         else
         {
             // CMP-350: every unit defines both, possibly empty; $init registers the threadvar descriptor first (ABI-180)
-            var initialization = unit.Initialization ?? EmptyBody();
+            var initialization = WithClassConstructors(unit, unit.Initialization ?? EmptyBody());          // CMP-1397 (C-374)
             if (unit.FormRegistration is { } forms)
             {
                 initialization = initialization with { Body = new LBlock([forms, initialization.Body]) };          // CMP-350: after _TlsRegister
@@ -215,7 +216,7 @@ internal static class IrEmitter
 
             new FunctionEmitter(module, initialization, IrLinkage.External, Mangler.UnitInit(unit.Unit)).Emit();
             module.DeclarePending();
-            new FunctionEmitter(module, unit.Finalization ?? EmptyBody(), IrLinkage.External, Mangler.UnitFinal(unit.Unit)).Emit();
+            new FunctionEmitter(module, WithClassDestructors(unit, unit.Finalization ?? EmptyBody()), IrLinkage.External, Mangler.UnitFinal(unit.Unit)).Emit();
             module.DeclarePending();
         }
 
@@ -314,6 +315,13 @@ internal static class IrEmitter
             writer.DefineGlobal(new IrGlobalDefinition(name, IrLinkage.Internal, IsConstant: false, zero, Alignment: layout.Alignment));
         }
 
+        if (!unit.ClassConstructors.IsEmpty)
+        {
+            // CMP-1397 (C-374): element k = 1 once item k took its turn and its class constructor (if any) returned normally
+            writer.DefineGlobal(new IrGlobalDefinition(Mangler.ClassConstructorsDone(unit.Unit.Name), IrLinkage.Internal, IsConstant: false,
+                new IrZeroConstant(new ArrayIrType(unit.ClassConstructors.Length, IrType.I8)), Alignment: 1));
+        }
+
         if (!unit.ThreadVars.IsEmpty)
         {
             // ABI-180 / CMP-414: { i64 Size, i64 Offset = -1 }; external when other units reach interface threadvars through it
@@ -403,6 +411,40 @@ internal static class IrEmitter
     private static LoweredBody EmptyBody() => new(null, [], new LBlock([]));
 
     /// <summary>
+    /// CMP-1397 (C-374): <paramref name="body"/> (a unit's <c>$init</c> body, the program block) with the constructor parts of the
+    /// module's items in run order before its statements, after the managed slots are zeroed (C-241: before the first call that
+    /// can raise).
+    /// </summary>
+    private static LoweredBody WithClassConstructors(LoweredUnit unit, LoweredBody body)
+    {
+        if (unit.ClassConstructors.IsEmpty)
+        {
+            return body;
+        }
+
+        var zeroed = body.Body.Statements.TakeWhile(s => s is LZero).ToArray();
+        var count = unit.ClassConstructors.Length;
+        return body with
+        {
+            Body = new LBlock([.. zeroed, .. unit.ClassConstructors.Select((item, k) => new LClassConstructorRun(item, k, count)),
+                new LBlock([.. body.Body.Statements.Skip(zeroed.Length)])]),
+        };
+    }
+
+    /// <summary>
+    /// CMP-1397 (C-374): <paramref name="body"/> (a unit's <c>$final</c> body, the program <c>$final</c>) with the destructor parts of
+    /// the module's items that have a class destructor, in reverse run order, after its statements; the managed globals stay in its
+    /// cleanup scope, so they are released afterwards.
+    /// </summary>
+    private static LoweredBody WithClassDestructors(LoweredUnit unit, LoweredBody body)
+    {
+        var count = unit.ClassConstructors.Length;
+        LStatement[] runs = [.. unit.ClassConstructors.Select((item, k) => (Item: item, Index: k)).Reverse()
+            .Where(i => i.Item.Destructor is not null).Select(i => new LClassDestructorRun(i.Item, i.Index, count))];
+        return runs.Length == 0 ? body : body with { Body = new LBlock([body.Body, .. runs]) };
+    }
+
+    /// <summary>
     /// CMP-355: <c>internal void $main()</c> = <c>_InitUnits</c>, then the main block. The main block's managed slots are
     /// zeroed (CMP-325 rule 1) before <c>_InitUnits</c>: an exception escaping a unit initialization runs <c>$main</c>'s
     /// cleanup, which must see <c>nil</c> slots (C-241).
@@ -414,7 +456,8 @@ internal static class IrEmitter
         var rest = new LBlock([.. main.Body.Statements.Skip(zeroed.Length)]);
         var initUnits = new LCallStatement(new LHelperCallee(new RuntimeHelper("_InitUnits", [], ReturnType: null, IsNoReturn: false)), []);
         LStatement[] statements = [.. zeroed, initUnits, .. unit.TlsRegistration is { } register ? [register] : Array.Empty<LStatement>(),   // ABI-180
-            .. unit.FormRegistration is { } forms ? [forms] : Array.Empty<LStatement>(), rest];                                // ABI-150 (C-114)
+            .. unit.FormRegistration is { } forms ? [forms] : Array.Empty<LStatement>(),                                       // ABI-150 (C-114)
+            .. unit.ClassConstructors.Select((item, k) => new LClassConstructorRun(item, k, unit.ClassConstructors.Length)), rest];   // CMP-1397 (C-374)
         new FunctionEmitter(module, main with { Body = new LBlock([.. statements]) }, IrLinkage.Internal, MainName).Emit();
         module.DeclarePending();
     }
@@ -2566,9 +2609,61 @@ internal sealed class FunctionEmitter
             case LCallStatement { Callee: LIntrinsicCallee intrinsic } call:
                 CallIntrinsic(null, intrinsic, call.Arguments);
                 break;
+            case LClassConstructorRun run:
+                ClassConstructorRun(run);
+                break;
+            case LClassDestructorRun run:
+                ClassDestructorRun(run);
+                break;
             default:
                 throw new InvalidOperationException($"Cannot emit {statement.GetType().Name}.");
         }
+    }
+
+    // ------------------------------------------------------------------ class constructors and destructors (CMP-1397, C-374)
+
+    /// <summary>Element <paramref name="index"/> of the module's <c>$ccdone</c> flags: the global itself for element 0, else a constant GEP.</summary>
+    private IrValue DoneFlag(int index, int count)
+    {
+        var flags = new IrGlobal(Mangler.ClassConstructorsDone(_module.UnitName));
+        return index == 0 ? flags : new IrGepConstant(new ArrayIrType(count, IrType.I8), flags, [IrIntConstant.I64(0), IrIntConstant.I64(index)]);
+    }
+
+    /// <summary>
+    /// CMP-1400: the location of the declaration heading of <paramref name="method"/> (the call stack inside a class constructor shows
+    /// the module's <c>$init</c> at that line); the current one without debug information.
+    /// </summary>
+    private void AtHeadingOf(MethodSymbol method) => SetLocation(LocationOf(method.MethodDeclaration.Heading.FirstToken()));
+
+    /// <summary>CMP-1397: <c>call void @"&lt;type&gt;.$cctor"()</c> (an invoke inside an EH scope), then the item's done flag.</summary>
+    private void ClassConstructorRun(LClassConstructorRun run)
+    {
+        if (run.Item.Constructor is { } constructor)
+        {
+            var saved = _location;
+            AtHeadingOf(constructor);
+            Call(named: false, new LRoutineCallee(constructor), []);
+            SetLocation(saved);
+        }
+
+        _w.Store(new IrIntConstant(IrType.I8, 1), DoneFlag(run.Index, run.Count), 1);
+    }
+
+    /// <summary>CMP-1397: the item's class destructor, called when its done flag is set (its turn came and its class constructor returned).</summary>
+    private void ClassDestructorRun(LClassDestructorRun run)
+    {
+        var k = run.Index.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var done = _w.Load(Unique("cd" + k + ".done"), IrType.I8, DoneFlag(run.Index, run.Count), 1);
+        var ran = _w.ICmp(Unique("cd" + k + ".ran"), IrIntPredicate.Ne, done, new IrIntConstant(IrType.I8, 0));
+        IrBlock call = new(Unique("cd" + k + ".run")), skip = new(Unique("cd" + k + ".skip"));
+        _w.CondBr(ran, call, skip);
+        Start(call);
+        var saved = _location;
+        AtHeadingOf(run.Item.Destructor!);
+        Call(named: false, new LRoutineCallee(run.Item.Destructor!), []);
+        SetLocation(saved);
+        _w.Br(skip);
+        Start(skip);
     }
 
     // ------------------------------------------------------------------ control flow (CMP-318…322)

@@ -14,7 +14,7 @@ namespace FreexComp.Compiler.Tests.Emit;
 /// </summary>
 [Trait("Phase", "2")]
 [Trait("Kind", "Snapshot")]
-public sealed class IrSnapshotTests
+public sealed partial class IrSnapshotTests
 {
     /// <summary>CMP-310 verbatim (the example of codegen.md §3).</summary>
     private const string Cmp310Add =
@@ -2073,6 +2073,8 @@ public sealed class IrSnapshotTests
         ["ReadText"] = ReadTextSource,
         ["ManagedRecords"] = ManagedRecordsSource,
         ["ByteStrings"] = ByteStringsSource,
+        ["ClassConstructors"] = ClassConstructorsSource,
+        ["DebugInfo_ClassConstructor"] = ClassConstructorDebugSource,
         ["DynArrays"] = DynArraysSource,
         ["StringFunctions"] = StringFunctionsSource,
         ["Strings"] = StringsSource,

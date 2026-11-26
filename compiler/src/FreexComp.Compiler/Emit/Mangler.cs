@@ -38,6 +38,12 @@ internal static class Mangler
         }
 
         var prefix = routine.ContainingSymbol is { } container ? Qualified(container) : null;     // a nested routine: its parent's link name
+        if (routine is MethodSymbol { MethodKind: MethodKind.ClassConstructor or MethodKind.ClassDestructor } classConstructor)
+        {
+            // CMP-1395 (C-374): fixed suffixes, independent of the declared name (an ordinary Create keeps U.TA.Create)
+            return prefix + (classConstructor.MethodKind == MethodKind.ClassConstructor ? ".$cctor" : ".$cdtor");
+        }
+
         var name = (prefix is null ? routine.Name : prefix + "." + routine.Name) + routine.GenericSuffix;
         // C-123: conversion operators may differ in their result only (Implicit to Integer and to Double), so operators add it
         return routine is MethodSymbol { OperatorName: not null, ReturnType: { } result } ? name + "$" + Signature(routine.Parameters) + "$" + TypeName(result)
@@ -59,6 +65,9 @@ internal static class Mangler
 
     /// <summary>The threadvar descriptor of a unit or program (ABI-180): <c>U.$tls</c>.</summary>
     public static LinkName TlsDescriptor(UnitSymbol unit) => new(unit.Name + ".$tls", AlwaysQuote: true);
+
+    /// <summary>CMP-1397 (C-374): the done flags of the module's class constructor items, <c>U.$ccdone</c> (<c>[n x i8]</c>).</summary>
+    public static LinkName ClassConstructorsDone(string unitName) => new(unitName + ".$ccdone", AlwaysQuote: true);
 
     /// <summary>CMP-415: the unit's <c>{$FORM}</c> table and its blob number <paramref name="index"/> (0-based, directive order).</summary>
     public static LinkName FormTable(UnitSymbol unit) => new(unit.Name + ".$forms", AlwaysQuote: true);

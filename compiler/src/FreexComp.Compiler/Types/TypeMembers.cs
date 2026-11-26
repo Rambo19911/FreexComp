@@ -33,6 +33,14 @@ internal static class TypeMembers
         _ => [],
     };
 
+    /// <summary>The class constructor and class destructor of a class or record, those it has (LANG-786; never members, LANG-787).</summary>
+    public static IEnumerable<MethodSymbol> ClassConstructors(TypeSymbol type) => type switch
+    {
+        ClassTypeSymbol c => new[] { c.ClassConstructor, c.ClassDestructor }.OfType<MethodSymbol>(),
+        RecordTypeSymbol r => new[] { r.ClassConstructor, r.ClassDestructor }.OfType<MethodSymbol>(),
+        _ => [],
+    };
+
     public static ImmutableArray<VariableSymbol> ClassVariables(TypeSymbol type) => type switch
     {
         ClassTypeSymbol c => c.ClassVariables,

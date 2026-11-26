@@ -39,6 +39,7 @@ internal sealed partial class DeclarationBinder
         var names = new Dictionary<string, Symbol>(IdentifierComparer.Instance);
         var methods = new List<(MethodDeclarationSyntax Syntax, Visibility Visibility)>();
         var genericMethods = new List<(MethodDeclarationSyntax Syntax, Visibility Visibility)>();
+        var classConstructors = new List<(MethodDeclarationSyntax Syntax, Visibility Visibility)>();
         var properties = new List<(PropertyDeclarationSyntax Syntax, Visibility Visibility)>();
         var classVarSections = new List<(ClassVarSectionSyntax Syntax, Visibility Visibility)>();
         var nested = ImmutableArray.CreateBuilder<Symbol>();
@@ -60,6 +61,9 @@ internal sealed partial class DeclarationBinder
                     break;
                 case ClassVarSectionSyntax section:
                     classVarSections.Add((section, visibility));
+                    break;
+                case MethodDeclarationSyntax classConstructor when IsClassConstructorHeading(classConstructor.Heading):
+                    classConstructors.Add((classConstructor, visibility));                     // LANG-786 (C-374)
                     break;
                 case MethodDeclarationSyntax { Heading.TypeParameterList: not null } genericMethod:
                     genericMethods.Add((genericMethod, visibility));                    // C-117 (LANG-701)
@@ -147,6 +151,11 @@ internal sealed partial class DeclarationBinder
 
         record.Methods = boundMethods.ToImmutable();
         record.GenericMethods = [.. genericMethods.Select(g => inner.BindGenericMethodDeclaration(record, g.Syntax, g.Visibility))];
+        foreach (var (classConstructor, visibility) in classConstructors)
+        {
+            inner.BindClassConstructorDeclaration(record, classConstructor, visibility);                  // LANG-786 (C-374)
+        }
+
         record.Properties = inner.BindProperties(record, properties, names);
         return record;
     }
@@ -259,7 +268,6 @@ internal sealed partial class DeclarationBinder
 
         var unsupported = heading.Keyword.Kind switch
         {
-            SyntaxKind.ConstructorKeyword when isClass => "class constructor",
             SyntaxKind.ProcedureKeyword or SyntaxKind.FunctionKeyword or SyntaxKind.ConstructorKeyword or SyntaxKind.DestructorKeyword => null,
             _ => heading.Keyword.Text.ToLowerInvariant(),
         } ?? (heading.TypeParameterList is not null && !_genericMethodInstance ? "generic method" : null);
@@ -355,7 +363,7 @@ internal sealed partial class DeclarationBinder
 
     /// <summary>The records a unit declares with methods (nested ones in classes and records too), in declaration order.</summary>
     internal static IEnumerable<RecordTypeSymbol> RecordsWithMethodsOf(UnitSymbol unit) =>
-        OwnTypesOf(unit).OfType<RecordTypeSymbol>().Where(r => !r.Methods.IsEmpty || !r.ClassVariables.IsEmpty);
+        OwnTypesOf(unit).OfType<RecordTypeSymbol>().Where(r => !r.Methods.IsEmpty || !r.ClassVariables.IsEmpty || r.ClassConstructor is not null || r.ClassDestructor is not null);
 
     /// <summary>The unit's own types and, depth first, their nested types (LANG-770).</summary>
     internal static IEnumerable<TypeSymbol> OwnTypesOf(UnitSymbol unit)
@@ -367,9 +375,10 @@ internal sealed partial class DeclarationBinder
             .Where(t => ReferenceEquals(t.ContainingSymbol, unit)).Distinct().SelectMany(WithNested).Distinct();
     }
 
-    /// <summary>The methods with bodies of the unit's classes and records (C-081, C-122).</summary>
+    /// <summary>The methods with bodies of the unit's classes and records (C-081, C-122), class constructors and destructors too (LANG-788).</summary>
     internal static IEnumerable<MethodSymbol> MethodsOf(UnitSymbol unit) =>
-        ClassesOf(unit).SelectMany(c => c.Methods).Concat(RecordsWithMethodsOf(unit).SelectMany(r => r.Methods)).Concat(HelpersOf(unit).SelectMany(h => h.Methods));
+        ClassesOf(unit).SelectMany(c => c.Methods.Concat(TypeMembers.ClassConstructors(c)))
+            .Concat(RecordsWithMethodsOf(unit).SelectMany(r => r.Methods.Concat(TypeMembers.ClassConstructors(r)))).Concat(HelpersOf(unit).SelectMany(h => h.Methods));
 
     /// <summary>The class vars of the unit's classes and records (CMP-370, LANG-730).</summary>
     internal static IEnumerable<VariableSymbol> ClassVariablesOf(UnitSymbol unit) =>

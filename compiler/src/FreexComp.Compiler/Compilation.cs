@@ -1212,7 +1212,7 @@ public sealed class Compilation
             front.InitOrder,
             Options.AppType,
             unit => ReferenceEquals(unit, front.Binder.Main)
-                ? (false, !Lowerer.ManagedGlobals(main.Unit).IsEmpty)
+                ? (false, HasProgramFinal(main.Unit))
                 : UnitTableEntryOf(unit) is var entry ? (entry.HasInit, entry.HasFinal) : default,
             Types: front.Binder.Types));
     }
@@ -1353,7 +1353,9 @@ public sealed class Compilation
 
         var unit = loaded.Result!;
         var used = !unit.Bodies.IsEmpty || !Lowerer.ManagedGlobals(unit.Unit).IsEmpty;
-        return new(unit.Unit, HasInit: used || !Lowerer.ThreadVars(unit.Unit).IsEmpty || !loaded.Forms.IsEmpty, HasFinal: used);     // $init registers threadvars (ABI-180) and forms (ABI-150)
+        var items = Lowerer.ClassConstructorItems(unit.Unit);                   // CMP-1396 (C-374): class constructors run in $init, destructors in $final
+        return new(unit.Unit, HasInit: used || !Lowerer.ThreadVars(unit.Unit).IsEmpty || !loaded.Forms.IsEmpty || !items.IsEmpty,    // $init registers threadvars (ABI-180) and forms (ABI-150)
+            HasFinal: used || items.Any(i => i.Destructor is not null));
     }
 
     /// <summary>
@@ -1368,8 +1370,15 @@ public sealed class Compilation
         }
 
         var table = initOrder.Select(UnitTableEntryOf);
-        return Lowerer.ManagedGlobals(main.Unit).IsEmpty ? [.. table] : [.. table, new UnitTableEntry(main.Unit, HasInit: false, HasFinal: true)];
+        return HasProgramFinal(main.Unit) ? [.. table, new UnitTableEntry(main.Unit, HasInit: false, HasFinal: true)] : [.. table];
     }
+
+    /// <summary>
+    /// C-183: the program (library) module has its own last unit table entry, its <c>$final</c>, when it has managed globals to
+    /// release or, CMP-1396 (C-374), a type with a class destructor.
+    /// </summary>
+    private static bool HasProgramFinal(UnitSymbol program) =>
+        !Lowerer.ManagedGlobals(program).IsEmpty || Lowerer.ClassConstructorItems(program).Any(i => i.Destructor is not null);
 
     /// <summary>
     /// CMP-420…424: with <c>-g</c> the metadata options — container, <c>isOptimized</c> (DBG-101) and the source bytes on disk for the

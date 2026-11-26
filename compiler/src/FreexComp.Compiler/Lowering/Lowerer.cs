@@ -24,13 +24,14 @@ internal static class Lowerer
         // statements); a program's by a synthesised program $final, the last unit table entry, so they are released after the
         // ExitProc chain (ABI-104 steps 1–2, C-183)
         var managed = ManagedGlobals(result.Unit);
+        var items = ClassConstructorItems(result.Unit);                       // CMP-1396 (C-374)
         var outlined = new List<LoweredBody>();                                // CMP-392 $fin routines
         var bodyGlobals = new List<(VariableSymbol, LinkName)>();
         var routines = result.Routines.Select(r => LowerRoutine(result, r, outlined)).ToImmutableArray();
         var bodies = result.Bodies.Select(b => (b.Syntax, Lowered: LowerBody(result, b,
             b.Syntax is FinalizationSectionSyntax ? managed : [], BodyName(b.Syntax), outlined, bodyGlobals))).ToImmutableArray();
         var finalization = bodies.FirstOrDefault(b => b.Syntax is FinalizationSectionSyntax).Lowered;
-        if (finalization is null && !managed.IsEmpty)
+        if (finalization is null && (!managed.IsEmpty || items.Any(i => i.Destructor is not null)))
         {
             finalization = LowerBody(result, block: null, managed, "$final", outlined, bodyGlobals);
         }
@@ -41,6 +42,7 @@ internal static class Lowerer
             BodyGlobals = [.. bodyGlobals],
             Initialization = bodies.FirstOrDefault(b => b.Syntax is InitializationSectionSyntax).Lowered,
             Finalization = finalization,
+            ClassConstructors = items,
             Statics = [.. result.Routines.SelectMany(r => r.Scope.Symbols.OfType<ConstantSymbol>()).Select(c => c.Storage).OfType<VariableSymbol>()],
             ThreadVars = ThreadVars(result.Unit),
             TlsRegistration = ThreadVars(result.Unit).IsEmpty ? null
@@ -51,6 +53,49 @@ internal static class Lowerer
                 : new LCallStatement(new LHelperCallee(new RuntimeHelper("_RegisterResources", [result.Types.Pointer, result.Types.NativeInt], ReturnType: null, IsNoReturn: false)),
                     [new LFormTable(result.Unit, result.Types.Pointer), new LConst(new ConstantValue(new System.Numerics.BigInteger(forms.Length), result.Types.NativeInt), result.Types.NativeInt)]),   // ABI-150 (C-114)
         };
+    }
+
+    /// <summary>
+    /// CMP-1396, LANG-790 c (C-374): the module's own items — its non-generic types (unit level or nested, interface part then
+    /// implementation part, an enclosing type before its nested ones, depth first) that have a class constructor or a class
+    /// destructor — in run order: a stable topological order in which every ancestor among the items comes first. The instance
+    /// items of generic types (LANG-790 a, soft prerequisites) are C-375.
+    /// </summary>
+    public static ImmutableArray<ClassConstructorItem> ClassConstructorItems(UnitSymbol unit)
+    {
+        var items = DeclarationBinder.OwnTypesOf(unit)
+            .Where(t => TypeMembers.EnclosingInstance(t) is null && TypeMembers.ClassConstructors(t).Any())
+            .Select(t => t switch
+            {
+                ClassTypeSymbol c => new ClassConstructorItem(c, c.ClassConstructor, c.ClassDestructor, IsInstance: false),
+                RecordTypeSymbol r => new ClassConstructorItem(r, r.ClassConstructor, r.ClassDestructor, IsInstance: false),
+                _ => throw new InvalidOperationException("Only classes and records have class constructors."),
+            })
+            .ToList();
+        return RunOrder(items, item => item.Type is ClassTypeSymbol c ? c.SelfAndAncestors().Skip(1) : [], _ => []);
+    }
+
+    /// <summary>
+    /// LANG-790 c: repeatedly the first item not yet taken whose prerequisites among the items (<paramref name="hard"/> and
+    /// <paramref name="soft"/>) have all been taken; when none has, the first one whose hard prerequisites have.
+    /// </summary>
+    private static ImmutableArray<ClassConstructorItem> RunOrder(List<ClassConstructorItem> items,
+        Func<ClassConstructorItem, IEnumerable<TypeSymbol>> hard, Func<ClassConstructorItem, IEnumerable<TypeSymbol>> soft)
+    {
+        var present = items.Select(i => i.Type).ToHashSet();
+        var taken = new HashSet<TypeSymbol>();
+        var order = ImmutableArray.CreateBuilder<ClassConstructorItem>(items.Count);
+        var remaining = items.ToList();
+        bool Ready(IEnumerable<TypeSymbol> prerequisites) => prerequisites.All(p => !present.Contains(p) || taken.Contains(p));
+        while (remaining.Count > 0)
+        {
+            var next = remaining.FirstOrDefault(i => Ready(hard(i)) && Ready(soft(i))) ?? remaining.FirstOrDefault(i => Ready(hard(i))) ?? remaining[0];
+            remaining.Remove(next);
+            taken.Add(next.Type);
+            order.Add(next);
+        }
+
+        return order.MoveToImmutable();
     }
 
     /// <summary>The unit's (or program's) threadvars in declaration order (interface first; LANG-345, ABI-180).</summary>

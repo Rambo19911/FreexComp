@@ -1,0 +1,11 @@
+ErrClassCtor.pas(6,29): error E2665: A class constructor cannot have parameters or type parameters
+ErrClassCtor.pas(7,29): error E2665: A class destructor cannot have parameters or type parameters
+ErrClassCtor.pas(12,23): error E2666: Type 'TTwice' already has a class constructor
+ErrClassCtor.pas(18,22): error E2666: Type 'TRecTwice' already has a class destructor
+ErrClassCtor.pas(22,31): error E2667: Directive 'virtual' is not allowed on a class constructor
+ErrClassCtor.pas(23,31): error E2667: Directive 'static' is not allowed on a class destructor
+ErrClassCtor.pas(33,23): error E2605: Method 'TMissing.Create' is not implemented
+ErrClassCtor.pas(40,33): error E2665: A class constructor cannot have parameters or type parameters
+ErrClassCtor.pas(66,3): error E2608: Instance member 'FField' is not accessible from a class method
+ErrClassCtor.pas(71,3): error E2668: 'inherited' needs a method name in a class destructor
+ErrClassCtor.pas(74,24): error E2606: 'Init' is not a member of class 'TFoo'

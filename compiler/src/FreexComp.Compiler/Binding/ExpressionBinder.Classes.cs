@@ -1138,6 +1138,13 @@ internal sealed partial class ExpressionBinder
             return new MethodCall(null, [], null);
         }
 
+        if (inherited.Name is null && current.IsClassConstructorOrDestructor)
+        {
+            // LANG-788 c (C-374): nothing to call, the ancestor's class constructor runs by itself (LANG-789)
+            _diagnostics.Report(call, "E2668", current.MethodKind == MethodKind.ClassConstructor ? "constructor" : "destructor");
+            return new MethodCall(null, [], null);
+        }
+
         if (bare && current.MessageId is { } id)
         {
             return InheritedMessage(call, current, id);

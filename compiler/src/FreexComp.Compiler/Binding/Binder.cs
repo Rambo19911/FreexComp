@@ -146,7 +146,8 @@ internal static class Binder
 
                 ImmutableArray<MethodSymbol> methods = instance switch
                 {
-                    TypeSymbol type => [.. TypeMembers.SelfAndNestedTypes(type).SelectMany(t => TypeMembers.Methods(t))],   // C-344: nested types too (LANG-776)
+                    // C-344: nested types too (LANG-776); C-374: class constructors and destructors bind per instance (LANG-788 b)
+                    TypeSymbol type => [.. TypeMembers.SelfAndNestedTypes(type).SelectMany(t => TypeMembers.Methods(t).Concat(TypeMembers.ClassConstructors(t)))],
                     MethodSymbol genericMethod => [genericMethod],                   // C-117: a generic method instance
                     _ => [],
                 };

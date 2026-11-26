@@ -5,7 +5,8 @@ using FreexComp.Compiler.Types;
 
 namespace FreexComp.Compiler.Symbols;
 
-public enum MethodKind { Ordinary, Constructor, Destructor, ClassMethod, ClassStatic }
+/// <summary>The kind of a method; <see cref="ClassConstructor"/> and <see cref="ClassDestructor"/> are never members of their type (LANG-787, CMP-1395).</summary>
+public enum MethodKind { Ordinary, Constructor, Destructor, ClassMethod, ClassStatic, ClassConstructor, ClassDestructor }
 
 /// <summary>
 /// A method of a class (LANG-620…624, api.md §5). <see cref="RoutineSymbol.Parameters"/> are the declared parameters; the
@@ -106,7 +107,11 @@ public sealed class MethodSymbol : RoutineSymbol
     /// <summary>Calls dispatch through the VMT (LANG-622).</summary>
     public bool IsDispatched => VmtSlot >= 0;
 
-    public bool IsClassMethod => MethodKind is MethodKind.ClassMethod or MethodKind.ClassStatic;
+    /// <summary>A class method; class constructors and class destructors bind like class static methods (LANG-788 b).</summary>
+    public bool IsClassMethod => MethodKind is MethodKind.ClassMethod or MethodKind.ClassStatic or MethodKind.ClassConstructor or MethodKind.ClassDestructor;
+
+    /// <summary>A class constructor or class destructor (LANG-786): no member of its type, run by its module (LANG-789).</summary>
+    internal bool IsClassConstructorOrDestructor => MethodKind is MethodKind.ClassConstructor or MethodKind.ClassDestructor;
 
     /// <summary>The declaration in the class body.</summary>
     internal MethodDeclarationSyntax MethodDeclaration { get; }
@@ -130,6 +135,8 @@ public sealed class MethodSymbol : RoutineSymbol
             _ when OperatorName is not null => "class operator",
             MethodKind.Constructor => "constructor",
             MethodKind.Destructor => "destructor",
+            MethodKind.ClassConstructor => "class constructor",
+            MethodKind.ClassDestructor => "class destructor",
             _ => (IsClassMethod ? "class " : "") + (ReturnType is null ? "procedure" : "function"),
         };
         var parameters = Parameters.IsEmpty ? "" : "(" + string.Join("; ", Parameters.Select(ParameterSymbol.Declaration)) + ")";

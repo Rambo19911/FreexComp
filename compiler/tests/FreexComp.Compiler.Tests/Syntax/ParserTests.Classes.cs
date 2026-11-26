@@ -156,6 +156,30 @@ public sealed partial class ParserTests
         Assert.Equal(SyntaxKind.SemicolonToken, method.SemicolonToken!.Value.Kind);
     }
 
+    /// <summary>LANG-788 (C-374): the implementation headings repeat <c>class constructor</c> / <c>class destructor</c> with the type path.</summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "LANG-788")]
+    public void Classes_ClassConstructorImplementationHeadings()
+    {
+        const string Body = "; (Block (CompoundStatement begin end)) ;)";
+        Assert.Equal(
+            "(RoutineDeclaration (RoutineHeading class constructor (QualifiedName (IdentifierName TFoo) . (IdentifierName Create))) " + Body + " "
+            + "(RoutineDeclaration (RoutineHeading class constructor (QualifiedName (GenericName TBox (TypeArgumentList < (NamedType (IdentifierName T)) >)) . "
+            + "(IdentifierName Create))) " + Body + " "
+            + "(RoutineDeclaration (RoutineHeading class destructor (QualifiedName (QualifiedName (IdentifierName TOuter) . (IdentifierName TInner)) . "
+            + "(IdentifierName Destroy))) " + Body + " "
+            + "(RoutineDeclaration (RoutineHeading class destructor (QualifiedName (IdentifierName TRec) . (IdentifierName Done))) " + Body,
+            DumpDeclarations("class constructor TFoo.Create; begin end; class constructor TBox<T>.Create; begin end; "
+                             + "class destructor TOuter.TInner.Destroy; begin end; class destructor TRec.Done; begin end;"));
+
+        var program = (ProgramSyntax)Parse("type TRec = record class constructor Create; class destructor Done; end; class constructor TRec.Create; begin end; "
+            + "class destructor TRec.Done; begin end; begin end.").Root;
+        var implementation = Assert.IsType<RoutineDeclarationSyntax>(program.Block.Declarations[1]);
+        Assert.Equal(SyntaxKind.ClassKeyword, implementation.Heading.ClassKeyword!.Value.Kind);
+        Assert.Equal(SyntaxKind.ConstructorKeyword, implementation.Heading.Keyword.Kind);
+    }
+
     [Fact]
     public void Classes_ClassConstructorsOperatorsAndProperties()
     {

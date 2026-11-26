@@ -79,6 +79,42 @@ internal sealed record LoweredUnit(UnitSymbol Unit, ImmutableArray<LoweredBody> 
     public LStatement? FormRegistration { get; init; }
 
     public LoweredBody? Finalization { get; init; }
+
+    /// <summary>
+    /// CMP-1396 (C-374): the module's class constructor items in run order (LANG-790 c); item k owns element k of
+    /// <c>@"&lt;Module&gt;.$ccdone"</c>. The constructor parts run at the start of <c>$init</c> (a program's <c>$main</c>), the
+    /// destructor parts, in reverse order, at the end of <c>$final</c> (the program's <c>$final</c>), CMP-1397.
+    /// </summary>
+    public ImmutableArray<ClassConstructorItem> ClassConstructors { get; init; } = [];
+}
+
+/// <summary>
+/// One item of a module's class constructor list (CMP-1396, LANG-790 c): a type with a class constructor or a class destructor
+/// (either may be null), its own (declared by the module) or a generic instance the module defines (C-375).
+/// </summary>
+internal sealed record ClassConstructorItem(TypeSymbol Type, MethodSymbol? Constructor, MethodSymbol? Destructor, bool IsInstance);
+
+/// <summary>
+/// CMP-1397: the constructor part of item <see cref="Index"/> of <see cref="Count"/> — the call of its class constructor (if any),
+/// then <c>store i8 1</c> to its element of <c>$ccdone</c>; the call carries the location of the declaration heading (CMP-1400).
+/// </summary>
+internal sealed class LClassConstructorRun(ClassConstructorItem item, int index, int count) : LStatement
+{
+    public ClassConstructorItem Item { get; } = item;
+
+    public int Index { get; } = index;
+
+    public int Count { get; } = count;
+}
+
+/// <summary>CMP-1397: the destructor part of item <see cref="Index"/> of <see cref="Count"/> — its class destructor, called when its done flag is set.</summary>
+internal sealed class LClassDestructorRun(ClassConstructorItem item, int index, int count) : LStatement
+{
+    public ClassConstructorItem Item { get; } = item;
+
+    public int Index { get; } = index;
+
+    public int Count { get; } = count;
 }
 
 /// <summary>

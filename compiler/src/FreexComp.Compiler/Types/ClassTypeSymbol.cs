@@ -47,6 +47,12 @@ public sealed class ClassTypeSymbol : TypeSymbol
     /// <summary>The class's own methods in declaration order.</summary>
     public ImmutableArray<MethodSymbol> Methods { get; internal set; } = [];
 
+    /// <summary>The class constructor (LANG-786, CMP-1395), or null; never a member: no lookup finds it (LANG-787).</summary>
+    public MethodSymbol? ClassConstructor { get; internal set; }
+
+    /// <summary>The class destructor (LANG-786, CMP-1395), or null; never a member: no lookup finds it (LANG-787).</summary>
+    public MethodSymbol? ClassDestructor { get; internal set; }
+
     /// <summary>Generic methods (LANG-701, C-117); their instances are not in <see cref="Methods"/>.</summary>
     public ImmutableArray<GenericMethodSymbol> GenericMethods { get; internal set; } = [];
 

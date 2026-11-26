@@ -151,6 +151,9 @@ internal sealed partial class DeclarationBinder
                 case ClassVarSectionSyntax section:
                     BindClassVariables(type, section, visibility, classVariables, names);              // LANG-615, CMP-370
                     break;
+                case MethodDeclarationSyntax classConstructor when IsClassConstructorHeading(classConstructor.Heading):
+                    BindClassConstructorDeclaration(type, classConstructor, visibility);               // LANG-786 (C-374)
+                    break;
                 case MethodDeclarationSyntax { Heading.TypeParameterList: not null } genericMethod:
                     genericMethods.Add(BindGenericMethodDeclaration(type, genericMethod, visibility));          // C-117 (LANG-701)
                     break;
@@ -401,7 +404,6 @@ internal sealed partial class DeclarationBinder
         var isClass = heading.ClassKeyword is not null;
         var unsupported = heading.Keyword.Kind switch
         {
-            SyntaxKind.ConstructorKeyword or SyntaxKind.DestructorKeyword when isClass => "class " + heading.Keyword.Text.ToLowerInvariant(),   // LANG-636
             SyntaxKind.ProcedureKeyword or SyntaxKind.FunctionKeyword or SyntaxKind.ConstructorKeyword or SyntaxKind.DestructorKeyword => null,
             _ => heading.Keyword.Text.ToLowerInvariant(),
         } ?? (heading.TypeParameterList is not null && !_genericMethodInstance ? "generic method" : null);
@@ -672,6 +674,12 @@ internal sealed partial class DeclarationBinder
     {
         var heading = declaration.Heading;
         var name = NameOf(identifier);
+        if (IsClassConstructorHeading(heading))
+        {
+            DefineClassConstructor(type, declaration, identifier);                      // LANG-788 (C-374)
+            return;
+        }
+
         if (heading.TypeParameterList is { } typeParameters)
         {
             DefineGenericMethod(type, declaration, identifier, typeParameters);         // C-117 (LANG-704)

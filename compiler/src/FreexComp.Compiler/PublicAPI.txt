@@ -376,6 +376,8 @@ sealed class FreexComp.Compiler.Symbols.IntrinsicSymbol : FreexComp.Compiler.Sym
 sealed class FreexComp.Compiler.Symbols.LabelSymbol : FreexComp.Compiler.Symbols.Symbol
   public override System.String ToDisplayString()
 enum FreexComp.Compiler.Symbols.MethodKind
+  ClassConstructor = 5
+  ClassDestructor = 6
   ClassMethod = 3
   ClassStatic = 4
   Constructor = 1
@@ -1954,6 +1956,8 @@ sealed class FreexComp.Compiler.Types.ClassRefTypeSymbol : FreexComp.Compiler.Ty
   public FreexComp.Compiler.Types.ClassTypeSymbol Class { get; }
   public override System.String ToDisplayString()
 sealed class FreexComp.Compiler.Types.ClassTypeSymbol : FreexComp.Compiler.Types.TypeSymbol
+  public FreexComp.Compiler.Symbols.MethodSymbol ClassConstructor { get; }
+  public FreexComp.Compiler.Symbols.MethodSymbol ClassDestructor { get; }
   public FreexComp.Compiler.Symbols.PropertySymbol DefaultProperty { get; }
   public FreexComp.Compiler.Types.ClassRefTypeSymbol Reference { get; }
   public FreexComp.Compiler.Types.ClassTypeSymbol Parent { get; }
@@ -2067,6 +2071,8 @@ enum FreexComp.Compiler.Types.RealKind
 sealed class FreexComp.Compiler.Types.RealTypeSymbol : FreexComp.Compiler.Types.TypeSymbol
   public FreexComp.Compiler.Types.RealKind RealKind { get; }
 sealed class FreexComp.Compiler.Types.RecordTypeSymbol : FreexComp.Compiler.Types.TypeSymbol
+  public FreexComp.Compiler.Symbols.MethodSymbol ClassConstructor { get; }
+  public FreexComp.Compiler.Symbols.MethodSymbol ClassDestructor { get; }
   public System.Boolean HasVariantPart { get; }
   public System.Boolean IsAnonymous { get; }
   public System.Boolean IsPacked { get; }
