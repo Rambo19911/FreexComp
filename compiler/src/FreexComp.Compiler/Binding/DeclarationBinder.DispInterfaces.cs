@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Globalization;
 using System.Numerics;
 using FreexComp.Compiler.Symbols;
 using FreexComp.Compiler.Syntax;
@@ -35,7 +36,7 @@ internal sealed partial class DeclarationBinder
         var properties = ImmutableArray.CreateBuilder<PropertySymbol>();
         var names = new Dictionary<string, Symbol>(IdentifierComparer.Instance);
         var dispIds = new Dictionary<int, SyntaxNode>();
-        var unnumbered = new List<Symbol>();
+        var unnumbered = new List<(Symbol Member, SyntaxToken Name)>();
         foreach (var member in syntax.Members)
         {
             switch (member)
@@ -73,10 +74,17 @@ internal sealed partial class DeclarationBinder
         }
 
         // LANG-694 (C-352): members without a dispid are numbered in declaration order after the highest written one (1 when none
-        // is written or the highest is negative), so they never collide with an explicit number
+        // is written or the highest is negative), so they never collide with an explicit number; C-373: one that would need a number
+        // above High(Integer) is E2012 at its name, it and the later ones stay unnumbered
         var next = Math.Max(dispIds.Count == 0 ? 0 : dispIds.Keys.Max(), 0);
-        foreach (var member in unnumbered)
+        foreach (var (member, name) in unnumbered)
         {
+            if (next == int.MaxValue)
+            {
+                _diagnostics.Report(name, "E2012", (next + 1L).ToString(CultureInfo.InvariantCulture), "Integer");
+                break;
+            }
+
             next++;
             switch (member)
             {
@@ -96,7 +104,7 @@ internal sealed partial class DeclarationBinder
     }
 
     /// <summary>A method of a dispatch interface: a procedure or function whose only directive is <c>dispid N</c> (LANG-693, 694).</summary>
-    private MethodSymbol? BindDispMethod(InterfaceTypeSymbol type, MethodDeclarationSyntax syntax, Dictionary<int, SyntaxNode> dispIds, List<Symbol> unnumbered)
+    private MethodSymbol? BindDispMethod(InterfaceTypeSymbol type, MethodDeclarationSyntax syntax, Dictionary<int, SyntaxNode> dispIds, List<(Symbol Member, SyntaxToken Name)> unnumbered)
     {
         var heading = syntax.Heading;
         if (heading.Name is not IdentifierNameSyntax { Identifier: { IsMissing: false } identifier })
@@ -150,7 +158,7 @@ internal sealed partial class DeclarationBinder
         method.DispId = BindMemberDispId(type, number, dispIds);
         if (number is null)
         {
-            unnumbered.Add(method);
+            unnumbered.Add((method, identifier));
         }
 
         return method;
@@ -163,7 +171,7 @@ internal sealed partial class DeclarationBinder
     /// index arguments and the default property bind like those of every other property.
     /// </summary>
     private PropertySymbol? BindDispProperty(InterfaceTypeSymbol type, PropertyDeclarationSyntax syntax, Dictionary<string, Symbol> names,
-        Dictionary<int, SyntaxNode> dispIds, List<Symbol> unnumbered, ImmutableArray<PropertySymbol>.Builder bound)
+        Dictionary<int, SyntaxNode> dispIds, List<(Symbol Member, SyntaxToken Name)> unnumbered, ImmutableArray<PropertySymbol>.Builder bound)
     {
         if (syntax.Identifier.IsMissing)
         {
@@ -224,7 +232,7 @@ internal sealed partial class DeclarationBinder
         property.DispId = BindMemberDispId(type, number, dispIds);
         if (number is null)
         {
-            unnumbered.Add(property);
+            unnumbered.Add((property, syntax.Identifier));
         }
 
         if (syntax.DefaultKeyword is { } defaultKeyword)

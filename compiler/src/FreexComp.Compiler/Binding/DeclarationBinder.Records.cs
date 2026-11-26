@@ -224,7 +224,10 @@ internal sealed partial class DeclarationBinder
                     aliases.Add((NameOf(declaration.Identifier), target, visibility));     // LANG-774 (C-359): the section's visibility
                 }
 
-                foreach (var type in declared.OfType<TypeSymbol>().Where(t => ReferenceEquals(t.ContainingSymbol, _container)))
+                // C-372: an anonymous enumeration (`TS = set of (a, b)`) is no declared symbol, only its elements are; it has the
+                // section's visibility too, so its elements obey it as those of a named one do (C-363)
+                foreach (var type in declared.OfType<TypeSymbol>().Concat(declared.OfType<EnumMemberSymbol>().Select(e => e.Type)).Distinct()
+                    .Where(t => ReferenceEquals(t.ContainingSymbol, _container)))
                 {
                     type.NestedVisibility = visibility;                         // LANG-774 (C-344): the section's visibility
                 }

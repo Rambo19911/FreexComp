@@ -300,6 +300,28 @@ public sealed class DispInterfaceBinderTests
         Assert.Equal([2, 1, 3], dup.Unit.ImplementationMembers.OfType<InterfaceTypeSymbol>().Single().Methods.Select(m => m.DispId));
     }
 
+    /// <summary>
+    /// LANG-694 (C-373): an automatic number above <c>High(Integer)</c> is E2012 at the first member that would need one (the
+    /// later ones are not reported again and stay unnumbered); the members before it keep theirs, up to <c>High(Integer)</c> itself.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "LANG-694")]
+    public void AutomaticDispidOverflow_IsAnError()
+    {
+        AssertDiagnostics(
+            ["E2012(1,71): Constant value 2147483648 is out of range for type 'Integer'"],
+            "type IMax = dispinterface procedure Top; dispid 2147483647; procedure A; procedure B; end; begin end.");
+        AssertDiagnostics(
+            ["E2012(1,84): Constant value 2147483648 is out of range for type 'Integer'"],
+            "type IEdge = dispinterface procedure Top; dispid 2147483646; procedure A; property B: Integer; procedure C; end; begin end.");
+
+        var result = BindWithDispatch("type IEdge = dispinterface procedure Top; dispid 2147483646; procedure A; property B: Integer; end; begin end.");
+        var edge = result.Unit.ImplementationMembers.OfType<InterfaceTypeSymbol>().Single();
+        Assert.Equal([int.MaxValue - 1, int.MaxValue], edge.Methods.Select(m => m.DispId ?? 0));
+        Assert.Null(edge.Properties[0].DispId);
+        Assert.Null(edge.Properties[0].ReadMethod!.DispId);
+    }
+
     // ------------------------------------------------------------------ LANG-696
 
     [Fact]

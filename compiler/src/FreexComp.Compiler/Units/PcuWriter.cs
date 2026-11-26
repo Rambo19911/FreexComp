@@ -696,13 +696,18 @@ internal sealed class PcuWriter(PcuContext context)
                 // C-367: a named pointer has no containing symbol; read back in its declaring type, it keeps its link name (CMP-361)
                 entry["outer"] = TypeId((TypeSymbol)pointer.DeclaredIn);
             }
-            else if (type.ContainingSymbol is HelperTypeSymbol helper && TypeMembers.NestedMembers(helper).Contains(type))
+            else if (type.ContainingSymbol is HelperTypeSymbol helper && (TypeMembers.NestedMembers(helper).Contains(type)
+                     || TypeMembers.NestedMembers(helper).OfType<EnumMemberSymbol>().Any(e => ReferenceEquals(e.Type, type))))
             {
-                entry["outer"] = TypeId(helper);                                   // C-363: a helper's nested type keeps its section's visibility
+                entry["outer"] = TypeId(helper);                                   // C-363: a helper's nested type keeps its section's visibility; C-372: its anonymous enumeration too
             }
 
             var constants = TypeMembers.NestedMembers(type).OfType<ConstantSymbol>().Where(c => c is { IsTyped: false, Value: not null }).ToList();
-            if (!type.IsGenericInstance && (TypeMembers.NestedMembers(type).OfType<TypeSymbol>().Any() || !TypeMembers.NestedAliases(type).IsEmpty || constants.Count > 0))
+            // C-372: an anonymous enumeration of a nested type (`TS = set of (a, b)`) is no nested member, its elements are
+            var anonymous = TypeMembers.NestedMembers(type).OfType<EnumMemberSymbol>().Select(e => e.Type).Distinct()
+                .Where(e => !TypeMembers.NestedMembers(type).Contains(e)).ToList();
+            if (!type.IsGenericInstance && (TypeMembers.NestedMembers(type).OfType<TypeSymbol>().Any() || !TypeMembers.NestedAliases(type).IsEmpty
+                || constants.Count > 0 || anonymous.Count > 0))
             {
                 // CMP-1392 (C-344): the nested types (and type aliases) of a class or record, with their section's visibility;
                 // C-361: its nested (true) constants with their value and section's visibility too
@@ -724,6 +729,12 @@ internal sealed class PcuWriter(PcuContext context)
                     ["type"] = TypeId(a.Target),
                     ["alias"] = true,
                     ["visibility"] = VisibilityName(a.Visibility),            // C-359
+                }), .. anonymous.Select(e => (JsonNode?)new JsonObject
+                {
+                    ["name"] = e.Name,
+                    ["type"] = TypeId(e),
+                    ["anonymous"] = true,                                         // C-372: its elements are members, the type is not
+                    ["visibility"] = VisibilityName(e.NestedVisibility),
                 })]);
             }
 

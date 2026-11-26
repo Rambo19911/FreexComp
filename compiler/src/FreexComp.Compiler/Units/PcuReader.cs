@@ -499,7 +499,11 @@ internal static class PcuReader
                     }
 
                     type.NestedVisibility = VisibilityOf(Text(item, "visibility"));
-                    members.Add(type);
+                    if (item["anonymous"] is not JsonValue anonymous || !anonymous.GetValue<bool>())
+                    {
+                        members.Add(type);                                          // C-372: an anonymous enumeration is no member, its elements are
+                    }
+
                     if (type is EnumTypeSymbol { TypeKind: TypeKind.Enum, IsScoped: false } enumeration)
                     {
                         members.AddRange(enumeration.EnumMembers);                 // C-370: unscoped elements are members of the outer type, as from source
