@@ -386,4 +386,59 @@ public sealed class CompletionTests
         Assert.Empty(Inline("main-before"));
         Assert.Equal(["Top"], Inline("main-inside"));
     }
+
+    // ------------------------------------------------------------------ CMP-1394 (C-347): qualified generic and nested type names
+
+    /// <summary>The items after <paramref name="qualifier"/> (ending in a dot) in a statement of a program using <c>UG</c>.</summary>
+    private static CompletionItem[] AfterQualifier(string qualifier) =>
+        [.. Complete("program P;\nuses UG;\nvar O: TObject;\nbegin\n  O := " + qualifier + "$$\nend.", '.', ("UG.pas", GenericNamesFixture.Unit)).List.Items];
+
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1394")]
+    public void UnitQualifier_OffersGenericAndNestedTypes()
+    {
+        var unit = AfterQualifier("UG.");
+        Assert.Contains(unit, i => i.Label == "TOuter" && i.Kind == CompletionItemKind.Class);
+        Assert.Contains(unit, i => i.Label == "TList" && i.Detail == "type TList<T>");      // a generic with its type parameter list
+
+        var nested = AfterQualifier("UG.TOuter.");
+        Assert.Contains(nested, i => i.Label == "TInner" && i.Kind == CompletionItemKind.Class);
+        Assert.Contains(nested, i => i.Label == "TBox" && i.Detail == "type TBox<T>");
+    }
+
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1394")]
+    public void TypeQualifier_OffersNestedGeneric()
+    {
+        var items = AfterQualifier("TOuter.");
+
+        Assert.Contains(items, i => i.Label == "TBox" && i.Detail == "type TBox<T>");
+        Assert.Contains(items, i => i.Label == "TInner");
+        Assert.Contains(items, i => i.Label == "Create");
+        Assert.DoesNotContain(items, i => i.Label.Contains('<'));
+    }
+
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1394")]
+    public void InstanceQualifier_OffersNestedTypesAndClassMembers()
+    {
+        foreach (var qualifier in new[] { "TList<Integer>.", "UG.TList<Integer>." })
+        {
+            string[] labels = [.. AfterQualifier(qualifier).Select(i => i.Label)];
+
+            Assert.Contains("TEnumerator", labels);
+            Assert.Contains("Make", labels);
+            Assert.Contains("Count", labels);
+            Assert.Contains("Create", labels);
+            Assert.DoesNotContain("Add", labels);              // instance members need an object
+            Assert.DoesNotContain("Items", labels);
+        }
+
+        string[] nested = [.. AfterQualifier("TList<Integer>.TEnumerator.").Select(i => i.Label)];
+        Assert.Contains("Create", nested);
+        Assert.DoesNotContain("MoveNext", nested);
+    }
 }

@@ -607,6 +607,11 @@ internal sealed partial class ExpressionBinder
         methodCall = null;
         if (syntax.Name.Identifier.IsMissing)
         {
+            if (syntax.Expression is GenericNameSyntax || syntax.Expression.DescendantNodes().OfType<GenericNameSyntax>().Any())
+            {
+                _ = TypeNamedBy(syntax.Expression);                     // C-347 (CMP-1394): G<X>. being typed — the instance exists for completion
+            }
+
             return Error(syntax);
         }
 

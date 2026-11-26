@@ -201,4 +201,64 @@ public sealed class GoToDefinitionTests
         Assert.Equal([U1Text.IndexOf("TBase", StringComparison.Ordinal), square, cube],
             NavigationService.GoToImplementation(doc, U1Text.IndexOf("IShape", StringComparison.Ordinal) + 1, TestContext.Current.CancellationToken).Select(t => t.Span.Start));
     }
+
+    // ------------------------------------------------------------------ CMP-1394 (C-347): qualified generic and nested type names
+
+    private static (string Path, int Start) DefinitionInP(string piece, string segment, int occurrence = 1)
+    {
+        var text = GenericNamesFixture.Program;
+        var at = GenericNamesFixture.Offset(text, piece, occurrence) + piece.IndexOf(segment, StringComparison.Ordinal) + 1;
+        return Single(NavigationService.GoToDefinition(GenericNamesFixture.Open(), at, TestContext.Current.CancellationToken));
+    }
+
+    private static (string Path, int Start) InUG(string piece, int occurrence = 1) =>
+        (TestFiles.PathOf("UG.pas"), GenericNamesFixture.Offset(GenericNamesFixture.Unit, piece, occurrence));
+
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1394")]
+    public void QualifiedGenericSegments()
+    {
+        Assert.Equal((TestFiles.PathOf("UG.pas"), 0), DefinitionInP("UG.TOuter.TBox<Integer>", "UG"));
+        Assert.Equal(InUG("TOuter = class"), DefinitionInP("UG.TOuter.TBox<Integer>", "TOuter"));
+        Assert.Equal(InUG("TBox<T> = class"), DefinitionInP("UG.TOuter.TBox<Integer>", "TBox"));
+        Assert.Equal(InUG("TList<T> = class"), DefinitionInP("UG.TList<string>.TEnumerator", "TList"));
+        Assert.Equal(InUG("TOuter = class"), DefinitionInP("TOuter.TBox<Integer>.Create", "TOuter"));
+        Assert.Equal(InUG("TBox<T> = class"), DefinitionInP("TOuter.TBox<Integer>.Create", "TBox"));
+        Assert.Equal(InUG("TInner = class"), DefinitionInP("TOuter.TInner", "TInner"));
+    }
+
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1394")]
+    public void NestedTypeOfInstance_GoesToTheGenericsNestedDeclaration()
+    {
+        Assert.Equal(InUG("TEnumerator = class"), DefinitionInP("TList<Integer>.TEnumerator;", "TEnumerator"));
+        Assert.Equal(InUG("TEnumerator = class"), DefinitionInP("UG.TList<string>.TEnumerator", "TEnumerator"));
+        Assert.Equal(InUG("TEnumerator = class"), DefinitionInP("TList<Integer>.TEnumerator.Create", "TEnumerator"));
+        Assert.Equal(InUG("TList<T> = class"), DefinitionInP("TList<Integer>.TEnumerator;", "TList"));
+        Assert.Equal(InUG("Count: Integer"), DefinitionInP("TList<Integer>.Count", "Count"));
+        Assert.Equal(InUG("MoveNext", 2), DefinitionInP("E.MoveNext", "MoveNext"));        // a method: its implementation heading
+    }
+
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1394")]
+    public void NestedMethodImplementationHeading()
+    {
+        var doc = GenericNamesFixture.Open("UG.pas");
+        var text = GenericNamesFixture.Unit;
+        (string, int) Go(string piece, string segment) =>
+            Single(NavigationService.GoToDefinition(doc, GenericNamesFixture.Offset(text, piece) + piece.IndexOf(segment, StringComparison.Ordinal) + 1,
+                                                    TestContext.Current.CancellationToken));
+
+        // the method segment toggles with the declaration in the nested class; the type segments go to their declarations
+        Assert.Equal(InUG("MoveNext: Boolean;"), Go("TList<T>.TEnumerator.MoveNext", "MoveNext"));
+        Assert.Equal(InUG("MoveNext", 2), Go("MoveNext: Boolean;", "MoveNext"));
+        Assert.Equal(InUG("TEnumerator = class"), Go("TList<T>.TEnumerator.MoveNext", "TEnumerator"));
+        Assert.Equal(InUG("TList<T> = class"), Go("TList<T>.TEnumerator.MoveNext", "TList"));
+        Assert.Equal(InUG("Go;"), Go("TOuter.TInner.Go", "Go"));
+        Assert.Equal(InUG("TInner = class"), Go("TOuter.TInner.Go", "TInner"));
+        Assert.Equal(InUG("Make: TList<T>;"), Go("TList<T>.Make", "Make"));
+    }
 }

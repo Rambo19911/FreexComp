@@ -21,9 +21,17 @@ public static class QuickInfoService
             return null;
         }
 
-        var signature = symbol is TypeSymbol && !IdentifierComparer.Instance.Equals(symbol.Name, token.Value as string ?? token.Text)
+        // C-347: a declaration inside a generic is indexed with an instance's symbol (SemanticModel); it is shown as the generic's
+        var inGeneric = ReferenceEquals(model.GetDeclaredSymbol(token), symbol) && new[] { symbol }.Concat(TypeMembers.EnclosingTypes(symbol))
+            .OfType<TypeSymbol>().Any(t => t.IsGenericInstance);
+        if (inGeneric && symbol is not TypeSymbol)
+        {
+            return null;
+        }
+
+        var signature = symbol is TypeSymbol type && !IdentifierComparer.Instance.Equals(type.GenericDefinition?.Name ?? type.Name, token.Value as string ?? token.Text)
             ? $"type {token.Text} = {symbol.Name}"                       // an alias names the type it stands for
-            : symbol.ToDisplayString();
+            : symbol is TypeSymbol named ? DisplayWithEnclosingTypes(named, inGeneric) : symbol.ToDisplayString();
         var documentation = symbol is UnitSymbol unit
             ? unit.Locations.FirstOrDefault().Path
             : symbol.Documentation;
@@ -66,6 +74,25 @@ public static class QuickInfoService
         return model.GetDeclaredSymbol(token)
             ?? (token.Parent.FirstAncestorOrSelf<UsedUnitSyntax>() is { } used ? model.GetSymbolInfo(used).Symbol : null)
             ?? model.GetSymbolInfo(token.Parent).Symbol;
+    }
+
+    /// <summary>
+    /// CMP-1394 (C-347): a type's display string with its display name (LANG-775: <c>type TList&lt;Integer&gt;.TEnumerator = class</c>); with
+    /// <paramref name="asDeclared"/> every generic instance in the name is shown as its generic (<c>TList&lt;T&gt;.TEnumerator</c>).
+    /// </summary>
+    private static string DisplayWithEnclosingTypes(TypeSymbol type, bool asDeclared)
+    {
+        var display = type.ToDisplayString();
+        var plain = "type " + type.Name;
+        if (!display.StartsWith(plain, StringComparison.Ordinal))
+        {
+            return display;
+        }
+
+        static string NameOf(TypeSymbol t, bool asDeclared) =>
+            asDeclared && t.GenericDefinition is GenericTypeSymbol generic ? generic.Name + "<" + string.Join(", ", generic.ParameterNames) + ">" : t.Name;
+        var name = string.Join(".", TypeMembers.EnclosingTypes(type).Reverse().Append(type).Select(t => NameOf(t, asDeclared)));
+        return "type " + name + display[plain.Length..];
     }
 
     /// <summary>CMP-730: the unit name, plus the containing type if any (<c>U1.TFoo</c>).</summary>

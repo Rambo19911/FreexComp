@@ -292,6 +292,11 @@ public sealed class SemanticModel
             QualifiedNameSyntax qualified when ReferenceEquals(qualified.Right, nameNode) => qualified.Left,
             _ => null,
         };
+        if (nameNode is GenericNameSyntax generic && GenericType(generic, left, name) is { } genericType)
+        {
+            return genericType;
+        }
+
         if (left is not null)
         {
             return ContainerOf(left) switch
@@ -332,7 +337,10 @@ public sealed class SemanticModel
         return ScopeAt(node.Span.Start).Lookup(name) ?? _findUnit(name);
     }
 
-    /// <summary>What the left side of a member access denotes: a unit, a type (also the type of a value), or null.</summary>
+    /// <summary>
+    /// What the left side of a member access denotes: a unit, a type (also the type of a value), or null. A generic definition
+    /// (<c>TList&lt;T&gt;</c> in a method implementation heading) stands for its <see cref="Representative"/> instance.
+    /// </summary>
     private Symbol? ContainerOf(SyntaxNode left)
     {
         if (left is NameSyntax name && _findUnit(UnitBinder.NameOf(name)) is { } unit && GetSymbolInfo(left).Symbol is null or UnitSymbol)
@@ -342,11 +350,41 @@ public sealed class SemanticModel
 
         return GetSymbolInfo(left).Symbol switch
         {
-            TypeSymbol type => type,
+            TypeSymbol type => Representative(type) ?? type,
             UnitSymbol u => u,
             _ => GetTypeInfo(left).Type,
         };
     }
+
+    /// <summary>
+    /// CMP-1394 (C-347): the generic type a generic name segment names — by name and arity in the scope, in a unit qualifier's interface
+    /// or among the generics nested in a type qualifier — as the instance for its type arguments when they are types and that instance
+    /// exists, else the definition; null when no generic type has that name and arity (a generic routine, an error).
+    /// </summary>
+    private TypeSymbol? GenericType(GenericNameSyntax generic, SyntaxNode? left, string name)
+    {
+        var arity = generic.TypeArgumentList.Arguments.Count;
+        IEnumerable<Symbol?> candidates = left is null
+            ? [ScopeAt(generic.Span.Start).Lookup(GenericTypeSymbol.KeyOf(name, arity))]
+            : ContainerOf(left) switch
+            {
+                UnitSymbol unit => unit.InterfaceMembers,
+                TypeSymbol type => TypeMembers.NestedGenerics(type, name),
+                _ => [],
+            };
+        if (candidates.OfType<GenericTypeSymbol>().FirstOrDefault(g => IdentifierComparer.Instance.Equals(g.Name, name) && g.ParameterNames.Length == arity)
+            is not { } definition)
+        {
+            return null;
+        }
+
+        var arguments = generic.TypeArgumentList.Arguments
+            .Select(a => a is StringTypeSyntax { Length: null } ? _result.Types.String : GetSymbolInfo(a).Symbol as TypeSymbol).ToArray();
+        return arguments.All(a => a is not null) && definition.Instances.TryGetValue([.. arguments!], out var instance) ? instance : definition;
+    }
+
+    /// <summary>C-347: an instance standing for a generic definition (the first one made), or null when none exists or it is no generic.</summary>
+    private static TypeSymbol? Representative(TypeSymbol type) => type is GenericTypeSymbol generic ? generic.Instances.Values.FirstOrDefault() : null;
 
     /// <summary>The identifier naming what a node refers to: a name, a member access's member, an invocation's callee.</summary>
     private static SyntaxToken NameToken(SyntaxNode node) => node switch
@@ -452,6 +490,15 @@ public sealed class SemanticModel
                     foreach (var member in type.Members)
                     {
                         Visit(member);
+                    }
+
+                    // CMP-1394 (C-347): the members of a generic's declaration (nested types, their methods) are those of an instance
+                    if (Representative(type) is { } instance)
+                    {
+                        foreach (var member in instance.Members)
+                        {
+                            Visit(member);
+                        }
                     }
 
                     break;

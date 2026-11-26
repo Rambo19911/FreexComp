@@ -184,4 +184,36 @@ public sealed class QuickInfoTests
     }
 
     private static int TextSpan(string text, string piece) => text.ReplaceLineEndings("\n").IndexOf(piece, StringComparison.Ordinal);
+
+    /// <summary>CMP-1394 (C-347): hover on each segment of a qualified generic name shows that segment's symbol with its display name.</summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1394")]
+    public void NestedTypeOfInstance_DisplayName()
+    {
+        var doc = GenericNamesFixture.Open();
+        var text = GenericNamesFixture.Program;
+        QuickInfo At(string piece, string segment, int occurrence = 1)
+        {
+            var info = QuickInfoService.GetQuickInfo(doc, GenericNamesFixture.Offset(text, piece, occurrence) + piece.IndexOf(segment, StringComparison.Ordinal) + 1,
+                                                     TestContext.Current.CancellationToken);
+            Assert.NotNull(info);
+            return info;
+        }
+
+        var nested = At("TList<Integer>.TEnumerator;", "TEnumerator");
+        Assert.Equal("type TList<Integer>.TEnumerator = class(TObject)", nested.Signature);
+        Assert.Equal("UG.TList<Integer>", nested.DeclaredIn);
+        Assert.Equal("type TList<string>.TEnumerator = class(TObject)", At("UG.TList<string>.TEnumerator", "TEnumerator").Signature);
+        Assert.Equal("type TList<Integer> = class(TObject)", At("TList<Integer>.TEnumerator;", "TList").Signature);
+        Assert.Equal("unit UG", At("UG.TOuter.TBox<Integer>", "UG").Signature);
+        Assert.Equal("type TOuter = class(TObject)", At("UG.TOuter.TBox<Integer>", "TOuter").Signature);
+        Assert.Equal("type TOuter.TBox<Integer> = class(TObject)", At("UG.TOuter.TBox<Integer>", "TBox").Signature);
+        Assert.Equal("type TOuter.TInner = class(TObject)", At("I: TOuter.TInner", "TInner").Signature);
+
+        // at its declaration inside the generic, the nested type is shown as the generic's
+        var unit = GenericNamesFixture.Open("UG.pas");
+        var declared = QuickInfoService.GetQuickInfo(unit, GenericNamesFixture.Offset(GenericNamesFixture.Unit, "TEnumerator = class") + 1, TestContext.Current.CancellationToken);
+        Assert.Equal("type TList<T>.TEnumerator = class(TObject)", declared?.Signature);
+    }
 }

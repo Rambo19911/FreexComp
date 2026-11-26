@@ -158,4 +158,60 @@ public sealed class DocumentSymbolTests
         Assert.Equal(text.IndexOf("procedure", StringComparison.Ordinal), q.Span.Start);
         Assert.Equal(text.IndexOf("end;", StringComparison.Ordinal) + 4, q.Span.End);
     }
+
+    /// <summary>CMP-1394 (C-347): nested classes and nested generics under their enclosing type; nested-type method implementations.</summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1394")]
+    public void NestedClassesUnderTheirEnclosingType()
+    {
+        const string text = """
+            unit Unit1;
+            interface
+            type
+              TList<T> = class
+              public
+                type
+                  TEnumerator = class
+                  public
+                    function MoveNext: Boolean;
+                    type
+                      TDeep = class
+                      end;
+                  end;
+                  TBox<A, B> = class
+                  end;
+              public
+                procedure Add(const V: T);
+              end;
+            implementation
+            function TList<T>.TEnumerator.MoveNext: Boolean;
+            begin
+              Result := False;
+            end;
+            procedure TList<T>.Add(const V: T);
+            begin
+            end;
+            end.
+            """;
+
+        Assert.Equal(
+            """
+            Unit Unit1
+              Keyword interface
+                Class TList<T> : class
+                  Keyword public
+                    Class TEnumerator : class
+                      Keyword public
+                        Method MoveNext : function MoveNext: Boolean
+                        Class TDeep : class
+                    Class TBox<A, B> : class
+                  Keyword public
+                    Method Add : procedure Add(const V: T)
+              Keyword implementation
+                Method TList<T>.TEnumerator.MoveNext : function TList<T>.TEnumerator.MoveNext: Boolean
+                Method TList<T>.Add : procedure TList<T>.Add(const V: T)
+            """.ReplaceLineEndings("\n"),
+            Outline(text.ReplaceLineEndings("\n")));
+    }
 }

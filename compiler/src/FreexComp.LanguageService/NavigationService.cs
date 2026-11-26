@@ -20,7 +20,8 @@ public static partial class NavigationService
 {
     /// <summary>
     /// CMP-743, purely syntactic: compilation unit → (per section) <c>uses</c> node → <c>interface</c> / <c>implementation</c>
-    /// sections → types (class members grouped under one node per visibility section), constants, variables, routines (nested
+    /// sections → types (class members grouped under one node per visibility section, nested types among them; a generic named with its
+    /// type parameters, CMP-1394), constants, variables, routines (nested
     /// routines as children). A program lists its uses node and declarations directly under the program node.
     /// </summary>
     public static ImmutableArray<DocumentSymbol> GetDocumentSymbols(Document doc)
@@ -191,7 +192,13 @@ public static partial class NavigationService
                 break;
         }
 
-        return new DocumentSymbol(declaration.Identifier.Text, detail, kind, declaration.Span, declaration.Identifier.Span, children.ToImmutable());
+        var name = declaration.Identifier.Text;
+        if (declaration.TypeParameterList is { } parameters)                // CMP-1394: a generic with its type parameter names, TBox<A, B>
+        {
+            name += "<" + string.Join(", ", parameters.Parameters.SelectMany(p => p.Identifiers).Select(i => i.Identifier.Text)) + ">";
+        }
+
+        return new DocumentSymbol(name, detail, kind, declaration.Span, declaration.Identifier.Span, children.ToImmutable());
     }
 
     private static void AddMembers(ImmutableArray<DocumentSymbol>.Builder into, IEnumerable<SyntaxNode> members)
