@@ -1,22 +1,28 @@
 program DbAccessibilityProbe;
-{ A-083: the program the UI Automation client test DbAccessibilityClientTests.Uia_DbGridCellsAndNavigatorButtons
-  reads. One form 'DB Accessibility Probe' with a data grid (component name Grid; persistent columns titled 'Item'
-  and 'Label' over the fields id and name of five records 1 Alpha ... 5 Epsilon, all shown) and a navigator (Nav)
-  on the same data source. Protocol (each answer is one stdout line, flushed):
+{ A-083, A-084: the program the UI Automation client tests of DbAccessibilityClientTests read. One form
+  'DB Accessibility Probe' with a data grid (component name Grid; persistent columns titled 'Item' and 'Label' over
+  the fields id and name of five records 1 Alpha ... 5 Epsilon, all shown) and a navigator (Nav) on the same data
+  source. Protocol (each answer is one stdout line, flushed):
     'ready <form handle in hex>' once the form is shown;
     on WM_APP + 1: 'state <RecNo> <SelectedIndex of the grid> <dataset state>';
     on WM_APP + 2: the form becomes the active window of the probe's thread (no foreground change) and the grid
       takes the focus, then 'focused grid <True|False>' (whether the grid's window has the focus);
     on WM_APP + 3 (wParam = a virtual key): WM_KEYDOWN with that key is sent to the grid's window, then the state
       line of WM_APP + 1;
+    on WM_APP + 4 (A-084): 'listening <True|False>' (UiaClientsAreListening);
+    on WM_APP + 5 (A-084, wParam = the change): 1 the navigator shows only First, Prior, Next and Last; 2 it shows
+      its default buttons again; 3 the grid's second column is hidden; 4 it is shown again; 5 the current record is
+      deleted; then 'changed <wParam>';
     WM_CLOSE ends the program (exit code 0). Nothing is read from or written to files. }
 uses
-  Windows, Messages, SysUtils, Classes, Controls, Forms, DB, DBCtrls, DBGrids, TestDataSet;
+  Windows, Messages, SysUtils, Classes, Controls, Forms, UIAutomation, DB, DBCtrls, DBGrids, TestDataSet;
 
 const
   WM_PROBE_STATE = WM_APP + 1;
   WM_PROBE_FOCUS = WM_APP + 2;
   WM_PROBE_KEY = WM_APP + 3;
+  WM_PROBE_LISTENING = WM_APP + 4;
+  WM_PROBE_CHANGE = WM_APP + 5;
 
 type
   TProbeForm = class(TForm)
@@ -62,6 +68,23 @@ begin
       begin
         SendMessage(Grid.Handle, WM_KEYDOWN, Message.WParam, 0);
         SayState;
+      end;
+    WM_PROBE_LISTENING:
+      if UiaClientsAreListening then
+        Say('listening True')
+      else
+        Say('listening False');
+    WM_PROBE_CHANGE:
+      begin
+        case Message.WParam of
+          1: Nav.VisibleButtons := [nbFirst, nbPrior, nbNext, nbLast];
+          2: Nav.VisibleButtons := [nbFirst, nbPrior, nbNext, nbLast, nbInsert, nbDelete, nbEdit, nbPost, nbCancel,
+               nbRefresh];
+          3: Grid.Columns[1].Visible := False;
+          4: Grid.Columns[1].Visible := True;
+          5: DS.Delete;
+        end;
+        Say('changed ' + IntToStr(Message.WParam));
       end;
     WM_CLOSE:
       Application.Terminate;

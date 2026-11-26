@@ -39,6 +39,8 @@ public sealed class DbAccessibilityClientTests
     private const uint WM_PROBE_STATE = WM_APP + 1;
     private const uint WM_PROBE_FOCUS = WM_APP + 2;
     private const uint WM_PROBE_KEY = WM_APP + 3;
+    private const uint WM_PROBE_LISTENING = WM_APP + 4;
+    private const uint WM_PROBE_CHANGE = WM_APP + 5;
     private const int VK_LEFT = 0x25;
     private const int VK_DOWN = 0x28;
     private const int TablePattern = 10012;                                          // UIA_TablePatternId
@@ -147,6 +149,168 @@ public sealed class DbAccessibilityClientTests
             GoldenProgramRunner.TryDelete(work);
         }
     }
+
+    /// <summary>
+    /// A-084 (DAT-880, UIF-1445): a navigator button raises IsEnabled property-changed when the dataset's state changes
+    /// what the button may do: Prior becomes enabled after Next and disabled again after First, Post becomes enabled
+    /// when Edit puts the dataset into dsEdit and disabled again after Cancel (each button invoked by the client).
+    /// </summary>
+    [Fact]
+    [Trait("Req", "DAT-880")]
+    public void Uia_NavigatorButtonIsEnabledChangeRaised()
+    {
+        Session((probe, client, root) =>
+        {
+            var nav = Find(client, root, UiaIds.AutomationIdProperty, "Nav");
+            IUIAutomationElement Button(string name) => Find(client, nav, UiaIds.NameProperty, name);
+            void Invoke(string name) => ((IUIAutomationInvokePattern)Button(name).GetCurrentPattern(UiaIds.InvokePattern)!).Invoke();
+
+            var (prior, post) = (Button("Prior record"), Button("Post edit"));
+            Assert.True(prior.GetCurrentPropertyValue(UiaIds.IsEnabledProperty) is false, "Prior record disabled at the first record");
+            Assert.True(post.GetCurrentPropertyValue(UiaIds.IsEnabledProperty) is false, "Post edit disabled while browsing");
+            var (priorSink, postSink) = (new EventSink(probe.Changed), new EventSink(probe.Changed));
+            client.AddPropertyChangedEventHandlerNativeArray(prior, TreeScope.Element, IntPtr.Zero, priorSink, [UiaIds.IsEnabledProperty], 1);
+            client.AddPropertyChangedEventHandlerNativeArray(post, TreeScope.Element, IntPtr.Zero, postSink, [UiaIds.IsEnabledProperty], 1);
+            Listen(probe);
+
+            Invoke("Next record");
+            Assert.Equal("state 2 0 dsBrowse", probe.Request(WM_PROBE_STATE, "state "));
+            Assert.True(probe.WaitUntil(() => priorSink.Values(UiaIds.IsEnabledProperty) == "True"), "no IsEnabled True of Prior record; seen: " + priorSink);
+            Invoke("Edit record");
+            Assert.Equal("state 2 0 dsEdit", probe.Request(WM_PROBE_STATE, "state "));
+            Assert.True(probe.WaitUntil(() => postSink.Values(UiaIds.IsEnabledProperty) == "True"), "no IsEnabled True of Post edit; seen: " + postSink);
+            Invoke("Cancel edit");
+            Assert.Equal("state 2 0 dsBrowse", probe.Request(WM_PROBE_STATE, "state "));
+            Assert.True(probe.WaitUntil(() => postSink.Values(UiaIds.IsEnabledProperty) == "True False"), "no IsEnabled False of Post edit; seen: " + postSink);
+            Invoke("First record");
+            Assert.Equal("state 1 0 dsBrowse", probe.Request(WM_PROBE_STATE, "state "));
+            Assert.True(probe.WaitUntil(() => priorSink.Values(UiaIds.IsEnabledProperty) == "True False"), "no IsEnabled False of Prior record; seen: " + priorSink);
+            Assert.True(post.GetCurrentPropertyValue(UiaIds.IsEnabledProperty) is false, "Post edit disabled after Cancel");
+            Assert.True(prior.GetCurrentPropertyValue(UiaIds.IsEnabledProperty) is false, "Prior record disabled after First");
+        });
+    }
+
+    /// <summary>
+    /// A-084 (DAT-880, UIF-1446): a change of the navigator's <c>VisibleButtons</c> invalidates its children
+    /// (structure changed, children invalidated, with the navigator's runtime id): hiding the editing buttons removes
+    /// them from the navigator's children, showing them again brings them back.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "DAT-880")]
+    public void Uia_NavigatorVisibleButtonsInvalidateChildren()
+    {
+        Session((probe, client, root) =>
+        {
+            var nav = Find(client, root, UiaIds.AutomationIdProperty, "Nav");
+            IUIAutomationElement? Button(string name) =>
+                nav.FindFirst(TreeScope.Children, client.CreatePropertyCondition(UiaIds.NameProperty, name));
+            var navId = string.Join(",", nav.GetRuntimeId());
+            Assert.NotNull(Button("Delete record"));
+            var sink = new EventSink(probe.Changed);
+            client.AddStructureChangedEventHandler(nav, TreeScope.Element, IntPtr.Zero, sink);
+            Listen(probe);
+
+            Assert.Equal("changed 1", probe.Request(WM_PROBE_CHANGE, "changed ", 1));
+            Assert.True(probe.WaitUntil(() => sink.Count("structure") >= 1), "no structure-changed event of the navigator after hiding buttons; seen: " + sink);
+            Assert.Null(Button("Delete record"));
+            Assert.NotNull(Button("Last record"));
+            Assert.Equal("changed 2", probe.Request(WM_PROBE_CHANGE, "changed ", 2));
+            Assert.True(probe.WaitUntil(() => sink.Count("structure") >= 2), "no structure-changed event of the navigator after showing buttons; seen: " + sink);
+            Assert.NotNull(Button("Delete record"));
+            Assert.All(sink.All(), e =>
+            {
+                Assert.Equal("structure", e.Kind);
+                Assert.Equal(UiaIds.ChildrenInvalidated, e.Id);
+                Assert.Equal(navId, e.Value as string);
+            });
+        });
+    }
+
+    /// <summary>
+    /// A-084 (DAT-880, UIF-1446): the grid invalidates its children when its shown columns change (the second column
+    /// hidden, then shown again: ColumnCount 1, then 2) and when the rows of its row window change (the current record
+    /// deleted: RowCount 4), each time structure changed, children invalidated, with the grid's runtime id.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "DAT-880")]
+    public void Uia_DbGridColumnAndRowChangesInvalidateChildren()
+    {
+        Session((probe, client, root) =>
+        {
+            var grid = Find(client, root, UiaIds.AutomationIdProperty, "Grid");
+            var pattern = (IUIAutomationGridPattern)grid.GetCurrentPattern(UiaIds.GridPattern)!;
+            Assert.Equal(2, pattern.CurrentColumnCount);
+            Assert.Equal(5, pattern.CurrentRowCount);
+            var gridId = string.Join(",", grid.GetRuntimeId());
+            var sink = new EventSink(probe.Changed);
+            client.AddStructureChangedEventHandler(grid, TreeScope.Element, IntPtr.Zero, sink);
+            Listen(probe);
+
+            Assert.Equal("changed 3", probe.Request(WM_PROBE_CHANGE, "changed ", 3));
+            Assert.True(probe.WaitUntil(() => sink.Count("structure") >= 1), "no structure-changed event of the grid after hiding a column; seen: " + sink);
+            Assert.Equal(1, pattern.CurrentColumnCount);
+            Assert.Equal("changed 4", probe.Request(WM_PROBE_CHANGE, "changed ", 4));
+            Assert.True(probe.WaitUntil(() => sink.Count("structure") >= 2), "no structure-changed event of the grid after showing a column; seen: " + sink);
+            Assert.Equal(2, pattern.CurrentColumnCount);
+            Assert.Equal("changed 5", probe.Request(WM_PROBE_CHANGE, "changed ", 5));
+            Assert.True(probe.WaitUntil(() => sink.Count("structure") >= 3), "no structure-changed event of the grid after deleting a record; seen: " + sink);
+            Assert.Equal(4, pattern.CurrentRowCount);
+            Assert.All(sink.All(), e =>
+            {
+                Assert.Equal("structure", e.Kind);
+                Assert.Equal(UiaIds.ChildrenInvalidated, e.Id);
+                Assert.Equal(gridId, e.Value as string);
+            });
+        });
+    }
+
+    /// <summary>
+    /// Builds and starts the probe, runs <paramref name="body"/> with a client and the probe's form element, then
+    /// removes the client's handlers (bounded) and closes the probe; the probe is killed and the work folder deleted
+    /// whatever happens.
+    /// </summary>
+    private static void Session(Action<ProbeProcess, IUIAutomation, IUIAutomationElement> body)
+    {
+        if (GoldenProgramRunner.MissingPrerequisites(DataCorpus.ToolchainDirectory, DataCorpus.OpcPath, DataCorpus.SqliteLibrary) is { } missing)
+        {
+            Assert.Fail(missing);
+        }
+
+        var ct = TestContext.Current.CancellationToken;
+        var work = Path.Combine(Path.GetTempPath(), "FreexComp.Tests", "data-uia-" + Guid.NewGuid().ToString("N"));
+        var exe = Build(work, ct);
+        using var probe = ProbeProcess.Start(exe, DateTime.UtcNow + Budget);
+        var client = (IUIAutomation)new CUIAutomation();
+        try
+        {
+            body(probe, client, client.ElementFromHandle(probe.Window));
+            Assert.True(RemoveHandlers(client), "RemoveAllEventHandlers did not return within 5 s");
+            probe.Close();
+        }
+        finally
+        {
+            probe.Dispose();
+            RemoveHandlers(client);                                                  // after a failure: bounded
+            GoldenProgramRunner.TryDelete(work);
+        }
+    }
+
+    /// <summary>The first descendant of <paramref name="under"/> whose <paramref name="property"/> is <paramref name="value"/>; fails when there is none.</summary>
+    private static IUIAutomationElement Find(IUIAutomation client, IUIAutomationElement under, int property, string value)
+    {
+        var found = under.FindFirst(TreeScope.Descendants, client.CreatePropertyCondition(property, value));
+        Assert.True(found is not null, $"no element with {value}");
+        return found;
+    }
+
+    /// <summary>
+    /// Waits until the probe sees a listening client (<c>UiaClientsAreListening</c>, the condition of UIF-1440 for
+    /// raising events): at most 100 requests, each answered by the probe.
+    /// </summary>
+    private static void Listen(ProbeProcess probe) =>
+        Assert.True(
+            Enumerable.Range(0, 100).Any(_ => probe.Request(WM_PROBE_LISTENING, "listening ") == "listening True"),
+            "the probe does not see a listening client");
 
     /// <summary>Compiles the probe as the golden runner compiles a program (data, its test library and the UI framework on the unit path).</summary>
     private static string Build(string work, CancellationToken ct)
@@ -463,6 +627,51 @@ public sealed class DbAccessibilityClientTests
                 return string.Join("; ", events.Select(e => $"{UiaIds.Name(e.Type)} '{e.Name}'"))
                     + $" (and {others} of other processes)";
             }
+        }
+    }
+
+    /// <summary>One event a client handler received: its kind (property, structure), the property or change-type id, and the new value (structure: the runtime id, comma-separated).</summary>
+    private sealed record UiaEvent(string Kind, int Id, object? Value);
+
+    /// <summary>
+    /// The client's property-changed and structure-changed handler (a COM callable wrapper the system calls on its own
+    /// threads): it records what arrives and wakes the test's waits.
+    /// </summary>
+    [ComVisible(true)]
+    private sealed class EventSink(Action changed) : IUIAutomationPropertyChangedEventHandler, IUIAutomationStructureChangedEventHandler
+    {
+        private readonly List<UiaEvent> events = [];
+
+        public void HandlePropertyChangedEvent(IUIAutomationElement sender, int propertyId, object? newValue) =>
+            Add(new("property", propertyId, newValue));
+
+        public void HandleStructureChangedEvent(IUIAutomationElement sender, int changeType, int[]? runtimeId) =>
+            Add(new("structure", changeType, runtimeId is null ? null : string.Join(",", runtimeId)));
+
+        public UiaEvent[] All()
+        {
+            lock (events)
+            {
+                return [.. events];
+            }
+        }
+
+        public int Count(string kind) => All().Count(e => e.Kind == kind);
+
+        /// <summary>The new values of the property events of <paramref name="propertyId"/>, space-separated.</summary>
+        public string Values(int propertyId) =>
+            string.Join(" ", All().Where(e => e.Kind == "property" && e.Id == propertyId).Select(e => e.Value));
+
+        public override string ToString() => string.Join("; ", All().Select(e => $"{e.Kind} {e.Id} {e.Value}"));
+
+        private void Add(UiaEvent e)
+        {
+            lock (events)
+            {
+                events.Add(e);
+            }
+
+            changed();
         }
     }
 }

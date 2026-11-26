@@ -286,6 +286,9 @@ type
 
   TDBGridCellProvider = class;
 
+  { what the children of the grid's element depend on (A-084), see AccShape }
+  TAccShape = array[0..4] of Integer;
+
   { A-083 (accessibility.md section 12 follow-up of UIF-1435...1439): the data grid, a fragment root with the Grid,
     Table and Selection patterns. Its items are the cells of the rows of the row window (row 0 = the first row the
     grid shows) and of the shown columns; the title cells are its header items (column headers of the Table
@@ -298,12 +301,17 @@ type
     FLastCol: Integer;
     FLastRow: Integer;
     FLastRecNo: Integer;
+    { the children last reported (A-084): shown columns, rows of the row window, title row, first and last column
+      inside the client area }
+    FShape: TAccShape;
     function Grid: TDBGrid;
     { the live provider of an element (ARow = -1: a title cell) or a new one (no reference yet) }
     function CellObject(ACol, ARow: Integer): TDBGridCellProvider;
     { the title cells of the shown columns as a safe array of provider references }
     function TitleArray(AFirst, ALast: Integer; out pRetVal: PSafeArray): HResult;
     procedure NoteCurrent;
+    { A-084 (DAT-880): children invalidated when the columns or rows the grid exposes changed }
+    procedure NoteShape;
   protected
     procedure DisconnectFragments; override;
   public
@@ -576,6 +584,24 @@ begin
     TDBGridAutomationProvider(G.AutomationObject).NoteCurrent;
 end;
 
+{ the columns or rows the grid exposes may have changed: see NoteShape }
+procedure AccShapeMayHaveChanged(G: TDBGrid);
+begin
+  if G.AutomationObject is TDBGridAutomationProvider then
+    TDBGridAutomationProvider(G.AutomationObject).NoteShape;
+end;
+
+{ what the children of the grid's element depend on: the shown columns, the rows of the row window, the title row,
+  the first and the last column inside the client area }
+procedure AccShape(G: TDBGrid; out Shape: TAccShape);
+begin
+  Shape[0] := G.FShown.Count;
+  Shape[1] := AccRowCount(G);
+  Shape[2] := Ord(AccHasTitles(G));
+  Shape[3] := AccFirstCol(G);
+  Shape[4] := AccLastCol(G);
+end;
+
 { ---------------------------------------------------------------- TDBGridAutomationProvider }
 
 constructor TDBGridAutomationProvider.Create(AControl: TControl);
@@ -587,6 +613,31 @@ begin
   FHasLast := AccCurrent(G, FLastCol, FLastRow);
   if FHasLast then
     FLastRecNo := G.FDataLink.DataSet.RecNo;
+  AccShape(G, FShape);
+end;
+
+{ the shape is remembered; a change raises structure changed, children invalidated, on the grid when a client
+  listens (UIF-1440, UIF-1446) }
+procedure TDBGridAutomationProvider.NoteShape;
+var
+  G: TDBGrid;
+  Shape: TAccShape;
+  I: Integer;
+  Changed: Boolean;
+begin
+  G := Grid;
+  if (G = nil) or (csDestroying in G.ComponentState) then
+    Exit;
+  AccShape(G, Shape);
+  Changed := False;
+  for I := 0 to 4 do
+    if Shape[I] <> FShape[I] then
+    begin
+      FShape[I] := Shape[I];
+      Changed := True;
+    end;
+  if Changed then
+    RaiseChildrenInvalidated(G);
 end;
 
 destructor TDBGridAutomationProvider.Destroy;
@@ -2060,6 +2111,7 @@ begin
   FDataLink.BufferCount := VisibleRowCount;
   UpdateNativeBars;
   UpdateEditorBounds;
+  AccShapeMayHaveChanged(Self);
 end;
 
 { an empty range hides a bar; vertical: 1 .. RecordCount at RecNo; horizontal: one position per column }
@@ -2112,6 +2164,7 @@ begin
   UpdateNativeBars;
   UpdateEditorBounds;
   InvalidateGrid;
+  AccShapeMayHaveChanged(Self);
 end;
 
 procedure TDBGrid.ScrollSelectedIntoView;

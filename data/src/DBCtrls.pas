@@ -441,12 +441,16 @@ type
   TNavigatorAutomationProvider = class(TWindowAutomationProvider)
   private
     FButtons: array[TNavigateBtn] of TNavButtonProvider;    { the live button providers (no counted references) }
+    FEnabled: array[TNavigateBtn] of Boolean;               { IsEnabled of each button last reported (A-084) }
     function Nav: TDBNavigator;
     { the live provider of a button or a new one (a new one has no reference yet: the caller takes one at once) }
     function ButtonObject(B: TNavigateBtn): TNavButtonProvider;
+    { A-084 (DAT-880): IsEnabled property-changed on each visible button whose IsEnabled changed }
+    procedure NoteButtons;
   protected
     procedure DisconnectFragments; override;
   public
+    constructor Create(AControl: TControl); override;
     class function DefaultControlType(Control: TControl): Integer; override;
     function Navigate(direction: Integer; out pRetVal: IRawElementProviderFragment): HResult; override; stdcall;
     function ElementProviderFromPoint(x, y: Double; out pRetVal: IRawElementProviderFragment): HResult; override;
@@ -1718,7 +1722,50 @@ begin
   RaiseFragmentEvent(N, Button, UIA_Invoke_InvokedEventId);
 end;
 
+{ the state of the buttons may have changed (dataset state, Enabled): see NoteButtons }
+procedure NavButtonsMayHaveChanged(N: TDBNavigator);
+begin
+  if N.AutomationObject is TNavigatorAutomationProvider then
+    TNavigatorAutomationProvider(N.AutomationObject).NoteButtons;
+end;
+
 { ---------------------------------------------------------------- TNavigatorAutomationProvider }
+
+constructor TNavigatorAutomationProvider.Create(AControl: TControl);
+var
+  B: TNavigateBtn;
+begin
+  inherited Create(AControl);
+  for B := Low(TNavigateBtn) to High(TNavigateBtn) do
+    FEnabled[B] := NavButtonEnabled(TDBNavigator(AControl), B);
+end;
+
+{ every button's IsEnabled is remembered; a change of a visible button raises IsEnabled property-changed on its
+  element when a client listens (UIF-1440; a hidden button is no element) }
+procedure TNavigatorAutomationProvider.NoteButtons;
+var
+  N: TDBNavigator;
+  B: TNavigateBtn;
+  IsOn: Boolean;
+  Button: IRawElementProviderSimple;
+begin
+  N := Nav;
+  if (N = nil) or (csDestroying in N.ComponentState) then
+    Exit;
+  for B := Low(TNavigateBtn) to High(TNavigateBtn) do
+  begin
+    IsOn := NavButtonEnabled(N, B);
+    if IsOn = FEnabled[B] then
+      Continue;
+    FEnabled[B] := IsOn;
+    if (B in N.FVisibleButtons) and AutomationEventsWanted(N) then
+    begin
+      Button := ButtonObject(B);
+      RaiseFragmentBoolPropertyChanged(N, Button, UIA_IsEnabledPropertyId, not IsOn, IsOn);
+      Button := nil;
+    end;
+  end;
+end;
 
 class function TNavigatorAutomationProvider.DefaultControlType(Control: TControl): Integer;
 begin
@@ -2031,8 +2078,11 @@ end;
 
 procedure TDBNavigator.SetVisibleButtons(Value: TNavButtonSet);
 begin
+  if Value = FVisibleButtons then
+    Exit;
   FVisibleButtons := Value;
   Invalidate;
+  RaiseChildrenInvalidated(Self);                            { A-084 (DAT-880): the buttons are its children }
 end;
 
 procedure TDBNavigator.SetHints(Value: TStrings);
@@ -2043,13 +2093,17 @@ end;
 procedure TDBNavigator.LinkChanged;
 begin
   if (FDataLink <> nil) and not (csDestroying in ComponentState) then
+  begin
     Invalidate;
+    NavButtonsMayHaveChanged(Self);
+  end;
 end;
 
 procedure TDBNavigator.CMEnabledChanged(var Message: TMessage);
 begin
   inherited CMEnabledChanged(Message);
   Invalidate;
+  NavButtonsMayHaveChanged(Self);
 end;
 
 function TDBNavigator.ButtonEnabled(Index: TNavigateBtn): Boolean;
