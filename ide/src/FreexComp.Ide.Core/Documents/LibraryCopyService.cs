@@ -18,8 +18,9 @@ namespace FreexComp.Ide.Core.Documents;
 
 /// <summary>
 /// <c>file.copyLibraryUnitToProject</c> and the <c>Copy to Project</c> action of the library bar (library-local-copy.md
-/// §3, IDE-LIB-026…038): copies a library unit (and the companion form it names) into the project directory and adds
-/// it to the project, so that this project is built from the copy. Nothing is ever overwritten; all or nothing.
+/// §3, IDE-LIB-026…038): copies a library unit (with the companion form and the include files it names) into the
+/// project directory and adds it to the project, so that this project is built from the copy. Nothing is ever
+/// overwritten; all or nothing.
 /// </summary>
 public sealed class LibraryCopyService
 {
@@ -29,6 +30,8 @@ public sealed class LibraryCopyService
     public const string ActionName = "CopyToProject";
 
     private const string LogCategory = "LibraryCopy";
+    private const string IncludeNotFound = "E1202";   // the compiler's "include file not found" (LANG-875)
+    private const string IncludeUnreadable = "E0003"; // the compiler's "cannot read" (path, system text)
     private static readonly TimeSpan StatusDuration = TimeSpan.FromSeconds(5); // UI-MSG-003 "Status"
 
     private readonly IFileSystem _fileSystem;
@@ -144,17 +147,37 @@ public sealed class LibraryCopyService
         byte[] bytes;
         byte[]? formBytes = null;
         string? form;
+        var includes = new List<(string Source, string Relative, byte[] Bytes)>();
         try
         {
             bytes = _fileSystem.ReadAllBytes(source);
-            var (hasInclude, namedForm) = Directives(source, EncodingDetector.Detect(bytes).Text);
-            if (hasInclude)
+            var tree = SyntaxTree.Parse(SourceText.From(PathUtil.Normalize(source), EncodingDetector.Detect(bytes).Text),
+                fs: new CompilerFileSystemAdapter(_fileSystem));
+
+            // IDE-LIB-029: the include files as the compiler resolves them; a missing one → nothing is copied.
+            if (tree.Diagnostics.FirstOrDefault(d => d.Code == IncludeNotFound) is { } missing)
             {
-                // IDE-LIB-029: an include file is looked up beside the including file, so the copy would not compile.
-                Report(Format(Strings.Msg_File_LibraryCopyHasIncludes, name));
+                Report(Format(Strings.Msg_File_LibraryCopyIncludeMissing, name, Convert.ToString(missing.Arguments[0], CultureInfo.InvariantCulture)!));
                 return;
             }
 
+            if (tree.Diagnostics.FirstOrDefault(d => d.Code == IncludeUnreadable) is { } unreadable)
+            {
+                await ReportFailureAsync(name, Convert.ToString(unreadable.Arguments[^1], CultureInfo.InvariantCulture)!);
+                return;
+            }
+
+            var unitDirectory = Path.GetDirectoryName(PathUtil.Normalize(source))!;
+            foreach (var include in tree.IncludedTrees.Select(t => t.Text.Path).Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                // Only what lies in the unit's folder moves with it; a file elsewhere (absolute name) is found where it is.
+                var relative = Path.GetRelativePath(unitDirectory, include);
+                if (relative == ".." || relative.StartsWith(@"..\", StringComparison.Ordinal) || Path.IsPathRooted(relative))
+                    continue;
+                includes.Add((include, relative, _fileSystem.ReadAllBytes(include)));
+            }
+
+            var namedForm = FormOf(source, tree);
             form = namedForm is not null && _fileSystem.FileExists(namedForm) ? namedForm : null;
             if (form is not null)
                 formBytes = _fileSystem.ReadAllBytes(form);
@@ -173,8 +196,16 @@ public sealed class LibraryCopyService
             return;
         }
 
+        // IDE-LIB-029: nor is an existing include file; the whole action is refused.
+        if (includes.FirstOrDefault(i => _fileSystem.FileExists(Path.Combine(project.Directory, i.Relative))) is { Relative: { } existingInclude })
+        {
+            Report(Format(Strings.Msg_File_LibraryCopyAlreadyInProject, existingInclude));
+            return;
+        }
+
         // IDE-LIB-031, 032: copy, then add; whatever fails, nothing the action created stays behind.
         var created = new List<string>();
+        var createdDirectories = new List<string>();
         string? failure = null;
         try
         {
@@ -185,6 +216,14 @@ public sealed class LibraryCopyService
             {
                 created.Add(targetForm);
                 _fileSystem.WriteAllBytes(targetForm, formBytes!);
+            }
+
+            foreach (var include in includes)
+            {
+                var includeTarget = Path.Combine(project.Directory, include.Relative);
+                CreateDirectoryOf(includeTarget, createdDirectories);
+                created.Add(includeTarget);
+                _fileSystem.WriteAllBytes(includeTarget, include.Bytes);
             }
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
@@ -198,11 +237,14 @@ public sealed class LibraryCopyService
         {
             foreach (var path in created)
                 DeleteQuietly(path);
+            foreach (var directory in Enumerable.Reverse(createdDirectories))
+                DeleteDirectoryQuietly(directory);
             await ReportFailureAsync(name, failure);
             return;
         }
 
-        _log.Info(LogCategory, $"{CommandId}: '{source}' copied to '{target}'."); // IDE-LIB-036
+        var withIncludes = string.Concat(includes.Select(i => $", '{i.Source}' to '{Path.Combine(project.Directory, i.Relative)}'"));
+        _log.Info(LogCategory, $"{CommandId}: '{source}' copied to '{target}'{withIncludes}."); // IDE-LIB-036
         if (await OpenAsync(target) is { } copy)
         {
             // IDE-LIB-033: the same caret position and vertical scroll position as the library document.
@@ -244,6 +286,32 @@ public sealed class LibraryCopyService
             : Format(Strings.ResourceManager.GetString(result.MessageId!.Replace('.', '_'), CultureInfo.CurrentUICulture) ?? result.MessageId,
                 [.. result.Args]);
 
+    /// <summary>Creates the missing folders of <paramref name="file"/>'s directory, outermost first, and records them.</summary>
+    private void CreateDirectoryOf(string file, List<string> created)
+    {
+        var missing = new List<string>();
+        for (var directory = Path.GetDirectoryName(file); directory is not null && !_fileSystem.DirectoryExists(directory);
+             directory = Path.GetDirectoryName(directory))
+            missing.Insert(0, directory);
+        foreach (var directory in missing)
+        {
+            _fileSystem.CreateDirectory(directory);
+            created.Add(directory);
+        }
+    }
+
+    private void DeleteDirectoryQuietly(string path)
+    {
+        try
+        {
+            _fileSystem.DeleteDirectory(path);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            _log.Warning(LogCategory, $"{path}: not removed after a failed copy", e);
+        }
+    }
+
     private void DeleteQuietly(string path)
     {
         try
@@ -258,30 +326,16 @@ public sealed class LibraryCopyService
     }
 
     /// <summary>
-    /// The directive trivia of the unit (compiler lexer, so a directive inside a comment does not count): whether it has
-    /// an include directive (IDE-LIB-029; the switches <c>{$I+}</c> / <c>{$I-}</c> are none) and the sibling
-    /// <c>&lt;base&gt;.form</c> path when a <c>{$FORM}</c> directive names it (IDE-PM-051).
+    /// The sibling <c>&lt;base&gt;.form</c> path when a <c>{$FORM}</c> directive of the unit names it (IDE-PM-051; directive
+    /// trivia of the compiler's tree, so a directive inside a comment does not count).
     /// </summary>
-    private static (bool HasInclude, string? Form) Directives(string unitPath, string text)
+    private static string? FormOf(string unitPath, SyntaxTree tree)
     {
         var formPath = Path.ChangeExtension(unitPath, ".form");
         var formName = Path.GetFileName(formPath);
-        var hasInclude = false;
-        string? form = null;
-        foreach (var token in Lexer.Tokenize(SourceText.From(unitPath, text)))
-        {
-            foreach (var trivia in token.LeadingTrivia.Concat(token.TrailingTrivia))
-            {
-                // The lexer gives an include directive its own trivia kind ({$I+} / {$I-} are ordinary directives).
-                if (trivia.Kind == SyntaxKind.IncludeDirectiveTrivia)
-                    hasInclude = true;
-                else if (trivia.Kind == SyntaxKind.DirectiveTrivia && trivia.Directive is { Name: "FORM" } directive
-                    && string.Equals(directive.Argument.Trim().Trim('\''), formName, StringComparison.OrdinalIgnoreCase))
-                    form = formPath;
-            }
-        }
-
-        return (hasInclude, form);
+        return tree.Directives.Any(d => d.Name == "FORM" && string.Equals(d.Argument.Trim().Trim('\''), formName, StringComparison.OrdinalIgnoreCase))
+            ? formPath
+            : null;
     }
 
     private static string Format(string text, params string[] args) => string.Format(CultureInfo.CurrentCulture, text, args);

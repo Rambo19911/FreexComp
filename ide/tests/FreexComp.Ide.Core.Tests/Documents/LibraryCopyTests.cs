@@ -267,42 +267,212 @@ public sealed class LibraryCopyTests
 
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-LIB-029")]
-    public Task UnitWithIncludeDirectiveIsRefused() => TestUiThread.RunAsync(async () =>
+    public Task UnitIsCopiedWithItsIncludeFiles() => TestUiThread.RunAsync(async () =>
     {
         var bed = new BuildTestBed();
         var services = bed.Services;
         await bed.OpenHelloAsync();
         bed.File(Root + @"\Tables.inc", "const Zero = 0;\r\n");
+        bed.File(Root + @"\Long.inc", "const One = 1;\r\n");
         var body = "\r\ninterface\r\nimplementation\r\nend.\r\n";
-        bed.File(Root + @"\Short.pas", "unit Short;\r\ninterface\r\n{$I Tables.inc}\r\nimplementation\r\nend.\r\n");
-        bed.File(Root + @"\Long.pas", "unit Long;\r\ninterface\r\n{$include 'Tables.inc'}\r\nimplementation\r\nend.\r\n");
+        // The same include twice (in another case): copied once.
+        bed.File(Root + @"\Short.pas", "unit Short;\r\ninterface\r\n{$I Tables.inc}\r\n{$I TABLES.INC}\r\nimplementation\r\nend.\r\n");
+        // The long form, quoted, without extension (.inc is the default, LANG-875).
+        bed.File(Root + @"\Long.pas", "unit Long;\r\ninterface\r\n{$include 'Long'}\r\nimplementation\r\nend.\r\n");
         bed.File(Root + @"\Switches.pas", "unit Switches;\r\n{$I-}\r\n{$I+}\r\n// {$I Tables.inc}\r\n(* {$INCLUDE Tables.inc} *)" + body);
+
+        foreach (var (name, include) in (ValueTuple<string, string>[])[("Short.pas", "Tables.inc"), ("Long.pas", "Long.inc")])
+        {
+            await bed.OpenDocumentAsync(Path.Combine(Root, name));
+            var files = bed.Fs.AllFiles;
+            Assert.True(services.Commands.CanExecute(Command));
+            await services.Commands.ExecuteAsync(Command);
+
+            var target = Path.Combine(BuildTestBed.Dir, name);
+            var targetInclude = Path.Combine(BuildTestBed.Dir, include);
+            Assert.Equal(new[] { target, targetInclude }.Order(StringComparer.OrdinalIgnoreCase), bed.Fs.AllFiles.Except(files).Order(StringComparer.OrdinalIgnoreCase));
+            Assert.Equal(bed.Fs.ReadAllBytes(Path.Combine(Root, name)), bed.Fs.ReadAllBytes(target));
+            Assert.Equal(bed.Fs.ReadAllBytes(Path.Combine(Root, include)), bed.Fs.ReadAllBytes(targetInclude));
+            Assert.Equal(target, services.Documents.ActiveDocument!.FilePath);
+            Assert.Equal(name + " was copied into the project. This project is now built from the copy.", services.Status.Message);
+            Assert.Contains(bed.Log.Lines, l => l.Contains(Command, StringComparison.Ordinal) && l.Contains(targetInclude, StringComparison.Ordinal));
+        }
+
+        // Only the unit is a member (an include file is no unit of the project).
+        Assert.Equal(["Hello.pas|", "Unit1.pas|", "Short.pas|", "Long.pas|"], Entries(bed));
+
+        // The switches {$I+} / {$I-} and a directive inside a comment are no include directives.
+        await bed.OpenDocumentAsync(Root + @"\Switches.pas");
+        var before = bed.Fs.AllFiles;
+        await services.Commands.ExecuteAsync(Command);
+        Assert.Equal(BuildTestBed.Dir + @"\Switches.pas", services.Documents.ActiveDocument!.FilePath);
+        Assert.Equal(bed.Fs.ReadAllBytes(Root + @"\Switches.pas"), bed.Fs.ReadAllBytes(BuildTestBed.Dir + @"\Switches.pas"));
+        Assert.Equal([BuildTestBed.Dir + @"\Switches.pas"], bed.Fs.AllFiles.Except(before));
+        Assert.Equal(["Hello.pas|", "Unit1.pas|", "Short.pas|", "Long.pas|", "Switches.pas|"], Entries(bed));
+        Assert.Empty(bed.Dialogs.Requests);
+    });
+
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "IDE-LIB-029")]
+    [Trait("Req", "IDE-LIB-032")]
+    public Task NestedIncludeCopiedAtItsRelativePath() => TestUiThread.RunAsync(async () =>
+    {
+        var (bed, recording) = RecordingBed();
+        var services = bed.Services;
+        await bed.OpenHelloAsync();
+        bed.File(Root + @"\Nest.pas", "unit Nest;\r\ninterface\r\n{$I parts\\Outer.inc}\r\nimplementation\r\nend.\r\n");
+        bed.File(Root + @"\parts\Outer.inc", "{$I Inner}\r\nconst Outer = 1;\r\n");
+        bed.File(Root + @"\parts\Inner.inc", "const Inner = 2;\r\n");
+        // Beside the unit, but an include is looked up beside the including file first (LANG-875): not this one.
+        bed.File(Root + @"\Inner.inc", "const Wrong = 3;\r\n");
+        var library = await bed.OpenDocumentAsync(Root + @"\Nest.pas");
+        var files = bed.Fs.AllFiles;
+        var projectFile = bed.Text(BuildTestBed.ProjectPath);
+        var parts = BuildTestBed.Dir + @"\parts";
+
+        // A failing write removes what the action created, the new folder included (IDE-LIB-032).
+        bed.Dialogs.Answer("Msg.File.LibraryCopyFailed", "OK");
+        recording.FailWith = call => call == "WriteAllBytes " + parts + @"\Inner.inc" ? new IOException("The disk is full.") : null;
+        await services.Commands.ExecuteAsync(Command);
+        var failed = Assert.Single(bed.Dialogs.Requests);
+        Assert.Equal(("Msg.File.LibraryCopyFailed", "Nest.pas", "The disk is full."), (failed.MessageId, failed.Args[0], failed.Args[1]));
+        Assert.Equal(files, bed.Fs.AllFiles);
+        Assert.False(bed.Fs.DirectoryExists(parts));
+        Assert.Equal(projectFile, bed.Text(BuildTestBed.ProjectPath));
+        Assert.Equal(["Hello.pas|", "Unit1.pas|"], Entries(bed));
+        Assert.Same(library, services.Documents.ActiveDocument);
+
+        recording.FailWith = null;
+        await services.Commands.ExecuteAsync(Command);
+        Assert.Equal([BuildTestBed.Dir + @"\Nest.pas", parts + @"\Inner.inc", parts + @"\Outer.inc"],
+            bed.Fs.AllFiles.Except(files).Order(StringComparer.OrdinalIgnoreCase));
+        Assert.Equal("const Inner = 2;\r\n", bed.Text(parts + @"\Inner.inc"));
+        Assert.Equal(bed.Fs.ReadAllBytes(Root + @"\parts\Outer.inc"), bed.Fs.ReadAllBytes(parts + @"\Outer.inc"));
+        Assert.Equal(["Hello.pas|", "Unit1.pas|", "Nest.pas|"], Entries(bed));
+        Assert.Equal(BuildTestBed.Dir + @"\Nest.pas", services.Documents.ActiveDocument!.FilePath);
+        Assert.Single(bed.Dialogs.Requests);
+    });
+
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "IDE-LIB-029")]
+    public Task ExistingIncludeTarget_CopiesNothing() => TestUiThread.RunAsync(async () =>
+    {
+        var bed = new BuildTestBed();
+        var services = bed.Services;
+        await bed.OpenHelloAsync();
+        bed.File(Root + @"\Short.pas", "unit Short;\r\ninterface\r\n{$I Tables.inc}\r\nimplementation\r\nend.\r\n");
+        bed.File(Root + @"\Tables.inc", "const Zero = 0;\r\n");
+        bed.File(Root + @"\Nest.pas", "unit Nest;\r\ninterface\r\n{$I parts\\Outer.inc}\r\nimplementation\r\nend.\r\n");
+        bed.File(Root + @"\parts\Outer.inc", "{$I Inner.inc}\r\n");
+        bed.File(Root + @"\parts\Inner.inc", "const Inner = 2;\r\n");
+        bed.File(BuildTestBed.Dir + @"\Tables.inc", "const Mine = 0;\r\n");
+        bed.File(BuildTestBed.Dir + @"\parts\Inner.inc", "const MineToo = 0;\r\n");
         var files = bed.Fs.AllFiles;
         var projectFile = bed.Text(BuildTestBed.ProjectPath);
 
-        foreach (var name in (string[])["Short.pas", "Long.pas"])
+        foreach (var (name, include) in (ValueTuple<string, string>[])[("Short.pas", "Tables.inc"), ("Nest.pas", @"parts\Inner.inc")])
+        {
+            var library = await bed.OpenDocumentAsync(Path.Combine(Root, name));
+            await services.Commands.ExecuteAsync(Command);
+
+            // Nothing is written, an existing file is never overwritten; the status bar names it.
+            Assert.Equal(files, bed.Fs.AllFiles);
+            Assert.Equal("const Mine = 0;\r\n", bed.Text(BuildTestBed.Dir + @"\Tables.inc"));
+            Assert.Equal("const MineToo = 0;\r\n", bed.Text(BuildTestBed.Dir + @"\parts\Inner.inc"));
+            Assert.Equal(projectFile, bed.Text(BuildTestBed.ProjectPath));
+            Assert.Equal(["Hello.pas|", "Unit1.pas|"], Entries(bed));
+            Assert.Same(library, services.Documents.ActiveDocument);
+            Assert.Equal("The project already has its own " + include + ".", services.Status.Message);
+            Assert.Contains(bed.Log.Lines, l => l.Contains(services.Status.Message!, StringComparison.Ordinal));
+        }
+
+        Assert.Empty(bed.Dialogs.Requests);
+    });
+
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "IDE-LIB-029")]
+    public Task MissingIncludeFile_CopiesNothing() => TestUiThread.RunAsync(async () =>
+    {
+        var (bed, recording) = RecordingBed();
+        var services = bed.Services;
+        await bed.OpenHelloAsync();
+        bed.File(Root + @"\Short.pas", "unit Short;\r\ninterface\r\n{$I Tables.inc}\r\nimplementation\r\nend.\r\n");
+        bed.File(Root + @"\Nest.pas", "unit Nest;\r\ninterface\r\n{$I parts\\Outer.inc}\r\nimplementation\r\nend.\r\n");
+        bed.File(Root + @"\parts\Outer.inc", "{$I 'Gone'}\r\n");
+        bed.File(Root + @"\Read.pas", "unit Read;\r\ninterface\r\n{$I Locked.inc}\r\nimplementation\r\nend.\r\n");
+        bed.File(Root + @"\Locked.inc", "const Locked = 0;\r\n");
+        var files = bed.Fs.AllFiles;
+        var projectFile = bed.Text(BuildTestBed.ProjectPath);
+        Assert.Equal("{0} cannot be copied into the project because its include file {1} was not found.",
+            Strings.Msg_File_LibraryCopyIncludeMissing);
+
+        void AssertNothingHappened(TextDocumentViewModel library)
+        {
+            Assert.Equal(files, bed.Fs.AllFiles);
+            Assert.Equal(projectFile, bed.Text(BuildTestBed.ProjectPath));
+            Assert.Equal(["Hello.pas|", "Unit1.pas|"], Entries(bed));
+            Assert.Same(library, services.Documents.ActiveDocument);
+            Assert.True(library.IsLibraryProtected);
+        }
+
+        // The unit's file name and the include name as written (a nested one too).
+        foreach (var (name, include) in (ValueTuple<string, string>[])[("Short.pas", "Tables.inc"), ("Nest.pas", "Gone")])
         {
             var library = await bed.OpenDocumentAsync(Path.Combine(Root, name));
             Assert.True(services.Commands.CanExecute(Command)); // refused when run, not disabled
             await services.Commands.ExecuteAsync(Command);
 
-            var text = name + " cannot be copied into the project because it includes other files.";
-            Assert.Equal(Format(Strings.Msg_File_LibraryCopyHasIncludes, name), text);
+            var text = name + " cannot be copied into the project because its include file " + include + " was not found.";
+            Assert.Equal(Format(Strings.Msg_File_LibraryCopyIncludeMissing, name, include), text);
             Assert.Equal(text, services.Status.Message);
-            Assert.Contains(bed.Log.Lines, l => l.Contains(text, StringComparison.Ordinal));
-            Assert.Same(library, services.Documents.ActiveDocument);
-            Assert.Equal(files, bed.Fs.AllFiles); // nothing written
-            Assert.Equal(projectFile, bed.Text(BuildTestBed.ProjectPath));
-            Assert.Equal(["Hello.pas|", "Unit1.pas|"], Entries(bed));
+            Assert.Contains(bed.Log.Lines, l => l.Contains(text, StringComparison.Ordinal)); // UI-ED-149
+            AssertNothingHappened(library);
         }
 
-        // The switches {$I+} / {$I-} and a directive inside a comment are no include directives.
-        await bed.OpenDocumentAsync(Root + @"\Switches.pas");
-        await services.Commands.ExecuteAsync(Command);
-        Assert.Equal(BuildTestBed.Dir + @"\Switches.pas", services.Documents.ActiveDocument!.FilePath);
-        Assert.Equal(bed.Fs.ReadAllBytes(Root + @"\Switches.pas"), bed.Fs.ReadAllBytes(BuildTestBed.Dir + @"\Switches.pas"));
-        Assert.Equal(["Hello.pas|", "Unit1.pas|", "Switches.pas|"], Entries(bed));
         Assert.Empty(bed.Dialogs.Requests);
+
+        // An include file that is found but cannot be read: the copy failure with the system's text.
+        bed.Dialogs.Answer("Msg.File.LibraryCopyFailed", "OK");
+        var locked = await bed.OpenDocumentAsync(Root + @"\Read.pas");
+        recording.FailWith = call => call == "ReadAllBytes " + Root + @"\Locked.inc" ? new IOException("The file is in use.") : null;
+        await services.Commands.ExecuteAsync(Command);
+        var failed = Assert.Single(bed.Dialogs.Requests);
+        Assert.Equal(("Msg.File.LibraryCopyFailed", "Read.pas", "The file is in use."), (failed.MessageId, failed.Args[0], failed.Args[1]));
+        AssertNothingHappened(locked);
+    });
+
+    [Fact(Timeout = 60000)]
+    [Trait("Req", "IDE-LIB-029")]
+    [Trait("Req", "IDE-LIB-034")]
+    public Task CopiedUnitWithIncludesCompiles() => TestUiThread.RunAsync(async () =>
+    {
+        var bed = new BuildTestBed();
+        var services = bed.Services;
+        var src = Path.Combine(SpecTables.RepoRootPath(), "rtl", "src");
+        foreach (var file in Directory.GetFiles(src, "*.inc").Append(Path.Combine(src, "System.pas")).Append(Path.Combine(src, "unit-aliases.json")).Where(File.Exists))
+            bed.File(Path.Combine(Root, Path.GetFileName(file)), File.ReadAllText(file));
+        string[] library =
+        [
+            bed.File(Root + @"\IncUnit.pas",
+                "unit IncUnit;\r\ninterface\r\n{$I parts\\Consts.inc}\r\nfunction Answer: Integer;\r\nimplementation\r\nfunction Answer: Integer;\r\nbegin\r\n  Result := Base + Extra;\r\nend;\r\nend.\r\n"),
+            bed.File(Root + @"\parts\Consts.inc", "const Base = 40;\r\n{$I More}\r\n"),
+            bed.File(Root + @"\parts\More.inc", "const Extra = 2;\r\n"),
+        ];
+        await bed.OpenHelloAsync();
+        Assert.True(await services.Documents.CloseAllAsync());
+        bed.File(BuildTestBed.MainPath, "program Hello;\nuses IncUnit;\nbegin\n  WriteLn(Answer);\nend.\n");
+
+        await bed.OpenDocumentAsync(library[0]);
+        await services.Commands.ExecuteAsync(Command);
+        Assert.Equal(BuildTestBed.Dir + @"\IncUnit.pas", services.Documents.ActiveDocument!.FilePath);
+
+        // Without the library's unit and include files the project compiles from the copy alone (IDE-LIB-034).
+        Assert.True(await services.Documents.CloseAllAsync());
+        foreach (var path in library)
+            bed.Fs.DeleteFile(path);
+        var diagnostics = await services.CodeModel.GetProjectDiagnosticsAsync(CancellationToken.None);
+        Assert.DoesNotContain(diagnostics, d => d.Severity == FreexComp.Compiler.DiagnosticSeverity.Error);
+        Assert.Contains("IncUnit", await services.CodeModel.GetProjectUnitNamesAsync(CancellationToken.None), StringComparer.OrdinalIgnoreCase);
     });
 
     [Fact(Timeout = 30000)]
@@ -573,7 +743,7 @@ public sealed class LibraryCopyTests
         var before = bed.Fs.AllFiles.Where(f => f.StartsWith(Root + @"\", StringComparison.OrdinalIgnoreCase)).ToDictionary(f => f, f => bed.Fs.ReadAllBytes(f));
         bed.Dialogs.Answer("Msg.File.LibraryCopyExists", "AddAndOpen");
 
-        // Every outcome: copied, copied with a form, refused (includes), already a member, existing file added.
+        // Every outcome: copied, copied with a form, refused (include file missing), already a member, existing file added.
         foreach (var name in (string[])["LibUnit.pas", "LibForm.pas", "Inc.pas", "LibUnit.pas"])
         {
             await services.Documents.OpenAsync(Path.Combine(Root, name));

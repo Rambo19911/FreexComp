@@ -27,8 +27,8 @@ above the text when you do want to change it.
 To change a library unit for one project only, open the unit and choose `Copy to Project` on the bar above
 the text. FreexComp copies the file into the project's folder and adds it to the project. From then on
 this project is built from the copy; every other project still uses the library unit. To go back, remove
-the file from the project and delete it. Units that include other files (`System`, `Math`, `Character`)
-cannot be copied this way.
+the file from the project and delete it. Include files the unit uses are copied with it, into the same
+relative folders; if one of them is missing or already exists in the project, nothing is copied.
 
 You may also change the library source itself. Keep in mind:
 
