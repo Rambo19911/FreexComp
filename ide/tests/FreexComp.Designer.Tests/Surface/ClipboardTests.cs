@@ -95,7 +95,7 @@ public sealed class ClipboardTests
         Assert.Equal(FormWriter.WriteObjects([h.Object("Panel1"), h.Object("Edit1")]), h.Host.Clipboard.GetData(PlainText));
 
         // The custom format: the same text after the header with the surface origin of the primary's parent client area.
-        Assert.Equal("; parent-origin 17 47\n" + expected, h.Host.Clipboard.GetData(Components));
+        Assert.Equal("; parent-origin 17 47\n; source-root F\n" + expected, h.Host.Clipboard.GetData(Components));
         Assert.Equal(2, h.Host.Clipboard.Formats.Count);
         Assert.Equal(0, h.Undo.UndoCount); // copy changes nothing
 
@@ -104,7 +104,7 @@ public sealed class ClipboardTests
         h.Execute(Commands.Copy);
         var origin = h.Controller.Geometry.GetClientRect(h.Object("Panel1"));
         var custom = h.Host.Clipboard.GetData(Components)!;
-        Assert.StartsWith($"; parent-origin {origin.Left} {origin.Top}\nobject Button1: TButton\n", custom);
+        Assert.StartsWith($"; parent-origin {origin.Left} {origin.Top}\n; source-root F\nobject Button1: TButton\n", custom);
         Assert.DoesNotContain(";", h.Host.Clipboard.GetData(PlainText)!);
 
         // The copied text is a valid fragment: it parses back into the same objects.
@@ -112,6 +112,43 @@ public sealed class ClipboardTests
         Assert.False(fragment.HasSyntaxErrors);
         Assert.Equal(["Button1"], fragment.Objects.Select(o => o.Name));
         Assert.Equal("TButton", fragment.Objects[0].TypeName);
+    }
+
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "DSG-SUR-111")]
+    public void CopyNamesTheSourceRoot()
+    {
+        // D-145: the second header line of the custom format names the root of the form the copy came from.
+        using var h = DesignerHarness.FromText("""
+            object CustomerForm: TForm
+              Left = 0
+              Top = 0
+              ClientWidth = 400
+              ClientHeight = 300
+              object Edit1: TEdit
+                Left = 8
+                Top = 8
+                Width = 121
+                Height = 23
+                TabOrder = 0
+              end
+            end
+
+            """);
+        h.Select("Edit1");
+        h.Execute(Commands.Copy);
+        var custom = h.Host.Clipboard.GetData(Components)!;
+        var lines = custom.Split('\n');
+        Assert.StartsWith("; parent-origin ", lines[0], StringComparison.Ordinal);
+        Assert.Equal("; source-root CustomerForm", lines[1]);
+        Assert.Equal("object Edit1: TEdit", lines[2]);
+        Assert.DoesNotContain(";", h.Host.Clipboard.GetData(PlainText)!, StringComparison.Ordinal); // only in the custom format
+
+        // The header lines are skipped by the fragment parser.
+        var fragment = FormParser.ParseFragment(custom, "clipboard", TestCatalog.Instance);
+        Assert.False(fragment.HasSyntaxErrors);
+        Assert.Equal(["Edit1"], fragment.Objects.Select(o => o.Name));
     }
 
     [Fact]

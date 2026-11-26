@@ -15,6 +15,12 @@ public sealed partial class DesignSurfaceController
     private (long Sequence, string ParentName)? _lastCopy;
     private (long Sequence, string TargetName, int Count)? _lastPaste;
 
+    /// <summary>DSG-SUR-111 (D-145): the header line that names the root of the form a copy came from.</summary>
+    private const string SourceRootHeader = "; source-root ";
+
+    /// <summary>D-145: the source root named by the clipboard text being pasted; null = not named (the D-143 rule).</summary>
+    private string? _pasteSourceRoot;
+
     /// <summary>DSG-SUR-112: the effective copy set — the selection after DSG-SUR-024 without the form, in pre-order.</summary>
     private List<FormObject> CopySet() => Selection.GetEffectiveSet().Where(o => o.Parent is not null).ToList();
 
@@ -25,7 +31,8 @@ public sealed partial class DesignSurfaceController
 
     /// <summary>
     /// DSG-SUR-110, 111: the form text of the copy set in both formats; the custom one starts with the header line
-    /// <c>; parent-origin x y</c> (surface coordinates of the client origin of the primary's parent).
+    /// <c>; parent-origin x y</c> (surface coordinates of the client origin of the primary's parent) and the line
+    /// <c>; source-root Name</c> (the root of this form, D-145).
     /// </summary>
     private void Copy()
     {
@@ -36,7 +43,7 @@ public sealed partial class DesignSurfaceController
         var clipboard = _host.Clipboard;
         clipboard.SetData(new Dictionary<string, string>
         {
-            [ClipboardFormats.Components] = $"; parent-origin {origin.Left} {origin.Top}\n" + text,
+            [ClipboardFormats.Components] = $"; parent-origin {origin.Left} {origin.Top}\n{SourceRootHeader}{Document.Root.Name}\n" + text,
             [ClipboardFormats.Text] = text,
         });
         _lastCopy = (clipboard.SequenceNumber, parent.QualifiedName);
@@ -93,7 +100,8 @@ public sealed partial class DesignSurfaceController
     /// </summary>
     private void Paste()
     {
-        var fragment = FormParser.ParseFragment(PasteText()!, "clipboard", Catalog, Document.Frames, Document.Root.TypeName);
+        var text = PasteText()!;
+        var fragment = FormParser.ParseFragment(text, "clipboard", Catalog, Document.Frames, Document.Root.TypeName);
         if (fragment.HasSyntaxErrors || fragment.Objects.IsEmpty)
         {
             _host.SetStatus(StatusIds.PasteNothing);
@@ -160,8 +168,37 @@ public sealed partial class DesignSurfaceController
                 ? slots[slot++]
                 : (Coordinate(d.Object, "Left") + offsets[d.Object].Dx, Coordinate(d.Object, "Top") + offsets[d.Object].Dy)))
             .ToList();
-        AddCopies(placements, UndoTitles.Paste);
+        _pasteSourceRoot = SourceRoot(text);
+        try
+        {
+            AddCopies(placements, UndoTitles.Paste);
+        }
+        finally
+        {
+            _pasteSourceRoot = null;
+        }
+
         _lastPaste = (sequence, target.QualifiedName, k);
+    }
+
+    /// <summary>DSG-SUR-111 (D-145): the name of the <c>; source-root</c> line among the leading header lines, or null.</summary>
+    private static string? SourceRoot(string text)
+    {
+        foreach (var line in text.Split('\n'))
+        {
+            var trimmed = line.Trim(' ', '\t', '\r', '﻿');
+            if (trimmed.StartsWith(SourceRootHeader, StringComparison.Ordinal) && trimmed[SourceRootHeader.Length..].Trim() is { Length: > 0 } name)
+            {
+                return name;
+            }
+
+            if (trimmed.Length > 0 && trimmed[0] != ';')
+            {
+                return null; // the header ends at the first object line
+            }
+        }
+
+        return null;
     }
 
     /// <summary>A copy to create: the source object, its new parent and its new Left/Top (DesignLeft/DesignTop for a tray item).</summary>
@@ -391,10 +428,20 @@ public sealed partial class DesignSurfaceController
         };
     }
 
-    /// <summary>A pasted property line: a component reference as <see cref="PastedReference"/> makes it (null: removed), any other line unchanged.</summary>
+    /// <summary>
+    /// A pasted property line: a component reference as <see cref="PastedReference"/> makes it (null: removed), a
+    /// collection with the component references of its items made the same way (D-145), any other line unchanged.
+    /// </summary>
     private FormPropertyData? PastedLine(FormObject? scope, ComponentInfo info, FormPropertyData property, Dictionary<FormObject, string> names,
         Dictionary<string, FormObject> pasted)
     {
+        if (property.Value is CollectionValue collection
+            && Catalog.FindPropertyPath(info, property.Path) is { Kind: PropertyKind.Collection, ItemClass: { } itemClass }
+            && Catalog.FindType(itemClass) is { Kind: TypeKind.Object } itemType)
+        {
+            return PastedItems(scope, itemType, collection, names, pasted) is { } items ? new FormPropertyData(property.Path, items) : property;
+        }
+
         if (property.Value is not (IdentValue or QualifiedIdentValue) || Catalog.FindPropertyPath(info, property.Path) is not { Kind: PropertyKind.Component })
         {
             return property;
@@ -409,12 +456,48 @@ public sealed partial class DesignSurfaceController
     }
 
     /// <summary>
+    /// D-145: the items of a pasted collection with their component references as <see cref="PastedReference"/> makes
+    /// them (a removed one leaves its item without that line), or null when none changes. Nested collections: unchanged.
+    /// </summary>
+    private CollectionValue? PastedItems(FormObject? scope, Catalog.TypeInfo itemType, CollectionValue collection,
+        Dictionary<FormObject, string> names, Dictionary<string, FormObject> pasted)
+    {
+        var changed = false;
+        var items = new List<CollectionItem>();
+        foreach (var item in collection.Items)
+        {
+            var properties = new List<(string Path, FormValue Value, string? RawText)>();
+            foreach (var line in item.Properties)
+            {
+                var reference = line.Value is IdentValue or QualifiedIdentValue
+                    && itemType.Properties.Any(p => p.Kind == PropertyKind.Component && p.Name.Equals(line.Path, StringComparison.OrdinalIgnoreCase));
+                var value = reference ? PastedReference(scope, line.Value, names, pasted) : line.Value;
+                if (ReferenceEquals(value, line.Value))
+                {
+                    properties.Add(line);
+                    continue;
+                }
+
+                changed = true;
+                if (value is not null)
+                {
+                    properties.Add((line.Path, value, null));
+                }
+            }
+
+            items.Add(new CollectionItem([.. properties]));
+        }
+
+        return changed ? new CollectionValue([.. items]) : null;
+    }
+
+    /// <summary>
     /// DSG-SUR-123, D-142, D-143: a component reference of a pasted line whose owner's reference scope is
     /// <paramref name="scope"/> (a pasted instance; null for the file scope), resolved as in the source by the scope rules
     /// (<see cref="ReferenceLookup"/>, DSG-FD-108). A name, or the first part of a qualified name, that the scope resolves
     /// (the instance by name, its components) or that names a pasted object reaches the pasted set; so does a qualified
-    /// name whose second part names a pasted object after a first part that names nothing of this form but its root (the
-    /// source form's root name: it becomes this form's). A reference into the pasted set names the copies (renamed parts
+    /// name whose second part names a pasted object after a first part that names the source form's root
+    /// (<see cref="NamesSourceRoot"/>: it becomes this form's). A reference into the pasted set names the copies (renamed parts
     /// replaced; removed when a further part does not resolve); any other reference is kept only when it resolves in this
     /// form's file scope. Null = removed.
     /// </summary>
@@ -438,8 +521,7 @@ public sealed partial class DesignSurfaceController
         var parts = ((QualifiedIdentValue)value).Parts;
         var first = 0;
         var current = ReferenceLookup.ResolveInScope(scope, parts[0]) ?? pasted.GetValueOrDefault(parts[0]);
-        if (current is null && pasted.GetValueOrDefault(parts[1]) is { } afterRoot
-            && Document.FindByName(parts[0]) is var named && (named is null || ReferenceEquals(named, Document.Root)))
+        if (current is null && pasted.GetValueOrDefault(parts[1]) is { } afterRoot && NamesSourceRoot(parts[0]))
         {
             (current, first) = (afterRoot, 1);
         }
@@ -476,6 +558,14 @@ public sealed partial class DesignSurfaceController
 
         return result.SequenceEqual(parts, StringComparer.Ordinal) ? value : new QualifiedIdentValue(result.ToImmutable());
     }
+
+    /// <summary>
+    /// Whether the first part of a pasted qualified reference names the source form's root: the name of the clipboard's
+    /// <c>; source-root</c> line (D-145); without it (D-143), a name of nothing of this form but its root.
+    /// </summary>
+    private bool NamesSourceRoot(string name) => _pasteSourceRoot is { } sourceRoot
+        ? name.Equals(sourceRoot, StringComparison.OrdinalIgnoreCase)
+        : Document.FindByName(name) is var named && (named is null || ReferenceEquals(named, Document.Root));
 
     /// <summary>The snapshot with <paramref name="path"/> set to an integer (replacing the stored line or appending one).</summary>
     private static FormObjectData WithProperty(FormObjectData data, string path, int value)

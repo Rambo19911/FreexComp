@@ -434,6 +434,166 @@ public sealed class ReferenceClearingTests
 
     [Fact]
     [Trait("Phase", "8")]
+    [Trait("Req", "DSG-SUR-111")]
+    [Trait("Req", "DSG-SUR-123")]
+    public void PasteUsesTheSourceRootFromTheClipboard()
+    {
+        // D-145: Label2 names the target form's own Edit1, Label3 a component of a third form.
+        using var h = Open("""
+            object CustomerForm: TCustomerForm
+              Left = 200
+              Top = 120
+              Caption = 'Customer'
+              ClientWidth = 640
+              ClientHeight = 420
+              PixelsPerInch = 96
+              object Edit1: TEdit
+                Left = 8
+                Top = 8
+                Width = 120
+                Height = 23
+                TabOrder = 0
+              end
+              object Label1: TLabel
+                Left = 8
+                Top = 40
+                Width = 40
+                Height = 15
+                FocusControl = CustomerForm.Edit1
+              end
+              object Label2: TLabel
+                Left = 8
+                Top = 60
+                Width = 40
+                Height = 15
+                FocusControl = OrderForm.Edit1
+              end
+              object Label3: TLabel
+                Left = 8
+                Top = 80
+                Width = 40
+                Height = 15
+                FocusControl = ThirdForm.Edit1
+              end
+            end
+
+            """);
+        h.Select("Edit1", "Label1", "Label2", "Label3");
+        h.Execute(Commands.Copy);
+        const string order = """
+            object OrderForm: TOrderForm
+              Left = 200
+              Top = 120
+              Caption = 'Order'
+              ClientWidth = 640
+              ClientHeight = 420
+              PixelsPerInch = 96
+              object Edit1: TEdit
+                Left = 300
+                Top = 300
+                Width = 120
+                Height = 23
+                TabOrder = 0
+              end
+            end
+
+            """;
+
+        // The clipboard names the source root: only references qualified by it reach the pasted set; the others are
+        // references outside the set, kept only when they resolve in the target.
+        using var other = Open(order);
+        PasteInto(h, other, "OrderForm");
+        Assert.Equal(["Edit2", "Label1", "Label2", "Label3"], other.Selected);
+        Assert.Equal(Q("OrderForm", "Edit2"), Reference(other, "Label1"));
+        Assert.Equal(Q("OrderForm", "Edit1"), Reference(other, "Label2")); // the target's own Edit1, as in the source
+        Assert.Null(Reference(other, "Label3"));
+
+        // Plain text has no header: the D-143 rule takes a first part that names nothing of the target but its root
+        // as the source root.
+        using var plain = Open(order);
+        plain.Host.Clipboard.SetText(h.Host.Clipboard.GetData(ClipboardFormats.Text)!);
+        plain.Select("OrderForm");
+        plain.Execute(Commands.Paste);
+        Assert.Equal(["Edit2", "Label1", "Label2", "Label3"], plain.Selected);
+        Assert.Equal(Q("OrderForm", "Edit2"), Reference(plain, "Label1"));
+        Assert.Equal(Q("OrderForm", "Edit2"), Reference(plain, "Label2"));
+        Assert.Equal(Q("OrderForm", "Edit2"), Reference(plain, "Label3"));
+    }
+
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "DSG-SUR-123")]
+    public void PasteFiltersCollectionItemReferences()
+    {
+        // D-145: component references inside collection items follow the paste rule of the other lines.
+        var catalog = FreexComp.Designer.Tests.Model.FormValidatorTests.RestrictedCatalog();
+        using var h = DesignerHarness.FromText("""
+            object F: TForm
+              Left = 0
+              Top = 0
+              ClientWidth = 640
+              ClientHeight = 420
+              object Header1: THeader
+                Left = 8
+                Top = 8
+                Width = 200
+                Height = 20
+                Sections = <
+                  item
+                    Partner = Header1
+                  end
+                  item
+                    Width = 10
+                    Partner = Header2
+                  end
+                  item
+                    Partner = F.Header1
+                  end
+                >
+              end
+              object Header2: THeader
+                Left = 8
+                Top = 40
+                Width = 200
+                Height = 20
+              end
+            end
+
+            """, "f.form", catalog: catalog);
+        h.Select("Header1");
+        h.Execute(Commands.Copy);
+
+        // Same form: the reference into the set names the copy; the one outside it resolves and is kept.
+        h.Select("F");
+        h.Execute(Commands.Paste);
+        Assert.Equal(["Header3"], h.Selected);
+        Assert.Equal([[new IdentValue("Header3")], [new IdentValue("Header2")], [Q("F", "Header3")]], Partners(h, "Header3"));
+        Assert.Equal([[new IdentValue("Header1")], [new IdentValue("Header2")], [Q("F", "Header1")]], Partners(h, "Header1"));
+
+        // Another form without Header2: that reference is removed (the item stays), the source root becomes the target's.
+        using var other = DesignerHarness.FromText("""
+            object G: TForm
+              Left = 0
+              Top = 0
+              ClientWidth = 640
+              ClientHeight = 420
+            end
+
+            """, "g.form", catalog: catalog);
+        PasteInto(h, other, "G");
+        Assert.Equal(["Header1"], other.Selected);
+        Assert.Equal([[new IdentValue("Header1")], [], [Q("G", "Header1")]], Partners(other, "Header1"));
+        var items = ((CollectionValue)other.Object("Header1").FindProperty("Sections")!.Value).Items;
+        Assert.Equal(new IntegerValue(10, false), items[1].Properties.Single().Value);
+    }
+
+    /// <summary>The Partner values of each item of <paramref name="owner"/>'s Sections (empty: the item has none).</summary>
+    private static List<List<FormValue>> Partners(DesignerHarness h, string owner) =>
+        [.. ((CollectionValue)h.Object(owner).FindProperty("Sections")!.Value).Items
+            .Select(item => item.Properties.Where(p => p.Path == "Partner").Select(p => p.Value).ToList())];
+
+    [Fact]
+    [Trait("Phase", "8")]
     [Trait("Req", "DSG-SUR-123")]
     [Trait("Req", "DSG-SUR-230")]
     [Trait("Req", "DSG-FD-108")]
