@@ -24,6 +24,8 @@ public static class Phase8Features
         "diff.copyBlockToRight", // F11-061
         "diff.nextDifference", // F12-014
         "diff.previousDifference", // F12-014
+        "edit.formatDocument", // F11-101
+        "edit.formatSelection", // F11-101
         "file.compareWithSaved", // F12-014
         "file.copyLibraryUnitToProject", // F05-099
         "file.editLibrarySource", // F02-004
@@ -37,6 +39,7 @@ public static class Phase8Features
         "history.refresh", // F11-060
         "history.revert", // F11-061
         "locals.viewText", // F14-013
+        "options:Editor.General.FormatOnSave", // F11-101
         "options:Editor.General.LiveDiagnosticsSeverities", // F11-065
         "options:Editor.General.WrapSelection", // F11-047
         "options:Environment.Files.HistoryDays", // F11-059

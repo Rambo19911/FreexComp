@@ -169,6 +169,7 @@ public sealed class OptionsViewModel : DialogViewModel<bool>
             Check("AutoCloseBrackets", SettingsCatalog.EditorAutoCloseBrackets, 1),
             Check("WrapSelection", SettingsCatalog.EditorWrapSelection, 8), // IDE-ED-028 (I-313)
             Check("AutoCloseBeginEnd", SettingsCatalog.EditorAutoCloseBeginEnd, 3),
+            Check("FormatOnSave", SettingsCatalog.EditorFormatOnSave, 8), // IDE-SET-084 (I-337)
             Check("SmartHome", SettingsCatalog.EditorSmartHome, 1),
             Check("CaretPastEol", SettingsCatalog.EditorCaretPastEndOfLine, 1),
             Check("RectangularSelection", SettingsCatalog.EditorRectangularSelection, 1),

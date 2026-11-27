@@ -134,6 +134,9 @@ public sealed class DocumentService : IDocumentService
     /// <summary>The local history (IDE-HIST-004): each successful save is recorded there after it is settled; null = none.</summary>
     public LocalHistoryService? History { get; set; }
 
+    /// <summary>IDE-SET-084: formats a Pascal document before it is saved while <c>editor.formatOnSave</c> is on (set by the service graph).</summary>
+    public Editing.IFormatterService? Formatter { get; set; }
+
     /// <summary>
     /// tool-windows.md §2: the full paths of the selected Project Manager nodes while the Project Manager has focus
     /// (<c>file.save</c>, <c>file.copyPath</c>, <c>file.showInExplorer</c> then act on them); null elsewhere, so the
@@ -686,6 +689,11 @@ public sealed class DocumentService : IDocumentService
         if (FindByPath(fullPath) is { } other && other != document)
             return OperationResult.Fail("Msg.File.SaveFailed", other.FilePath!, Strings.Reason_OpenInAnotherTab);
 
+        // IDE-SET-084: format first (one undo step of its own); a refusal saves the text as it is and reports in the status bar.
+        var formatted = Formatter is { } formatter && _settings.Get(SettingsCatalog.EditorFormatOnSave) && formatter.CanFormat(document)
+            ? await formatter.FormatAsync(document, null, fullPath)
+            : null;
+
         // A form document: repair, then the removal of empty handlers, before the unit text is taken (DSG-CS-091 b, 072).
         var form = document as FormDocumentViewModel;
         var movedForm = form is { HasUnit: true } ? FollowingFormPath(form, fullPath) : null;
@@ -766,6 +774,8 @@ public sealed class DocumentService : IDocumentService
             PushStatus();
         DocumentSaved?.Invoke(this, new DocumentEventArgs(document));
         _status.ShowMessage(string.Format(CultureInfo.CurrentCulture, Strings.Msg_File_Saved, document.Title), StatusMessageDuration);
+        if (formatted is { Outcome: Editing.FormatOutcome.Refused })
+            _status.ShowMessage(Editing.FormatterService.RefusedMessage(formatted), StatusMessageDuration);
         if (plan is { RemovedHandlers: > 0 } removed) // DSG-CS-074
         {
             _status.ShowMessage(removed.RemovedHandlers == 1

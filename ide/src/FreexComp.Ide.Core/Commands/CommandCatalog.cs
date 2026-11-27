@@ -67,6 +67,7 @@ public static class CommandCatalog
         new("edit.completeClass", [Editor], 8, ["Ctrl+Shift+C"]),
         new("edit.syncEdit", [Editor], 8, ["Ctrl+Shift+E"]),
         new("edit.formatDocument", [Editor], 8, ["Shift+Alt+F"]),
+        new("edit.formatSelection", [Editor], 8, ["Shift+Alt+S"]),
         new("edit.fold", [Editor], 1, ["Ctrl+Shift+["]),
         new("edit.unfold", [Editor], 1, ["Ctrl+Shift+]"]),
         new("edit.foldAll", [Editor], 1, ["Ctrl+Shift+-"]),

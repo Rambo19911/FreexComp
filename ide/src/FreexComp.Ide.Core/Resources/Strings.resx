@@ -265,6 +265,15 @@ Add the existing file to the project and open it?</value>
   <data name="Msg_Editor_NoDeclaration" xml:space="preserve">
     <value>No declaration found for {0}</value>
   </data>
+  <data name="Msg_Format_Refused" xml:space="preserve">
+    <value>Not formatted: {0}</value>
+  </data>
+  <data name="Msg_Format_NoChanges" xml:space="preserve">
+    <value>Already formatted</value>
+  </data>
+  <data name="Msg_Format_ProfileInvalid" xml:space="preserve">
+    <value>Format profile {0} is not valid JSON; the built-in style was used.</value>
+  </data>
   <data name="Msg_Editor_NotAnIdentifier" xml:space="preserve">
     <value>The caret is not on an identifier</value>
   </data>
@@ -1429,6 +1438,9 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   <data name="Cmd_edit_formatDocument" xml:space="preserve">
     <value>Format Document</value>
   </data>
+  <data name="Cmd_edit_formatSelection" xml:space="preserve">
+    <value>Format Selection</value>
+  </data>
   <data name="Cmd_edit_fold" xml:space="preserve">
     <value>Fold Region at Cursor</value>
   </data>
@@ -2533,6 +2545,9 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   <data name="Menu_edit_formatDocument" xml:space="preserve">
     <value>F&amp;ormat Document</value>
   </data>
+  <data name="Menu_edit_formatSelection" xml:space="preserve">
+    <value>Format Select&amp;ion</value>
+  </data>
   <data name="Menu_Edit_Align" xml:space="preserve">
     <value>Ali&amp;gn</value>
   </data>
@@ -3598,6 +3613,10 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   </data>
   <data name="Options_Field_AutoCloseBeginEnd" xml:space="preserve">
     <value>Complete begin with _end</value>
+    <comment>dialogs.md §9 field label</comment>
+  </data>
+  <data name="Options_Field_FormatOnSave" xml:space="preserve">
+    <value>Fo_rmat on save</value>
     <comment>dialogs.md §9 field label</comment>
   </data>
   <data name="Options_Field_SmartHome" xml:space="preserve">

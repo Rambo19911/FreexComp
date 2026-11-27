@@ -159,6 +159,44 @@ public partial class TextDocumentViewModel
     }
 
     /// <summary>
+    /// IDE-ED-154: the formatter's edits (sorted by offset, non-overlapping) as one undo step of their own; the caret and the
+    /// selection anchor move with the edits (bookmarks follow through their anchors). Refused while read-only.
+    /// </summary>
+    internal bool ApplyFormatEdits(IReadOnlyList<TextEdit> edits)
+    {
+        ArgumentNullException.ThrowIfNull(edits);
+        var selection = Selection;
+        return Command(() =>
+        {
+            if (!TryEdit(edits))
+                return false;
+            Selection = new TextSelection(MapThrough(selection.Anchor, edits), MapThrough(selection.Caret, edits));
+            return true;
+        });
+    }
+
+    /// <summary>
+    /// <paramref name="offset"/> after <paramref name="edits"/> (ascending): an edit ending at or before it shifts it (so an
+    /// offset before a token stays before that token when whitespace is inserted there); one around it keeps it at the same
+    /// distance from the edit's start, at most at the end of the new text.
+    /// </summary>
+    private static int MapThrough(int offset, IReadOnlyList<TextEdit> edits)
+    {
+        var delta = 0;
+        foreach (var edit in edits)
+        {
+            if (edit.Offset + edit.Length <= offset)
+                delta += edit.NewText.Length - edit.Length;
+            else if (edit.Offset < offset)
+                return edit.Offset + delta + Math.Min(offset - edit.Offset, edit.NewText.Length);
+            else
+                break;
+        }
+
+        return offset + delta;
+    }
+
+    /// <summary>
     /// A command edit from outside (find/replace): <paramref name="action"/> runs as one undo step of its own that
     /// restores the selection on undo (IDE-P1-092); refused edits inside report as <see cref="TryEdit"/> does.
     /// </summary>

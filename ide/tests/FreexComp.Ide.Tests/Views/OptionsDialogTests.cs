@@ -28,6 +28,7 @@ public sealed partial class OptionsDialogTests
         ("AutoCloseBrackets", "Close _brackets and quotes automatically", SettingsCatalog.EditorAutoCloseBrackets, true),
         ("WrapSelection", "_Wrap a selection in brackets and quotes", SettingsCatalog.EditorWrapSelection, true), // I-313 (P8, delivered)
         ("AutoCloseBeginEnd", "Complete begin with _end", SettingsCatalog.EditorAutoCloseBeginEnd, true),
+        ("FormatOnSave", "Fo_rmat on save", SettingsCatalog.EditorFormatOnSave, true), // IDE-SET-084 (I-337, P8, delivered)
         ("SmartHome", "_Home key goes to first non-blank character", SettingsCatalog.EditorSmartHome, true),
         ("CaretPastEol", "Allow caret beyond end of _line", SettingsCatalog.EditorCaretPastEndOfLine, true),
         ("RectangularSelection", "_Column selection with Alt", SettingsCatalog.EditorRectangularSelection, true),

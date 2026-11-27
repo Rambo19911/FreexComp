@@ -201,6 +201,13 @@ public static class ServiceGraph
         find.FocusedText = () => focus.Current.ToolWindowName == ViewModels.OutputViewModel.ToolName ? outputView.Content : null;
         var messages = new MessagesService(documents, navigation, platform.FileSystem, status, layout) { IsProjectFile = projects.IsMember };
         templates.Start(platform.FileWatchers, platform.Clock, platform.Dispatcher, messages, platform.Log); // IDE-SET-081…083 (I-325)
+        // I-337: the built-in Pascal formatter (IDE-ED-154…156) and format-on-save (IDE-SET-084), where its phase-8 delivery applies.
+        var formatter = new Editing.FormatterService(platform.FileSystem, messages, status, () => documents.ActiveDocument?.VisibleText);
+        if (Phase8Features.IsAvailable(Editing.FormatterService.FormatDocumentCommandId, 8, toolWindowPhase ?? ImplementedPhase))
+        {
+            formatter.RegisterCommands(commands);
+            documents.Formatter = formatter;
+        }
         var engine = platform.BuildEngine;
         var build = new BuildService(engine, projects, documents, settings, state, toolchain, output, messages, platform.Clock,
             platform.Dispatcher, platform.Dialogs, status, platform.Log, platform.Processes, trust)

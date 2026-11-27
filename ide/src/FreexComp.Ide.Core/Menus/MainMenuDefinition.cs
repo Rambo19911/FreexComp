@@ -110,6 +110,7 @@ public static class MainMenuDefinition
                 Command("refactor.addUses"),
             ]),
             Command("edit.formatDocument"),
+            Command("edit.formatSelection"),
             Separator,
             Submenu("Edit.Align",
             [

@@ -38,6 +38,7 @@ public static class SettingsCatalog
     public static readonly SettingKey<bool> EditorAutoCloseBrackets = Bool("editor.autoCloseBrackets", true);
     public static readonly SettingKey<bool> EditorWrapSelection = Bool("editor.wrapSelection", true); // IDE-ED-028 (P8, F11-047)
     public static readonly SettingKey<bool> EditorAutoCloseBeginEnd = Bool("editor.autoCloseBeginEnd", true);
+    public static readonly SettingKey<bool> EditorFormatOnSave = Bool("editor.formatOnSave", false); // IDE-SET-084 (P8, F11-101)
     public static readonly SettingKey<bool> EditorSmartHome = Bool("editor.smartHome", true);
     public static readonly SettingKey<bool> EditorCaretPastEndOfLine = Bool("editor.caretPastEndOfLine", false);
     public static readonly SettingKey<bool> EditorRectangularSelection = Bool("editor.rectangularSelection", true);
