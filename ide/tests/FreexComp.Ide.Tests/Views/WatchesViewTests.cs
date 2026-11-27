@@ -210,7 +210,7 @@ public sealed class WatchesViewTests
 
         // Tool bar and context menu of tool-windows.md §13.
         Assert.Equal(["watches.add", "watches.edit", "watches.delete", "watches.deleteAll"], watches.ToolBarCommands.Select(c => c.CommandId));
-        Assert.Equal(["watches.add", "watches.edit", "watches.delete", "watches.deleteAll", null, "locals.modifyValue", "locals.copyValue", null, "run.evaluate"], watches.ContextCommands);
+        Assert.Equal(["watches.add", "watches.edit", "watches.delete", "watches.deleteAll", null, "locals.modifyValue", "locals.copyValue", "locals.viewText", null, "run.evaluate"], watches.ContextCommands); // UI-TW-1108
         Assert.NotNull(h.TryFind<Control>("Tool.Watches.ToolBar.watches.add"));
 
         // The watches belong to the project: gone when it closes, back when it opens again.

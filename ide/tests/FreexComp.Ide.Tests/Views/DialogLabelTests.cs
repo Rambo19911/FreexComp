@@ -84,6 +84,8 @@ public sealed class DialogLabelTests
             new ReopenEncodingViewModel("Unit1.pas", FileEncoding.Windows1252, FileEncoding.Utf8, isModified: false))),
         ["RunParameters"] = (typeof(RunParametersWindow), Scene.Project, Command("run.parameters")),
         ["StringsEditor"] = (typeof(StringsEditorWindow), Scene.Designer, Model((_, _) => new StringsEditorViewModel("Lines", "Memo1", ["one"]))),
+        ["TextViewer"] = (typeof(TextViewerWindow), Scene.Project, Model((h, _) => new TextViewerViewModel(h.Services.Debug!, h.Services.Clipboard, h.Services.Layout, "S",
+            new FreexComp.Debugger.VariableInfo("S", "'a'", "string", FreexComp.Debugger.ValueKind.String, null, 0, false, "S", null) { Text = new FreexComp.Debugger.VariableHandle(1, 1) }))),
         ["TrustProject"] = (typeof(TrustProjectWindow), Scene.Trust, (h, _) => h.Services.Build.BuildAsync(BuildKind.Build)),
         ["UnsavedChanges"] = (typeof(UnsavedChangesWindow), Scene.Project, Model((h, _) => new UnsavedChangesViewModel([.. h.Services.Documents.Documents]))),
         ["Watch"] = (typeof(WatchWindow), Scene.Project, Model((h, _) => new WatchViewModel(h.Services.Layout, "Foo1", edit: false))),

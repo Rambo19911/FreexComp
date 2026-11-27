@@ -25,6 +25,7 @@ public sealed class EvaluateViewModel : DialogViewModel<bool>
     private string _newValue = "";
     private string? _modifyError;
     private VariableInfo? _value;
+    private string _evaluated = ""; // the expression of _value: the Text Viewer's title
     private int _evaluations; // the number of the newest evaluation: an older one's answer is not shown (I-258)
 
     public EvaluateViewModel(IDebugService debug, ILayoutService? layout, string expression)
@@ -39,7 +40,15 @@ public sealed class EvaluateViewModel : DialogViewModel<bool>
             IsAuxiliary = true,
             AccessLabel = Strings.Evaluate_AddWatch,
         };
-        Buttons = [AddWatch, new DialogButtonViewModel("Close", Strings.Button_Close, () => Close(true)) { IsCancel = true }];
+        // UI-DLG-323: View Text, right of Add Watch, for the value of the last evaluation when it has a text.
+        ViewText = new DialogButtonViewModel("ViewText", Strings.Evaluate_ViewText.Replace("_", "", StringComparison.Ordinal),
+            () => _value is { } value ? _debug.ViewTextAsync(_evaluated, value) : Task.CompletedTask)
+        {
+            IsAuxiliary = true,
+            AccessLabel = Strings.Evaluate_ViewText,
+            IsEnabled = false,
+        };
+        Buttons = [AddWatch, ViewText, new DialogButtonViewModel("Close", Strings.Button_Close, () => Close(true)) { IsCancel = true }];
         Refresh();
         if (!_debug.IsPaused)
             (_result, _resultIsError) = (Strings.Msg_Debug_NotPaused, false);
@@ -66,6 +75,9 @@ public sealed class EvaluateViewModel : DialogViewModel<bool>
     public override IReadOnlyList<DialogButtonViewModel> Buttons { get; }
 
     public DialogButtonViewModel AddWatch { get; }
+
+    /// <summary>UI-DLG-323: opens the Text Viewer for the last result; enabled when it succeeded and has a text handle.</summary>
+    public DialogButtonViewModel ViewText { get; }
 
     public IReadOnlyList<string> History { get; }
 
@@ -148,7 +160,10 @@ public sealed class EvaluateViewModel : DialogViewModel<bool>
         {
             var value = (await _debug.EvaluateAsync(expression, EvaluateContext.Console)).Value;
             if (evaluation == _evaluations)
+            {
+                _evaluated = expression;
                 SetValue(value, value.Value, isError: false);
+            }
         }
         catch (DebuggerException e) when (evaluation == _evaluations)
         {
@@ -196,6 +211,7 @@ public sealed class EvaluateViewModel : DialogViewModel<bool>
         ResultText = text;
         ResultIsError = isError;
         Type = value?.TypeName ?? "";
+        ViewText.IsEnabled = value?.Text is not null && _debug.IsPaused;
         OnPropertyChanged(nameof(CanEditNewValue));
         OnPropertyChanged(nameof(CanModify));
     }

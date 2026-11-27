@@ -61,6 +61,8 @@ public sealed class DebugShell
             return Task.CompletedTask;
         }));
         commands.RegisterHandler("locals.copyValue", new Handler(() => Values().CanCopySelected, () => Values().CopySelectedValueAsync()));
+        commands.RegisterHandler("locals.viewText", new Handler(() => Values().SelectedText is not null, () =>
+            Values().SelectedText is { } text ? debug.ViewTextAsync(text.Name, text.Value) : Task.CompletedTask)); // UI-TW-1008, UI-TW-1108
 
         // The row commands of the windows that have focus act on their rows.
         breakpoints.ToolSelection = () => Breakpoints.IsActive ? Breakpoints.SelectedBreakpoints : null;

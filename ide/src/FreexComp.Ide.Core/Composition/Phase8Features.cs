@@ -25,6 +25,7 @@ public static class Phase8Features
         "file.openInTerminal", // F09-054
         "file.saveGroupAs", // F09-009
         "help.contents", // I-257
+        "locals.viewText", // F14-013
         "options:Environment.General.BuildJobs", // F01-010
         "options:Environment.General.ContinueAfterFailure", // F09-009
         "options:Environment.Trust", // F09-008

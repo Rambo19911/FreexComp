@@ -320,6 +320,7 @@ public static class CommandCatalog
         new("watches.deleteAll", [ToolList], 6, []),
         new("locals.copyValue", [ToolList], 6, ["Ctrl+C"]),
         new("locals.modifyValue", [ToolList], 6, ["F2"]),
+        new("locals.viewText", [ToolList], 8, []),
         new("threads.switchTo", [ToolList], 6, ["Enter"]),
         new("eventLog.clear", [ToolList], 6, []),
         new("objectInspector.resetToDefault", [ToolList], 5, ["Ctrl+Delete"]),

@@ -75,6 +75,21 @@ public interface IDebugService
     /// <summary>Assigns in the selected frame; the session must be paused.</summary>
     Task<VariableInfo> SetValueAsync(string evaluateName, string valueExpression);
 
+    /// <summary>DBG-429 through the session (Text Viewer, UI-DLG-323): the details of a text handle; the session must be paused.</summary>
+    Task<TextDetails> GetTextDetailsAsync(VariableHandle text, CancellationToken ct = default);
+
+    /// <summary>DBG-430 through the session (UI-DLG-324): one chunk of a text from <paramref name="start"/>; the session must be paused.</summary>
+    Task<TextChunk> ReadTextAsync(VariableHandle text, long start, int count, CancellationToken ct = default);
+
+    /// <summary>The debuggee's memory (the Text Viewer's hex rows of 1-byte texts, UI-DLG-326); the session must be paused.</summary>
+    Task<byte[]> ReadMemoryAsync(ulong address, int count, CancellationToken ct = default);
+
+    /// <summary>
+    /// UI-TW-1008, UI-DLG-323: shows the Text Viewer for <paramref name="value"/> (its <c>Text</c> handle is set) titled
+    /// with <paramref name="name"/>; completes when the dialog is closed.
+    /// </summary>
+    Task ViewTextAsync(string name, VariableInfo value);
+
     /// <summary>Makes <paramref name="frame"/> the selected frame (UI-TW-901); frame 0 or null returns to the execution point.</summary>
     void SelectFrame(StackFrameInfo? frame);
 
@@ -242,6 +257,9 @@ public sealed partial class DebugService : IDebugService
 
     /// <summary>The field history of the Watch and Evaluate dialogs (UI-DLG-009); null = none.</summary>
     public Layout.ILayoutService? UiState { get; set; }
+
+    /// <summary>The clipboard of the Text Viewer's Copy (UI-DLG-327); null = Copy does nothing.</summary>
+    public Platform.IClipboardService? Clipboard { get; set; }
 
     /// <summary>The debug-session interface §6.1: the IDE state of a session state.</summary>
     public static IdeState Map(DebugState state) => state switch
@@ -442,6 +460,29 @@ public sealed partial class DebugService : IDebugService
         _active is { } active && _stop is not null
             ? active.Session.EvaluateAsync(expression, FrameId, context)
             : Task.FromException<EvaluateResult>(new DebuggerException(DebugErrorCode.InvalidState, Strings.Msg_Debug_NotPaused));
+
+    public Task<TextDetails> GetTextDetailsAsync(VariableHandle text, CancellationToken ct = default) =>
+        _active is { } active && _stop is not null
+            ? active.Session.GetTextDetailsAsync(text, ct)
+            : Task.FromException<TextDetails>(new DebuggerException(DebugErrorCode.InvalidState, Strings.Msg_Debug_NotPaused));
+
+    public Task<TextChunk> ReadTextAsync(VariableHandle text, long start, int count, CancellationToken ct = default) =>
+        _active is { } active && _stop is not null
+            ? active.Session.ReadTextAsync(text, start, count, ct)
+            : Task.FromException<TextChunk>(new DebuggerException(DebugErrorCode.InvalidState, Strings.Msg_Debug_NotPaused));
+
+    public Task<byte[]> ReadMemoryAsync(ulong address, int count, CancellationToken ct = default) =>
+        _active is { } active && _stop is not null
+            ? active.Session.ReadMemoryAsync(address, count, ct)
+            : Task.FromException<byte[]>(new DebuggerException(DebugErrorCode.InvalidState, Strings.Msg_Debug_NotPaused));
+
+    public async Task ViewTextAsync(string name, VariableInfo value)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+        if (value.Text is null || !IsPaused)
+            return;
+        await _dialogs.ShowAsync(new TextViewerViewModel(this, Clipboard, UiState, name, value));
+    }
 
     public async Task<VariableInfo> SetValueAsync(string evaluateName, string valueExpression)
     {

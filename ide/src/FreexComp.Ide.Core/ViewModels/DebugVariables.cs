@@ -55,6 +55,10 @@ public abstract class VariableTreeViewModel : DebugGridViewModel
 
     public bool CanCopySelected => SelectedRows is [{ Tag: Node }];
 
+    /// <summary>UI-TW-1008, UI-TW-1108: one selected row whose value has a text handle, while paused — its name and value.</summary>
+    public (string Name, VariableInfo Value)? SelectedText =>
+        Debug.IsPaused && SelectedRows is [{ Tag: Node { Info: { Text: not null } info } node }] ? (node.Name, info) : null;
+
     /// <summary>UI-TW-1004: edits the value of the selected row in place; rows that are not modifiable do not enter edit mode.</summary>
     public void BeginModifySelected()
     {
@@ -434,7 +438,7 @@ public sealed class LocalsViewModel : VariableTreeViewModel
         new("Name", Strings.DebugView_Column_Name, 180), new("Value", Strings.DebugView_Column_Value, 0), new("Type", Strings.DebugView_Column_Type, 140),
     ];
 
-    public override IReadOnlyList<string?> ContextCommands { get; } = ["locals.modifyValue", "locals.copyValue", null, "run.addWatch", "run.evaluate"];
+    public override IReadOnlyList<string?> ContextCommands { get; } = ["locals.modifyValue", "locals.copyValue", "locals.viewText", null, "run.addWatch", "run.evaluate"];
 
     protected override async Task<List<Node>> LoadRootsAsync(IDebugSession session, StackFrameInfo? frame)
     {
@@ -494,7 +498,7 @@ public sealed class WatchesViewModel : VariableTreeViewModel
 
     public override IReadOnlyList<string?> ContextCommands { get; } =
     [
-        "watches.add", "watches.edit", "watches.delete", "watches.deleteAll", null, "locals.modifyValue", "locals.copyValue", null, "run.evaluate",
+        "watches.add", "watches.edit", "watches.delete", "watches.deleteAll", null, "locals.modifyValue", "locals.copyValue", "locals.viewText", null, "run.evaluate",
     ];
 
     /// <summary>The indexes of the selected top-level watches.</summary>

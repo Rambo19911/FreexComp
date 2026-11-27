@@ -410,7 +410,7 @@ public sealed class LocalsViewTests
         Assert.Equal("3", clipboard.Text);
 
         // The context menu; Evaluate/Modify opens with the row's path expression, Add Watch adds it (and shows Watches).
-        Assert.Equal(["locals.modifyValue", "locals.copyValue", null, "run.addWatch", "run.evaluate"], locals.ContextCommands);
+        Assert.Equal(["locals.modifyValue", "locals.copyValue", "locals.viewText", null, "run.addWatch", "run.evaluate"], locals.ContextCommands); // UI-TW-1008
         Assert.Equal("P.X", locals.SelectedExpression);
         var opening = commands.ExecuteAsync("run.evaluate");
         var dialog = await h.WaitForDialogAsync("Evaluate");

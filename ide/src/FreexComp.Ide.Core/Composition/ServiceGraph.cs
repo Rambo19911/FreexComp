@@ -271,6 +271,7 @@ public static class ServiceGraph
             {
                 OpenProjectOptions = () => commands.ExecuteAsync("project.options"),
                 UiState = layout,
+                Clipboard = platform.Clipboard, // UI-DLG-327
                 SelectProgramOutput = () => outputView.SelectChannel(OutputChannels.Program),
                 ShowWatches = () => toolWindowService.Show(ViewModels.WatchesViewModel.ToolName, focus: false), // UI-DLG-200
                 LibrarySource = librarySource, // IDE-LIB-022

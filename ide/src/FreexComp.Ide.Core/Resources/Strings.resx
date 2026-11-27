@@ -5871,4 +5871,65 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
 {1}</value>
     <comment>IDE-PM-178: 0 = project name, 1 = system error text</comment>
   </data>
+  <data name="Cmd_locals_viewText" xml:space="preserve">
+    <value>View Text…</value>
+  </data>
+  <data name="Evaluate_ViewText" xml:space="preserve">
+    <value>View _Text…</value>
+    <comment>UI-DLG-323</comment>
+  </data>
+  <data name="TextViewer_Title" xml:space="preserve">
+    <value>Text of {0}</value>
+    <comment>dialogs.md §32: 0 = the row's name or the evaluated expression</comment>
+  </data>
+  <data name="TextViewer_Wrap" xml:space="preserve">
+    <value>_Wrap lines</value>
+  </data>
+  <data name="TextViewer_Hex" xml:space="preserve">
+    <value>Show as _hex</value>
+  </data>
+  <data name="TextViewer_Copy" xml:space="preserve">
+    <value>_Copy</value>
+  </data>
+  <data name="TextViewer_Length" xml:space="preserve">
+    <value>Length {0}</value>
+    <comment>UI-DLG-323 Details: 0 = length, grouped digits</comment>
+  </data>
+  <data name="TextViewer_LengthUnknown" xml:space="preserve">
+    <value>Length unknown</value>
+  </data>
+  <data name="TextViewer_MaxLength" xml:space="preserve">
+    <value>Max length {0}</value>
+    <comment>0 = declared maximum of a short string</comment>
+  </data>
+  <data name="TextViewer_RefCount" xml:space="preserve">
+    <value>Reference count {0}</value>
+  </data>
+  <data name="TextViewer_RefCountConstant" xml:space="preserve">
+    <value>Reference count: constant</value>
+  </data>
+  <data name="Msg_Debug_TextLoading" xml:space="preserve">
+    <value>Loading… {0} of {1} characters</value>
+    <comment>0 = loaded, 1 = length</comment>
+  </data>
+  <data name="Msg_Debug_TextLoadingNoLength" xml:space="preserve">
+    <value>Loading… {0} characters</value>
+    <comment>0 = loaded (length unknown)</comment>
+  </data>
+  <data name="Msg_Debug_TextLoadingBytes" xml:space="preserve">
+    <value>Loading… {0} of {1} bytes</value>
+    <comment>1-byte texts: 0 = bytes loaded, 1 = length in bytes</comment>
+  </data>
+  <data name="Msg_Debug_TextLoadingBytesNoLength" xml:space="preserve">
+    <value>Loading… {0} bytes</value>
+    <comment>1-byte texts, length unknown: 0 = bytes loaded</comment>
+  </data>
+  <data name="Msg_Debug_TextCut" xml:space="preserve">
+    <value>Only the first {0} characters are shown.</value>
+    <comment>0 = 16 777 216 (grouped)</comment>
+  </data>
+  <data name="Msg_Debug_TextUnreadable" xml:space="preserve">
+    <value>The rest of the text could not be read: {0}</value>
+    <comment>0 = fault message</comment>
+  </data>
 </root>
