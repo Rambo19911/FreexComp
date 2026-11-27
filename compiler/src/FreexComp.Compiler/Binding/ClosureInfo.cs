@@ -189,7 +189,7 @@ internal sealed class ClosureInfo
         var symbol = (Symbol?)owner ?? unit;
         var local = blockOn is null ? "$closure" : "$block" + number;
         return new ClosureInfo(owner, type,
-            new VariableSymbol(local, type, isGlobal: false, symbol, []),
+            new VariableSymbol(local, type, isGlobal: false, symbol, []) { IsFrameSlot = blockOn is not null },
             new VariableSymbol(local + "Ref", types.IInterface ?? types.Pointer, isGlobal: false, symbol, []), syntax)
         {
             _enclosing = blockOn,

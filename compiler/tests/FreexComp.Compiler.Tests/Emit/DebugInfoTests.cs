@@ -393,6 +393,21 @@ public sealed class DebugInfoTests
                 declare, StringComparison.Ordinal);
         }
 
+        // C-399: the frame slot is nil before the first instruction of its loop's line (a stop there reads nil through it, not
+        // stack garbage): it is cleared on entry with the managed locals, at a location before the loop line
+        var function = ir[ir.IndexOf("@\"P.Run\"(", StringComparison.Ordinal)..];
+        function = function[..function.IndexOf("\n}", StringComparison.Ordinal)];
+        foreach (var (name, marker) in new[] { ("I", "counted"), ("X", "in") })
+        {
+            var slot = blocks.Single(b => b.Fields.Keys.Any(k => k.Name == name)).Local.Name;
+            var locations = Regex.Matches(ir, $@"^!(\d+) = !DILocation\(line: {Line(marker)},", RegexOptions.Multiline).Select(m => "!dbg !" + m.Groups[1].Value).ToHashSet();
+            var lines = function.Split('\n');
+            var first = Array.FindIndex(lines, l => locations.Any(d => l.EndsWith(d, StringComparison.Ordinal)));
+            Assert.True(first > 0, "no instruction on the line of " + name);
+            var cleared = Array.FindIndex(lines, l => l.TrimStart().StartsWith($"store ptr null, ptr %{slot}.addr, align 8", StringComparison.Ordinal));
+            Assert.InRange(cleared, 0, first - 1);
+        }
+
         // the counted loop's driver is a hidden local like the index of a for … in loop: artificial, not in the sidecar (DBG-145)
         Assert.DoesNotContain(run["vars"]!.AsArray(), v => v!["name"]!.GetValue<string>().StartsWith('$'));
         var counted = blocks.Single(b => b.Fields.Keys.Any(k => k.Name == "I"));

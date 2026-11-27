@@ -434,24 +434,29 @@ internal static class ManagedRewriter
     /// Rule 1: every managed local and temporary (not a hidden <c>Result</c>, which is the caller's initialised storage, ABI-032)
     /// is set to <c>nil</c> first; rule 3: <c>_UStrAddRef</c> of each managed value parameter (ABI-031) and <c>_UStrClr</c> of each
     /// managed <c>out</c> parameter (ABI-030); rule 2: when the body has any managed value parameter, local or temporary, the
-    /// cleanup scope finalises them in declaration order (parameters, locals, temporaries).
+    /// cleanup scope finalises them in declaration order (parameters, locals, temporaries). The plain slot of each block frame
+    /// (<see cref="VariableSymbol.IsFrameSlot"/>) is set to <c>nil</c> with them, in declaration order, and not finalised (C-399).
     /// </summary>
     public static LoweredBody AddLifetimes(LoweringContext context, LoweredBody body)
     {
         var routine = body.Routine;
         var locals = body.Locals.Where(l => l.Type.IsManaged && !(routine is not null && ReferenceEquals(l.Variable, routine.ResultVariable) && IrEmitter.HasHiddenResult(routine)))
             .ToImmutableArray();
+        var frameSlots = body.Locals.Where(l => l.Variable is { IsFrameSlot: true }).ToHashSet();
         var parameters = routine?.Parameters.Where(p => p.Type.IsManaged).ToImmutableArray() ?? [];
         // ABI-080 / CMP-325 rule 6: a managed record or array passed by address is the caller's copy, which the caller
         // references and finalises; the callee takes its own reference only to values it receives in its own storage
         var valueParameters = parameters.Where(p => p.Mode == ParameterMode.Value && !IrEmitter.IsPassedByAddress(p)).ToImmutableArray();
-        if (locals.IsEmpty && valueParameters.IsEmpty && !parameters.Any(p => p.Mode == ParameterMode.Out))
+        if (locals.IsEmpty && frameSlots.Count == 0 && valueParameters.IsEmpty && !parameters.Any(p => p.Mode == ParameterMode.Out))
         {
             return body;
         }
 
         var prologue = new List<LStatement>();
-        prologue.AddRange(locals.Select(l => new LZero(AddressOf(context, new LLocalRef(l)), l.Type)));
+        var zeroed = locals.ToHashSet();
+        prologue.AddRange(body.Locals.Where(l => frameSlots.Contains(l) || zeroed.Contains(l)).Select(l => frameSlots.Contains(l)
+            ? new LAssign(new LLocalRef(l), new LConst(new ConstantValue(null, context.Types.Nil), l.Type))
+            : (LStatement)new LZero(AddressOf(context, new LLocalRef(l)), l.Type)));
         prologue.AddRange(valueParameters.Select(p => AddRef(context, new LParamRef(p))));
         prologue.AddRange(parameters.Where(p => p.Mode == ParameterMode.Out).Select(p => Clear(context, new LParamRef(p))));
         // CMP-1180: a variable its declaration scope finalises is only zeroed here

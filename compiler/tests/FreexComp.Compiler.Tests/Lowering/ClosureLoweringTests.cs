@@ -134,7 +134,18 @@ public sealed class ClosureLoweringTests
             "(call _IntfAsg (addr (deref (+ptr $block3 24:Int64))) (let $v6 $block2 (select (Equal (conv Pointer $v6) nil:Pointer) nil:IInterface (+ptr $v6 40:Int64)))) " +
             "(scope (block (:= (deref (+ptr $block3 32:Int64)) j)";
         Assert.True(text.Contains(MakeInner, StringComparison.Ordinal), text);
-        Assert.Single(System.Text.RegularExpressions.Regex.Matches(text, @"\(:= \$block2 "));
+        // C-399: the frame slots are nil from the routine's entry, with the managed locals and before the routine's closure is
+        // made (a stop before a scope first makes its frame reads nil through the slot); every other store is a new instance
+        var closureMade = text.IndexOf("(:= $closure (call Create:TObject))", StringComparison.Ordinal);
+        Assert.True(closureMade > 0, text);
+        foreach (var slot in new[] { "$block2", "$block3" })
+        {
+            Assert.Single(System.Text.RegularExpressions.Regex.Matches(text, $@"\(:= \{slot} nil:"));
+            Assert.InRange(text.IndexOf($"(:= {slot} nil:", StringComparison.Ordinal), 0, closureMade);
+            Assert.Single(System.Text.RegularExpressions.Regex.Matches(text, $@"\(:= \{slot} \(call Create:TObject\)\)"));
+            Assert.Equal(2, System.Text.RegularExpressions.Regex.Matches(text, $@"\(:= \{slot} ").Count);
+        }
+
         // the scopes release their frames (inner first); the routine's cleanup does not
         Assert.Contains("(block (call _IntfClr (addr $block3Ref)))", text);
         Assert.Contains("(block (call _IntfClr (addr $block2Ref)))", text);
@@ -285,6 +296,9 @@ public sealed class ClosureLoweringTests
         Assert.Contains("$for2", lowered.Locals.Select(l => l.Name));
         Assert.DoesNotContain("i", lowered.Locals.Select(l => l.Name));
         Assert.Contains("(:= $block2 nil:", text);
+        // C-399: nil on the routine's entry (with the managed locals) and again where the loop statement starts
+        Assert.Equal(2, System.Text.RegularExpressions.Regex.Matches(text, @"\(:= \$block2 nil:").Count);
+        Assert.True(text.IndexOf("(:= $block2 nil:", StringComparison.Ordinal) < text.IndexOf("(:= $closure (call Create:TObject))", StringComparison.Ordinal), text);
         Assert.Single(System.Text.RegularExpressions.Regex.Matches(text, @"\(:= \$block2 \(call Create:TObject\)\)"));
         Assert.Contains("(:= (deref (+ptr $block2 32:Int64)) $for2)", text);
         Assert.Contains("(block (call _IntfClr (addr $block2Ref)))", text);

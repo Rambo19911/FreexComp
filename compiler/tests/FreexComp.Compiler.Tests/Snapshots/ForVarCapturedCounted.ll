@@ -54,6 +54,7 @@ entry:
           to label %cont.1 unwind label %cleanup.pad
 cont.1:
   store ptr null, ptr %$closureRef.addr, align 8
+  store ptr null, ptr %$block2.addr, align 8
   store ptr null, ptr %$block2Ref.addr, align 8
   %t1 = invoke ptr @"System.TObject.Create"(ptr @"M.Fill.$closure1.$vmt", i8 1)
           to label %cont.2 unwind label %cleanup.pad

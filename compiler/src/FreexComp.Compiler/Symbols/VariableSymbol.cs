@@ -68,6 +68,13 @@ public sealed class VariableSymbol : Symbol
     internal Binding.ClosureInfo? BlockFrame { get; set; }
 
     /// <summary>
+    /// The plain hidden local <c>$block&lt;n&gt;</c> that holds the current instance of a block frame (inline-variables.md CMP-1183,
+    /// CMP-1410, 1411): set to <c>nil</c> on entry together with the managed locals (C-399), so that a debugger stop before its
+    /// scope first makes a frame reads <c>nil</c>, not stack garbage, through it (CMP-1412).
+    /// </summary>
+    internal bool IsFrameSlot { get; init; }
+
+    /// <summary>
     /// The debug scope of an inline variable or typed constant (inline-variables.md CMP-1184, C-309): the first token of its
     /// declaration statement and the token that closes its statement list (the last token of a <c>repeat</c> or <c>for var</c>
     /// statement; none when the list ends a unit section); for the variable of an exception handler (DBG-142, C-315) the first and
