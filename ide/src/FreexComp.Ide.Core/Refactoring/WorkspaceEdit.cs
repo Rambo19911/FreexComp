@@ -1,5 +1,8 @@
 using System.Collections.Immutable;
+using FreexComp.Compiler;
 using FreexComp.Ide.Core.Text;
+using FreexComp.LanguageService;
+using IFileSystem = FreexComp.Ide.Core.Platform.IFileSystem;
 
 namespace FreexComp.Ide.Core.Refactoring;
 
@@ -15,6 +18,45 @@ public sealed record FileEdit(string Path, string BaseText, ImmutableArray<TextE
 /// </summary>
 public sealed record WorkspaceEdit(string Title, ImmutableArray<FileEdit> Files)
 {
+    /// <summary>
+    /// IDE-REFAC-003: the edits of the language service as a workspace edit — one file edit per document edit, in the
+    /// service's order, every change with its span and text. The base text is the text the service computed the changes
+    /// against: for a source of <paramref name="compilation"/> its syntax tree's text (an open document's buffer text as
+    /// the workspace was synchronised with it, else the file); for a form file (CMP-753), which the service reads from
+    /// disk, the file decoded with <see cref="EncodingDetector"/>, without a byte-order mark. Everything runs off the
+    /// calling thread. A form file that cannot be read faults the task with the <see cref="IOException"/> or
+    /// <see cref="UnauthorizedAccessException"/>. A file rename of the service is not part of a workspace edit.
+    /// </summary>
+    public static Task<WorkspaceEdit> FromLanguageService(string title, IEnumerable<DocumentEdit> edits, Compilation compilation,
+        IFileSystem fileSystem, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(title);
+        ArgumentNullException.ThrowIfNull(edits);
+        ArgumentNullException.ThrowIfNull(compilation);
+        ArgumentNullException.ThrowIfNull(fileSystem);
+        var list = edits.ToList();
+        return Task.Run(() =>
+        {
+            var files = ImmutableArray.CreateBuilder<FileEdit>(list.Count);
+            foreach (var edit in list)
+            {
+                ct.ThrowIfCancellationRequested();
+                var baseText = IsFormFile(edit.Path)
+                    ? EncodingDetector.Detect(fileSystem.ReadAllBytes(edit.Path)).Text
+                    : compilation.GetSyntaxTree(edit.Path).Text.Text;
+                files.Add(new FileEdit(edit.Path, baseText, [.. edit.Changes.Select(c => new TextEdit(c.Span.Start, c.Span.Length, c.NewText))]));
+            }
+
+            return new WorkspaceEdit(title, files.ToImmutable());
+        }, ct);
+    }
+
+    /// <summary>
+    /// The one kind of file the language service edits without a syntax tree: a form (<c>.form</c>, the extension of the
+    /// form language). Every other path is a source the compilation parsed.
+    /// </summary>
+    private static bool IsFormFile(string path) => string.Equals(Path.GetExtension(path), ".form", StringComparison.OrdinalIgnoreCase);
+
     /// <summary>
     /// IDE-REFAC-001: the edit without the edits that replace a text by the same text and without the files that have
     /// no edit left. Edits outside the base text are kept: they make the edit invalid (<see cref="FindDefect"/>).

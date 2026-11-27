@@ -118,8 +118,8 @@ public sealed class RefactoringService : IRefactoringService
         plan = await CheckAsync(prepared);
         if (plan.Blocked.Count > 0)
             return await BlockedAsync(prepared.Title, plan.Blocked, working);
-        var buffers = plan.Targets.Where(t => t.Document is not null).ToList();
-        var files = plan.Targets.Where(t => t.Document is null).ToList();
+        var open = plan.Targets.Where(t => !t.IsFile).ToList();
+        var files = plan.Targets.Where(t => t.IsFile).ToList();
 
         // (2) The closed files, on the thread pool, in path order; a failed write puts back what was written.
         var written = await Task.Run(() => WriteFiles(files));
@@ -130,9 +130,9 @@ public sealed class RefactoringService : IRefactoringService
             return Result(RefactoringOutcome.Failed, error: written.Error);
         }
 
-        // (3) One block on the UI thread: every buffer is still open and has its recorded version, then the edits.
-        var changed = buffers.Where(b => !_documents.Documents.Contains(b.Document!) || b.Document!.Buffer.Version != b.Version)
-            .Select(b => new BlockedFile(b.Edit.Path, BlockReason.ChangedSinceComputed)).ToList();
+        // (3) One block on the UI thread: every document is still open, every buffer has its recorded version and every
+        // form its recorded text; then the edits, in path order.
+        var changed = open.Where(IsChanged).Select(t => new BlockedFile(t.Edit.Path, BlockReason.ChangedSinceComputed)).ToList();
         if (changed.Count > 0)
         {
             var unrestored = await Task.Run(() => Restore(written.Written));
@@ -146,19 +146,28 @@ public sealed class RefactoringService : IRefactoringService
         var edited = new List<Target>();
         try
         {
-            foreach (var buffer in buffers)
+            foreach (var target in open)
             {
-                edited.Add(buffer);
-                buffer.Document!.Buffer.ApplyEdits(buffer.Edit.Edits, prepared.Title); // IDE-REFAC-010: one undo step, not saved
+                edited.Add(target);
+                if (target.Form is { } form)
+                    form.Designer.RevertFormText(Apply(target.Edit.BaseText, target.Edit.Edits), prepared.Title); // IDE-REFAC-011: through the designer, not saved
+                else
+                    target.Document!.Buffer.ApplyEdits(target.Edit.Edits, prepared.Title); // IDE-REFAC-010: one undo step, not saved
             }
         }
         catch (Exception e)
         {
-            // Not expected (the edit is valid and the buffers were checked): the undo steps made so far are undone and
-            // the files put back; reported as an edit that cannot be applied (IDE-REFAC-002).
+            // Not expected (the edit is valid and the documents were checked): the undo steps made so far are undone, a
+            // form gets back the text it had, and the files are put back; reported as an edit that cannot be applied
+            // (IDE-REFAC-002).
             _log.Error(LogCategory, $"{prepared.Title}: editing {edited[^1].Edit.Path} failed", e);
             foreach (var target in Enumerable.Reverse(edited))
-                UndoQuietly(target.Document!.Buffer, target.Version);
+            {
+                if (target.Form is { } form)
+                    RevertQuietly(form, target.FormText!, prepared.Title);
+                else
+                    UndoQuietly(target.Document!.Buffer, target.Version);
+            }
             var unrestored = await Task.Run(() => Restore(written.Written));
             working.Stop();
             await ShowWriteFailureAsync(prepared.Title, "Msg.Refactoring.Failed", [], unrestored);
@@ -207,14 +216,23 @@ public sealed class RefactoringService : IRefactoringService
         return (normalized, Result(RefactoringOutcome.Failed, error: error));
     }
 
-    /// <summary>What a file edit changes at apply time (IDE-REFAC-004): the buffer of an open text document, else the file.</summary>
-    private sealed record Target(FileEdit Edit, TextDocumentViewModel? Document)
+    /// <summary>
+    /// What a file edit changes at apply time (IDE-REFAC-004): the form text of an open form document
+    /// (<paramref name="Form"/>), the buffer of an open text document (<paramref name="Document"/>), else the file.
+    /// </summary>
+    private sealed record Target(FileEdit Edit, TextDocumentViewModel? Document, FormDocumentViewModel? Form)
     {
+        /// <summary>Neither a buffer nor a form text: the file on disk is rewritten.</summary>
+        public bool IsFile => Document is null && Form is null;
+
         /// <summary>A file target as read by the checks: null when the file does not exist.</summary>
         public FileState? File { get; init; }
 
         /// <summary>A buffer target: the buffer's version when the checks judged it (IDE-REFAC-008 (1)).</summary>
         public long Version { get; init; }
+
+        /// <summary>A form-text target: the designer's current form text when the checks judged it (IDE-REFAC-008 (1)).</summary>
+        public string? FormText { get; init; }
     }
 
     /// <summary>A closed file as found on disk: its bytes (read once, IDE-REFAC-009) and whether it can be written.</summary>
@@ -222,8 +240,32 @@ public sealed class RefactoringService : IRefactoringService
 
     private sealed record Plan(IReadOnlyList<Target> Targets, IReadOnlyList<BlockedFile> Blocked);
 
-    private TextDocumentViewModel? DocumentOf(string path) => _documents.Documents.OfType<TextDocumentViewModel>()
-        .FirstOrDefault(d => string.Equals(d.FilePath, path, StringComparison.OrdinalIgnoreCase));
+    /// <summary>
+    /// IDE-REFAC-004: the open document a path belongs to. The <c>.form</c> of an open form document is looked for first:
+    /// a form opened without its unit is a document with the form's own path and an empty placeholder buffer.
+    /// </summary>
+    private (TextDocumentViewModel? Document, FormDocumentViewModel? Form) DocumentOf(string path)
+    {
+        if (_documents.Documents.OfType<FormDocumentViewModel>()
+            .FirstOrDefault(d => string.Equals(d.FormText.FilePath, path, StringComparison.OrdinalIgnoreCase)) is { } form)
+            return (null, form);
+        return (_documents.Documents.OfType<TextDocumentViewModel>()
+            .FirstOrDefault(d => string.Equals(d.FilePath, path, StringComparison.OrdinalIgnoreCase)), null);
+    }
+
+    private Target TargetOf(FileEdit edit)
+    {
+        var (document, form) = DocumentOf(edit.Path);
+        return new Target(edit, document, form);
+    }
+
+    /// <summary>
+    /// IDE-REFAC-008 (3): the document was closed, its buffer has another version, or the form another text, than when the
+    /// checks judged it.
+    /// </summary>
+    private bool IsChanged(Target target) => target.Form is { } form
+        ? !_documents.Documents.Contains(form) || !string.Equals(form.Designer.CurrentFormText(), target.FormText, StringComparison.Ordinal)
+        : !_documents.Documents.Contains(target.Document!) || target.Document!.Buffer.Version != target.Version;
 
     /// <summary>
     /// IDE-REFAC-004, 006: the target of every file edit, in path order, and the files that block with the first reason
@@ -235,17 +277,20 @@ public sealed class RefactoringService : IRefactoringService
         var ordered = edit.Files.OrderBy(f => f.Path, StringComparer.OrdinalIgnoreCase).ToList();
         while (true)
         {
-            var targets = ordered.Select(f => new Target(f, DocumentOf(f.Path))).ToList();
-            var closed = targets.Where(t => t.Document is null).Select(t => t.Edit.Path).ToList();
+            var targets = ordered.Select(TargetOf).ToList();
+            var closed = targets.Where(t => t.IsFile).Select(t => t.Edit.Path).ToList();
             var states = closed.Count == 0 ? [] : await Task.Run(() => closed.Select(ReadState).ToList()); // IDE-ARCH-081
-            if (!targets.Select(t => t.Document).SequenceEqual(ordered.Select(f => DocumentOf(f.Path))))
+            if (!targets.Select(t => (t.Document, t.Form)).SequenceEqual(ordered.Select(f => DocumentOf(f.Path))))
                 continue;
             var blocked = new List<BlockedFile>();
             for (int i = 0, read = 0; i < targets.Count; i++)
             {
-                targets[i] = targets[i].Document is { } document
-                    ? targets[i] with { Version = document.Buffer.Version }
-                    : targets[i] with { File = states[read++] };
+                targets[i] = targets[i] switch
+                {
+                    { Form: { } form } => targets[i] with { FormText = form.Designer.CurrentFormText() },
+                    { Document: { } document } => targets[i] with { Version = document.Buffer.Version },
+                    _ => targets[i] with { File = states[read++] },
+                };
                 if (ReasonFor(targets[i]) is { } reason)
                     blocked.Add(new BlockedFile(targets[i].Edit.Path, reason));
             }
@@ -278,17 +323,27 @@ public sealed class RefactoringService : IRefactoringService
     private BlockReason? ReasonFor(Target target)
     {
         var (path, document, file) = (target.Edit.Path, target.Document, target.File);
-        if (document is null && file is null)
+        if (target.IsFile && file is null)
             return BlockReason.NotFound;
         if (_library.IsLibrarySource(path) && !_projects.IsMember(path))
             return BlockReason.LibrarySource;
         if (!EditableFiles.MayEdit(path, _projects, _library.IsLibrarySource, _documents))
             return BlockReason.OutsideProject;
+        if (target.Form is { } form)
+        {
+            // The form document is read only as a whole (its unit cannot be written, a library source), or its form buffer is.
+            if (form.IsReadOnly || form.FormText.IsReadOnly)
+                return BlockReason.NotWritable;
+            if (ShowsExternalChange(form)) // one bar per document, whichever of its two files changed
+                return BlockReason.ChangedOnDisk;
+            return target.FormText == target.Edit.BaseText ? null : BlockReason.ChangedSinceComputed;
+        }
+
         if (document is not null)
         {
             if (document.Buffer.IsReadOnly)
                 return BlockReason.NotWritable;
-            if (document.InfoBars.Any(bar => bar.Kind is TextDocumentViewModel.ExternalChangeInfoBarKind or TextDocumentViewModel.ExternalDeleteInfoBarKind))
+            if (ShowsExternalChange(document))
                 return BlockReason.ChangedOnDisk;
             return document.Buffer.Text == target.Edit.BaseText ? null : BlockReason.ChangedSinceComputed;
         }
@@ -297,6 +352,9 @@ public sealed class RefactoringService : IRefactoringService
             return BlockReason.NotWritable;
         return file.Detection is { IsBinary: false } detection && detection.Text == target.Edit.BaseText ? null : BlockReason.ChangedOnDisk;
     }
+
+    private static bool ShowsExternalChange(TextDocumentViewModel document) => document.InfoBars
+        .Any(bar => bar.Kind is TextDocumentViewModel.ExternalChangeInfoBarKind or TextDocumentViewModel.ExternalDeleteInfoBarKind);
 
     /// <summary>
     /// IDE-REFAC-006: nothing changed; <c>Msg.Refactoring.Blocked</c> with one line per file in path order, at most ten,
@@ -433,8 +491,25 @@ public sealed class RefactoringService : IRefactoringService
     }
 
     /// <summary>
+    /// Gives a form back the text it had before the operation edited it (the designer's own undo stack went with that
+    /// edit, IDE-REFAC-011); never throws.
+    /// </summary>
+    private void RevertQuietly(FormDocumentViewModel form, string textBefore, string title)
+    {
+        try
+        {
+            if (!string.Equals(form.Designer.CurrentFormText(), textBefore, StringComparison.Ordinal))
+                form.Designer.RevertFormText(textBefore, title);
+        }
+        catch (Exception e)
+        {
+            _log.Warning(LogCategory, "A form edit cannot be taken back", e);
+        }
+    }
+
+    /// <summary>
     /// IDE-REFAC-007: <see cref="PreviewMode.Auto"/> shows the preview unless the edit changes exactly one file and that
-    /// file is the buffer of the active document's visible text view.
+    /// file is the buffer of the active document's visible text view. A form-text target is not a buffer: it is previewed.
     /// </summary>
     private bool NeedsPreview(PreviewMode mode, Plan plan) => mode switch
     {

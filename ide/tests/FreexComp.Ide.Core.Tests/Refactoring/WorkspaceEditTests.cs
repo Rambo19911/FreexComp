@@ -17,7 +17,7 @@ namespace FreexComp.Ide.Core.Tests.Refactoring;
 /// edited as one undo step and not saved; a failed write and a buffer changed meanwhile roll everything back.
 /// </summary>
 [Trait("Phase", "8")]
-public sealed class WorkspaceEditTests
+public sealed partial class WorkspaceEditTests
 {
     private const string Dir = @"C:\p\App";
     private const string ProjectPath = Dir + @"\App.pproj";

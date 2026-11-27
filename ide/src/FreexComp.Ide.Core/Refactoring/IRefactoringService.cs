@@ -11,7 +11,8 @@ public interface IRefactoringService
     /// <summary>
     /// Applies <paramref name="edit"/> (IDE-REFAC-001…012): normalisation and validation, the checks, the preview decided
     /// by <paramref name="preview"/>, the checks again, then the closed files are written and the open buffers edited —
-    /// each buffer as one undo step, not saved. Either every file has its new text afterwards or none has. Messages and
+    /// each buffer as one undo step, not saved; the <c>.form</c> of an open form document receives its text through the
+    /// designer (IDE-REFAC-011). Either every file has its new text afterwards or none has. Messages and
     /// the status text are shown here; the result says how it ended. <paramref name="ct"/> cancels until the first
     /// write (outcome <see cref="RefactoringOutcome.Canceled"/>); after it the operation runs to its end.
     /// </summary>

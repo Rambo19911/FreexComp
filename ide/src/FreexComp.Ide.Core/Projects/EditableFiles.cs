@@ -12,14 +12,16 @@ internal static class EditableFiles
     /// <summary>
     /// With a project open: a project member (the companion form of a member unit is one), or a file under the project
     /// directory or under an effective search path of the active configuration that is not a library source. Without a
-    /// project: only a file that is open as a document and is not a protected library source. UI thread; no disk access.
+    /// project: only a file that is open as a document — the <c>.form</c> of an open form document is one — and is not a
+    /// protected library source. UI thread; no disk access.
     /// </summary>
     public static bool MayEdit(string path, IProjectService projects, Func<string, bool> isLibrarySource, IDocumentService documents)
     {
         if (projects.Definition is not { } project)
         {
             return documents.Documents.OfType<TextDocumentViewModel>()
-                .Any(d => string.Equals(d.FilePath, path, StringComparison.OrdinalIgnoreCase) && !d.IsLibraryProtected);
+                .Any(d => !d.IsLibraryProtected && (string.Equals(d.FilePath, path, StringComparison.OrdinalIgnoreCase)
+                    || d is FormDocumentViewModel form && string.Equals(form.FormText.FilePath, path, StringComparison.OrdinalIgnoreCase)));
         }
 
         if (projects.IsMember(path))
