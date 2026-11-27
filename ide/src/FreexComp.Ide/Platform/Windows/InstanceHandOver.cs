@@ -26,7 +26,7 @@ public sealed class InstanceHandOver : IDisposable
         _pipeName = PipeName(key);
     }
 
-    /// <summary>The instance key of a user directory (<c>--user-dir</c>; null = the default one).</summary>
+    /// <summary>The instance key of a user directory (<c>--user-dir</c>, or the portable one of INS-021; null = the default one).</summary>
     public static string Key(string? userDir)
     {
         var text = userDir is null ? "" : Path.GetFullPath(userDir).TrimEnd('\\', '/').ToUpperInvariant();
