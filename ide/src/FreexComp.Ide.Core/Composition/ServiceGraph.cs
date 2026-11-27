@@ -163,7 +163,7 @@ public static class ServiceGraph
         var session = new SessionService(platform.FileSystem, documents, projects, projectManager, layout, platform.UserPaths,
             platform.Clock, platform.Log, safe);
         projects.Session = session;
-        var bookmarks = new BookmarkService(documents, navigation, status); // I-121
+        var bookmarks = new BookmarkService(documents, navigation, status, platform.FileSystem); // I-121, I-315
         bookmarks.RegisterCommands(commands);
         session.Bookmarks = bookmarks;
         projects.RecentItems = recent;
@@ -368,6 +368,11 @@ public static class ServiceGraph
             designerShell?.AutoSwitchSuspended = () => holder.HoldsProfile;
         }
 
+        // I-316: the Bookmarks window and its commands (F11-045), where its phase-8 delivery applies.
+        var bookmarksView = new ViewModels.BookmarksViewModel(commands, bookmarks, toolWindowService);
+        if (Phase8Features.IsAvailable("toolwindow:" + ViewModels.BookmarksViewModel.ToolName, 8, toolWindowPhase ?? ImplementedPhase))
+            bookmarksView.RegisterCommands();
+
         // A test phase below the product's (testing.md §2.1) gives the later commands the stubs of UI-CMD-004 as before I-207.
         EditorCommandRoute.Register(commands, toolWindowPhase ?? ImplementedPhase, () => documents.ActiveDocument?.CommandTarget); // I-158
         commands.RegisterLaterPhaseStubs(toolWindowPhase ?? ImplementedPhase);
@@ -382,6 +387,7 @@ public static class ServiceGraph
         if (debugShell is not null)
             production = [.. production, .. debugShell.ToolWindows];
         production = [.. production, new ViewModels.DataExplorerViewModel().Definition]; // I-137: registers from Phase 7 (UI-TW-1401)
+        production = [.. production, bookmarksView.Definition]; // I-316: registers where delivered (UI-TW-006)
         foreach (var definition in production)
         {
             if (!extras.Any(e => e.Name == definition.Name))

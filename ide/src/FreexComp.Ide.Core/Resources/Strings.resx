@@ -502,6 +502,12 @@ Set the toolchain folder in Tools &gt; Options &gt; Toolchain Paths.</value>
   <data name="Msg_Debug_BreakpointsEmpty_Secondary" xml:space="preserve">
     <value>Press F9 on a line of code to add one.</value>
   </data>
+  <data name="Msg_Bookmarks_Empty" xml:space="preserve">
+    <value>No bookmarks</value>
+  </data>
+  <data name="Msg_Bookmarks_Empty_Secondary" xml:space="preserve">
+    <value>Press Ctrl+F2 on a line of code to add one.</value>
+  </data>
   <data name="Msg_Debug_WatchesEmpty" xml:space="preserve">
     <value>No watches</value>
   </data>
@@ -1477,6 +1483,9 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   <data name="Cmd_search_bookmark_clearAll" xml:space="preserve">
     <value>Clear All Bookmarks</value>
   </data>
+  <data name="Cmd_search_bookmark_addNamed" xml:space="preserve">
+    <value>Add Named Bookmark…</value>
+  </data>
   <data name="Cmd_view_projectManager" xml:space="preserve">
     <value>Project Manager</value>
   </data>
@@ -1521,6 +1530,9 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   </data>
   <data name="Cmd_view_dataExplorer" xml:space="preserve">
     <value>Data Explorer</value>
+  </data>
+  <data name="Cmd_view_bookmarks" xml:space="preserve">
+    <value>Bookmarks</value>
   </data>
   <data name="Cmd_view_welcomePage" xml:space="preserve">
     <value>Welcome Page</value>
@@ -2018,6 +2030,15 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   <data name="Cmd_breakpoints_goToSource" xml:space="preserve">
     <value>Go to Source</value>
   </data>
+  <data name="Cmd_bookmarks_goToSource" xml:space="preserve">
+    <value>Go to Source</value>
+  </data>
+  <data name="Cmd_bookmarks_rename" xml:space="preserve">
+    <value>Rename Bookmark</value>
+  </data>
+  <data name="Cmd_bookmarks_delete" xml:space="preserve">
+    <value>Delete Bookmark</value>
+  </data>
   <data name="Cmd_callStack_goToFrame" xml:space="preserve">
     <value>Go to Frame</value>
   </data>
@@ -2501,6 +2522,9 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   <data name="Menu_search_bookmark_toggle" xml:space="preserve">
     <value>&amp;Toggle Bookmark</value>
   </data>
+  <data name="Menu_search_bookmark_addNamed" xml:space="preserve">
+    <value>&amp;Add Named Bookmark…</value>
+  </data>
   <data name="Menu_search_bookmark_next" xml:space="preserve">
     <value>&amp;Next Bookmark</value>
   </data>
@@ -2539,6 +2563,9 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   </data>
   <data name="Menu_view_dataExplorer" xml:space="preserve">
     <value>Data &amp;Explorer</value>
+  </data>
+  <data name="Menu_view_bookmarks" xml:space="preserve">
+    <value>Boo&amp;kmarks</value>
   </data>
   <data name="Menu_View_DebugWindows" xml:space="preserve">
     <value>De&amp;bug Windows</value>
@@ -5408,6 +5435,12 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   <data name="DebugView_Column_Name" xml:space="preserve">
     <value>Name</value>
     <comment>tool-windows.md 12, 14 column header</comment>
+  </data>
+  <data name="DebugView_Column_Number" xml:space="preserve">
+    <value>#</value>
+  </data>
+  <data name="DebugView_Column_Text" xml:space="preserve">
+    <value>Text</value>
   </data>
   <data name="DebugView_Column_Value" xml:space="preserve">
     <value>Value</value>

@@ -17,6 +17,9 @@ public static class Phase8Features
     /// </summary>
     internal static readonly IReadOnlyList<string> DeliveredIds =
     [
+        "bookmarks.delete", // F11-045
+        "bookmarks.goToSource", // F11-045
+        "bookmarks.rename", // F11-045
         "designer.revertToInherited", // F05-006, F05-007 (D-134)
         "file.copyLibraryUnitToProject", // F05-099
         "file.editLibrarySource", // F02-004
@@ -50,6 +53,9 @@ public static class Phase8Features
         "project.setActive", // F09-009
         "project.setPlatform", // F03-003
         "run.toggleLibraryStepping", // F02-004
+        "search.bookmark.addNamed", // F11-045
+        "toolwindow:Bookmarks", // F11-045
+        "view.bookmarks", // F11-045
     ];
 
     private static readonly FrozenSet<string> Shipped = DeliveredIds.ToFrozenSet(StringComparer.Ordinal);

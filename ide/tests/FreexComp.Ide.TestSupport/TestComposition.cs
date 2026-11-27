@@ -115,6 +115,8 @@ public static class TestComposition
         TestUiThread.RegisterWork(() => projectManager.MissingFileChecks.IsCompleted, () => projectManager.MissingFileChecks);
         var run = services.Run;
         TestUiThread.RegisterWork(() => run.ExitsPosted, run.WhenExitsPostedAsync);
+        var bookmarks = services.Bookmarks; // I-315: the previews of closed documents, read from disk
+        TestUiThread.RegisterWork(() => bookmarks.Pending.IsCompleted, () => bookmarks.Pending);
         if (services.Debug is { } debug) // Phase 6: a session the test left is ended; its events and breakpoint requests settle
             TestUiThread.RegisterWork(() => debug.IsIdle, debug.ShutdownAsync);
         services.Documents.DocumentOpened += (_, e) =>

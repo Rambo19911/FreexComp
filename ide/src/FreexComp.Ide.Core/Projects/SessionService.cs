@@ -214,9 +214,10 @@ public sealed class SessionService : ISessionService
         // IDE-ED-114: before the documents open, so they anchor the bookmarks as they come.
         _bookmarks?.Load(root["bookmarks"] is JsonArray marks
             ? marks.OfType<JsonObject>()
-                .Select(m => (Path: Resolve(LayoutStateJson.Str(m["path"])), Line: LayoutStateJson.Int(m["line"]), Number: LayoutStateJson.Int(m["number"])))
+                .Select(m => (Path: Resolve(LayoutStateJson.Str(m["path"])), Line: LayoutStateJson.Int(m["line"]), Number: LayoutStateJson.Int(m["number"]),
+                    Name: LayoutStateJson.Str(m["name"]))) // IDE-ED-118: optional
                 .Where(m => m.Path is not null && m.Line is not null)
-                .Select(m => new Editing.BookmarkInfo(m.Path!, m.Line!.Value, m.Number))
+                .Select(m => new Editing.BookmarkInfo(m.Path!, m.Line!.Value, m.Number, m.Name))
                 .ToList()
             : []);
 
@@ -296,11 +297,17 @@ public sealed class SessionService : ISessionService
         Put(root, "activeDocument", _documents.ActiveDocument is { } active && stored.Contains(active) ? ToSessionPath(active.FilePath!) : null);
         if (_bookmarks is not null && (_bookmarks.All.Count > 0 || root.ContainsKey("bookmarks")))
         {
-            Put(root, "bookmarks", new JsonArray([.. _bookmarks.All.Select(b => (JsonNode)new JsonObject
+            Put(root, "bookmarks", new JsonArray([.. _bookmarks.All.Select(b =>
             {
-                ["path"] = ToSessionPath(b.Path),
-                ["line"] = b.Line,
-                ["number"] = b.Number,
+                var mark = new JsonObject
+                {
+                    ["path"] = ToSessionPath(b.Path),
+                    ["line"] = b.Line,
+                    ["number"] = b.Number,
+                };
+                if (b.Name is not null)
+                    mark["name"] = b.Name; // IDE-ED-118: only when the bookmark has a name
+                return (JsonNode)mark;
             })]));
         }
         if (_breakpoints is not null && project is not null && (_breakpoints.All.Count > 0 || root.ContainsKey("breakpoints")))

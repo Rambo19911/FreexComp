@@ -176,6 +176,7 @@ public static class MainMenuDefinition
             Submenu("Search.Bookmarks",
             [
                 Command("search.bookmark.toggle"),
+                Command("search.bookmark.addNamed"),
                 Command("search.bookmark.next"),
                 Command("search.bookmark.previous"),
                 Separator,
@@ -195,6 +196,7 @@ public static class MainMenuDefinition
             Command("view.searchResults"),
             Command("view.todo"),
             Command("view.dataExplorer"),
+            Command("view.bookmarks"),
             Submenu("View.DebugWindows",
             [
                 Command("view.breakpoints"),

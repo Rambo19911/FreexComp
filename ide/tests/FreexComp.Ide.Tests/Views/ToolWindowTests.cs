@@ -219,9 +219,11 @@ public sealed class ToolWindowTests
         Assert.Equal(7, h.Services.ImplementedPhase);
 
         foreach (var name in new[] { "ProjectManager", "Structure", "Messages", "Output", "SearchResults", "ObjectInspector", "ToolPalette",
-                     "Breakpoints", "CallStack", "Locals", "Watches", "Threads", "EventLog", "DataExplorer" })
+                     "Breakpoints", "CallStack", "Locals", "Watches", "Threads", "EventLog", "DataExplorer", "Bookmarks" })
             Assert.True(tools.IsRegistered(name), name);
         Assert.False(tools.IsRegistered("ToDo")); // P8+ (UI-TW-700)
+        Assert.Null(h.TryFind<Control>("Tool.Bookmarks")); // P8, delivered (F11-045, I-316); hidden by default
+        Assert.True(h.Services.Commands.CanExecute("view.bookmarks"));
         Assert.False(h.Services.Commands.CanExecute("view.todo"));
         Assert.Null(h.TryFind<Control>("Tool.DataExplorer")); // hidden by default
         Assert.True(h.Services.Commands.CanExecute("view.dataExplorer"));
@@ -251,6 +253,9 @@ public sealed class ToolWindowTests
             Assert.True(tools.IsRegistered(name), name);
         Assert.False(tools.IsRegistered("DataExplorer"));
         Assert.False(tools.Show("DataExplorer", focus: true));
+        Assert.False(tools.IsRegistered("Bookmarks")); // phase-8 deliveries need phase 7 (IDE-P8-003)
+        Assert.False(h.Services.Commands.CanExecute("view.bookmarks"));
+        Assert.False(h.Services.Commands.CanExecute("search.bookmark.addNamed"));
         Assert.True(h.Services.Commands.CanExecute("view.callStack"));
         Assert.True(h.Services.Commands.CanExecute("view.eventLog"));
         Assert.False(h.Services.Commands.CanExecute("view.dataExplorer"));

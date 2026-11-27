@@ -120,6 +120,7 @@ public static class CommandCatalog
         new("search.bookmark.goTo8", [Global], 3, ["Ctrl+8"]),
         new("search.bookmark.goTo9", [Global], 3, ["Ctrl+9"]),
         new("search.bookmark.clearAll", [Global], 3, []),
+        new("search.bookmark.addNamed", [Editor], 8, []),
 
         // 2.4 View
         new("view.projectManager", [Global], 1, ["Alt+1"]),
@@ -137,6 +138,7 @@ public static class CommandCatalog
         new("view.threads", [Global], 6, []),
         new("view.eventLog", [Global], 6, []),
         new("view.dataExplorer", [Global], 7, []),
+        new("view.bookmarks", [Global], 8, []),
         new("view.welcomePage", [Global], 1, []),
         new("view.toggleFormCode", [Global], 5, ["F7"]),
         new("view.formAsText", [Global], 5, []),
@@ -312,6 +314,9 @@ public static class CommandCatalog
         new("breakpoints.enableAll", [ToolList], 6, []),
         new("breakpoints.disableAll", [ToolList], 6, []),
         new("breakpoints.goToSource", [ToolList], 6, ["Enter"]),
+        new("bookmarks.goToSource", [ToolList], 8, ["Enter"]),
+        new("bookmarks.rename", [ToolList], 8, ["F2"]),
+        new("bookmarks.delete", [ToolList], 8, ["Delete"]),
         new("callStack.goToFrame", [ToolList], 6, ["Enter"]),
         new("callStack.copy", [ToolList], 6, ["Ctrl+C"]),
         new("watches.add", [ToolList], 6, ["Insert"]),

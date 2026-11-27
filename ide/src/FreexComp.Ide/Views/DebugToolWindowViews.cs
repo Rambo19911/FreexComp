@@ -483,12 +483,16 @@ public abstract class DebugToolWindowView : UserControl
 
     private static readonly object ExpanderTag = new();
 
-    /// <summary>UI-TW-1004 / UI-TW-1103: the input replaces the cell; a failed commit shows its message under it.</summary>
+    /// <summary>
+    /// UI-TW-1004 / UI-TW-1103 / UI-TW-1504: the input replaces the cell; a failed commit shows its message under it; an
+    /// edit that commits on focus loss does so and gives the list the focus back after Enter.
+    /// </summary>
     private Control CreateEditor(DebugGridEdit edit, string rowId)
     {
         var box = new TextBox { Text = edit.Text, MinHeight = RowHeight, Padding = new Thickness(3, 1), VerticalContentAlignment = VerticalAlignment.Center };
-        box.Classes.Add("codeSmall");
-        AutomationProperties.SetAutomationId(box, rowId + ".Editor");
+        if (edit.IsCode)
+            box.Classes.Add("codeSmall");
+        AutomationProperties.SetAutomationId(box, rowId + edit.IdSuffix);
         var error = new TextBlock { TextWrapping = TextWrapping.Wrap, IsVisible = false, Margin = new Thickness(4, 0) };
         error.Classes.Add("caption");
         error.Bind(TextBlock.ForegroundProperty, error.GetResourceObservable("FxcStatusErrorBrush"));
@@ -509,6 +513,8 @@ public abstract class DebugToolWindowView : UserControl
             {
                 e.Handled = true;
                 _ = edit.CommitAsync(box.Text ?? ""); // never faults; a view model registers what it starts with the debug service (I-221)
+                if (edit.CommitsOnFocusLoss && _grid?.Edit != edit)
+                    _list.Focus();
             }
             else if (e.Key == Key.Escape)
             {
@@ -517,6 +523,16 @@ public abstract class DebugToolWindowView : UserControl
                 _list.Focus();
             }
         }, RoutingStrategies.Tunnel);
+        if (edit.CommitsOnFocusLoss)
+        {
+            // Posted: a click on another row selects that row first, then the commit redraws the rows.
+            box.LostFocus += (_, _) => Dispatcher.UIThread.Post(() =>
+            {
+                if (_grid?.Edit == edit)
+                    _ = edit.CommitAsync(box.Text ?? "");
+            });
+        }
+
         box.AttachedToVisualTree += (_, _) => Dispatcher.UIThread.Post(() =>
         {
             if (box.IsEffectivelyVisible && _grid?.Edit == edit)
@@ -662,3 +678,6 @@ public sealed class ThreadsView() : DebugToolWindowView(ThreadsViewModel.ToolNam
 
 /// <summary>Event Log (tool-windows.md §15).</summary>
 public sealed class EventLogView() : DebugToolWindowView(EventLogViewModel.ToolName);
+
+/// <summary>Bookmarks (tool-windows.md §18, F11-045).</summary>
+public sealed class BookmarksView() : DebugToolWindowView(BookmarksViewModel.ToolName);

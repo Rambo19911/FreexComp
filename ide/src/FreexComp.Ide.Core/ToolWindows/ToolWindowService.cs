@@ -58,6 +58,7 @@ public sealed class ToolWindowService : IToolWindowService
         ["Threads"] = "view.threads",
         ["EventLog"] = "view.eventLog",
         ["DataExplorer"] = "view.dataExplorer",
+        ["Bookmarks"] = "view.bookmarks",
     };
 
     private readonly ICommandService _commands;

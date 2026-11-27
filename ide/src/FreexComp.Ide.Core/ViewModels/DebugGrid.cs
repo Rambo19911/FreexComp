@@ -80,6 +80,17 @@ public sealed class DebugGridEdit(string rowKey, string column, string text, Fun
 
     public string Text { get; } = text;
 
+    /// <summary>The input's AutomationId after <c>Tool.&lt;Name&gt;.Row.&lt;key&gt;</c> (UI-TW-1504: <c>.Name.Edit</c>).</summary>
+    public string IdSuffix { get; init; } = ".Editor";
+
+    /// <summary>The input is drawn in <c>type.codeSmall</c> (expressions and values); false = <c>type.body</c>.</summary>
+    public bool IsCode { get; init; } = true;
+
+    /// <summary>
+    /// UI-TW-1504: focus loss commits (instead of leaving the input open), and after Enter the list has the focus again.
+    /// </summary>
+    public bool CommitsOnFocusLoss { get; init; }
+
     /// <summary>The message of the failed commit; null = none.</summary>
     public string? Error
     {
