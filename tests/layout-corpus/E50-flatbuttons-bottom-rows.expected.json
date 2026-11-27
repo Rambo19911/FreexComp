@@ -1,0 +1,76 @@
+{
+  "formatVersion": 1,
+  "dpi": 96,
+  "forms": [
+    {
+      "class": "TForm",
+      "name": "LayoutForm",
+      "clientWidth": 400,
+      "clientHeight": 300,
+      "controls": [
+        {
+          "class": "TPageControl",
+          "name": "Book",
+          "left": 0,
+          "top": 0,
+          "width": 260,
+          "height": 193,
+          "visible": true,
+          "controls": [
+            {
+              "class": "TTabSheet",
+              "name": "S1",
+              "left": 4,
+              "top": 4,
+              "width": 252,
+              "height": 140,
+              "visible": true,
+              "controls": [
+                {
+                  "class": "TPanel",
+                  "name": "C",
+                  "left": 0,
+                  "top": 0,
+                  "width": 252,
+                  "height": 140,
+                  "visible": true,
+                  "controls": []
+                }
+              ]
+            },
+            {
+              "class": "TTabSheet",
+              "name": "S2",
+              "left": 4,
+              "top": 4,
+              "width": 252,
+              "height": 140,
+              "visible": false,
+              "controls": []
+            },
+            {
+              "class": "TTabSheet",
+              "name": "S3",
+              "left": 4,
+              "top": 4,
+              "width": 252,
+              "height": 140,
+              "visible": false,
+              "controls": []
+            },
+            {
+              "class": "TTabSheet",
+              "name": "S4",
+              "left": 4,
+              "top": 4,
+              "width": 252,
+              "height": 140,
+              "visible": false,
+              "controls": []
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
