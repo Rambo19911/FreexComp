@@ -1,0 +1,5 @@
+dump
+set Book TabPosition tpRight
+dump
+set Book TabPosition tpBottom
+dump

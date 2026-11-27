@@ -1,0 +1,37 @@
+object LayoutForm: TForm
+  Left = 0
+  Top = 0
+  ClientWidth = 400
+  ClientHeight = 300
+  PixelsPerInch = 96
+  Scaled = False
+  object Book: TPageControl
+    Left = 0
+    Top = 0
+    Width = 289
+    Height = 193
+    Font.Height = -12
+    MultiLine = True
+    ParentFont = False
+    TabWidth = 100
+    object S1: TTabSheet
+      object C: TPanel
+        Left = 0
+        Top = 0
+        Width = 50
+        Height = 50
+        Align = alClient
+      end
+    end
+    object S2: TTabSheet
+    end
+    object S3: TTabSheet
+    end
+    object S4: TTabSheet
+    end
+    object S5: TTabSheet
+    end
+    object S6: TTabSheet
+    end
+  end
+end

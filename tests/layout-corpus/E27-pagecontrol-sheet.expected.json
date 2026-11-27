@@ -21,9 +21,9 @@
               "class": "TTabSheet",
               "name": "Sheet",
               "left": 4,
-              "top": 27,
+              "top": 25,
               "width": 281,
-              "height": 162,
+              "height": 164,
               "visible": true,
               "controls": [
                 {
@@ -32,7 +32,7 @@
                   "left": 0,
                   "top": 0,
                   "width": 281,
-                  "height": 162,
+                  "height": 164,
                   "visible": true,
                   "controls": []
                 }
