@@ -1,0 +1,39 @@
+order: 1 2 3 4 5 6 (rc 1 cap 0)
+  a: 1 2 (rc 1 cap 0)
+  b: 3 (rc 1 cap 0)
+  c: 4 5 6 (rc 1 cap 0)
+  result not shared: 1
+one source: 1 2 (rc 1 cap 0)
+  copy TRUE
+empty: nil TRUE
+nil + nil: nil TRUE
+nil + a: 1 2 (rc 1 cap 0)
+  fresh TRUE a rc 1
+a + a: 1 2 1 2 (rc 1 cap 0)
+  old a: 1 2 (rc 1 cap 0)
+b + a: 8 9 1 2 (rc 1 cap 0)
+  b: 8 9 (rc 1 cap 0)
+a + a unique: 1 2 3 4 1 2 3 4 (rc 1 cap 0)
+strings before 4
+  joined 3 xyxy refs 7
+  released 4
+  in place 3 refs 5 cap 4
+  all released 1
+rows: 2 shared row TRUE rc 4
+  released rc 1
+exact: 1 2 (rc 1 cap 0)
+grown: 1 2 3 (rc 1 cap 4)
+in room: 1 2 3 4 (rc 1 cap 4)
+  same block TRUE
+grown again: 1 2 3 4 5 (rc 1 cap 6)
+  same block TRUE cap 6
+  + nil: same block TRUE length 6
+three: 1 2 3 4 5 6 6 7 8 9 10 (rc 1 cap 11)
+shared: 1 2 3 4 5 6 6 7 8 9 10 6 (rc 1 cap 0)
+  other 11 new block TRUE other rc 1
+before setlength cap > 0: TRUE
+setlength grow: 1 2 3 4 5 6 6 7 8 9 10 6 6 0 (rc 1 cap 0)
+  cap > 0: TRUE
+setlength shrink: 1 2 3 (rc 1 cap 0)
+appends 100000 sum 4999950000 growths 27 cap 138255 rc 1
+leaks 0

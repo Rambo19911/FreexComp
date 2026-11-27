@@ -14,10 +14,11 @@ type
   end;
   PStrRec = ^TStrRec;
 
-  { rtl-abi.md section 4: in front of element 0 of a dynamic array }
+  { rtl-abi.md section 4: in front of element 0 of a dynamic array. RefCount -1 = static block (ABI-045); Capacity:
+    0 = exactly Length elements, > 0 = room for Capacity elements (ABI-046) }
   TDynArrayRec = record
     RefCount: Integer;                 { -16 }
-    Reserved: Integer;                 { -12 }
+    Capacity: Integer;                 { -12 }
     Length: NativeInt;                 { -8 }
   end;
   PDynArrayRec = ^TDynArrayRec;

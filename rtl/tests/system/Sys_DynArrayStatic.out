@@ -1,0 +1,61 @@
+read-only TRUE
+static: rc -1 -1 -1 -1 cap 0 len 3 2
+  ints: 10 20 30
+  row: 7 8
+  grid rows TRUE TRUE strs alpha beta
+addref: -1 -1
+clr: nil TRUE rc -1
+finalize: nil TRUE TRUE TRUE rc -1 -1
+local holds: 3 20 2
+value param: 3 30
+after value param: TRUE rc -1
+asg: rc 1 cap 0 len 3 copied TRUE
+  copy written: 99 20 30
+  static: 10 20 30
+_DynArrayAsg: rc 1 cap 0 len 2 copied TRUE
+  copy: 7 8
+strs: rc 1 cap 0 len 2 copied TRUE
+  alpha beta literal shared TRUE -1
+  written beta! static beta
+nested: rc 1 cap 0 len 2 copied TRUE
+  row 0: rc 1 cap 0 len 3 copied TRUE
+  row 1: rc 1 cap 0 len 2 copied TRUE
+  row 0 written: 5 20 30
+  row 1 written: 7 6
+_CopyArray 0: rc 1 cap 0 len 3 copied TRUE
+_CopyArray 1: rc 1 cap 0 len 2 copied TRUE
+record: rc 1 cap 0 len 3 copied TRUE
+  written: 10 20 33
+_CopyRecord: rc 1 cap 0 len 3 copied TRUE
+  n 4 source keeps static TRUE
+copy: rc 1 cap 0 len 2 copied TRUE
+  row 0: rc 1 cap 0 len 3 copied TRUE
+  row 0 written: 10 21 30
+copy part: rc 1 cap 0 len 2 copied TRUE
+  part: 20 30
+setlength same: rc 1 cap 0 len 3 copied TRUE
+  written: -1 20 30
+setlength grow: rc 1 cap 0 len 5 copied TRUE
+  grown: 10 20 30 0 0
+setlength shrink: rc 1 cap 0 len 1 copied TRUE
+  shrunk: 10
+setlength 0: nil TRUE
+setlength nested: rc 1 cap 0 len 3 copied TRUE
+  row 0: rc 1 cap 0 len 3 copied TRUE
+  rows 3 2 nil TRUE 1
+setlength 2 dims: rc 1 cap 0 len 2 copied TRUE
+  row 1: rc 1 cap 0 len 4 copied TRUE
+  row 1: 7 8 0 0
+cat: rc 1 cap 0 len 5 copied TRUE
+  joined: 10 20 30 7 8
+cat into static: rc 1 cap 0 len 5 copied TRUE
+  joined: 10 20 30 7 8
+cat nested: rc 1 cap 0 len 4 copied TRUE
+  row 0: rc 1 cap 0 len 3 copied TRUE
+  row 3: rc 1 cap 0 len 2 copied TRUE
+  row 3 written: 70 8
+static after: rc -1 -1 -1 -1 cap 0 len 3 2
+  ints: 10 20 30
+  row: 7 8
+  grid rows TRUE TRUE strs alpha beta
+leaks 0

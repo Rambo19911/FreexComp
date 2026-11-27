@@ -393,6 +393,9 @@ procedure _DynArrayAddRef(A: Pointer);
 procedure _DynArrayAsg(var Dest: Pointer; Src: Pointer; TI: Pointer);
 procedure _DynArraySetLen(var A: Pointer; TI: Pointer; DimCount: NativeInt; Dims: PNativeInt);
 procedure _DynArrayCopy(var Dest: Pointer; Src: Pointer; TI: Pointer; Index, Count: NativeInt);
+{ Dest := Sources[0] + ... + Sources[Count - 1] (element-0 pointers, nil = empty; Dest may alias a source); a unique
+  first source is extended in place with growth room (system.md RTL-088) }
+procedure _DynArrayCat(var Dest: Pointer; TI: Pointer; Count: NativeInt; Sources: PPointer);
 procedure _Finalize(P: Pointer; TI: Pointer);
 procedure _FinalizeArray(P: Pointer; TI: Pointer; Count: NativeInt);
 procedure _AddRef(P: Pointer; TI: Pointer);
@@ -1695,9 +1698,11 @@ begin
 end;
 
 { ---------------------------------------------------------------- dynamic arrays, managed values (rtl-abi.md 4, 9.5) }
-{ A block is 16 + Length * ElSize bytes (ABI-040), RefCount > 0, counted with atomic increments (RTL-080); the last
-  release finalises the managed elements in index order, then frees the block (RTL-085). Writing an element never
-  copies; SetLength and Copy return unique blocks (ABI-042). }
+{ A heap block is 16 + Length * ElSize bytes (ABI-040), or 16 + Capacity * ElSize after an append grew it (ABI-046),
+  RefCount > 0, counted with atomic increments (RTL-080); the last release finalises the managed elements in index
+  order, then frees the block (RTL-085). A static block (RefCount -1, read-only, ABI-045) is never counted, freed or
+  written: assigning it stores a heap copy (RTL-087), the modifying helpers copy it first. Writing an element never
+  copies; SetLength, Copy and _DynArrayCat return unique blocks (ABI-042). }
 
 const
   KindUString = 9;                     { rtl-abi.md section 10 kind values }
@@ -1719,6 +1724,13 @@ begin
     Result := DynRec(A)^.Length;
 end;
 
+{ a static block (ABI-045): RefCount -1 }
+function DynStatic(A: Pointer): Boolean;
+begin
+  Result := (A <> nil) and (DynRec(A)^.RefCount < 0);
+end;
+
+{ a static block is only dropped }
 procedure ReleaseDynArray(A: Pointer; TI: Pointer);
 var
   R: PDynArrayRec;
@@ -1727,6 +1739,8 @@ begin
   if A = nil then
     Exit;
   R := DynRec(A);
+  if R^.RefCount < 0 then
+    Exit;
   if AtomicDecrement(R^.RefCount) = 0 then
   begin
     El := PDynArrayTypeInfo(TI)^.ManagedElType;
@@ -1747,17 +1761,81 @@ end;
 
 procedure _DynArrayAddRef(A: Pointer);
 begin
-  if A <> nil then
+  if (A <> nil) and (DynRec(A)^.RefCount > 0) then
     AtomicIncrement(DynRec(A)^.RefCount);
+end;
+
+function StaticDynCopy(A: Pointer; TI: Pointer): Pointer; forward;
+
+{ RTL-087 for Count values of type TI at P (just copied, references taken): every static dynamic array among their
+  managed parts is replaced by a heap copy, so no block reachable from them is read-only. Static blocks are not
+  counted, so replacing one releases nothing. }
+procedure UnshareStatic(P: Pointer; TI: Pointer; Count: NativeInt);
+var
+  I, J: NativeInt;
+  Rec: PRecordTypeInfo;
+  F: PManagedField;
+  Arr: PArrayTypeInfo;
+  Q: PByte;
+begin
+  if Count <= 0 then
+    Exit;
+  case PByte(TI)^ of
+    KindDynArray:
+      for I := 0 to Count - 1 do
+        if DynStatic(PPointer(P)[I]) then
+          PPointer(P)[I] := StaticDynCopy(PPointer(P)[I], TI);
+    KindRecord:
+      begin
+        Rec := TI;
+        Q := P;
+        for I := 0 to Count - 1 do
+        begin
+          F := Rec^.ManagedFields;
+          for J := 0 to Rec^.ManagedCount - 1 do
+            UnshareStatic(Q + F[J].Offset, F[J].TypeInfo, 1);
+          Q := Q + Rec^.Size;
+        end;
+      end;
+    KindArray:
+      begin
+        Arr := TI;
+        if Arr^.ElType <> nil then
+          UnshareStatic(P, Arr^.ElType, Count * Arr^.ElCount);
+      end;
+  end;
+end;
+
+{ Count elements of type TI (a dynamic-array type) copied from the block Src to Dest with managed semantics: raw copy,
+  one more reference on the managed parts, and, when Src is static, its static parts copied (RTL-087) }
+procedure CopyDynElements(Dest, Src: Pointer; TI: Pointer; Count: NativeInt);
+var
+  Info: PDynArrayTypeInfo;
+begin
+  if Count <= 0 then
+    Exit;
+  Info := TI;
+  Move(Src^, Dest^, Count * Info^.ElSize);
+  if Info^.ManagedElType <> nil then
+  begin
+    _AddRefArray(Dest, Info^.ManagedElType, Count);
+    if DynStatic(Src) then
+      UnshareStatic(Dest, Info^.ManagedElType, Count);
+  end;
 end;
 
 procedure _DynArrayAsg(var Dest: Pointer; Src: Pointer; TI: Pointer);
 var
   Old: Pointer;
 begin
-  _DynArrayAddRef(Src);
   Old := Dest;
-  Dest := Src;
+  if DynStatic(Src) then
+    Dest := StaticDynCopy(Src, TI)
+  else
+  begin
+    _DynArrayAddRef(Src);
+    Dest := Src;
+  end;
   ReleaseDynArray(Old, TI);
 end;
 
@@ -1781,13 +1859,21 @@ begin
   else
     R := GetMemAt(Size, Addr);
   R^.RefCount := 1;
-  R^.Reserved := 0;
+  R^.Capacity := 0;
   R^.Length := Len;
   Result := PByte(R) + SizeOf(TDynArrayRec);
 end;
 
-{ RTL-081 for one dimension (NewLen >= 0): a unique block is resized in place (dropped elements finalised, new ones
-  zeroed), a shared one is copied (kept managed elements gain a reference) and released; the result is unique }
+{ RTL-087: a heap block (RefCount 1, Capacity 0) with the elements of the static block A }
+function StaticDynCopy(A: Pointer; TI: Pointer): Pointer;
+begin
+  Result := NewDynArray(DynRec(A)^.Length, PDynArrayTypeInfo(TI)^.ElSize, False, _ReturnAddress);
+  CopyDynElements(Result, A, TI, DynRec(A)^.Length);
+end;
+
+{ RTL-081 for one dimension (NewLen >= 0): a unique block is resized in place to exactly NewLen elements (dropped
+  elements finalised, new ones zeroed, Capacity 0), a shared or static one is copied (kept managed elements gain a
+  reference; RTL-087 for a static one, also at the same length) and released; the result is unique }
 procedure SetDynLength(var A: Pointer; TI: Pointer; NewLen: NativeInt; Addr: Pointer);
 var
   Info: PDynArrayTypeInfo;
@@ -1809,6 +1895,7 @@ begin
     if (NewLen < OldLen) and (Info^.ManagedElType <> nil) then
       _FinalizeArray(PByte(A) + NewLen * Info^.ElSize, Info^.ManagedElType, OldLen - NewLen);
     R := ReallocMemAt(DynRec(A), SizeOf(TDynArrayRec) + DynPayload(NewLen, Info^.ElSize, Addr), Addr);
+    R^.Capacity := 0;
     R^.Length := NewLen;
     A := PByte(R) + SizeOf(TDynArrayRec);
     if NewLen > OldLen then
@@ -1820,12 +1907,7 @@ begin
     Keep := OldLen;
     if Keep > NewLen then
       Keep := NewLen;
-    if Keep > 0 then
-    begin
-      Move(A^, N^, Keep * Info^.ElSize);
-      if Info^.ManagedElType <> nil then
-        _AddRefArray(N, Info^.ManagedElType, Keep);
-    end;
+    CopyDynElements(N, A, TI, Keep);
     Old := A;
     A := N;
     ReleaseDynArray(Old, TI);
@@ -1878,7 +1960,93 @@ begin
     N := NewDynArray(Count, Info^.ElSize, False, _ReturnAddress);
     Move(PByte(Src)[Index * Info^.ElSize], N^, Count * Info^.ElSize);
     if Info^.ManagedElType <> nil then
+    begin
       _AddRefArray(N, Info^.ManagedElType, Count);
+      if DynStatic(Src) then
+        UnshareStatic(N, Info^.ManagedElType, Count);
+    end;
+  end;
+  Old := Dest;
+  Dest := N;
+  ReleaseDynArray(Old, TI);
+end;
+
+{ RTL-088. The total is checked before anything changes (runtime error 203 as SetLength). In place: Sources[0] is
+  Dest, a heap block with RefCount 1 that no later source repeats; the other sources' elements are appended, the block
+  growing to max(Total, Room + Room div 2, 4) elements (Room = Capacity, or Length when Capacity is 0; exactly Total
+  and Capacity 0 when that exceeds High(Integer)). Otherwise a new exact block takes copies of all the elements and
+  replaces Dest, whose old value is released last (Dest may alias a source). }
+procedure _DynArrayCat(var Dest: Pointer; TI: Pointer; Count: NativeInt; Sources: PPointer);
+var
+  Info: PDynArrayTypeInfo;
+  R: PDynArrayRec;
+  Total, L, I, Pos, Room, NewCap: NativeInt;
+  InPlace, Exact: Boolean;
+  N, Old: Pointer;
+begin
+  Info := TI;
+  Total := 0;
+  for I := 0 to Count - 1 do
+  begin
+    L := DynLength(Sources[I]);
+    if L > High(NativeInt) - Total then
+      RunErrorAt(203, _ReturnAddress);
+    Total := Total + L;
+  end;
+  DynPayload(Total, Info^.ElSize, _ReturnAddress);
+  if Total = 0 then
+  begin
+    _DynArrayClr(Dest, TI);
+    Exit;
+  end;
+  InPlace := (Count > 0) and (Sources[0] = Dest) and (Dest <> nil) and (DynRec(Dest)^.RefCount = 1);
+  for I := 1 to Count - 1 do
+    if Sources[I] = Dest then
+      InPlace := False;
+  if InPlace then
+  begin
+    R := DynRec(Dest);
+    Pos := R^.Length;
+    Room := R^.Capacity;
+    if Room = 0 then
+      Room := Pos;
+    if Total > Room then
+    begin
+      Exact := Room > High(Integer) - Room div 2;
+      NewCap := Total;
+      if not Exact then
+      begin
+        if NewCap < Room + Room div 2 then
+          NewCap := Room + Room div 2;
+        if NewCap < 4 then
+          NewCap := 4;
+        Exact := NewCap > High(Integer);
+        if Exact then
+          NewCap := Total;
+      end;
+      R := ReallocMemAt(R, SizeOf(TDynArrayRec) + DynPayload(NewCap, Info^.ElSize, _ReturnAddress), _ReturnAddress);
+      if Exact then
+        R^.Capacity := 0
+      else
+        R^.Capacity := NewCap;
+      Dest := PByte(R) + SizeOf(TDynArrayRec);
+    end;
+    R^.Length := Total;
+    for I := 1 to Count - 1 do
+    begin
+      L := DynLength(Sources[I]);
+      CopyDynElements(PByte(Dest) + Pos * Info^.ElSize, Sources[I], TI, L);
+      Pos := Pos + L;
+    end;
+    Exit;
+  end;
+  N := NewDynArray(Total, Info^.ElSize, False, _ReturnAddress);
+  Pos := 0;
+  for I := 0 to Count - 1 do
+  begin
+    L := DynLength(Sources[I]);
+    CopyDynElements(PByte(N) + Pos * Info^.ElSize, Sources[I], TI, L);
+    Pos := Pos + L;
   end;
   Old := Dest;
   Dest := N;
@@ -1994,7 +2162,8 @@ end;
 
 { Dest[i] := Src[i] for Count values of type TI with reference counting. Dest = Src is a no-op; otherwise the ranges
   must not overlap. Records and static arrays: the source parts gain their references before the old destination
-  parts are released, then all bytes are copied. }
+  parts are released, then all bytes are copied and the static dynamic arrays among the copied parts are replaced by
+  heap copies, as _DynArrayAsg does (RTL-087). }
 procedure _CopyArray(Dest, Src: Pointer; TI: Pointer; Count: NativeInt);
 var
   I: NativeInt;
@@ -2015,6 +2184,7 @@ begin
     _AddRefArray(Src, TI, Count);
     _FinalizeArray(Dest, TI, Count);
     Move(Src^, Dest^, Count * ManagedSize(TI));
+    UnshareStatic(Dest, TI, Count);
   end;
 end;
 
