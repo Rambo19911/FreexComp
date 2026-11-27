@@ -65,6 +65,10 @@ public static class MessageDefinitions
         new("Msg.Project.DuplicateUnitName", E, ["OK"]),
         new("Msg.Project.RenameFailed", E, ["OK"]),
         new("Msg.Project.RenameConflict", E, ["OK"]),
+        new("Msg.Refactoring.Blocked", W, ["OK"]), // IDE-REFAC-006
+        new("Msg.Refactoring.ApplyFailed", E, ["OK"]), // IDE-REFAC-008
+        new("Msg.Refactoring.RestoreFailed", E, ["OK"]),
+        new("Msg.Refactoring.Failed", E, ["OK"]), // IDE-REFAC-002
         new("Msg.Project.NewFolderFailed", E, ["OK"]),
         new("Msg.Project.MoveExists", E, ["OK"]),
         new("Msg.Project.MoveFailed", E, ["OK"]),

@@ -6645,4 +6645,77 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
     <value>Original file name:</value>
     <comment>UI-DLG-334: read-only, the output file</comment>
   </data>
+  <data name="Msg_Refactoring_Working" xml:space="preserve">
+    <value>{0}…</value>
+    <comment>IDE-REFAC-012</comment>
+  </data>
+  <data name="Msg_Refactoring_NoChanges" xml:space="preserve">
+    <value>{0}: nothing to change</value>
+    <comment>IDE-REFAC-001</comment>
+  </data>
+  <data name="Msg_Refactoring_AppliedOne" xml:space="preserve">
+    <value>{0}: 1 change</value>
+    <comment>IDE-REFAC-012</comment>
+  </data>
+  <data name="Msg_Refactoring_AppliedOneFile" xml:space="preserve">
+    <value>{0}: {1} changes in 1 file</value>
+    <comment>IDE-REFAC-012</comment>
+  </data>
+  <data name="Msg_Refactoring_AppliedMany" xml:space="preserve">
+    <value>{0}: {1} changes in {2} files</value>
+    <comment>IDE-REFAC-012</comment>
+  </data>
+  <data name="Msg_Refactoring_Blocked" xml:space="preserve">
+    <value>{0} cannot be applied. Nothing was changed.
+{1}</value>
+    <comment>IDE-REFAC-006</comment>
+  </data>
+  <data name="Msg_Refactoring_ApplyFailed" xml:space="preserve">
+    <value>{0} cannot be applied. Nothing was changed.
+{1}
+{2}</value>
+    <comment>IDE-REFAC-008</comment>
+  </data>
+  <data name="Msg_Refactoring_RestoreFailed" xml:space="preserve">
+    <value>{0} cannot be applied, and these files cannot be put back to their previous content:
+{1}
+{2}</value>
+    <comment>IDE-REFAC-008</comment>
+  </data>
+  <data name="Msg_Refactoring_Failed" xml:space="preserve">
+    <value>{0} produced changes that cannot be applied. Nothing was changed.</value>
+    <comment>IDE-REFAC-002</comment>
+  </data>
+  <data name="Reason_Refactoring_NotFound" xml:space="preserve">
+    <value>The file does not exist.</value>
+    <comment>IDE-REFAC-006</comment>
+  </data>
+  <data name="Reason_Refactoring_LibrarySource" xml:space="preserve">
+    <value>The file is a library source.</value>
+    <comment>IDE-REFAC-006</comment>
+  </data>
+  <data name="Reason_Refactoring_OutsideProject" xml:space="preserve">
+    <value>The file is outside the project.</value>
+    <comment>IDE-REFAC-006</comment>
+  </data>
+  <data name="Reason_Refactoring_NotWritable" xml:space="preserve">
+    <value>The file is read-only or in use.</value>
+    <comment>IDE-REFAC-006</comment>
+  </data>
+  <data name="Reason_Refactoring_ChangedOnDisk" xml:space="preserve">
+    <value>The file was changed outside the IDE.</value>
+    <comment>IDE-REFAC-006</comment>
+  </data>
+  <data name="Reason_Refactoring_ChangedSinceComputed" xml:space="preserve">
+    <value>The file was edited after the changes were computed.</value>
+    <comment>IDE-REFAC-006</comment>
+  </data>
+  <data name="Reason_Refactoring_ChangedAfterwards" xml:space="preserve">
+    <value>The file was changed after the refactoring.</value>
+    <comment>IDE-REFAC-021</comment>
+  </data>
+  <data name="Reason_Refactoring_More" xml:space="preserve">
+    <value>… and {0} more files</value>
+    <comment>IDE-REFAC-006</comment>
+  </data>
 </root>

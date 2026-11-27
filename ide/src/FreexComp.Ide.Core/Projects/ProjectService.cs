@@ -757,11 +757,7 @@ public sealed class ProjectService : IProjectService
         return fullPath.Replace('\\', '/');
     }
 
-    private static bool IsInside(string path, string directory)
-    {
-        var relative = Path.GetRelativePath(directory, Path.GetFullPath(path));
-        return !Path.IsPathRooted(relative) && relative != ".." && !relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal);
-    }
+    private static bool IsInside(string path, string directory) => EditableFiles.IsInside(path, directory);
 
     /// <summary>A new source file's bytes: LF text converted to <c>files.defaultLineEnding</c>, encoded per <c>files.defaultEncoding</c>.</summary>
     private byte[] SourceBytes(string lfText)
@@ -1243,19 +1239,8 @@ public sealed class ProjectService : IProjectService
     }
 
     /// <summary>IDE-PM-133: a project member, or a file under the project directory or its search paths that is not a library source.</summary>
-    private bool MayEditForRename(CodeModel.UnitRenameAnalyzer analyzer, string path)
-    {
-        if (IsMember(path))
-            return true;
-        return !analyzer.IsLibrarySource(path)
-            && (IsInside(path, _project!.Directory) || EffectiveSearchPaths().Any(s => IsInside(path, Resolve(s))));
-    }
-
-    /// <summary>The search paths the active configuration is built with (CMP-1160): project level, then its chain.</summary>
-    private IEnumerable<string> EffectiveSearchPaths()
-    {
-        return ConfigurationEdits.Effective(_project!, _project!.ActiveConfiguration)?.SearchPaths ?? _project.SearchPaths;
-    }
+    private bool MayEditForRename(CodeModel.UnitRenameAnalyzer analyzer, string path) =>
+        EditableFiles.MayEdit(path, this, analyzer.IsLibrarySource, _documents);
 
     /// <summary>One entry of a move (IDE-PM-123): the unit or file and its companion form, before and after.</summary>
     private sealed record FileMove(ProjectFile Entry, string From, string To, string? FormFrom, string? FormTo);

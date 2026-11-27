@@ -221,6 +221,8 @@ public static class ServiceGraph
         build.CheckSyntax = codeModel.GetProjectDiagnosticsAsync;
         build.DeployDatabaseLibrary = new DatabaseLibraryDeployer(platform.FileSystem, toolchain, codeModel.GetProjectUnitNamesAsync).DeployAsync; // I-225, I-280
         projects.UnitRename = new CodeModel.UnitRenameAnalyzer(codeModel, toolchain, librarySource); // I-236
+        var refactoring = new Refactoring.RefactoringService(documents, projects, librarySource, platform.FileSystem, platform.Dialogs, status,
+            platform.Clock, platform.Log, codeModel); // I-347
         var liveDiagnostics = new CodeModel.LiveDiagnosticsService(documents, codeModel, settings, platform.Clock, platform.Dispatcher); // I-111
         projects.ProjectChanged += (_, _) => liveDiagnostics.OnProjectChanged(projects.Definition); // IDE-ED-151 (I-324)
         var semanticHighlights = new CodeModel.SemanticHighlightService(documents, codeModel, settings, platform.Clock, platform.Dispatcher); // I-112
@@ -486,6 +488,7 @@ public static class ServiceGraph
             SearchResults = searchResults,
             ProjectManager = projectManager,
             CodeModel = codeModel,
+            Refactoring = refactoring,
             SemanticHighlights = semanticHighlights,
             LiveDiagnostics = liveDiagnostics,
             Metadata = metadata,

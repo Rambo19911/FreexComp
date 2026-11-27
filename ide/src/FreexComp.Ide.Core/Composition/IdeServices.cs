@@ -112,6 +112,9 @@ public sealed record IdeServices
     /// <summary>The project <c>Compilation</c> and the language-service worker (I-110).</summary>
     public required CodeModel.CodeModelService CodeModel { get; init; }
 
+    /// <summary>The refactoring engine: workspace edits applied all or nothing (IDE-REFAC-001…012, F13-003).</summary>
+    public required Refactoring.IRefactoringService Refactoring { get; init; }
+
     /// <summary>The P3 classification layer of the open Pascal documents (I-112).</summary>
     public required CodeModel.SemanticHighlightService SemanticHighlights { get; init; }
 
