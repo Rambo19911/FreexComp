@@ -224,6 +224,8 @@ public static class DiagnosticCatalog
         new("E2710", null, DiagnosticSeverity.Error, "In instantiation '%s': %s"),
         new("E2711", null, DiagnosticSeverity.Error, "Cannot infer type arguments for '%s'; specify them explicitly"),
         new("E2712", null, DiagnosticSeverity.Error, "Generic instantiation nested too deeply"),
+        new("E2713", null, DiagnosticSeverity.Error, "Generic method '%s' cannot be %s"),
+        new("E2714", null, DiagnosticSeverity.Error, "Generic method '%s' is not allowed in an interface"),
         new("E2720", null, DiagnosticSeverity.Error, "Parameter '%s' cannot be captured by an anonymous method"),
         new("E2730", null, DiagnosticSeverity.Error, "'%s' is not allowed in a record"),
         new("E2731", null, DiagnosticSeverity.Error, "Operator '%s' must have a parameter or result of type '%s'"),

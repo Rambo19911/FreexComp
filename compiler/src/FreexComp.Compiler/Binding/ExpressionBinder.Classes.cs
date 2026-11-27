@@ -1015,7 +1015,12 @@ internal sealed partial class ExpressionBinder
             // rule 5: the methods of the name are all generic and none of them is a candidate
             if (inferable == 0)
             {
-                _diagnostics.Report(nameSyntax, "E2711", name);
+                // LANG-978 (C-420): nothing more for a generic constructor, destructor or operator whose heading does not bind as a
+                // method of that kind — it was reported where it is declared (E2713)
+                if (!set.Generics.Where((g, d) => g.HasRestrictedKind && opens[d] is null).Any())
+                {
+                    _diagnostics.Report(nameSyntax, "E2711", name);
+                }
             }
             else if (inferable == 1 && refused!.ToImmutable() is var reasons && reasons.Any(r => r.Severity == DiagnosticSeverity.Error))
             {

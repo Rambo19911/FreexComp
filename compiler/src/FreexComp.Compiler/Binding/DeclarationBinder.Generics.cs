@@ -793,18 +793,59 @@ internal sealed partial class DeclarationBinder
     /// <summary>The binder binds the heading of a generic method instance (its type parameter list is expected then).</summary>
     private bool _genericMethodInstance;
 
-    /// <summary>LANG-701 (C-117): a generic method of a class or record; nothing of it is bound until it is instantiated.</summary>
+    /// <summary>
+    /// LANG-701 (C-117): a generic method of a class or record; nothing of it is bound until it is instantiated. LANG-978 (C-420):
+    /// what a generic method cannot be is reported here, at its name, whether or not it is ever called — E2713 once, for the first
+    /// row of the table that applies: a constructor, destructor or operator; a section the source marks <c>published</c> (the
+    /// default section of a class with type information is silently <c>public</c>); the first of the directives <c>virtual</c>,
+    /// <c>dynamic</c>, <c>override</c>, <c>abstract</c>, <c>message</c>. The declaration is kept without the offending property (it
+    /// is <c>public</c>; its instances ignore those directives, <see cref="IsRestrictedDirective"/>), so calls of it bind.
+    /// </summary>
     private GenericMethodSymbol BindGenericMethodDeclaration(TypeSymbol owner, MethodDeclarationSyntax syntax, Visibility visibility)
     {
         var heading = syntax.Heading;
         var identifier = heading.Name is IdentifierNameSyntax { Identifier: var token } ? token : heading.Name.FirstToken();
         var names = heading.TypeParameterList!.Parameters.SelectMany(p => p.Identifiers).Where(i => !i.Identifier.IsMissing)
             .Select(i => NameOf(i.Identifier)).ToImmutableArray();
-        return new GenericMethodSymbol(NameOf(identifier), owner, syntax, visibility, names, _scope, _container, [DiagnosticBag.LocationOf(identifier)])
+        var kind = heading.Keyword.Kind switch
+        {
+            SyntaxKind.ConstructorKeyword => "a constructor",
+            SyntaxKind.DestructorKeyword => "a destructor",
+            _ => heading.Keyword.ContextualKind == SyntaxKind.OperatorKeyword ? "an operator" : null,
+        };
+        var phrase = kind
+            ?? (visibility == Visibility.Published && syntax.Parent is VisibilitySectionSyntax ? "published" : null)
+            ?? syntax.Directives.Select(d => RestrictedDirective(d.Keyword.ContextualKind)).FirstOrDefault(p => p is not null);
+        if (phrase is not null && !identifier.IsMissing)
+        {
+            _diagnostics.Report(identifier, "E2713", NameOf(identifier), phrase);
+        }
+
+        return new GenericMethodSymbol(NameOf(identifier), owner, syntax, visibility == Visibility.Published ? Visibility.Public : visibility, names, _scope,
+            _container, [DiagnosticBag.LocationOf(identifier)])
         {
             Constraints = BindConstraints(heading.TypeParameterList),
+            HasRestrictedKind = kind is not null,
         };
     }
+
+    /// <summary>LANG-978: the phrase of E2713 for a directive a generic method cannot have; null for every other directive.</summary>
+    private static string? RestrictedDirective(SyntaxKind directive) => directive switch
+    {
+        SyntaxKind.VirtualKeyword => "virtual",
+        SyntaxKind.DynamicKeyword => "dynamic",
+        SyntaxKind.OverrideKeyword => "an override",
+        SyntaxKind.AbstractKeyword => "abstract",
+        SyntaxKind.MessageKeyword => "a message handler",
+        _ => null,
+    };
+
+    /// <summary>
+    /// LANG-978 (C-420): the heading being bound is that of a generic method instance and <paramref name="directive"/> is one a
+    /// generic method cannot have — reported at the declaration (E2713) and without effect on the instance.
+    /// </summary>
+    private bool IsRestrictedDirective(DirectiveSyntax directive) =>
+        _genericMethodInstance && RestrictedDirective(directive.Keyword.ContextualKind) is not null;
 
     /// <summary><c>function TUtil.Max&lt;T&gt;(…)</c> (LANG-704): the implementation of the generic method of that name and arity.</summary>
     private void DefineGenericMethod(TypeSymbol type, RoutineDeclarationSyntax declaration, SyntaxToken identifier, TypeParameterListSyntax typeParameters)
@@ -962,7 +1003,10 @@ internal sealed partial class DeclarationBinder
                 scope.TryDeclare(generic.ParameterNames[i], arguments[i], out _);
             }
 
-            var binder = new DeclarationBinder(_types, scope, generic.DeclaringContainer, _diagnostics) { _genericMethodInstance = true };
+            // LANG-978 (C-420): a generic constructor, destructor or operator was reported where it is declared (E2713); where its
+            // heading does not bind as a method of that kind (an operator of a class, a destructor of a record) a call adds nothing
+            var reported = generic.HasRestrictedKind ? new DiagnosticBag() : _diagnostics;
+            var binder = new DeclarationBinder(_types, scope, generic.DeclaringContainer, reported) { _genericMethodInstance = true };
             var uses = new List<GenericUses.Use>();
             using (GenericUses.For(unit))
             using (GenericUses.Capture(uses))
@@ -980,10 +1024,12 @@ internal sealed partial class DeclarationBinder
                 return null;
             }
 
-            if (instance.IsVirtual || instance.IsOverride || instance.IsAbstract)
+            if (!ReferenceEquals(reported, _diagnostics))
             {
-                _diagnostics.Report(at, "E2900", "virtual generic method");
-                return null;
+                foreach (var diagnostic in reported.ToImmutable())
+                {
+                    _diagnostics.Add(diagnostic);
+                }
             }
 
             instance.GenericMethodDefinition = generic;

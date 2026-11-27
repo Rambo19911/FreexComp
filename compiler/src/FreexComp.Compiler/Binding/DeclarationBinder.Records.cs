@@ -284,9 +284,10 @@ internal sealed partial class DeclarationBinder
             return null;
         }
 
-        if (syntax.Directives.FirstOrDefault(d => d.Keyword.ContextualKind is SyntaxKind.VirtualKeyword or SyntaxKind.DynamicKeyword
-                or SyntaxKind.OverrideKeyword or SyntaxKind.AbstractKeyword or SyntaxKind.MessageKeyword or SyntaxKind.FinalKeyword
-                or SyntaxKind.ReintroduceKeyword) is { } directive)
+        if (syntax.Directives.FirstOrDefault(d => !IsRestrictedDirective(d)                                  // LANG-978 (C-420): E2713 at the declaration
+                && d.Keyword.ContextualKind is SyntaxKind.VirtualKeyword or SyntaxKind.DynamicKeyword
+                    or SyntaxKind.OverrideKeyword or SyntaxKind.AbstractKeyword or SyntaxKind.MessageKeyword or SyntaxKind.FinalKeyword
+                    or SyntaxKind.ReintroduceKeyword) is { } directive)
         {
             _diagnostics.Report(directive.Keyword, "E2730", directive.Keyword.Text.ToLowerInvariant());
             return null;

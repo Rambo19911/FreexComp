@@ -166,9 +166,22 @@ internal sealed partial class ExpressionBinder
         ImmutableArray<RoutineSymbol> candidates = [];
         BoundExpression? self = null;
         ClassTypeSymbol? owner = null;
-        IdentifierNameSyntax? name = null;
+        SimpleNameSyntax? name = null;
+        Func<RoutineSymbol, RoutineSymbol> chosen = routine => routine;
         switch (target)
         {
+            case GenericNameSyntax { Identifier.IsMissing: false } generic
+                when CurrentMethod is { SelfParameter: not null, ContainingSymbol: ClassTypeSymbol } current
+                    && GenericMethodCandidates(current.ContainingType, generic, generic, argumentList: null) is { } instances:
+                if (instances.IsEmpty)
+                {
+                    return Error(syntax);
+                }
+
+                // LANG-981 (C-420): Scale<Integer> inside a method — the instance, on Self
+                (candidates, name, owner, chosen) = (instances.Routines, generic, current.ContainingType, instances.Chosen);
+                self = SelfOf(current, generic);
+                break;
             case IdentifierNameSyntax { Identifier: { IsMissing: false } plainToken } plainName
                 when _scope.For(plainName).LookupCandidates(plainToken.Value as string ?? plainToken.Text) is [var routine and not MethodSymbol, ..] routines
                     && !(addressOf is null && routines.Length == 1 && routine is { ReturnType: { } plainResult, Parameters.IsEmpty: true }
@@ -188,7 +201,7 @@ internal sealed partial class ExpressionBinder
                 (candidates, name, owner) = (methods, identifier, current.ContainingType);
                 self = SelfOf(current, identifier);
                 break;
-            case MemberAccessExpressionSyntax { Name: IdentifierNameSyntax { Identifier.IsMissing: false } memberName } member:
+            case MemberAccessExpressionSyntax { Name: SimpleNameSyntax { Identifier.IsMissing: false } memberName } member:
             {
                 var memberText = memberName.Identifier.Value as string ?? memberName.Identifier.Text;
                 if (_scope.Unqualified(member.Expression) is IdentifierNameSyntax { Identifier: { IsMissing: false } q } qualifier
@@ -219,7 +232,21 @@ internal sealed partial class ExpressionBinder
                     };
                 }
 
-                if (owner is not null)
+                if (owner is not null && memberName is GenericNameSyntax)
+                {
+                    // LANG-981 (C-420): Obj.Scale<Integer>, TClass.Method<Integer> — the instances for the written type arguments;
+                    // a name without them never denotes a generic method (the non-generic methods of the name, below)
+                    if (GenericMethodCandidates(owner, member, argumentList: null) is { } instances)
+                    {
+                        if (instances.IsEmpty)
+                        {
+                            return Error(syntax, self!);
+                        }
+
+                        (candidates, name, chosen) = (instances.Routines, memberName, instances.Chosen);
+                    }
+                }
+                else if (owner is not null)
                 {
                     candidates = MemberCandidates(owner, memberText);
                     name = memberName;
@@ -271,7 +298,7 @@ internal sealed partial class ExpressionBinder
         }
 
         CheckHintDirectives(method, syntax);                                    // LANG-472 (C-232): a method reference
-        return new BoundMethodPointerExpression(syntax, method, self, method.IsDispatched, type);
+        return new BoundMethodPointerExpression(syntax, (MethodSymbol)chosen(method), self, method.IsDispatched, type);
     }
 
     /// <summary>
@@ -325,6 +352,24 @@ internal sealed partial class ExpressionBinder
             }
         }
 
+        // LANG-981 (C-420): TClass.Method<X> / @TClass.Method<X>, Method<X> inside a method — the instance of a class static generic method
+        if (GenericInstancesNamed(Unparenthesized(addressOf is null ? inner : Unparenthesized(addressOf.Operand))) is var (genericName, through, instances))
+        {
+            if (instances.IsEmpty)
+            {
+                return Error(syntax);
+            }
+
+            if (!(addressOf is null && instances.Routines is [{ ReturnType: { } made, Parameters.IsEmpty: true } single]
+                && !Signatures.Compatible(single, type.Signature) && _conversions.Classify(made, type).Exists))
+            {
+                var value = RoutineValue(syntax, genericName, instances.Routines, type, instances.Chosen);
+                return value is BoundAddressOfExpression { Routine: MethodSymbol used } && !CheckAccess(genericName, used, used.Owner, through)
+                    ? Error(syntax)                                             // LANG-610: as for a call of the instance
+                    : value;
+            }
+        }
+
         // LANG-480 (C-102): TClass.StaticMethod / @TClass.StaticMethod — a class static method of a class named by the qualifier
         if (Unparenthesized(addressOf is null ? inner : Unparenthesized(addressOf.Operand)) is MemberAccessExpressionSyntax
             {
@@ -340,15 +385,18 @@ internal sealed partial class ExpressionBinder
             return RoutineValue(syntax, memberName, methods, type);
         }
 
-        // Obj.Method of an instance: a method pointer, not a plain procedural value (E2010, C-103)
+        // Obj.Method of an instance: a method pointer, not a plain procedural value (E2010, C-103); Obj.Method<X> too (LANG-981, C-420:
+        // its instances are looked at on a scratch binder — after an error the call below reports it)
         if (Unparenthesized(addressOf is null ? inner : Unparenthesized(addressOf.Operand)) is MemberAccessExpressionSyntax
             {
-                Name: IdentifierNameSyntax { Identifier: { IsMissing: false } instanceMember },
+                Name: SimpleNameSyntax { Identifier: { IsMissing: false } instanceMember } instanceName,
             } access
             && (_scope.Unqualified(access.Expression) is not IdentifierNameSyntax { Identifier: var head } headName
                 || _scope.For(headName).Lookup(head.Value as string ?? head.Text) is VariableSymbol or ParameterSymbol or FieldSymbol)
             && BindExpression(access.Expression) is { HasErrors: false, Type: ClassTypeSymbol instanceClass } instance
-            && MemberCandidates(instanceClass, instanceMember.Value as string ?? instanceMember.Text) is [MethodSymbol { MethodKind: not MethodKind.ClassStatic } first, ..] instanceMethods
+            && (instanceName is GenericNameSyntax
+                ? ProbeBinder(new DiagnosticBag()).GenericMethodCandidates(instanceClass, access, argumentList: null)?.Routines ?? []
+                : MemberCandidates(instanceClass, instanceMember.Value as string ?? instanceMember.Text)) is [MethodSymbol { MethodKind: not MethodKind.ClassStatic } first, ..] instanceMethods
             && !(addressOf is null && instanceMethods.Length == 1 && first is { ReturnType: { } instanceResult, Parameters.IsEmpty: true }
                 && _conversions.Classify(instanceResult, type).Exists))
         {
@@ -364,7 +412,8 @@ internal sealed partial class ExpressionBinder
     /// for a nested routine, LANG-451); of an overload set the one compatible with the type (E2131 when none, C-102). Other
     /// methods are no plain procedural values (E2010).
     /// </summary>
-    private BoundExpression RoutineValue(ExpressionSyntax syntax, IdentifierNameSyntax name, ImmutableArray<RoutineSymbol> candidates, ProceduralTypeSymbol type)
+    private BoundExpression RoutineValue(ExpressionSyntax syntax, SimpleNameSyntax name, ImmutableArray<RoutineSymbol> candidates, ProceduralTypeSymbol type,
+        Func<RoutineSymbol, RoutineSymbol>? chosen = null)
     {
         var routine = candidates[0];
         if (candidates.Length > 1)
@@ -397,8 +446,25 @@ internal sealed partial class ExpressionBinder
         }
 
         CheckHintDirectives(routine, name);                                     // LANG-472 (C-232): a procedural reference
-        return new BoundAddressOfExpression(syntax, operand: null, routine, type);
+        return new BoundAddressOfExpression(syntax, operand: null, chosen?.Invoke(routine) ?? routine, type);      // LANG-981: the instance counts as used
     }
+
+    /// <summary>
+    /// LANG-981 (C-420): <c>TClass.Name&lt;X1, …, Xk&gt;</c> through a class name, or <c>Name&lt;X1, …, Xk&gt;</c> inside a method of a class,
+    /// where a routine is named as a value: the instances of the generic methods of that name for the written type arguments
+    /// (LANG-980 rule 2; empty after E2703 or E2704). Null when <paramref name="target"/> is no such name.
+    /// </summary>
+    private (GenericNameSyntax Name, ClassTypeSymbol Through, GenericCandidates Instances)? GenericInstancesNamed(ExpressionSyntax target) => target switch
+    {
+        MemberAccessExpressionSyntax { Name: GenericNameSyntax { Identifier.IsMissing: false } name } member
+            when _scope.Unqualified(member.Expression) is IdentifierNameSyntax { Identifier: { IsMissing: false } token } qualifier
+                && _scope.For(qualifier).Lookup(token.Value as string ?? token.Text) is ClassTypeSymbol @class
+                && GenericMethodCandidates(@class, member, argumentList: null) is { } instances => (name, @class, instances),
+        GenericNameSyntax { Identifier.IsMissing: false } name
+            when CurrentMethod is { ContainingSymbol: ClassTypeSymbol owner }
+                && GenericMethodCandidates(owner, name, name, argumentList: null) is { } instances => (name, owner, instances),
+        _ => null,
+    };
 
     /// <summary>
     /// LANG-482: a procedural variable (or field, element…) of a parameterless function type in a value position is called;
@@ -794,6 +860,40 @@ internal sealed partial class ExpressionBinder
             return new BoundAddressOfExpression(syntax, operand: null, routine, _types.Pointer);
         }
 
+        // LANG-981 (C-420): @TClass.Method<X> — the code address of the instance of a class static generic method; without type
+        // arguments the non-generic class static method of the name (LANG-480)
+        if (GenericInstancesNamed(Unparenthesized(operandSyntax)) is var (genericName, through, instances))
+        {
+            if (instances.IsEmpty)
+            {
+                return Error(syntax);
+            }
+
+            if (instances.Routines is [MethodSymbol { MethodKind: MethodKind.ClassStatic } instance, ..])
+            {
+                if (!CheckAccess(genericName, instance, instance.Owner, through))
+                {
+                    return Error(syntax);
+                }
+
+                CheckHintDirectives(instance, genericName);
+                return new BoundAddressOfExpression(syntax, operand: null, instances.Chosen(instance), _types.Pointer);
+            }
+        }
+        else if (Unparenthesized(operandSyntax) is MemberAccessExpressionSyntax { Name: IdentifierNameSyntax { Identifier: { IsMissing: false } staticToken } staticName } staticAccess
+            && _scope.Unqualified(staticAccess.Expression) is IdentifierNameSyntax { Identifier: { IsMissing: false } ownerToken } ownerName
+            && _scope.For(ownerName).Lookup(ownerToken.Value as string ?? ownerToken.Text) is ClassTypeSymbol staticOwner
+            && MemberCandidates(staticOwner, staticToken.Value as string ?? staticToken.Text) is [MethodSymbol { MethodKind: MethodKind.ClassStatic } staticMethod, ..])
+        {
+            if (!CheckAccess(staticName, staticMethod, staticMethod.ContainingType, staticOwner))
+            {
+                return Error(syntax);
+            }
+
+            CheckHintDirectives(staticMethod, staticName);
+            return new BoundAddressOfExpression(syntax, operand: null, staticMethod, _types.Pointer);
+        }
+
         if (_scope.Unqualified(Unparenthesized(operandSyntax)) is IdentifierNameSyntax { Identifier: { IsMissing: false } intrinsicToken } intrinsicName
             && _scope.For(intrinsicName).Lookup(intrinsicToken.Value as string ?? intrinsicToken.Text) is IntrinsicSymbol intrinsic)
         {
@@ -1133,6 +1233,10 @@ internal sealed partial class ExpressionBinder
         else if (symbol is null && DeclarationBinder.SmallestGenericArity(_scope.For(name), text) is { } arity)
         {
             _diagnostics.Report(name, "E2703", text, arity);                    // LANG-781 (C-345): TBox.Create where only TBox<T> exists
+        }
+        else if (symbol is null && CurrentMethod is { } current && !MethodsNamed(current.Owner, text).Generics.IsEmpty)
+        {
+            _diagnostics.Report(name, "E2711", text);                           // LANG-981 (C-420): only generic methods have that name
         }
         else if (symbol is null)
         {

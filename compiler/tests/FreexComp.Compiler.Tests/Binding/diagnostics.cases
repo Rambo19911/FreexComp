@@ -424,6 +424,10 @@ type TFoo<T> = record X: T; end; var V: TFoo<Byte, Word>; begin end.
 type U = class class function F<T>(X: Integer): T; static; end; class function U.F<T>(X: Integer): T; begin end; begin U.F(1); end.
 === E2712 1,23
 type TR<T> = class X: TR<TR<T>>; end; var V: TR<Integer>; begin end.
+=== E2713 1,26
+type U = class procedure F<T>(X: T); virtual; end; procedure U.F<T>(X: T); begin end; begin end.
+=== E2714 1,30
+type I = interface procedure F<T>(X: T); end; begin end.
 === E2701 1,21
 type TFoo<T: class, record> = class end; begin end.
 === E2702 1,22

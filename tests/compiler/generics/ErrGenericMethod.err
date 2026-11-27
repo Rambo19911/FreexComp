@@ -1,0 +1,15 @@
+ErrGenericMethod.pas(14,15): error E2713: Generic method 'V' cannot be virtual
+ErrGenericMethod.pas(15,15): error E2713: Generic method 'D' cannot be dynamic
+ErrGenericMethod.pas(16,15): error E2713: Generic method 'A' cannot be virtual
+ErrGenericMethod.pas(17,15): error E2713: Generic method 'O' cannot be an override
+ErrGenericMethod.pas(18,15): error E2713: Generic method 'M' cannot be a message handler
+ErrGenericMethod.pas(19,17): error E2713: Generic method 'Create' cannot be a constructor
+ErrGenericMethod.pas(21,15): error E2713: Generic method 'P' cannot be published
+ErrGenericMethod.pas(25,15): error E2714: Generic method 'I' is not allowed in an interface
+ErrGenericMethod.pas(44,21): error E2120: Previous declaration of 'Show' was not marked with the 'overload' directive
+ErrGenericMethod.pas(118,14): error E2711: Cannot infer type arguments for 'Make'; specify them explicitly
+ErrGenericMethod.pas(119,9): error E2711: Cannot infer type arguments for 'Pick'; specify them explicitly
+ErrGenericMethod.pas(120,3): error E2123: There is no overloaded version of 'Show' that can be called with these arguments
+ErrGenericMethod.pas(121,14): error E2711: Cannot infer type arguments for 'Twice'; specify them explicitly
+ErrGenericMethod.pas(122,9): error E2704: Type argument 'Integer' does not satisfy constraint 'class' of 'T'
+ErrGenericMethod.pas(123,17): error E2003: Undeclared identifier 'Undeclared'

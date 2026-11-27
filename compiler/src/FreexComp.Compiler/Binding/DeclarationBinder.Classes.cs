@@ -488,6 +488,11 @@ internal sealed partial class DeclarationBinder
 
         foreach (var directive in directives)
         {
+            if (IsRestrictedDirective(directive))
+            {
+                continue;                                                                                  // LANG-978 (C-420)
+            }
+
             switch (directive.Keyword.ContextualKind)
             {
                 case SyntaxKind.VirtualKeyword or SyntaxKind.DynamicKeyword:

@@ -300,6 +300,12 @@ internal sealed partial class DeclarationBinder
             return null;
         }
 
+        if (heading is { TypeParameterList: not null, ClassKeyword: null, Keyword.Kind: SyntaxKind.ProcedureKeyword or SyntaxKind.FunctionKeyword })
+        {
+            _diagnostics.Report(identifier, "E2714", NameOf(identifier));          // LANG-978 (C-420): no generic method in an interface
+            return null;
+        }
+
         if (heading.ClassKeyword is not null || heading.Keyword.Kind is not (SyntaxKind.ProcedureKeyword or SyntaxKind.FunctionKeyword) || heading.TypeParameterList is not null)
         {
             _diagnostics.Report(heading, "E2900", "interface " + heading.Keyword.Text.ToLowerInvariant());

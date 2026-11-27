@@ -124,9 +124,9 @@ internal sealed partial class DeclarationBinder
             return null;
         }
 
-        if (heading.TypeParameterList is { } typeParameters)
+        if (heading.TypeParameterList is not null)
         {
-            _diagnostics.Report(typeParameters, "E2660", "a type parameter list");
+            _diagnostics.Report(identifier, "E2714", NameOf(identifier));          // LANG-978 (C-420): as in an interface
             return null;
         }
 
