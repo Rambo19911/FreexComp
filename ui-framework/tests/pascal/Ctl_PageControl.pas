@@ -1,16 +1,19 @@
 // covers: UIF-219, UIF-770, UIF-771, UIF-772, UIF-773, UIF-774, UIF-775, UIF-776, UIF-777
+// covers: UIF-1490, UIF-1491, UIF-1493, UIF-1496, UIF-1502, UIF-1512
 // needs: desktop
 program Ctl_PageControl;
 { U-082, controls-standard.md section 20: TPageControl / TTabSheet defaults; pages = the TTabSheet children in order,
   a tab sheet only on a page control (UIF-770); exactly one active page, the others invisible (UIF-771); the page
-  rectangle of layout.md UIF-219 (E27, TabHeight, font change, clamping, DPI constants, scaling of TabHeight and
-  TabWidth) applied to every page (UIF-772); the native SysTabControl32 window (styles, HotTrack and TabWidth
-  recreate the window keeping the state, tab items in sync with TabVisible pages: text, image, order, UIF-776);
-  switching in code without OnChanging/OnChange (UIF-774) and by the user with them, including the veto (a mouse
-  click on a tab, UIF-773); focus moving from the old page to the page control; keys: Left/Right on the tab strip,
-  Ctrl+Tab / Ctrl+Shift+Tab inside the page control through the form's dialog-key handling, accelerators (UIF-775,
-  UIF-776); destroying the active page (UIF-777); MultiLine / TabPosition not supported in Phase 4; streaming with
-  ActivePage stored and not stored; 50 instances with handles leak no GUI objects.
+  rectangle = DisplayRect of phase8/tab-control.md UIF-1501 (E27, TabHeight, font change, clamping, DPI constants,
+  scaling of TabHeight and TabWidth) applied to every page (UIF-772, UIF-1502); the native SysTabControl32 window
+  (styles, HotTrack and TabWidth recreate the window keeping the state, tab items in sync with TabVisible pages:
+  text, image, order, UIF-776); every MultiLine / TabPosition / Style value accepted, the window recreated keeping
+  pages, active page and tab items (U-172, UIF-1493); switching in code without OnChanging/OnChange (UIF-774) and
+  by the user with them, including the veto (a mouse click on a tab, UIF-773); focus moving from the old page to the
+  page control; keys: Left/Right on the tab strip, Ctrl+Tab / Ctrl+Shift+Tab inside the page control through the
+  form's dialog-key handling, accelerators (UIF-775, UIF-776); the image-list change link and OnGetImageIndex of a
+  page control (UIF-1496, UIF-1512); destroying the active page (UIF-777); streaming with ActivePage stored and not
+  stored; 50 instances with handles leak no GUI objects.
   The Ctrl / Shift state is set with KeyStateKit (whole thread key state; no real input). }
 uses
   Windows, Messages, Types, SysUtils, Classes, Graphics, Controls, Forms, StdCtrls, ExtCtrls, ImgList, CommCtrl,
@@ -30,6 +33,7 @@ type
     procedure Changed(Sender: TObject);
     procedure Shown(Sender: TObject);
     procedure Hidden(Sender: TObject);
+    procedure GetImage(Sender: TObject; TabIndex: Integer; var ImageIndex: Integer);
   end;
 
   TPagesForm = class(TForm)
@@ -78,6 +82,12 @@ begin
   Text := Text + TComponent(Sender).Name + '.hide;';
 end;
 
+{ every tab shows image 1 - its tab index }
+procedure TLog.GetImage(Sender: TObject; TabIndex: Integer; var ImageIndex: Integer);
+begin
+  ImageIndex := 1 - TabIndex;
+end;
+
 procedure TPagesForm.BookChange(Sender: TObject);
 begin
   Log.Text := Log.Text + 'streamed change;';
@@ -97,6 +107,11 @@ end;
 function BoundsText(C: TControl): string;
 begin
   Result := Format('%d,%d,%d,%d', [C.Left, C.Top, C.Width, C.Height]);
+end;
+
+function RectText(const R: TRect): string;
+begin
+  Result := Format('%d,%d,%d,%d', [R.Left, R.Top, R.Right, R.Bottom]);
 end;
 
 function TabCount(PC: TPageControl): Integer;
@@ -209,6 +224,15 @@ begin
     + Integer(GetGuiResources(GetCurrentProcess, GR_USEROBJECTS));
 end;
 
+{ pages, active page S2 and the tab items survive a recreation of the window }
+procedure KeptThrough(PC: TPageControl; const What: string);
+begin
+  CheckEqS('S1|S2|S3', Tabs(PC), What + ': tabs kept');
+  CheckEqI(1, CurSel(PC), What + ': selection kept');
+  CheckEqS('S2', ActiveName(PC), What + ': active page kept');
+  CheckEqS('S2;', VisiblePages(PC), What + ': only the active page visible');
+end;
+
 procedure Defaults;
 var
   PC: TPageControl;
@@ -247,27 +271,14 @@ begin
     CheckEqI(-1, S.PageIndex, 'sheet PageIndex -1');
     CheckEqI(-1, S.TabIndex, 'sheet TabIndex -1');
     CheckEqB(True, csAcceptsControls in S.ControlStyle, 'sheet accepts controls');
-
-    Section('not supported in Phase 4');
-    try
-      PC.MultiLine := True;
-      CheckEqS('raised', 'nothing', 'MultiLine True');
-    except
-      on E: ENotSupportedException do
-        CheckEqS(SMultiLineTabs, E.Message, 'MultiLine True: ENotSupportedException');
-    end;
-    CheckEqB(False, PC.MultiLine, 'MultiLine stays False');
-    try
-      PC.TabPosition := tpBottom;
-      CheckEqS('raised', 'nothing', 'TabPosition tpBottom');
-    except
-      on E: ENotSupportedException do
-        CheckEqS('Multi-line tabs are not supported', E.Message, 'TabPosition tpBottom: ENotSupportedException');
-    end;
-    CheckEqB(True, PC.TabPosition = tpTop, 'TabPosition stays tpTop');
-    PC.MultiLine := False;
-    PC.TabPosition := tpTop;
-    Check(True, 'the supported values are accepted');
+    CheckEqB(True, PC.Style = tsTabs, 'Style tsTabs');
+    CheckEqB(False, PC.ScrollOpposite, 'ScrollOpposite');
+    CheckEqB(False, PC.RaggedRight, 'RaggedRight');
+    CheckEqB(True, not Assigned(PC.OnGetImageIndex), 'OnGetImageIndex nil');
+    CheckEqI(0, PC.RowCount, 'RowCount 0 without tabs');
+    CheckEqS('4,4,285,189', RectText(PC.DisplayRect), 'DisplayRect without tabs');
+    CheckEqS('0,0,0,0', RectText(PC.TabRect(0)), 'TabRect without a handle');
+    CheckEqI(-1, PC.IndexOfTabAt(10, 10), 'IndexOfTabAt without a handle');
   finally
     S.Free;
     PC.Free;
@@ -279,9 +290,9 @@ var
   PC: TPageControl;
   S: TTabSheet;
   C: TFocusBox;
-  P, G, TabH: Integer;
+  P, TabH: Integer;
 begin
-  Section('page rectangle (UIF-772, layout.md UIF-219, E27)');
+  Section('page rectangle (UIF-772, UIF-1501, E27)');
   PC := TPageControl.Create(nil);
   try
     PC.Font.Height := -12;
@@ -290,25 +301,25 @@ begin
     C := TFocusBox.Create(PC);
     C.Align := alClient;
     C.Parent := S;
-    CheckEqS('4,27,281,162', BoundsText(S), 'E27: sheet');
-    CheckEqS('0,0,281,162', BoundsText(C), 'E27: alClient child');
+    CheckEqS('4,25,281,164', BoundsText(S), 'E27: sheet');
+    CheckEqS('0,0,281,164', BoundsText(C), 'E27: alClient child');
     PC.TabHeight := 30;
-    CheckEqS('4,36,281,153', BoundsText(S), 'TabHeight 30');
+    CheckEqS('4,34,281,155', BoundsText(S), 'TabHeight 30');
     PC.TabHeight := 0;
     PC.Font.Height := -20;
-    CheckEqS('4,35,281,154', BoundsText(S), 'font change: TabH from the font');
+    CheckEqS('4,33,281,156', BoundsText(S), 'font change: TabH from the font');
     PC.Font.Height := -12;
     PC.SetBounds(0, 0, 100, 50);
-    CheckEqS('4,27,92,19', BoundsText(S), 'size change');
+    CheckEqS('4,25,92,21', BoundsText(S), 'size change');
     PC.SetBounds(0, 0, 6, 20);
-    CheckEqS('4,27,0,0', BoundsText(S), 'clamped to 0');
+    CheckEqS('4,25,0,0', BoundsText(S), 'clamped to 0');
     PC.SetBounds(0, 0, 289, 193);
     S.SetBounds(1, 2, 3, 4);
     PC.Realign;
-    CheckEqS('4,27,281,162', BoundsText(S), 'a sheet''s own bounds are replaced in the layout pass');
+    CheckEqS('4,25,281,164', BoundsText(S), 'a sheet''s own bounds are replaced in the layout pass');
     S.Align := alLeft;
     PC.Realign;
-    CheckEqS('4,27,281,162', BoundsText(S), 'a sheet''s Align is ignored');
+    CheckEqS('4,25,281,164', BoundsText(S), 'a sheet''s Align is ignored');
     S.Align := alNone;
     PC.TabHeight := 30;
     PC.TabWidth := 40;
@@ -321,10 +332,9 @@ begin
     PC.SetBounds(0, 0, 289, 193);
     PC.Parent := F;
     P := LayoutMulDiv(4, F.PixelsPerInch, 96);
-    G := LayoutMulDiv(2, F.PixelsPerInch, 96);
     TabH := 12 + LayoutMulDiv(9, F.PixelsPerInch, 96);
     PC.Realign;
-    CheckEqS(Format('%d,%d,%d,%d', [P, TabH + P + G, 289 - 2 * P, 193 - P - (TabH + P + G)]), BoundsText(S),
+    CheckEqS(Format('%d,%d,%d,%d', [P, TabH + P, 289 - 2 * P, 193 - P - (TabH + P)]), BoundsText(S),
       'constants at the form''s DPI');
   finally
     PC.Free;
@@ -345,7 +355,7 @@ var
   R: TRect;
   Msg: string;
   SF: TPagesForm;
-  I, Before, P, G: Integer;
+  I, Before, P: Integer;
 begin
   Application.Initialize;
   Log := TLog.Create;
@@ -438,6 +448,51 @@ begin
     PC.TabHeight := 0;
     PC.TabWidth := 0;
     CheckEqB(False, (GetWindowLongPtrW(PC.Handle, GWL_STYLE) and TCS_FIXEDWIDTH) <> 0, 'TabWidth 0: automatic');
+
+    Section('tab positions and rows (UIF-1493)');
+    PC.ActivePage := S2;
+    H := PC.Handle;
+    PC.MultiLine := True;
+    CheckEqB(True, PC.MultiLine, 'MultiLine True accepted');
+    CheckEqB(True, PC.Handle <> H, 'MultiLine recreates the window');
+    CheckEqB(True, (GetWindowLongPtrW(PC.Handle, GWL_STYLE) and TCS_MULTILINE) <> 0, 'TCS_MULTILINE');
+    KeptThrough(PC, 'MultiLine');
+    PC.MultiLine := False;
+    CheckEqB(False, (GetWindowLongPtrW(PC.Handle, GWL_STYLE) and TCS_MULTILINE) <> 0, 'MultiLine False: single line');
+    PC.TabPosition := tpBottom;
+    CheckEqB(True, PC.TabPosition = tpBottom, 'TabPosition tpBottom accepted');
+    CheckEqB(True, (GetWindowLongPtrW(PC.Handle, GWL_STYLE) and TCS_BOTTOM) <> 0, 'TCS_BOTTOM');
+    KeptThrough(PC, 'tpBottom');
+    PC.TabPosition := tpLeft;
+    CheckEqB(True, PC.TabPosition = tpLeft, 'TabPosition tpLeft accepted');
+    Style := GetWindowLongPtrW(PC.Handle, GWL_STYLE);
+    CheckEqB(True, (Style and (TCS_VERTICAL or TCS_MULTILINE)) = (TCS_VERTICAL or TCS_MULTILINE),
+      'tpLeft: TCS_VERTICAL, multi-line');
+    CheckEqB(False, (Style and TCS_RIGHT) <> 0, 'tpLeft: no TCS_RIGHT');
+    CheckEqB(False, PC.MultiLine, 'tpLeft keeps the stored MultiLine');
+    KeptThrough(PC, 'tpLeft');
+    PC.TabPosition := tpRight;
+    CheckEqB(True, PC.TabPosition = tpRight, 'TabPosition tpRight accepted');
+    CheckEqB(True, (GetWindowLongPtrW(PC.Handle, GWL_STYLE) and (TCS_VERTICAL or TCS_RIGHT)) = (TCS_VERTICAL or TCS_RIGHT),
+      'tpRight: TCS_VERTICAL or TCS_RIGHT');
+    KeptThrough(PC, 'tpRight');
+    PC.TabPosition := tpTop;
+    Style := GetWindowLongPtrW(PC.Handle, GWL_STYLE);
+    CheckEqB(False, (Style and (TCS_VERTICAL or TCS_BOTTOM or TCS_MULTILINE)) <> 0, 'tpTop: no position bits');
+    KeptThrough(PC, 'tpTop');
+    PC.Style := tsButtons;
+    CheckEqB(True, PC.Style = tsButtons, 'Style tsButtons accepted');
+    Style := GetWindowLongPtrW(PC.Handle, GWL_STYLE);
+    CheckEqB(True, ((Style and TCS_BUTTONS) <> 0) and ((Style and TCS_FLATBUTTONS) = 0), 'TCS_BUTTONS');
+    KeptThrough(PC, 'tsButtons');
+    PC.Style := tsFlatButtons;
+    CheckEqB(True, PC.Style = tsFlatButtons, 'Style tsFlatButtons accepted');
+    CheckEqB(True, (GetWindowLongPtrW(PC.Handle, GWL_STYLE) and (TCS_BUTTONS or TCS_FLATBUTTONS))
+      = (TCS_BUTTONS or TCS_FLATBUTTONS), 'TCS_BUTTONS or TCS_FLATBUTTONS');
+    KeptThrough(PC, 'tsFlatButtons');
+    PC.Style := tsTabs;
+    CheckEqB(False, (GetWindowLongPtrW(PC.Handle, GWL_STYLE) and TCS_BUTTONS) <> 0, 'Style tsTabs: tabs');
+    KeptThrough(PC, 'tsTabs');
     PC.ActivePage := S1;
 
     Section('switching in code (UIF-774)');
@@ -563,6 +618,25 @@ begin
     CheckEqS('&Two|S1|S3', Tabs(PC), 'tab order follows');
     CheckEqI(0, CurSel(PC), 'selection follows the active page');
     CheckEqI(1, TabImage(PC, 1), 'image moves with its page');
+
+    Section('image-list link and image indexes (UIF-1496, UIF-1512)');
+    PC.OnGetImageIndex := Log.GetImage;
+    S2.ImageIndex := 0;
+    CheckEqI(1, TabImage(PC, 0), 'OnGetImageIndex overrides the page''s ImageIndex (tab 0)');
+    CheckEqI(0, TabImage(PC, 1), 'OnGetImageIndex overrides the page''s ImageIndex (tab 1)');
+    PC.OnGetImageIndex := nil;
+    S2.ImageIndex := 1;
+    CheckEqI(1, TabImage(PC, 0), 'default: the page''s ImageIndex');
+    IL.Width := 20;
+    CheckEqB(True, HIMAGELIST(SendMessageW(PC.Handle, TCM_GETIMAGELIST, 0, 0)) = IL.Handle,
+      'a change of the image list re-sends its handle');
+    CheckEqI(1, TabImage(PC, 0), 'images re-queried after the change');
+    PC.Images := nil;
+    CheckEqI(-1, TabImage(PC, 0), 'without Images the tab has no image');
+    IL.Width := 16;
+    CheckEqB(True, SendMessageW(PC.Handle, TCM_GETIMAGELIST, 0, 0) = 0, 'an unlinked list sends nothing');
+    PC.Images := IL;
+    CheckEqI(1, TabImage(PC, 0), 'Images assigned: images re-queried');
     IL.Free;
     CheckEqB(True, PC.Images = nil, 'Images cleared when the image list is freed');
     CheckEqB(True, SendMessageW(PC.Handle, TCM_GETIMAGELIST, 0, 0) = 0, 'native image list cleared');
@@ -604,10 +678,9 @@ begin
       CheckEqI(2, SF.Second.ImageIndex, 'ImageIndex');
       CheckEqB(False, SF.Third.TabVisible, 'TabVisible False');
       P := LayoutMulDiv(4, SF.PixelsPerInch, 96);
-      G := LayoutMulDiv(2, SF.PixelsPerInch, 96);
-      CheckEqS(Format('%d,%d,%d,%d', [P, 24 + P + G, 289 - 2 * P, 193 - P - (24 + P + G)]), BoundsText(SF.Second),
+      CheckEqS(Format('%d,%d,%d,%d', [P, 24 + P, 289 - 2 * P, 193 - P - (24 + P)]), BoundsText(SF.Second),
         'page rectangle (TabHeight 24, form DPI)');
-      CheckEqS(Format('0,0,%d,%d', [289 - 2 * P, 193 - P - (24 + P + G)]), BoundsText(SF.Inside),
+      CheckEqS(Format('0,0,%d,%d', [289 - 2 * P, 193 - P - (24 + P)]), BoundsText(SF.Inside),
         'alClient child of a page');
       CheckEqS('First|&Second', Tabs(SF.Book), 'tabs of the visible pages');
       CheckEqI(1, CurSel(SF.Book), 'selected tab');

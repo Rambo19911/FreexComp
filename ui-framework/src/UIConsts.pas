@@ -54,7 +54,6 @@ resourcestring
   SScrollBarRange = 'Scrollbar property out of range';
   SProgressRange = 'Progress bar range is invalid';
   STrackBarRange = 'Track bar range is invalid';
-  SMultiLineTabs = 'Multi-line tabs are not supported';
   SFixedColTooBig = 'Fixed column count must be less than column count';
   SFixedRowTooBig = 'Fixed row count must be less than row count';
   SGridIndexOutOfRange = 'Grid index out of range';

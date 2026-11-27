@@ -72,9 +72,9 @@
               "class": "TTabSheet",
               "name": "GeneralPage",
               "left": 4,
-              "top": 27,
+              "top": 25,
               "width": 320,
-              "height": 25,
+              "height": 27,
               "visible": false,
               "controls": []
             },
@@ -82,9 +82,9 @@
               "class": "TTabSheet",
               "name": "AdvancedPage",
               "left": 4,
-              "top": 27,
+              "top": 25,
               "width": 320,
-              "height": 25,
+              "height": 27,
               "visible": true,
               "controls": [
                 {

@@ -198,9 +198,9 @@
               "class": "TTabSheet",
               "name": "Sheet1",
               "left": 4,
-              "top": 27,
+              "top": 25,
               "width": 492,
-              "height": 269,
+              "height": 271,
               "visible": true,
               "controls": [
                 {
@@ -251,9 +251,9 @@
               "class": "TTabSheet",
               "name": "Sheet2",
               "left": 4,
-              "top": 27,
+              "top": 25,
               "width": 492,
-              "height": 269,
+              "height": 271,
               "visible": false,
               "controls": [
                 {
@@ -262,7 +262,7 @@
                   "left": 0,
                   "top": 0,
                   "width": 492,
-                  "height": 269,
+                  "height": 271,
                   "visible": true,
                   "controls": []
                 }

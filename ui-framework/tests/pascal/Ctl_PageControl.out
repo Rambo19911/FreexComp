@@ -28,13 +28,15 @@ ok sheet PageControl nil
 ok sheet PageIndex -1
 ok sheet TabIndex -1
 ok sheet accepts controls
-# not supported in Phase 4
-ok MultiLine True: ENotSupportedException
-ok MultiLine stays False
-ok TabPosition tpBottom: ENotSupportedException
-ok TabPosition stays tpTop
-ok the supported values are accepted
-# page rectangle (UIF-772, layout.md UIF-219, E27)
+ok Style tsTabs
+ok ScrollOpposite
+ok RaggedRight
+ok OnGetImageIndex nil
+ok RowCount 0 without tabs
+ok DisplayRect without tabs
+ok TabRect without a handle
+ok IndexOfTabAt without a handle
+# page rectangle (UIF-772, UIF-1501, E27)
 ok E27: sheet
 ok E27: alClient child
 ok TabHeight 30
@@ -87,6 +89,57 @@ ok tabs kept after TabWidth
 ok fixed tab width
 ok TCM_SETITEMSIZE: tab height TabH
 ok TabWidth 0: automatic
+# tab positions and rows (UIF-1493)
+ok MultiLine True accepted
+ok MultiLine recreates the window
+ok TCS_MULTILINE
+ok MultiLine: tabs kept
+ok MultiLine: selection kept
+ok MultiLine: active page kept
+ok MultiLine: only the active page visible
+ok MultiLine False: single line
+ok TabPosition tpBottom accepted
+ok TCS_BOTTOM
+ok tpBottom: tabs kept
+ok tpBottom: selection kept
+ok tpBottom: active page kept
+ok tpBottom: only the active page visible
+ok TabPosition tpLeft accepted
+ok tpLeft: TCS_VERTICAL, multi-line
+ok tpLeft: no TCS_RIGHT
+ok tpLeft keeps the stored MultiLine
+ok tpLeft: tabs kept
+ok tpLeft: selection kept
+ok tpLeft: active page kept
+ok tpLeft: only the active page visible
+ok TabPosition tpRight accepted
+ok tpRight: TCS_VERTICAL or TCS_RIGHT
+ok tpRight: tabs kept
+ok tpRight: selection kept
+ok tpRight: active page kept
+ok tpRight: only the active page visible
+ok tpTop: no position bits
+ok tpTop: tabs kept
+ok tpTop: selection kept
+ok tpTop: active page kept
+ok tpTop: only the active page visible
+ok Style tsButtons accepted
+ok TCS_BUTTONS
+ok tsButtons: tabs kept
+ok tsButtons: selection kept
+ok tsButtons: active page kept
+ok tsButtons: only the active page visible
+ok Style tsFlatButtons accepted
+ok TCS_BUTTONS or TCS_FLATBUTTONS
+ok tsFlatButtons: tabs kept
+ok tsFlatButtons: selection kept
+ok tsFlatButtons: active page kept
+ok tsFlatButtons: only the active page visible
+ok Style tsTabs: tabs
+ok tsTabs: tabs kept
+ok tsTabs: selection kept
+ok tsTabs: active page kept
+ok tsTabs: only the active page visible
 # switching in code (UIF-774)
 ok OnHide, OnShow; no OnChanging/OnChange
 ok only the new page visible
@@ -138,6 +191,15 @@ ok others follow
 ok tab order follows
 ok selection follows the active page
 ok image moves with its page
+# image-list link and image indexes (UIF-1496, UIF-1512)
+ok OnGetImageIndex overrides the page's ImageIndex (tab 0)
+ok OnGetImageIndex overrides the page's ImageIndex (tab 1)
+ok default: the page's ImageIndex
+ok a change of the image list re-sends its handle
+ok images re-queried after the change
+ok without Images the tab has no image
+ok an unlinked list sends nothing
+ok Images assigned: images re-queried
 ok Images cleared when the image list is freed
 ok native image list cleared
 # destroying pages (UIF-777)
@@ -171,4 +233,4 @@ ok OnChange bound
 ok no events while loading
 # leak
 ok GUI objects after 50 instances with handles
-# passed 160 failed 0
+# passed 221 failed 0

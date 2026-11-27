@@ -44,7 +44,6 @@ begin
   Writeln(SScrollBarRange);
   Writeln(SProgressRange);
   Writeln(STrackBarRange);
-  Writeln(SMultiLineTabs);
   Writeln(SFixedColTooBig);
   Writeln(SFixedRowTooBig);
   Writeln(SGridIndexOutOfRange);

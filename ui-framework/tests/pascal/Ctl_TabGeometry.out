@@ -1,0 +1,160 @@
+# corpus configurations (UIF-1520)
+ok E27 top: style bits
+ok E27 top: visual styles as the program
+ok E27 top: RowCount = TCM_GETROWCOUNT
+ok E27 top: DisplayRect = TCM_ADJUSTRECT
+ok E27 top: tab lengths = TCM_GETITEMRECT
+ok E41 bottom: style bits
+ok E41 bottom: visual styles off
+ok E41 bottom: RowCount = TCM_GETROWCOUNT
+ok E41 bottom: DisplayRect = TCM_ADJUSTRECT
+ok E41 bottom: tab lengths = TCM_GETITEMRECT
+ok E42 left: style bits
+ok E42 left: visual styles off
+ok E42 left: RowCount = TCM_GETROWCOUNT
+ok E42 left: DisplayRect = TCM_ADJUSTRECT
+ok E42 left: tab lengths = TCM_GETITEMRECT
+ok E43 right: style bits
+ok E43 right: visual styles off
+ok E43 right: RowCount = TCM_GETROWCOUNT
+ok E43 right: DisplayRect = TCM_ADJUSTRECT
+ok E43 right: tab lengths = TCM_GETITEMRECT
+ok E44 two rows: style bits
+ok E44 two rows: visual styles as the program
+ok E44 two rows: RowCount = TCM_GETROWCOUNT
+ok E44 two rows: DisplayRect = TCM_ADJUSTRECT
+ok E44 two rows: tab lengths = TCM_GETITEMRECT
+ok E45 three rows: style bits
+ok E45 three rows: visual styles as the program
+ok E45 three rows: RowCount = TCM_GETROWCOUNT
+ok E45 three rows: DisplayRect = TCM_ADJUSTRECT
+ok E45 three rows: tab lengths = TCM_GETITEMRECT
+ok E46 buttons: style bits
+ok E46 buttons: RowCount = TCM_GETROWCOUNT
+ok E46 buttons: DisplayRect = TCM_ADJUSTRECT
+ok E46 buttons: tab lengths = TCM_GETITEMRECT
+ok E48 top: style bits
+ok E48 top: visual styles as the program
+ok E48 top: RowCount = TCM_GETROWCOUNT
+ok E48 top: DisplayRect = TCM_ADJUSTRECT
+ok E48 top: tab lengths = TCM_GETITEMRECT
+ok E48 right: style bits
+ok E48 right: visual styles off
+ok E48 right: RowCount = TCM_GETROWCOUNT
+ok E48 right: DisplayRect = TCM_ADJUSTRECT
+ok E48 right: tab lengths = TCM_GETITEMRECT
+ok E48 bottom: style bits
+ok E48 bottom: visual styles off
+ok E48 bottom: RowCount = TCM_GETROWCOUNT
+ok E48 bottom: DisplayRect = TCM_ADJUSTRECT
+ok E48 bottom: tab lengths = TCM_GETITEMRECT
+ok E49: K = 1
+ok E49 scroll opposite: style bits
+ok E49 scroll opposite: visual styles as the program
+ok E49 scroll opposite: RowCount = TCM_GETROWCOUNT
+ok E49 scroll opposite: DisplayRect = TCM_ADJUSTRECT
+ok E49 scroll opposite: tab lengths = TCM_GETITEMRECT
+# ScrollOpposite: each row selected (UIF-1500)
+ok row 0 selected: K = 0
+ok row 0 selected: style bits
+ok row 0 selected: visual styles as the program
+ok row 0 selected: RowCount = TCM_GETROWCOUNT
+ok row 0 selected: DisplayRect = TCM_ADJUSTRECT
+ok row 0 selected: tab lengths = TCM_GETITEMRECT
+ok row 1 selected: K = 1
+ok row 1 selected: style bits
+ok row 1 selected: visual styles as the program
+ok row 1 selected: RowCount = TCM_GETROWCOUNT
+ok row 1 selected: DisplayRect = TCM_ADJUSTRECT
+ok row 1 selected: tab lengths = TCM_GETITEMRECT
+ok row 2 selected: K = 2
+ok row 2 selected: style bits
+ok row 2 selected: visual styles as the program
+ok row 2 selected: RowCount = TCM_GETROWCOUNT
+ok row 2 selected: DisplayRect = TCM_ADJUSTRECT
+ok row 2 selected: tab lengths = TCM_GETITEMRECT
+ok buttons: ScrollOpposite not in effect, K = 0
+ok buttons with ScrollOpposite: style bits
+ok buttons with ScrollOpposite: RowCount = TCM_GETROWCOUNT
+ok buttons with ScrollOpposite: DisplayRect = TCM_ADJUSTRECT
+ok buttons with ScrollOpposite: tab lengths = TCM_GETITEMRECT
+# positions, styles, rows
+ok flat buttons top: style bits
+ok flat buttons top: RowCount = TCM_GETROWCOUNT
+ok flat buttons top: DisplayRect = TCM_ADJUSTRECT
+ok flat buttons top: tab lengths = TCM_GETITEMRECT
+ok flat buttons bottom: style bits
+ok flat buttons bottom: visual styles off
+ok flat buttons bottom: RowCount = TCM_GETROWCOUNT
+ok flat buttons bottom: DisplayRect = the top result mirrored
+ok flat buttons bottom: no tab rectangle overlaps DisplayRect
+ok flat buttons bottom: distance to the nearest tab as at the top
+ok flat buttons bottom: that distance is 4 scaled
+ok flat buttons bottom: tab lengths = TCM_GETITEMRECT
+ok left 12 tabs: style bits
+ok left 12 tabs: visual styles off
+ok left 12 tabs: RowCount = TCM_GETROWCOUNT
+ok left 12 tabs: DisplayRect = TCM_ADJUSTRECT
+ok left 12 tabs: tab lengths = TCM_GETITEMRECT
+ok right 12 tabs: style bits
+ok right 12 tabs: visual styles off
+ok right 12 tabs: RowCount = TCM_GETROWCOUNT
+ok right 12 tabs: DisplayRect = TCM_ADJUSTRECT
+ok right 12 tabs: tab lengths = TCM_GETITEMRECT
+ok bottom 3 rows: style bits
+ok bottom 3 rows: visual styles off
+ok bottom 3 rows: RowCount = TCM_GETROWCOUNT
+ok bottom 3 rows: DisplayRect = TCM_ADJUSTRECT
+ok bottom 3 rows: tab lengths = TCM_GETITEMRECT
+ok buttons bottom: style bits
+ok buttons bottom: visual styles off
+ok buttons bottom: RowCount = TCM_GETROWCOUNT
+ok buttons bottom: DisplayRect = the top result mirrored
+ok buttons bottom: no tab rectangle overlaps DisplayRect
+ok buttons bottom: distance to the nearest tab as at the top
+ok buttons bottom: that distance is 4 scaled
+ok buttons bottom: tab lengths = TCM_GETITEMRECT
+ok buttons left: style bits
+ok buttons left: visual styles off
+ok buttons left: RowCount = TCM_GETROWCOUNT
+ok buttons left: DisplayRect = the top result mirrored
+ok buttons left: no tab rectangle overlaps DisplayRect
+ok buttons left: distance to the nearest tab as at the top
+ok buttons left: that distance is 4 scaled
+ok buttons left: tab lengths = TCM_GETITEMRECT
+ok buttons right: style bits
+ok buttons right: visual styles off
+ok buttons right: RowCount = TCM_GETROWCOUNT
+ok buttons right: DisplayRect = the top result mirrored
+ok buttons right: no tab rectangle overlaps DisplayRect
+ok buttons right: distance to the nearest tab as at the top
+ok buttons right: that distance is 4 scaled
+ok buttons right: tab lengths = TCM_GETITEMRECT
+ok empty: style bits
+ok empty: visual styles as the program
+ok empty: RowCount = TCM_GETROWCOUNT
+ok empty: DisplayRect = TCM_ADJUSTRECT
+ok empty: tab lengths = TCM_GETITEMRECT
+# automatic lengths (UIF-1495, UIF-1498)
+ok single line: style bits
+ok single line: visual styles as the program
+ok single line: RowCount = TCM_GETROWCOUNT
+ok single line: DisplayRect = TCM_ADJUSTRECT
+ok single line: tab lengths = TCM_GETITEMRECT
+ok two rows: style bits
+ok two rows: visual styles as the program
+ok two rows: RowCount = TCM_GETROWCOUNT
+ok two rows: DisplayRect = TCM_ADJUSTRECT
+ok two rows: tab lengths = TCM_GETITEMRECT
+ok with images: 2 rows
+ok two rows with images: style bits
+ok two rows with images: visual styles as the program
+ok two rows with images: RowCount = TCM_GETROWCOUNT
+ok two rows with images: DisplayRect = TCM_ADJUSTRECT
+ok two rows with images: tab lengths = TCM_GETITEMRECT
+ok 20-pixel font, minimum length sent: style bits
+ok 20-pixel font, minimum length sent: visual styles as the program
+ok 20-pixel font, minimum length sent: RowCount = TCM_GETROWCOUNT
+ok 20-pixel font, minimum length sent: DisplayRect = TCM_ADJUSTRECT
+ok 20-pixel font, minimum length sent: tab lengths = TCM_GETITEMRECT
+# passed 155 failed 0

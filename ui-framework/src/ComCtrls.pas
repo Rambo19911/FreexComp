@@ -11,7 +11,13 @@ uses
 
 type
   TTabPosition = (tpTop, tpBottom, tpLeft, tpRight);
+  { UIF-1490 }
+  TTabStyle = (tsTabs, tsButtons, tsFlatButtons);
   TTabChangingEvent = procedure(Sender: TObject; var AllowChange: Boolean) of object;
+
+  TCustomTabControl = class;
+  TDrawTabEvent = procedure(Control: TCustomTabControl; TabIndex: Integer; const Rect: TRect; Active: Boolean) of object;
+  TTabGetImageEvent = procedure(Sender: TObject; TabIndex: Integer; var ImageIndex: Integer) of object;
 
   TPageControl = class;
 
@@ -75,20 +81,34 @@ type
     property OnShow: TNotifyEvent read FOnShow write FOnShow;
   end;
 
-  { the native tab strip (SysTabControl32) with the properties shared by tab controls }
+  { the native tab strip (SysTabControl32) with the properties shared by tab controls; the geometry of
+    phase8/tab-control.md section 4 (tab lengths, rows, display rectangle) is computed, never queried (UIF-1503) }
   TCustomTabControl = class(TWinControl)
   private
     FHotTrack: Boolean;
     FImages: TCustomImageList;
+    FImageChangeLink: TChangeLink;
     FMultiLine: Boolean;
+    FRaggedRight: Boolean;
+    FScrollOpposite: Boolean;
+    FStyle: TTabStyle;
     FTabHeight: SmallInt;
+    FTabIndex: Integer;
     FTabPosition: TTabPosition;
     FTabWidth: SmallInt;
     FOnChange: TNotifyEvent;
     FOnChanging: TTabChangingEvent;
+    FOnGetImageIndex: TTabGetImageEvent;
+    function GetDisplayRect: TRect;
+    procedure ImageListChange(Sender: TObject);
+    { UIF-1493: a property that changes the window styles: recreate and realign }
+    procedure StyleChanged;
     procedure SetHotTrack(Value: Boolean);
     procedure SetImages(Value: TCustomImageList);
     procedure SetMultiLine(Value: Boolean);
+    procedure SetRaggedRight(Value: Boolean);
+    procedure SetScrollOpposite(Value: Boolean);
+    procedure SetStyle(Value: TTabStyle);
     procedure SetTabHeight(Value: SmallInt);
     procedure SetTabPosition(Value: TTabPosition);
     procedure SetTabWidth(Value: SmallInt);
@@ -97,22 +117,57 @@ type
     procedure CreateWnd; override;
     procedure ChangeScale(M, D: Integer); override;
     procedure Notification(AComponent: TComponent; Operation: TOperation); override;
-    { the tab height of layout.md UIF-219 }
+    { the tab thickness TabH of UIF-1497 }
     function TabH: Integer;
     { TCM_SETITEMSIZE (TabWidth, TabH) and the realign of a changed tab height }
     procedure TabSizeChanged; virtual;
     function CanChange: Boolean; virtual;
     procedure Change; virtual;
+    { the visible tabs (section 2): their number and the raw caption of visible tab Index }
+    function VisibleTabCount: Integer; virtual;
+    function TabCaption(Index: Integer): string; virtual;
+    { the native tab items rebuilt (texts, images, selection) }
+    procedure UpdateTabItems; virtual;
+    function GetTabIndex: Integer; virtual;
+    procedure SetTabIndex(Value: Integer); virtual;
+    { UIF-1512 }
+    function GetImageIndex(TabIndex: Integer): Integer; virtual;
+    { UIF-1510 }
+    procedure SelectNextTab(GoForward: Boolean);
+    { section 2: MultiLine, or tabs on the left or right }
+    function EffectiveMultiLine: Boolean;
+    { UIF-1492: TCS_SCROLLOPPOSITE is sent }
+    function ScrollOppositeInEffect: Boolean;
+    { UIF-1498: the length of visible tab Index }
+    function TabLength(Index: Integer): Integer;
+    { UIF-1499: the row of visible tab Index (-1 for none) and the number of rows }
+    function RowOfTab(Index: Integer; out Rows: Integer): Integer;
+    { UIF-1500: K, the number of rows on the side opposite the strip }
+    function OppositeRows: Integer;
     property HotTrack: Boolean read FHotTrack write SetHotTrack default False;
     property Images: TCustomImageList read FImages write SetImages;
     property MultiLine: Boolean read FMultiLine write SetMultiLine default False;
+    property RaggedRight: Boolean read FRaggedRight write SetRaggedRight default False;
+    property ScrollOpposite: Boolean read FScrollOpposite write SetScrollOpposite default False;
+    property Style: TTabStyle read FStyle write SetStyle default tsTabs;
     property TabHeight: SmallInt read FTabHeight write SetTabHeight default 0;
+    property TabIndex: Integer read GetTabIndex write SetTabIndex default -1;
     property TabPosition: TTabPosition read FTabPosition write SetTabPosition default tpTop;
     property TabWidth: SmallInt read FTabWidth write SetTabWidth default 0;
     property OnChange: TNotifyEvent read FOnChange write FOnChange;
     property OnChanging: TTabChangingEvent read FOnChanging write FOnChanging;
+    property OnGetImageIndex: TTabGetImageEvent read FOnGetImageIndex write FOnGetImageIndex;
   public
     constructor Create(AOwner: TComponent); override;
+    destructor Destroy; override;
+    { UIF-1499: R }
+    function RowCount: Integer;
+    { TCM_GETITEMRECT of visible tab Index; Rect(0, 0, 0, 0) without a handle or for a bad index }
+    function TabRect(Index: Integer): TRect;
+    { TCM_HITTEST; -1 without a handle }
+    function IndexOfTabAt(X, Y: Integer): Integer;
+    { UIF-1501: the display rectangle in client coordinates }
+    property DisplayRect: TRect read GetDisplayRect;
   end;
 
   { controls-standard.md section 20 }
@@ -140,7 +195,15 @@ type
     procedure SelectPage(Page: TTabSheet);
     { UIF-776: the native tabs rebuilt from the pages }
     procedure UpdateTabs;
+    { the visible tabs changed: native tabs rebuilt and the pages realigned (UIF-1502) }
+    procedure TabsChanged;
   protected
+    function VisibleTabCount: Integer; override;
+    function TabCaption(Index: Integer): string; override;
+    procedure UpdateTabItems; override;
+    function GetTabIndex: Integer; override;
+    procedure SetTabIndex(Value: Integer); override;
+    function GetImageIndex(TabIndex: Integer): Integer; override;
     procedure CreateWnd; override;
     procedure AlignControls(AControl: TControl; var Rect: TRect); override;
     procedure Loaded; override;
@@ -149,8 +212,7 @@ type
     constructor Create(AOwner: TComponent); override;
     destructor Destroy; override;
     procedure SelectNextPage(GoForward: Boolean; CheckTabVisible: Boolean = True);
-    function IndexOfTabAt(X, Y: Integer): Integer;
-    { UIF-219: the page rectangle in client coordinates }
+    { UIF-1502: the page rectangle = DisplayRect }
     function PageRect: TRect;
     property ActivePageIndex: Integer read GetActivePageIndex write SetActivePageIndex;
     property PageCount: Integer read GetPageCount;
@@ -162,6 +224,9 @@ type
     property Images;
     property MultiLine;
     property ParentFont;
+    property RaggedRight;
+    property ScrollOpposite;
+    property Style;
     property TabHeight;
     property TabOrder;
     property TabPosition;
@@ -174,6 +239,7 @@ type
     property OnDblClick;
     property OnEnter;
     property OnExit;
+    property OnGetImageIndex;
     property OnKeyDown;
     property OnKeyPress;
     property OnKeyUp;
@@ -1248,7 +1314,7 @@ type
 implementation
 
 uses
-  RTLConsts, RichEdit, UIAutomation, Accessibility;
+  RTLConsts, RichEdit, UIAutomation, Accessibility, UxTheme;
 
 type
   TFormAccess = class(TCustomForm);
@@ -1493,7 +1559,7 @@ begin
   begin
     FImageIndex := Value;
     if FPageControl <> nil then
-      FPageControl.UpdateTabs;
+      FPageControl.TabsChanged;
   end;
 end;
 
@@ -1511,7 +1577,7 @@ procedure TTabSheet.WndProc(var Message: TMessage);
 begin
   inherited WndProc(Message);
   if (Message.Msg = CM_TEXTCHANGED) and (FPageControl <> nil) then
-    FPageControl.UpdateTabs;
+    FPageControl.TabsChanged;
 end;
 
 { ---------------------------------------------------------------- TCustomTabControl }
@@ -1522,22 +1588,70 @@ begin
   ControlStyle := ControlStyle + [csAcceptsControls];
   SetBounds(Left, Top, 289, 193);
   TabStop := True;
+  FTabIndex := -1;
+  FImageChangeLink := TChangeLink.Create;
+  FImageChangeLink.OnChange := ImageListChange;
 end;
 
+destructor TCustomTabControl.Destroy;
+begin
+  inherited Destroy;
+  FImageChangeLink.Free;
+  FImageChangeLink := nil;
+end;
+
+{ UIF-1492 }
 procedure TCustomTabControl.CreateParams(var Params: TCreateParams);
 begin
   inherited CreateParams(Params);
   Params.SubclassOf := WC_TABCONTROL;
-  Params.Style := Params.Style or TCS_TABS or TCS_SINGLELINE or WS_CLIPCHILDREN;
+  Params.Style := Params.Style or WS_CLIPCHILDREN;
+  case FStyle of
+    tsButtons:
+      Params.Style := Params.Style or TCS_BUTTONS;
+    tsFlatButtons:
+      Params.Style := Params.Style or TCS_BUTTONS or TCS_FLATBUTTONS;
+  else
+    Params.Style := Params.Style or TCS_TABS;
+  end;
+  if EffectiveMultiLine then
+    Params.Style := Params.Style or TCS_MULTILINE
+  else
+    Params.Style := Params.Style or TCS_SINGLELINE;
+  case FTabPosition of
+    tpBottom:
+      Params.Style := Params.Style or TCS_BOTTOM;
+    tpLeft:
+      Params.Style := Params.Style or TCS_VERTICAL;
+    tpRight:
+      Params.Style := Params.Style or TCS_VERTICAL or TCS_RIGHT;
+  end;
+  if ScrollOppositeInEffect then
+    Params.Style := Params.Style or TCS_SCROLLOPPOSITE;
+  if FRaggedRight then
+    Params.Style := Params.Style or TCS_RAGGEDRIGHT;
   if FHotTrack then
     Params.Style := Params.Style or TCS_HOTTRACK;
   if FTabWidth > 0 then
     Params.Style := Params.Style or TCS_FIXEDWIDTH;
 end;
 
+{ UIF-1494: bottom, left and right tabs use the unthemed renderer; UIF-1495: padding and minimum tab length sent
+  before any tab item exists }
 procedure TCustomTabControl.CreateWnd;
+var
+  NoTheme: array[0..0] of WideChar;
+  DPI: Integer;
 begin
   inherited CreateWnd;
+  if FTabPosition <> tpTop then
+  begin
+    NoTheme[0] := #0;
+    SetWindowTheme(Handle, @NoTheme[0], @NoTheme[0]);
+  end;
+  DPI := ControlDPI(Self);
+  SendMessageW(Handle, TCM_SETPADDING, 0, MakeLParam(Word(LayoutMulDiv(6, DPI, 96)), Word(LayoutMulDiv(3, DPI, 96))));
+  SendMessageW(Handle, TCM_SETMINTABWIDTH, 0, LPARAM(LayoutMulDiv(48, DPI, 96)));
   if FImages <> nil then
     SendMessageW(Handle, TCM_SETIMAGELIST, 0, LPARAM(FImages.Handle));
   SendMessageW(Handle, TCM_SETITEMSIZE, 0, MakeLParam(Word(FTabWidth), Word(TabH)));
@@ -1590,6 +1704,252 @@ begin
     FOnChange(Self);
 end;
 
+function TCustomTabControl.VisibleTabCount: Integer;
+begin
+  Result := 0;
+end;
+
+function TCustomTabControl.TabCaption(Index: Integer): string;
+begin
+  Result := '';
+end;
+
+procedure TCustomTabControl.UpdateTabItems;
+begin
+end;
+
+function TCustomTabControl.GetTabIndex: Integer;
+begin
+  Result := FTabIndex;
+end;
+
+procedure TCustomTabControl.SetTabIndex(Value: Integer);
+begin
+  FTabIndex := Value;
+  if HandleAllocated then
+    SendMessageW(Handle, TCM_SETCURSEL, WPARAM(Value), 0);
+end;
+
+{ UIF-1512: the default image index of visible tab TabIndex is TabIndex; OnGetImageIndex may change it }
+function TCustomTabControl.GetImageIndex(TabIndex: Integer): Integer;
+begin
+  Result := TabIndex;
+  if Assigned(FOnGetImageIndex) then
+    FOnGetImageIndex(Self, TabIndex, Result);
+end;
+
+{ UIF-1510: the next / previous visible tab, cyclically, with OnChanging (veto) and OnChange }
+procedure TCustomTabControl.SelectNextTab(GoForward: Boolean);
+var
+  N, I: Integer;
+begin
+  N := VisibleTabCount;
+  if N = 0 then
+    Exit;
+  I := TabIndex;
+  if GoForward then
+    I := (I + 1) mod N
+  else if I <= 0 then
+    I := N - 1
+  else
+    I := I - 1;
+  if I = TabIndex then
+    Exit;
+  if not CanChange then
+    Exit;
+  TabIndex := I;
+  Change;
+end;
+
+function TCustomTabControl.EffectiveMultiLine: Boolean;
+begin
+  Result := FMultiLine or (FTabPosition = tpLeft) or (FTabPosition = tpRight);
+end;
+
+function TCustomTabControl.ScrollOppositeInEffect: Boolean;
+begin
+  Result := FScrollOpposite and (FStyle = tsTabs) and EffectiveMultiLine;
+end;
+
+{ UIF-1498: TabWidth when > 0, else Max(MinW, Tx + 2 Px + Iw); Tx is the GDI extent of the raw caption (with its '&'
+  characters) in the control's font, measured on a memory DC compatible with the screen }
+function TCustomTabControl.TabLength(Index: Integer): Integer;
+var
+  DPI, MinW: Integer;
+  DC: HDC;
+  Old: HGDIOBJ;
+  S: string;
+  Size: TSize;
+begin
+  if FTabWidth > 0 then
+  begin
+    Result := FTabWidth;
+    Exit;
+  end;
+  DPI := ControlDPI(Self);
+  S := TabCaption(Index);
+  Size.cx := 0;
+  Size.cy := 0;
+  if S <> '' then
+  begin
+    DC := CreateCompatibleDC(0);
+    try
+      Old := SelectObject(DC, Font.Handle);
+      GetTextExtentPoint32W(DC, PWideChar(S), Length(S), Size);
+      SelectObject(DC, Old);
+    finally
+      DeleteDC(DC);
+    end;
+  end;
+  Result := Size.cx + 2 * LayoutMulDiv(6, DPI, 96);
+  if (FImages <> nil) and (GetImageIndex(Index) >= 0) then
+    Result := Result + TImageListAccess(FImages).Width + LayoutMulDiv(6, DPI, 96);
+  MinW := LayoutMulDiv(48, DPI, 96);
+  if Result < MinW then
+    Result := MinW;
+end;
+
+{ UIF-1499: one row unless effective multi-line; else the visible tabs packed greedily in order, a row of k tabs
+  fitting when k = 1 or w_1 + ... + w_k + (k - 1) Sa + E <= L }
+function TCustomTabControl.RowOfTab(Index: Integer; out Rows: Integer): Integer;
+var
+  N, I, K, Sum, W, Sa, E, L, DPI: Integer;
+begin
+  Result := -1;
+  N := VisibleTabCount;
+  if N = 0 then
+  begin
+    Rows := 0;
+    Exit;
+  end;
+  if not EffectiveMultiLine then
+  begin
+    Rows := 1;
+    if (Index >= 0) and (Index < N) then
+      Result := 0;
+    Exit;
+  end;
+  DPI := ControlDPI(Self);
+  if FStyle = tsTabs then
+  begin
+    Sa := 0;
+    E := 5;
+  end
+  else
+  begin
+    if (FStyle = tsFlatButtons) and (FTabPosition = tpTop) then
+      Sa := 10
+    else
+      Sa := 3;
+    E := 3;
+  end;
+  Sa := LayoutMulDiv(Sa, DPI, 96);
+  E := LayoutMulDiv(E, DPI, 96);
+  if (FTabPosition = tpTop) or (FTabPosition = tpBottom) then
+    L := Width
+  else
+    L := Height;
+  Rows := 1;
+  K := 0;
+  Sum := 0;
+  for I := 0 to N - 1 do
+  begin
+    W := TabLength(I);
+    if (K > 0) and (Sum + W + K * Sa + E > L) then
+    begin
+      Inc(Rows);
+      K := 0;
+      Sum := 0;
+    end;
+    Sum := Sum + W;
+    Inc(K);
+    if I = Index then
+      Result := Rows - 1;
+  end;
+end;
+
+function TCustomTabControl.RowCount: Integer;
+begin
+  RowOfTab(-1, Result);
+end;
+
+{ UIF-1500: K = the row of the selected tab when TCS_SCROLLOPPOSITE is sent and a tab is selected, else 0 }
+function TCustomTabControl.OppositeRows: Integer;
+var
+  Rows: Integer;
+begin
+  Result := 0;
+  if not ScrollOppositeInEffect or (TabIndex < 0) then
+    Exit;
+  Result := RowOfTab(TabIndex, Rows);
+  if Result < 0 then
+    Result := 0;
+end;
+
+{ UIF-1501: depth(r) = r TabH + Max(r - 1, 0) Sr + P on the strip side (Rn = R - K rows) and on the opposite side
+  (K rows); extents clamped at 0 }
+function TCustomTabControl.GetDisplayRect: TRect;
+var
+  DPI, P, Sr, Th, R, K, DK, DN: Integer;
+begin
+  DPI := ControlDPI(Self);
+  P := LayoutMulDiv(4, DPI, 96);
+  if FStyle = tsTabs then
+    Sr := 0
+  else
+    Sr := LayoutMulDiv(3, DPI, 96);
+  Th := TabH;
+  R := RowCount;
+  K := OppositeRows;
+  DK := K * Th + P;
+  if K > 1 then
+    DK := DK + (K - 1) * Sr;
+  DN := (R - K) * Th + P;
+  if R - K > 1 then
+    DN := DN + (R - K - 1) * Sr;
+  case FTabPosition of
+    tpBottom:
+      Result := Rect(P, DK, Width - P, Height - DN);
+    tpLeft:
+      Result := Rect(DN, P, Width - DK, Height - P);
+    tpRight:
+      Result := Rect(DK, P, Width - DN, Height - P);
+  else
+    Result := Rect(P, DN, Width - P, Height - DK);
+  end;
+  if Result.Right < Result.Left then
+    Result.Right := Result.Left;
+  if Result.Bottom < Result.Top then
+    Result.Bottom := Result.Top;
+end;
+
+function TCustomTabControl.TabRect(Index: Integer): TRect;
+begin
+  Result := Rect(0, 0, 0, 0);
+  if not HandleAllocated or (Index < 0) or (Index >= Integer(SendMessageW(Handle, TCM_GETITEMCOUNT, 0, 0))) then
+    Exit;
+  if SendMessageW(Handle, TCM_GETITEMRECT, WPARAM(Index), LPARAM(@Result)) = 0 then
+    Result := Rect(0, 0, 0, 0);
+end;
+
+function TCustomTabControl.IndexOfTabAt(X, Y: Integer): Integer;
+var
+  Info: TTCHitTestInfo;
+begin
+  Result := -1;
+  if not HandleAllocated then
+    Exit;
+  Info.pt := Point(X, Y);
+  Info.flags := 0;
+  Result := Integer(SendMessageW(Handle, TCM_HITTEST, 0, LPARAM(@Info)));
+end;
+
+procedure TCustomTabControl.StyleChanged;
+begin
+  RecreateWnd;
+  Realign;
+end;
+
 procedure TCustomTabControl.SetHotTrack(Value: Boolean);
 begin
   if FHotTrack <> Value then
@@ -1599,34 +1959,86 @@ begin
   end;
 end;
 
+{ UIF-1496: a change link with the image list; the tab items' images re-queried and the control realigned }
 procedure TCustomTabControl.SetImages(Value: TCustomImageList);
 begin
   if FImages = Value then
     Exit;
   if FImages <> nil then
+  begin
+    FImages.UnRegisterChanges(FImageChangeLink);
     FImages.RemoveFreeNotification(Self);
+  end;
   FImages := Value;
   if FImages <> nil then
+  begin
+    FImages.RegisterChanges(FImageChangeLink);
     FImages.FreeNotification(Self);
+  end;
   if HandleAllocated then
     if FImages <> nil then
       SendMessageW(Handle, TCM_SETIMAGELIST, 0, LPARAM(FImages.Handle))
     else
       SendMessageW(Handle, TCM_SETIMAGELIST, 0, 0);
+  if not (csDestroying in ComponentState) then
+  begin
+    UpdateTabItems;
+    Realign;
+  end;
+end;
+
+procedure TCustomTabControl.ImageListChange(Sender: TObject);
+begin
+  if HandleAllocated and (FImages <> nil) then
+    SendMessageW(Handle, TCM_SETIMAGELIST, 0, LPARAM(FImages.Handle));
+  UpdateTabItems;
+  Realign;
 end;
 
 procedure TCustomTabControl.SetMultiLine(Value: Boolean);
 begin
-  if Value then
-    raise ENotSupportedException.Create(SMultiLineTabs);
-  FMultiLine := False;
+  if FMultiLine <> Value then
+  begin
+    FMultiLine := Value;
+    StyleChanged;
+  end;
 end;
 
+procedure TCustomTabControl.SetRaggedRight(Value: Boolean);
+begin
+  if FRaggedRight <> Value then
+  begin
+    FRaggedRight := Value;
+    StyleChanged;
+  end;
+end;
+
+procedure TCustomTabControl.SetScrollOpposite(Value: Boolean);
+begin
+  if FScrollOpposite <> Value then
+  begin
+    FScrollOpposite := Value;
+    StyleChanged;
+  end;
+end;
+
+procedure TCustomTabControl.SetStyle(Value: TTabStyle);
+begin
+  if FStyle <> Value then
+  begin
+    FStyle := Value;
+    StyleChanged;
+  end;
+end;
+
+{ UIF-1493: the stored MultiLine value is kept; left and right tabs are multi-line through the effective rule }
 procedure TCustomTabControl.SetTabPosition(Value: TTabPosition);
 begin
-  if Value <> tpTop then
-    raise ENotSupportedException.Create(SMultiLineTabs);
-  FTabPosition := tpTop;
+  if FTabPosition <> Value then
+  begin
+    FTabPosition := Value;
+    StyleChanged;
+  end;
 end;
 
 procedure TCustomTabControl.SetTabHeight(Value: SmallInt);
@@ -1648,6 +2060,7 @@ begin
   begin
     FTabWidth := Value;
     RecreateWnd;                                             { TCS_FIXEDWIDTH }
+    Realign;                                                 { the tab lengths of UIF-1498 }
   end;
 end;
 
@@ -1777,7 +2190,7 @@ begin
   FPages.Delete(Index);
   Page.FPageControl := nil;
   if not (csDestroying in ComponentState) then
-    UpdateTabs;
+    TabsChanged;
 end;
 
 procedure TPageControl.MovePage(Page: TTabSheet; Index: Integer);
@@ -1792,7 +2205,7 @@ begin
   if (Old < 0) or (Old = Index) then
     Exit;
   FPages.Move(Old, Index);
-  UpdateTabs;
+  TabsChanged;
 end;
 
 procedure TPageControl.PageTabVisibleChanged(Page: TTabSheet);
@@ -1802,7 +2215,7 @@ begin
       ChangeActivePage(SuccessorOf(Page))
     else if Page.FTabVisible and (FActivePage = nil) then
       ChangeActivePage(Page);
-  UpdateTabs;
+  TabsChanged;
 end;
 
 procedure TPageControl.ChangeActivePage(Page: TTabSheet);
@@ -1839,6 +2252,8 @@ begin
       SendMessageW(Handle, TCM_SETCURSEL, WPARAM(Page.TabIndex), 0)
     else
       SendMessageW(Handle, TCM_SETCURSEL, WPARAM(-1), 0);
+  if ScrollOppositeInEffect then
+    Realign;                                                 { UIF-1502: K follows the selected tab }
 end;
 
 procedure TPageControl.SelectPage(Page: TTabSheet);
@@ -1880,16 +2295,59 @@ begin
   until I = Start;
 end;
 
-function TPageControl.IndexOfTabAt(X, Y: Integer): Integer;
+function TPageControl.VisibleTabCount: Integer;
 var
-  Info: TTCHitTestInfo;
+  I: Integer;
 begin
-  Result := -1;
-  if not HandleAllocated then
-    Exit;
-  Info.pt := Point(X, Y);
-  Info.flags := 0;
-  Result := Integer(SendMessageW(Handle, TCM_HITTEST, 0, LPARAM(@Info)));
+  Result := 0;
+  if FPages <> nil then
+    for I := 0 to FPages.Count - 1 do
+      if TTabSheet(FPages[I]).FTabVisible then
+        Inc(Result);
+end;
+
+function TPageControl.TabCaption(Index: Integer): string;
+var
+  P: TTabSheet;
+begin
+  P := PageOfTab(Index);
+  if P = nil then
+    Result := ''
+  else
+    Result := P.Caption;
+end;
+
+procedure TPageControl.UpdateTabItems;
+begin
+  UpdateTabs;
+end;
+
+{ section 3: the tab index of the active page }
+function TPageControl.GetTabIndex: Integer;
+begin
+  if FActivePage = nil then
+    Result := -1
+  else
+    Result := FActivePage.TabIndex;
+end;
+
+procedure TPageControl.SetTabIndex(Value: Integer);
+begin
+  SetActivePage(PageOfTab(Value));
+end;
+
+{ UIF-1512: the page's ImageIndex; OnGetImageIndex may change it }
+function TPageControl.GetImageIndex(TabIndex: Integer): Integer;
+var
+  P: TTabSheet;
+begin
+  P := PageOfTab(TabIndex);
+  if P = nil then
+    Result := -1
+  else
+    Result := P.FImageIndex;
+  if Assigned(OnGetImageIndex) then
+    OnGetImageIndex(Self, TabIndex, Result);
 end;
 
 procedure TPageControl.UpdateTabs;
@@ -1912,7 +2370,10 @@ begin
     FillChar(Item, SizeOf(Item), 0);
     Item.mask := TCIF_TEXT or TCIF_IMAGE;
     Item.pszText := PChar(S);
-    Item.iImage := P.FImageIndex;
+    if Images <> nil then
+      Item.iImage := GetImageIndex(N)
+    else
+      Item.iImage := -1;
     SendMessageW(Handle, TCM_INSERTITEMW, WPARAM(N), LPARAM(@Item));
     Inc(N);
   end;
@@ -1922,6 +2383,13 @@ begin
     SendMessageW(Handle, TCM_SETCURSEL, WPARAM(-1), 0);
 end;
 
+procedure TPageControl.TabsChanged;
+begin
+  UpdateTabs;
+  if not (csDestroying in ComponentState) then
+    Realign;
+end;
+
 procedure TPageControl.CreateWnd;
 begin
   inherited CreateWnd;
@@ -1929,16 +2397,8 @@ begin
 end;
 
 function TPageControl.PageRect: TRect;
-var
-  P, G: Integer;
 begin
-  P := LayoutMulDiv(4, ControlDPI(Self), 96);
-  G := LayoutMulDiv(2, ControlDPI(Self), 96);
-  Result := Rect(P, TabH + P + G, Width - P, Height - P);
-  if Result.Right < Result.Left then
-    Result.Right := Result.Left;
-  if Result.Bottom < Result.Top then
-    Result.Bottom := Result.Top;
+  Result := DisplayRect;
 end;
 
 procedure TPageControl.AlignControls(AControl: TControl; var Rect: TRect);
