@@ -680,6 +680,8 @@ internal static class PcuReader
                     record.Methods = [.. (entry["methods"] as JsonArray ?? []).Select(m => StaticMethod(record, m!))];
                     record.GenericMethods = GenericMethods(record, entry);                                  // C-232
                     record.Properties = [.. (entry["properties"] as JsonArray ?? []).Select(p => Property(record, p!))];
+                    record.ClassConstructor = ClassConstructor(record, entry, "classConstructor", MethodKind.ClassConstructor);   // CMP-1399 (C-376)
+                    record.ClassDestructor = ClassConstructor(record, entry, "classDestructor", MethodKind.ClassDestructor);
                     return record;
                 }
 
@@ -808,8 +810,18 @@ internal static class PcuReader
             type.Interfaces = [.. Array(entry, "interfaces").Select(i => new ImplementedInterface(
                 Type(i!, "type") as InterfaceTypeSymbol ?? throw new PcuFormatException($"an interface of '{name}' is not an interface"),
                 i!["offset"]!.GetValue<long>(), []))];
+            type.ClassConstructor = ClassConstructor(type, entry, "classConstructor", MethodKind.ClassConstructor);         // CMP-1399 (C-376)
+            type.ClassDestructor = ClassConstructor(type, entry, "classDestructor", MethodKind.ClassDestructor);
             return type;
         }
+
+        /// <summary>
+        /// CMP-1399 (C-376): the class constructor (destructor) a class or record entry names, kept for display only: never a member, so
+        /// never found by lookup (LANG-787), and never called by an importer (the declaring unit's <c>$init</c> / <c>$final</c> run it).
+        /// An entry without the key (also one written before the key existed) has none.
+        /// </summary>
+        private static MethodSymbol? ClassConstructor(TypeSymbol type, JsonObject entry, string key, MethodKind kind) =>
+            entry[key] is JsonValue name ? new MethodSymbol(name.GetValue<string>(), type, [], declaration: null!, kind, Visibility.Public) : null;
 
         /// <summary>C-205: an interface of architecture.md §6 — parent, GUID, methods with their IMT slots, properties.</summary>
         private InterfaceTypeSymbol Interface(int id, JsonObject entry, string name, Symbol container)

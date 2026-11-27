@@ -45,8 +45,11 @@ public sealed class DllGoldenTests
         Assert.True(failure is null, failure);
     }
 
-    /// <summary>The five scenarios of dll-output.md §10.3 exist (a renamed or deleted folder must not silently shrink the theory).</summary>
+    /// <summary>
+    /// The five scenarios of dll-output.md §10.3 and generics.md §14.8.3's <c>ClassCtorLib</c> (C-376) exist (a renamed or deleted
+    /// folder must not silently shrink the theory).
+    /// </summary>
     [Fact]
     public void Scenarios_AreTheFiveOfTheSpec() =>
-        Assert.Equal(["InitFails", "InitFinal", "MathLib", "OwnRtl", "StaticUnload"], DllScenario.Discover(ScenarioRoot).Select(Path.GetFileName));
+        Assert.Equal(["ClassCtorLib", "InitFails", "InitFinal", "MathLib", "OwnRtl", "StaticUnload"], DllScenario.Discover(ScenarioRoot).Select(Path.GetFileName));
 }

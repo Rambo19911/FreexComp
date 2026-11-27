@@ -1,0 +1,6 @@
+dll cclib.pas
+exe usecc.pas
+run usecc.exe
+exists cc-ctor.txt
+exists cc-dtor.txt
+exists cc-own.txt

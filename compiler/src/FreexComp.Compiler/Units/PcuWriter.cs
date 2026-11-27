@@ -828,6 +828,7 @@ internal sealed class PcuWriter(PcuContext context)
                     // C-122 (LANG-730), imported since C-219
                     entry["methods"] = StaticMethods(record.Methods);
                     GenericMethods(entry, record.GenericMethods);                      // C-232: as for a plain class (C-227)
+                    ClassConstructorKeys(entry, record.ClassConstructor, record.ClassDestructor);        // CMP-1399 (C-376)
                     entry["properties"] = MemberProperties(record.Properties);
                     if (!record.ClassVariables.IsEmpty)
                     {
@@ -916,6 +917,7 @@ internal sealed class PcuWriter(PcuContext context)
                         ["msgId"] = m.MessageId,                                       // C-113
                     }, m.Hints))]);
                     GenericMethods(entry, @class.GenericMethods);                      // C-227
+                    ClassConstructorKeys(entry, @class.ClassConstructor, @class.ClassDestructor);        // CMP-1399 (C-376)
                     entry["properties"] = new JsonArray([.. @class.Properties.Select(p => (JsonNode?)new JsonObject
                     {
                         ["name"] = p.Name,
@@ -1049,6 +1051,23 @@ internal sealed class PcuWriter(PcuContext context)
                 ["params"] = new JsonArray([.. p.Parameters.Select(q => (JsonNode?)new JsonObject { ["name"] = q.Name, ["type"] = TypeId(q.Type) })]),
                 ["isDefault"] = p.IsDefault,
             })]);
+
+        /// <summary>
+        /// CMP-1399 (C-376): the declared names of a class's or record's class constructor and class destructor, each key only when the
+        /// type has one (an entry without them means none; importers never call them, LANG-787).
+        /// </summary>
+        private static void ClassConstructorKeys(JsonObject entry, MethodSymbol? classConstructor, MethodSymbol? classDestructor)
+        {
+            if (classConstructor is not null)
+            {
+                entry["classConstructor"] = classConstructor.Name;
+            }
+
+            if (classDestructor is not null)
+            {
+                entry["classDestructor"] = classDestructor.Name;
+            }
+        }
 
         private JsonArray ClassVars(ImmutableArray<VariableSymbol> variables) =>
             new([.. variables.Select(v => (JsonNode?)new JsonObject

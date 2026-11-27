@@ -253,4 +253,85 @@ public sealed partial class IrSnapshotTests
         Assert.True(call.Success, "the inserted call has a location");
         Assert.Matches("!" + call.Groups[1].Value + " = !DILocation\\(line: 6, column: 5, scope: ", text);
     }
+
+    /// <summary>C-376: a library file whose own record has a class constructor and a class destructor and which has no managed global.</summary>
+    internal const string LibraryClassDestructorSource = """
+        library cdlib;
+        uses CdUnit;
+        type
+          TLib = record
+            class constructor Create;
+            class destructor Destroy;
+          end;
+        var
+          Runs: Integer;
+        class constructor TLib.Create;
+        begin
+          Runs := Runs + 1;
+        end;
+        class destructor TLib.Destroy;
+        begin
+          Runs := 0;
+        end;
+        function Ping: Integer; stdcall;
+        begin
+          Result := Runs + Shared;
+        end;
+        exports
+          Ping;
+        begin
+          Runs := Runs + 10;
+        end.
+
+        """;
+
+    internal const string LibraryClassDestructorUnitSource = """
+        unit CdUnit;
+        interface
+        var
+          Shared: Integer;
+        type
+          TUnitType = class
+            class constructor Create;
+          end;
+        implementation
+        class constructor TUnitType.Create;
+        begin
+          Shared := 5;
+        end;
+        end.
+
+        """;
+
+    /// <summary>
+    /// LANG-792, CMP-1396 (C-376): in a library the units' class constructors run in their <c>$init</c> (inside <c>_InitUnits</c> at the
+    /// first process attach), the library file's own ones in <c>$main</c> after <c>_InitUnits</c> and before the library block; a class
+    /// destructor gives the library its own <c>$final</c> entry, the last of the unit table, also without managed globals (CMP-1050).
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "LANG-792")]
+    [Trait("Req", "CMP-1396")]
+    [Trait("Req", "CMP-1050")]
+    public void LibraryModuleWithClassDestructor()
+    {
+        var modules = ExportThunkTests.Emit("cdlib", LibraryClassDestructorSource, ("CdUnit", LibraryClassDestructorUnitSource));
+        var text = modules["cdlib"];
+
+        Snapshot.Verify("LibraryModuleWithClassDestructor", text);
+        Assert.Contains("@\"cdlib.$ccdone\" = internal global [1 x i8] zeroinitializer, align 1\n", text);
+        Assert.Contains("@\"$units\" = internal constant [3 x { ptr, ptr }] ", text);
+        Assert.Contains("{ ptr, ptr } { ptr @\"CdUnit.$init\", ptr null }, { ptr, ptr } { ptr null, ptr @\"cdlib.$final\" }], align 8\n", text);
+        Assert.Contains("define internal void @\"cdlib.$final\"() #0 {", text);
+        Assert.Contains(
+            "  call void @\"System._InitUnits\"()\n" +
+            "  call void @\"cdlib.TLib.$cctor\"()\n" +
+            "  store i8 1, ptr @\"cdlib.$ccdone\", align 1\n", text);
+        var main = text[text.IndexOf("define internal void @\"$main\"", StringComparison.Ordinal)..];
+        Assert.True(main.IndexOf("@\"cdlib.TLib.$cctor\"", StringComparison.Ordinal) < main.IndexOf("add i32", StringComparison.Ordinal), "own class constructors before the library block");
+        var final = text[text.IndexOf("define internal void @\"cdlib.$final\"", StringComparison.Ordinal)..];
+        Assert.Contains("@\"cdlib.TLib.$cdtor\"()", final[..final.IndexOf("\n}\n", StringComparison.Ordinal)], StringComparison.Ordinal);
+        Assert.DoesNotContain("_start", text, StringComparison.Ordinal);
+        Assert.Contains("  call void @\"CdUnit.TUnitType.$cctor\"()\n", modules["CdUnit"], StringComparison.Ordinal);
+    }
 }

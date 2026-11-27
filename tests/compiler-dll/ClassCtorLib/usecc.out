@@ -1,0 +1,8 @@
+host Runs = 1
+before load: cctor FALSE, cdtor FALSE
+loaded: TRUE
+after load: cctor TRUE, cdtor FALSE
+LibRuns = 1
+host Runs = 1
+freed: TRUE
+after free: cctor TRUE, cdtor TRUE, own TRUE
