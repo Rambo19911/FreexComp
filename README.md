@@ -249,10 +249,10 @@ Phase 8 implements the full feature set for Windows, area by area. Progress coun
 | Visual data binding | 0 / 16 | `░░░░░░░░░░` | — |
 | Build and deploy | 11 / 36 | `███░░░░░░░` | Build and run from the IDE, clickable errors · build configurations with inheritance · build events with a trust question · resource scripts and the resource compiler `prc` |
 | Language and runtime library | 9 / 118 | `█░░░░░░░░░` | Inline variables and `for var` loops with type inference · class constructors and destructors · hardware faults caught by `try` … `except` · `deprecated` / `platform` / `experimental` warnings · runtime library source included |
-| IDE | 10 / 120 | `█░░░░░░░░░` | Main window, code editor, project open and save · light and dark themes · code folding · named bookmarks and the Bookmarks window · Tool Palette search · copy a library unit into a project · no-network guarantee checked by tests |
+| IDE | 11 / 120 | `█░░░░░░░░░` | Main window, code editor, project open and save · light and dark themes · code folding · bracket and directive pair matching · named bookmarks and the Bookmarks window · Tool Palette search · copy a library unit into a project · no-network guarantee checked by tests |
 | Source control | 0 / 18 | `░░░░░░░░░░` | — |
 | Refactoring and navigation | 0 / 27 | `░░░░░░░░░░` | — |
-| Debugging | 4 / 41 | `█░░░░░░░░░` | Breakpoints, stepping, locals, call stack · Step Into library code · value visualisers |
+| Debugging | 5 / 41 | `█░░░░░░░░░` | Breakpoints, stepping, locals, call stack · Step Into library code · value visualisers and a text viewer for strings |
 | Unit testing | 0 / 9 | `░░░░░░░░░░` | — |
 | Help | 0 / 8 | `░░░░░░░░░░` | Offline help pages in the IDE (first pages) |
 | Data access | 1 / 93 | `█░░░░░░░░░` | SQLite and data-aware controls |
@@ -260,7 +260,7 @@ Phase 8 implements the full feature set for Windows, area by area. Progress coun
 | Web front-end framework | 0 / 29 | `░░░░░░░░░░` | — |
 | Bundled components | 0 / 6 | `░░░░░░░░░░` | — |
 | Local web UI | 0 / 18 | `░░░░░░░░░░` | — |
-| **Total** | **59 / 881** | `█░░░░░░░░░` | **7 %** |
+| **Total** | **61 / 881** | `█░░░░░░░░░` | **7 %** |
 
 - [ ] First public release with installer
 
