@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
-// covers: UIF-1492, UIF-1494, UIF-1495, UIF-1497, UIF-1498, UIF-1499, UIF-1500, UIF-1501, UIF-1503
+// covers: UIF-1492, UIF-1494, UIF-1495, UIF-1497, UIF-1498, UIF-1499, UIF-1500, UIF-1501, UIF-1503, UIF-1520
 // phase: 8
 // needs: desktop
 // opc: --app-type gui

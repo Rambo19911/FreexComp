@@ -233,6 +233,7 @@ public sealed class AccessibilityClientTests
     public void Uia_ProvidersReleasedWhenAnotherProcessStartsListening()
     {
         Harness.RequireDesktop();
+        Gui.BuildProgram(OutsideListener.Source);                       // U-177: outside the probe's budget
         using var probe = Probe.Start();
         using var turns = new ForegroundTurns(probe);
         Gui.GuiProcess? outside = null;
@@ -424,6 +425,7 @@ public sealed class AccessibilityClientTests
 
         void Round(int unheld)
         {
+            probe.Renew();                                               // U-177: each round of forms gets the whole budget
             var line = probe.Request(WM_PROBE_CYCLE, "held ", (nuint)unheld);
             var handle = new IntPtr(Convert.ToInt64(line.Split(' ')[2], 16));
             var form = probe.Client.ElementFromHandle(handle);
@@ -431,7 +433,7 @@ public sealed class AccessibilityClientTests
             foreach (var id in new[] { "SecondLabel", "SecondPanel", "InnerLabel" })
             {
                 var e = form.FindFirst(TreeScope.Descendants, probe.IdCondition(id));
-                Assert.NotNull(e);
+                Assert.True(e is not null, probe.Output($"the element {id} of the form {line}"));
                 Assert.False(string.IsNullOrEmpty(e.CurrentName), $"{id} has no name");
                 held.Add(e);
             }
@@ -814,9 +816,14 @@ public sealed class AccessibilityClientTests
     /// <summary>
     /// A started probe: its main window, the COM client and the window's element, the marker protocol of the program
     /// (internal: U-157's <see cref="AccessibilityGridClientTests"/> uses it too).
-    /// U-161: one test with a probe lasts at most <see cref="Budget"/> (build, start and every wait included): every
-    /// wait of the probe ends at that deadline, where a watchdog kills the probe so that a wait inside a call to it
-    /// ends too. The probe is in the job object of the test host (<see cref="Gui.StartGui"/>, U-162) that kills it when the host ends (also when the host
+    /// U-161: one test with a probe lasts at most <see cref="Budget"/> (start and every wait included): every wait of
+    /// the probe ends at that deadline, where a watchdog kills the probe so that a wait inside a call to it ends too.
+    /// U-177: the build of the probe (and of every other program a test starts) comes before the deadline is set (a
+    /// build has its own net, <see cref="Gui.BuildSafetyNet"/>), and a test whose work is many equal steps (the form
+    /// cycles) gives each step the whole budget (<see cref="Renew"/>): the watchdog stops a probe that makes no progress,
+    /// not one that is slow on a loaded machine (the lead's full verify: the 1 000 forms with an outside listener took
+    /// longer than 48 s, the watchdog killed the probe between two calls of the client and the next
+    /// <c>FindFirst</c> returned null). The probe is in the job object of the test host (<see cref="Gui.StartGui"/>, U-162) that kills it when the host ends (also when the host
     /// is stopped); <see cref="Dispose"/> kills it and removes the client's event handlers, also after a failure.
     /// </summary>
     internal sealed class Probe : IDisposable
@@ -830,8 +837,9 @@ public sealed class AccessibilityClientTests
         /// <summary>How long the removal of the client's event handlers may take (1/24 of the shared net: 5 s).</summary>
         private static readonly TimeSpan RemovalLimit = Gui.SafetyNet / 24;
 
-        private readonly DateTime deadline;
+        private DateTime deadline;
         private readonly Timer watchdog;
+        private volatile bool stoppedAtDeadline;
         private bool handlersRemoved;
         private int linesSeen;
 
@@ -842,7 +850,7 @@ public sealed class AccessibilityClientTests
             this.deadline = deadline;
             Client = (IUIAutomation)new CUIAutomation();
             Root = Client.ElementFromHandle(window);
-            watchdog = new Timer(_ => App.Dispose(), null, Remaining, Timeout.InfiniteTimeSpan);
+            watchdog = new Timer(_ => StopAtDeadline(), null, Remaining, Timeout.InfiniteTimeSpan);
         }
 
         public Gui.GuiProcess App { get; }
@@ -856,10 +864,20 @@ public sealed class AccessibilityClientTests
         /// <summary>The time left until the deadline of the test (never negative).</summary>
         public TimeSpan Remaining => Until(deadline);
 
+        /// <summary>
+        /// U-177: the probe made progress (a step of a test made of many equal steps is done): the deadline and the
+        /// watchdog are set to <see cref="Budget"/> from now. A probe that has been stopped stays stopped.
+        /// </summary>
+        public void Renew()
+        {
+            deadline = DateTime.UtcNow + Budget;
+            watchdog.Change(Budget, Timeout.InfiniteTimeSpan);
+        }
+
         public static Probe Start()
         {
+            var exe = Gui.BuildProgram(ProbeSource);                // U-177: before the deadline (own net)
             var deadline = DateTime.UtcNow + Budget;
-            var exe = Gui.BuildProgram(ProbeSource);
             var app = Gui.StartGui(exe, [], new Dictionary<string, string>());
             try
             {
@@ -925,7 +943,7 @@ public sealed class AccessibilityClientTests
 
         public string Output(string what) =>
             $"{what} did not come (test budget {Budget.TotalSeconds:F0} s, {Remaining.TotalSeconds:F1} s left, "
-            + $"probe {(App.Process.HasExited ? "exited" : "running")})\n--- stdout\n{App.StdOut}\n--- stderr\n{App.StdErr}";
+            + $"probe {(stoppedAtDeadline ? "stopped by the watchdog at the deadline" : App.Process.HasExited ? "exited" : "running")})\n--- stdout\n{App.StdOut}\n--- stderr\n{App.StdErr}";
 
         /// <summary>
         /// Removes every event handler of the client (all of them are the test's own: the tests of the project run one
@@ -957,6 +975,12 @@ public sealed class AccessibilityClientTests
                 handlersRemoved = true;
                 RemoveAllBounded();                                 // after a failure: must not hide the test's own one
             }
+        }
+
+        private void StopAtDeadline()
+        {
+            stoppedAtDeadline = true;
+            App.Dispose();
         }
 
         private static TimeSpan Until(DateTime deadline)
