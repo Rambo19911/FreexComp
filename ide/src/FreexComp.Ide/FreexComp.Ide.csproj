@@ -3,6 +3,8 @@
     <OutputType>WinExe</OutputType>
     <RootNamespace>FreexComp.Ide</RootNamespace>
     <ApplicationIcon>..\..\..\assets\brand\app.ico</ApplicationIcon>
+    <!-- UI-TOK-066: per-monitor-v2 DPI awareness declared to the loader, embedded in FreexComp.Ide.exe. -->
+    <ApplicationManifest>app.manifest</ApplicationManifest>
     <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
   </PropertyGroup>

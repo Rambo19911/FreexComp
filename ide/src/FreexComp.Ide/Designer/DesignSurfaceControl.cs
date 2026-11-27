@@ -198,6 +198,12 @@ public sealed class DesignSurfaceControl : Control, ICommandTarget
         return new Size(Math.Max(g.FrameRect.Right, g.TrayRect.Right) + SurfaceMargin, Math.Max(g.FrameRect.Bottom, g.TrayRect.Bottom) + SurfaceMargin);
     }
 
+    /// <summary>
+    /// UI-TOK-069: how often the surface was drawn. It draws from the controller's state each time (nothing drawn is
+    /// kept), so a new render scaling — the window came to another monitor — shows with the next draw.
+    /// </summary>
+    internal int RenderCount { get; private set; }
+
     public override void Render(DrawingContext context)
     {
         if (_surface is null)
@@ -205,6 +211,7 @@ public sealed class DesignSurfaceControl : Control, ICommandTarget
             return;
         }
 
+        RenderCount++;
         var size = Bounds.Size;
         var viewport = new DesignRect(0, 0, (int)Math.Ceiling(size.Width), (int)Math.Ceiling(size.Height));
         _surface.Render(new AvaloniaDesignCanvas(context, BrushFor), viewport);

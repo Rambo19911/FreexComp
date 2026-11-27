@@ -29,6 +29,7 @@ public static class CompositionRoot
 
         var paths = UserPaths.FromProcess(options.UserDir);
         var log = new FileLog(paths.LogDirectory, () => DateTime.Now, FileLog.MinimumLevelFrom(Environment.GetEnvironmentVariable(FileLog.LevelVariable)));
+        log.Info("startup", "dpi awareness: " + Platform.Windows.DpiAwareness.Current); // UI-TOK-067: the UI thread's, once per start
         var clipboard = new AvaloniaClipboard(mainWindow);
         var clock = new DispatcherClock();
         return new PlatformServices(

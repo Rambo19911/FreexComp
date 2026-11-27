@@ -20,10 +20,16 @@ internal static class Program
 
         // IDE-P1-013: --version, --help and unknown options are answered before any window exists.
         var options = StartupOptions.Parse(args);
-        if (options.UnknownOption is not null || options.ShowHelp || options.ShowVersion)
+        if (options.UnknownOption is not null || options.ShowHelp || options.ShowVersion || options.SmokeDpi)
         {
             AttachConsole(AttachParentProcess); // a windowed executable: print into the console that started it, if any
-            return options.HandleInformationOptions(Console.Out, Console.Error) ?? 0;
+            if (options.HandleInformationOptions(Console.Out, Console.Error) is { } exitCode)
+                return exitCode;
+
+            // UI-TOK-067: --smoke-dpi. Nothing of the UI library has run yet: this is the awareness the application
+            // manifest gave the process (UI-TOK-066).
+            Console.Out.WriteLine(Platform.Windows.DpiAwareness.Current);
+            return 0;
         }
 
         // I-213: with files to open, hand them to the IDE already running for this user directory and exit (no window).

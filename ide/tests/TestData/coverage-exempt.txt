@@ -67,8 +67,6 @@ UI-TOK-001 structural: code organisation rule (namespaces, base classes, file lo
 UI-TOK-051 not checkable headless: drawing geometry, cursors, animation or timing of rendering (IDE-TEST-010)
 UI-TOK-052 not checkable headless: drawing geometry, cursors, animation or timing of rendering (IDE-TEST-010)
 UI-TOK-053 not checkable headless: drawing geometry, cursors, animation or timing of rendering (IDE-TEST-010)
-UI-TOK-060 platform: done by the OS picker or the OS, not by the IDE
-UI-TOK-064 platform: done by the OS picker or the OS, not by the IDE
 UI-TW-004 absence: states that a feature does not exist in Phases 1-7
 UI-WIN-003 absence: states that a feature does not exist in Phases 1-7
 UI-WIN-006 superseded: Dock library removed (architecture.md lead decision I-022/I-023)

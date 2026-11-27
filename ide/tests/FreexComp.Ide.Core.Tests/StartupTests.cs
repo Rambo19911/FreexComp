@@ -46,4 +46,26 @@ public sealed class StartupTests
         Assert.Null(options.UnknownOption);
         Assert.False(StartupOptions.Parse(["a.pas"], @"C:\w").Safe);
     }
+
+    /// <summary>
+    /// <c>--smoke-dpi</c> is a known option that is not part of the usage text; the information options and an unknown
+    /// option are answered first, otherwise the IDE's entry point prints the awareness and exits (no window).
+    /// </summary>
+    [Fact]
+    [Trait("Req", "UI-TOK-067")]
+    public void SmokeDpiIsAKnownOption()
+    {
+        var nl = Environment.NewLine;
+        var options = StartupOptions.Parse(["--user-dir", @"C:\u", "--Smoke-DPI"], @"C:\w");
+        Assert.True(options.SmokeDpi);
+        Assert.Null(options.UnknownOption);
+        Assert.Empty(options.Paths);
+        Assert.Equal(@"C:\u", options.UserDir);
+        Assert.False(StartupOptions.Parse(["a.pas"], @"C:\w").SmokeDpi);
+
+        Assert.DoesNotContain("smoke", Strings.App_Usage, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal((null, "", ""), Run("--smoke-dpi"));
+        Assert.Equal((0, Usage + nl, ""), Run("--smoke-dpi", "--help"));
+        Assert.Equal((1, "", Usage + nl), Run("--smoke-dpi", "--bogus"));
+    }
 }

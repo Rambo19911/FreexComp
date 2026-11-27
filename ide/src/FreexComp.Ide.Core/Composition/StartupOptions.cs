@@ -7,7 +7,7 @@ namespace FreexComp.Ide.Core.Composition;
 /// The parsed command line (phase1-shell.md §2, IDE-ARCH-015 step 1):
 /// <c>FreexComp.exe [&lt;path&gt; …] [--new-window] [--user-dir &lt;dir&gt;] [--safe] [--version] [--help]</c>.
 /// Options are matched case-insensitively. <see cref="Arguments"/> keeps every argument except the <c>--user-dir</c>
-/// pair, in order.
+/// pair, in order. <c>--smoke-dpi</c> is a check of the installation, not part of the usage text (UI-TOK-067).
 /// </summary>
 public sealed record StartupOptions(string? UserDir, IReadOnlyList<string> Arguments)
 {
@@ -16,6 +16,7 @@ public sealed record StartupOptions(string? UserDir, IReadOnlyList<string> Argum
     public const string VersionOption = "--version";
     public const string HelpOption = "--help";
     public const string NewWindowOption = "--new-window";
+    public const string SmokeDpiOption = "--smoke-dpi";
 
     /// <summary>IDE-P1-010: the path arguments, made absolute against the working directory, in order.</summary>
     public IReadOnlyList<string> Paths { get; init; } = [];
@@ -25,6 +26,9 @@ public sealed record StartupOptions(string? UserDir, IReadOnlyList<string> Argum
 
     /// <summary><c>--new-window</c>: the paths open in this new instance even when another one runs (I-213).</summary>
     public bool NewWindow { get; init; }
+
+    /// <summary>UI-TOK-067: print the process's DPI awareness and exit with 0; no window, nothing of the IDE starts.</summary>
+    public bool SmokeDpi { get; init; }
 
     /// <summary>IDE-P1-013.</summary>
     public bool ShowVersion { get; init; }
@@ -42,7 +46,7 @@ public sealed record StartupOptions(string? UserDir, IReadOnlyList<string> Argum
         var baseDirectory = workingDirectory ?? Environment.CurrentDirectory;
         string? userDir = null;
         string? unknown = null;
-        bool safe = false, version = false, help = false, newWindow = false;
+        bool safe = false, version = false, help = false, newWindow = false, smokeDpi = false;
         var rest = new List<string>();
         var paths = new List<string>();
         for (var i = 0; i < args.Count; i++)
@@ -63,6 +67,8 @@ public sealed record StartupOptions(string? UserDir, IReadOnlyList<string> Argum
                 help = true;
             else if (Is(arg, NewWindowOption))
                 newWindow = true; // I-213: never hand the paths to a running instance
+            else if (Is(arg, SmokeDpiOption))
+                smokeDpi = true;
             else if (arg.StartsWith("--", StringComparison.Ordinal))
                 unknown ??= arg;
             else if (arg.Length > 0)
@@ -74,6 +80,7 @@ public sealed record StartupOptions(string? UserDir, IReadOnlyList<string> Argum
             Paths = paths,
             Safe = safe,
             NewWindow = newWindow,
+            SmokeDpi = smokeDpi,
             ShowVersion = version,
             ShowHelp = help,
             UnknownOption = unknown,
