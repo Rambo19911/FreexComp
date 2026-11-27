@@ -47,14 +47,18 @@ public sealed class DocumentAreaViewModel : ObservableObject
         };
         TabContextMenu = [.. TabMenuCommands.Select(id => id is null
             ? MenuItemModel.Separator()
-            : MenuItemModel.ForCommand(MenuLabels.For(new CommandMenuNode(id)), commands.Get(id), null, MenuToggleKind.None))];
+            : MenuItemModel.ForCommand(TabLabels.TryGetValue(id, out var label) ? label : MenuLabels.For(new CommandMenuNode(id)), commands.Get(id), null,
+                MenuToggleKind.None))];
         SyncTabs();
     }
+
+    /// <summary>Tab-menu labels that differ from the main menu's (local-history.md UI-TW-1620: <c>Show &amp;History</c>).</summary>
+    private static readonly Dictionary<string, string> TabLabels = new(StringComparer.Ordinal) { ["view.history"] = Strings.TabMenu_view_history };
 
     /// <summary>UI-ED-079: the tab context menu; null = separator.</summary>
     private static readonly string?[] TabMenuCommands =
     [
-        "file.close", "file.closeOthers", "file.closeAll", null, "file.save", "file.saveAs", "file.revert", "file.compareWithSaved", null,
+        "file.close", "file.closeOthers", "file.closeAll", null, "file.save", "file.saveAs", "file.revert", "file.compareWithSaved", "view.history", null,
         "file.copyPath", "file.showInExplorer", null, "window.splitRight", "window.splitDown",
     ];
 

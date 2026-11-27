@@ -7,6 +7,7 @@ namespace FreexComp.Ide.Views;
 /// I-215: the row of a tool-window tool bar (UI-TW-008). The first child (the buttons) keeps its natural width at the
 /// left; the optional second child (the filter box) is right-aligned at its preferred width and shrinks down to its
 /// minimum width when space is short. The two never overlap; the row's desired width is buttons + minimum filter.
+/// A second child that is not a text box (the radio-button options of UI-TW-1622) keeps its natural width at the right.
 /// </summary>
 public sealed class ToolBarRowPanel : Panel
 {
@@ -23,6 +24,12 @@ public sealed class ToolBarRowPanel : Panel
         if (filter is null)
             return new Size(buttonsWidth, height);
 
+        if (filter is not TextBox)
+        {
+            filter.Measure(new Size(double.PositiveInfinity, availableSize.Height));
+            return new Size(buttonsWidth + filter.DesiredSize.Width, Math.Max(height, filter.DesiredSize.Height));
+        }
+
         filter.Measure(new Size(FilterWidth(filter, availableSize.Width - buttonsWidth), availableSize.Height));
         return new Size(buttonsWidth + MinimumWidth(filter), Math.Max(height, filter.DesiredSize.Height));
     }
@@ -35,7 +42,7 @@ public sealed class ToolBarRowPanel : Panel
         buttons?.Arrange(new Rect(0, 0, buttonsWidth, finalSize.Height));
         if (filter is not null)
         {
-            var width = FilterWidth(filter, finalSize.Width - buttonsWidth);
+            var width = filter is TextBox ? FilterWidth(filter, finalSize.Width - buttonsWidth) : filter.DesiredSize.Width;
             filter.Arrange(new Rect(Math.Max(buttonsWidth, finalSize.Width - width), 0, width, finalSize.Height));
         }
 

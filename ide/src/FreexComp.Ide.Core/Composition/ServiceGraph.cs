@@ -389,6 +389,12 @@ public static class ServiceGraph
         if (Phase8Features.IsAvailable("toolwindow:" + ViewModels.TemplatesViewModel.ToolName, 8, toolWindowPhase ?? ImplementedPhase))
             templatesView.RegisterCommands();
 
+        // I-332: the History window and its commands (F11-060), where its phase-8 delivery applies.
+        var historyView = new ViewModels.HistoryViewModel(commands, history, documents, layout, languages, platform.TextBuffers, status,
+            platform.Dialogs, platform.Clock, platform.Clipboard);
+        if (Phase8Features.IsAvailable("toolwindow:" + ViewModels.HistoryViewModel.ToolName, 8, toolWindowPhase ?? ImplementedPhase))
+            historyView.RegisterCommands();
+
         // A test phase below the product's (testing.md §2.1) gives the later commands the stubs of UI-CMD-004 as before I-207.
         EditorCommandRoute.Register(commands, toolWindowPhase ?? ImplementedPhase, () => documents.ActiveDocument?.CommandTarget); // I-158
         commands.RegisterLaterPhaseStubs(toolWindowPhase ?? ImplementedPhase);
@@ -405,6 +411,7 @@ public static class ServiceGraph
         production = [.. production, new ViewModels.DataExplorerViewModel().Definition]; // I-137: registers from Phase 7 (UI-TW-1401)
         production = [.. production, bookmarksView.Definition]; // I-316: registers where delivered (UI-TW-006)
         production = [.. production, templatesView.Definition]; // I-328: registers where delivered (UI-TW-006)
+        production = [.. production, historyView.Definition]; // I-332: registers where delivered (UI-TW-006)
         foreach (var definition in production)
         {
             if (!extras.Any(e => e.Name == definition.Name))

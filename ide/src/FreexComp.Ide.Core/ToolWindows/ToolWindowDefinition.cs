@@ -52,4 +52,13 @@ public sealed class ToolWindowToolBarChoice(string name, string label, double wi
     }
 
     public string SelectedId => Items[SelectedIndex].Id;
+
+    /// <summary>Whether the choice is shown (the History window's Part, UI-TW-1622, only for form documents with a unit).</summary>
+    public bool IsVisible
+    {
+        get => _isVisible;
+        set => SetProperty(ref _isVisible, value);
+    }
+
+    private bool _isVisible = true;
 }

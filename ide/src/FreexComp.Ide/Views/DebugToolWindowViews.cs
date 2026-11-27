@@ -684,3 +684,6 @@ public sealed class BookmarksView() : DebugToolWindowView(BookmarksViewModel.Too
 
 /// <summary>Templates (code-templates.md §5, F11-052).</summary>
 public sealed class TemplatesView() : DebugToolWindowView(TemplatesViewModel.ToolName);
+
+/// <summary>History (local-history.md §2, F11-060).</summary>
+public sealed class HistoryView() : DebugToolWindowView(HistoryViewModel.ToolName);

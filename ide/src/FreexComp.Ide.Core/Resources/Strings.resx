@@ -949,6 +949,26 @@ The form change was undone.</value>
     <value>Local history could not be written: {0}</value>
     <comment>local-history.md IDE-HIST-005: status bar, once per session; {0} the reason</comment>
   </data>
+  <data name="Msg_History_NoDocument" xml:space="preserve">
+    <value>Open a file to see its history.</value>
+    <comment>local-history.md UI-TW-1621</comment>
+  </data>
+  <data name="Msg_History_NotInProject" xml:space="preserve">
+    <value>Local history is kept for files in the project folder.</value>
+    <comment>local-history.md UI-TW-1621</comment>
+  </data>
+  <data name="Msg_History_Disabled" xml:space="preserve">
+    <value>Local history is turned off (Options › Environment › Files).</value>
+    <comment>local-history.md UI-TW-1621</comment>
+  </data>
+  <data name="Msg_History_NoRevisions" xml:space="preserve">
+    <value>No saved revisions yet.</value>
+    <comment>local-history.md UI-TW-1621</comment>
+  </data>
+  <data name="Msg_History_CurrentRow" xml:space="preserve">
+    <value>(current buffer)</value>
+    <comment>local-history.md UI-TW-1620: the pseudo-row</comment>
+  </data>
   <data name="Msg_Options_GridRange" xml:space="preserve">
     <value>Enter a grid size from 2 to 64.</value>
   </data>
@@ -1604,6 +1624,10 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   <data name="Cmd_view_templates" xml:space="preserve">
     <value>Templates</value>
   </data>
+  <data name="Cmd_view_history" xml:space="preserve">
+    <value>History</value>
+    <comment>local-history.md UI-TW-1620</comment>
+  </data>
   <data name="Cmd_view_welcomePage" xml:space="preserve">
     <value>Welcome Page</value>
   </data>
@@ -2105,6 +2129,66 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   </data>
   <data name="Cmd_bookmarks_rename" xml:space="preserve">
     <value>Rename Bookmark</value>
+  </data>
+  <data name="Cmd_history_compare" xml:space="preserve">
+    <value>Compare</value>
+    <comment>local-history.md UI-TW-1620…1625</comment>
+  </data>
+  <data name="Cmd_history_label" xml:space="preserve">
+    <value>Edit Label</value>
+    <comment>local-history.md UI-TW-1620…1625</comment>
+  </data>
+  <data name="Cmd_history_revert" xml:space="preserve">
+    <value>Revert to This Revision</value>
+    <comment>local-history.md IDE-HIST-020 (I-333)</comment>
+  </data>
+  <data name="Cmd_history_refresh" xml:space="preserve">
+    <value>Refresh</value>
+    <comment>local-history.md UI-TW-1620…1625</comment>
+  </data>
+  <data name="TabMenu_view_history" xml:space="preserve">
+    <value>Show &amp;History</value>
+    <comment>local-history.md UI-TW-1620: editor tab context menu</comment>
+  </data>
+  <data name="History_Column_Time" xml:space="preserve">
+    <value>Time</value>
+    <comment>local-history.md UI-TW-1620…1625</comment>
+  </data>
+  <data name="History_Column_Kind" xml:space="preserve">
+    <value>Kind</value>
+    <comment>local-history.md UI-TW-1620…1625</comment>
+  </data>
+  <data name="History_Column_Size" xml:space="preserve">
+    <value>Size</value>
+    <comment>local-history.md UI-TW-1620…1625</comment>
+  </data>
+  <data name="History_Column_Label" xml:space="preserve">
+    <value>Label</value>
+    <comment>local-history.md UI-TW-1620…1625</comment>
+  </data>
+  <data name="History_Kind_Save" xml:space="preserve">
+    <value>Saved</value>
+    <comment>local-history.md UI-TW-1620…1625</comment>
+  </data>
+  <data name="History_Kind_Original" xml:space="preserve">
+    <value>Original</value>
+    <comment>local-history.md UI-TW-1620…1625</comment>
+  </data>
+  <data name="History_Kind_BeforeRevert" xml:space="preserve">
+    <value>Before revert</value>
+    <comment>local-history.md UI-TW-1620…1625</comment>
+  </data>
+  <data name="History_Part" xml:space="preserve">
+    <value>Part:</value>
+    <comment>local-history.md UI-TW-1622</comment>
+  </data>
+  <data name="History_Part_Unit" xml:space="preserve">
+    <value>Unit</value>
+    <comment>local-history.md UI-TW-1622</comment>
+  </data>
+  <data name="History_Part_Form" xml:space="preserve">
+    <value>Form</value>
+    <comment>local-history.md UI-TW-1622</comment>
   </data>
   <data name="Cmd_bookmarks_delete" xml:space="preserve">
     <value>Delete Bookmark</value>
@@ -2649,6 +2733,10 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   <data name="Menu_view_templates" xml:space="preserve">
     <value>Template Catalo&amp;g</value>
     <comment>code-templates.md UI-TW-1600; every letter of Templates is taken in the View menu (UI-MENU-003)</comment>
+  </data>
+  <data name="Menu_view_history" xml:space="preserve">
+    <value>Histor&amp;y</value>
+    <comment>local-history.md UI-TW-1620: View menu, after Bookmarks</comment>
   </data>
   <data name="Menu_View_DebugWindows" xml:space="preserve">
     <value>De&amp;bug Windows</value>

@@ -60,6 +60,7 @@ public sealed class ToolWindowService : IToolWindowService
         ["DataExplorer"] = "view.dataExplorer",
         ["Bookmarks"] = "view.bookmarks",
         ["Templates"] = "view.templates",
+        ["History"] = "view.history",
     };
 
     private readonly ICommandService _commands;

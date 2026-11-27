@@ -31,6 +31,9 @@ public static class Phase8Features
         "file.openInTerminal", // F09-054
         "file.saveGroupAs", // F09-009
         "help.contents", // I-257
+        "history.compare", // F11-060
+        "history.label", // F11-060
+        "history.refresh", // F11-060
         "locals.viewText", // F14-013
         "options:Editor.General.LiveDiagnosticsSeverities", // F11-065
         "options:Editor.General.WrapSelection", // F11-047
@@ -68,8 +71,10 @@ public static class Phase8Features
         "templates.new", // F11-052
         "tools.compareFiles", // F12-014
         "toolwindow:Bookmarks", // F11-045
+        "toolwindow:History", // F11-060
         "toolwindow:Templates", // F11-052
         "view.bookmarks", // F11-045
+        "view.history", // F11-060
         "view.templates", // F11-052
     ];
 

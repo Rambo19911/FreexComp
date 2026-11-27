@@ -45,7 +45,7 @@ public sealed class ToolWindowFrame : DockPanel
         CommandRouting.SetToolWindow(this, model.Name);
 
         Add(CreateCaption(), Avalonia.Controls.Dock.Top);
-        if (model.ToolBar.Count > 0 || model.HasFilter || model.ToolBarChoice is not null)
+        if (model.ToolBar.Count > 0 || model.HasFilter || model.ToolBarChoice is not null || model.ToolBarOptions is not null)
         {
             Add(CreateToolBar(), Avalonia.Controls.Dock.Top);
         }
@@ -184,6 +184,10 @@ public sealed class ToolWindowFrame : DockPanel
         {
             row.Children.Add(CreateFilter());
         }
+        else if (_model.ToolBarOptions is { } options)
+        {
+            row.Children.Add(CreateOptions(options));
+        }
 
         var bar = new Border { Child = row, Height = 28, BorderThickness = new Thickness(0, 0, 0, 1) };
         bar.Bind(Border.BackgroundProperty, bar.GetResourceObservable("FxcBgPanelBrush"));
@@ -209,6 +213,80 @@ public sealed class ToolWindowFrame : DockPanel
         combo.Bind(SelectingItemsControl.SelectedIndexProperty, new Binding(nameof(choice.SelectedIndex)) { Source = choice, Mode = BindingMode.TwoWay });
         row.Children.Add(label);
         row.Children.Add(combo);
+    }
+
+    /// <summary>
+    /// <see cref="ToolWindowViewModel.ToolBarOptions"/> at the right end: the label, then one radio button per item
+    /// (<c>Tool.&lt;Name&gt;.&lt;Choice&gt;.&lt;ItemId&gt;</c>), shown while the choice is visible (UI-TW-1622).
+    /// </summary>
+    private Control CreateOptions(Core.ToolWindows.ToolWindowToolBarChoice options)
+    {
+        var panel = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Center,
+            MinWidth = options.Width,
+        };
+        // design-tokens.md: a radio button is a 14 × 14 box in a 22 high row. The theme's glyph is 20 in a 32 high cell,
+        // taller than the 28 tool bar; its template sets those sizes, which only local values override.
+        var row = Metric("FxcMetricCheckBoxRowHeight");
+        var box = Metric("FxcMetricCheckBoxSize");
+        void Compact(object? sender, TemplateAppliedEventArgs e)
+        {
+            foreach (var name in (string[])["OuterEllipse", "CheckOuterEllipse"])
+            {
+                if (e.NameScope.Find<Ellipse>(name) is not { } ellipse)
+                    continue;
+                ellipse.Width = box;
+                ellipse.Height = box;
+                if (ellipse.Parent is Grid cell)
+                {
+                    cell.Height = row;
+                    cell.VerticalAlignment = VerticalAlignment.Center;
+                }
+            }
+        }
+
+        var label = new TextBlock { Text = options.Label, VerticalAlignment = VerticalAlignment.Center };
+        label.Bind(MarginProperty, label.GetResourceObservable("FxcSpace2Horizontal"));
+        panel.Children.Add(label);
+        var group = AutomationIds.Tool(_model.Name) + "." + options.Name;
+        var buttons = new List<RadioButton>();
+        for (var i = 0; i < options.Items.Count; i++)
+        {
+            var index = i;
+            var button = new RadioButton
+            {
+                Content = options.Items[i].Label,
+                GroupName = group,
+                VerticalAlignment = VerticalAlignment.Center,
+                Height = row,
+                MinHeight = row,
+                Margin = new Thickness(0, 0, ToolWindowViewModel.ChoiceMargin, 0),
+                IsChecked = options.SelectedIndex == i,
+            };
+            AutomationProperties.SetAutomationId(button, group + "." + options.Items[i].Id);
+            button.TemplateApplied += Compact;
+            button.IsCheckedChanged += (_, _) =>
+            {
+                if (button.IsChecked == true)
+                    options.SelectedIndex = index;
+            };
+            buttons.Add(button);
+            panel.Children.Add(button);
+        }
+
+        void Sync()
+        {
+            panel.IsVisible = options.IsVisible;
+            for (var i = 0; i < buttons.Count; i++)
+                buttons[i].IsChecked = options.SelectedIndex == i;
+        }
+
+        options.PropertyChanged += (_, _) => Sync();
+        Sync();
+        return panel;
     }
 
     /// <summary>UI-A11Y-006: Left / Right move focus between the enabled tool-bar buttons.</summary>

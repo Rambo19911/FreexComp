@@ -37,7 +37,7 @@ public abstract class ToolWindowViewModel : ObservableObject
     public string Title { get; private set; } = "";
 
     /// <summary>UI-TW-002: the caption shows the title upper-case.</summary>
-    public string Caption => Title.ToUpper(CultureInfo.CurrentCulture);
+    public virtual string Caption => Title.ToUpper(CultureInfo.CurrentCulture);
 
     /// <summary>Automation name of the tab (UI-TW-410: Messages adds its counts in words).</summary>
     public virtual string TabAutomationName => Title;
@@ -67,6 +67,12 @@ public abstract class ToolWindowViewModel : ObservableObject
 
     /// <summary>An optional labelled combo box drawn before the tool-bar buttons (UI-TW-501).</summary>
     public virtual ToolWindowToolBarChoice? ToolBarChoice => null;
+
+    /// <summary>
+    /// Optional radio buttons at the right end of the tool bar, labelled (the History window's <c>Part</c>, UI-TW-1622);
+    /// a window with options has no filter box.
+    /// </summary>
+    public virtual ToolWindowToolBarChoice? ToolBarOptions => null;
 
     /// <summary>
     /// The caption shows a <c>⋯</c> button (<c>Tool.&lt;Name&gt;.Menu</c>) that opens <see cref="BuildCaptionMenu"/>
@@ -109,7 +115,8 @@ public abstract class ToolWindowViewModel : ObservableObject
     public double ToolBarMinWidth =>
         (ToolBar.Count * ToolBarButtonSize)
         + (ToolBarChoice is { } choice ? choice.Width + ChoiceMargin : 0)
-        + (HasFilter ? FilterMinWidth + (2 * FilterMargin) : 0);
+        + (HasFilter ? FilterMinWidth + (2 * FilterMargin) : 0)
+        + (ToolBarOptions is { } options ? options.Width : 0);
 
     /// <summary>
     /// I-219: the narrowest the window's content is usable (e.g. the Object Inspector's 200, UI-DSG-113); 0 = no own

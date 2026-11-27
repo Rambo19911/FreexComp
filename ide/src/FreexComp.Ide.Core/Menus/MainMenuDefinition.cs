@@ -198,6 +198,7 @@ public static class MainMenuDefinition
             Command("view.todo"),
             Command("view.dataExplorer"),
             Command("view.bookmarks"),
+            Command("view.history"),
             Command("view.templates"),
             Submenu("View.DebugWindows",
             [
