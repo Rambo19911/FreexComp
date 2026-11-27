@@ -32,3 +32,4 @@ system | uiautomationcore.dll | — | part of Windows; imported by the runtime l
 system | shell32.dll | — | part of Windows; imported by the runtime library
 system | shlwapi.dll | — | part of Windows; imported by the runtime library
 system | user32.dll | — | part of Windows; imported by the runtime library
+system | uxtheme.dll | — | part of Windows; imported by the runtime library
