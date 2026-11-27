@@ -820,7 +820,8 @@ internal sealed class FlowAnalyzer
                 return Call(call.Routine, call.Arguments, Eval(call.Receiver?.Self, Eval(call.Target, state)));
 
             case BoundIntrinsicCallExpression intrinsic:
-                if (intrinsic.Intrinsic.Intrinsic is IntrinsicKind.Low or IntrinsicKind.High or IntrinsicKind.SizeOf or IntrinsicKind.Length)
+                if (intrinsic.Intrinsic.Intrinsic is IntrinsicKind.Low or IntrinsicKind.High or IntrinsicKind.SizeOf or IntrinsicKind.Length
+                    || intrinsic.Intrinsic.IsTypeQuery)                         // IsConstValue(X), LANG-975 (C-416)
                 {
                     foreach (var argument in intrinsic.Arguments)
                     {

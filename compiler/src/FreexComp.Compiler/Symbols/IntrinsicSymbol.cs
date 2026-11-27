@@ -57,6 +57,9 @@ internal enum IntrinsicKind
     // M2.6 generics (LANG-713, C-116; the zero value of the operand type)
     Default,
 
+    // Phase 8 type queries (LANG-972…976, C-416; compile-time constants of the operand type, respectively of the operand)
+    IsManagedType, HasWeakRef, GetTypeKind, IsConstValue,
+
     // M2.2 machine intrinsics without arguments (never constant): _ReturnAddress (ABI-172, C-173), _GetMXCSR (ABI-105, C-174)
     ReturnAddress, GetMxcsr,
 }
@@ -85,6 +88,12 @@ public sealed class IntrinsicSymbol : Symbol
     /// <summary>A function-like intrinsic that is never a constant expression (not in the LANG-340 list).</summary>
     internal bool IsNeverConstant => IsAtomic || IsStringFunction || IsMachineFunction
         || Intrinsic is IntrinsicKind.Eof or IntrinsicKind.Eoln or IntrinsicKind.Slice or IntrinsicKind.TypeInfo;
+
+    /// <summary>
+    /// A type query (LANG-972, C-416): <c>IsManagedType</c>, <c>HasWeakRef</c>, <c>GetTypeKind</c> of a type, <c>IsConstValue</c> of
+    /// an expression — folded by the binder, never evaluated at run time.
+    /// </summary>
+    internal bool IsTypeQuery => Intrinsic is >= IntrinsicKind.IsManagedType and <= IntrinsicKind.IsConstValue;
 
     /// <summary><c>_ReturnAddress</c> or <c>_GetMXCSR</c>: no arguments, a value read from the machine (C-173, C-174).</summary>
     internal bool IsMachineFunction => Intrinsic is IntrinsicKind.ReturnAddress or IntrinsicKind.GetMxcsr;

@@ -129,6 +129,39 @@ internal sealed class TypeParameterTypeSymbol : TypeSymbol
         Constraints.Types.Any(t => t is ClassTypeSymbol) || !(Constraints.Class || Constraints.Constructor) || types.TObject is not { } root
             ? Constraints.Types.Where(t => t is ClassTypeSymbol or InterfaceTypeSymbol)
             : Constraints.Types.Where(t => t is InterfaceTypeSymbol).Prepend(root);
+
+    /// <summary>
+    /// C-416 (LANG-976): <paramref name="type"/> depends on a type parameter of an open instance — it is one, an instance with one
+    /// among its type arguments, a type nested in such an instance, or an array, pointer, set or class reference made of one.
+    /// </summary>
+    internal static bool IsIn(TypeSymbol? type) => IsIn(type, new HashSet<TypeSymbol>(ReferenceEqualityComparer.Instance));
+
+    private static bool IsIn(TypeSymbol? type, HashSet<TypeSymbol> seen)
+    {
+        if (type is null || !seen.Add(type))
+        {
+            return false;                                                       // a type reaching itself (a pointer to its own record)
+        }
+
+        for (Symbol? symbol = type; symbol is not null; symbol = symbol.ContainingSymbol)
+        {
+            if (symbol is TypeParameterTypeSymbol || symbol is TypeSymbol { TypeArguments: var arguments } && arguments.Any(a => IsIn(a, seen)))
+            {
+                return true;
+            }
+        }
+
+        return type switch
+        {
+            ArrayTypeSymbol array => IsIn(array.ElementType, seen),
+            DynamicArrayTypeSymbol array => IsIn(array.ElementType, seen),
+            OpenArrayTypeSymbol array => IsIn(array.ElementType, seen),
+            SetTypeSymbol set => IsIn(set.ElementType, seen),
+            PointerTypeSymbol pointer => IsIn(pointer.PointedType, seen),
+            ClassRefTypeSymbol reference => IsIn(reference.Class, seen),
+            _ => false,
+        };
+    }
 }
 
 /// <summary>

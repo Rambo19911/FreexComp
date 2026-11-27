@@ -404,4 +404,76 @@ public sealed class ConstantFolderTests
         Assert.Same(constant.Type, constant.Value.Type);
         Assert.Equal(new BigInteger(expected), Assert.IsType<ArrayTypeSymbol>(result.Scope.LookupLocal("TArr")).High);
     }
+
+    /// <summary>
+    /// C-416 (LANG-976, CMP-1474): a type query is a constant expression — a local constant, an array bound of a local type, a
+    /// <c>case</c> label, an element of a set constructor, and an operand that the operators fold (<c>=</c>, <c>in</c>, <c>not</c>,
+    /// <c>and</c>).
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "LANG-976")]
+    [Trait("Req", "CMP-1474")]
+    public void TypeIntrinsics()
+    {
+        var result = BindWithTypeKinds("""
+            program P;
+            type
+              TRec = record S: string; end;
+            const
+              UnitLevel = GetTypeKind(TRec) in [tkRecord, tkArray];
+            procedure Q(N: TTypeKind);
+            const
+              M = IsManagedType(TRec);
+              W = HasWeakRef(TRec);
+              K = GetTypeKind(TRec);
+              IsRecord = GetTypeKind(TRec) = tkRecord;
+              Raw = not IsManagedType(Integer) and not IsManagedType(TRec);
+              Known = IsConstValue(SizeOf(TRec));
+              Kinds = [GetTypeKind(Integer), GetTypeKind(Int64)];
+            type
+              TArr = array[0..Ord(GetTypeKind(Integer))] of Byte;
+              TByKind = array[GetTypeKind(Integer)..GetTypeKind(TRec)] of Byte;
+            var
+              B: Boolean;
+            begin
+              case N of
+                GetTypeKind(string): B := True;
+                GetTypeKind(Integer), GetTypeKind(Int64)..GetTypeKind(Pointer): B := False;
+              end;
+              B := N in [GetTypeKind(Integer), GetTypeKind(Int64)];
+              B := GetTypeKind(TRec) in [tkRecord, tkArray];
+              B := GetTypeKind(Integer) in Kinds;
+              B := GetTypeKind(TRec) = K;
+              B := GetTypeKind(TRec) <> tkRecord;
+              B := IsManagedType(TRec) and not HasWeakRef(TRec);
+            end;
+            begin
+            end.
+            """);
+
+        Assert.Equal([], Format(result.Diagnostics).Where(d => !d.StartsWith('H')));
+        var routine = result.Routines.Single(r => r.Routine.Name == "Q");
+        string Local(string name)
+        {
+            var constant = Assert.IsType<ConstantSymbol>(routine.Scope.LookupLocal(name));
+            return $"{constant.Type.Name} {constant.Value!.ToDisplayString()}";
+        }
+
+        Assert.Equal("Boolean True", $"{((ConstantSymbol)result.Scope.LookupLocal("UnitLevel")!).Type.Name} {((ConstantSymbol)result.Scope.LookupLocal("UnitLevel")!).Value!.ToDisplayString()}");
+        Assert.Equal(
+            ["Boolean True", "Boolean False", "TTypeKind 12", "Boolean True", "Boolean False", "Boolean True"],
+            new[] { "M", "W", "K", "IsRecord", "Raw", "Known" }.Select(Local));
+        var kinds = Assert.IsType<ConstantSymbol>(routine.Scope.LookupLocal("Kinds"));
+        Assert.Equal("TTypeKind", Assert.IsType<SetTypeSymbol>(kinds.Type).ElementType!.Name);
+        Assert.Equal((BigInteger.One << 1) | (BigInteger.One << 16), kinds.Value!.Value);
+        Assert.Equal(BigInteger.One, Assert.IsType<ArrayTypeSymbol>(routine.Scope.LookupLocal("TArr")).High);
+        var byKind = Assert.IsType<ArrayTypeSymbol>(routine.Scope.LookupLocal("TByKind"));
+        Assert.Equal((new BigInteger(1), new BigInteger(12), "TTypeKind"), (byKind.Low, byKind.High, byKind.IndexType.BaseType!.Name));   // a subrange of the enumeration
+        Assert.Equal(
+            "(block (case N:TTypeKind (arm [9] (:= B:Boolean True:Boolean)) (arm [1, 16..17] (:= B:Boolean False:Boolean))) "
+            + "(:= B:Boolean (In:Boolean N:TTypeKind 65538:set of TTypeKind)) "                 // the constructor is the set constant {1, 16}
+            + "(:= B:Boolean True:Boolean) (:= B:Boolean True:Boolean) (:= B:Boolean True:Boolean) (:= B:Boolean False:Boolean) (:= B:Boolean True:Boolean))",
+            BoundDump.Of(routine.Body));
+    }
 }

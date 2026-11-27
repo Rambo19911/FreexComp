@@ -1136,7 +1136,7 @@ internal sealed class BoundIntrinsicCallExpression : BoundExpression
         TypeOperand = typeOperand;
     }
 
-    /// <summary>The type operand of <c>TypeInfo(T)</c> (C-112); null for the other intrinsics.</summary>
+    /// <summary>The type operand of <c>TypeInfo(T)</c> (C-112) and of a type query on a type (C-416); null for the other intrinsics.</summary>
     public TypeSymbol? TypeOperand { get; }
 
     public override BoundKind Kind => BoundKind.IntrinsicCallExpression;

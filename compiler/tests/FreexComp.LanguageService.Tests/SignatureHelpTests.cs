@@ -259,4 +259,20 @@ public sealed class SignatureHelpTests
         Assert.Equal("Returns the greeting for AName.", signature.Documentation);
         Assert.Equal(["The name; '' greets the world.", null], signature.Parameters.Select(p => p.Documentation));
     }
+
+    /// <summary>C-416 (CMP-1476): signature help inside a type query shows the signature text of LANG-972.</summary>
+    [Theory]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1476")]
+    [InlineData("IsManagedType($$string)", "function IsManagedType(T: Type): Boolean")]
+    [InlineData("HasWeakRef($$Integer)", "function HasWeakRef(T: Type): Boolean")]
+    [InlineData("GetTypeKind($$Integer) = tkInteger", "function GetTypeKind(T: Type): TTypeKind")]
+    [InlineData("IsConstValue($$1)", "function IsConstValue(const X): Boolean")]
+    public void TypeQueryIntrinsic_TheInformalSignature(string call, string label)
+    {
+        var (help, _) = Help("var B: Boolean;\nbegin\n  B := " + call + ";\nend.");
+
+        Assert.Equal(label, Assert.Single(help!.Signatures).Label);
+        Assert.Equal(0, help.ActiveParameter);
+    }
 }

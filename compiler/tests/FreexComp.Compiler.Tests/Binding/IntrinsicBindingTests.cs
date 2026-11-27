@@ -6,7 +6,7 @@ namespace FreexComp.Compiler.Tests.Binding;
 
 /// <summary>The M2.1 intrinsics in bodies and in constant expressions (intrinsics.md §1, LANG-900…903, LANG-340).</summary>
 [Trait("Phase", "2")]
-public sealed class IntrinsicBindingTests
+public sealed partial class IntrinsicBindingTests
 {
     private const string Vars = "var i: Integer; b: Byte; c: Char; f: Boolean; d: Double; u: Cardinal; q: Int64; s: string; t: Text; w: Word; ";
 

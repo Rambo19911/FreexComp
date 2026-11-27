@@ -1364,6 +1364,11 @@ internal sealed partial class ExpressionBinder
             return BindDefault(invocation, syntax);
         }
 
+        if (intrinsic.IsTypeQuery)
+        {
+            return BindTypeQuery(invocation, intrinsic, syntax);
+        }
+
         if (intrinsic.Intrinsic is IntrinsicKind.Low or IntrinsicKind.High or IntrinsicKind.SizeOf or IntrinsicKind.Length)
         {
             // the operand is never evaluated (LANG-903), so it captures nothing (lead decision C-029)
@@ -1967,6 +1972,46 @@ internal sealed partial class ExpressionBinder
             _ => type,                                                              // no zero constant (method pointers…)
         };
         return ReferenceEquals(zero, type) ? Unsupported(invocation, "Default of " + type.Name) : new BoundLiteral(invocation, new ConstantValue(zero, type));
+    }
+
+    /// <summary>
+    /// LANG-972…976 (C-416): a type query, folded here (CMP-1474) — it never reaches lowering as a call. <c>IsManagedType</c>,
+    /// <c>HasWeakRef</c> and <c>GetTypeKind</c> take a type (E2002 otherwise, as <c>Default</c>) and are the constants of
+    /// <see cref="ConstantFolder.FoldTypeQuery"/>; with an operand that depends on a type parameter of an open instance they are
+    /// values of their result type and no constants. <c>IsConstValue(X)</c> binds <c>X</c> for its diagnostics and never evaluates
+    /// it (LANG-903: no code, no call, no capture): <c>True</c> exactly when <c>X</c> is a constant expression; a type name is E2009.
+    /// </summary>
+    private BoundExpression BindTypeQuery(InvocationExpressionSyntax invocation, IntrinsicSymbol intrinsic, ExpressionSyntax syntax)
+    {
+        var captured = CapturedVariables.Count;
+        var (type, argument) = BindUnevaluated(syntax, out _);
+        CapturedVariables.RemoveRange(captured, CapturedVariables.Count - captured);
+        if (type.TypeKind == TypeKind.Error || argument is { HasErrors: true })
+        {
+            return Error(invocation);
+        }
+
+        if (intrinsic.Intrinsic == IntrinsicKind.IsConstValue)
+        {
+            if (argument is null)
+            {
+                _diagnostics.Report(syntax, "E2009", type.Name);
+                return Error(invocation);
+            }
+
+            return new BoundIntrinsicCallExpression(invocation, intrinsic, [argument], _types.Boolean,
+                new ConstantValue(argument.ConstantValue is not null, _types.Boolean));
+        }
+
+        if (argument is not null)
+        {
+            _diagnostics.Report(syntax, "E2002", syntax.ToString().Trim());
+            return Error(invocation);
+        }
+
+        return _folder.TypeQueryResultType(invocation, intrinsic) is { } resultType
+            ? new BoundIntrinsicCallExpression(invocation, intrinsic, [], resultType, _folder.FoldTypeQuery(intrinsic, type, resultType), typeOperand: type)
+            : Error(invocation);
     }
 
     /// <summary>The argument of <c>Low</c>/<c>High</c>/<c>SizeOf</c>: a type name (bound argument null) or an expression.</summary>

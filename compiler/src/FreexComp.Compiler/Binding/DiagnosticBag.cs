@@ -18,6 +18,28 @@ internal sealed class DiagnosticBag
     public void Add(Diagnostic diagnostic) => _diagnostics.Add(diagnostic);
 
     /// <summary>
+    /// Removes the diagnostics with <paramref name="code"/> added since the bag held <paramref name="count"/> entries; true when an
+    /// error with another code was added since then (C-416: the operand of <c>IsConstValue</c> may fail to be constant, LANG-975).
+    /// </summary>
+    public bool RemoveSince(int count, string code)
+    {
+        var otherError = false;
+        for (var i = _diagnostics.Count - 1; i >= count; i--)
+        {
+            if (_diagnostics[i].Code == code)
+            {
+                _diagnostics.RemoveAt(i);
+            }
+            else
+            {
+                otherError |= _diagnostics[i].Severity == DiagnosticSeverity.Error;
+            }
+        }
+
+        return otherError;
+    }
+
+    /// <summary>
     /// LANG-711 (C-118, C-222): an error found while instantiating <paramref name="instance"/> becomes E2710 at the same place with
     /// <paramref name="site"/> as related location "instantiated from here" (CMP-508); E2710 (of a nested instance) and E2712 pass
     /// unchanged. A warning or hint keeps its code and gets the same related location, but only the first one per (code, location)

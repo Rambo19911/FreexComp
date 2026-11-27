@@ -15,7 +15,7 @@ namespace FreexComp.Compiler.Tests.Emit;
 /// <c>m2.1/HelloWorld</c> and <c>m2.1/EmptyProgram</c> (testing.md §2, sources inline, identical to the golden files).
 /// </summary>
 [Trait("Phase", "2")]
-public sealed class EmitTests
+public sealed partial class EmitTests
 {
     internal const string HelloWorldSource = """
         // covers: LANG-500, LANG-511, LANG-910, LANG-912

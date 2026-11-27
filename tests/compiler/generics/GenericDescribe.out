@@ -1,0 +1,40 @@
+Integer: tkInteger 1 managed=FALSE weak=FALSE
+Int64: tkInt64 16 managed=FALSE weak=FALSE
+Byte: tkInteger 1 managed=FALSE weak=FALSE
+Boolean: tkEnumeration 3 managed=FALSE weak=FALSE
+TColor: tkEnumeration 3 managed=FALSE weak=FALSE
+Char: tkWChar 8 managed=FALSE weak=FALSE
+AnsiChar: tkChar 2 managed=FALSE weak=FALSE
+Double: tkFloat 4 managed=FALSE weak=FALSE
+Currency: tkFloat 4 managed=FALSE weak=FALSE
+string: tkUString 9 managed=TRUE weak=FALSE
+AnsiString: tkAString 10 managed=TRUE weak=FALSE
+ShortString: tkSString 11 managed=FALSE weak=FALSE
+TPlain: tkRecord 12 managed=FALSE weak=FALSE
+TNamed: tkRecord 12 managed=TRUE weak=FALSE
+TInts: tkArray 13 managed=FALSE weak=FALSE
+TNames: tkArray 13 managed=TRUE weak=FALSE
+TArray<Integer>: tkDynArray 14 managed=TRUE weak=FALSE
+TThing: tkClass 6 managed=FALSE weak=FALSE
+IInterface: tkInterface 15 managed=TRUE weak=FALSE
+TAction: tkInterface 15 managed=TRUE weak=FALSE
+Pointer: tkPointer 17 managed=FALSE weak=FALSE
+PInteger: tkPointer 17 managed=FALSE weak=FALSE
+TThingClass: tkClassRef 18 managed=FALSE weak=FALSE
+TCallback: tkProcedure 19 managed=FALSE weak=FALSE
+TNotify: tkMethod 7 managed=FALSE weak=FALSE
+TColors: tkSet 5 managed=FALSE weak=FALSE
+literal TRUE
+true constant TRUE
+constant expression TRUE
+enumeration value TRUE
+type query TRUE
+variable FALSE
+typed constant FALSE
+parameter FALSE
+function call FALSE
+calls made 0
+Byte: 0..255 size 1 ordinal=TRUE
+TColor: 0..2 size 1 ordinal=TRUE
+TRUE 3 TRUE
+TRUE FALSE

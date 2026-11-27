@@ -15,6 +15,15 @@ internal static class BinderTestHelper
     /// </summary>
     public const string StubSystemSource = "unit System; interface var Input, Output: Text; implementation end.";
 
+    /// <summary>
+    /// <see cref="StubSystemSource"/> plus the enumeration <c>TTypeKind</c> as <c>rtl/src/System.pas</c> declares it: the result type
+    /// of <c>GetTypeKind</c> (intrinsics.md LANG-974, C-416).
+    /// </summary>
+    public const string TypeKindSystemSource =
+        "unit System; interface type TTypeKind = (tkUnknown, tkInteger, tkChar, tkEnumeration, tkFloat, tkSet, tkClass, tkMethod, tkWChar, "
+        + "tkUString, tkAString, tkSString, tkRecord, tkArray, tkDynArray, tkInterface, tkInt64, tkPointer, tkClassRef, tkProcedure); "
+        + "var Input, Output: Text; implementation end.";
+
     public static (BindingResult Result, SyntaxTree Tree) Bind(string text)
     {
         var tree = SyntaxTree.Parse(SourceText.From(TestPath, text));
@@ -22,11 +31,19 @@ internal static class BinderTestHelper
         return (BindWithStubSystem(tree), tree);
     }
 
-    /// <summary>Binds <paramref name="tree"/> against <see cref="StubSystemSource"/> (one <see cref="BuiltInTypes"/> for both).</summary>
-    public static BindingResult BindWithStubSystem(SyntaxTree tree)
+    /// <summary><see cref="Bind"/> against <see cref="TypeKindSystemSource"/>.</summary>
+    public static BindingResult BindWithTypeKinds(string text)
+    {
+        var tree = SyntaxTree.Parse(SourceText.From(TestPath, text));
+        Assert.Empty(tree.Diagnostics);
+        return BindWithStubSystem(tree, TypeKindSystemSource);
+    }
+
+    /// <summary>Binds <paramref name="tree"/> against <paramref name="systemSource"/> (one <see cref="BuiltInTypes"/> for both).</summary>
+    public static BindingResult BindWithStubSystem(SyntaxTree tree, string systemSource = StubSystemSource)
     {
         var types = new BuiltInTypes();
-        var system = Binder.BindCompilationUnit(SyntaxTree.Parse(SourceText.From(@"C:\p\System.pas", StubSystemSource)), types);
+        var system = Binder.BindCompilationUnit(SyntaxTree.Parse(SourceText.From(@"C:\p\System.pas", systemSource)), types);
         Assert.Empty(system.Diagnostics);
         return Binder.BindCompilationUnit(tree, types, system);
     }

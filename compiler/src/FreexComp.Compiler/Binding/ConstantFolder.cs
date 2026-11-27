@@ -806,6 +806,11 @@ internal sealed class ConstantFolder
         }
 
         var argument = invocation.ArgumentList.Arguments[0].Expression;
+        if (intrinsic.IsTypeQuery)
+        {
+            return FoldTypeQueryCall(invocation, intrinsic, argument);
+        }
+
         if (intrinsic.Intrinsic is IntrinsicKind.Low or IntrinsicKind.High or IntrinsicKind.SizeOf or IntrinsicKind.Length)
         {
             // a type name, a variable (only its type matters, LANG-903) or a constant
@@ -862,6 +867,117 @@ internal sealed class ConstantFolder
             ? NotConstant(invocation)
             : FoldIntrinsic(invocation, intrinsic, operand, resultType);
     }
+
+    /// <summary>
+    /// LANG-972…976 (C-416): a type query in a constant expression. The operand of <c>IsManagedType</c>, <c>HasWeakRef</c> and
+    /// <c>GetTypeKind</c> is a type (E2002 otherwise). The operand of <c>IsConstValue</c> is folded for its diagnostics only: "not a
+    /// constant expression" (E2050) is the answer <c>False</c> and is not reported; a type name is E2009.
+    /// </summary>
+    private ConstantValue? FoldTypeQueryCall(InvocationExpressionSyntax invocation, IntrinsicSymbol intrinsic, ExpressionSyntax argument)
+    {
+        var type = TypeOperand(argument, out var failed);
+        if (failed)
+        {
+            return null;
+        }
+
+        if (intrinsic.Intrinsic == IntrinsicKind.IsConstValue)
+        {
+            if (type is not null)
+            {
+                _diagnostics.Report(argument, "E2009", type.Name);
+                return null;
+            }
+
+            var reported = _diagnostics.Count;
+            var value = Fold(argument);
+            return _diagnostics.RemoveSince(reported, "E2050") ? null : new ConstantValue(value is not null, _types.Boolean);
+        }
+
+        if (type is null)
+        {
+            // an undeclared name is E2003 (LookupName); anything else that names no type is E2002, as for Default (LANG-713)
+            if (_scope.Unqualified(argument) is not IdentifierNameSyntax name || LookupName(name) is not null)
+            {
+                _diagnostics.Report(argument, "E2002", argument.ToString().Trim());
+            }
+
+            return null;
+        }
+
+        if (TypeQueryResultType(invocation, intrinsic) is not { } resultType)
+        {
+            return null;
+        }
+
+        return FoldTypeQuery(intrinsic, type, resultType) ?? NotConstant(invocation);
+    }
+
+    /// <summary>
+    /// The type a type operand names — <c>string</c>, a type identifier, or a qualified, nested or instance name (LANG-784) — or null
+    /// when it names none (nothing is reported then); <paramref name="failed"/> after a diagnostic at a nested or generic name.
+    /// </summary>
+    private TypeSymbol? TypeOperand(ExpressionSyntax argument, out bool failed)
+    {
+        failed = false;
+        if (argument is PredefinedTypeExpressionSyntax)
+        {
+            return _types.String;
+        }
+
+        if (argument is MemberAccessExpressionSyntax or GenericNameSyntax && NestedNames.AccessibleTypeNamedBy(_scope, argument, Generic, _diagnostics, _types) is { } named)
+        {
+            failed = named is ErrorTypeSymbol || IncompleteInstance(argument, named);
+            return failed ? null : named;
+        }
+
+        if (_scope.Unqualified(argument) is IdentifierNameSyntax { Identifier: { IsMissing: false } token } name
+            && _scope.For(name).Lookup(token.Value as string ?? token.Text) is TypeSymbol type)
+        {
+            HintChecks.CheckName(_diagnostics, _types, _scope, name, token.Value as string ?? token.Text, type);    // LANG-472, as LookupName
+            return type;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// The result type of a type query: <c>Boolean</c>, and for <c>GetTypeKind</c> the enumeration <c>TTypeKind</c> that unit
+    /// <c>System</c> declares (LANG-974) — null after E2003 at <paramref name="at"/> when the <c>System</c> in use declares none.
+    /// </summary>
+    internal TypeSymbol? TypeQueryResultType(SyntaxNode at, IntrinsicSymbol intrinsic)
+    {
+        if (intrinsic.Intrinsic != IntrinsicKind.GetTypeKind)
+        {
+            return _types.Boolean;
+        }
+
+        for (var scope = _scope; scope is not null; scope = scope.Parent)
+        {
+            if (scope.LookupLocal("TTypeKind") is EnumTypeSymbol { BaseType: null, ContainingSymbol: UnitSymbol unit } kinds
+                && string.Equals(unit.Name, "System", StringComparison.OrdinalIgnoreCase))
+            {
+                return kinds;
+            }
+        }
+
+        _diagnostics.ReportUndeclared(at, "TTypeKind");
+        return null;
+    }
+
+    /// <summary>
+    /// CMP-1474 (C-416): the constant <c>IsManagedType</c>, <c>HasWeakRef</c> or <c>GetTypeKind</c> of <paramref name="type"/> is —
+    /// ABI-010 managed-ness, <c>False</c> (no type holds a weak reference yet: LANG-763, card F10-021), and the <c>Kind</c> byte of
+    /// the type's RTTI block (<see cref="RttiKind"/>). Null when <paramref name="type"/> depends on a type parameter of an open
+    /// instance: the query is not a constant there (LANG-976).
+    /// </summary>
+    internal ConstantValue? FoldTypeQuery(IntrinsicSymbol intrinsic, TypeSymbol type, TypeSymbol resultType) =>
+        TypeParameterTypeSymbol.IsIn(type) ? null : intrinsic.Intrinsic switch
+        {
+            IntrinsicKind.IsManagedType => new ConstantValue(type.IsManaged, resultType),
+            IntrinsicKind.HasWeakRef => new ConstantValue(false, resultType),
+            _ => new ConstantValue(new BigInteger(RttiKind.Of(type)), resultType),
+        };
 
     /// <summary>
     /// The result type of a value intrinsic (<c>Succ</c> … <c>Swap</c>, not <c>Low</c>/<c>High</c>/<c>SizeOf</c>) applied to

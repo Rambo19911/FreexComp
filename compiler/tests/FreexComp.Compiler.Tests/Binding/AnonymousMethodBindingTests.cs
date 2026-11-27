@@ -11,7 +11,7 @@ namespace FreexComp.Compiler.Tests.Binding;
 [Trait("Req", "LANG-720")]
 public sealed class AnonymousMethodBindingTests
 {
-    private const string SystemSource = """
+    internal const string SystemSource = """
         unit System;
         interface
         type

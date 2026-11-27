@@ -658,4 +658,39 @@ public sealed class CompletionTests
         Assert.All(NavigationService.GoToDefinition(doc, call, TestContext.Current.CancellationToken),
                    l => Assert.Equal(ClassConstructorFixture.IndexOf(ClassConstructorFixture.Unit, "Create(N: Integer);"), l.Span.Start));
     }
+
+    /// <summary>
+    /// C-416 (CMP-1476): the four type queries are offered wherever <c>SizeOf</c> and <c>Default</c> are, with the same item kind,
+    /// group and origin, and the signature texts of LANG-972.
+    /// </summary>
+    [Theory]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1476")]
+    [InlineData("program P;\nvar B: Boolean;\nbegin\n  B := $$\nend.")]                                     // an expression
+    [InlineData("program P;\nvar B: Boolean;\nbegin\n  $$\nend.")]                                          // a statement start
+    [InlineData("program P;\nconst K = $$;\nbegin\nend.")]                                                  // a constant expression
+    [InlineData("program P;\ntype TBox<T> = class procedure Run; end;\nprocedure TBox<T>.Run;\nvar B: Boolean;\nbegin\n  if $$ then B := True;\nend;\nbegin\nend.")]
+    public void TypeQueryIntrinsics_AreOffered(string markup)
+    {
+        var items = Complete(markup).List.Items;
+
+        var sizeOf = Assert.Single(items, i => i.Label == "SizeOf");
+        var @default = Assert.Single(items, i => i.Label == "Default");
+        Assert.Equal("function Default(T: Type): T", @default.Detail);
+        (string Name, string Signature)[] queries =
+        [
+            ("IsManagedType", "IsManagedType(T: Type): Boolean"), ("HasWeakRef", "HasWeakRef(T: Type): Boolean"),
+            ("GetTypeKind", "GetTypeKind(T: Type): TTypeKind"), ("IsConstValue", "IsConstValue(const X): Boolean"),
+        ];
+        foreach (var (name, signature) in queries)
+        {
+            var item = Assert.Single(items, i => i.Label == name);
+            Assert.Equal(
+                (sizeOf.Kind, "function " + signature, sizeOf.SortText[..1], sizeOf.Origin, name, false),
+                (item.Kind, item.Detail, item.SortText[..1], item.Origin, item.InsertText, item.IsDeprecated));
+            Assert.Equal((@default.Kind, @default.SortText[..1], @default.Origin), (item.Kind, item.SortText[..1], item.Origin));
+        }
+
+        Assert.Equal(items.Select(i => i.SortText).Order(StringComparer.Ordinal), items.Select(i => i.SortText));   // CMP-723: the order contract
+    }
 }

@@ -1301,44 +1301,44 @@ internal sealed class ModuleState(IIrWriter writer)
     /// <summary>The fields of the block of a non-class type: Kind, 7 zero bytes, Name, then the kind's data (rtl-abi.md §10 table).</summary>
     private IrConstant[] TypeInfoFields(TypeSymbol type, LinkName name)
     {
-        IrConstant Kind(int kind) => new IrIntConstant(IrType.I8, kind);
+        var kind = new IrIntConstant(IrType.I8, RttiKind.Of(type));                             // CMP-1474 (C-416): the mapping GetTypeKind folds with
         IrConstant Name() => IsDeclared(type) || type.IsPredefined || type is StringTypeSymbol { Variant: not StringVariant.Short } ? StringLiteral(type.Name) : new IrNullConstant();
         IrConstant Byte(long value) => new IrIntConstant(IrType.I8, value);
         IrConstant Pad(int bytes) => new IrZeroConstant(new ArrayIrType(bytes, IrType.I8));
-        IrConstant[] Ordinal(int kind, int ordType, BigInteger min, BigInteger max) =>
-            [Kind(kind), Pad7, Name(), Byte(ordType), Pad7, new IrIntConstant(IrType.I64, min), new IrIntConstant(IrType.I64, max)];
-        IrConstant[] Routine(int kind, RoutineSymbol signature) =>
-            [Kind(kind), Pad7, Name(), Byte(signature.ReturnType is null ? 0 : 1), Byte(signature.Parameters.Length), Pad(6)];
+        IrConstant[] Ordinal(int ordType, BigInteger min, BigInteger max) =>
+            [kind, Pad7, Name(), Byte(ordType), Pad7, new IrIntConstant(IrType.I64, min), new IrIntConstant(IrType.I64, max)];
+        IrConstant[] Routine(RoutineSymbol signature) =>
+            [kind, Pad7, Name(), Byte(signature.ReturnType is null ? 0 : 1), Byte(signature.Parameters.Length), Pad(6)];
 
         return type switch
         {
-            StringTypeSymbol { Variant: StringVariant.Short } s => [Kind(11), Pad7, Name(), Byte(s.MaxLength), Pad7],
-            StringTypeSymbol s => [Kind(s.Variant == StringVariant.Unicode ? 9 : 10), Pad7, Name(), new IrIntConstant(IrType.I16, (short)s.CodePage), Pad(6)],
-            IntegerTypeSymbol i => Ordinal(i.Bits == 64 ? 16 : 1, OrdType(i.Bits, i.IsSigned), i.Min, i.Max),
-            CharTypeSymbol c => Ordinal(c.IsWide ? 8 : 2, c.IsWide ? 3 : 1, c.MinValue, c.MaxValue),
+            StringTypeSymbol { Variant: StringVariant.Short } s => [kind, Pad7, Name(), Byte(s.MaxLength), Pad7],
+            StringTypeSymbol s => [kind, Pad7, Name(), new IrIntConstant(IrType.I16, (short)s.CodePage), Pad(6)],
+            IntegerTypeSymbol i => Ordinal(OrdType(i.Bits, i.IsSigned), i.Min, i.Max),
+            CharTypeSymbol c => Ordinal(c.IsWide ? 3 : 1, c.MinValue, c.MaxValue),
             BooleanTypeSymbol b => Enumeration(type, name, OrdType(8 * (int)b.Size, isSigned: false), 0, 1, type, ["False", "True"]),
             EnumTypeSymbol e => Enumeration(type, name, OrdType(8 * (int)e.Size, e.Low < 0), e.Low, e.High, e.BaseType ?? e,
                 [.. Enumerable.Range(0, (int)(e.High - e.Low + 1)).Select(k => e.EnumMembers.FirstOrDefault(m => m.Ordinal == e.Low + k)?.Name ?? "")]),
-            RealTypeSymbol r => [Kind(4), Pad7, Name(), Byte(r.RealKind switch { RealKind.Single => 0, RealKind.Double => 1, _ => 2 }), Pad7],
-            SetTypeSymbol set => [Kind(5), Pad7, Name(), IrIntConstant.I32(set.Size), Pad(4), set.ElementType is { } element ? TypeInfo(element) : new IrNullConstant()],
+            RealTypeSymbol r => [kind, Pad7, Name(), Byte(r.RealKind switch { RealKind.Single => 0, RealKind.Double => 1, _ => 2 }), Pad7],
+            SetTypeSymbol set => [kind, Pad7, Name(), IrIntConstant.I32(set.Size), Pad(4), set.ElementType is { } element ? TypeInfo(element) : new IrNullConstant()],
             DynamicArrayTypeSymbol array =>
             [
-                Kind(14), Pad7, Name(), Native(TypeLayout.Of(array.ElementType).Size), TypeInfo(array.ElementType),
+                kind, Pad7, Name(), Native(TypeLayout.Of(array.ElementType).Size), TypeInfo(array.ElementType),
                 array.ElementType.IsManaged ? TypeInfo(array.ElementType) : new IrNullConstant(),
             ],
             RecordTypeSymbol record => RecordFields(record, Name()),
             InterfaceTypeSymbol intf =>
             [
                 // ABI §10 tkInterface (C-099): Parent, Guid, own method count
-                Kind(15), Pad7, Name(), intf.Parent is { } parent ? TypeInfo(parent) : new IrNullConstant(),
+                kind, Pad7, Name(), intf.Parent is { } parent ? TypeInfo(parent) : new IrNullConstant(),
                 IrEmitter.GuidConstant(intf), Native(intf.Methods.Length),
             ],
-            ArrayTypeSymbol array => [Kind(13), Pad7, Name(), Native(array.Size), Native(ElementCount(array)), TypeInfo(Innermost(array))],
-            PointerTypeSymbol pointer => [Kind(17), Pad7, Name(), pointer.PointedType is { } pointed && HasTypeInfo(pointed) ? TypeInfo(pointed) : new IrNullConstant()],
-            ClassRefTypeSymbol reference => [Kind(18), Pad7, Name(), TypeInfo(reference.Class)],
-            MethodPointerTypeSymbol method => Routine(7, method.Signature),
-            ProceduralTypeSymbol procedure => Routine(19, procedure.Signature),
-            _ => [Kind(0), Pad7, Name()],                                                       // tkUnknown (Text)
+            ArrayTypeSymbol array => [kind, Pad7, Name(), Native(array.Size), Native(ElementCount(array)), TypeInfo(Innermost(array))],
+            PointerTypeSymbol pointer => [kind, Pad7, Name(), pointer.PointedType is { } pointed && HasTypeInfo(pointed) ? TypeInfo(pointed) : new IrNullConstant()],
+            ClassRefTypeSymbol reference => [kind, Pad7, Name(), TypeInfo(reference.Class)],
+            MethodPointerTypeSymbol method => Routine(method.Signature),
+            ProceduralTypeSymbol procedure => Routine(procedure.Signature),
+            _ => [kind, Pad7, Name()],                                                       // tkUnknown (Text)
         };
     }
 
@@ -1355,7 +1355,7 @@ internal sealed class ModuleState(IIrWriter writer)
         var namesName = new LinkName(text + ".$names", AlwaysQuote: true);
         AggregateConstants.Add((namesName, new IrArrayConstant(new ArrayIrType(names.Length, IrType.Ptr), [.. names.Select(StringLiteral)]), PtrAlign));
         IrConstant typeName = IsDeclared(type) || type.IsPredefined ? StringLiteral(type.Name) : new IrNullConstant();
-        return [new IrIntConstant(IrType.I8, 3), Pad7, typeName, new IrIntConstant(IrType.I8, ordType), Pad7, new IrIntConstant(IrType.I64, min),
+        return [new IrIntConstant(IrType.I8, RttiKind.Of(type)), Pad7, typeName, new IrIntConstant(IrType.I8, ordType), Pad7, new IrIntConstant(IrType.I64, min),
             new IrIntConstant(IrType.I64, max), TypeInfo(baseType), new IrGlobal(namesName)];
     }
 
@@ -1373,7 +1373,7 @@ internal sealed class ModuleState(IIrWriter writer)
             table = new IrGlobal(tableName);
         }
 
-        return [new IrIntConstant(IrType.I8, 12), Pad7, name, Native(record.Size), Native(managed.Length), table];
+        return [new IrIntConstant(IrType.I8, RttiKind.Of(record)), Pad7, name, Native(record.Size), Native(managed.Length), table];
     }
 
     /// <summary>The block of an untyped pointer's target is never built: <c>Text</c> and untyped targets have none worth pointing at.</summary>
@@ -1419,7 +1419,7 @@ internal sealed class ModuleState(IIrWriter writer)
             [Vmt(a.Type), Routine(a.Thunk)])));                                                                    // C-126 (ABI §10.1)
         IrConstant[] block =
         [
-            new IrIntConstant(IrType.I8, 6), Pad7, StringLiteral(type.Name), Vmt(type), type.Parent is { } parent ? TypeInfo(parent) : new IrNullConstant(),
+            new IrIntConstant(IrType.I8, RttiKind.Of(type)), Pad7, StringLiteral(type.Name), Vmt(type), type.Parent is { } parent ? TypeInfo(parent) : new IrNullConstant(),
             StringLiteral(UnitOf(type)), Native(properties.Length), props, Native(methods.Length), methodTable,
             Native(fields.Length), fieldTable, Native(type.Attributes.Length), attributeTable,
         ];

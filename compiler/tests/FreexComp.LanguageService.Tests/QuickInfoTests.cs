@@ -555,4 +555,19 @@ public sealed class QuickInfoTests
 
         Assert.Equal(signature, info?.Signature);
     }
+
+    /// <summary>C-416 (CMP-1476): hovering a type query shows the signature text of LANG-972, like every intrinsic.</summary>
+    [Theory]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1476")]
+    [InlineData("B := IsManaged$$Type(string);", "function IsManagedType(T: Type): Boolean")]
+    [InlineData("B := Has$$WeakRef(Integer);", "function HasWeakRef(T: Type): Boolean")]
+    [InlineData("B := Get$$TypeKind(Integer) = tkInteger;", "function GetTypeKind(T: Type): TTypeKind")]
+    [InlineData("B := IsConst$$Value(1 + 2);", "function IsConstValue(const X): Boolean")]
+    public void TypeQueryIntrinsic_ShowsItsSignature(string statement, string signature)
+    {
+        var info = HoverAt("program P;\nvar B: Boolean;\nbegin\n  " + statement + "\nend.");
+
+        Assert.Equal(signature, info?.Signature);
+    }
 }
