@@ -413,6 +413,32 @@ public partial class TextDocumentViewModel : DocumentViewModel, ICommandTarget
         OnPropertyChanged(nameof(IsModified));
     }
 
+    /// <summary>
+    /// IDE-HIST-020: <paramref name="text"/> replaces the buffer as one undo step <paramref name="undoTitle"/> (only the
+    /// differing middle is replaced, so marks before and after it stay); the caret keeps its line, clamped. The document
+    /// becomes modified; nothing is written.
+    /// </summary>
+    internal void ReplaceText(string text, string undoTitle)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+        var current = Buffer.Text;
+        if (string.Equals(current, text, StringComparison.Ordinal))
+            return;
+        var caret = ViewState.Caret;
+        var prefix = 0;
+        var max = Math.Min(current.Length, text.Length);
+        while (prefix < max && current[prefix] == text[prefix])
+            prefix++;
+        var suffix = 0;
+        while (suffix < max - prefix && current[^(suffix + 1)] == text[^(suffix + 1)])
+            suffix++;
+        ViewState.SelectionAnchor = null; // the old selection may lie past the new end
+        Buffer.ApplyEdits([new TextEdit(prefix, current.Length - prefix - suffix, text[prefix..^suffix])], undoTitle);
+        var line = Math.Clamp(caret.Line, 1, Buffer.LineCount);
+        ViewState.Caret = Buffer.GetPosition(Buffer.GetOffset(line, caret.Column));
+        OnPropertyChanged(nameof(IsModified));
+    }
+
     /// <summary>The status-bar fields R2–R8 of this document (main-window.md §5).</summary>
     public EditorStatus GetStatus(bool insertSpaces, int indentSize)
     {

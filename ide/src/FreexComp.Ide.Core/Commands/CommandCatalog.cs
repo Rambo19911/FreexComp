@@ -361,6 +361,7 @@ public static class CommandCatalog
         new("todo.refresh", [ToolList], 8, []),
         new("diff.nextDifference", [Editor], 8, ["Alt+Down"]),
         new("diff.previousDifference", [Editor], 8, ["Alt+Up"]),
+        new("diff.copyBlockToRight", [Editor], 8, ["Alt+Right"]),
     ];
 
     private static readonly Dictionary<string, CommandDefinition> ById = All.ToDictionary(c => c.Id, StringComparer.Ordinal);

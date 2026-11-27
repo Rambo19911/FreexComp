@@ -175,6 +175,7 @@ public static class DefaultKeymap
         new(KeyGesture.Parse("Alt+Down"), Editor, null, "edit.moveLineDown"),
         new(KeyGesture.Parse("Alt+Up"), Editor, ViewModels.DiffDocumentViewModel.DocumentKind, "diff.previousDifference"), // IDE-DIFF-024
         new(KeyGesture.Parse("Alt+Down"), Editor, ViewModels.DiffDocumentViewModel.DocumentKind, "diff.nextDifference"),
+        new(KeyGesture.Parse("Alt+Right"), Editor, ViewModels.DiffDocumentViewModel.DocumentKind, "diff.copyBlockToRight"), // IDE-HIST-021
         new(KeyGesture.Parse("Alt+Left"), Global, null, "search.navigateBack"),
         new(KeyGesture.Parse("Alt+Right"), Global, null, "search.navigateForward"),
         new(KeyGesture.Parse("Alt+Z"), Editor, null, "view.wordWrap"),

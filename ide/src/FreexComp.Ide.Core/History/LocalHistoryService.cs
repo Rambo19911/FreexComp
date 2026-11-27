@@ -127,7 +127,16 @@ public sealed class LocalHistoryService
     /// IDE-HIST-004, 005: records the save of the key <paramref name="documentPath"/> on a background task after the ones
     /// before it; the task never faults. Settings, project and time are those of the call.
     /// </summary>
-    public Task RecordSaveAsync(string documentPath, IReadOnlyList<HistoryPart> parts)
+    public Task RecordSaveAsync(string documentPath, IReadOnlyList<HistoryPart> parts) => Enqueue(documentPath, parts, HistoryKind.Save);
+
+    /// <summary>
+    /// IDE-HIST-020 (I-333): records the buffer content of the key <paramref name="documentPath"/> before a revert as kind
+    /// <c>beforeRevert</c> (every part's <see cref="HistoryPart.Written"/> = the bytes the buffer would write now); nothing
+    /// when it equals the newest revision. No <c>original</c> is recorded; retention applies as after a save. Never faults.
+    /// </summary>
+    public Task RecordBeforeRevertAsync(string documentPath, IReadOnlyList<HistoryPart> parts) => Enqueue(documentPath, parts, HistoryKind.BeforeRevert);
+
+    private Task Enqueue(string documentPath, IReadOnlyList<HistoryPart> parts, HistoryKind kind)
     {
         ArgumentNullException.ThrowIfNull(documentPath);
         ArgumentNullException.ThrowIfNull(parts);
@@ -142,7 +151,7 @@ public sealed class LocalHistoryService
             Pending = Task.Run(async () =>
             {
                 await previous.ConfigureAwait(false);
-                Record(location, parts, limits, now);
+                Record(location, parts, limits, now, kind);
             });
             return Pending;
         }
@@ -178,7 +187,7 @@ public sealed class LocalHistoryService
         RaiseChanged([location.FullPath]);
     }
 
-    private void Record(Location location, IReadOnlyList<HistoryPart> parts, Limits limits, DateTimeOffset now)
+    private void Record(Location location, IReadOnlyList<HistoryPart> parts, Limits limits, DateTimeOffset now, HistoryKind kind)
     {
         try
         {
@@ -191,7 +200,7 @@ public sealed class LocalHistoryService
             {
                 var list = Load(location);
                 var recorded = false;
-                if (list.Revisions.Count == 0 && contents.All(c => c.Unchanged || c.Before is not null))
+                if (kind == HistoryKind.Save && list.Revisions.Count == 0 && contents.All(c => c.Unchanged || c.Before is not null))
                 {
                     var before = contents.Select(c => (c.Role, Bytes: c.Unchanged ? c.Bytes : c.Before!)).ToList();
                     var beforeEntries = before.Select(c => new HistoryEntry(c.Role, Hash(c.Bytes), c.Bytes.Length)).ToImmutableArray();
@@ -209,7 +218,7 @@ public sealed class LocalHistoryService
                     foreach (var content in contents)
                         StoreBlob(location.HistoryDirectory, content.Bytes);
                     var id = list.Revisions.Count == 0 ? 1 : list.Revisions.Max(r => r.Id) + 1;
-                    list.Revisions.Add(new HistoryRevision(id, now, HistoryKind.Save, null, entries));
+                    list.Revisions.Add(new HistoryRevision(id, now, kind, null, entries));
                     recorded = true;
                 }
 

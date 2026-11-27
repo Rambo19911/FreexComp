@@ -413,6 +413,30 @@ public sealed class FormDesignerViewModel
     }
 
     /// <summary>
+    /// IDE-HIST-020: a revert of the form text. The form buffer first receives the model's current text (as entering the
+    /// Text view would), then <paramref name="text"/> as one undo step <paramref name="undoTitle"/>; the designer reads it as
+    /// after a Text-view edit: in the Text view when it is left, otherwise now (a text with syntax errors switches to the
+    /// Text view with <c>InfoBar.FormSyntax</c>, as DSG-FD-101).
+    /// </summary>
+    public void RevertFormText(string text, string undoTitle)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+        WriteText();
+        var buffer = _formText.Buffer;
+        var current = buffer.Text;
+        if (!string.Equals(current, text, StringComparison.Ordinal))
+            buffer.ApplyEdits([new global::FreexComp.Ide.Core.Text.TextEdit(0, current.Length, text)], undoTitle);
+        if (_activeView != DocumentView.Text && !TryReadText())
+        {
+            Host.Disarm();
+            _activeView = DocumentView.Text;
+            ActiveViewChanged?.Invoke(this, EventArgs.Empty);
+        }
+
+        ModifiedChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
     /// DSG-FD-100: the form buffer was reloaded from disk; its text replaces the model (selection kept by name, undo stack
     /// cleared, the reloaded text is the save point). A text with syntax errors switches to the Text view with
     /// <c>InfoBar.FormSyntax</c> (DSG-FD-101).

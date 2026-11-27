@@ -4,6 +4,7 @@ using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Data;
+using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Threading;
 using FreexComp.Ide.Core.Commands;
@@ -17,8 +18,9 @@ namespace FreexComp.Ide.Views;
 
 /// <summary>
 /// A diff document (diff-viewer.md §2, IDE-DIFF-020…026): the header bar (labels with full-path tooltips, notes, change
-/// count, mode toggles, Ignore whitespace, Previous / Next Difference, Refresh), an optional banner, the two side-by-side
-/// views or the inline view, and the overview strip at the right edge. Both side-by-side views scroll together.
+/// count, mode toggles, Ignore whitespace, Previous / Next Difference, Copy Block to Current when the right side is a live
+/// editor buffer (IDE-HIST-021), Refresh), an optional banner, the two side-by-side views or the inline view with their
+/// context menu (<c>Diff.ContextMenu</c>), and the overview strip at the right edge. Both side-by-side views scroll together.
 /// <c>Editor</c> command scope with the keymap context <c>Diff</c> (shortcuts.md <c>E Diff</c>); the view is the target of
 /// <c>edit.copy</c> and <c>edit.selectAll</c> in the focused view. AutomationId <c>Document.Diff</c>.
 /// </summary>
@@ -74,7 +76,49 @@ public sealed class DiffDocumentView : DockPanel, ICommandTarget
         {
             var own = pane;
             own.Editor.TextArea.TextView.ScrollOffsetChanged += (_, _) => OnScrolled(own);
+            own.Editor.TextArea.ContextRequested += (_, e) => e.Handled = OpenContextMenu(own, e);
         }
+    }
+
+    /// <summary>
+    /// The views' context menu: from the pointer, a click outside the selection first moves the caret there (UI-MENU-044),
+    /// so the block under the pointer is the one Copy Block works on; from the keyboard it opens at the caret.
+    /// </summary>
+    private bool OpenContextMenu(DiffPaneEditor pane, ContextRequestedEventArgs e)
+    {
+        if (_diff?.ContextMenu is not { } build)
+            return false;
+        var area = pane.Editor.TextArea;
+        var textView = area.TextView;
+        var fromPointer = e.TryGetPosition(textView, out var point);
+        if (fromPointer && textView.GetPositionFloor(point + textView.ScrollOffset) is { } position)
+        {
+            var offset = pane.Editor.Document.GetOffset(position.Location);
+            var selection = area.Selection;
+            if (selection.IsEmpty || !selection.Segments.Any(s => offset >= s.StartOffset && offset <= s.EndOffset))
+            {
+                area.ClearSelection();
+                area.Caret.Offset = offset;
+            }
+        }
+
+        var menu = MenuBarBuilder.CreateContextMenu(build());
+        AutomationProperties.SetAutomationId(menu, "Diff.ContextMenu");
+        menu.PlacementTarget = textView;
+        if (fromPointer)
+        {
+            menu.Placement = PlacementMode.Pointer;
+        }
+        else
+        {
+            var caret = area.Caret.CalculateCaretRectangle();
+            menu.Placement = PlacementMode.Bottom;
+            menu.PlacementRect = new Rect(caret.X - textView.ScrollOffset.X, caret.Y - textView.ScrollOffset.Y, 1, caret.Height);
+        }
+
+        area.ContextMenu = menu;
+        menu.Open(area);
+        return true;
     }
 
     /// <summary>The view of a pane (tests and the find panel reach the editors through it).</summary>
@@ -269,12 +313,20 @@ public sealed class DiffDocumentView : DockPanel, ICommandTarget
         var previous = MakeButton("Diff.PreviousDifference", Strings.Cmd_diff_previousDifference, nameof(DiffDocumentViewModel.PreviousDifferenceCommand));
         previous.Margin = new Thickness(8, 0, 0, 0);
         var next = MakeButton("Diff.NextDifference", Strings.Cmd_diff_nextDifference, nameof(DiffDocumentViewModel.NextDifferenceCommand));
+        var copyBlock = MakeButton("Diff.CopyBlockToRight", Strings.Cmd_diff_copyBlockToRight, nameof(DiffDocumentViewModel.CopyBlockCommand));
+        copyBlock.Margin = new Thickness(8, 0, 0, 0);
+        copyBlock.Bind(IsVisibleProperty, new Binding(nameof(DiffDocumentViewModel.HasLiveRight)));
         var refresh = MakeButton("Diff.Refresh", Strings.Diff_Refresh, nameof(DiffDocumentViewModel.RefreshCommand));
         refresh.Margin = new Thickness(8, 0, 0, 0);
 
         var labels = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Children = { leftLabel, arrow, rightLabel, notes, changes } };
-        var tools = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, Children = { sideBySide, inline, whitespace, previous, next, refresh } };
-        var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
+        // The tools wrap onto a second line when the tab is too narrow for one (none is ever cut off).
+        var tools = new WrapPanel
+        {
+            Orientation = Orientation.Horizontal, ItemSpacing = 4, LineSpacing = 4, HorizontalAlignment = HorizontalAlignment.Right,
+            Margin = new Thickness(12, 0, 0, 0), Children = { sideBySide, inline, whitespace, previous, next, copyBlock, refresh },
+        };
+        var row = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*") };
         row.Children.Add(labels);
         Grid.SetColumn(tools, 1);
         row.Children.Add(tools);

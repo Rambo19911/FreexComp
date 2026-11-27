@@ -384,6 +384,8 @@ public sealed class DocumentService : IDocumentService
         ArgumentNullException.ThrowIfNull(document);
         if (document.FilePath is not null || _documents.Contains(document))
             throw new ArgumentException("Only a new document without a file opens this way.", nameof(document));
+        if (document is DiffDocumentViewModel diff && _commands is { } commands)
+            diff.ContextMenu ??= () => Menus.DiffContextMenu.Build(commands, ImplementedPhase, diff.HasLiveRight);
         Add(document);
     }
 

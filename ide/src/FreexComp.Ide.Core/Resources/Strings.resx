@@ -6227,6 +6227,10 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
     <value>Previous Difference</value>
     <comment>IDE-DIFF-024</comment>
   </data>
+  <data name="Cmd_diff_copyBlockToRight" xml:space="preserve">
+    <value>Copy Block to Current</value>
+    <comment>local-history.md IDE-HIST-021 (I-333): the diff header button, the views' context menu, the undo step</comment>
+  </data>
   <data name="Menu_file_compareWithSaved" xml:space="preserve">
     <value>Compare &amp;with Saved</value>
     <comment>IDE-DIFF-027: File menu after Revert to Saved, document-tab context menu</comment>

@@ -14,9 +14,13 @@ namespace FreexComp.Ide.Core.ViewModels;
 /// <summary>
 /// One side of a diff document (IDE-DIFF-020): the label shown in the header and the tab title, the full path of its
 /// tooltip (null: the label), and how its text is read (again on Refresh); null from the reader = it could not be read
-/// (the reader has reported why).
+/// (the reader has reported why). <see cref="LiveBuffer"/>: the editor buffer the side shows, when it is one (the right
+/// side of Copy Block to Current, IDE-HIST-021).
 /// </summary>
-public sealed record DiffSource(string Label, string? Path, Func<Task<DiffInput?>> ReadAsync);
+public sealed record DiffSource(string Label, string? Path, Func<Task<DiffInput?>> ReadAsync)
+{
+    public ITextBuffer? LiveBuffer { get; init; }
+}
 
 /// <summary>A request to the view: show <see cref="Row"/> at one third of the viewport, or (<see cref="Third"/> false) at its top.</summary>
 public sealed record DiffReveal(int Row, bool Third);
@@ -35,6 +39,9 @@ public sealed class DiffDocumentViewModel : DocumentViewModel, ICommandTarget
     public const string NextDifferenceCommandId = "diff.nextDifference";
 
     public const string PreviousDifferenceCommandId = "diff.previousDifference";
+
+    /// <summary>IDE-HIST-021: Copy Block to Current.</summary>
+    public const string CopyBlockToRightCommandId = "diff.copyBlockToRight";
 
     private const string Section = "diff";
     private static readonly TimeSpan StatusDuration = TimeSpan.FromSeconds(5); // UI-MSG-003 "Status"
@@ -70,6 +77,7 @@ public sealed class DiffDocumentViewModel : DocumentViewModel, ICommandTarget
         NextDifferenceCommand = new RelayCommand(() => NextDifference());
         PreviousDifferenceCommand = new RelayCommand(() => PreviousDifference());
         RefreshCommand = new AsyncRelayCommand(RefreshAsync);
+        CopyBlockCommand = new AsyncRelayCommand(CopyBlockAsync, () => CanCopyBlock);
     }
 
     public DiffSource LeftSource { get; }
@@ -240,8 +248,25 @@ public sealed class DiffDocumentViewModel : DocumentViewModel, ICommandTarget
     public int CurrentBlock
     {
         get;
-        private set => SetProperty(ref field, value);
+        private set
+        {
+            if (SetProperty(ref field, value))
+                CopyBlockCommand?.NotifyCanExecuteChanged();
+        }
     } = -1;
+
+    /// <summary>IDE-HIST-021: the right side is a live editor buffer (the Copy Block button is shown).</summary>
+    public bool HasLiveRight => RightSource.LiveBuffer is not null;
+
+    /// <summary>IDE-HIST-021: a live, writable right side and the caret in a change block.</summary>
+    public bool CanCopyBlock => RightSource.LiveBuffer is { IsReadOnly: false } && _rightInput is not null && CurrentBlock >= 0
+        && CurrentBlock < Blocks.Length;
+
+    /// <summary>The <c>Copy Block to Current</c> button of the header.</summary>
+    public IAsyncRelayCommand CopyBlockCommand { get; }
+
+    /// <summary>The context menu of the views (menus.md §12; set by the document service when the tab opens).</summary>
+    public Func<IReadOnlyList<Menus.MenuItemModel>>? ContextMenu { get; internal set; }
 
     /// <summary>The first visible row of the current mode; the view sets it when it scrolls.</summary>
     public int TopRow { get; set; }
@@ -359,14 +384,110 @@ public sealed class DiffDocumentViewModel : DocumentViewModel, ICommandTarget
     public Task CopyToClipboardAsync(DiffPane pane, int from, int to) =>
         _clipboard?.SetTextAsync(Copy(pane, from, to)) ?? Task.CompletedTask;
 
-    public bool CanExecute(string commandId, string? argument) => commandId is NextDifferenceCommandId or PreviousDifferenceCommandId;
-
-    public Task<bool> ExecuteAsync(string commandId, string? argument) => Task.FromResult(commandId switch
+    /// <summary>
+    /// IDE-HIST-021: the right lines of the current block are replaced in the live buffer by its left lines (an empty left
+    /// side deletes them) as one undo step; then the diff re-computes and the caret moves to the next block (else stays).
+    /// A buffer changed since the last computation is compared again first and nothing is copied (the blocks moved).
+    /// </summary>
+    public async Task CopyBlockAsync()
     {
-        NextDifferenceCommandId => NextDifference() || true,
-        PreviousDifferenceCommandId => PreviousDifference() || true,
+        if (!CanCopyBlock)
+            return;
+        var buffer = RightSource.LiveBuffer!;
+        var compared = _rightInput!;
+        if (!string.Equals(buffer.Text, compared.Text, StringComparison.Ordinal))
+        {
+            _rightInput = compared with { Text = buffer.Text };
+            await ComputeAsync(keepPosition: true);
+            return;
+        }
+
+        var index = CurrentBlock;
+        var block = Blocks[index];
+        var leftRows = Mode == DiffViewMode.SideBySide ? _diff.Left : _diff.Inline;
+        var rightRows = Mode == DiffViewMode.SideBySide ? _diff.Right : _diff.Inline;
+        var range = Enumerable.Range(block.FirstRow, block.RowCount).ToList();
+        var left = range.Select(r => leftRows[r]).Where(r => r.Kind == DiffRowKind.Removed).Select(r => r.Text).ToList();
+        var right = range.Select(r => rightRows[r]).Where(r => r.Kind == DiffRowKind.Added).Select(r => r.RightLine!.Value).ToList();
+        int first;
+        if (right.Count > 0)
+        {
+            first = right[0];
+        }
+        else
+        {
+            // Nothing on the right: the left lines go after the nearest right line above the block.
+            var above = Enumerable.Range(0, block.FirstRow).Reverse().Select(r => rightRows[r].RightLine).FirstOrDefault(l => l is not null);
+            first = above is { } line ? line + 1 : 0;
+        }
+
+        var edit = BlockEdit(buffer.Text, first, right.Count, left, LineEndingDetector.NewLineText(buffer.LineEnding));
+        buffer.ApplyEdits([edit], Strings.Cmd_diff_copyBlockToRight);
+        _rightInput = compared with { Text = buffer.Text };
+        await ComputeAsync(keepPosition: true);
+        if (index < Blocks.Length)
+            SelectBlock(index); // the block after the copied one has its index now
+    }
+
+    /// <summary>
+    /// The edit that replaces <paramref name="count"/> lines of <paramref name="text"/> from line <paramref name="first"/>
+    /// (0-based; with no lines: inserts there) by <paramref name="lines"/>, each ended by <paramref name="eol"/>, except at
+    /// the end of a text whose last line has no break.
+    /// </summary>
+    private static TextEdit BlockEdit(string text, int first, int count, IReadOnlyList<string> lines, string eol)
+    {
+        var split = DiffText.Split(text);
+        var offsets = new int[split.Count + 1];
+        for (var i = 0; i < split.Count; i++)
+            offsets[i + 1] = offsets[i] + split[i].Text.Length + split[i].Break.Length;
+        var inserted = string.Concat(lines.Select(l => l + eol));
+        var openEnd = split.Count > 0 && split[^1].Break.Length == 0; // the text ends without a line break
+        if (count > 0)
+        {
+            var start = offsets[first];
+            var end = offsets[first + count];
+            if (first + count == split.Count && openEnd)
+            {
+                if (inserted.Length > 0)
+                    inserted = inserted[..^eol.Length];
+                else if (first > 0)
+                    start -= split[first - 1].Break.Length; // the line above becomes the last one
+            }
+
+            return new TextEdit(start, end - start, inserted);
+        }
+
+        if (first < split.Count)
+            return new TextEdit(offsets[first], 0, inserted);
+        return openEnd && inserted.Length > 0
+            ? new TextEdit(text.Length, 0, eol + inserted[..^eol.Length])
+            : new TextEdit(text.Length, 0, inserted);
+    }
+
+    public bool CanExecute(string commandId, string? argument) => commandId switch
+    {
+        NextDifferenceCommandId or PreviousDifferenceCommandId => true,
+        CopyBlockToRightCommandId => CanCopyBlock,
         _ => false,
-    });
+    };
+
+    public async Task<bool> ExecuteAsync(string commandId, string? argument)
+    {
+        switch (commandId)
+        {
+            case NextDifferenceCommandId:
+                NextDifference();
+                return true;
+            case PreviousDifferenceCommandId:
+                PreviousDifference();
+                return true;
+            case CopyBlockToRightCommandId:
+                await CopyBlockAsync();
+                return true;
+            default:
+                return false;
+        }
+    }
 
     private static TextDocumentViewModel Pane(ITextBufferFactory buffers, string name, ILanguageDefinition language)
     {
@@ -426,6 +547,7 @@ public sealed class DiffDocumentViewModel : DocumentViewModel, ICommandTarget
                      nameof(IsBannerVisible), nameof(Blocks), nameof(Marks), nameof(RowCount) })
             OnPropertyChanged(name);
         LayoutChanged?.Invoke(this, EventArgs.Empty);
+        CopyBlockCommand.NotifyCanExecuteChanged();
         if (keepPosition)
             Reveal(new DiffReveal(TopRow, Third: false));
     }

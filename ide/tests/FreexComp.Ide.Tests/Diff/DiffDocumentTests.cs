@@ -460,6 +460,118 @@ public sealed class DiffDocumentTests
         Assert.Equal(DiffAlgorithm.Patience, diff.Algorithm);
     }
 
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "IDE-HIST-021")]
+    public async Task CopyBlockToCurrent()
+    {
+        await using var h = await HeadlessHarness.StartAsync();
+        var (diff, view) = await CompareWithSavedAsync(h, Saved, Edited);
+        var text = h.Services.Documents.Documents.OfType<TextDocumentViewModel>().Single();
+        Assert.Equal(2, diff.Blocks.Length);
+        Assert.Equal(0, diff.CurrentBlock);
+
+        // The header tools wrap rather than run past the tab's right edge.
+        foreach (var id in new[] { "Diff.CopyBlockToRight", "Diff.Refresh" })
+        {
+            var tool = h.Find<Control>(id);
+            Assert.True(tool.TranslatePoint(new Point(tool.Bounds.Width, 0), view)!.Value.X <= view.Bounds.Width + 0.5, id);
+        }
+
+        // The header button and the views' context menu, enabled with the caret in a block.
+        var button = h.Find<Button>("Diff.CopyBlockToRight");
+        Assert.True(button.IsEffectivelyVisible);
+        Assert.True(button.IsEffectivelyEnabled);
+        Assert.Equal("Copy Block to Current", button.Content);
+        Assert.True(h.Services.Commands.CanExecute(DiffDocumentViewModel.CopyBlockToRightCommandId));
+        Assert.Equal(["edit.copy", "edit.selectAll", null, "diff.previousDifference", "diff.nextDifference", null, "diff.copyBlockToRight"],
+            diff.ContextMenu!().Select(m => m.Command?.Id));
+        Assert.Equal("Copy Block to Current", diff.ContextMenu!()[^1].Label);
+
+        // Alt+Right: the right line of the changed block becomes its two left lines; the diff re-computes and the caret
+        // moves to the next block.
+        var afterFirst = Edited.Replace("procedure A(X: Integer);\r\n", "uses SysUtils;\r\nprocedure A;\r\n", StringComparison.Ordinal);
+        h.Press("Alt+Right");
+        await h.WaitForAsync(() => diff.Blocks.Length == 1, "the re-computed diff");
+        Assert.Equal(afterFirst, text.Buffer.Text);
+        Assert.Equal(Strings.Msg_Diff_ChangesOne, diff.ChangesText);
+        Assert.Equal((0, diff.Blocks[0].FirstRow), (diff.CurrentBlock, diff.CaretRow));
+        Assert.True(diff.Blocks[0] is { HasAdded: true, HasRemoved: false });
+        Assert.Contains("uses SysUtils;", diff.Right.Buffer.Text, StringComparison.Ordinal);
+
+        // Inline mode, a block with an empty left side: its right lines are deleted; no next block, the caret stays.
+        diff.Mode = DiffViewMode.Inline;
+        Dispatcher.UIThread.RunJobs();
+        diff.SelectBlock(0);
+        var caret = diff.CaretRow;
+        await h.ExecuteAsync(DiffDocumentViewModel.CopyBlockToRightCommandId);
+        Assert.Equal(Saved, text.Buffer.Text);
+        Assert.Empty(diff.Blocks);
+        Assert.True(diff.IsIdentical);
+        Assert.Equal((-1, caret), (diff.CurrentBlock, diff.CaretRow));
+        Assert.False(h.Services.Commands.CanExecute(DiffDocumentViewModel.CopyBlockToRightCommandId));
+        Dispatcher.UIThread.RunJobs();
+        Assert.False(button.IsEffectivelyEnabled);
+
+        // One undo step per copy.
+        text.Buffer.Undo();
+        Assert.Equal(afterFirst, text.Buffer.Text);
+        text.Buffer.Undo();
+        Assert.Equal(Edited, text.Buffer.Text);
+
+        // A buffer changed since the computation is compared again first; nothing is copied.
+        diff.Mode = DiffViewMode.SideBySide;
+        await diff.RefreshAsync();
+        diff.SelectBlock(0);
+        text.Buffer.ReplaceAll(Edited + "// later\r\n", resetUndo: false);
+        await h.ExecuteAsync(DiffDocumentViewModel.CopyBlockToRightCommandId);
+        Assert.Equal(Edited + "// later\r\n", text.Buffer.Text);
+        Assert.Equal(3, diff.Blocks.Length);
+    }
+
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "IDE-HIST-021")]
+    public async Task CopyBlockDisabledWithoutLiveRight()
+    {
+        await using var h = await HeadlessHarness.StartAsync(o =>
+        {
+            o.InitialFiles[@"a\Left.pas"] = Saved;
+            o.InitialFiles[@"b\Right.pas"] = Edited;
+        });
+        var rightPath = Path.Combine(h.TempDir, @"b\Right.pas");
+
+        // Compare Files: both sides are files; no button, no menu entry, the command and its key do nothing.
+        h.FileDialogs.NextOpen(Path.Combine(h.TempDir, @"a\Left.pas"));
+        h.FileDialogs.NextOpen(rightPath);
+        await h.ExecuteAsync("tools.compareFiles");
+        var files = Assert.IsType<DiffDocumentViewModel>(h.Services.Documents.ActiveDocument);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(0, files.CurrentBlock);
+        Assert.False(files.HasLiveRight);
+        Assert.False(h.Find<Button>("Diff.CopyBlockToRight").IsEffectivelyVisible);
+        Assert.False(h.Services.Commands.CanExecute(DiffDocumentViewModel.CopyBlockToRightCommandId));
+        Assert.DoesNotContain(files.ContextMenu!(), m => m.Command?.Id == DiffDocumentViewModel.CopyBlockToRightCommandId);
+        h.Press("Alt+Right");
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(Edited, File.ReadAllText(rightPath));
+        Assert.Equal(2, files.Blocks.Length);
+
+        // Compare with Saved has a live right side: disabled while the caret is outside every block or the buffer is read-only.
+        var (live, _) = await CompareWithSavedAsync(h, Saved, Edited);
+        var text = h.Services.Documents.Documents.OfType<TextDocumentViewModel>().Single();
+        Assert.True(live.HasLiveRight);
+        Assert.True(h.Services.Commands.CanExecute(DiffDocumentViewModel.CopyBlockToRightCommandId));
+        live.CaretRow = 0; // a context row
+        Assert.Equal(-1, live.CurrentBlock);
+        Assert.False(h.Services.Commands.CanExecute(DiffDocumentViewModel.CopyBlockToRightCommandId));
+        Assert.False(live.CopyBlockCommand.CanExecute(null));
+        live.SelectBlock(0);
+        Assert.True(live.CopyBlockCommand.CanExecute(null));
+        text.Buffer.IsReadOnly = true;
+        Assert.False(h.Services.Commands.CanExecute(DiffDocumentViewModel.CopyBlockToRightCommandId));
+        await live.CopyBlockAsync();
+        Assert.Equal(Edited, text.Buffer.Text);
+    }
+
     /// <summary>
     /// IDE-DIFF-022, theme colour lint for the new tokens: every syntax colour (but <c>syntax.inactive</c>, which reaches
     /// 4.5:1 only on white) and <c>text.primary</c> keep 4.5:1 on each diff line and span colour; <c>diff.filler</c> =

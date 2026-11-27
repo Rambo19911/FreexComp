@@ -82,7 +82,10 @@ public sealed class CompareService
         var name = Path.GetFileName(path);
         var left = new DiffSource(name + " " + Strings.Diff_SavedSuffix, path, async () =>
             await ReadAsync(path) is { } current ? new DiffInput(FileEncodings.Decode(current, text.Encoding)) : null);
-        var right = new DiffSource(name + " " + Strings.Diff_EditorSuffix, path, () => Task.FromResult<DiffInput?>(new DiffInput(text.Buffer.Text)));
+        var right = new DiffSource(name + " " + Strings.Diff_EditorSuffix, path, () => Task.FromResult<DiffInput?>(new DiffInput(text.Buffer.Text)))
+        {
+            LiveBuffer = text.Buffer, // IDE-HIST-021: Copy Block to Current
+        };
         if (_documents.Documents.OfType<DiffDocumentViewModel>().FirstOrDefault(d => d.Title == left.Label + " ↔ " + right.Label
                 && string.Equals(d.LeftSource.Path, path, StringComparison.OrdinalIgnoreCase)) is { } open)
         {

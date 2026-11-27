@@ -18,8 +18,9 @@ namespace FreexComp.Ide.Core.ViewModels;
 /// History (tool-windows.md §16b, local-history.md §2 UI-TW-1620…1625; F11-060): the local-history revisions of the active
 /// text document (its history key, IDE-HIST-002), newest first, after the <c>(current buffer)</c> pseudo-row; live with the
 /// active document and <see cref="LocalHistoryService.Changed"/>. <c>history.compare</c> opens a diff document of one
-/// revision against the editor buffer or of two rows; <c>history.label</c> edits a label in place. Owns
-/// <c>view.history</c>'s window and the <c>history.*</c> commands except <c>history.revert</c> (I-333).
+/// revision against the editor buffer or of two rows; <c>history.label</c> edits a label in place; <c>history.revert</c>
+/// puts a revision into the buffers (local-history.md IDE-HIST-020, I-333). Owns <c>view.history</c>'s window and the
+/// <c>history.*</c> commands.
 /// </summary>
 public sealed class HistoryViewModel : DebugGridViewModel
 {
@@ -153,6 +154,9 @@ public sealed class HistoryViewModel : DebugGridViewModel
     /// <summary>The latest compare (completed when none is under way).</summary>
     public Task Comparing { get; private set; } = Task.CompletedTask;
 
+    /// <summary>The latest revert (completed when none is under way).</summary>
+    public Task Reverting { get; private set; } = Task.CompletedTask;
+
     public void RegisterCommands()
     {
         Commands.RegisterHandler("history.compare", new Handler(CanCompare, () => Comparing = CompareAsync()));
@@ -161,11 +165,76 @@ public sealed class HistoryViewModel : DebugGridViewModel
             BeginLabel(SelectedRows[0]);
             return Task.CompletedTask;
         }));
+        Commands.RegisterHandler("history.revert", new Handler(CanRevert, () => Reverting = RevertAsync()));
         Commands.RegisterHandler("history.refresh", new Handler(() => true, () =>
         {
             Update(force: true);
             return Task.CompletedTask;
         }));
+    }
+
+    /// <summary>IDE-HIST-020: one selected revision row of a document that can be edited.</summary>
+    private bool CanRevert() =>
+        _document is { FilePath: not null, IsReadOnly: false } && SelectedRows.Count == 1 && SelectedRevisions.Count == 1;
+
+    /// <summary>
+    /// IDE-HIST-020: the selected revision replaces the buffer text (decoded as on open), one undo step per buffer; a
+    /// modified document's content is first recorded as <c>beforeRevert</c>. A form document with a unit gets both parts
+    /// (whatever the Part choice), and the designer reads the form text as after a Text-view edit. Nothing is written.
+    /// </summary>
+    public async Task RevertAsync()
+    {
+        if (_document is not { FilePath: { } path } document || !CanRevert())
+            return;
+        var revision = SelectedRevisions[0];
+        var form = document as FormDocumentViewModel;
+        HistoryRole[] roles = form is { HasUnit: true } ? [HistoryRole.Unit, HistoryRole.Form] : [HistoryRole.Text];
+        var texts = new Dictionary<HistoryRole, string>();
+        try
+        {
+            foreach (var role in roles.Where(r => revision.Entry(r) is not null))
+            {
+                var bytes = await Task.Run(() => _history.ReadEntry(revision, role));
+                texts[role] = EncodingDetector.Detect(bytes).Text;
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException or InvalidOperationException)
+        {
+            await _dialogs.ShowMessageAsync(new MessageRequest("Msg.File.OpenFailed", [path, ex.Message]));
+            return;
+        }
+
+        if (_document != document || texts.Count == 0)
+            return; // another document became active meanwhile
+        if (document.IsModified)
+            _ = _history.RecordBeforeRevertAsync(path, CurrentParts(document));
+        var title = Strings.Cmd_history_revert;
+        if (form is null)
+        {
+            document.ReplaceText(texts[HistoryRole.Text], title);
+            return;
+        }
+
+        if (texts.TryGetValue(HistoryRole.Unit, out var unit))
+            document.ReplaceText(unit, title);
+        if (texts.TryGetValue(form.HasUnit ? HistoryRole.Form : HistoryRole.Text, out var formText))
+            form.Designer.RevertFormText(formText, title);
+    }
+
+    /// <summary>IDE-HIST-020: the bytes the document's buffers would write now, per history part (IDE-HIST-002).</summary>
+    private static IReadOnlyList<HistoryPart> CurrentParts(TextDocumentViewModel document)
+    {
+        var path = document.FilePath!;
+        if (document is not FormDocumentViewModel form)
+            return [new HistoryPart(HistoryRole.Text, path, FileEncodings.Encode(document.Buffer.Text, document.Encoding), null)];
+        var formBytes = FileEncodings.Encode(form.Designer.CurrentFormText(), FileEncoding.Utf8);
+        return form.HasUnit
+            ?
+            [
+                new HistoryPart(HistoryRole.Unit, path, FileEncodings.Encode(document.Buffer.Text, document.Encoding), null),
+                new HistoryPart(HistoryRole.Form, form.FormText.FilePath ?? path, formBytes, null),
+            ]
+            : [new HistoryPart(HistoryRole.Text, path, formBytes, null)];
     }
 
     /// <summary>UI-TW-1623: one revision row, or two rows; not the pseudo-row alone, not more than two.</summary>
@@ -205,8 +274,13 @@ public sealed class HistoryViewModel : DebugGridViewModel
         var language = _languages.ForPath(path);
         var left = RevisionSource(older, role, name, path);
         var buffer = PartBuffer(document, role);
+        // IDE-HIST-021: the unit (or single file) buffer is the live right side of Copy Block; the form text is not (the
+        // designer owns it outside the Text view).
         var right = newer is null
             ? new DiffSource(name + " " + Strings.Diff_EditorSuffix, path, () => Task.FromResult<DiffInput?>(new DiffInput(buffer.Text)))
+            {
+                LiveBuffer = role == HistoryRole.Form || document is FormDocumentViewModel { HasUnit: false } ? null : buffer,
+            }
             : RevisionSource(newer, role, name, path);
         var pair = string.Join("|", path.ToUpperInvariant(), role, older.Id, newer?.Id.ToString(CultureInfo.InvariantCulture) ?? CurrentKey);
         if (_compares.TryGetValue(pair, out var open) && _documents.Documents.Contains(open))

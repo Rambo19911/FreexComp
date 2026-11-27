@@ -21,6 +21,7 @@ public static class Phase8Features
         "bookmarks.goToSource", // F11-045
         "bookmarks.rename", // F11-045
         "designer.revertToInherited", // F05-006, F05-007 (D-134)
+        "diff.copyBlockToRight", // F11-061
         "diff.nextDifference", // F12-014
         "diff.previousDifference", // F12-014
         "file.compareWithSaved", // F12-014
@@ -34,6 +35,7 @@ public static class Phase8Features
         "history.compare", // F11-060
         "history.label", // F11-060
         "history.refresh", // F11-060
+        "history.revert", // F11-061
         "locals.viewText", // F14-013
         "options:Editor.General.LiveDiagnosticsSeverities", // F11-065
         "options:Editor.General.WrapSelection", // F11-047

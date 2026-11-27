@@ -105,7 +105,7 @@ public sealed class HistoryWindowTests
         Assert.Equal(Size(System.Text.Encoding.UTF8.GetByteCount(original)), Cell(h, "1", "Size"));
         Assert.NotNull(h.TryFind<Control>("Tool.History.Row.3.Label"));
 
-        // Tool bar and context menu: Compare, Label, Revert, Refresh (Revert joins with I-333: disabled).
+        // Tool bar and context menu: Compare, Label, Revert, Refresh (Revert needs one selected revision row: none yet).
         foreach (var id in new[] { "history.compare", "history.label", "history.revert", "history.refresh" })
             Assert.True(h.Find<Button>("Tool.History.ToolBar." + id).IsVisible, id);
         Assert.False(h.Services.Commands.CanExecute("history.revert"));
