@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Text;
 using FreexComp.Compiler;
 using FreexComp.Compiler.Text;
+using FreexComp.LanguageService.Formatting;
 
 namespace FreexComp.LanguageService.Tests;
 
@@ -206,6 +207,33 @@ public sealed class PerformanceTests(ITestOutputHelper output)
 
         Sample();                                                                  // warm-up
         Check("diagnostics of the edited file", Median(Sample), TimeSpan.FromMilliseconds(500));
+    }
+
+    /// <summary>
+    /// CMP-1447 (C-404): formatting the 5 000-line unit with every line's indentation removed (it restores the unit; ~4 500 edits) takes
+    /// under 500 ms of the calling thread's CPU time after a warm-up (median of 5; x3 unoptimized, x3 with <c>CI_SLOW=1</c>).
+    /// Unlike the CMP-702 fixtures this budget is enforced.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1447")]
+    public void Format_FiveThousandLines_UnderFiveHundredMilliseconds()
+    {
+        var text = System.Text.RegularExpressions.Regex.Replace(BigUnit.Value, @"^[ \t]+", "", System.Text.RegularExpressions.RegexOptions.Multiline);
+        var source = SourceText.From(TestFiles.PathOf("Big.pas"), text);
+        var ct = TestContext.Current.CancellationToken;
+        var first = PascalFormatter.Format(source, FormatProfile.Default, null, ct);     // warm-up
+        Assert.False(first.Refused, first.RefusalReason);
+        Assert.Equal(BigUnit.Value, PascalFormatter.Apply(text, first.Edits));     // the formatter restores every indentation
+        Assert.InRange(source.Lines.LineCount, 5_000, 6_000);
+
+        var median = Median(() => ThreadCpuTime(() => PascalFormatter.Format(source, FormatProfile.Default, null, ct)));
+
+        var factor = Factor;
+        var limit = TimeSpan.FromMilliseconds(500) * factor;
+        output.WriteLine($"CMP-1447 format 5 000 lines: median {median.TotalMilliseconds:F2} ms, budget 500 ms x{factor} = {limit.TotalMilliseconds} ms");
+        Assert.True(median < limit, $"CMP-1447: formatting took {median.TotalMilliseconds:F0} ms, over the budget of 500 ms x{factor} "
+            + $"({(factor >= 3 ? "unoptimized build or CI_SLOW=1" : "optimized build")})");
     }
 
     /// <summary>The workspace, Big.pas and the offset just after <c>T := S</c> in the middle routine.</summary>

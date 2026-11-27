@@ -226,6 +226,68 @@ readonly record struct FreexComp.LanguageService.FoldingRange : System.IEquatabl
   public static System.Boolean op_Inequality(FreexComp.LanguageService.FoldingRange left, FreexComp.LanguageService.FoldingRange right)
 static class FreexComp.LanguageService.FoldingService
   public static System.Collections.Immutable.ImmutableArray<FreexComp.LanguageService.FoldingRange> GetFoldingRanges(FreexComp.Compiler.Syntax.SyntaxTree tree)
+enum FreexComp.LanguageService.Formatting.BeginStyle
+  NextLine = 0
+  SameLine = 1
+sealed record FreexComp.LanguageService.Formatting.FormatProfile : System.IEquatable<FreexComp.LanguageService.Formatting.FormatProfile>
+  public FreexComp.LanguageService.Formatting.BeginStyle Begin { get; init; }
+  public FreexComp.LanguageService.Formatting.FormatProfile <Clone>$()
+  public FreexComp.LanguageService.Formatting.KeywordCase Directives { get; init; }
+  public FreexComp.LanguageService.Formatting.KeywordCase Keywords { get; init; }
+  public FreexComp.LanguageService.Formatting.UsesWrap Uses { get; init; }
+  public System.Boolean Equals(FreexComp.LanguageService.Formatting.FormatProfile other)
+  public System.Boolean IdentifiersAsDeclared { get; init; }
+  public System.Boolean SpaceAfterComma { get; init; }
+  public System.Boolean SpaceAroundAssign { get; init; }
+  public System.Boolean SpaceAroundOperators { get; init; }
+  public System.Boolean SpaceBeforeColonInDecl { get; init; }
+  public System.Int32 IndentSize { get; init; }
+  public System.Int32 MaxBlankLines { get; init; }
+  public System.Int32 MaxLineLength { get; init; }
+  public System.String SourcePath { get; init; }
+  public System.Void Deconstruct(out System.Int32 IndentSize, out FreexComp.LanguageService.Formatting.BeginStyle Begin, out FreexComp.LanguageService.Formatting.KeywordCase Keywords, out FreexComp.LanguageService.Formatting.KeywordCase Directives, out System.Boolean IdentifiersAsDeclared, out System.Int32 MaxLineLength, out FreexComp.LanguageService.Formatting.UsesWrap Uses, out System.Int32 MaxBlankLines, out System.Boolean SpaceAroundOperators, out System.Boolean SpaceAfterComma, out System.Boolean SpaceAroundAssign, out System.Boolean SpaceBeforeColonInDecl, out System.String SourcePath)
+  public ctor(System.Int32 IndentSize, FreexComp.LanguageService.Formatting.BeginStyle Begin, FreexComp.LanguageService.Formatting.KeywordCase Keywords, FreexComp.LanguageService.Formatting.KeywordCase Directives, System.Boolean IdentifiersAsDeclared, System.Int32 MaxLineLength, FreexComp.LanguageService.Formatting.UsesWrap Uses, System.Int32 MaxBlankLines, System.Boolean SpaceAroundOperators, System.Boolean SpaceAfterComma, System.Boolean SpaceAroundAssign, System.Boolean SpaceBeforeColonInDecl, System.String SourcePath)
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public static FreexComp.LanguageService.Formatting.FormatProfile Default { get; }
+  public static System.Boolean op_Equality(FreexComp.LanguageService.Formatting.FormatProfile left, FreexComp.LanguageService.Formatting.FormatProfile right)
+  public static System.Boolean op_Inequality(FreexComp.LanguageService.Formatting.FormatProfile left, FreexComp.LanguageService.Formatting.FormatProfile right)
+sealed record FreexComp.LanguageService.Formatting.FormatResult : System.IEquatable<FreexComp.LanguageService.Formatting.FormatResult>
+  public FreexComp.LanguageService.Formatting.FormatResult <Clone>$()
+  public System.Boolean Equals(FreexComp.LanguageService.Formatting.FormatResult other)
+  public System.Boolean Refused { get; init; }
+  public System.Collections.Immutable.ImmutableArray<FreexComp.LanguageService.Formatting.TextEdit> Edits { get; init; }
+  public System.String RefusalReason { get; init; }
+  public System.Void Deconstruct(out System.Boolean Refused, out System.String RefusalReason, out System.Collections.Immutable.ImmutableArray<FreexComp.LanguageService.Formatting.TextEdit> Edits)
+  public ctor(System.Boolean Refused, System.String RefusalReason, System.Collections.Immutable.ImmutableArray<FreexComp.LanguageService.Formatting.TextEdit> Edits)
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public static System.Boolean op_Equality(FreexComp.LanguageService.Formatting.FormatResult left, FreexComp.LanguageService.Formatting.FormatResult right)
+  public static System.Boolean op_Inequality(FreexComp.LanguageService.Formatting.FormatResult left, FreexComp.LanguageService.Formatting.FormatResult right)
+enum FreexComp.LanguageService.Formatting.KeywordCase
+  AsIs = 2
+  Lower = 0
+  Upper = 1
+static class FreexComp.LanguageService.Formatting.PascalFormatter
+  public static FreexComp.LanguageService.Formatting.FormatProfile LoadProfile(System.String sourceFilePath)
+  public static FreexComp.LanguageService.Formatting.FormatResult Format(FreexComp.Compiler.SourceText text, FreexComp.LanguageService.Formatting.FormatProfile profile, System.Nullable<FreexComp.Compiler.Text.TextSpan> range, System.Threading.CancellationToken ct)
+readonly record struct FreexComp.LanguageService.Formatting.TextEdit : System.IEquatable<FreexComp.LanguageService.Formatting.TextEdit>
+  public FreexComp.Compiler.Text.TextSpan Span { get; init; }
+  public System.Boolean Equals(FreexComp.LanguageService.Formatting.TextEdit other)
+  public System.String NewText { get; init; }
+  public System.Void Deconstruct(out FreexComp.Compiler.Text.TextSpan Span, out System.String NewText)
+  public ctor(FreexComp.Compiler.Text.TextSpan Span, System.String NewText)
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public static System.Boolean op_Equality(FreexComp.LanguageService.Formatting.TextEdit left, FreexComp.LanguageService.Formatting.TextEdit right)
+  public static System.Boolean op_Inequality(FreexComp.LanguageService.Formatting.TextEdit left, FreexComp.LanguageService.Formatting.TextEdit right)
+enum FreexComp.LanguageService.Formatting.UsesWrap
+  AsIs = 2
+  Fill = 1
+  OnePerLine = 0
 sealed record FreexComp.LanguageService.GeneratedDeclaration : System.IEquatable<FreexComp.LanguageService.GeneratedDeclaration>
   public FreexComp.Compiler.Text.TextSpan NameSpan { get; init; }
   public FreexComp.LanguageService.GeneratedDeclaration <Clone>$()

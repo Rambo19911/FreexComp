@@ -10,5 +10,6 @@
   <ItemGroup>
     <None Include="GoToDefinition\**\*.pas" CopyToOutputDirectory="PreserveNewest" />
     <None Include="Completion\**\*.pas" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Formatting\Golden\*.pas;Formatting\Golden\*.pasformat" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>
