@@ -7,4 +7,7 @@
     <Compile Include="..\Shared\PublicApiListing.cs" Link="Shared\PublicApiListing.cs" />
     <ProjectReference Include="..\..\src\FreexComp.LanguageService\FreexComp.LanguageService.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="GoToDefinition\**\*.pas" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

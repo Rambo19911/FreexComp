@@ -55,10 +55,10 @@ public static class QuickInfoService
     {
         var tree = model.SyntaxTree;                                        // nodes handed to the model must be its own
         var token = tree.FindToken(Math.Clamp(position, 0, tree.Text.Text.Length));
-        if (!SyntaxFacts.IsNameToken(token) || !token.Span.Contains(position))
+        if (!IsTarget(token) || !token.Span.Contains(position))
         {
             var before = position > 0 ? tree.FindToken(position - 1) : default;
-            if (!SyntaxFacts.IsNameToken(before) || before.Span.End != position)
+            if (!IsTarget(before) || before.Span.End != position)
             {
                 return null;
             }
@@ -68,6 +68,10 @@ public static class QuickInfoService
 
         return SymbolOf(model, token) is { } symbol ? (symbol, token) : null;
     }
+
+    /// <summary>A name, or the keyword of a bare <c>inherited</c> (CMP-1419, C-396: it stands for the ancestor's method it calls).</summary>
+    private static bool IsTarget(SyntaxToken token) =>
+        SyntaxFacts.IsNameToken(token) || token.Kind == SyntaxKind.InheritedKeyword && token.Parent is InheritedExpressionSyntax { Name: null };
 
     /// <summary>What an identifier token of the model's tree declares or refers to (a uses entry: its unit).</summary>
     internal static Symbol? SymbolOf(SemanticModel model, SyntaxToken token)

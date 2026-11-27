@@ -129,7 +129,7 @@ public sealed class SemanticModel
             UsedUnitSyntax used => _findUnit(UnitBinder.NameOf(used.Name)),
             NamedTypeSyntax named => GetSymbolInfo(named.Name, ct).Symbol,
             LiteralExpressionSyntax literal => SyntaxFacts.IsLabelNumber(literal.FirstToken()) ? Resolve(node, literal.FirstToken()) : null,   // C-321
-            _ => NameToken(node) is { Kind: SyntaxKind.IdentifierToken } token ? Resolve(node, token) : null,
+            _ => NameToken(node) is { Kind: SyntaxKind.IdentifierToken or SyntaxKind.InheritedKeyword } token ? Resolve(node, token) : null,
         };
         if (symbol is null && node is UsedUnitSyntax or NamedTypeSyntax or NameSyntax or MemberAccessExpressionSyntax or InvocationExpressionSyntax
             && !node.IsMissing)
@@ -469,7 +469,19 @@ public sealed class SemanticModel
         MemberAccessExpressionSyntax access => access.Name.Identifier,
         InvocationExpressionSyntax invocation => NameToken(invocation.Expression),
         ExpressionStatementSyntax statement => NameToken(statement.Expression),
+        InheritedStatementSyntax inheritedStatement => NameToken(inheritedStatement.Expression),
+        InheritedExpressionSyntax inherited => inherited.Name?.Identifier ?? inherited.InheritedKeyword,      // C-396: the ancestor's member, not a lookup of the name here
         _ => default,
+    };
+
+    /// <summary>An <c>inherited</c> callee, also as the callee of an invocation or a statement.</summary>
+    private static bool IsInheritedCall(SyntaxNode node) => node switch
+    {
+        InheritedExpressionSyntax => true,
+        InvocationExpressionSyntax invocation => IsInheritedCall(invocation.Expression),
+        ExpressionStatementSyntax statement => IsInheritedCall(statement.Expression),
+        InheritedStatementSyntax => true,
+        _ => false,
     };
 
     private static SyntaxToken LastIdentifier(NameSyntax name) => name switch
@@ -631,8 +643,14 @@ public sealed class SemanticModel
             return;
         }
 
+        // C-396: the implicit Self and forwarded parameters of an inherited call share its syntax; its name is the ancestor's member
+        if (symbol is ParameterSymbol && IsInheritedCall(syntax))
+        {
+            return;
+        }
+
         var token = NameToken(syntax);
-        if (token.Kind == SyntaxKind.IdentifierToken && !token.IsMissing && IsOwn(token))
+        if (token.Kind is SyntaxKind.IdentifierToken or SyntaxKind.InheritedKeyword && !token.IsMissing && IsOwn(token))
         {
             if (symbol is VariableSymbol { TypedConstant: { } constant })
             {

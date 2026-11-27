@@ -465,20 +465,31 @@ internal sealed partial class DeclarationBinder
     /// LANG-265 <c>^T</c>: a typed pointer named after its declaration (or <c>^T</c>). A <c>T</c> declared later in the current type
     /// section — or not declared at all yet — is resolved at the section's end (LANG-208, E2015 when the section does not declare it).
     /// </summary>
-    private TypeSymbol BindPointer(PointerTypeSyntax syntax, string name, ImmutableArray<Symbol>.Builder? declared)
+    private TypeSymbol BindPointer(PointerTypeSyntax syntax, string name, SyntaxToken? declaredAt, ImmutableArray<Symbol>.Builder? declared)
     {
+        // C-396: a declared pointer type has its declaration site (go to definition, CMP-740)
+        PointerTypeSymbol Declared(PointerTypeSymbol pointer)
+        {
+            if (declaredAt is { } at)
+            {
+                pointer.AddLocation(DiagnosticBag.LocationOf(at));
+            }
+
+            return pointer;
+        }
+
         if (syntax.PointedType is NamedTypeSyntax { Name: IdentifierNameSyntax { Identifier.IsMissing: false } pointedName }
             && _forwardPointers is not null
             && (_sectionTypeNames!.Contains(NameOf(pointedName.Identifier)) && _scope.LookupLocal(NameOf(pointedName.Identifier)) is null
                 || _scope.Lookup(NameOf(pointedName.Identifier)) is null))
         {
-            var forward = new PointerTypeSymbol(_types.Target, name, pointedType: null, allowsPointerMath: false, _container);
+            var forward = Declared(new PointerTypeSymbol(_types.Target, name, pointedType: null, allowsPointerMath: false, _container));
             _forwardPointers.Add((forward, pointedName));
             return forward;
         }
 
         var target = BindType(syntax.PointedType, declared: declared);
-        return target.TypeKind == TypeKind.Error ? _types.Error : new PointerTypeSymbol(_types.Target, name, target, allowsPointerMath: false, _container);
+        return target.TypeKind == TypeKind.Error ? _types.Error : Declared(new PointerTypeSymbol(_types.Target, name, target, allowsPointerMath: false, _container));
     }
 
     // ------------------------------------------------------------------ enumerations and subranges (LANG-210…212)
@@ -2037,7 +2048,7 @@ internal sealed partial class DeclarationBinder
             case RecordTypeSyntax record:
                 return BindRecord(record, typeName, declaredAt, declared);
             case PointerTypeSyntax pointer:
-                return BindPointer(pointer, typeName, declared);
+                return BindPointer(pointer, typeName, declaredAt, declared);
             case ProceduralTypeSyntax procedural:
                 return BindProcedural(procedural, typeName, declaredAt);
             case ClassRefTypeSyntax classRef:

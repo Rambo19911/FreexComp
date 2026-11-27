@@ -226,6 +226,19 @@ readonly record struct FreexComp.LanguageService.FoldingRange : System.IEquatabl
   public static System.Boolean op_Inequality(FreexComp.LanguageService.FoldingRange left, FreexComp.LanguageService.FoldingRange right)
 static class FreexComp.LanguageService.FoldingService
   public static System.Collections.Immutable.ImmutableArray<FreexComp.LanguageService.FoldingRange> GetFoldingRanges(FreexComp.Compiler.Syntax.SyntaxTree tree)
+sealed record FreexComp.LanguageService.GeneratedDeclaration : System.IEquatable<FreexComp.LanguageService.GeneratedDeclaration>
+  public FreexComp.Compiler.Text.TextSpan NameSpan { get; init; }
+  public FreexComp.LanguageService.GeneratedDeclaration <Clone>$()
+  public System.Boolean Equals(FreexComp.LanguageService.GeneratedDeclaration other)
+  public System.String Text { get; init; }
+  public System.String UnitName { get; init; }
+  public System.Void Deconstruct(out System.String UnitName, out System.String Text, out FreexComp.Compiler.Text.TextSpan NameSpan)
+  public ctor(System.String UnitName, System.String Text, FreexComp.Compiler.Text.TextSpan NameSpan)
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public static System.Boolean op_Equality(FreexComp.LanguageService.GeneratedDeclaration left, FreexComp.LanguageService.GeneratedDeclaration right)
+  public static System.Boolean op_Inequality(FreexComp.LanguageService.GeneratedDeclaration left, FreexComp.LanguageService.GeneratedDeclaration right)
 static class FreexComp.LanguageService.IndentationService
   public static System.Int32 GetDesiredIndentation(FreexComp.Compiler.Syntax.SyntaxTree tree, System.Int32 lineNumber, System.Int32 indentSize)
   public static System.Nullable<FreexComp.Compiler.Text.TextSpan> GetMatchingBracket(FreexComp.Compiler.Syntax.SyntaxTree tree, System.Int32 position)
@@ -246,6 +259,7 @@ enum FreexComp.LanguageService.InlayHintKind
 static class FreexComp.LanguageService.InlayHintService
   public static System.Collections.Immutable.ImmutableArray<FreexComp.LanguageService.InlayHint> GetInlayHints(FreexComp.LanguageService.Document doc, FreexComp.Compiler.Text.TextSpan range, System.Threading.CancellationToken ct)
 static class FreexComp.LanguageService.NavigationService
+  public static FreexComp.LanguageService.GeneratedDeclaration GetGeneratedDeclaration(FreexComp.LanguageService.Document doc, System.Int32 position, System.Threading.CancellationToken ct)
   public static System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Text.Location> GoToDefinition(FreexComp.LanguageService.Document doc, System.Int32 position, System.Threading.CancellationToken ct)
   public static System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Text.Location> GoToImplementation(FreexComp.LanguageService.Document doc, System.Int32 position, System.Threading.CancellationToken ct)
   public static System.Collections.Immutable.ImmutableArray<FreexComp.LanguageService.DocumentHighlight> GetDocumentHighlights(FreexComp.LanguageService.Document doc, System.Int32 position, System.Threading.CancellationToken ct)
