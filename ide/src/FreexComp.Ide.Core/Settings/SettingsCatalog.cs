@@ -73,6 +73,10 @@ public static class SettingsCatalog
     public static readonly SettingKey<bool> FilesEnsureFinalNewline = Bool("files.ensureFinalNewline", true);
     public static readonly SettingKey<bool> FilesDetectExternalChanges = Bool("files.detectExternalChanges", true);
     public static readonly SettingKey<int> FilesLargeFileThresholdMb = Int("files.largeFileThresholdMb", 10, new SettingRange(1, 200));
+    public static readonly SettingKey<bool> HistoryEnabled = Bool("history.enabled", true); // IDE-HIST-007 (P8, F11-059)
+    public static readonly SettingKey<int> HistoryMaxRevisions = Int("history.maxRevisions", 50, new SettingRange(1, 1000));
+    public static readonly SettingKey<int> HistoryMaxAgeDays = Int("history.maxAgeDays", 30, new SettingRange(1, 3650));
+    public static readonly SettingKey<int> HistoryMaxSizeMb = Int("history.maxSizeMB", 200, new SettingRange(10, 10000));
 
     // 4.5 Build, run, tool windows
     public static readonly SettingKey<string> ToolchainLlvmBinDir = String("toolchain.llvmBinDir", "");

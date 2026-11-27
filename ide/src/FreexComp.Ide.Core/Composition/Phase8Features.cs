@@ -34,6 +34,10 @@ public static class Phase8Features
         "locals.viewText", // F14-013
         "options:Editor.General.LiveDiagnosticsSeverities", // F11-065
         "options:Editor.General.WrapSelection", // F11-047
+        "options:Environment.Files.HistoryDays", // F11-059
+        "options:Environment.Files.HistoryEnabled", // F11-059
+        "options:Environment.Files.HistoryRevisions", // F11-059
+        "options:Environment.Files.HistorySize", // F11-059
         "options:Environment.General.BuildJobs", // F01-010
         "options:Environment.General.ContinueAfterFailure", // F09-009
         "options:Environment.Trust", // F09-008
@@ -58,6 +62,7 @@ public static class Phase8Features
         "project.setPlatform", // F03-003
         "run.toggleLibraryStepping", // F02-004
         "search.bookmark.addNamed", // F11-045
+        "setting:history.enabled", // F11-059
         "templates.edit", // F11-052
         "templates.insert", // F11-052
         "templates.new", // F11-052

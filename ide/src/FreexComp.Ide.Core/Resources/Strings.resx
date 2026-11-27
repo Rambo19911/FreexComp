@@ -941,6 +941,14 @@ The form change was undone.</value>
   <data name="Msg_Options_LargeFileRange" xml:space="preserve">
     <value>Enter a size from 1 to 200 MB.</value>
   </data>
+  <data name="Msg_Options_HistoryRange" xml:space="preserve">
+    <value>{0} must be between {1} and {2}.</value>
+    <comment>local-history.md IDE-HIST-007: inline; {0} field label, {1} minimum, {2} maximum</comment>
+  </data>
+  <data name="Msg_History_WriteFailed" xml:space="preserve">
+    <value>Local history could not be written: {0}</value>
+    <comment>local-history.md IDE-HIST-005: status bar, once per session; {0} the reason</comment>
+  </data>
   <data name="Msg_Options_GridRange" xml:space="preserve">
     <value>Enter a grid size from 2 to 64.</value>
   </data>
@@ -4188,6 +4196,22 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   <data name="Options_Field_LargeFile" xml:space="preserve">
     <value>Treat files lar_ger than (MB) as large:</value>
     <comment>dialogs.md §9.7</comment>
+  </data>
+  <data name="Options_Field_HistoryEnabled" xml:space="preserve">
+    <value>Keep local _history of saved files</value>
+    <comment>local-history.md IDE-HIST-007 (dialogs.md §9.7)</comment>
+  </data>
+  <data name="Options_Field_HistoryRevisions" xml:space="preserve">
+    <value>Revisions _kept per file:</value>
+    <comment>local-history.md IDE-HIST-007 (dialogs.md §9.7)</comment>
+  </data>
+  <data name="Options_Field_HistoryDays" xml:space="preserve">
+    <value>Keep revisions for (da_ys):</value>
+    <comment>local-history.md IDE-HIST-007 (dialogs.md §9.7)</comment>
+  </data>
+  <data name="Options_Field_HistorySize" xml:space="preserve">
+    <value>Maximum history si_ze per project (MB):</value>
+    <comment>local-history.md IDE-HIST-007 (dialogs.md §9.7)</comment>
   </data>
   <data name="Button_Close" xml:space="preserve">
     <value>Close</value>

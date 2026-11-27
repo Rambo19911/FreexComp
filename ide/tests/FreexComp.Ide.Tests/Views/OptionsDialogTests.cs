@@ -83,6 +83,10 @@ public sealed partial class OptionsDialogTests
         ("AutoReload", "_Reload unmodified files that change on disk", SettingsCatalog.EnvironmentAutoReloadUnmodified, true),
         ("RecoveryInterval", "Save recovery copies e_very (seconds, 0 = off):", SettingsCatalog.EnvironmentRecoveryIntervalSeconds, true),
         ("LargeFile", "Treat files lar_ger than (MB) as large:", SettingsCatalog.FilesLargeFileThresholdMb, true),
+        ("HistoryEnabled", "Keep local _history of saved files", SettingsCatalog.HistoryEnabled, true), // IDE-HIST-007 (P8, F11-059)
+        ("HistoryRevisions", "Revisions _kept per file:", SettingsCatalog.HistoryMaxRevisions, true),
+        ("HistoryDays", "Keep revisions for (da_ys):", SettingsCatalog.HistoryMaxAgeDays, true),
+        ("HistorySize", "Maximum history si_ze per project (MB):", SettingsCatalog.HistoryMaxSizeMb, true),
     ];
 
     private static List<string> ChoiceTexts(DialogDriver dlg, string field) =>
@@ -158,6 +162,7 @@ public sealed partial class OptionsDialogTests
     [Trait("Req", "UI-DLG-092")]
     [Trait("Req", "UI-DLG-094")]
     [Trait("Req", "IDE-ED-150")]
+    [Trait("Req", "IDE-HIST-007")]
     public async Task EveryFieldBoundToCatalogKey()
     {
         await using var h = await HeadlessHarness.StartAsync(o =>
@@ -278,6 +283,28 @@ public sealed partial class OptionsDialogTests
         dlg = await h.WaitForDialogAsync("Options");
         Assert.Equal("Editor › General", PageTitle(dlg));
         Assert.Equal("Code assistance", ((OptionsViewModel)dlg.Window.Model).Field("CompletionAuto").GroupHeading); // menus.md N4
+
+        // Environment › Files with the local-history fields (IDE-HIST-007, I-331): bound to their keys; the three limits are
+        // enabled only while the history is on and report Msg.Options.HistoryRange outside their range.
+        dlg.Click("Page.Environment.Files");
+        CheckPage(EnvironmentFilesFields);
+        SetText(dlg, "HistoryRevisions", "0");
+        Assert.Equal("Revisions kept per file must be between 1 and 1000.", dlg.ErrorText("HistoryRevisions"));
+        SetText(dlg, "HistoryRevisions", "1000");
+        Assert.Null(dlg.ErrorText("HistoryRevisions"));
+        SetText(dlg, "HistoryDays", "3651");
+        Assert.Equal("Keep revisions for (days) must be between 1 and 3650.", dlg.ErrorText("HistoryDays"));
+        SetText(dlg, "HistoryDays", "30");
+        SetText(dlg, "HistorySize", "9");
+        Assert.Equal("Maximum history size per project (MB) must be between 10 and 10000.", dlg.ErrorText("HistorySize"));
+        SetText(dlg, "HistorySize", "200");
+        Assert.Null(dlg.ErrorText("HistorySize"));
+        dlg.Find<Control>("HistoryEnabled").BringIntoView();
+        Dispatcher.UIThread.RunJobs();
+        dlg.Click("HistoryEnabled");
+        Assert.All(new[] { "HistoryRevisions", "HistoryDays", "HistorySize" }, f => Assert.False(dlg.Find<Control>(f).IsEffectivelyEnabled, f));
+        dlg.Click("HistoryEnabled");
+        Assert.All(new[] { "HistoryRevisions", "HistoryDays", "HistorySize" }, f => Assert.True(dlg.Find<Control>(f).IsEffectivelyEnabled, f));
 
         // Selecting a group row selects its first child; at the product's phase the Designer page is live (the note of a
         // later-phase page: AutoSwitchLayoutBinds at Phase 4).

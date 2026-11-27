@@ -237,6 +237,8 @@ public sealed class UnitRenameTests
     private async Task FailureRestoresEveryEditedFileOnUiThread()
     {
         await OpenFixtureAsync();
+        // The file set is compared before and after: the local history of the saves (IDE-HIST-004) would add its own files.
+        _services.Settings.Set(SettingsCatalog.HistoryEnabled, false);
         Dialogs.Answer("Msg.Project.RenameFailed", "OK");
         var project = Text(ProjectPath);
         var files = _fs.AllFiles;

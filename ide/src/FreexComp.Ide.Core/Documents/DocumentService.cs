@@ -5,6 +5,7 @@ using FreexComp.Ide.Core.Commands;
 using FreexComp.Ide.Core.Designer;
 using FreexComp.Ide.Core.Dialogs;
 using FreexComp.Ide.Core.Editing;
+using FreexComp.Ide.Core.History;
 using FreexComp.Ide.Core.Languages;
 using FreexComp.Ide.Core.Models;
 using FreexComp.Ide.Core.Platform;
@@ -129,6 +130,9 @@ public sealed class DocumentService : IDocumentService
 
     /// <summary>The OS shell of <c>file.showInExplorer</c> (set by the service graph).</summary>
     public IShellService? Shell { get; set; }
+
+    /// <summary>The local history (IDE-HIST-004): each successful save is recorded there after it is settled; null = none.</summary>
+    public LocalHistoryService? History { get; set; }
 
     /// <summary>
     /// tool-windows.md §2: the full paths of the selected Project Manager nodes while the Project Manager has focus
@@ -696,13 +700,23 @@ public sealed class DocumentService : IDocumentService
         var formText = form is null ? null : plan?.FormText ?? (movedForm is null ? null : form.Designer.CurrentFormText());
         var formBytes = formText is null ? null : FileEncodings.Encode(formText, FileEncoding.Utf8);
 
+        // IDE-HIST-004: the parts of the revision this save makes (the history key is the document's file).
+        var historyKey = History?.IsTracked(fullPath) == true ? fullPath : null;
+        var historyParts = new List<HistoryPart>();
+
         // designer README §3: only the modified buffers are written, the .pas first; a form without unit has no .pas.
         if (form is null || (form.HasUnit && (form.IsUnitModified || !string.Equals(form.FilePath, fullPath, StringComparison.OrdinalIgnoreCase))))
         {
-            var written = await WriteAsync(fullPath, FileEncodings.Encode(text, document.Encoding));
+            var unitBytes = FileEncodings.Encode(text, document.Encoding);
+            var written = await WriteAsync(fullPath, unitBytes, historyKey);
             if (!written.Success)
                 return written.Failure!;
             document.DiskStamp = written.Stamp;
+            historyParts.Add(new(form is null ? HistoryRole.Text : HistoryRole.Unit, fullPath, unitBytes, written.Before));
+        }
+        else if (form is { HasUnit: true })
+        {
+            historyParts.Add(new(HistoryRole.Unit, fullPath, null, null)); // not rewritten: read from disk
         }
 
         // The form: written when modified; a form that follows the unit to a new path (Save As, rename) is written there
@@ -710,21 +724,29 @@ public sealed class DocumentService : IDocumentService
         if (form is not null && formText is not null && formBytes is { } bytes)
         {
             var formPath = movedForm ?? (form.HasUnit ? form.FormText.FilePath! : fullPath);
+            var formRole = form.HasUnit ? HistoryRole.Form : HistoryRole.Text;
             if (plan?.FormText is null && _fileSystem.FileExists(formPath) && _fileSystem.ReadAllBytes(formPath).AsSpan().SequenceEqual(bytes))
             {
                 form.FormText.DiskStamp = StampAfterWrite(formPath, bytes);
+                historyParts.Add(new(formRole, formPath, bytes, bytes));
             }
             else
             {
-                var written = await WriteAsync(formPath, bytes);
+                var written = await WriteAsync(formPath, bytes, historyKey);
                 if (!written.Success)
                     return written.Failure!;
                 form.FormText.DiskStamp = written.Stamp;
+                historyParts.Add(new(formRole, formPath, bytes, written.Before));
             }
 
             form.FormText.SetEncoding(FileEncoding.Utf8);
             form.FormText.MarkSaved(formPath, form.FormText.Language);
             form.Designer.MarkFormSaved(formText);
+        }
+        else if (form is not null)
+        {
+            // The form was not rewritten: its bytes on disk are its entry and its content before this save.
+            historyParts.Add(new(form.HasUnit ? HistoryRole.Form : HistoryRole.Text, form.HasUnit ? form.FormText.FilePath! : fullPath, null, null));
         }
 
         // The recovery copy is deleted by the recovery service on DocumentSaved (IDE-P1-080 step 5).
@@ -750,28 +772,47 @@ public sealed class DocumentService : IDocumentService
         }
 
         _commands?.InvalidateCanExecute();
+        if (historyKey is not null) // IDE-HIST-005: after the save is settled, in the background; it never fails the save
+            _ = History!.RecordSaveAsync(historyKey, historyParts);
         return OperationResult.Ok;
     }
 
     /// <summary>
     /// One file of a save, off the UI thread (IDE-ARCH-081) and marked as our own write (IDE-P1-086); the new stamp
-    /// (IDE-P1-080 step 5) or the <c>Msg.File.SaveFailed</c> result.
+    /// (IDE-P1-080 step 5) or the <c>Msg.File.SaveFailed</c> result. With a <paramref name="historyKey"/> that has no
+    /// revisions yet, the file's bytes before the write are read for its <c>original</c> revision (IDE-HIST-004; null when
+    /// the file did not exist or could not be read).
     /// </summary>
-    private async Task<(bool Success, DiskStamp? Stamp, OperationResult? Failure)> WriteAsync(string path, byte[] bytes)
+    private async Task<(bool Success, DiskStamp? Stamp, OperationResult? Failure, byte[]? Before)> WriteAsync(string path, byte[] bytes,
+        string? historyKey = null)
     {
         using var ownWrite = WriteGuard?.Invoke(path);
         try
         {
-            var stamp = await Task.Run(() =>
+            var (stamp, before) = await Task.Run(() =>
             {
+                var old = historyKey is not null && History?.WantsOriginal(historyKey) == true ? ReadBefore(path) : null;
                 AtomicFileWriter.Write(_fileSystem, path, bytes);
-                return StampAfterWrite(path, bytes);
+                return (StampAfterWrite(path, bytes), old);
             });
-            return (true, stamp, null);
+            return (true, stamp, null, before);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            return (false, null, OperationResult.Fail("Msg.File.SaveFailed", path, ex.Message));
+            return (false, null, OperationResult.Fail("Msg.File.SaveFailed", path, ex.Message), null);
+        }
+    }
+
+    /// <summary>The bytes of a file about to be overwritten; null when it does not exist or cannot be read.</summary>
+    private byte[]? ReadBefore(string path)
+    {
+        try
+        {
+            return _fileSystem.FileExists(path) ? _fileSystem.ReadAllBytes(path) : null;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return null;
         }
     }
 

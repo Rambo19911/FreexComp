@@ -240,6 +240,14 @@ public sealed class OptionsViewModel : DialogViewModel<bool>
             Check("AutoReload", SettingsCatalog.EnvironmentAutoReloadUnmodified, 1, enabledBy: "DetectExternal"),
             Integer("RecoveryInterval", SettingsCatalog.EnvironmentRecoveryIntervalSeconds, 1, () => Strings.Msg_Options_RecoveryRange),
             Integer("LargeFile", SettingsCatalog.FilesLargeFileThresholdMb, 1, () => Strings.Msg_Options_LargeFileRange),
+            // local-history.md IDE-HIST-007 (I-331, F11-059): the three limits only while the history is on.
+            Check("HistoryEnabled", SettingsCatalog.HistoryEnabled, 8),
+            Integer("HistoryRevisions", SettingsCatalog.HistoryMaxRevisions, 8, HistoryRange("HistoryRevisions", SettingsCatalog.HistoryMaxRevisions),
+                enabledBy: "HistoryEnabled"),
+            Integer("HistoryDays", SettingsCatalog.HistoryMaxAgeDays, 8, HistoryRange("HistoryDays", SettingsCatalog.HistoryMaxAgeDays),
+                enabledBy: "HistoryEnabled"),
+            Integer("HistorySize", SettingsCatalog.HistoryMaxSizeMb, 8, HistoryRange("HistorySize", SettingsCatalog.HistoryMaxSizeMb),
+                enabledBy: "HistoryEnabled"),
         ]);
         // dialogs.md §9.10 (I-268): a custom page over the trust list, read now (IDE-TRUST-014, 015).
         Trust = new TrustedLocationsPageViewModel(trustStore);
@@ -687,6 +695,11 @@ public sealed class OptionsViewModel : DialogViewModel<bool>
             field.Choices.Add(new OptionChoice(current, current));
         return field;
     }
+
+    /// <summary><c>Msg.Options.HistoryRange</c>: the field's label (without access key and colon) and the key's range.</summary>
+    private static Func<string> HistoryRange(string fieldId, SettingKey<int> key) => () =>
+        string.Format(CultureInfo.CurrentCulture, Strings.Msg_Options_HistoryRange, Resource("Options_Field_" + fieldId).Replace("_", "", StringComparison.Ordinal).TrimEnd(':'),
+            key.Ranges[0].Minimum, key.Ranges[0].Maximum);
 
     private static Func<string> DelayRange(SettingKey<int> key) => () =>
         string.Format(CultureInfo.CurrentCulture, Strings.Msg_Options_DelayRange, key.Ranges[0].Minimum, key.Ranges[0].Maximum);

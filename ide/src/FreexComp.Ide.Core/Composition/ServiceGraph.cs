@@ -168,6 +168,10 @@ public static class ServiceGraph
         var bookmarks = new BookmarkService(documents, navigation, status, platform.FileSystem); // I-121, I-315
         bookmarks.RegisterCommands(commands);
         session.Bookmarks = bookmarks;
+        // I-331: the local history of saved files (F11-059), where its phase-8 delivery applies.
+        var history = new History.LocalHistoryService(platform.FileSystem, projects, settings, platform.Clock, platform.Dispatcher, status, platform.Log);
+        if (Phase8Features.IsAvailable("setting:" + SettingsCatalog.HistoryEnabled.Name, 8, toolWindowPhase ?? ImplementedPhase))
+            documents.History = history;
         projects.RecentItems = recent;
         // IDE-P1-130: a file document that is not a member of the open project joins the recent files.
         documents.DocumentOpened += (_, e) =>
@@ -449,6 +453,7 @@ public static class ServiceGraph
             Find = find,
             Navigation = navigation,
             Bookmarks = bookmarks,
+            History = history,
             Templates = templates,
             Application = application,
             Help = help,
