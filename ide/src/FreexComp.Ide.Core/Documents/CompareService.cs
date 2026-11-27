@@ -67,9 +67,18 @@ public sealed class CompareService
     /// IDE-DIFF-027: left = the file on disk decoded as the document is (its encoding), right = the editor text; equal
     /// texts → <c>Msg.Diff.Identical</c> and no tab. An open diff of the same document is activated and refreshed.
     /// </summary>
-    public async Task CompareWithSavedAsync()
+    public Task CompareWithSavedAsync() =>
+        SavedTarget() is { } text ? CompareWithDiskAsync(text, Strings.Diff_SavedSuffix, Strings.Diff_EditorSuffix) : Task.CompletedTask;
+
+    /// <summary>
+    /// The comparison of IDE-DIFF-027 for <paramref name="text"/>, whichever document is active, with the given label
+    /// suffixes of the file on disk (left) and the document's buffer (right, live): Show Differences of a recovered
+    /// document (IDE-P1-125). Nothing for a document without a path.
+    /// </summary>
+    public async Task CompareWithDiskAsync(TextDocumentViewModel text, string diskSuffix, string bufferSuffix)
     {
-        if (SavedTarget() is not { FilePath: { } path } text)
+        ArgumentNullException.ThrowIfNull(text);
+        if (text.FilePath is not { } path)
             return;
         if (await ReadAsync(path) is not { } bytes)
             return;
@@ -80,9 +89,9 @@ public sealed class CompareService
         }
 
         var name = Path.GetFileName(path);
-        var left = new DiffSource(name + " " + Strings.Diff_SavedSuffix, path, async () =>
+        var left = new DiffSource(name + " " + diskSuffix, path, async () =>
             await ReadAsync(path) is { } current ? new DiffInput(FileEncodings.Decode(current, text.Encoding)) : null);
-        var right = new DiffSource(name + " " + Strings.Diff_EditorSuffix, path, () => Task.FromResult<DiffInput?>(new DiffInput(text.Buffer.Text)))
+        var right = new DiffSource(name + " " + bufferSuffix, path, () => Task.FromResult<DiffInput?>(new DiffInput(text.Buffer.Text)))
         {
             LiveBuffer = text.Buffer, // IDE-HIST-021: Copy Block to Current
         };

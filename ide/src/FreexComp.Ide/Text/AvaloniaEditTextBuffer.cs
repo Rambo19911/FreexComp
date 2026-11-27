@@ -44,6 +44,14 @@ public sealed class AvaloniaEditTextBuffer : ITextBuffer
     public TextDocument Document { get; }
 
     public string Text => Document.Text;
+
+    /// <summary>The document's own immutable snapshot: it shares the text's pieces with the document until they change.</summary>
+    public Func<string> CreateSnapshot()
+    {
+        var snapshot = Document.CreateSnapshot();
+        return () => snapshot.Text;
+    }
+
     public int Length => Document.TextLength;
     public int LineCount => Document.LineCount;
     public long Version { get; private set; }

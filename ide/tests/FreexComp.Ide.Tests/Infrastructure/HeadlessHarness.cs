@@ -541,6 +541,7 @@ public sealed class HeadlessHarness : IAsyncDisposable
             // Let pending saves finish before the user directory is removed.
             await Services.Settings.FlushAsync();
             await Services.Keymap.FlushAsync();
+            await Services.Recovery.WhenIdle(); // a recovery copy on its way (the idle copy, IDE-P1-126)
         }
         finally
         {

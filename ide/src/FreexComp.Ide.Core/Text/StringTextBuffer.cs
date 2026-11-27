@@ -32,6 +32,13 @@ public sealed class StringTextBuffer : ITextBuffer
     }
 
     public string Text => _text;
+
+    public Func<string> CreateSnapshot()
+    {
+        var text = _text; // a string never changes
+        return () => text;
+    }
+
     public int Length => _text.Length;
     public int LineCount => LineStarts.Length;
     public long Version { get; private set; }

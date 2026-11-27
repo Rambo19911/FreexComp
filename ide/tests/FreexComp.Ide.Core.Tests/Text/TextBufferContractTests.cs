@@ -21,6 +21,28 @@ public abstract class TextBufferContractTests
         return changes;
     }
 
+    /// <summary>IDE-P1-128: a snapshot keeps the text of its moment, whatever happens to the buffer, and is read on any thread.</summary>
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "IDE-P1-128")]
+    public void SnapshotKeepsItsTextOnAnyThread()
+    {
+        var b = CreateBuffer("one\r\ntwo");
+        var first = b.CreateSnapshot();
+        b.ApplyEdits([new TextEdit(0, 3, "1")]);
+        var second = b.CreateSnapshot();
+        b.ReplaceAll("gone", resetUndo: true);
+
+        string? firstText = null, secondText = null;
+        var reader = new Thread(() => (firstText, secondText) = (first(), second()));
+        reader.Start();
+        reader.Join();
+
+        Assert.Equal("one\r\ntwo", firstText);
+        Assert.Equal("1\r\ntwo", secondText);
+        Assert.Equal("one\r\ntwo", first()); // also here, again
+        Assert.Equal("gone", b.Text);
+    }
+
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-P1-091")]
     public void ContinuedUndoGroupJoinsThePreviousStep()

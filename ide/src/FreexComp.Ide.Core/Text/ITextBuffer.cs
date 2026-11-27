@@ -38,6 +38,12 @@ public interface ITextBuffer
 {
     /// <summary>Snapshot of the whole text; O(n).</summary>
     string Text { get; }
+
+    /// <summary>
+    /// The text as it is now, to be read later: taking the snapshot does not copy the text (IDE-P1-128), calling the
+    /// result yields it (O(n) for the editor's buffer) and is allowed on any thread, any number of times.
+    /// </summary>
+    Func<string> CreateSnapshot();
     int Length { get; }
     int LineCount { get; }
     string GetText(int offset, int length);

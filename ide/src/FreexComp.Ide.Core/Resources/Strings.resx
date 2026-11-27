@@ -116,6 +116,10 @@ Add the existing file to the project and open it?</value>
   <data name="Msg_File_Recovered" xml:space="preserve">
     <value>Unsaved changes from {0} were recovered after FreexComp closed unexpectedly.</value>
   </data>
+  <data name="Msg_File_RecoveredDiskChanged" xml:space="preserve">
+    <value>Unsaved changes from {0} were recovered, but the file on disk has changed since. Compare before keeping them.</value>
+    <comment>IDE-P1-127 info bar (warning); 0 = date and time of the recovery copy</comment>
+  </data>
   <data name="Msg_File_Saved" xml:space="preserve">
     <value>Saved {0}</value>
   </data>
@@ -3243,6 +3247,10 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
     <value>Keep Recovered Version</value>
     <comment>Msg.File.Recovered info-bar button (IDE-P1-123)</comment>
   </data>
+  <data name="Button_ShowDifferences" xml:space="preserve">
+    <value>Show Differences</value>
+    <comment>Msg.File.Recovered / Msg.File.RecoveredDiskChanged info-bar button (IDE-P1-125)</comment>
+  </data>
   <data name="Button_DiscardAndReload" xml:space="preserve">
     <value>Discard and Reload from Disk</value>
     <comment>Msg.File.Recovered info-bar button (IDE-P1-123)</comment>
@@ -6312,6 +6320,14 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   <data name="Diff_EditorSuffix" xml:space="preserve">
     <value>(editor)</value>
     <comment>IDE-DIFF-020: label suffix of the editor text in Compare with Saved</comment>
+  </data>
+  <data name="Diff_OnDiskSuffix" xml:space="preserve">
+    <value>(on disk)</value>
+    <comment>IDE-P1-125: label suffix of the file on disk in Show Differences of a recovered document</comment>
+  </data>
+  <data name="Diff_RecoveredSuffix" xml:space="preserve">
+    <value>(recovered)</value>
+    <comment>IDE-P1-125: label suffix of the document's text in Show Differences of a recovered document</comment>
   </data>
   <data name="Diff_SideBySide" xml:space="preserve">
     <value>Side by side</value>
