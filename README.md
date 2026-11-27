@@ -235,7 +235,7 @@ Help pages (also shown inside the IDE with F1):
 
 Phases 1–7 (IDE shell, compiler, build and run, UI framework, form designer, debugger, data access) are complete.
 Phase 8 implements the full feature set for Windows, area by area. Progress counts finished feature items
-(updated 2026-11-26; non-Windows platforms are out of scope).
+(updated 2026-11-27; non-Windows platforms are out of scope).
 
 | Area | Done | Progress | Finished so far (☐ = in work) |
 |---|---:|---|---|
@@ -248,7 +248,7 @@ Phase 8 implements the full feature set for Windows, area by area. Progress coun
 | AI features | 0 / 31 | `░░░░░░░░░░` | — |
 | Visual data binding | 0 / 16 | `░░░░░░░░░░` | — |
 | Build and deploy | 11 / 36 | `███░░░░░░░` | Build and run from the IDE, clickable errors · build configurations with inheritance · build events with a trust question · resource scripts and the resource compiler `prc` |
-| Language and runtime library | 6 / 118 | `█░░░░░░░░░` | Inline variables · hardware faults caught by `try` … `except` · `deprecated` / `platform` / `experimental` warnings · runtime library source included |
+| Language and runtime library | 7 / 118 | `█░░░░░░░░░` | Inline variables · class constructors and destructors · hardware faults caught by `try` … `except` · `deprecated` / `platform` / `experimental` warnings · runtime library source included |
 | IDE | 6 / 120 | `█░░░░░░░░░` | Main window, code editor, project open and save · copy a library unit into a project · no-network guarantee checked by tests |
 | Source control | 0 / 18 | `░░░░░░░░░░` | — |
 | Refactoring and navigation | 0 / 27 | `░░░░░░░░░░` | — |
@@ -260,7 +260,7 @@ Phase 8 implements the full feature set for Windows, area by area. Progress coun
 | Web front-end framework | 0 / 29 | `░░░░░░░░░░` | — |
 | Bundled components | 0 / 6 | `░░░░░░░░░░` | — |
 | Local web UI | 0 / 18 | `░░░░░░░░░░` | — |
-| **Total** | **51 / 881** | `█░░░░░░░░░` | **6 %** |
+| **Total** | **52 / 881** | `█░░░░░░░░░` | **6 %** |
 
 - [ ] First public release with installer
 
