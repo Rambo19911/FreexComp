@@ -16,7 +16,7 @@ using FreexComp.Ide.Core.ViewModels;
 namespace FreexComp.Ide.Core.Refactoring;
 
 /// <inheritdoc cref="IRefactoringService"/>
-public sealed class RefactoringService : IRefactoringService
+public sealed partial class RefactoringService : IRefactoringService
 {
     /// <summary>The command that takes the newest operation back (IDE-REFAC-021).</summary>
     public const string UndoCommandId = "refactor.undo";
@@ -61,6 +61,12 @@ public sealed class RefactoringService : IRefactoringService
             if (e.Document is TextDocumentViewModel text)
                 text.OperationUndo = UndoFromEditor;
         };
+        // IDE-REFAC-032: closing a document cancels the collection of its quick actions.
+        documents.DocumentClosed += (_, e) =>
+        {
+            if (e.Document is TextDocumentViewModel text && _collecting.Remove(text, out var request))
+                request.Cancel();
+        };
     }
 
     public bool IsBusy { get; private set; }
@@ -78,13 +84,20 @@ public sealed class RefactoringService : IRefactoringService
     public string? UndoTitle => _history.Count > 0 ? _history[^1].Title : null;
 
     /// <summary>
-    /// Registers <c>refactor.undo</c> (IDE-REFAC-021): enabled while the history is not empty and no operation runs; its
-    /// main-menu label names the operation it takes back.
+    /// Gives the engine the command service, while the IDE is composed. Where they are available in a composition of
+    /// <paramref name="implementedPhase"/> it registers <c>refactor.undo</c> (IDE-REFAC-021: enabled while the history is
+    /// not empty and no operation runs; its main-menu label names the operation it takes back) and
+    /// <c>edit.quickActions</c> (IDE-REFAC-034); a refactoring registered afterwards gets its command here (IDE-REFAC-030).
     /// </summary>
-    public void RegisterCommands(ICommandService commands)
+    public void RegisterCommands(ICommandService commands, int implementedPhase)
     {
         ArgumentNullException.ThrowIfNull(commands);
-        commands.RegisterHandler(UndoCommandId, new UndoHandler(this));
+        _commands = commands;
+        _implementedPhase = implementedPhase;
+        if (IsAvailable(UndoCommandId))
+            commands.RegisterHandler(UndoCommandId, new UndoHandler(this));
+        if (IsAvailable(QuickActionsCommandId))
+            commands.RegisterHandler(QuickActionsCommandId, new QuickActionsHandler(this));
         Changed += (_, _) => commands.InvalidateCanExecute();
     }
 

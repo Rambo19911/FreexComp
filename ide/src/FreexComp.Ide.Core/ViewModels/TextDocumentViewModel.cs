@@ -115,6 +115,14 @@ public partial class TextDocumentViewModel : DocumentViewModel, ICommandTarget
     /// <summary>The text-area context menu (menus.md §12), built when it opens; null without a command service.</summary>
     public Func<IReadOnlyList<Menus.MenuItemModel>>? TextAreaMenu { get; internal set; }
 
+    /// <summary>
+    /// A menu to open at the caret of the document's view, its first item focused (IDE-REFAC-034: the quick actions of
+    /// the caret position). Without a view nothing opens.
+    /// </summary>
+    public event EventHandler<IReadOnlyList<Menus.MenuItemModel>>? CaretMenuRequested;
+
+    internal void ShowCaretMenu(IReadOnlyList<Menus.MenuItemModel> items) => CaretMenuRequested?.Invoke(this, items);
+
     /// <summary>Change-bar states per line (UI-ED-040): the document's <see cref="LineChangeTracker"/> (tests may replace it).</summary>
     public ILineChangeSource LineChanges
     {

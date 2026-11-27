@@ -26,6 +26,7 @@ public static class Phase8Features
         "diff.previousDifference", // F12-014
         "edit.formatDocument", // F11-101
         "edit.formatSelection", // F11-101
+        "edit.quickActions", // F13-003
         "file.compareWithSaved", // F12-014
         "file.copyLibraryUnitToProject", // F05-099
         "file.editLibrarySource", // F02-004

@@ -119,6 +119,7 @@ public static class DefaultKeymap
         new(KeyGesture.Parse("Alt+8"), Global, null, "view.todo"),
         new(KeyGesture.Parse("Alt+9"), Global, null, "view.breakpoints"),
         new(KeyGesture.Parse("Ctrl+,"), Global, null, "tools.options"),
+        new(KeyGesture.Parse("Ctrl+."), Editor, null, "edit.quickActions"),
         new(KeyGesture.Parse("Ctrl+/"), Editor, null, "edit.toggleLineComment"),
         new(KeyGesture.Parse("Ctrl+Shift+/"), Editor, null, "edit.toggleBlockComment"),
         new(KeyGesture.Parse("Ctrl+]"), Editor, null, "search.goToMatchingBracket"),
@@ -184,6 +185,7 @@ public static class DefaultKeymap
         new(KeyGesture.Parse("Shift+Alt+F"), Editor, null, "edit.formatDocument"),
         new(KeyGesture.Parse("Shift+Alt+S"), Editor, null, "edit.formatSelection"),
         new(KeyGesture.Parse("Ctrl+K, Ctrl+F"), Editor, null, "edit.formatSelection"), // I-342: the default key map's one chord (UI-KEY-006)
+        new(KeyGesture.Parse("Alt+Enter"), Editor, null, "edit.quickActions"),
         new(KeyGesture.Parse("Shift+Alt+Enter"), Global, null, "view.fullScreen"),
         new(KeyGesture.Parse("Ctrl+Break"), Global, null, "project.cancelBuild"),
         new(KeyGesture.Parse("Ctrl+Alt+Break"), Global, null, "run.pause"),

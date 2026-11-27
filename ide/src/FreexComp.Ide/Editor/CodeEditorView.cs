@@ -328,6 +328,7 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
             old.Folding.Changed -= OnFoldingChanged;
             old.RevealCaretRequested -= OnRevealCaretRequested;
             old.RevealCaretAtThirdRequested -= OnRevealCaretAtThirdRequested;
+            old.CaretMenuRequested -= OnCaretMenuRequested;
             old.TemplateFieldsChanged -= OnDecorationsChanged;
         }
 
@@ -374,6 +375,7 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
         document.Folding.Changed += OnFoldingChanged;
         document.RevealCaretRequested += OnRevealCaretRequested;
         document.RevealCaretAtThirdRequested += OnRevealCaretAtThirdRequested;
+        document.CaretMenuRequested += OnCaretMenuRequested;
         document.TemplateFieldsChanged += OnDecorationsChanged;
         SetFind(document.Find);
         ApplyZoomAndWrap();
@@ -483,7 +485,6 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
         }
 
         var menu = Views.MenuBarBuilder.CreateContextMenu(build());
-        var caret = area.Caret.CalculateCaretRectangle();
         menu.PlacementTarget = textView;
         if (point is { } at)
         {
@@ -491,14 +492,50 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
         }
         else
         {
-            menu.Placement = PlacementMode.Bottom;
-            menu.PlacementRect = new Rect(caret.X - textView.ScrollOffset.X, caret.Y - textView.ScrollOffset.Y, 1, caret.Height);
+            PlaceAtCaret(menu);
         }
 
         area.ContextMenu = menu;
         menu.Open(area);
         return true;
     }
+
+    /// <summary>UI-MENU-043: below the caret line, at the caret (the toolkit centres the menu on it).</summary>
+    private void PlaceAtCaret(ContextMenu menu)
+    {
+        var textView = _editor.TextArea.TextView;
+        var caret = _editor.TextArea.Caret.CalculateCaretRectangle();
+        menu.PlacementTarget = textView;
+        menu.Placement = PlacementMode.Bottom;
+        menu.PlacementRect = new Rect(caret.X - textView.ScrollOffset.X, caret.Y - textView.ScrollOffset.Y, 1, caret.Height);
+    }
+
+    /// <summary>
+    /// IDE-REFAC-034: a menu of the document (its quick actions) below the caret line with its left edge at the caret
+    /// and its first item focused. It opens after the input that asked for it was handled — the request may come from
+    /// an item of a menu that is still open.
+    /// </summary>
+    private void OnCaretMenuRequested(object? sender, IReadOnlyList<Core.Menus.MenuItemModel> items) =>
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (!ReferenceEquals(sender, _document) || !this.IsAttachedToVisualTree())
+                return;
+            var area = _editor.TextArea;
+            if (area.ContextMenu is { IsOpen: true } open)
+                open.Close();
+            area.Caret.BringCaretToView();
+            UpdateLayout(); // a caret that was scrolled out of view: the menu is placed where it is now
+            var menu = Views.MenuBarBuilder.CreateContextMenu(items);
+            PlaceAtCaret(menu);
+            menu.Placement = PlacementMode.BottomEdgeAlignedLeft; // a list about the caret position: its left edge at the caret
+            area.ContextMenu = menu;
+            menu.Open(area);
+            if (menu.Items.OfType<MenuItem>().FirstOrDefault() is { } first)
+            {
+                first.IsSelected = true;
+                first.Focus(NavigationMethod.Directional);
+            }
+        });
 
     private IDisposable? _pendingBoxClick;
 

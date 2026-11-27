@@ -38,7 +38,7 @@ public sealed class RefactoringUndoViewTests
     }
 
     /// <summary>Returns when the engine's running operation has ended (its work on the thread pool included).</summary>
-    private static async Task WhenIdleAsync(IRefactoringService engine)
+    internal static async Task WhenIdleAsync(IRefactoringService engine)
     {
         if (engine.IsBusy)
         {

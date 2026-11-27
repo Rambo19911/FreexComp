@@ -29,7 +29,7 @@ public static class ServiceGraph
     /// <param name="toolWindowPhase">Tool windows up to this phase register (default <see cref="ImplementedPhase"/>); tests
     /// use it to drive the Phase 3 tool windows before the implemented phase switches (I-127).</param>
     public static IdeServices Build(StartupOptions options, IPlatformServices platform, IReadOnlyList<ToolWindowDefinition>? toolWindows = null,
-        int? toolWindowPhase = null)
+        int? toolWindowPhase = null, IReadOnlyList<Refactoring.IRefactoring>? refactorings = null)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(platform);
@@ -226,8 +226,12 @@ public static class ServiceGraph
         // IDE-REFAC-007: the preview of an operation is the dialog RefactoringPreview (I-350).
         refactoring.Preview = edit => platform.Dialogs.ShowAsync(new RefactoringPreviewViewModel(edit, documents.ActiveDocument?.FilePath,
             platform.TextBuffers, languages, layout, platform.Clipboard));
-        if (Phase8Features.IsAvailable(Refactoring.RefactoringService.UndoCommandId, 8, toolWindowPhase ?? ImplementedPhase))
-            refactoring.RegisterCommands(commands); // I-349
+        refactoring.RegisterCommands(commands, toolWindowPhase ?? ImplementedPhase); // I-349 refactor.undo, I-351 edit.quickActions
+        // IDE-REFAC-033: the code actions of the language service are quick actions. IDE-REFAC-030: the refactorings — a
+        // card that delivers one registers it here; a composition may add its own.
+        refactoring.Register(new Refactoring.LanguageServiceQuickActions(codeModel, platform.FileSystem));
+        foreach (var extra in refactorings ?? [])
+            refactoring.Register(extra);
         var liveDiagnostics = new CodeModel.LiveDiagnosticsService(documents, codeModel, settings, platform.Clock, platform.Dispatcher); // I-111
         projects.ProjectChanged += (_, _) => liveDiagnostics.OnProjectChanged(projects.Definition); // IDE-ED-151 (I-324)
         var semanticHighlights = new CodeModel.SemanticHighlightService(documents, codeModel, settings, platform.Clock, platform.Dispatcher); // I-112

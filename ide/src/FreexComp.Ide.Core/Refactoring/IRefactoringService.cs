@@ -1,3 +1,6 @@
+using FreexComp.Ide.Core.Text;
+using FreexComp.Ide.Core.ViewModels;
+
 namespace FreexComp.Ide.Core.Refactoring;
 
 /// <summary>
@@ -40,6 +43,37 @@ public interface IRefactoringService
     /// </summary>
     /// <exception cref="InvalidOperationException">An operation is running (<see cref="IsBusy"/>), or nothing can be undone.</exception>
     Task<RefactoringResult> UndoAsync();
+
+    /// <summary>
+    /// IDE-REFAC-030: adds a refactoring. It is offered as a quick action where it is applicable, and when its
+    /// <see cref="IRefactoring.CommandId"/> names a command that is available it becomes that command's handler — enabled
+    /// in a writable text view while no operation runs and the refactoring is applicable. Called while the IDE is
+    /// composed, before the commands without a handler get their stubs.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">A refactoring with this id is registered, or the command has a handler.</exception>
+    void Register(IRefactoring refactoring);
+
+    /// <summary>IDE-REFAC-032: adds a source of quick actions; the providers are asked in the order they were registered.</summary>
+    void Register(IQuickActionProvider provider);
+
+    /// <summary>
+    /// IDE-REFAC-031: runs <paramref name="refactoring"/> at the selection of the active document's visible text view: its
+    /// changes are computed and applied with <see cref="PreviewMode.Auto"/>. A null result (the user cancelled) or no
+    /// writable text view: <see cref="RefactoringOutcome.Canceled"/>, nothing shown; a refusal
+    /// (<see cref="RefactoringException"/>) or a file that cannot be read while the changes are built: a message and
+    /// <see cref="RefactoringOutcome.Failed"/>. The engine is busy from the start to the result.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">An operation is running (<see cref="IsBusy"/>).</exception>
+    Task<RefactoringResult> RunAsync(IRefactoring refactoring);
+
+    /// <summary>
+    /// IDE-REFAC-032: the quick actions for <paramref name="selection"/> of <paramref name="document"/> — what the
+    /// providers offer, then one action per registered refactoring that is applicable; all fixes before all
+    /// refactorings, each in the order received, an action with the id and title of an earlier one left out, at most
+    /// twenty. A provider that throws is logged and skipped. The task is cancelled by <paramref name="ct"/>, by a newer
+    /// request for the same document and when the document closes. The engine is not busy meanwhile.
+    /// </summary>
+    Task<IReadOnlyList<QuickAction>> GetQuickActionsAsync(TextDocumentViewModel document, TextSelection selection, CancellationToken ct);
 
     /// <summary>The busy state or the history changed (an operation started or ended, the history was cleared).</summary>
     event EventHandler? Changed;

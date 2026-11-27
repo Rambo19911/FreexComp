@@ -44,7 +44,8 @@ public static class MenuBarBuilder
             return new Separator();
         }
 
-        var item = new MenuItem { Header = ToAccessText(model.Label) };
+        // A literal label has no mnemonic: only the underscore, which the menu reads as its mark, is escaped.
+        var item = new MenuItem { Header = model.IsLiteralLabel ? model.Label.Replace("_", "__", StringComparison.Ordinal) : ToAccessText(model.Label) };
         if (model.Run is { } run)
         {
             AutomationProperties.SetAutomationId(item, (context ? "Context." : "Menu.") + model.ActionId);

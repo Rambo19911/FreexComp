@@ -1448,6 +1448,9 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   <data name="Cmd_edit_completeClass" xml:space="preserve">
     <value>Complete Class at Cursor</value>
   </data>
+  <data name="Cmd_edit_quickActions" xml:space="preserve">
+    <value>Quick Actions…</value>
+  </data>
   <data name="Cmd_edit_syncEdit" xml:space="preserve">
     <value>Edit Identifier Occurrences Together</value>
   </data>
@@ -2527,6 +2530,9 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   </data>
   <data name="Menu_edit_parameterInfo" xml:space="preserve">
     <value>&amp;Parameter Info</value>
+  </data>
+  <data name="Menu_edit_quickActions" xml:space="preserve">
+    <value>&amp;Quick Actions…</value>
   </data>
   <data name="Menu_edit_insertTemplate" xml:space="preserve">
     <value>Insert Code &amp;Template…</value>
@@ -6696,6 +6702,11 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
     <value>{0} produced changes that cannot be applied. Nothing was changed.</value>
     <comment>IDE-REFAC-002</comment>
   </data>
+  <data name="Msg_Refactoring_Refused" xml:space="preserve">
+    <value>{0} is not possible here.
+{1}</value>
+    <comment>IDE-REFAC-031: 0 = the title of the refactoring or quick action, 1 = its reason</comment>
+  </data>
   <data name="Msg_Refactoring_UndoneOne" xml:space="preserve">
     <value>Undid {0} in 1 file</value>
     <comment>IDE-REFAC-021</comment>
@@ -6763,6 +6774,10 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   <data name="Msg_Refactoring_PreviewSummary" xml:space="preserve">
     <value>Selected changes: {0} of {1}, files: {2}</value>
     <comment>UI-DLG-363 summary line of the Preview dialog: 0 = checked edits, 1 = all edits, 2 = files with a checked edit</comment>
+  </data>
+  <data name="Msg_QuickActions_None" xml:space="preserve">
+    <value>No quick actions here</value>
+    <comment>IDE-REFAC-034</comment>
   </data>
   <data name="Dialog_RefactoringPreview_Title" xml:space="preserve">
     <value>Preview — {0}</value>

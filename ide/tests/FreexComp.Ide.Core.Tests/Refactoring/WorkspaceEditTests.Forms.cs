@@ -5,10 +5,8 @@ using FreexComp.Designer.Surface;
 using FreexComp.Ide.Core.Documents;
 using FreexComp.Ide.Core.Refactoring;
 using FreexComp.Ide.Core.Resources;
-using FreexComp.Ide.Core.Settings;
 using FreexComp.Ide.Core.Tests.Designer;
 using FreexComp.Ide.Core.Tests.Designer.CodeSync;
-using FreexComp.Ide.Core.Tests.Infrastructure;
 using FreexComp.Ide.Core.Text;
 using FreexComp.Ide.Core.ViewModels;
 using FreexComp.Ide.TestSupport;
@@ -237,18 +235,6 @@ public sealed partial class WorkspaceEditTests
         + "procedure Run(F: TMainForm);\nbegin\n  F.Old(nil);\nend;\n\nend.\n";
 
     private const string RenameForm = "object MainForm: TMainForm\n  OnShow = Old\n  object Button1: TButton\n    OnClick = Old\n  end\nend\n";
-
-    /// <summary>The toolchain under <c>G:\</c> with the real system unit, so that the project binds (as <c>UnitRenameTests</c>).</summary>
-    private void WriteToolchain()
-    {
-        var src = Path.Combine(SpecTables.RepoRootPath(), "rtl", "src");
-        foreach (var file in Directory.GetFiles(src, "*.inc").Append(Path.Combine(src, "System.pas")).Append(Path.Combine(src, "unit-aliases.json")).Where(System.IO.File.Exists))
-            File(@"G:\rtl\" + Path.GetFileName(file), System.IO.File.ReadAllText(file));
-        foreach (var tool in (string[])[@"G:\llvm\clang.exe", @"G:\llvm\lld-link.exe", @"G:\llvm\llvm-dlltool.exe"])
-            File(tool, "");
-        _services.Settings.Set(SettingsCatalog.ToolchainLlvmBinDir, @"G:\llvm");
-        _services.Settings.Set(SettingsCatalog.ToolchainRtlDir, @"G:\rtl");
-    }
 
     [Fact(Timeout = 120000)]
     [Trait("Req", "IDE-REFAC-003")]

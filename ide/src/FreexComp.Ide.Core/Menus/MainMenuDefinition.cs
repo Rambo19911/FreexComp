@@ -95,6 +95,7 @@ public static class MainMenuDefinition
             [
                 Command("edit.completeCode"),
                 Command("edit.parameterInfo"),
+                Command("edit.quickActions"),
                 Command("edit.insertTemplate"),
                 Command("edit.surroundWith"),
                 Command("edit.completeClass"),

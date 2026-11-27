@@ -69,6 +69,7 @@ public static class MessageDefinitions
         new("Msg.Refactoring.ApplyFailed", E, ["OK"]), // IDE-REFAC-008
         new("Msg.Refactoring.RestoreFailed", E, ["OK"]),
         new("Msg.Refactoring.Failed", E, ["OK"]), // IDE-REFAC-002
+        new("Msg.Refactoring.Refused", MessageKind.Info, ["OK"]), // IDE-REFAC-031
         new("Msg.Refactoring.UndoBlocked", W, ["OK"]), // IDE-REFAC-021
         new("Msg.Refactoring.UndoBlockedLocal", Q, ["UndoInThisFile", "Cancel"]), // IDE-REFAC-024
         new("Msg.Refactoring.UndoFailed", E, ["OK"]), // IDE-REFAC-021

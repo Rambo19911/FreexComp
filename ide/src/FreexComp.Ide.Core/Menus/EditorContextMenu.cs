@@ -13,7 +13,7 @@ public static class EditorContextMenu
     public static readonly IReadOnlyList<string?> Commands =
     [
         "edit.cut", "edit.copy", "edit.paste", "edit.selectAll", null,
-        "search.goToDeclaration", "search.findReferences", "refactor.rename", null,
+        "edit.quickActions", "search.goToDeclaration", "search.findReferences", "refactor.rename", null,
         "edit.toggleLineComment", "edit.insertTemplate", "edit.formatDocument", null,
         "run.toggleBreakpoint", "run.runToCursor", "run.addWatch", "run.evaluate", null,
         "view.toggleFormCode", "file.showInExplorer", "file.copyPath",

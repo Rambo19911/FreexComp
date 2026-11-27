@@ -24,8 +24,9 @@ public sealed record WorkspaceEdit(string Title, ImmutableArray<FileEdit> Files)
     /// against: for a source of <paramref name="compilation"/> its syntax tree's text (an open document's buffer text as
     /// the workspace was synchronised with it, else the file); for a form file (CMP-753), which the service reads from
     /// disk, the file decoded with <see cref="EncodingDetector"/>, without a byte-order mark. Everything runs off the
-    /// calling thread. A form file that cannot be read faults the task with the <see cref="IOException"/> or
-    /// <see cref="UnauthorizedAccessException"/>. A file rename of the service is not part of a workspace edit.
+    /// calling thread. A file that cannot be read (a form deleted or locked since the service read it) faults the task
+    /// with a <see cref="WorkspaceEditReadException"/> — an <see cref="IOException"/> that names the file and carries the
+    /// system's reason. A file rename of the service is not part of a workspace edit.
     /// </summary>
     public static Task<WorkspaceEdit> FromLanguageService(string title, IEnumerable<DocumentEdit> edits, Compilation compilation,
         IFileSystem fileSystem, CancellationToken ct = default)
@@ -41,9 +42,18 @@ public sealed record WorkspaceEdit(string Title, ImmutableArray<FileEdit> Files)
             foreach (var edit in list)
             {
                 ct.ThrowIfCancellationRequested();
-                var baseText = IsFormFile(edit.Path)
-                    ? EncodingDetector.Detect(fileSystem.ReadAllBytes(edit.Path)).Text
-                    : compilation.GetSyntaxTree(edit.Path).Text.Text;
+                string baseText;
+                try
+                {
+                    baseText = IsFormFile(edit.Path)
+                        ? EncodingDetector.Detect(fileSystem.ReadAllBytes(edit.Path)).Text
+                        : compilation.GetSyntaxTree(edit.Path).Text.Text;
+                }
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+                {
+                    throw new WorkspaceEditReadException(edit.Path, e);
+                }
+
                 files.Add(new FileEdit(edit.Path, baseText, [.. edit.Changes.Select(c => new TextEdit(c.Span.Start, c.Span.Length, c.NewText))]));
             }
 

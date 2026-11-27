@@ -67,6 +67,12 @@ public sealed class TestCompositionOptions
 
     /// <summary>Tool windows up to this phase register (testing.md §2.1 "ImplementedPhase override"); null = the product's phase.</summary>
     public int? ImplementedPhase { get; set; }
+
+    /// <summary>
+    /// Refactorings registered while the graph is composed, before the commands without a handler get their stubs
+    /// (IDE-REFAC-030): one bound to a delivered command handles that command.
+    /// </summary>
+    public List<Core.Refactoring.IRefactoring> Refactorings { get; } = [];
 }
 
 /// <summary>Builds the production service graph from fakes (IDE-ARCH-013, IDE-TEST-020).</summary>
@@ -104,7 +110,7 @@ public static class TestComposition
             PlatformCatalog = o.PlatformCatalog,
         };
 
-        var services = ServiceGraph.Build(options, platform, o.ToolWindows, o.ImplementedPhase);
+        var services = ServiceGraph.Build(options, platform, o.ToolWindows, o.ImplementedPhase, o.Refactorings);
 
         // I-210: the test settles the background work it started before it ends: language-service requests (structure,
         // diagnostics, highlighting; a request queued after all earlier ones completes once they have posted their results)

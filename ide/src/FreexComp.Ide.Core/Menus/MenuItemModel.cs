@@ -80,6 +80,9 @@ public sealed class MenuItemModel : ObservableObject
     /// <summary>Label with <c>&amp;</c> before the mnemonic; empty for separators.</summary>
     public string Label { get; }
 
+    /// <summary><see cref="Label"/> is shown as it is: an <c>&amp;</c> in it is a character, not the mark of a mnemonic.</summary>
+    public bool IsLiteralLabel { get; private init; }
+
     public IdeCommand? Command { get; }
 
     public string? CommandId => Command?.Id;
@@ -161,6 +164,13 @@ public sealed class MenuItemModel : ObservableObject
     internal static MenuItemModel ForAction(string actionId, string label, Action run, bool? isChecked = null, bool disabled = false) =>
         new(null, label, null, null, isChecked is null ? MenuToggleKind.None : MenuToggleKind.Check, [], false, false)
         { ActionId = actionId, Run = run, IsCheckedAction = isChecked, IsDisabled = disabled };
+
+    /// <summary>
+    /// An action item whose label is a text from outside the resources (IDE-REFAC-034: the title of a quick action): it
+    /// is shown as it is and has no mnemonic.
+    /// </summary>
+    internal static MenuItemModel ForTitledAction(string actionId, string title, Action run) =>
+        new(null, title, null, null, MenuToggleKind.None, [], false, false) { ActionId = actionId, Run = run, IsLiteralLabel = true };
 
     internal static MenuItemModel ForSubmenu(string key, string label, IReadOnlyList<MenuItemModel> children, bool alwaysEnabled) =>
         new(key, label, null, null, MenuToggleKind.None, children, false, alwaysEnabled);

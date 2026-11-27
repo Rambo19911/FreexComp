@@ -65,6 +65,7 @@ public static class CommandCatalog
         new("edit.insertTemplate", [Editor], 3, ["Ctrl+J"]),
         new("edit.surroundWith", [Editor], 8, ["Ctrl+Shift+J"]),
         new("edit.completeClass", [Editor], 8, ["Ctrl+Shift+C"]),
+        new("edit.quickActions", [Editor], 8, ["Ctrl+.", "Alt+Enter"]),
         new("edit.syncEdit", [Editor], 8, ["Ctrl+Shift+E"]),
         new("edit.formatDocument", [Editor], 8, ["Shift+Alt+F"]),
         new("edit.formatSelection", [Editor], 8, ["Shift+Alt+S", "Ctrl+K, Ctrl+F"]),

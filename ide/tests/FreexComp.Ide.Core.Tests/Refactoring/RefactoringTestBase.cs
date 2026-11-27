@@ -7,8 +7,10 @@ using FreexComp.Designer.Surface;
 using FreexComp.Ide.Core.Composition;
 using FreexComp.Ide.Core.Documents;
 using FreexComp.Ide.Core.Refactoring;
+using FreexComp.Ide.Core.Settings;
 using FreexComp.Ide.Core.Tests.Designer;
 using FreexComp.Ide.Core.Tests.Designer.CodeSync;
+using FreexComp.Ide.Core.Tests.Infrastructure;
 using FreexComp.Ide.Core.Text;
 using FreexComp.Ide.Core.ViewModels;
 using FreexComp.Ide.TestSupport;
@@ -16,7 +18,7 @@ using FreexComp.Ide.TestSupport;
 namespace FreexComp.Ide.Core.Tests.Refactoring;
 
 /// <summary>
-/// The fixture of the refactoring-engine tests (I-347 … I-349): an in-memory project of four units, optionally with a form
+/// The fixture of the refactoring-engine tests (I-347 … I-351): an in-memory project of four units, optionally with a form
 /// unit, the engine of a test composition, and the helpers that build edits and compare the state of files and buffers.
 /// </summary>
 public abstract class RefactoringTestBase
@@ -39,16 +41,32 @@ public abstract class RefactoringTestBase
     protected readonly InMemoryFileSystem _fs = new();
     protected readonly RecordingFileSystem _recording;
     protected readonly ManualClock _clock = new();
-    protected readonly IdeServices _services;
+    protected IdeServices _services;
 
     protected RefactoringTestBase()
     {
         _recording = new RecordingFileSystem(_fs);
-        _services = TestComposition.Build(o =>
-        {
-            o.FileSystem = _recording;
-            o.Clock = _clock;
-        });
+        _services = Compose();
+    }
+
+    /// <summary>A composition over the fixture's file system and clock; <paramref name="configure"/> adds to it (the refactorings of I-351).</summary>
+    protected IdeServices Compose(Action<TestCompositionOptions>? configure = null) => TestComposition.Build(o =>
+    {
+        o.FileSystem = _recording;
+        o.Clock = _clock;
+        configure?.Invoke(o);
+    });
+
+    /// <summary>The toolchain under <c>G:\</c> with the real system unit, so that the project binds (as <c>UnitRenameTests</c>).</summary>
+    protected void WriteToolchain()
+    {
+        var src = Path.Combine(SpecTables.RepoRootPath(), "rtl", "src");
+        foreach (var file in Directory.GetFiles(src, "*.inc").Append(Path.Combine(src, "System.pas")).Append(Path.Combine(src, "unit-aliases.json")).Where(System.IO.File.Exists))
+            File(@"G:\rtl\" + Path.GetFileName(file), System.IO.File.ReadAllText(file));
+        foreach (var tool in (string[])[@"G:\llvm\clang.exe", @"G:\llvm\lld-link.exe", @"G:\llvm\llvm-dlltool.exe"])
+            File(tool, "");
+        _services.Settings.Set(SettingsCatalog.ToolchainLlvmBinDir, @"G:\llvm");
+        _services.Settings.Set(SettingsCatalog.ToolchainRtlDir, @"G:\rtl");
     }
 
     protected IRefactoringService Engine => _services.Refactoring;
