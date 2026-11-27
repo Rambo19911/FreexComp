@@ -4,6 +4,7 @@ using FreexComp.Compiler;
 using FreexComp.Compiler.Syntax;
 using FreexComp.Designer.Catalog;
 using FreexComp.Designer.Model;
+using FreexComp.Designer.Surface;
 using FreexComp.Ide.Core.CodeModel;
 using FreexComp.Ide.Core.Commands;
 using FreexComp.Ide.Core.Documents;
@@ -36,6 +37,9 @@ public sealed class StructureRow(StructureNode node, int depth, bool isExpanded)
         set => SetProperty(ref _isTracked, value);
     }
 }
+
+/// <summary>UI-TW-1611: the drop position over <see cref="Row"/>; <see cref="IsValid"/> false: the drop is refused (UI-TW-1612).</summary>
+public sealed record StructureDropTarget(StructureRow Row, StructureDropPosition Position, bool IsValid);
 
 /// <summary>
 /// The Structure tool window (tool-windows.md §3, IDE-ED-130/131): the tree of the active Pascal document's buffer,
@@ -79,6 +83,8 @@ public sealed class StructureViewModel : ToolWindowViewModel, ICommandTarget
     private IReadOnlyList<StructureRow> _selectedRows = [];
     private FormDocumentViewModel? _form;
     private ICommandService? _commands;
+    private List<FormObject>? _dragged;
+    private StructureDropTarget? _dropTarget;
 
     public StructureViewModel(IDocumentService documents, IClock clock, IUiDispatcher dispatcher, CodeModelWorker worker, ILayoutService layout,
         NavigationService navigation)
@@ -196,9 +202,97 @@ public sealed class StructureViewModel : ToolWindowViewModel, ICommandTarget
 
     /// <summary>
     /// tool-windows.md §3: in the Design view a row's context menu is the designer context menu of the selection (its
-    /// verb group first, DSG-SUR-191, UI-DSG-082); null outside the Design view.
+    /// verb group first, DSG-SUR-191, UI-DSG-082) with the order entries after <c>edit.delete</c> (UI-TW-1614); null outside
+    /// the Design view.
     /// </summary>
-    public IReadOnlyList<Menus.MenuItemModel>? BuildDesignContextMenu() => IsDesign ? _form!.Designer.ContextMenu?.Invoke() : null;
+    public IReadOnlyList<Menus.MenuItemModel>? BuildDesignContextMenu() =>
+        IsDesign && _form!.Designer.ContextMenu?.Invoke() is { } items
+            ? _commands is { } commands ? Menus.DesignerContextMenu.ForStructure(items, commands) : items
+            : null;
+
+    /// <summary>UI-TW-1611: the selected components are being dragged in the Design view's tree.</summary>
+    public bool IsDragging => _dragged is not null;
+
+    /// <summary>UI-TW-1611: where the dragged components would go (null: over no row, or no drag).</summary>
+    public StructureDropTarget? DropTarget
+    {
+        get => _dropTarget;
+        private set => SetProperty(ref _dropTarget, value);
+    }
+
+    /// <summary>
+    /// UI-TW-1611: the drop position within a row from the pointer's place in it (0 = top edge, 1 = bottom edge): the upper
+    /// quarter before the row, the lower quarter after it, the middle half into its component.
+    /// </summary>
+    public static StructureDropPosition PositionAt(double fraction) =>
+        fraction < 0.25 ? StructureDropPosition.Before : fraction >= 0.75 ? StructureDropPosition.After : StructureDropPosition.Into;
+
+    /// <summary>
+    /// UI-TW-1611: starts dragging the selection from <paramref name="row"/> (an unselected row first becomes the selection).
+    /// False — no drag — outside the Design view or when the selection has the form root or an item that cannot move
+    /// (unknown, read-only, inherited).
+    /// </summary>
+    public bool BeginDrag(StructureRow row)
+    {
+        ArgumentNullException.ThrowIfNull(row);
+        if (!IsDesign || IsDragging || _form!.Designer.Surface is not { } surface)
+            return false;
+        if (!SelectedRows.Contains(row))
+            SelectRows([row]);
+        var items = surface.Selection.Items.ToList();
+        if (items.Count == 0 || !items.TrueForAll(DesignSurfaceController.CanDragInStructure))
+            return false;
+        _dragged = items;
+        return true;
+    }
+
+    /// <summary>UI-TW-1611, 1612: the pointer is over <paramref name="row"/> at <paramref name="fraction"/> of its height (null: over no row).</summary>
+    public StructureDropTarget? DragOver(StructureRow? row, double fraction)
+    {
+        if (_dragged is not { } items || _form!.Designer.Surface is not { } surface)
+            return null;
+        if (row is null || _form.Designer.Model?.FindByQualifiedName(row.Node.Name) is not { } target)
+            return DropTarget = null;
+        var position = row.Node.IsDesignRoot ? StructureDropPosition.Into : PositionAt(fraction);
+        var valid = surface.ResolveStructureDrop(items, target, position, out _, out _) is not null;
+        return DropTarget = new StructureDropTarget(row, position, valid);
+    }
+
+    /// <summary>
+    /// UI-TW-1612, 1613: ends the drag at the current drop target — a valid one moves the components (one
+    /// <c>Move in Structure</c> undo unit), an invalid one changes nothing and shows <c>Msg.Structure.DropRefused</c> (the
+    /// target cannot hold controls) or <c>Msg.Structure.NonVisualStaysInParent</c> (a non-visual component would change its
+    /// parent). True when the form changed.
+    /// </summary>
+    public bool Drop()
+    {
+        var items = _dragged;
+        var target = DropTarget;
+        CancelDrag();
+        if (items is null || target is null || _form!.Designer.Surface is not { } surface
+            || _form.Designer.Model?.FindByQualifiedName(target.Row.Node.Name) is not { } obj)
+        {
+            return false;
+        }
+
+        if (surface.ResolveStructureDrop(items, obj, target.Position, out var refusing, out var reason) is null)
+        {
+            if (reason == StructureDropRefusal.NonVisualStaysInParent)
+                _form.Designer.ShowStatus("Msg.Structure.NonVisualStaysInParent", [refusing.Name, refusing.Parent?.Name ?? ""]);
+            else
+                _form.Designer.ShowStatus("Msg.Structure.DropRefused", [refusing.Name]);
+            return false;
+        }
+
+        return surface.MoveInStructure(items, obj, target.Position);
+    }
+
+    /// <summary>UI-TW-1612: Escape or a lost pointer capture ends the drag without a change.</summary>
+    public void CancelDrag()
+    {
+        _dragged = null;
+        DropTarget = null;
+    }
 
     /// <summary>Expands or collapses a row (keyed, kept across refreshes).</summary>
     public void SetExpanded(StructureRow row, bool expanded)
@@ -252,6 +346,7 @@ public sealed class StructureViewModel : ToolWindowViewModel, ICommandTarget
 
     private void OnActiveDocumentChanged()
     {
+        CancelDrag(); // a drag does not survive a document switch
         if (_document is { } old)
         {
             old.Buffer.Changed -= OnBufferChanged;
@@ -393,7 +488,8 @@ public sealed class StructureViewModel : ToolWindowViewModel, ICommandTarget
 
     /// <summary>
     /// UI-TW-207, 209: the form, then its components in creation order (non-visual ones after their visual siblings), each
-    /// <c>Name: TClass</c> with the key <c>Form/&lt;Name&gt;</c> (a duplicate name, preserved F0106, appends <c>#&lt;n&gt;</c>).
+    /// <c>Name: TClass</c> with the key <c>Form/&lt;Name&gt;</c> (a duplicate name, preserved F0106, appends <c>#&lt;n&gt;</c>);
+    /// UI-TW-1610: each with its palette icon (the root: the form glyph).
     /// DSG-SUR-233, 245: the inherited objects of an instance under it, named and keyed by their qualified name, with the frame
     /// or ancestor class they come from (UI-DSG-136, 143); the root of a descendant with its ancestor class (UI-DSG-144).
     /// </summary>
@@ -411,7 +507,8 @@ public sealed class StructureViewModel : ToolWindowViewModel, ICommandTarget
             var children = obj.Children.Where(c => !IsNonVisual(c)).Concat(obj.Children.Where(IsNonVisual)).Select(Node).ToList();
             return new StructureNode(key, obj.QualifiedName, $"{obj.Name}: {obj.TypeName}", StructureKind.Component, -1, 0, 0, children,
                 IsNonVisual: IsNonVisual(obj), IsUnavailable: obj.IsPreserved, InheritedFrom: obj.IsInherited ? obj.InheritedSource?.ClassName : null,
-                InheritsFrom: obj.IsInheritedRoot ? obj.InheritedSource?.ClassName : null);
+                InheritsFrom: obj.IsInheritedRoot ? obj.InheritedSource?.ClassName : null, IsDesignRoot: obj.Parent is null,
+                PaletteIcon: obj.Info?.Palette?.Icon);
         }
 
         return [Node(model.Root)];

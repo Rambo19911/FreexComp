@@ -14,5 +14,7 @@
     <None Include="..\TestData\**\*" LinkBase="TestData" CopyToOutputDirectory="PreserveNewest" />
     <!-- I-329: golden diff cases (DiffGoldenTests), copied to the output as Diff/Corpus/. -->
     <None Update="Diff\Corpus\**\*" CopyToOutputDirectory="PreserveNewest" />
+    <!-- D-150: the Structure outline golden (StructureGoldenTests), copied to the output as Editing/Structure/. -->
+    <None Update="Editing\Structure\**\*" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

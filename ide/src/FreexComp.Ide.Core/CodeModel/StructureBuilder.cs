@@ -17,11 +17,13 @@ public enum StructureKind { Group, Error, Unit, Class, Record, Interface, Enum, 
 /// members (null = none / public); <see cref="Position"/> = <c>line:col</c> of an error row. Design view (UI-TW-207):
 /// <see cref="IsNonVisual"/> = a non-visual component (gear overlay), <see cref="IsUnavailable"/> = an unknown or read-only
 /// (preserved) object (<c>text.disabled</c>, warning overlay), <see cref="InheritedFrom"/> = the frame or ancestor class of an
-/// inherited object (UI-DSG-136, 143), <see cref="InheritsFrom"/> = the ancestor class of a descendant's root row (UI-DSG-144).
+/// inherited object (UI-DSG-136, 143), <see cref="InheritsFrom"/> = the ancestor class of a descendant's root row (UI-DSG-144),
+/// <see cref="IsDesignRoot"/> = the form root (the <c>form</c> glyph, UI-TW-1610), <see cref="PaletteIcon"/> = the full path of
+/// the component's palette icon (DSG-TP-009; null: the generic component glyph, UI-TW-1610).
 /// </summary>
 public sealed record StructureNode(string Key, string Name, string Text, StructureKind Kind, int NameOffset, int Start, int End,
     IReadOnlyList<StructureNode> Children, string? Visibility = null, string? Position = null, bool IsNonVisual = false, bool IsUnavailable = false,
-    string? InheritedFrom = null, string? InheritsFrom = null);
+    string? InheritedFrom = null, string? InheritsFrom = null, bool IsDesignRoot = false, string? PaletteIcon = null);
 
 /// <summary>The Structure tree of a Pascal syntax tree (UI-TW-200…209, IDE-ED-130), from <c>NavigationService.GetDocumentSymbols</c>.</summary>
 public static class StructureBuilder

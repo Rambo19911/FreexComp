@@ -94,6 +94,9 @@ public static class UndoTitles
 {
     public const string Move = "Undo_Designer_Move";
 
+    /// <summary>A drop in the Structure window's Design view (structure-tree.md UI-TW-1613, "Move in Structure").</summary>
+    public const string MoveInStructure = "Undo_Designer_MoveInStructure";
+
     public const string Resize = "Undo_Designer_Resize";
 
     public const string TabOrder = "Undo_Designer_TabOrder";

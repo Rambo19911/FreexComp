@@ -305,6 +305,13 @@ public sealed class InheritedFormDesignerViewTests
             var inStructure = Enabled(menu);
             menu.Close();
             Dispatcher.UIThread.RunJobs();
+            // UI-TW-1614: the tree's menu has the order entries at the top level, with the surface's enabled rules, instead
+            // of the surface menu's Order sub-menu (whose closed items do not reflect the command state).
+            foreach (var id in new[] { "Context.Designer.Order", "Context.designer.bringToFront", "Context.designer.sendToBack" })
+                Assert.True(onSurface.Remove(id), id);
+            Assert.Equal(surface.CanExecute(FreexComp.Designer.Surface.Commands.BringToFront), inStructure["Context.designer.bringToFront"]);
+            Assert.Equal(surface.CanExecute(FreexComp.Designer.Surface.Commands.SendToBack), inStructure["Context.designer.sendToBack"]);
+            Assert.True(inStructure.Remove("Context.designer.bringToFront") && inStructure.Remove("Context.designer.sendToBack"));
             Assert.Equal(onSurface, inStructure);
             Assert.True(inStructure["Context.edit.copy"], name);
             Assert.True(inStructure["Context.edit.selectAll"], name);

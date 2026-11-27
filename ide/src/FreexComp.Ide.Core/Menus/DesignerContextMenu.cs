@@ -22,6 +22,34 @@ public static class DesignerContextMenu
 
     private static readonly string?[] Order = ["designer.bringToFront", "designer.sendToBack"];
 
+    /// <summary>
+    /// UI-TW-1614: the Structure window's Design-view menu — <paramref name="items"/> (the design-surface menu) with a
+    /// separator, <c>designer.bringToFront</c> and <c>designer.sendToBack</c> after <c>edit.delete</c>, and without the
+    /// <c>Designer.Order</c> sub-menu that would repeat them (every item id stays unique).
+    /// </summary>
+    public static IReadOnlyList<MenuItemModel> ForStructure(IReadOnlyList<MenuItemModel> items, ICommandService commands)
+    {
+        ArgumentNullException.ThrowIfNull(items);
+        ArgumentNullException.ThrowIfNull(commands);
+        var result = new List<MenuItemModel>(items.Count + 3);
+        foreach (var item in items)
+        {
+            if (item.Key == "Designer.Order")
+            {
+                continue;
+            }
+
+            result.Add(item);
+            if (item.CommandId == "edit.delete")
+            {
+                result.Add(MenuItemModel.Separator());
+                result.AddRange(Order.Select(id => MenuItemModel.ForCommand(MenuLabels.For(new CommandMenuNode(id!)), commands.Get(id!), null, MenuToggleKind.None)));
+            }
+        }
+
+        return result;
+    }
+
     public static IReadOnlyList<MenuItemModel> Build(ICommandService commands, IReadOnlyList<FreexComp.Designer.Catalog.DesignerVerb>? verbs = null)
     {
         ArgumentNullException.ThrowIfNull(commands);

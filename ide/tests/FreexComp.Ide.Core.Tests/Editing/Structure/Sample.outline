@@ -1,0 +1,40 @@
+Errors | Errors (1) | folder
+  Errors/0 | Expression expected but ';' found | error
+Uses | Uses | folder
+  Uses/SysUtils | SysUtils | symbol-unit
+  Uses/Classes | Classes | symbol-unit
+  Uses/Math | Math | symbol-unit
+Types | Types | folder
+  Types/TShape | TShape = (shCircle, shSquare, shTriangle) | symbol-enum
+    Types/TShape/shCircle | shCircle | symbol-constant
+    Types/TShape/shSquare | shSquare | symbol-constant
+    Types/TShape/shTriangle | shTriangle | symbol-constant
+  Types/TPoint2 | TPoint2 = record | symbol-record
+    Types/TPoint2/X | X: Integer | symbol-field
+    Types/TPoint2/Y | Y: Integer | symbol-field
+  Types/TCanvasItem | TCanvasItem = class(TObject) | symbol-class
+    Types/TCanvasItem/FSecret | FSecret: Integer | symbol-field+lock
+    Types/TCanvasItem/FName | FName: string | symbol-field+lock
+    Types/TCanvasItem/SetName | SetName(const AValue: string) | symbol-routine+lock
+    Types/TCanvasItem/FGuarded | FGuarded: Boolean | symbol-field+symbol-protected
+    Types/TCanvasItem/FShape | FShape: TShape | symbol-field+symbol-protected
+    Types/TCanvasItem/GetArea | GetArea: Double | symbol-routine+symbol-protected
+    Types/TCanvasItem/Create | Create(const AName: string) | symbol-routine
+    Types/TCanvasItem/Draw | Draw | symbol-routine
+    Types/TCanvasItem/Name | Name: string | symbol-property
+    Types/TCanvasItem/Shape | Shape: TShape | symbol-property
+Constants | Constants | folder
+  Constants/MaxItems | MaxItems = 100 | symbol-constant
+  Constants/Greeting | Greeting = 'Hello, structure window' | symbol-constant
+Variables | Variables | folder
+  Variables/ItemCount | ItemCount: Integer | symbol-field
+  Variables/Origin | Origin: TPoint2 | symbol-field
+Routines | Routines | folder
+  Routines/Scale | Scale(A: Integer): Integer | symbol-routine
+  Routines/Scale#1 | Scale(A: Double): Double | symbol-routine
+  Routines/TCanvasItem.Create | TCanvasItem.Create(const AName: string) | symbol-routine
+  Routines/TCanvasItem.SetName | TCanvasItem.SetName(const AValue: string) | symbol-routine
+  Routines/TCanvasItem.GetArea | TCanvasItem.GetArea: Double | symbol-routine
+  Routines/TCanvasItem.Draw | TCanvasItem.Draw | symbol-routine
+  Routines/Scale#2 | Scale(A: Integer): Integer | symbol-routine
+  Routines/Scale#3 | Scale(A: Double): Double | symbol-routine

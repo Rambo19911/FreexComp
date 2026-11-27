@@ -729,6 +729,12 @@ The form change was undone.</value>
   <data name="Msg_Structure_Empty" xml:space="preserve">
     <value>Nothing to show for this document</value>
   </data>
+  <data name="Msg_Structure_DropRefused" xml:space="preserve">
+    <value>{0} cannot hold child controls.</value>
+  </data>
+  <data name="Msg_Structure_NonVisualStaysInParent" xml:space="preserve">
+    <value>{0} is not a control; it can only be reordered among the components of {1}.</value>
+  </data>
   <data name="Msg_Options_FontSizeRange" xml:space="preserve">
     <value>Enter a size from 6 to 72.</value>
   </data>

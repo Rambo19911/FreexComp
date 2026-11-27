@@ -19,15 +19,30 @@ namespace FreexComp.Ide.Views;
 /// Left/Right collapse/expand, Enter and double-click run <c>structure.goToSource</c>; the tracked row is selected without
 /// taking the focus. Empty state <c>Tool.Structure.Empty</c> (<c>Msg.Structure.Empty</c>). In the Design view
 /// (UI-TW-207) the list allows several selected rows, kept equal to the surface selection; non-visual components carry
-/// a gear overlay, unknown or read-only ones are drawn in <c>text.disabled</c> with a warning overlay.
+/// a gear overlay, unknown or read-only ones are drawn in <c>text.disabled</c> with a warning overlay; the rows show their
+/// palette icons (UI-TW-1610) and can be dragged to re-parent or reorder the components (UI-TW-1611…1613): a press and a
+/// 4 px move start the drag, a 2 px <c>accent</c> insertion line or a highlighted row (<c>bg.selected.inactive</c>,
+/// <c>accent</c> border) shows the drop position, the "no" cursor an invalid one; Escape or a lost capture cancels.
 /// </summary>
 public sealed class StructureView : UserControl
 {
     private const string Prefix = "Tool.Structure";
     private readonly ListBox _list = new() { SelectionMode = SelectionMode.Single };
     private readonly TextBlock _empty = new() { Text = Strings.Msg_Structure_Empty, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 24, 0, 0) };
+    /// <summary>UI-TW-1611: the pointer distance (DIP) that turns a press on a row into a drag.</summary>
+    private const double DragThreshold = 4;
+
+    private Cursor? _noCursor;
+
+    private readonly Canvas _dropLayer = new() { IsHitTestVisible = false };
+    private readonly Border _dropLine = new() { Height = 2, IsVisible = false };
+    private readonly System.Runtime.CompilerServices.ConditionalWeakTable<StructureRow, Border> _rowBorders = [];
     private StructureViewModel? _model;
     private bool _syncing;
+    private (Point At, StructureRow Row, bool SelectOnRelease)? _press;
+    private bool _dragging;
+    private Border? _highlighted;
+    private IDisposable[] _highlight = [];
 
     public StructureView()
     {
@@ -62,9 +77,19 @@ public sealed class StructureView : UserControl
         };
         _list.AddHandler(KeyDownEvent, OnKeyDown, RoutingStrategies.Tunnel);
         _list.ContextRequested += OnContextRequested;
+        _list.AddHandler(PointerPressedEvent, OnPointerPressed, RoutingStrategies.Tunnel);
+        _list.AddHandler(PointerMovedEvent, OnPointerMoved, RoutingStrategies.Tunnel, handledEventsToo: true);
+        _list.AddHandler(PointerReleasedEvent, OnPointerReleased, RoutingStrategies.Tunnel, handledEventsToo: true);
+        _list.PointerCaptureLost += (_, _) =>
+        {
+            if (_dragging)
+                CancelDrag(); // UI-TW-1612
+        };
         AutomationProperties.SetAutomationId(_empty, Prefix + ".Empty");
         _empty.Bind(TextBlock.ForegroundProperty, _empty.GetResourceObservable("FxcTextSecondaryBrush"));
-        Content = new Panel { Children = { _list, _empty } };
+        _dropLine.Bind(Border.BackgroundProperty, _dropLine.GetResourceObservable("FxcAccentDefaultBrush"));
+        _dropLayer.Children.Add(_dropLine);
+        Content = new Panel { Children = { _list, _dropLayer, _empty } };
         DataContextChanged += (_, _) => Attach(DataContext as StructureViewModel);
     }
 
@@ -124,8 +149,152 @@ public sealed class StructureView : UserControl
         e.Handled = true;
     }
 
+    /// <summary>
+    /// UI-TW-1611: a left press on a row of the Design view may become a drag. A press on a row of a multi-selection keeps
+    /// the selection (the drag moves all of it); without a drag the release then selects only that row.
+    /// </summary>
+    private void OnPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        _press = null;
+        if (_model is not { IsDesign: true } model || !e.GetCurrentPoint(_list).Properties.IsLeftButtonPressed || e.KeyModifiers != KeyModifiers.None)
+            return;
+        var at = e.GetPosition(_list);
+        if (RowAt(at) is not { } hit)
+            return;
+        var keep = model.SelectedRows.Count > 1 && model.SelectedRows.Contains(hit.Row);
+        _press = (at, hit.Row, keep);
+        if (keep)
+        {
+            e.Handled = true; // the list would reduce the selection to this row
+            _list.Focus();
+        }
+    }
+
+    private void OnPointerMoved(object? sender, PointerEventArgs e)
+    {
+        if (_model is not { } model || _press is not { } press)
+            return;
+        var at = e.GetPosition(_list);
+        if (!_dragging)
+        {
+            if (Math.Abs(at.X - press.At.X) < DragThreshold && Math.Abs(at.Y - press.At.Y) < DragThreshold)
+                return;
+            if (!model.BeginDrag(press.Row))
+            {
+                _press = null;
+                return;
+            }
+
+            _dragging = true;
+            e.Pointer.Capture(_list);
+        }
+
+        e.Handled = true;
+        var hit = RowAt(at);
+        ShowDropTarget(model.DragOver(hit?.Row, hit?.Fraction ?? 0));
+    }
+
+    private void OnPointerReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        if (_model is not { } model || _press is not { } press)
+            return;
+        _press = null;
+        if (!_dragging)
+        {
+            if (press.SelectOnRelease)
+                model.SelectRows([press.Row]);
+            return;
+        }
+
+        _dragging = false;
+        e.Handled = true;
+        e.Pointer.Capture(null);
+        ShowDropTarget(null);
+        model.Drop();
+    }
+
+    private void CancelDrag()
+    {
+        _dragging = false;
+        _press = null;
+        ShowDropTarget(null);
+        _model?.CancelDrag();
+    }
+
+    /// <summary>The row under <paramref name="at"/> (list coordinates) and where in it (0 = top edge, 1 = bottom edge).</summary>
+    private (StructureRow Row, double Fraction)? RowAt(Point at)
+    {
+        foreach (var container in _list.GetRealizedContainers())
+        {
+            if (!container.IsVisible || _list.ItemFromContainer(container) is not StructureRow row
+                || container.TranslatePoint(default, _list) is not { } origin)
+            {
+                continue;
+            }
+
+            var height = container.Bounds.Height;
+            if (height > 0 && at.Y >= origin.Y && at.Y < origin.Y + height)
+                return (row, (at.Y - origin.Y) / height);
+        }
+
+        return null;
+    }
+
+    /// <summary>UI-TW-1611, 1612: the insertion line or the row highlight of <paramref name="target"/>, the "no" cursor when it is invalid.</summary>
+    private void ShowDropTarget(StructureDropTarget? target)
+    {
+        foreach (var binding in _highlight)
+            binding.Dispose();
+        _highlight = [];
+        _highlighted?.ClearValue(Border.BackgroundProperty);
+        _highlighted?.SetValue(Border.BorderBrushProperty, Avalonia.Media.Brushes.Transparent);
+        _highlighted = null;
+        _dropLine.IsVisible = false;
+        _list.Cursor = _dragging && target is not { IsValid: true } ? _noCursor ??= new Cursor(StandardCursorType.No) : null;
+        if (!_dragging || target is not { IsValid: true } || _list.ContainerFromItem(target.Row) is not { } container
+            || container.TranslatePoint(default, _dropLayer) is not { } origin)
+        {
+            return;
+        }
+
+        if (target.Position == FreexComp.Designer.Surface.StructureDropPosition.Into)
+        {
+            if (_rowBorders.TryGetValue(target.Row, out var border))
+            {
+                _highlighted = border;
+                _highlight =
+                [
+                    border.Bind(Border.BackgroundProperty, border.GetResourceObservable("FxcBgSelectedInactiveBrush")),
+                    border.Bind(Border.BorderBrushProperty, border.GetResourceObservable("FxcAccentDefaultBrush")),
+                ];
+            }
+
+            return;
+        }
+
+        var indent = 4 + 16 * target.Row.Depth;
+        var y = target.Position == FreexComp.Designer.Surface.StructureDropPosition.Before ? origin.Y : origin.Y + container.Bounds.Height;
+        Canvas.SetLeft(_dropLine, origin.X + indent);
+        Canvas.SetTop(_dropLine, Math.Max(0, y - 1));
+        _dropLine.Width = Math.Max(0, container.Bounds.Width - indent - 4);
+        _dropLine.IsVisible = true;
+    }
+
+    /// <summary>The row frame highlighted as the "into" drop target (UI-TW-1611); for tests.</summary>
+    internal Border? HighlightedRow => _highlighted;
+
+    /// <summary>The insertion line (UI-TW-1611); for tests.</summary>
+    internal Border DropLine => _dropLine;
+
     private async void OnKeyDown(object? sender, KeyEventArgs e)
     {
+        if (_dragging && e.Key == Key.Escape)
+        {
+            e.Handled = true;
+            CancelDrag(); // UI-TW-1612
+            return;
+        }
+
         if (_model?.SelectedRow is not { } row || e.KeyModifiers != KeyModifiers.None)
             return;
         switch (e.Key)
@@ -153,7 +322,8 @@ public sealed class StructureView : UserControl
     private Control CreateRow(StructureRow row)
     {
         var id = $"{Prefix}.Row.{row.Node.Key}";
-        var panel = new DockPanel { MinHeight = 22, Margin = new Thickness(4 + 16 * row.Depth, 0, 4, 0), Background = Avalonia.Media.Brushes.Transparent };
+        // 1 px less on every side: the frame around the row (UI-TW-1611) keeps the row at 22 px and the indent unchanged.
+        var panel = new DockPanel { MinHeight = 20, Margin = new Thickness(3 + 16 * row.Depth, 0, 3, 0), Background = Avalonia.Media.Brushes.Transparent };
         AutomationProperties.SetAutomationId(panel, id);
         // UI-DSG-136, UI-DSG-143: an inherited object's screen-reader name names the frame or ancestor it comes from;
         // UI-DSG-144: the root row of a descendant names its ancestor.
@@ -184,12 +354,16 @@ public sealed class StructureView : UserControl
             panel.Children.Add(position);
         }
 
-        // UI-TW-203: the symbol-kind icon (16).
-        var kind = new IdeIcon
-        {
-            IconName = SymbolIcons.For(row.Node.Kind), Width = 16, Height = 16, VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(0, 0, 4, 0), Classes = { "symbol" },
-        };
+        // UI-TW-203: the symbol-kind icon (16); UI-TW-1610: a component's palette icon (16 × 16, the generic glyph when it has
+        // none or it cannot be read), the form root's form glyph.
+        Control kind = row.Node.Kind == StructureKind.Component && !row.Node.IsDesignRoot
+            ? PaletteIcon.FromFile(row.Node.PaletteIcon)
+            : new IdeIcon { IconName = row.Node.IsDesignRoot ? "form" : SymbolIcons.For(row.Node.Kind), Classes = { "symbol" } };
+        kind.Width = 16;
+        kind.Height = 16;
+        kind.VerticalAlignment = VerticalAlignment.Center;
+        kind.Margin = new Thickness(0, 0, 4, 0);
+        kind.IsHitTestVisible = false;
         DockPanel.SetDock(kind, Avalonia.Controls.Dock.Left);
         panel.Children.Add(kind);
 
@@ -224,6 +398,10 @@ public sealed class StructureView : UserControl
         if (row.Node.Visibility is { } visibility)
             ToolTip.SetTip(text, visibility);
         panel.Children.Add(text);
-        return panel;
+
+        // UI-TW-1611: the frame of the "into" drop highlight.
+        var rowFrame = new Border { Child = panel, BorderThickness = new Thickness(1), BorderBrush = Avalonia.Media.Brushes.Transparent };
+        _rowBorders.AddOrUpdate(row, rowFrame);
+        return rowFrame;
     }
 }

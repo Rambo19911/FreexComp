@@ -25,7 +25,6 @@ public sealed class PaletteIcon : Control
         new("M9 9H15V15H9Z", false, true, 1.5),
     ];
 
-    private readonly Shape[] _shapes;
     private readonly List<(Geometry Geometry, Shape Shape)> _geometry = [];
 
     /// <param name="svg">The icon file's bytes; null or unusable: the generic glyph (<paramref name="failed"/> is then called for bytes that did not parse).</param>
@@ -38,10 +37,22 @@ public sealed class PaletteIcon : Control
         }
 
         IsGeneric = shapes is null;
-        _shapes = shapes ?? Generic;
         ActualThemeVariantChanged += (_, _) => InvalidateVisual();
-        _geometry.AddRange(Geometries(_shapes));
+        _geometry.AddRange(Geometries(shapes ?? Generic));
     }
+
+    private PaletteIcon(IReadOnlyList<(Geometry Geometry, Shape Shape)>? loaded)
+    {
+        IsGeneric = loaded is null;
+        ActualThemeVariantChanged += (_, _) => InvalidateVisual();
+        _geometry.AddRange(loaded ?? Geometries(Generic));
+    }
+
+    /// <summary>
+    /// UI-TW-1610: the icon of the SVG file at <paramref name="path"/> (read and parsed once per path, as the design
+    /// surface's tray tiles, <see cref="Load"/>); null, missing or unusable: the generic glyph (no message).
+    /// </summary>
+    internal static PaletteIcon FromFile(string? path) => new(path is null ? null : Load(path));
 
     /// <summary>
     /// D-121: the drawable shapes of the SVG file at <paramref name="path"/> (read and parsed once per path), or null when
