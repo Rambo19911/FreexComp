@@ -1,0 +1,12 @@
+# Toolchain files of the installed product: globs relative to third_party\llvm, "/" separated (INS-002).
+# A glob that matches nothing fails the build; the end-to-end test of the installed product proves the set complete.
+
+# compiler back end (CMP-600): clang compiles the emitted IR, lld-link links, llvm-dlltool writes import libraries
+bin/clang.exe
+bin/lld-link.exe
+bin/llvm-dlltool.exe
+# resource compiler (prc): llvm-rc, preprocessing through clang
+bin/llvm-rc.exe
+# debugger: the adapter and its library (liblldb loads the Python runtime of payload-third-party.txt)
+bin/lldb-dap.exe
+bin/liblldb.dll

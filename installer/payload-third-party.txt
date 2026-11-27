@@ -1,0 +1,12 @@
+# Run-time files of the other bundled components: globs relative to third_party, "/" separated (INS-002).
+
+# SQLite (public domain): loaded by the data-access units and copied next to built programs
+sqlite/sqlite3.dll
+# Python runtime that liblldb.dll imports, with its standard library and licence
+python-embed/python3.dll
+python-embed/python313.dll
+python-embed/python313.zip
+python-embed/python313._pth
+python-embed/vcruntime140.dll
+python-embed/vcruntime140_1.dll
+python-embed/LICENSE.txt

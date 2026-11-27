@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    The product's own offline setup program (INS-004…012). Windows Forms comes with the Windows Desktop runtime of the
+    SDK; scripts/build-installer.ps1 publishes it self-contained single-file and appends the payload.
+  -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <RootNamespace>FreexComp.Setup</RootNamespace>
+    <ApplicationIcon>..\..\..\assets\brand\app.ico</ApplicationIcon>
+    <!-- ApplicationConfiguration.Initialize(): per-monitor DPI, visual styles. No elevation in the manifest (asInvoker). -->
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <ApplicationVisualStyles>true</ApplicationVisualStyles>
+    <!-- IShellLink for the Start-menu shortcut. -->
+    <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
+  </PropertyGroup>
+  <!--
+    The product outputs share one folder layout (bin/<configuration>/net10.0), which the repository's network-policy
+    scan of every product assembly reads (NET-010). Builds with an artifacts path (build-installer.ps1) keep that layout.
+  -->
+  <PropertyGroup Condition="'$(ArtifactsPath)' == ''">
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <OutputPath>bin\$(Configuration)\net10.0\</OutputPath>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="FreexComp.Setup.Tests" />
+  </ItemGroup>
+</Project>

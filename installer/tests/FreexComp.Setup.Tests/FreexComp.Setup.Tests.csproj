@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Tests of the setup program (installer.md §4). They write only scratch folders and HKCU\Software\FreexComp-SetupTest\<guid>. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <RootNamespace>FreexComp.Setup.Tests</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\FreexComp.Setup\FreexComp.Setup.csproj" />
+  </ItemGroup>
+</Project>
