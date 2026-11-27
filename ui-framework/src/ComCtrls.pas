@@ -98,6 +98,8 @@ type
     FTabPosition: TTabPosition;
     FTabWidth: SmallInt;
     FCanvas: TCanvas;
+    FHotTab: Integer;                                        { the tab under the mouse, -1 for none (UIF-1517) }
+    FNativeStrip: Boolean;                                   { the system control paints below the own strip }
     FOnChange: TNotifyEvent;
     FOnChanging: TTabChangingEvent;
     FOnDrawTab: TDrawTabEvent;
@@ -118,9 +120,23 @@ type
     procedure SetTabWidth(Value: SmallInt);
     { UIF-1513: the parent's WM_DRAWITEM (ODT_TAB) reflected }
     procedure CNDrawItem(var Message: TWMDrawItem);
+    { UIF-1513: Canvas bound to DC for one DrawTab call }
+    procedure DrawItemOn(DC: HDC; Index: Integer; const R: TRect; Active: Boolean);
+    { UIF-1517: the theme data of the tab class when the framework paints the strip (bottom, left and right tabs
+      with visual styles), else 0; the caller closes it }
+    function StripTheme: THandle;
+    { UIF-1517: the system control's painting, the own strip over it, the graphic children }
+    procedure PaintStrip(DC: HDC; Theme: THandle);
+    procedure DrawStrip(DC: HDC; Theme: THandle);
+    procedure DrawStripTab(DC: HDC; Theme: THandle; Index, Count: Integer; Selected: Boolean; const Display: TRect);
+    procedure DrawStripContent(DC: HDC; Index: Integer; const R: TRect; Side: TTabPosition; Selected: Boolean);
+    procedure SetHotTab(Value: Integer);
   protected
     procedure CreateParams(var Params: TCreateParams); override;
     procedure CreateWnd; override;
+    procedure WMEraseBkgnd(var Message: TWMEraseBkgnd); override;
+    procedure WMPaint(var Message: TWMPaint); override;
+    procedure WMPrintClient(var Message: TMessage); override;
     { a window DC Canvas obtained on demand goes before the window (graphics.md UIF-570) }
     procedure DestroyWnd; override;
     procedure WndProc(var Message: TMessage); override;
@@ -1669,6 +1685,7 @@ begin
   SetBounds(Left, Top, 289, 193);
   TabStop := True;
   FTabIndex := -1;
+  FHotTab := -1;
   FImageChangeLink := TChangeLink.Create;
   FImageChangeLink.OnChange := ImageListChange;
   FCanvas := TControlCanvas.Create;
@@ -1725,22 +1742,37 @@ end;
 procedure TCustomTabControl.DestroyWnd;
 begin
   TControlCanvas(FCanvas).FreeHandle;
+  FHotTab := -1;
   inherited DestroyWnd;
 end;
 
+{ UIF-1517: the tab under the mouse is followed for the hot state of the own strip }
 procedure TCustomTabControl.WndProc(var Message: TMessage);
 begin
-  if Message.Msg = CN_DRAWITEM then
-    CNDrawItem(TWMDrawItem(Message))
+  case Message.Msg of
+    CN_DRAWITEM:
+      CNDrawItem(TWMDrawItem(Message));
+    WM_MOUSEMOVE:
+      begin
+        inherited WndProc(Message);
+        if HandleAllocated and (FTabPosition <> tpTop) and (FStyle = tsTabs) then
+          SetHotTab(IndexOfTabAt(TWMMouse(Message).XPos, TWMMouse(Message).YPos));
+      end;
+    WM_MOUSELEAVE, CM_MOUSELEAVE:
+      begin
+        inherited WndProc(Message);
+        SetHotTab(-1);
+      end;
   else
     inherited WndProc(Message);
+  end;
 end;
 
-{ UIF-1513: the item DC's state saved, Canvas bound to it for DrawTab, both undone in a finally; answered 1 }
+{ UIF-1513: answered 1. UIF-1517: an item message of the system control's painting below the own strip is not
+  passed on - the own strip calls DrawTab itself, once per tab }
 procedure TCustomTabControl.CNDrawItem(var Message: TWMDrawItem);
 var
   D: PDrawItemStruct;
-  Saved: Integer;
 begin
   D := Message.DrawItemStruct;
   if (D = nil) or (D^.CtlType <> ODT_TAB) then
@@ -1748,18 +1780,27 @@ begin
     inherited WndProc(TMessage(Message));
     Exit;
   end;
-  Saved := SaveDC(D^.hDC);
+  if not FNativeStrip then
+    DrawItemOn(D^.hDC, Integer(D^.itemID), D^.rcItem, (D^.itemState and ODS_SELECTED) <> 0);
+  Message.Result := 1;
+end;
+
+{ UIF-1513: the DC's state saved, Canvas bound to it for DrawTab, both undone in a finally }
+procedure TCustomTabControl.DrawItemOn(DC: HDC; Index: Integer; const R: TRect; Active: Boolean);
+var
+  Saved: Integer;
+begin
+  Saved := SaveDC(DC);
   TControlCanvas(FCanvas).FreeHandle;
-  FCanvas.Handle := D^.hDC;
+  FCanvas.Handle := DC;
   try
     FCanvas.Font := Font;
     FCanvas.Brush.Color := Color;
-    DrawTab(Integer(D^.itemID), D^.rcItem, (D^.itemState and ODS_SELECTED) <> 0);
+    DrawTab(Index, R, Active);
   finally
     FCanvas.Handle := 0;
-    RestoreDC(D^.hDC, Saved);
+    RestoreDC(DC, Saved);
   end;
-  Message.Result := 1;
 end;
 
 { UIF-1514: OnDrawTab when assigned; otherwise Rect filled with the brush, the tab's image (UIF-1512) at
@@ -1793,8 +1834,8 @@ begin
   FCanvas.TextRect(R, S, [tfSingleLine, tfVerticalCenter, tfCenter]);
 end;
 
-{ UIF-1494: bottom, left and right tabs use the unthemed renderer; UIF-1495: padding and minimum tab length sent
-  before any tab item exists }
+{ UIF-1494: bottom, left and right tabs use the unthemed renderer of the system (the themed look for them is the own
+  strip, UIF-1517); UIF-1495: padding and minimum tab length sent before any tab item exists }
 procedure TCustomTabControl.CreateWnd;
 var
   NoTheme: array[0..0] of WideChar;
@@ -1812,6 +1853,542 @@ begin
   if FImages <> nil then
     SendMessageW(Handle, TCM_SETIMAGELIST, 0, LPARAM(FImages.Handle));
   SendMessageW(Handle, TCM_SETITEMSIZE, 0, MakeLParam(Word(FTabWidth), Word(TabH)));
+end;
+
+{ ---------------------------------------------------------------- the own strip (UIF-1517)
+
+  The system has no themed look for bottom, left and right tabs (UIF-1494), so with visual styles the framework
+  paints them from the themed parts of top tabs. Measured against the system's top tabs (U-175, 96 DPI): the pane
+  is TABP_PANE on the display rectangle grown by 4 on the sides without rows and by 2 on the sides with rows; its
+  frame has a shadow on the right and at the bottom, so it is turned like the tabs. An unselected tab is drawn on
+  its item rectangle with TABP_TABITEM, the part with a left edge when it starts a row, the part with a right edge
+  when it is the last tab, the part with both edges when it is both; the selected tab is drawn last on its item
+  rectangle grown by 2, with TABP_TABITEM or, when it starts a row, the part with a left edge; its last row is fill
+  only, which removes the pane's frame line along it. Content is centred along the tab (image, Px, caption); across
+  it the caption cell lies (TabH - text height) div 2 + 1 and the image (TabH - image height + 1) div 2 from the
+  outer edge, both 2 nearer to it on the selected tab. }
+
+const
+  { the tab item parts between TABP_TABITEM and TABP_PANE in the part numbering of the class TAB (the UxTheme unit
+    declares only those two): an item at the start of a row, at the end of the strip, and both }
+  TABP_TABITEMLEFTEDGE = 2;
+  TABP_TABITEMRIGHTEDGE = 3;
+  TABP_TABITEMBOTHEDGE = 4;
+
+{ one part of the tab class for a strip on Side. Drawn directly for tpTop; otherwise in the top orientation into a
+  32-bit memory bitmap that starts as the turned copy of what DC shows in R (the parts have translucent corners),
+  then turned back and copied to R. Top-orientation pixel (U, V) - U along the strip, V the depth from the
+  strip-side edge - is pixel (U, h - 1 - V) of R for tpBottom (mirrored vertically), (V, U) for tpLeft (rotated
+  counter-clockwise, with the start of the row kept at the start) and (w - 1 - V, U) for tpRight (rotated
+  clockwise) }
+procedure DrawTurnedPart(Theme: HTHEME; DC: HDC; Part, State: Integer; const R: TRect; Side: TTabPosition);
+var
+  W, H, TW, TH, U, V, X, Y, Pass: Integer;
+  Info: TBitmapInfo;
+  FlatDC, TopDC: HDC;
+  Flat, Top: HBITMAP;
+  OldFlat, OldTop: HGDIOBJ;
+  FlatBits, TopBits: Pointer;
+  PF, PT: PCardinal;
+  TopRect: TRect;
+begin
+  W := R.Right - R.Left;
+  H := R.Bottom - R.Top;
+  if (W <= 0) or (H <= 0) then
+    Exit;
+  if Side = tpTop then
+  begin
+    DrawThemeBackground(Theme, DC, Part, State, R, nil);
+    Exit;
+  end;
+  if (Side = tpLeft) or (Side = tpRight) then
+  begin
+    TW := H;
+    TH := W;
+  end
+  else
+  begin
+    TW := W;
+    TH := H;
+  end;
+  TopRect := Rect(0, 0, TW, TH);
+  FillChar(Info, SizeOf(Info), 0);
+  Info.bmiHeader.biSize := SizeOf(TBitmapInfoHeader);
+  Info.bmiHeader.biPlanes := 1;
+  Info.bmiHeader.biBitCount := 32;
+  Info.bmiHeader.biCompression := BI_RGB;
+  FlatBits := nil;
+  TopBits := nil;
+  Info.bmiHeader.biWidth := W;
+  Info.bmiHeader.biHeight := -H;
+  Flat := CreateDIBSection(DC, @Info, DIB_RGB_COLORS, FlatBits, 0, 0);
+  Info.bmiHeader.biWidth := TW;
+  Info.bmiHeader.biHeight := -TH;
+  Top := CreateDIBSection(DC, @Info, DIB_RGB_COLORS, TopBits, 0, 0);
+  FlatDC := CreateCompatibleDC(DC);
+  TopDC := CreateCompatibleDC(DC);
+  try
+    if (Flat = 0) or (Top = 0) or (FlatDC = 0) or (TopDC = 0) or (FlatBits = nil) or (TopBits = nil) then
+      Exit;
+    OldFlat := SelectObject(FlatDC, Flat);
+    OldTop := SelectObject(TopDC, Top);
+    try
+      BitBlt(FlatDC, 0, 0, W, H, DC, R.Left, R.Top, SRCCOPY);
+      { pass 0 turns the background into the top orientation, pass 1 turns the painted part back }
+      for Pass := 0 to 1 do
+      begin
+        GdiFlush;
+        for V := 0 to TH - 1 do
+          for U := 0 to TW - 1 do
+          begin
+            Y := U;
+            case Side of
+              tpBottom:
+                begin
+                  X := U;
+                  Y := TH - 1 - V;
+                end;
+              tpLeft:
+                X := V;
+            else
+              X := TH - 1 - V;
+            end;
+            PF := PCardinal(NativeUInt(FlatBits) + NativeUInt(Y * W + X) * 4);
+            PT := PCardinal(NativeUInt(TopBits) + NativeUInt(V * TW + U) * 4);
+            if Pass = 0 then
+              PT^ := PF^
+            else
+              PF^ := PT^;
+          end;
+        if Pass = 0 then
+          DrawThemeBackground(Theme, TopDC, Part, State, TopRect, nil);
+      end;
+      BitBlt(DC, R.Left, R.Top, W, H, FlatDC, 0, 0, SRCCOPY);
+    finally
+      SelectObject(FlatDC, OldFlat);
+      SelectObject(TopDC, OldTop);
+    end;
+  finally
+    if FlatDC <> 0 then
+      DeleteDC(FlatDC);
+    if TopDC <> 0 then
+      DeleteDC(TopDC);
+    if Flat <> 0 then
+      DeleteObject(Flat);
+    if Top <> 0 then
+      DeleteObject(Top);
+  end;
+end;
+
+{ The strip is the framework's when the tabs are not on top, Style is tsTabs (the button styles have no themed look
+  on top either, U-172) and visual styles are active - read at every paint, never kept (RTL-1147). The theme data
+  is opened without a window: this window's own theme is switched off (UIF-1494), which leaves OpenThemeData with
+  its handle without a result }
+function TCustomTabControl.StripTheme: THandle;
+begin
+  Result := 0;
+  if HandleAllocated and (FTabPosition <> tpTop) and (FStyle = tsTabs) then
+    if IsAppThemed then
+      Result := OpenThemeData(0, 'TAB');
+end;
+
+{ nothing to erase below the own strip: it covers the client area }
+procedure TCustomTabControl.WMEraseBkgnd(var Message: TWMEraseBkgnd);
+var
+  Theme: THandle;
+begin
+  Theme := StripTheme;
+  if Theme = 0 then
+  begin
+    inherited WMEraseBkgnd(Message);
+    Exit;
+  end;
+  CloseThemeData(Theme);
+  Message.Result := 1;
+end;
+
+{ the own strip is composed in a memory bitmap of the client area and copied to the window in one step }
+procedure TCustomTabControl.WMPaint(var Message: TWMPaint);
+var
+  Theme: THandle;
+  DC, MemDC: HDC;
+  PS: TPaintStruct;
+  Bmp: HBITMAP;
+  Old: HGDIOBJ;
+  R: TRect;
+begin
+  Theme := StripTheme;
+  if Theme = 0 then
+  begin
+    inherited WMPaint(Message);
+    Exit;
+  end;
+  try
+    if Message.DC <> 0 then
+    begin
+      PaintStrip(Message.DC, Theme);
+      Exit;
+    end;
+    DC := BeginPaint(Handle, PS);
+    try
+      R := GetClientRect;
+      if (R.Right <= 0) or (R.Bottom <= 0) then
+        Exit;
+      MemDC := CreateCompatibleDC(DC);
+      Bmp := CreateCompatibleBitmap(DC, R.Right, R.Bottom);
+      try
+        if (MemDC = 0) or (Bmp = 0) then
+          Exit;
+        Old := SelectObject(MemDC, Bmp);
+        try
+          PaintStrip(MemDC, Theme);
+          BitBlt(DC, 0, 0, R.Right, R.Bottom, MemDC, 0, 0, SRCCOPY);
+        finally
+          SelectObject(MemDC, Old);
+        end;
+      finally
+        if Bmp <> 0 then
+          DeleteObject(Bmp);
+        if MemDC <> 0 then
+          DeleteDC(MemDC);
+      end;
+    finally
+      EndPaint(Handle, PS);
+    end;
+  finally
+    CloseThemeData(Theme);
+  end;
+end;
+
+procedure TCustomTabControl.WMPrintClient(var Message: TMessage);
+var
+  Theme: THandle;
+begin
+  Theme := StripTheme;
+  if Theme = 0 then
+  begin
+    inherited WMPrintClient(Message);
+    Exit;
+  end;
+  try
+    FNativeStrip := True;
+    try
+      inherited WMPrintClient(Message);
+    finally
+      FNativeStrip := False;
+    end;
+    DrawStrip(HDC(Message.WParam), Theme);
+  finally
+    CloseThemeData(Theme);
+  end;
+end;
+
+procedure TCustomTabControl.PaintStrip(DC: HDC; Theme: THandle);
+begin
+  FNativeStrip := True;
+  try
+    PaintWindow(DC);
+  finally
+    FNativeStrip := False;
+  end;
+  DrawStrip(DC, Theme);
+  PaintControls(DC, nil);
+end;
+
+{ the background, the pane, the unselected tabs in order, the selected tab. What is painted follows the system
+  control's own geometry - its item rectangles and its display rectangle (TCM_ADJUSTRECT, equal to DisplayRect by
+  UIF-1503) - so that pane and tabs always meet. The side opposite the strip has rows (UIF-1500) when the display
+  rectangle starts further in than P }
+procedure TCustomTabControl.DrawStrip(DC: HDC; Theme: THandle);
+var
+  DPI, G2, G4, N, Sel, I: Integer;
+  C, D, P: TRect;
+begin
+  C := GetClientRect;
+  Windows.FillRect(DC, C, Brush.Handle);
+  DPI := ControlDPI(Self);
+  G2 := LayoutMulDiv(2, DPI, 96);
+  G4 := LayoutMulDiv(4, DPI, 96);
+  D := C;
+  SendMessageW(Handle, TCM_ADJUSTRECT, 0, LPARAM(@D));
+  P := Rect(D.Left - G4, D.Top - G4, D.Right + G4, D.Bottom + G4);
+  case FTabPosition of
+    tpBottom:
+      begin
+        P.Bottom := D.Bottom + G2;
+        if D.Top > C.Top + G4 then
+          P.Top := D.Top - G2;
+      end;
+    tpLeft:
+      begin
+        P.Left := D.Left - G2;
+        if D.Right < C.Right - G4 then
+          P.Right := D.Right + G2;
+      end;
+  else
+    P.Right := D.Right + G2;
+    if D.Left > C.Left + G4 then
+      P.Left := D.Left - G2;
+  end;
+  DrawTurnedPart(Theme, DC, TABP_PANE, 0, P, FTabPosition);
+  N := Integer(SendMessageW(Handle, TCM_GETITEMCOUNT, 0, 0));
+  Sel := Integer(SendMessageW(Handle, TCM_GETCURSEL, 0, 0));
+  for I := 0 to N - 1 do
+    if I <> Sel then
+      DrawStripTab(DC, Theme, I, N, False, D);
+  if (Sel >= 0) and (Sel < N) then
+    DrawStripTab(DC, Theme, Sel, N, True, D);
+end;
+
+{ the themed background of visible tab Index, then its content: the owner's DrawTab (Rect as the system gives it:
+  the item rectangle shrunk by 2, grown by 2 for the selected tab; clipped inside the tab's frame) or the image and
+  the caption; the focus rectangle on the selected tab }
+procedure TCustomTabControl.DrawStripTab(DC: HDC; Theme: THandle; Index, Count: Integer; Selected: Boolean;
+  const Display: TRect);
+var
+  R, B, Prev, Item: TRect;
+  Side: TTabPosition;
+  First: Boolean;
+  Part, State, G2, Saved: Integer;
+begin
+  R := TabRect(Index);
+  if (R.Right <= R.Left) or (R.Bottom <= R.Top) then
+    Exit;
+  First := Index = 0;
+  if not First then
+  begin
+    Prev := TabRect(Index - 1);
+    if (FTabPosition = tpLeft) or (FTabPosition = tpRight) then
+      First := Prev.Left <> R.Left
+    else
+      First := Prev.Top <> R.Top;
+  end;
+  { a row beyond the display rectangle (UIF-1500) faces the other way }
+  Side := FTabPosition;
+  case FTabPosition of
+    tpBottom:
+      if R.Bottom <= Display.Top then
+        Side := tpTop;
+    tpLeft:
+      if R.Left >= Display.Right then
+        Side := tpRight;
+    tpRight:
+      if R.Right <= Display.Left then
+        Side := tpLeft;
+  end;
+  Part := TABP_TABITEM;
+  if First then
+    Part := TABP_TABITEMLEFTEDGE;
+  if Selected then
+    State := TIS_SELECTED
+  else
+  begin
+    if Index = Count - 1 then
+      if First then
+        Part := TABP_TABITEMBOTHEDGE
+      else
+        Part := TABP_TABITEMRIGHTEDGE;
+    if not Enabled then
+      State := TIS_DISABLED
+    else if Index = FHotTab then
+      State := TIS_HOT
+    else
+      State := TIS_NORMAL;
+  end;
+  G2 := LayoutMulDiv(2, ControlDPI(Self), 96);
+  B := R;
+  if Selected then
+    B := Rect(R.Left - G2, R.Top - G2, R.Right + G2, R.Bottom + G2);
+  DrawTurnedPart(Theme, DC, Part, State, B, Side);
+  if FOwnerDraw then
+  begin
+    if Selected then
+      Item := B
+    else
+      Item := Rect(R.Left + G2, R.Top + G2, R.Right - G2, R.Bottom - G2);
+    Saved := SaveDC(DC);
+    try
+      IntersectClipRect(DC, B.Left + 1, B.Top + 1, B.Right - 1, B.Bottom - 1);
+      DrawItemOn(DC, Index, Item, Selected);
+    finally
+      RestoreDC(DC, Saved);
+    end;
+  end
+  else
+    DrawStripContent(DC, Index, R, Side, Selected);
+  if Selected and (GetFocus = Handle)
+    and ((SendMessageW(Handle, WM_QUERYUISTATE, 0, 0) and UISF_HIDEFOCUS) = 0) then
+  begin
+    Saved := SaveDC(DC);
+    try
+      SetTextColor(DC, 0);
+      SetBkColor(DC, $FFFFFF);
+      Item := Rect(R.Left + 1, R.Top + 1, R.Right - 1, R.Bottom - 1);
+      Windows.DrawFocusRect(DC, Item);
+    finally
+      RestoreDC(DC, Saved);
+    end;
+  end;
+end;
+
+{ the image (the tab item's, UIF-1512) and the caption of visible tab Index, R its item rectangle: upright for a
+  strip on the top or bottom side (accelerators underlined unless the window hides them), rotated with a copy of
+  the font for a vertical strip - escapement 900 on the left (read upwards, the image below), 2700 on the right
+  (read downwards, the image above), without accelerator marks }
+procedure TCustomTabControl.DrawStripContent(DC: HDC; Index: Integer; const R: TRect; Side: TTabPosition;
+  Selected: Boolean);
+var
+  Saved, DPI, Px, W, H, Tx, Ty, Ia, Ic, C, A, Dt, Di, Shift, ImageIndex, X, Y: Integer;
+  Item: TTCItemW;
+  S, Plain: string;
+  Size: TSize;
+  Vertical: Boolean;
+  TR: TRect;
+  Flags: UINT;
+begin
+  S := TabCaption(Index);
+  Plain := StripHotkey(S);
+  ImageIndex := -1;
+  if FImages <> nil then
+  begin
+    FillChar(Item, SizeOf(Item), 0);
+    Item.mask := TCIF_IMAGE;
+    Item.iImage := -1;
+    if SendMessageW(Handle, TCM_GETITEMW, WPARAM(Index), LPARAM(@Item)) <> 0 then
+      ImageIndex := Item.iImage;
+    if (ImageIndex < 0) or (ImageIndex >= FImages.Count) then
+      ImageIndex := -1;
+  end;
+  if (Plain = '') and (ImageIndex < 0) then
+    Exit;
+  Vertical := (Side = tpLeft) or (Side = tpRight);
+  if Vertical then
+  begin
+    W := R.Bottom - R.Top;
+    H := R.Right - R.Left;
+  end
+  else
+  begin
+    W := R.Right - R.Left;
+    H := R.Bottom - R.Top;
+  end;
+  DPI := ControlDPI(Self);
+  Px := LayoutMulDiv(6, DPI, 96);
+  Shift := 0;
+  if Selected then
+    Shift := LayoutMulDiv(2, DPI, 96);
+  Saved := SaveDC(DC);
+  TControlCanvas(FCanvas).FreeHandle;
+  FCanvas.Handle := DC;
+  try
+    IntersectClipRect(DC, R.Left, R.Top, R.Right, R.Bottom);
+    FCanvas.Font := Font;
+    if not Enabled then
+      FCanvas.Font.Color := clGrayText;
+    FCanvas.Brush.Style := bsClear;
+    Size := FCanvas.TextExtent(Plain);
+    Tx := Size.cx;
+    Ty := Size.cy;
+    Ia := 0;
+    Ic := 0;
+    C := Tx;
+    if ImageIndex >= 0 then
+    begin
+      if Vertical then
+      begin
+        Ia := TImageListAccess(FImages).Height;
+        Ic := TImageListAccess(FImages).Width;
+      end
+      else
+      begin
+        Ia := TImageListAccess(FImages).Width;
+        Ic := TImageListAccess(FImages).Height;
+      end;
+      C := C + Ia;
+      if Tx > 0 then
+        C := C + Px;
+    end;
+    A := (W - C) div 2;
+    if A < 0 then
+      A := 0;
+    Dt := (H - Ty) div 2 + 1 - Shift;
+    Di := (H - Ic + 1) div 2 - Shift;
+    case Side of
+      tpLeft:
+        begin
+          Y := R.Bottom - A;
+          if ImageIndex >= 0 then
+          begin
+            FImages.Draw(FCanvas, R.Left + Di, Y - Ia, ImageIndex, Enabled);
+            Y := Y - Ia - Px;
+          end;
+          FCanvas.Font.Orientation := 900;
+          FCanvas.TextOut(R.Left + Dt, Y, Plain);
+        end;
+      tpRight:
+        begin
+          Y := R.Top + A;
+          if ImageIndex >= 0 then
+          begin
+            FImages.Draw(FCanvas, R.Right - Di - Ic, Y, ImageIndex, Enabled);
+            Y := Y + Ia + Px;
+          end;
+          FCanvas.Font.Orientation := 2700;
+          FCanvas.TextOut(R.Right - Dt, Y, Plain);
+        end;
+    else
+      X := R.Left + A;
+      if ImageIndex >= 0 then
+      begin
+        if Side = tpTop then
+          Y := R.Top + Di
+        else
+          Y := R.Bottom - Di - Ic;
+        FImages.Draw(FCanvas, X, Y, ImageIndex, Enabled);
+        X := X + Ia + Px;
+      end;
+      if Side = tpTop then
+        Y := R.Top + Dt
+      else
+        Y := R.Bottom - Dt - Ty;
+      TR := Rect(X, Y, X + Tx, Y + Ty);
+      Flags := DT_SINGLELINE or DT_NOCLIP;
+      if (SendMessageW(Handle, WM_QUERYUISTATE, 0, 0) and UISF_HIDEACCEL) <> 0 then
+        Flags := Flags or DT_HIDEPREFIX;
+      SetBkMode(DC, TRANSPARENT);
+      DrawTextW(DC, PWideChar(S), Length(S), TR, Flags);
+    end;
+  finally
+    FCanvas.Handle := 0;
+    RestoreDC(DC, Saved);
+  end;
+end;
+
+{ the hot tab changed: both tabs are painted again (the selected tab's grown rectangle is covered) }
+procedure TCustomTabControl.SetHotTab(Value: Integer);
+var
+  Old, G: Integer;
+  R: TRect;
+begin
+  if Value = FHotTab then
+    Exit;
+  Old := FHotTab;
+  FHotTab := Value;
+  if not HandleAllocated then
+    Exit;
+  G := LayoutMulDiv(2, ControlDPI(Self), 96);
+  if Old >= 0 then
+  begin
+    R := TabRect(Old);
+    InflateRect(R, G, G);
+    InvalidateRect(Handle, @R, False);
+  end;
+  if Value >= 0 then
+  begin
+    R := TabRect(Value);
+    InflateRect(R, G, G);
+    InvalidateRect(Handle, @R, False);
+  end;
 end;
 
 function TCustomTabControl.TabH: Integer;

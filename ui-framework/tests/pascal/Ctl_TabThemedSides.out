@@ -1,0 +1,92 @@
+# the reference and the three other positions (UIF-1518)
+ok one row of 5 tabs everywhere
+ok top tabs are drawn by the system alone
+ok reference: no frame line at the selected tab's inner edge
+ok reference: the frame line runs along the other tabs
+# bottom tabs
+ok bottom: every TabRect is the reference's, mirrored vertically
+ok bottom: the own drawing is used exactly when visual styles are active
+ok bottom: the first tab equals the reference tab mirrored vertically
+ok bottom: the middle tabs equal the reference tabs mirrored vertically
+ok bottom: the selected tab, grown by 2, equals the reference tab mirrored vertically
+ok bottom: the last tab equals the reference tab mirrored vertically
+ok bottom: strip and pane equal the whole reference mirrored vertically
+ok bottom: no frame line at the selected tab's inner edge (pane fill)
+ok bottom: the frame line runs along the other tabs, the pane fill behind it
+# left tabs
+ok left: every TabRect is the reference's, rotated counter-clockwise, row start kept
+ok left: the own drawing is used exactly when visual styles are active
+ok left: the first tab equals the reference tab rotated counter-clockwise, row start kept
+ok left: the middle tabs equal the reference tabs rotated counter-clockwise, row start kept
+ok left: the selected tab, grown by 2, equals the reference tab rotated counter-clockwise, row start kept
+ok left: the last tab equals the reference tab rotated counter-clockwise, row start kept
+ok left: the selected tab equals the reference tab rotated counter-clockwise
+ok left: strip and pane equal the whole reference rotated counter-clockwise, row start kept
+ok left: no frame line at the selected tab's inner edge (pane fill)
+ok left: the frame line runs along the other tabs, the pane fill behind it
+# right tabs
+ok right: every TabRect is the reference's, rotated clockwise
+ok right: the own drawing is used exactly when visual styles are active
+ok right: the first tab equals the reference tab rotated clockwise
+ok right: the middle tabs equal the reference tabs rotated clockwise
+ok right: the selected tab, grown by 2, equals the reference tab rotated clockwise
+ok right: the last tab equals the reference tab rotated clockwise
+ok right: strip and pane equal the whole reference rotated clockwise
+ok right: no frame line at the selected tab's inner edge (pane fill)
+ok right: the frame line runs along the other tabs, the pane fill behind it
+# WM_PAINT into a device context (UIF-1517)
+ok bottom: WM_PAINT draws what WM_PRINTCLIENT draws
+ok right: WM_PAINT draws what WM_PRINTCLIENT draws
+# hot and disabled tabs (UIF-1517)
+ok bottom: the tab under the mouse is drawn hot
+ok bottom: the other tabs are unchanged
+ok bottom: back to normal when the mouse leaves
+ok bottom: the selected tab stays selected under the mouse
+ok bottom: tabs of a disabled control are drawn disabled
+ok bottom: its selected tab stays selected
+ok bottom: back to normal when enabled
+# owner drawing on the themed background (UIF-1517)
+ok bottom: tabs kept through the recreation
+ok bottom: tab 0 keeps the themed background around the owner's drawing
+ok bottom: tab 1 keeps the themed background around the owner's drawing
+ok bottom: tab 2 keeps the themed background around the owner's drawing
+ok bottom: tab 3 keeps the themed background around the owner's drawing
+ok bottom: tab 4 keeps the themed background around the owner's drawing
+ok bottom: OnDrawTab once per tab in a capture
+ok bottom: no other tab index
+ok bottom: Rect within TabRect -2 .. +2
+ok bottom: Active only for the selected tab
+ok bottom: the owner's drawing is on top in every tab
+ok bottom: Canvas not allocated after the capture
+ok left: tabs kept through the recreation
+ok left: tab 0 keeps the themed background around the owner's drawing
+ok left: tab 1 keeps the themed background around the owner's drawing
+ok left: tab 2 keeps the themed background around the owner's drawing
+ok left: tab 3 keeps the themed background around the owner's drawing
+ok left: tab 4 keeps the themed background around the owner's drawing
+ok left: OnDrawTab once per tab in a capture
+ok left: no other tab index
+ok left: Rect within TabRect -2 .. +2
+ok left: Active only for the selected tab
+ok left: the owner's drawing is on top in every tab
+ok left: Canvas not allocated after the capture
+# owner drawing through WM_PAINT (UIF-1517)
+ok bottom: OnDrawTab once per tab in a repaint
+ok left: OnDrawTab once per tab in a repaint
+ok Canvas not allocated after the repaints
+# captions and images (UIF-1517)
+ok bottom with captions and images: one row
+ok bottom: the whole image inside every tab
+ok bottom: captions upright
+ok bottom: the image at the start of the text
+ok left with captions and images: one row
+ok left: the whole image inside every tab
+ok left: captions rotated counter-clockwise (read upwards)
+ok left: the image at the start of the text
+ok right with captions and images: one row
+ok right: the whole image inside every tab
+ok right: captions rotated clockwise (read downwards)
+ok right: the image at the start of the text
+# no GDI growth
+ok 102 captures: GDI objects within 2
+# passed 81 failed 0
