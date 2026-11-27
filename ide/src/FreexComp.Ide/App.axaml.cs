@@ -70,7 +70,11 @@ public sealed class App : Application
                 HandOver?.Serve(paths => Avalonia.Threading.Dispatcher.UIThread.Post(() => _ = CompositionRoot.ReceiveHandOverAsync(services, window, paths)));
             };
             // The exit sequence (UI-WIN-072, IApplicationService) has written the state and deleted the recovery folder.
-            desktop.Exit += (_, _) => (platform.Log as IDisposable)?.Dispose();
+            desktop.Exit += (_, _) =>
+            {
+                services.ProjectManager.Dispose(); // I-339: no missing-file check outlives the window
+                (platform.Log as IDisposable)?.Dispose();
+            };
             desktop.MainWindow = window;
         }
 

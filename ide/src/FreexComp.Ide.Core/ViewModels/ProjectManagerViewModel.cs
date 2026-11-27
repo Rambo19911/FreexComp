@@ -32,7 +32,7 @@ public enum ProjectSelectMode
 /// selection and the context menus. Handles <c>projectManager.open</c>, <c>.collapseAll</c> and <c>.syncWithEditor</c>.
 /// UI thread only.
 /// </summary>
-public sealed class ProjectManagerViewModel : ToolWindowViewModel, ICommandTarget
+public sealed class ProjectManagerViewModel : ToolWindowViewModel, ICommandTarget, IDisposable
 {
     public const string ToolName = "ProjectManager";
     public const string MissingFilesKind = "MissingFiles";
@@ -110,7 +110,8 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel, ICommandTarge
     private Dictionary<string, bool>? _expansionBeforeFilter;
     private string _appliedFilter = "";
     private InfoBarViewModel? _missingFilesBar;
-    private int _missingCheck;
+    private MissingFileCheck? _missingCheck; // the check in flight
+    private bool _disposed;
     private bool _isCheckingMissingFiles;
     private readonly List<string> _emptyFolders = []; // UI-TW-114 folder keys ("lib/"), ordinal order (IDE-PM-113)
     private readonly List<string> _ignoredFiles = []; // project-relative paths with '/', ordinal order (IDE-PM-148)
@@ -972,45 +973,136 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel, ICommandTarge
     }
 
     /// <summary>
-    /// IDE-PM-103: <c>File.Exists</c> per file row on a background thread; the result is applied only when no newer check
-    /// or rebuild started meanwhile.
+    /// IDE-PM-103: <c>File.Exists</c> per file row on a background thread; the result is applied unless the check was
+    /// dropped meanwhile — by a newer check, a rebuild of the tree (the project closed or changed) or
+    /// <see cref="Dispose"/>. The task completes when the result is applied or the check dropped.
     /// </summary>
     public Task CheckMissingFilesAsync()
     {
-        var check = CheckMissingFilesCoreAsync();
-        MissingFileChecks = MissingFileChecks.IsCompleted ? check : Task.WhenAll(MissingFileChecks, check);
-        return check;
+        if (_disposed)
+            return Task.CompletedTask;
+        DropMissingFileCheck(); // the newer check replaces it
+        return MissingFileChecks = CheckMissingFilesCoreAsync();
     }
 
-    /// <summary>Completes once every missing-file check started so far has applied (or dropped) its result (I-210).</summary>
+    /// <summary>
+    /// The missing-file check in flight; completed when there is none (I-210) — also right after the project closed or
+    /// this view model was disposed, whatever its scan is still doing (I-339).
+    /// </summary>
     public Task MissingFileChecks { get; private set; } = Task.CompletedTask;
+
+    /// <summary>
+    /// The background scan of the latest check: completes when its thread has left the file system and handed over its
+    /// result (a dropped check's scan stops at the next file and hands over nothing).
+    /// </summary>
+    internal Task MissingFileScan { get; private set; } = Task.CompletedTask;
+
+    /// <summary>
+    /// Ends the background work (I-339): the missing-file check in flight is dropped and none starts afterwards.
+    /// </summary>
+    public void Dispose()
+    {
+        _disposed = true;
+        DropMissingFileCheck();
+        IsCheckingMissingFiles = false;
+    }
 
     private async Task CheckMissingFilesCoreAsync()
     {
-        var check = ++_missingCheck;
         var files = ActiveNodes().Where(n => n.IsFile).ToList();
-        var scan = FileOperationsDelivered("project.newFolder") ? UnlistedScan.For(_projects, files, _emptyFolders, _ignoredFiles) : null;
+        var unlistedScan = FileOperationsDelivered("project.newFolder") ? UnlistedScan.For(_projects, files, _emptyFolders, _ignoredFiles) : null;
+        var check = _missingCheck = new MissingFileCheck();
         IsCheckingMissingFiles = true;
-        bool[] exists;
-        UnlistedResult? unlisted = null;
+        var fileSystem = _fileSystem;
+        var paths = files.ConvertAll(f => f.FullPath);
+        MissingFileScan = Task.Run(() => check.Scan(fileSystem, paths, unlistedScan))
+            .ContinueWith(check.HandOver, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+        MissingFileScanResult? result;
         try
         {
-            (exists, unlisted) = await Task.Run(() => (files.Select(f => _fileSystem.FileExists(f.FullPath)).ToArray(), scan?.Run(_fileSystem)));
+            result = await check.Scanned;
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
             _log.Warning(LogCategory, "missing-file check failed", e);
-            exists = [.. files.Select(_ => true)];
+            result = new MissingFileScanResult([.. files.Select(_ => true)], null);
         }
 
-        if (check != _missingCheck)
-            return; // stale
+        if (result is null || check != _missingCheck)
+            return; // dropped
         for (var i = 0; i < files.Count; i++)
-            files[i].IsMissing = !exists[i];
+            files[i].IsMissing = !result.Exists[i];
         UpdateMissingFilesBar();
-        if (unlisted is not null)
-            ApplyUnlisted(unlisted);
+        if (result.Unlisted is not null)
+            ApplyUnlisted(result.Unlisted);
+        _missingCheck = null;
         IsCheckingMissingFiles = false;
+    }
+
+    /// <summary>
+    /// The check in flight is not wanted any more: nothing is pending from here on, its scan stops at the next file and
+    /// no result of it reaches the UI thread later.
+    /// </summary>
+    private void DropMissingFileCheck()
+    {
+        if (_missingCheck is not { } check)
+            return;
+        _missingCheck = null;
+        MissingFileChecks = Task.CompletedTask;
+        check.Drop();
+    }
+
+    /// <summary>What one scan found: per file row whether it exists, and the unlisted units when they are detected.</summary>
+    private sealed record MissingFileScanResult(bool[] Exists, UnlistedResult? Unlisted);
+
+    /// <summary>
+    /// One missing-file check: the scan on its background thread and the hand-over of its result to the UI thread.
+    /// The result is set under a lock, by the scan or — null — by <see cref="Drop"/>, whichever comes first. The scan
+    /// queues the continuation of the UI thread inside that lock, so once <see cref="Drop"/> has returned the scan
+    /// posts nothing to the UI thread any more: a check dropped at project close or disposal cannot come back later,
+    /// after the window (or the test) that owned it is gone (I-339).
+    /// </summary>
+    private sealed class MissingFileCheck
+    {
+        private readonly Lock _gate = new();
+        private readonly TaskCompletionSource<MissingFileScanResult?> _scanned = new(); // continues the UI thread from inside the lock
+
+        /// <summary>The scan's result; null when the check was dropped first.</summary>
+        public Task<MissingFileScanResult?> Scanned => _scanned.Task;
+
+        /// <summary>Read by the scan between two questions to the file system.</summary>
+        public bool IsDropped => _scanned.Task.IsCompleted;
+
+        /// <summary>UI thread.</summary>
+        public void Drop()
+        {
+            lock (_gate)
+                _scanned.TrySetResult(null);
+        }
+
+        /// <summary>Background thread: null as soon as the check is dropped.</summary>
+        public MissingFileScanResult? Scan(IFileSystem fileSystem, IReadOnlyList<string> paths, UnlistedScan? unlistedScan)
+        {
+            var exists = new bool[paths.Count];
+            for (var i = 0; i < paths.Count; i++)
+            {
+                if (IsDropped)
+                    return null;
+                exists[i] = fileSystem.FileExists(paths[i]);
+            }
+
+            if (unlistedScan is null)
+                return new MissingFileScanResult(exists, null);
+            return unlistedScan.Run(fileSystem, () => IsDropped) is { } unlisted ? new MissingFileScanResult(exists, unlisted) : null;
+        }
+
+        /// <summary>Background thread, after <see cref="Scan"/>: its result or its exception, unless the check was dropped.</summary>
+        public void HandOver(Task<MissingFileScanResult?> scan)
+        {
+            _ = scan.Exception; // observed here: a dropped check takes nothing over
+            lock (_gate)
+                _scanned.TrySetFromTask(scan);
+        }
     }
 
     /// <summary>The unlisted units found and the ignored entries that are still valid (IDE-PM-146, IDE-PM-148).</summary>
@@ -1068,12 +1160,17 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel, ICommandTarge
             return new UnlistedScan(project.Directory, directories, files.Select(f => f.FullPath).ToHashSet(StringComparer.OrdinalIgnoreCase), [.. ignored]);
         }
 
-        /// <summary>Background thread: <c>*.pas</c> directly in each directory that is not a project file.</summary>
-        public UnlistedResult Run(IFileSystem fileSystem)
+        /// <summary>
+        /// Background thread: <c>*.pas</c> directly in each directory that is not a project file. Null as soon as
+        /// <paramref name="isDropped"/> says that the result is not wanted any more (asked before each directory and entry).
+        /// </summary>
+        public UnlistedResult? Run(IFileSystem fileSystem, Func<bool> isDropped)
         {
             var found = new List<string>();
             foreach (var directory in Directories)
             {
+                if (isDropped())
+                    return null;
                 if (!fileSystem.DirectoryExists(directory))
                     continue;
                 found.AddRange(fileSystem.EnumerateFiles(directory, "*.pas")
@@ -1081,11 +1178,16 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel, ICommandTarge
             }
 
             // IDE-PM-148: an ignored entry stays while its file exists and is not a project member.
-            var ignored = Ignored.Where(relative =>
+            var ignored = new List<string>();
+            foreach (var relative in Ignored)
             {
+                if (isDropped())
+                    return null;
                 var full = Path.GetFullPath(Path.Combine(ProjectDirectory, relative.Replace('/', Path.DirectorySeparatorChar)));
-                return !Members.Contains(full) && fileSystem.FileExists(full);
-            }).ToList();
+                if (!Members.Contains(full) && fileSystem.FileExists(full))
+                    ignored.Add(relative);
+            }
+
             return new UnlistedResult(found, ignored);
         }
     }
@@ -1305,7 +1407,7 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel, ICommandTarge
 
         Roots.Clear();
         _selection.Clear();
-        _missingCheck++;
+        DropMissingFileCheck(); // I-339: the rows it asked about are gone; without a project none follows
         IsCheckingMissingFiles = false;
         MissingFilesBar = null;
         if (!string.Equals(_projects.Project?.FilePath, _stateProject, StringComparison.OrdinalIgnoreCase))

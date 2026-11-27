@@ -546,6 +546,7 @@ public sealed class HeadlessHarness : IAsyncDisposable
         finally
         {
             Dispatcher.UIThread.UnhandledException -= OnUnhandledException;
+            Services.ProjectManager.Dispose(); // I-339: a missing-file check in flight is dropped before its folders are deleted
             foreach (var dialog in Owned(Window).Reverse().ToList()) // the innermost first
             {
                 dialog.Close(); // a dialog window closes through its Cancel (UI-DLG-004)

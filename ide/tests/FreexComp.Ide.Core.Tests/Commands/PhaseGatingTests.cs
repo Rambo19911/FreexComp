@@ -250,8 +250,9 @@ public sealed class PhaseGatingTests
         Assert.False(keys.Rows.Single(r => r.Command.Id == "refactor.rename").IsLaterPhase);
         Assert.True(keys.Rows.Single(r => r.Command.Id == "project.setActive").IsLaterPhase);
 
-        // Project Manager context menu of the project row; the item runs the handler.
-        var projectManager = new ProjectManagerViewModel(services.Projects, services.Documents, services.FileSystem, services.Dialogs, commands,
+        // Project Manager context menu of the project row; the item runs the handler. A view model of its own, outside
+        // the composition: disposed with the test, so that the missing-file check it starts ends here (I-339).
+        using var projectManager = new ProjectManagerViewModel(services.Projects, services.Documents, services.FileSystem, services.Dialogs, commands,
             services.Log, Phase);
         Assert.True(await services.Projects.OpenAsync(GateProject));
         projectManager.Select(projectManager.Roots[0]);
