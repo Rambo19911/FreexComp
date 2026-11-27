@@ -12,6 +12,7 @@ internal sealed class LayoutReader
 {
     private readonly ComponentCatalog _catalog;
     private readonly Dictionary<ComponentInfo, LayoutNode> _templates = new(ReferenceEqualityComparer.Instance);
+    private FormDocument? _form;
 
     public LayoutReader(ComponentCatalog catalog) => _catalog = catalog;
 
@@ -19,6 +20,7 @@ internal sealed class LayoutReader
     public (LayoutNode Root, Dictionary<FormObject, LayoutNode> Nodes) Read(FormDocument form,
         IReadOnlyDictionary<string, LayoutOverride>? overrides = null)
     {
+        _form = form;
         var nodes = new Dictionary<FormObject, LayoutNode>(ReferenceEqualityComparer.Instance);
         var root = new LayoutNode(form.Root) { Kind = NodeKind.Form, IsWinControl = true, OwnFont = true };
         if (form.Root.Info is { } rootInfo && !form.Root.IsPreserved)
@@ -144,7 +146,13 @@ internal sealed class LayoutReader
 
             if (node.Kind == NodeKind.PageControl)
             {
-                node.ActivePageName = PropertyAccess.ReferencedName(obj, "ActivePage"); // RTL-1104: also FrameName.Sheet
+                // RTL-1104: also FrameName.Sheet; resolved after the sheets are read (Loaded, UIF-771), whatever the line order.
+                node.ActivePageName = PropertyAccess.ReferencedName(obj, "ActivePage");
+            }
+
+            if (node.IsTabStrip)
+            {
+                node.ImagesWidth = ImagesWidth(obj);
             }
 
             ApplyFont(node, obj);
@@ -196,6 +204,7 @@ internal sealed class LayoutReader
                 : Is(info, "TScrollBox") ? NodeKind.ScrollBox
                 : Is(info, "TCustomGrid") ? NodeKind.Grid
                 : Is(info, "TPageControl") ? NodeKind.PageControl
+                : Is(info, "TCustomTabControl") ? NodeKind.TabControl
                 : Is(info, "TTabSheet") ? NodeKind.TabSheet
                 : Is(info, "TToolBar") ? NodeKind.ToolBar
                 : Is(info, "TToolButton") ? NodeKind.ToolButton
@@ -232,7 +241,17 @@ internal sealed class LayoutReader
         t.BevelOuter = !IsName(Ident(info, "BevelOuter", t.Kind == NodeKind.Panel ? "bvRaised" : "bvNone"), "bvNone");
         t.BevelInner = !IsName(Ident(info, "BevelInner", "bvNone"), "bvNone");
         t.TabHeight = Int(info, "TabHeight", 0);
+        t.TabWidth = Int(info, "TabWidth", 0);
+        t.MultiLine = Bool(info, "MultiLine", false);
+        t.ScrollOpposite = Bool(info, "ScrollOpposite", false);
+        t.TabPosition = ParseTabPosition(Ident(info, "TabPosition", "tpTop")) ?? TabPosition.Top;
+        t.TabStyle = t.Kind is NodeKind.PageControl or NodeKind.TabControl
+            ? ParseTabStyle(Ident(info, "Style", "tsTabs")) ?? TabStyle.Tabs : TabStyle.Tabs;
         t.TabVisible = Bool(info, "TabVisible", true);
+        t.Caption = Default(info, "Caption") is StringValue { Value: var caption } ? caption : "";
+        t.ImageIndex = Int(info, "ImageIndex", -1);
+        t.Tabs = Default(info, "Tabs") is StringListValue { Lines: var tabs } ? tabs : [];
+        t.TabIndex = Int(info, "TabIndex", -1);
         t.ButtonWidth = Int(info, "ButtonWidth", 23);
         t.ButtonHeight = Int(info, "ButtonHeight", 22);
         t.Indent = Int(info, "Indent", 0);
@@ -257,7 +276,9 @@ internal sealed class LayoutReader
         PaddingLeft = t.PaddingLeft, PaddingTop = t.PaddingTop, PaddingRight = t.PaddingRight, PaddingBottom = t.PaddingBottom,
         OwnFont = t.OwnFont, FontHeight = t.FontHeight, AutoSize = t.AutoSize, BorderSingle = t.BorderSingle,
         ComboSimple = t.ComboSimple, BorderWidth = t.BorderWidth, BevelWidth = t.BevelWidth, BevelOuter = t.BevelOuter,
-        BevelInner = t.BevelInner, TabHeight = t.TabHeight, TabVisible = t.TabVisible, ButtonWidth = t.ButtonWidth,
+        BevelInner = t.BevelInner, TabHeight = t.TabHeight, TabWidth = t.TabWidth, MultiLine = t.MultiLine,
+        ScrollOpposite = t.ScrollOpposite, TabPosition = t.TabPosition, TabStyle = t.TabStyle, TabVisible = t.TabVisible,
+        Caption = t.Caption, ImageIndex = t.ImageIndex, Tabs = t.Tabs, TabIndex = t.TabIndex, ButtonWidth = t.ButtonWidth,
         ButtonHeight = t.ButtonHeight, Indent = t.Indent, Spacer = t.Spacer, AutoScroll = t.AutoScroll,
         HorzBarVisible = t.HorzBarVisible, VertBarVisible = t.VertBarVisible, HorzRange = t.HorzRange, VertRange = t.VertRange,
     };
@@ -293,6 +314,7 @@ internal sealed class LayoutReader
             case "style" when v is IdentValue s:
                 n.ComboSimple = IsName(s.Name, "csSimple");
                 n.Spacer = IsSpacer(s.Name);
+                n.TabStyle = ParseTabStyle(s.Name) ?? n.TabStyle;
                 break;
             case "borderwidth": SetInt(v, ref n.BorderWidth); break;
             case "bevelwidth": SetInt(v, ref n.BevelWidth); break;
@@ -300,6 +322,14 @@ internal sealed class LayoutReader
             case "bevelinner" when v is IdentValue b: n.BevelInner = !IsName(b.Name, "bvNone"); break;
             case "tabheight": SetInt(v, ref n.TabHeight); break;
             case "tabvisible": SetBool(v, ref n.TabVisible); break;
+            case "tabwidth": SetInt(v, ref n.TabWidth); break;
+            case "multiline": SetBool(v, ref n.MultiLine); break;
+            case "scrollopposite": SetBool(v, ref n.ScrollOpposite); break;
+            case "tabposition" when v is IdentValue a: n.TabPosition = ParseTabPosition(a.Name) ?? n.TabPosition; break;
+            case "caption" when v is StringValue c: n.Caption = c.Value; break;
+            case "imageindex": SetInt(v, ref n.ImageIndex); break;
+            case "tabs" when v is StringListValue l: n.Tabs = l.Lines; break;
+            case "tabindex": SetInt(v, ref n.TabIndex); break;
             case "buttonwidth": SetInt(v, ref n.ButtonWidth); break;
             case "buttonheight": SetInt(v, ref n.ButtonHeight); break;
             case "indent": SetInt(v, ref n.Indent); break;
@@ -350,6 +380,46 @@ internal sealed class LayoutReader
             n.FontHeight = -LayoutMachine.MulDiv(s, 96, 72);
         }
     }
+
+    /// <summary>DSG-LAY-069: <c>Images.Width</c> of the image list a tab control links (stored, else its default 16); null without one.</summary>
+    private int? ImagesWidth(FormObject obj)
+    {
+        if (PropertyAccess.ReferencedName(obj, "Images") is not { } name)
+        {
+            return null;
+        }
+
+        if (_form?.FindByName(name) is not { } list)
+        {
+            return 16;
+        }
+
+        if (TryStoredInt(list, "Width", out var width))
+        {
+            return Math.Max(0, width);
+        }
+
+        return list.Info is { } info ? Math.Max(0, Int(info, "Width", 16)) : 16;
+    }
+
+    /// <summary>A <c>TTabPosition</c> identifier; null for any other.</summary>
+    public static TabPosition? ParseTabPosition(string name) => name.ToLowerInvariant() switch
+    {
+        "tptop" => TabPosition.Top,
+        "tpbottom" => TabPosition.Bottom,
+        "tpleft" => TabPosition.Left,
+        "tpright" => TabPosition.Right,
+        _ => null,
+    };
+
+    /// <summary>A <c>TTabStyle</c> identifier; null for any other.</summary>
+    public static TabStyle? ParseTabStyle(string name) => name.ToLowerInvariant() switch
+    {
+        "tstabs" => TabStyle.Tabs,
+        "tsbuttons" => TabStyle.Buttons,
+        "tsflatbuttons" => TabStyle.FlatButtons,
+        _ => null,
+    };
 
     private bool Is(ComponentInfo info, string ancestor) => _catalog.IsAssignable(info.ClassName, ancestor);
 

@@ -37,6 +37,13 @@ public sealed partial class DesignSurfaceController
         return true;
     }
 
+    /// <summary>
+    /// DSG-LAY-071: the text extent of a raw tab caption (with its <c>&amp;</c> characters, as the native control measures
+    /// it) for the automatic tab lengths of the layout, measured with <see cref="MeasureCanvas"/> in the tab control's font.
+    /// </summary>
+    private int MeasureTabCaption(FormObject tabControl, string caption) =>
+        MeasureCanvas.MeasureText(caption, new RenderContext(tabControl, 0, 0).Font).Width;
+
     // UI-DSG-084: the tab under the pointer (its page control and sheet); null when the pointer is not over a tab.
     private (FormObject PageControl, FormObject Sheet)? _hoveredTab;
 

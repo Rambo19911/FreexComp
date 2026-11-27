@@ -23,6 +23,13 @@ public sealed class LayoutEngine
 
     public RendererRegistry Renderers { get; }
 
+    /// <summary>
+    /// DSG-LAY-071: the text extent of a tab caption for automatic tab lengths — the design surface passes its canvas
+    /// measurement with the tab control's effective font (control, raw caption including <c>&amp;</c> → width); null = the
+    /// headless estimate <see cref="TabStripGeometry.EstimateTextExtent"/>.
+    /// </summary>
+    public Func<FormObject, string, int>? TabTextWidth { get; set; }
+
     /// <summary>Full layout from stored properties (load sequence of layout.md §12, steps 1, 3, 5).</summary>
     public LayoutResult Compute(FormDocument form, LayoutMode mode = LayoutMode.Design) =>
         LayoutResult.Capture(Load(form, mode, null).Machine.Root);
@@ -117,7 +124,7 @@ public sealed class LayoutEngine
         IReadOnlyDictionary<string, LayoutOverride>? overrides)
     {
         var (root, nodes) = new LayoutReader(_catalog).Read(form, overrides);
-        var machine = new LayoutMachine(root, mode);
+        var machine = new LayoutMachine(root, mode, TabTextWidth);
         machine.Load();
         return (machine, nodes);
     }
@@ -129,7 +136,8 @@ public sealed class LayoutEngine
     /// <summary>
     /// <c>set C P v</c>: an explicit assignment with the run-time setter's semantics (UIF-210, UIF-232, UIF-227). Supported:
     /// <c>Left</c>, <c>Top</c>, <c>Width</c>, <c>Height</c>, <c>ClientWidth</c>, <c>ClientHeight</c>, <c>Align</c>,
-    /// <c>Visible</c>, <c>AlignWithMargins</c>.
+    /// <c>Visible</c>, <c>AlignWithMargins</c>; on a <c>TCustomTabControl</c> descendant also <c>TabHeight</c>,
+    /// <c>TabWidth</c>, <c>MultiLine</c>, <c>TabPosition</c>, <c>Style</c>, <c>ScrollOpposite</c> (DSG-LAY-069).
     /// </summary>
     private static void Set(LayoutMachine machine, LayoutNode node, string property, string value, string step)
     {
@@ -167,6 +175,32 @@ public sealed class LayoutEngine
                 break;
             case "alignwithmargins":
                 machine.SetAlignWithMargins(node, BoolArg(value, step));
+                break;
+            case "tabheight" when node.IsTabStrip:
+                var tabHeight = IntArg(value, step);
+                machine.SetTabStripInput(node, n => n.TabHeight = tabHeight);
+                break;
+            case "tabwidth" when node.IsTabStrip:
+                var tabWidth = IntArg(value, step);
+                machine.SetTabStripInput(node, n => n.TabWidth = tabWidth);
+                break;
+            case "multiline" when node.IsTabStrip:
+                var multiLine = BoolArg(value, step);
+                machine.SetTabStripInput(node, n => n.MultiLine = multiLine);
+                break;
+            case "scrollopposite" when node.IsTabStrip:
+                var scrollOpposite = BoolArg(value, step);
+                machine.SetTabStripInput(node, n => n.ScrollOpposite = scrollOpposite);
+                break;
+            case "tabposition" when node.IsTabStrip:
+                var position = LayoutReader.ParseTabPosition(value)
+                    ?? throw new FormatException($"not a TTabPosition value: '{value}' in step '{step.Trim()}'");
+                machine.SetTabStripInput(node, n => n.TabPosition = position);
+                break;
+            case "style" when node.IsTabStrip:
+                var style = LayoutReader.ParseTabStyle(value)
+                    ?? throw new FormatException($"not a TTabStyle value: '{value}' in step '{step.Trim()}'");
+                machine.SetTabStripInput(node, n => n.TabStyle = style);
                 break;
             default:
                 throw new FormatException($"unsupported property '{property}' in step '{step.Trim()}'");

@@ -6,7 +6,8 @@ namespace FreexComp.Designer.Layout;
 internal enum AlignKind { None, Top, Bottom, Left, Right, Client }
 
 /// <summary>The class-specific layout behaviour of a node, keyed on the metadata ancestor chain (layout-engine.md §4).</summary>
-internal enum NodeKind { Generic, Form, Panel, GroupBox, ScrollBox, Grid, PageControl, TabSheet, ToolBar, ToolButton }
+/// <remarks><see cref="PageControl"/> and <see cref="TabControl"/> are the <c>TCustomTabControl</c> descendants (DSG-LAY-070).</remarks>
+internal enum NodeKind { Generic, Form, Panel, GroupBox, ScrollBox, Grid, PageControl, TabControl, TabSheet, ToolBar, ToolButton }
 
 /// <summary>Intrinsic size rules I1 … I3 (layout.md UIF-250); I4 is <see cref="NodeKind.TabSheet"/>.</summary>
 internal enum IntrinsicRule { None, ComboBox, Edit }
@@ -53,10 +54,33 @@ internal sealed class LayoutNode
     public int BorderWidth, BevelWidth = 1;
     public bool BevelOuter = true, BevelInner;
 
-    // Page controls and tab sheets.
-    public int TabHeight;
+    // Tab controls, page controls and tab sheets (DSG-LAY-069).
+    public int TabHeight, TabWidth;
+    public bool MultiLine, ScrollOpposite;
+    public TabPosition TabPosition;
+    public TabStyle TabStyle;
+
+    /// <summary><c>Images.Width</c> of the linked image list; null without <c>Images</c>.</summary>
+    public int? ImagesWidth;
+
     public string? ActivePageName;
+
+    /// <summary>The page activated by <c>Loaded</c> (UIF-771); the selected tab for <c>K</c> (DSG-LAY-072).</summary>
+    public LayoutNode? ActivePage;
+
     public bool TabVisible = true;
+    public string Caption = "";
+    public int ImageIndex = -1;
+
+    /// <summary><c>TTabControl.Tabs</c> and the effective <c>TabIndex</c>.</summary>
+    public IReadOnlyList<string> Tabs = [];
+    public int TabIndex = -1;
+
+    /// <summary>The display rectangle of the last layout pass (UIF-1502: recomputed in every pass).</summary>
+    public Rect DisplayRect;
+
+    /// <summary>A tab-strip node: a <c>TCustomTabControl</c> descendant.</summary>
+    public bool IsTabStrip => Kind is NodeKind.PageControl or NodeKind.TabControl;
 
     // Tool bars and tool buttons.
     public int ButtonWidth = 23, ButtonHeight = 22, Indent;

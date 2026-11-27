@@ -1,3 +1,4 @@
+using FreexComp.Designer.Model;
 using FreexComp.Designer.Rendering;
 
 namespace FreexComp.Designer.Layout;
@@ -6,10 +7,13 @@ namespace FreexComp.Designer.Layout;
 /// The layout procedures of ui-framework layout.md, executed on a <see cref="LayoutNode"/> tree exactly as the run-time
 /// framework executes them on its controls in dump mode (96 DPI, no handles, scroll positions 0): <c>SetBounds</c>
 /// (UIF-210), <c>ConstrainSize</c> (UIF-240, UIF-250), the align pass (UIF-222), anchors (UIF-231), baselines
-/// (UIF-232), scroll bars (UIF-291), the class layouts of page controls and tool bars, the load sequence (UIF-300) and
-/// scaling (UIF-280, UIF-283). Every rule cites its source; the run-time units are the reference implementation.
+/// (UIF-232), scroll bars (UIF-291), the class layouts of tab controls (<see cref="TabStripGeometry"/>, DSG-LAY-070) and
+/// tool bars, the load sequence (UIF-300) and scaling (UIF-280, UIF-283). Every rule cites its source; the run-time
+/// units are the reference implementation.
 /// </summary>
-internal sealed class LayoutMachine(LayoutNode root, LayoutMode mode)
+/// <param name="measureText">DSG-LAY-071: the surface's canvas measurement of a tab caption (control, raw caption → width);
+/// null = the headless estimate.</param>
+internal sealed class LayoutMachine(LayoutNode root, LayoutMode mode, Func<FormObject, string, int>? measureText = null)
 {
     private const int ScrollBarSize = 17;   // MulDiv(17, 96, 96), UIF-215
     private int _scaling;
@@ -41,6 +45,10 @@ internal sealed class LayoutMachine(LayoutNode root, LayoutMode mode)
         {
             ActivatePage(node); // TPageControl.Loaded: ChangeActivePage before inherited Loaded (UIF-771)
         }
+        else if (node.Kind == NodeKind.TabControl && (node.TabIndex < -1 || node.TabIndex >= node.Tabs.Count))
+        {
+            node.TabIndex = -1; // UIF-1508: Loaded applies a streamed TabIndex; a value out of range becomes −1
+        }
 
         node.Loading = false;
         CaptureBaseline(node); // UIF-232 case 4
@@ -70,6 +78,8 @@ internal sealed class LayoutMachine(LayoutNode root, LayoutMode mode)
         {
             page.Visible = ReferenceEquals(page, active);
         }
+
+        pageControl.ActivePage = active;
     }
 
     // ------------------------------------------------------------------ explicit changes (steps, interactive resize)
@@ -249,17 +259,73 @@ internal sealed class LayoutMachine(LayoutNode root, LayoutMode mode)
                 const int s = ContainerRects.GroupBoxInset;
                 (l, t, r, b) = (l + s, t + ContainerRects.GroupBoxCaptionHeight(node.EffectiveFontHeight), r - s, b - s);
                 break;
+            case NodeKind.TabControl when node.Parent is not null:
+                var d = node.DisplayRect; // UIF-1511: AdjustClientRect returns DisplayRect (computed by the pass)
+                (l, t, r, b) = (d.Left, d.Top, d.Right, d.Bottom);
+                break;
         }
 
         return (l + node.PaddingLeft, t + node.PaddingTop, r - node.PaddingRight, b - node.PaddingBottom);
     }
 
-    /// <summary>UIF-219: <c>(4, TabH + 6, Width − 4, Height − 4)</c>, extents clamped at 0.</summary>
-    private static (int Left, int Top, int Width, int Height) PageRect(LayoutNode pageControl)
+    /// <summary>
+    /// DSG-LAY-070: the tab-strip geometry of a <c>TCustomTabControl</c> descendant from its current state — the visible
+    /// tabs (page control: the pages with <c>TabVisible</c>; tab control: <c>Tabs</c>), their lengths (UIF-1498,
+    /// DSG-LAY-071) and the selected tab (DSG-LAY-072).
+    /// </summary>
+    public TabStripGeometry TabStrip(LayoutNode node)
     {
-        var tabH = pageControl.TabHeight > 0 ? pageControl.TabHeight : Math.Abs(pageControl.EffectiveFontHeight) + 9;
-        int l = 4, t = tabH + 4 + 2, r = pageControl.Width - 4, b = pageControl.Height - 4;
-        return (l, t, Math.Max(r, l) - l, Math.Max(b, t) - t);
+        var tabH = TabStripGeometry.TabThickness(node.TabHeight, node.EffectiveFontHeight);
+        var lengths = new List<int>();
+        var selected = -1;
+        if (node.Kind == NodeKind.PageControl)
+        {
+            foreach (var page in node.Children.Where(c => c.Kind == NodeKind.TabSheet && c.TabVisible))
+            {
+                if (ReferenceEquals(page, node.ActivePage))
+                {
+                    selected = lengths.Count;
+                }
+
+                lengths.Add(TabLength(node, page.Caption, page.ImageIndex));
+            }
+        }
+        else
+        {
+            for (var i = 0; i < node.Tabs.Count; i++)
+            {
+                lengths.Add(TabLength(node, node.Tabs[i], i)); // UIF-1512: tab i shows image i
+            }
+
+            selected = node.TabIndex;
+        }
+
+        return new TabStripGeometry(node.Width, node.Height, tabH, lengths, node.TabPosition, node.TabStyle, node.MultiLine,
+            node.ScrollOpposite, selected);
+    }
+
+    // UIF-1498 with the text extent of DSG-LAY-071: the surface's canvas measurement, else the headless estimate.
+    private int TabLength(LayoutNode node, string caption, int imageIndex)
+    {
+        if (node.TabWidth > 0)
+        {
+            return node.TabWidth;
+        }
+
+        var text = measureText is { } measure ? measure(node.Object, caption)
+            : TabStripGeometry.EstimateTextExtent(caption, node.EffectiveFontHeight);
+        var image = node.ImagesWidth is { } w && imageIndex >= 0 ? w + TabStripGeometry.ImageGap : 0;
+        return TabStripGeometry.TabLength(0, text, image);
+    }
+
+    /// <summary>
+    /// A <c>.steps</c> assignment of a tab-strip input (DSG-LAY-069: <c>TabHeight</c>, <c>TabWidth</c>, <c>MultiLine</c>,
+    /// <c>TabPosition</c>, <c>Style</c>, <c>ScrollOpposite</c>): the run-time setter recreates the window and realigns (UIF-1493).
+    /// </summary>
+    public void SetTabStripInput(LayoutNode node, Action<LayoutNode> assign)
+    {
+        assign(node);
+        Realign(node);
     }
 
     // ------------------------------------------------------------------ layout pass (UIF-222 … 226)
@@ -319,6 +385,11 @@ internal sealed class LayoutMachine(LayoutNode root, LayoutMode mode)
             UpdateScrollBars(node);
         }
 
+        if (node.IsTabStrip)
+        {
+            node.DisplayRect = TabStrip(node).DisplayRect; // UIF-1502
+        }
+
         var r = AlignRect(node);
         for (var phase = AlignKind.Top; phase <= AlignKind.Client; phase++)
         {
@@ -347,11 +418,11 @@ internal sealed class LayoutMachine(LayoutNode root, LayoutMode mode)
 
         if (node.Kind == NodeKind.PageControl)
         {
-            // TPageControl.AlignControls: every page gets the page rectangle by an explicit SetBounds (UIF-772).
-            var (pl, pt, pw, ph) = PageRect(node);
+            // TPageControl.AlignControls: every page gets the display rectangle by an explicit SetBounds (UIF-772, UIF-1502).
+            var d = node.DisplayRect;
             foreach (var page in node.Children.Where(c => c.Kind == NodeKind.TabSheet).ToList())
             {
-                SetBounds(page, pl, pt, pw, ph, explicitChange: true);
+                SetBounds(page, d.Left, d.Top, d.Width, d.Height, explicitChange: true);
             }
         }
     }
@@ -596,9 +667,10 @@ internal sealed class LayoutMachine(LayoutNode root, LayoutMode mode)
                 }
             }
 
-            if (node.Kind == NodeKind.PageControl)
+            if (node.IsTabStrip)
             {
                 node.TabHeight = MulDiv(node.TabHeight, m, d);
+                node.TabWidth = MulDiv(node.TabWidth, m, d);
             }
         }
         finally

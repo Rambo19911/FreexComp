@@ -180,11 +180,11 @@ public sealed partial class LayoutEngineTests
         Assert.Equal(new Rect(10, 160, 121, 40), Bounds(r, form, "M"));
         Assert.Equal(new Rect(8, 20, 100, 31), Bounds(r, form, "Inner")); // inherits the group box font (UIF-251)
 
-        // I4: a tab sheet always has the page rectangle; its stored values are ignored.
+        // I4: a tab sheet always has the display rectangle (UIF-1501: top TabH + 4); its stored values are ignored.
         form = Form(400, 300, Obj("Book", "TPageControl", 0, 0, 289, 193, "TabHeight = 30",
             "object Sheet: TTabSheet\nend\n"));
         r = Engine.Compute(form);
-        Assert.Equal(new Rect(4, 36, 281, 153), Bounds(r, form, "Sheet"));
+        Assert.Equal(new Rect(4, 34, 281, 155), Bounds(r, form, "Sheet"));
         Assert.Empty(r.Differences()); // tab-sheet geometry is not stored (DSG-LAY-040)
     }
 
@@ -224,9 +224,9 @@ public sealed partial class LayoutEngineTests
         Assert.Equal(new Rect(0, 59, 196, 20), Bounds(r, form, "B"));
         Assert.Equal(new Rect(0, 0, 300, 50), Bounds(r, form, "N"));
 
-        // TPageControl (E27): sheets at the page rectangle; the sheet's client is its full bounds.
-        Assert.Equal(new Rect(4, 27, 281, 162), Bounds(r, form, "Sheet"));
-        FormObjectRects(r, form, "Sheet", new Rect(0, 0, 281, 162), new Rect(0, 0, 281, 162));
+        // TPageControl (E27): sheets at the display rectangle (UIF-1501); the sheet's client is its full bounds.
+        Assert.Equal(new Rect(4, 25, 281, 164), Bounds(r, form, "Sheet"));
+        FormObjectRects(r, form, "Sheet", new Rect(0, 0, 281, 164), new Rect(0, 0, 281, 164));
 
         // The renderers' rectangles (control coordinates) come from the same formulas (ContainerRects).
         foreach (var name in new[] { "Raised", "Framed", "Group" })

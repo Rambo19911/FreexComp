@@ -35,8 +35,8 @@ public sealed partial class RendererTests
 
         var sheet = form.FindByName("Sheet")!;
         var sheetCtx = RenderContext.FromLayout(sheet, layout);
-        Assert.Equal((281, 162), (sheetCtx.Width, sheetCtx.Height));
-        Assert.Equal(new Rect(0, 0, 281, 162), sheetCtx.ClientRect);
+        Assert.Equal((281, 164), (sheetCtx.Width, sheetCtx.Height)); // the display rectangle of UIF-1501
+        Assert.Equal(new Rect(0, 0, 281, 164), sheetCtx.ClientRect);
 
         // The form keeps its design caption: client (1, 31) below it, of the computed client size.
         var root = RenderContext.FromLayout(form.Root, layout);

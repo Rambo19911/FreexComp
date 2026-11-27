@@ -59,6 +59,7 @@ public sealed partial class DesignSurfaceController
         Undo = undo;
         Catalog = catalog;
         _layout = layout;
+        _layout.TabTextWidth = MeasureTabCaption; // DSG-LAY-071
         _settings = settings;
         _host = host;
         Selection = new Selection(document);
