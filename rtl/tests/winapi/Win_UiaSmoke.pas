@@ -169,7 +169,7 @@ end;
 procedure TestSafeArray;
 var
   A: PSafeArray;
-  I, Value: Integer;
+  I, Idx, Value: Integer;
   Data: PInteger;
 begin
   Section('safe arrays (RTL-1113)');
@@ -179,8 +179,9 @@ begin
   CheckEqI(4, PCardinal(NativeUInt(A) + 4)^, 'elements of four bytes');
   for I := 0 to 3 do
   begin
+    Idx := I;                                     // @ of a for control variable is E2053 (LANG-361)
     Value := (I + 1) * 10;
-    CheckEqI(S_OK, SafeArrayPutElement(A, @I, @Value), 'SafeArrayPutElement ' + IntStr(I));
+    CheckEqI(S_OK, SafeArrayPutElement(A, @Idx, @Value), 'SafeArrayPutElement ' + IntStr(I));
   end;
   I := 4;
   Value := 50;
