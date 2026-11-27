@@ -11,7 +11,8 @@ namespace FreexComp.Designer.Layout;
 /// tool bars, the load sequence (UIF-300) and scaling (UIF-280, UIF-283). Every rule cites its source; the run-time
 /// units are the reference implementation.
 /// </summary>
-/// <param name="measureText">DSG-LAY-071: the surface's canvas measurement of a tab caption (control, raw caption → width);
+/// <param name="measureText">DSG-LAY-071: the surface's canvas measurement of a tab caption (control, caption with mnemonic
+/// prefixes processed → width);
 /// null = the headless estimate.</param>
 internal sealed class LayoutMachine(LayoutNode root, LayoutMode mode, Func<FormObject, string, int>? measureText = null)
 {
@@ -304,7 +305,8 @@ internal sealed class LayoutMachine(LayoutNode root, LayoutMode mode, Func<FormO
             node.ScrollOpposite, selected);
     }
 
-    // UIF-1498 with the text extent of DSG-LAY-071: the surface's canvas measurement, else the headless estimate.
+    // UIF-1498 with the text extent of DSG-LAY-071 (mnemonic prefixes processed): the surface's canvas measurement, else
+    // the headless estimate.
     private int TabLength(LayoutNode node, string caption, int imageIndex)
     {
         if (node.TabWidth > 0)
@@ -312,8 +314,9 @@ internal sealed class LayoutMachine(LayoutNode root, LayoutMode mode, Func<FormO
             return node.TabWidth;
         }
 
-        var text = measureText is { } measure ? measure(node.Object, caption)
-            : TabStripGeometry.EstimateTextExtent(caption, node.EffectiveFontHeight);
+        var measured = TabStripGeometry.MeasuredCaption(caption);
+        var text = measureText is { } measure ? measure(node.Object, measured)
+            : TabStripGeometry.EstimateTextExtent(measured, node.EffectiveFontHeight);
         var image = node.ImagesWidth is { } w && imageIndex >= 0 ? w + TabStripGeometry.ImageGap : 0;
         return TabStripGeometry.TabLength(0, text, image);
     }

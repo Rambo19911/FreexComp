@@ -61,8 +61,9 @@ public sealed class TabStripGeometryTests
             Assert.Equal(2, Strip(2, style: style, multiLine: true, width: threshold - 1).RowCount);
         }
 
-        // 3 vertical tabs fit one column from H = 185 (tsTabs) and 189 (both button styles); flat buttons use Sa = 3 off the top.
-        foreach (var (style, threshold) in new[] { (TabStyle.Tabs, 185), (TabStyle.Buttons, 189), (TabStyle.FlatButtons, 189) })
+        // 3 vertical tabs fit one column from H = 185 (tsTabs), 189 (tsButtons) and 203 (tsFlatButtons: Sa = 10 at every
+        // position, as built at U-176).
+        foreach (var (style, threshold) in new[] { (TabStyle.Tabs, 185), (TabStyle.Buttons, 189), (TabStyle.FlatButtons, 203) })
         {
             foreach (var position in new[] { TabPosition.Left, TabPosition.Right })
             {
@@ -85,7 +86,8 @@ public sealed class TabStripGeometryTests
         Assert.Equal(48, TabStripGeometry.TabLength(0, 5, 0));
         Assert.Equal(102, TabStripGeometry.TabLength(0, 68, 16 + TabStripGeometry.ImageGap));
         Assert.Equal(30, TabStripGeometry.TabLength(30, 68, 22)); // the fixed width wins over MinW
-        // The headless estimate of DSG-LAY-071: Ceiling(0.55 · Abs(FontHeight) · length), raw caption with '&'.
+        // The headless estimate of DSG-LAY-071: Ceiling(0.55 · Abs(FontHeight) · length) of the text it is given (the layout
+        // passes the caption with mnemonic prefixes processed, MnemonicPrefixesProcessed).
         Assert.Equal(60, TabStripGeometry.EstimateTextExtent("&Mnemonic", -12));
         Assert.Equal(0, TabStripGeometry.EstimateTextExtent("", -12));
     }
@@ -154,7 +156,7 @@ public sealed class TabStripGeometryTests
         Assert.Equal(buttons.TabRects[0], buttons.TabDrawRect(0)); // only tsTabs grows the selected tab
         Assert.Equal([0, 70, 140], Strip(3, style: TabStyle.FlatButtons, multiLine: true).TabRects.Select(r => r.Left));
         Assert.Equal([2, 65], Strip(2, style: TabStyle.Buttons).TabRects.Select(r => r.Left)); // single-line buttons from 2
-        Assert.Equal([0, 63], Strip(2, TabPosition.Left, TabStyle.FlatButtons).TabRects.Select(r => r.Top)); // Sa 3 off the top
+        Assert.Equal([0, 70], Strip(2, TabPosition.Left, TabStyle.FlatButtons).TabRects.Select(r => r.Top)); // Sa 10 off the top too (U-176)
 
         // The display rectangle never overlaps a tab and keeps its distance to the nearest one (UIF-1503).
         foreach (var position in Enum.GetValues<TabPosition>())
@@ -165,6 +167,68 @@ public sealed class TabStripGeometryTests
                 Assert.All(g.TabRects, r => Assert.False(Overlaps(r, g.DisplayRect), $"{position} {style} {r} overlaps {g.DisplayRect}"));
             }
         }
+    }
+
+    [Fact]
+    [Trait("Req", "DSG-LAY-070")]
+    [Trait("Req", "DSG-LAY-071")]
+    public void FlatButtonsSpacingEveryPosition()
+    {
+        // D-149 / U-176 (layout.md UIF-1497): Sa = 0 (tsTabs), 3 (tsButtons), 10 (tsFlatButtons) at every TabPosition.
+        foreach (var position in Enum.GetValues<TabPosition>())
+        {
+            Assert.Equal(0, Strip(1, position, TabStyle.Tabs).AlongSpacing);
+            Assert.Equal(3, Strip(1, position, TabStyle.Buttons).AlongSpacing);
+            Assert.Equal(10, Strip(1, position, TabStyle.FlatButtons).AlongSpacing);
+
+            // 4 flat buttons of 60 fit one row (column) from 4 · 60 + 3 · 10 + 3 = 273 along the strip, on every side.
+            var vertical = position is TabPosition.Left or TabPosition.Right;
+            TabStripGeometry Four(int along) => vertical
+                ? Strip(4, position, TabStyle.FlatButtons, multiLine: true, width: 400, height: along)
+                : Strip(4, position, TabStyle.FlatButtons, multiLine: true, width: along);
+            Assert.Equal(1, Four(273).RowCount);
+            Assert.Equal(2, Four(272).RowCount);
+        }
+
+        // Corpus E50: flat buttons at the bottom, 4 × 60 in W 260 → rows 3 + 1, depth 2 · 21 + 3 + 4 = 49 → (4, 4, 252, 140).
+        var e50 = Strip(4, TabPosition.Bottom, TabStyle.FlatButtons, multiLine: true, width: 260);
+        Assert.Equal([0, 0, 0, 1], e50.RowOf);
+        Assert.Equal(new Rect(4, 4, 252, 140), e50.DisplayRect);
+        Assert.Equal([0, 70, 140, 0], e50.TabRects.Select(r => r.Left));
+    }
+
+    [Fact]
+    [Trait("Req", "DSG-LAY-071")]
+    public void MnemonicPrefixesProcessed()
+    {
+        // UIF-1498 (U-176): read left to right, an '&' is dropped and the next character kept unchanged; a trailing lone '&' is dropped.
+        Assert.Equal("File", TabStripGeometry.MeasuredCaption("&File"));
+        Assert.Equal("Save & close", TabStripGeometry.MeasuredCaption("Save && close"));
+        Assert.Equal("&", TabStripGeometry.MeasuredCaption("&&"));
+        Assert.Equal("&", TabStripGeometry.MeasuredCaption("&&&"));
+        Assert.Equal("&x", TabStripGeometry.MeasuredCaption("&&&x"));
+        Assert.Equal("Tail", TabStripGeometry.MeasuredCaption("Tail&"));
+        Assert.Equal("ab", TabStripGeometry.MeasuredCaption("a&b"));
+        Assert.Equal("", TabStripGeometry.MeasuredCaption("&"));
+        Assert.Equal("Plain", TabStripGeometry.MeasuredCaption("Plain"));
+
+        // The headless estimate (DSG-LAY-071) measures the processed caption: 'Mnemonic' (8) → Ceiling(0.55 · 12 · 8) = 53.
+        var form = LayoutHarness.Form(400, 300, LayoutHarness.Obj("Tabs", "TTabControl", 0, 0, 289, 193,
+            "Font.Height = -12\nParentFont = False\nTabs = (\n  '&Mnemonic'\n  'Mnemonic'\n  '&&&&'\n  '&&'\n)", ""));
+        var engine = LayoutHarness.Engine;
+        var strip = Assert.IsType<TabStripGeometry>(engine.Compute(form).GetTabStrip(form.FindByName("Tabs")!));
+        Assert.Equal([65, 65, 48, 48], strip.Lengths);
+
+        // The surface's canvas measurement receives the processed captions too.
+        var calls = new List<string>();
+        engine.TabTextWidth = (_, text) =>
+        {
+            calls.Add(text);
+            return 100;
+        };
+        _ = engine.Compute(form);
+        Assert.NotEmpty(calls);
+        Assert.Equal(Enumerable.Repeat<string[]>(["Mnemonic", "Mnemonic", "&&", "&"], calls.Count / 4).SelectMany(c => c), calls);
     }
 
     private static bool Overlaps(Rect a, Rect b) => a.Left < b.Right && b.Left < a.Right && a.Top < b.Bottom && b.Top < a.Bottom;

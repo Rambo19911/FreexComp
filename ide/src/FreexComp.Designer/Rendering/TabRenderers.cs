@@ -18,7 +18,7 @@ public abstract class TabStripRenderer : DesignRenderer
 
     /// <summary>
     /// The strip of <paramref name="ctx"/>: the layout's (<see cref="RenderContext.TabStrip"/>), else one computed from the
-    /// stored properties with text extents measured by <paramref name="measurer"/> (raw captions, DSG-LAY-071) and no images.
+    /// stored properties with text extents measured by <paramref name="measurer"/> (captions with mnemonic prefixes processed, DSG-LAY-071) and no images.
     /// </summary>
     public TabStripGeometry Strip(RenderContext ctx, IDesignCanvas measurer)
     {
@@ -32,7 +32,7 @@ public abstract class TabStripRenderer : DesignRenderer
         var tabWidth = ctx.Get("TabWidth", 0);
         var tabHeight = TabStripGeometry.TabThickness(ctx.Get("TabHeight", 0), (int)Math.Round(ctx.Font.SizePx));
         var lengths = Captions(ctx)
-            .Select(c => TabStripGeometry.TabLength(tabWidth, measurer.MeasureText(c, ctx.Font).Width, 0))
+            .Select(c => TabStripGeometry.TabLength(tabWidth, measurer.MeasureText(TabStripGeometry.MeasuredCaption(c), ctx.Font).Width, 0))
             .ToList();
         return new TabStripGeometry(ctx.Width, ctx.Height, tabHeight, lengths,
             LayoutReader.ParseTabPosition(ctx.Get("TabPosition", "tpTop")) ?? TabPosition.Top,

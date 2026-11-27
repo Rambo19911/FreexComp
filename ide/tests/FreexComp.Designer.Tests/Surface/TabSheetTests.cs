@@ -116,7 +116,7 @@ public sealed class TabSheetTests
         var sheets = string.Concat(Enumerable.Range(1, 6).Select(i => $"    object S{i}: TTabSheet\n      Caption = 'Sheet {i}'\n    end\n"));
         using var h = DesignerHarness.FromText(
             "object Form1: TForm\n  ClientWidth = 400\n  ClientHeight = 300\n  object Book: TPageControl\n    Left = 8\n    Top = 8\n"
-            + $"    Width = 289\n    Height = 193\n    MultiLine = True\n    Style = {style}\n    TabPosition = {position}\n    TabWidth = 60\n"
+            + $"    Width = 289\n    Height = 193\n    MultiLine = True\n    Style = {style}\n    TabPosition = {position}\n    TabWidth = 56\n"
             + sheets + "  end\nend\n", catalog: Layout.LayoutHarness.Catalog);
         (int X, int Y) Centre(string sheet)
         {

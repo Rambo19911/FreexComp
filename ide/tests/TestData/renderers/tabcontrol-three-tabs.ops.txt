@@ -1,13 +1,13 @@
 FillRect 0,0,289,193 #F0F0F0FF
 DrawRect 0,23,289,170 #ADADADFF 1 Solid
-FillRect 2,2,52,21 #F0F0F0FF
-DrawRect 2,2,52,21 #ADADADFF 1 Solid
-DrawText "&Alpha" 2,2,52,21 "Segoe UI" 12 #000000FF Center Center mnemonic
-FillRect 102,2,48,21 #F0F0F0FF
-DrawRect 102,2,48,21 #ADADADFF 1 Solid
-DrawText "Gamma" 102,2,48,21 "Segoe UI" 12 #000000FF Center Center mnemonic
-FillRect 52,0,52,25 #FFFFFFFF
-DrawLine 52,0.5,104,0.5 #ADADADFF 1 Solid
-DrawLine 52.5,0,52.5,25 #ADADADFF 1 Solid
-DrawLine 103.5,0,103.5,25 #ADADADFF 1 Solid
-DrawText "Beta" 52,0,52,25 "Segoe UI" 12 #000000FF Center Center mnemonic
+FillRect 2,2,48,21 #F0F0F0FF
+DrawRect 2,2,48,21 #ADADADFF 1 Solid
+DrawText "&Alpha" 2,2,48,21 "Segoe UI" 12 #000000FF Center Center mnemonic
+FillRect 98,2,48,21 #F0F0F0FF
+DrawRect 98,2,48,21 #ADADADFF 1 Solid
+DrawText "Gamma" 98,2,48,21 "Segoe UI" 12 #000000FF Center Center mnemonic
+FillRect 48,0,52,25 #FFFFFFFF
+DrawLine 48,0.5,100,0.5 #ADADADFF 1 Solid
+DrawLine 48.5,0,48.5,25 #ADADADFF 1 Solid
+DrawLine 99.5,0,99.5,25 #ADADADFF 1 Solid
+DrawText "Beta" 48,0,52,25 "Segoe UI" 12 #000000FF Center Center mnemonic

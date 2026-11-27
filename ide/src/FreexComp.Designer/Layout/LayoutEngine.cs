@@ -25,8 +25,9 @@ public sealed class LayoutEngine
 
     /// <summary>
     /// DSG-LAY-071: the text extent of a tab caption for automatic tab lengths — the design surface passes its canvas
-    /// measurement with the tab control's effective font (control, raw caption including <c>&amp;</c> → width); null = the
-    /// headless estimate <see cref="TabStripGeometry.EstimateTextExtent"/>.
+    /// measurement with the tab control's effective font (control, caption with mnemonic prefixes processed by
+    /// <see cref="TabStripGeometry.MeasuredCaption"/> → width); null = the headless estimate
+    /// <see cref="TabStripGeometry.EstimateTextExtent"/>.
     /// </summary>
     public Func<FormObject, string, int>? TabTextWidth { get; set; }
 

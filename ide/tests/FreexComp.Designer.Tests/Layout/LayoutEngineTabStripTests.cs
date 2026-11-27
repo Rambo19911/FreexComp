@@ -35,13 +35,14 @@ public sealed class LayoutEngineTabStripTests
         Assert.Equal(new Rect(4, 88, 281, 101), Bounds(measured.Compute(form), form, "S1"));
         Assert.Contains("Settings and more", calls);
 
-        // A sheet without TabVisible has no tab; the raw caption keeps its '&' (measured as the native control does).
+        // A sheet without TabVisible has no tab; the caption is measured with its mnemonic prefix processed (UIF-1498, U-176).
         form = Form(400, 300, Book("MultiLine = True",
             Sheets(caption, "Caption = '&Hidden one'\nTabVisible = False", caption, "Caption = '&Wide'")));
         calls.Clear();
         _ = measured.Compute(form);
         Assert.DoesNotContain("&Hidden one", calls);
-        Assert.Contains("&Wide", calls);
+        Assert.Contains("Wide", calls);
+        Assert.DoesNotContain("&Wide", calls);
         Assert.Equal(new Rect(4, 46, 281, 143), Bounds(Engine.Compute(form), form, "S2")); // estimate: rows 125 + 125 | 48
     }
 

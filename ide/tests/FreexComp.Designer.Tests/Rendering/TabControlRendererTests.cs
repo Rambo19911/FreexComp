@@ -49,7 +49,7 @@ public sealed class TabControlRendererTests
     public void DrawsTabsAtEveryPosition(string className, string position, string style)
     {
         var page = className == "TPageControl";
-        var properties = $"TabPosition = {position}\nStyle = {style}\nTabWidth = 60\n" + (page ? "ActivePage = S2\n" : StripTabs + "TabIndex = 1\n");
+        var properties = $"TabPosition = {position}\nStyle = {style}\nTabWidth = 56\n" + (page ? "ActivePage = S2\n" : StripTabs + "TabIndex = 1\n");
         var form = Form(400, 300, Obj("X", className, 8, 8, 289, 193, "ParentFont = False\nFont.Height = -12\n" + properties, page ? PageSheets : ""));
         var ctx = RenderContext.FromLayout(form.FindByName("X")!, Engine.Compute(form));
         var canvas = new RecordingCanvas();
@@ -61,7 +61,7 @@ public sealed class TabControlRendererTests
         Assert.Equal((3, 1, 1), (strip.TabRects.Count, strip.RowCount, strip.SelectedTab));
         Assert.Equal($"FillRect 0,0,289,193 {ctx.ParentFill}", ops[0]);
 
-        // The body frame of tsTabs, one row on the strip side: 2 there, 4 elsewhere (one column of 60-pixel tabs fits 193).
+        // The body frame of tsTabs, one row on the strip side: 2 there, 4 elsewhere (one column of 56-pixel tabs fits 193 in every style: flat buttons 3 · 56 + 2 · 10 + 3 = 191).
         var frame = $"DrawRect {R(TabStripRenderer.BodyFrame(strip))} {p.Border} 1 Solid";
         if (style == "tsTabs")
         {

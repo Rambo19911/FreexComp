@@ -92,12 +92,12 @@ public sealed class TabStripGeometry
     /// <summary>DSG-RND-020: the item rectangle of every visible tab, in order, in client coordinates.</summary>
     public IReadOnlyList<Rect> TabRects { get; }
 
-    /// <summary>Along spacing <c>Sa</c>.</summary>
+    /// <summary>Along spacing <c>Sa</c> (UIF-1497, as built at U-176): 0, 3, 10 for the three styles at every position.</summary>
     public int AlongSpacing => Style switch
     {
         TabStyle.Tabs => 0,
-        TabStyle.FlatButtons when Position == TabPosition.Top => 10,
-        _ => 3,
+        TabStyle.Buttons => 3,
+        _ => 10,
     };
 
     /// <summary>Row spacing <c>Sr</c>.</summary>
@@ -116,7 +116,40 @@ public sealed class TabStripGeometry
     public static int TabLength(int tabWidth, int textExtent, int imageWidth) =>
         tabWidth > 0 ? tabWidth : Math.Max(MinTabLength, textExtent + 2 * TextPadding + imageWidth);
 
-    /// <summary>DSG-LAY-071: the headless estimate <c>Ceiling(0.55 · Abs(FontHeight) · length)</c> of a raw caption's extent.</summary>
+    /// <summary>
+    /// UIF-1498 (U-176): the text of a caption whose extent is <c>Tx</c> — mnemonic prefixes processed left to right: an
+    /// <c>&amp;</c> is dropped and the character after it kept unchanged (<c>&amp;&amp;</c> → <c>&amp;</c>,
+    /// <c>&amp;&amp;&amp;</c> → <c>&amp;</c>); a trailing lone <c>&amp;</c> is dropped.
+    /// </summary>
+    public static string MeasuredCaption(string caption)
+    {
+        ArgumentNullException.ThrowIfNull(caption);
+        if (!caption.Contains('&', StringComparison.Ordinal))
+        {
+            return caption;
+        }
+
+        var builder = new System.Text.StringBuilder(caption.Length);
+        for (var i = 0; i < caption.Length; i++)
+        {
+            if (caption[i] == '&')
+            {
+                if (++i == caption.Length)
+                {
+                    break;
+                }
+            }
+
+            builder.Append(caption[i]);
+        }
+
+        return builder.ToString();
+    }
+
+    /// <summary>
+    /// DSG-LAY-071: the headless estimate <c>Ceiling(0.55 · Abs(FontHeight) · length)</c> of a text's extent (callers pass
+    /// the <see cref="MeasuredCaption"/> of a tab caption).
+    /// </summary>
     public static int EstimateTextExtent(string caption, int fontHeight)
     {
         ArgumentNullException.ThrowIfNull(caption);
