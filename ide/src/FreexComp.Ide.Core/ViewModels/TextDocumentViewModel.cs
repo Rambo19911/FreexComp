@@ -86,6 +86,9 @@ public partial class TextDocumentViewModel : DocumentViewModel, ICommandTarget
     /// <summary>The hover tooltip of this document (I-116); null when the code model does not provide it.</summary>
     public CodeModel.HoverSession? Hover { get; internal set; }
 
+    /// <summary>The Ctrl+hover underline of this document (I-322, IDE-ED-149); null when the code model does not provide it.</summary>
+    public CodeModel.DeclarationLinkSession? DeclarationLink { get; internal set; }
+
     /// <summary>The encoding of the next save (IDE-P1-074).</summary>
     public FileEncoding Encoding => _encoding;
 

@@ -109,6 +109,9 @@ public sealed record IdeServices
     /// <summary>The P3 classification layer of the open Pascal documents (I-112).</summary>
     public required CodeModel.SemanticHighlightService SemanticHighlights { get; init; }
 
+    /// <summary>The live squiggles of the open Pascal documents (I-111, I-324).</summary>
+    public required CodeModel.LiveDiagnosticsService LiveDiagnostics { get; init; }
+
     /// <summary>The Search Results tool window and Find in Files runner (I-123).</summary>
     public required ViewModels.SearchResultsViewModel SearchResults { get; init; }
 

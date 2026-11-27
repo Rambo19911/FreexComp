@@ -206,10 +206,13 @@ public static class ServiceGraph
         build.CheckSyntax = codeModel.GetProjectDiagnosticsAsync;
         build.DeployDatabaseLibrary = new DatabaseLibraryDeployer(platform.FileSystem, toolchain, codeModel.GetProjectUnitNamesAsync).DeployAsync; // I-225, I-280
         projects.UnitRename = new CodeModel.UnitRenameAnalyzer(codeModel, toolchain, librarySource); // I-236
-        _ = new CodeModel.LiveDiagnosticsService(documents, codeModel, settings, platform.Clock, platform.Dispatcher); // I-111
+        var liveDiagnostics = new CodeModel.LiveDiagnosticsService(documents, codeModel, settings, platform.Clock, platform.Dispatcher); // I-111
+        projects.ProjectChanged += (_, _) => liveDiagnostics.OnProjectChanged(projects.Definition); // IDE-ED-151 (I-324)
         var semanticHighlights = new CodeModel.SemanticHighlightService(documents, codeModel, settings, platform.Clock, platform.Dispatcher); // I-112
         projects.ProjectChanged += (_, _) => semanticHighlights.OnProjectChanged(projects.Definition); // I-247
-        new CodeModel.GoToDeclarationService(documents, projects, codeModel, navigation, status).RegisterCommands(commands); // I-117
+        var goToDeclaration = new CodeModel.GoToDeclarationService(documents, projects, codeModel, navigation, status);
+        goToDeclaration.RegisterCommands(commands); // I-117
+        goToDeclaration.AttachDeclarationLinks(); // I-322
         new CodeModel.CompletionController(documents, projects, codeModel, settings, platform.Clock, status).RegisterCommands(commands); // I-114
         var parameterInfo = new CodeModel.ParameterInfoController(documents, projects, codeModel, settings, platform.Clock); // I-116
         parameterInfo.RegisterCommands(commands);
@@ -453,6 +456,7 @@ public static class ServiceGraph
             ProjectManager = projectManager,
             CodeModel = codeModel,
             SemanticHighlights = semanticHighlights,
+            LiveDiagnostics = liveDiagnostics,
             Metadata = metadata,
             Frames = frames,
             DesignerShell = designerShell,

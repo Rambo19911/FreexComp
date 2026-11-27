@@ -67,6 +67,11 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
     private readonly SignatureHelpView _signatureHelp = new(); // I-116
     private readonly HoverView _hover = new(); // I-116
     private FindSession? _find;
+    private Core.CodeModel.DeclarationLinkSession? _link; // I-322: the bound document's Ctrl+hover session
+    private Point? _linkPointer; // the pointer over the text view (text-view coordinates), for Ctrl pressed while it rests
+    private bool _handCursor;
+    private Cursor? _cursorBeforeHand;
+    private static Cursor? s_hand;
 
     public CodeEditorView()
     {
@@ -124,6 +129,7 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
         textView.BackgroundRenderers.Add(new TemplateFieldRenderer(this, () => _document?.TemplateFieldRanges ?? [])); // IDE-ED-065
         _markers = new TextMarkerRenderer(this); // editor.md §6 row 12
         textView.BackgroundRenderers.Add(_markers);
+        textView.BackgroundRenderers.Add(new DeclarationLinkRenderer(this, () => _link?.Current)); // IDE-ED-149
         ApplyOptions(EditorOptions.Default);
 
         area.TextEntering += OnTextEntering;
@@ -148,8 +154,24 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
         area.PointerExited += (_, _) => _foldMargin.IsPointerNear = false;
         textView.PointerMoved += (_, e) => ShowTextTooltip(e.GetPosition(textView));
         textView.PointerExited += (_, _) => ShowTextTooltip(null);
+        // IDE-ED-149: Ctrl+hover follows the pointer and the Ctrl key; leaving the text or scrolling removes it.
+        textView.AddHandler(PointerMovedEvent, (_, e) =>
+        {
+            _linkPointer = e.GetPosition(textView);
+            UpdateLink(e.KeyModifiers);
+        }, RoutingStrategies.Bubble, handledEventsToo: true);
+        textView.PointerExited += (_, _) =>
+        {
+            _linkPointer = null;
+            _link?.Clear();
+        };
+        AddHandler(KeyDownEvent, (_, e) => UpdateLink(IsCtrlKey(e.Key) ? e.KeyModifiers | Avalonia.Input.KeyModifiers.Control : e.KeyModifiers),
+            RoutingStrategies.Tunnel, handledEventsToo: true);
+        AddHandler(KeyUpEvent, (_, e) => UpdateLink(IsCtrlKey(e.Key) ? e.KeyModifiers & ~Avalonia.Input.KeyModifiers.Control : e.KeyModifiers),
+            RoutingStrategies.Tunnel, handledEventsToo: true);
         textView.ScrollOffsetChanged += (_, _) =>
         {
+            _link?.Clear(); // IDE-ED-149
             MirrorScroll();
             _document?.Hover?.Close(); // UI-ED-130: scrolling closes the hover
             PlaceSignatureHelp();
@@ -311,6 +333,7 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
         _signatureHelp.Session = null;
         _hover.Session?.Close();
         _hover.Session = null;
+        SetLink(null);
         SetColorizer(null);
         SetDecorations(null);
         SetTokens(null);
@@ -333,6 +356,7 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
         _completionDoc.Session = document.Completion;
         _signatureHelp.Session = document.ParameterInfo;
         _hover.Session = document.Hover;
+        SetLink(document.DeclarationLink);
         SetDecorations(document);
         SetTokens(document);
         InstallFoldings();
@@ -960,6 +984,12 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
     (int Offset, int Length)? IEditorTestProbe.CurrentFindHighlight =>
         _find is { IsOpen: true, CurrentIndex: > 0 } find ? (find.Matches[find.CurrentIndex - 1].Offset, find.Matches[find.CurrentIndex - 1].Length) : null;
 
+    (int Offset, int Length)? IEditorTestProbe.DeclarationLink => _link?.Current;
+
+    string IEditorTestProbe.DeclarationLinkToken => DeclarationLinkRenderer.Token;
+
+    bool IEditorTestProbe.HandCursor => _handCursor;
+
     double IEditorTestProbe.GutterWidth =>
         _editor.TextArea.LeftMargins.OfType<GutterMargin>().Where(m => m.IsVisible).Sum(m => m.MarginWidth);
 
@@ -1089,6 +1119,60 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
         area.Caret.Position = position;
         area.Focus();
         _ = execute(Core.CodeModel.GoToDeclarationService.CommandId);
+    }
+
+    private static bool IsCtrlKey(Key key) => key is Key.LeftCtrl or Key.RightCtrl;
+
+    private void SetLink(Core.CodeModel.DeclarationLinkSession? link)
+    {
+        if (_link is { } old)
+        {
+            old.Changed -= OnLinkChanged;
+            old.Clear();
+        }
+
+        _link = link;
+        _link?.Changed += OnLinkChanged;
+        OnLinkChanged(null, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// IDE-ED-149: with Ctrl alone held and the pointer over text the session asks for the identifier there; any other
+    /// modifier state, or the pointer away from the text, removes the underline.
+    /// </summary>
+    private void UpdateLink(Avalonia.Input.KeyModifiers modifiers)
+    {
+        if (_link is not { } link)
+            return;
+        var textView = _editor.TextArea.TextView;
+        if (modifiers != Avalonia.Input.KeyModifiers.Control || _linkPointer is not { } p || p.X < 0 || p.Y < 0 || !textView.VisualLinesValid
+            || textView.GetPosition(p + textView.ScrollOffset) is not { } position)
+        {
+            link.Clear();
+            return;
+        }
+
+        link.PointerAt(_editor.Document.GetOffset(position.Location));
+    }
+
+    /// <summary>The underline is redrawn; over a link the text view shows the hand cursor (UI-TOK-053), else its own.</summary>
+    private void OnLinkChanged(object? sender, EventArgs e)
+    {
+        var textView = _editor.TextArea.TextView;
+        textView.InvalidateLayer(KnownLayer.Selection);
+        var hand = _link?.Current is not null;
+        if (hand == _handCursor)
+            return;
+        _handCursor = hand;
+        if (hand)
+        {
+            _cursorBeforeHand = textView.Cursor;
+            textView.Cursor = s_hand ??= new Cursor(StandardCursorType.Hand);
+        }
+        else
+        {
+            textView.Cursor = _cursorBeforeHand;
+        }
     }
 
     /// <summary>UI-ED-121: above the caret line, left edge at the opening parenthesis; below the line when there is no room above.</summary>

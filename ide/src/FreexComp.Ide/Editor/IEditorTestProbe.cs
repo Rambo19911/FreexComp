@@ -41,6 +41,15 @@ public interface IEditorTestProbe
     /// the gutter draws beside it (UI-ED-014). Read from what the margins draw. Empty when the line is not on screen.
     /// </summary>
     IReadOnlyList<EditorVisualRow> VisualRows(int line);
+
+    /// <summary>IDE-ED-149: the identifier the Ctrl+hover underline is drawn under, or null.</summary>
+    (int Offset, int Length)? DeclarationLink { get; }
+
+    /// <summary>Colour token of the Ctrl+hover underline (<c>text.link</c>).</summary>
+    string DeclarationLinkToken { get; }
+
+    /// <summary>UI-TOK-053: the text view shows the hand cursor (over a Ctrl+hover link).</summary>
+    bool HandCursor { get; }
 }
 
 /// <summary>

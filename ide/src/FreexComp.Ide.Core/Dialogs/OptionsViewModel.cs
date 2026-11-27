@@ -168,6 +168,9 @@ public sealed class OptionsViewModel : DialogViewModel<bool>
             Check("HoverEnabled", SettingsCatalog.EditorHoverEnabled, 3),
             Integer("HoverDelay", SettingsCatalog.EditorHoverDelayMs, 3, DelayRange(SettingsCatalog.EditorHoverDelayMs)),
             Check("LiveDiagnostics", SettingsCatalog.EditorLiveDiagnostics, 3),
+            FixedChoice("LiveDiagnosticsSeverities", SettingsCatalog.EditorLiveDiagnosticsSeverities, 8, "LiveDiagnostics", // IDE-ED-150 (I-324)
+                ("errors", Strings.Options_LiveSeverities_Errors), ("errorsAndWarnings", Strings.Options_LiveSeverities_ErrorsAndWarnings),
+                ("all", Strings.Options_LiveSeverities_All)),
             Integer("LiveDiagnosticsDelay", SettingsCatalog.EditorLiveDiagnosticsDelayMs, 3, DelayRange(SettingsCatalog.EditorLiveDiagnosticsDelayMs)),
         ]);
         var display = Page(EditorDisplayPage, 1,
@@ -602,9 +605,13 @@ public sealed class OptionsViewModel : DialogViewModel<bool>
         new(id, Resource("Options_Field_" + id), key, OptionFieldKind.Check, _settings.Get(key), phase, null) { GroupHeading = heading, EnabledBy = enabledBy };
 
     /// <summary>A combo with a fixed list of stored values and their display texts.</summary>
-    private OptionField FixedChoice(string id, SettingKey<string> key, int phase, params (string Value, string Display)[] choices)
+    private OptionField FixedChoice(string id, SettingKey<string> key, int phase, params (string Value, string Display)[] choices) =>
+        FixedChoice(id, key, phase, null, choices);
+
+    /// <summary>A combo with a fixed list of stored values, enabled only while the check box <paramref name="enabledBy"/> is checked.</summary>
+    private OptionField FixedChoice(string id, SettingKey<string> key, int phase, string? enabledBy, params (string Value, string Display)[] choices)
     {
-        var field = new OptionField(id, Resource("Options_Field_" + id), key, OptionFieldKind.Choice, _settings.Get(key), phase, null);
+        var field = new OptionField(id, Resource("Options_Field_" + id), key, OptionFieldKind.Choice, _settings.Get(key), phase, null) { EnabledBy = enabledBy };
         foreach (var (value, display) in choices)
         {
             field.Choices.Add(new OptionChoice(value, display));

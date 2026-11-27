@@ -29,6 +29,7 @@ public static class Phase8Features
         "file.saveGroupAs", // F09-009
         "help.contents", // I-257
         "locals.viewText", // F14-013
+        "options:Editor.General.LiveDiagnosticsSeverities", // F11-065
         "options:Editor.General.WrapSelection", // F11-047
         "options:Environment.General.BuildJobs", // F01-010
         "options:Environment.General.ContinueAfterFailure", // F09-009

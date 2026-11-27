@@ -75,6 +75,49 @@ public sealed class LiveDiagnosticsTests
         Assert.Empty(probe.Markers);
     }
 
+    /// <summary>
+    /// IDE-ED-150 (I-324): <c>editor.liveDiagnostics.severities</c> filters the squiggles and the error glyph; a change
+    /// re-applies at once to the open document from the last analysis (no new analysis runs).
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "IDE-ED-150")]
+    public async Task SeverityOptionFiltersSquiggles()
+    {
+        // An error (undeclared Foo), a warning (unknown directive) and a hint (text after the final end.).
+        const string unit = "unit Unit1;\r\ninterface\r\nimplementation\r\n{$NOSUCHSWITCH}\r\nvar Foo1: Integer;\r\nbegin\r\n  Foo := 1;\r\nend.\r\ntrailing\r\n";
+        await using var h = await BuildScenario.StartAsync(o =>
+        {
+            AddRealRtl(o);
+            o.InitialFiles[@"Hello\Unit1.pas"] = unit;
+        });
+        var delay = TimeSpan.FromMilliseconds(h.Services.Settings.Get(SettingsCatalog.EditorLiveDiagnosticsDelayMs));
+        Assert.Equal("all", h.Services.Settings.Get(SettingsCatalog.EditorLiveDiagnosticsSeverities));
+        var doc = Assert.IsType<TextDocumentViewModel>((await h.Services.Documents.OpenAsync(BuildScenario.UnitPath(h))).Value);
+        Dispatcher.UIThread.RunJobs();
+        IEditorTestProbe probe = h.Find<TextEditor>("Editor.Unit1.pas").FindAncestorOfType<CodeEditorView>()!;
+
+        h.Clock.Advance(delay);
+        await h.WaitForAsync(() => probe.Markers.Count == 3, "three squiggles");
+        Assert.Equal(["Warning", "Error", "Hint"], probe.Markers.Select(m => m.Kind));
+        Assert.Equal("Error", probe.GlyphAt(7));
+        var analyses = 0;
+        doc.Decorations.Changed += (_, _) => analyses++;
+
+        List<string> Kinds(string severities)
+        {
+            h.Services.Settings.Set(SettingsCatalog.EditorLiveDiagnosticsSeverities, severities);
+            Dispatcher.UIThread.RunJobs(); // no clock advance: the filter applies without a new analysis
+            return [.. probe.Markers.Select(m => m.Kind)];
+        }
+
+        Assert.Equal(["Error"], Kinds("errors"));
+        Assert.Equal("Error", probe.GlyphAt(7));
+        Assert.Equal(["Warning", "Error"], Kinds("errorsAndWarnings"));
+        Assert.Equal(["Warning", "Error", "Hint"], Kinds("all"));
+        Assert.Equal(3, analyses); // one refresh per change
+        Assert.Empty(h.Services.Messages.Items); // Build Messages are not affected
+    }
+
     /// <summary>IDE-ED-094: a file outside the project gets the parser's diagnostics only, no semantic analysis.</summary>
     [AvaloniaFact(Timeout = 30000)]
     [Trait("Req", "IDE-ED-094")]

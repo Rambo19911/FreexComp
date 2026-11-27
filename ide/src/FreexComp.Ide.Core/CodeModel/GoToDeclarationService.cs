@@ -31,6 +31,37 @@ public sealed class GoToDeclarationService(IDocumentService documents, IProjectS
         commands.RegisterHandler(CommandId, new Handler(this));
     }
 
+    /// <summary>IDE-ED-149 (I-322): every open Pascal document gets its Ctrl+hover session.</summary>
+    public void AttachDeclarationLinks()
+    {
+        documents.DocumentOpened += (_, e) => AttachLink(e.Document);
+        foreach (var document in documents.Documents)
+            AttachLink(document);
+    }
+
+    private void AttachLink(DocumentViewModel document)
+    {
+        if (document is TextDocumentViewModel { FilePath: not null, DeclarationLink: null } text && text.Language.Id == "pascal")
+            text.DeclarationLink = new DeclarationLinkSession(text, (offset, ct) => LinkAsync(text, offset, ct));
+    }
+
+    /// <summary>
+    /// IDE-ED-149: the identifier token at <paramref name="offset"/> when Go to Declaration would find a target for it
+    /// (the same <c>GoToDefinition</c> query, on the worker, cancellable); null on keywords, comments, strings and
+    /// identifiers without a declaration.
+    /// </summary>
+    private async Task<(int Offset, int Length)?> LinkAsync(TextDocumentViewModel document, int offset, CancellationToken ct)
+    {
+        if (document.FilePath is not { } path || projects.Project is null || codeModel.Synchronize() is null)
+            return null;
+        var source = codeModel.Workspace.GetDocument(path);
+        var token = source.SyntaxTree.FindToken(offset);
+        if (token.Kind != SyntaxKind.IdentifierToken || token.IsMissing || offset < token.Span.Start || offset >= token.Span.End)
+            return null;
+        var targets = await codeModel.Worker.RunAsync("declarationLink", t => LsNavigation.GoToDefinition(source, token.Span.Start, t), ct);
+        return targets.IsEmpty ? null : (token.Span.Start, token.Span.Length);
+    }
+
     private bool CanGo => documents.ActiveDocument?.VisibleText is { FilePath: not null } d && d.Language.Id == "pascal" && projects.Project is not null; // I-302
 
     /// <summary>Goes to the declaration of the identifier at <paramref name="offset"/> of <paramref name="document"/>; false when there is none.</summary>

@@ -50,6 +50,8 @@ public static class SettingsCatalog
     public static readonly SettingKey<int> EditorHoverDelayMs = Int("editor.hover.delayMs", 500, new SettingRange(100, 3000));
     public static readonly SettingKey<bool> EditorLiveDiagnostics = Bool("editor.liveDiagnostics", true);
     public static readonly SettingKey<int> EditorLiveDiagnosticsDelayMs = Int("editor.liveDiagnostics.delayMs", 500, new SettingRange(100, 5000));
+    public static readonly SettingKey<string> EditorLiveDiagnosticsSeverities = // IDE-ED-150 (I-324)
+        Enum("editor.liveDiagnostics.severities", "all", "errors", "errorsAndWarnings", "all");
     public static readonly SettingKey<bool> EditorTemplatesExpandOnTab = Bool("editor.templates.expandOnTab", true);
 
     // 4.4 Environment and files

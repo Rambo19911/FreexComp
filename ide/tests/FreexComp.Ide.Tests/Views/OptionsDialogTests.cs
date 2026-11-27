@@ -39,6 +39,7 @@ public sealed partial class OptionsDialogTests
         ("HoverEnabled", "Show symbol information on ho_ver", SettingsCatalog.EditorHoverEnabled, true),
         ("HoverDelay", "Hover dela_y (ms):", SettingsCatalog.EditorHoverDelayMs, true),
         ("LiveDiagnostics", "_Underline errors while typing", SettingsCatalog.EditorLiveDiagnostics, true),
+        ("LiveDiagnosticsSeverities", "Show wh_ile typing:", SettingsCatalog.EditorLiveDiagnosticsSeverities, true), // IDE-ED-150 (I-324)
         ("LiveDiagnosticsDelay", "Error chec_k delay (ms):", SettingsCatalog.EditorLiveDiagnosticsDelayMs, true),
     ];
 
@@ -156,6 +157,7 @@ public sealed partial class OptionsDialogTests
     [Trait("Req", "UI-DLG-090")]
     [Trait("Req", "UI-DLG-092")]
     [Trait("Req", "UI-DLG-094")]
+    [Trait("Req", "IDE-ED-150")]
     public async Task EveryFieldBoundToCatalogKey()
     {
         await using var h = await HeadlessHarness.StartAsync(o =>
@@ -230,10 +232,15 @@ public sealed partial class OptionsDialogTests
                     SetText(dlg, field, (settings.Get(i) + 1).ToString(System.Globalization.CultureInfo.InvariantCulture));
                     break;
                 case SettingKey<string>:
-                    model.Field(field).Value = "Courier New"; // the installed-font list depends on the machine
+                    // the installed-font list depends on the machine; a fixed combo takes its first choice (not the default)
+                    model.Field(field).Value = field == "FontFamily" ? "Courier New" : model.Field(field).Choices[0].Value;
                     break;
             }
         }
+
+        // IDE-ED-150: the severities combo is disabled while "Underline errors while typing" is off (unchecked above).
+        Assert.False(model.Field("LiveDiagnostics").Value is true);
+        Assert.False(dlg.Find<Control>("LiveDiagnosticsSeverities").IsEffectivelyEnabled);
 
         dlg.Click("Apply");
         foreach (var (field, _, key, enabled) in DisplayFields.Concat(GeneralFields))

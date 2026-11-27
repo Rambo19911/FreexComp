@@ -63,6 +63,48 @@ public sealed class ConfigurationUseTests
         Assert.NotEqual("syntax.inactive", ClassAt(Drawn(doc), other));
     }
 
+    /// <summary>
+    /// IDE-ED-151 (I-324): an edit of the active configuration's defines and a switch of the active configuration analyse the
+    /// open project documents again at once (no delay): the undeclared identifier inside <c>{$IFDEF FEATURE}</c> gets its
+    /// squiggle when FEATURE becomes defined and loses it when the branch turns inactive.
+    /// </summary>
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "IDE-ED-151")]
+    public Task DefineChangeReevaluatesLiveDiagnostics() => TestUiThread.RunAsync(DefineChangeReevaluatesLiveDiagnosticsOnUiThread);
+
+    private static async Task DefineChangeReevaluatesLiveDiagnosticsOnUiThread()
+    {
+        const string unit = "unit Unit1;\ninterface\nprocedure Run;\nimplementation\nprocedure Run;\nbegin\n{$IFDEF FEATURE}\n  Foo := 1;\n{$ENDIF}\nend;\nend.\n";
+        var bed = await SemanticHighlightTests.StartAsync("""
+            , "configurations": { "Debug": { "optimization": 0, "debugInfo": true, "defines": [], "outputDir": "bin/Debug" },
+                                  "Release": { "optimization": 2, "debugInfo": false, "defines": [], "outputDir": "bin/Release" } },
+              "activeConfiguration": "Debug"
+            """);
+        bed.File(BuildTestBed.UnitPath, unit);
+        var doc = await bed.OpenDocumentAsync(BuildTestBed.UnitPath);
+        var live = bed.Services.LiveDiagnostics;
+        var delay = TimeSpan.FromMilliseconds(bed.Services.Settings.Get(SettingsCatalog.EditorLiveDiagnosticsDelayMs));
+        var foo = unit.IndexOf("Foo", StringComparison.Ordinal);
+
+        // FEATURE undefined: the branch is inactive, nothing is reported.
+        bed.Clock.Advance(delay);
+        await live.PendingFor(doc);
+        Assert.Empty(doc.Decorations.Markers);
+
+        // The define is added to the active configuration: analysed again without the delay, Foo is undeclared.
+        var definition = bed.Services.Projects.Definition!;
+        var debug = definition.Configurations["Debug"] with { Defines = ["FEATURE"] };
+        Assert.True(await bed.Services.Projects.ApplyOptionsAsync(definition with { Configurations = definition.Configurations.SetItem("Debug", debug) }));
+        await live.PendingFor(doc);
+        var marker = Assert.Single(doc.Decorations.Markers);
+        Assert.Equal((foo, "E2003"), (marker.Offset, marker.Code));
+
+        // Switching to a configuration without the define: the squiggle goes at once.
+        await bed.Services.Commands.ExecuteAsync("project.setConfiguration", "Release");
+        await live.PendingFor(doc);
+        Assert.Empty(doc.Decorations.Markers);
+    }
+
     /// <summary>IDE-P3-086 asks by the effective value: a configuration inheriting <c>debugInfo: false</c> asks, one inheriting <c>true</c> does not.</summary>
     [Fact(Timeout = TestDeadline.DebugTestTimeout)]
     [Trait("Req", "IDE-CFG-001")]

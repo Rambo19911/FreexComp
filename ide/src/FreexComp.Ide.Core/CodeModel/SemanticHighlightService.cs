@@ -46,18 +46,20 @@ public sealed class SemanticHighlightService
     /// </summary>
     internal void OnProjectChanged(FreexComp.Build.Project? definition)
     {
-        var defines = definition is null ? null : string.Join(";", Projects.ConfigurationEdits.Effective(definition, definition.ActiveConfiguration)?.Defines ?? []);
-        if (definition is not null)
-        {
-            var platform = FreexComp.Build.ProjectOptions.GetEffectivePlatform(definition);
-            defines += "|" + platform + "|" + string.Join(";", definition.PlatformOptions.GetValueOrDefault(platform)?.Defines ?? []);
-        }
-
+        var defines = definition is null ? null : DefinesKey(definition);
         if (defines == _defines)
             return;
         _defines = defines;
         foreach (var highlighter in _highlighters.Values)
             highlighter.Schedule();
+    }
+
+    /// <summary>The effective defines of the active configuration, the active platform and that platform's defines, as one text.</summary>
+    internal static string DefinesKey(FreexComp.Build.Project definition)
+    {
+        var platform = FreexComp.Build.ProjectOptions.GetEffectivePlatform(definition);
+        return string.Join(";", Projects.ConfigurationEdits.Effective(definition, definition.ActiveConfiguration)?.Defines ?? [])
+            + "|" + platform + "|" + string.Join(";", definition.PlatformOptions.GetValueOrDefault(platform)?.Defines ?? []);
     }
 
     /// <summary>The analysis of <paramref name="document"/> that is running or last ran (tests await it).</summary>

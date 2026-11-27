@@ -3461,6 +3461,22 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
     <value>_Underline errors while typing</value>
     <comment>dialogs.md §9 field label</comment>
   </data>
+  <data name="Options_Field_LiveDiagnosticsSeverities" xml:space="preserve">
+    <value>Show wh_ile typing:</value>
+    <comment>dialogs.md §9 field label (IDE-ED-150)</comment>
+  </data>
+  <data name="Options_LiveSeverities_Errors" xml:space="preserve">
+    <value>Errors only</value>
+    <comment>dialogs.md §9 live-diagnostics severities choice (IDE-ED-150)</comment>
+  </data>
+  <data name="Options_LiveSeverities_ErrorsAndWarnings" xml:space="preserve">
+    <value>Errors and warnings</value>
+    <comment>dialogs.md §9 live-diagnostics severities choice (IDE-ED-150)</comment>
+  </data>
+  <data name="Options_LiveSeverities_All" xml:space="preserve">
+    <value>Errors, warnings and hints</value>
+    <comment>dialogs.md §9 live-diagnostics severities choice (IDE-ED-150)</comment>
+  </data>
   <data name="Options_Field_LiveDiagnosticsDelay" xml:space="preserve">
     <value>Error chec_k delay (ms):</value>
     <comment>dialogs.md §9 field label</comment>
