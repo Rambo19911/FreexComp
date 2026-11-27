@@ -234,4 +234,36 @@ public sealed class QuickInfoTests
         Assert.Equal("type TStack<T>.TNode = class(TObject)", At("TStack<T>.TNode.IsLast", "TNode"));
         Assert.Null(At("Value: T", "Value"));                                    // C-347: no hover for a member at its declaration
     }
+
+    /// <summary>
+    /// CMP-1400 (C-377): hover on a class constructor's (destructor's) declaration or implementation heading shows
+    /// <c>class constructor TA.Create</c>; hover on a call <c>TA.Create(1)</c> shows the ordinary constructor (LANG-787).
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1400")]
+    public void ClassConstructorHeading()
+    {
+        var unit = ClassConstructorFixture.Unit;
+        var program = ClassConstructorFixture.Program;
+        QuickInfo? At(string file, string text, string piece, string name)
+        {
+            var doc = MarkupTestFile.Open(file, ("P.pas", program), ("UC.pas", unit));
+            var at = ClassConstructorFixture.IndexOf(text, piece) + piece.IndexOf(name, StringComparison.Ordinal) + 1;
+            return QuickInfoService.GetQuickInfo(doc, at, TestContext.Current.CancellationToken);
+        }
+
+        string? Signature(string piece, string name) => At("UC.pas", unit, piece, name)?.Signature;
+
+        Assert.Equal("class constructor TA.Create", Signature("class constructor Create;", "Create"));
+        Assert.Equal("class constructor TA.Create", Signature("class constructor TA.Create;", "Create"));
+        Assert.Equal("class destructor TA.Teardown", Signature("class destructor Teardown;", "Teardown"));
+        Assert.Equal("class destructor TA.Teardown", Signature("class destructor TA.Teardown;", "Teardown"));
+        Assert.Equal("class constructor TR.Init", Signature("class constructor Init;", "Init"));
+        Assert.Equal("class constructor TR.Init", Signature("class constructor TR.Init;", "Init"));
+        Assert.Equal("constructor TA.Create(N: Integer)", Signature("constructor Create(N: Integer);", "Create"));
+        Assert.Equal("UC.TA", At("UC.pas", unit, "class constructor Create;", "Create")?.DeclaredIn);
+
+        Assert.Equal("constructor TA.Create(N: Integer)", At("P.pas", program, "TA.Create(1)", "Create")?.Signature);
+    }
 }

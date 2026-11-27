@@ -228,7 +228,11 @@ public static partial class NavigationService
 
                     break;
                 case MethodDeclarationSyntax method when !method.Heading.Name.IsMissing:
-                    into.Add(Leaf(method.Heading.Name.ToString(), Collapse(method.Heading.ToString()), CompletionItemKind.Method, method.Span, method.Heading.Name.Span));
+                    var heading = method.Heading;
+                    var detail = heading.ClassKeyword is not null && heading.Keyword.Kind is SyntaxKind.ConstructorKeyword or SyntaxKind.DestructorKeyword
+                        ? "class " + heading.Keyword.Text.ToLowerInvariant()                  // CMP-1400 (C-377): class constructor / class destructor
+                        : Collapse(heading.ToString());
+                    into.Add(Leaf(heading.Name.ToString(), detail, CompletionItemKind.Method, method.Span, heading.Name.Span));
                     break;
                 case PropertyDeclarationSyntax property when !property.Identifier.IsMissing:
                     into.Add(Leaf(property.Identifier.Text, property.Type is null ? "" : Collapse(property.Type.ToString()), CompletionItemKind.Property,

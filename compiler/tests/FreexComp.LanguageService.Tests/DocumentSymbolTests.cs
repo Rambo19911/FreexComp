@@ -214,4 +214,44 @@ public sealed class DocumentSymbolTests
             """.ReplaceLineEndings("\n"),
             Outline(text.ReplaceLineEndings("\n")));
     }
+
+    /// <summary>
+    /// CMP-1400 (C-377): class constructors and destructors are listed under their type (also nested types and records) with the
+    /// detail <c>class constructor</c> / <c>class destructor</c>; their implementation headings like other method implementations.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1400")]
+    public void ClassConstructorAndDestructorUnderTheirType()
+    {
+        Assert.Equal(
+            """
+            Unit UC
+              Keyword interface
+                Class TA : class
+                  Keyword public
+                    Field Value : Integer
+                    Method Create : class constructor
+                    Method Teardown : class destructor
+                    Method Create : constructor Create(N: Integer)
+                    Method Run : procedure Run
+                  Keyword public
+                    Class TN : class
+                      Keyword public
+                        Method Done : class destructor
+                Type TR : record
+                  Method Init : class constructor
+                Class TBox<T> : class
+                  Method Create : class constructor
+              Keyword implementation
+                Method TA.Create : class constructor TA.Create
+                Method TA.Teardown : class destructor TA.Teardown
+                Method TA.Create : constructor TA.Create(N: Integer)
+                Method TA.Run : procedure TA.Run
+                Method TA.TN.Done : class destructor TA.TN.Done
+                Method TR.Init : class constructor TR.Init
+                Method TBox<T>.Create : class constructor TBox<T>.Create
+            """.ReplaceLineEndings("\n"),
+            Outline(ClassConstructorFixture.Unit));
+    }
 }

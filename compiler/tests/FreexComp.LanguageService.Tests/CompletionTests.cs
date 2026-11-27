@@ -557,4 +557,85 @@ public sealed class CompletionTests
         var rename = GenericNamesFixture.Offset(text, "Item.Owner.Rename") + "Item.Owner.".Length + 1;
         Assert.Equal("procedure TOwner.Rename(const S: string)", QuickInfoService.GetQuickInfo(doc, rename, TestContext.Current.CancellationToken)?.Signature);
     }
+
+    // ------------------------------------------------------------------ CMP-1400 (C-377): class constructors and destructors
+
+    /// <summary>
+    /// CMP-1400 (C-377), LANG-787: completion never offers a class constructor or class destructor — after the class, record,
+    /// nested-type or instance qualifier, at a statement start in a descendant's method or after <c>inherited</c> — and signature
+    /// help on <c>TA.Create(</c> shows only the ordinary constructor.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1400")]
+    public void ClassConstructor_NeverOffered()
+    {
+        var unit = ("UC.pas", ClassConstructorFixture.Unit);
+        CompletionItem[] Items(string markup, char? typed = null) => [.. Complete(markup, typed, unit).List.Items];
+        string[] LabelsIn(string markup, char? typed = null) => [.. Items(markup, typed).Select(i => i.Label)];
+        string[] hidden = ["Teardown", "Done", "Init"];
+
+        var afterClass = Items("program P;\nuses UC;\nbegin\n  TA.$$\nend.", '.');
+        Assert.Contains(afterClass, i => i.Label == "Create");
+        Assert.All(afterClass.Where(i => i.Label == "Create"), i => Assert.DoesNotContain("class constructor", i.Detail ?? "", StringComparison.Ordinal));
+        Assert.Contains(afterClass, i => i.Label == "Value");
+        Assert.DoesNotContain(afterClass, i => hidden.Contains(i.Label));
+        Assert.DoesNotContain("Init", LabelsIn("program P;\nuses UC;\nbegin\n  TR.$$\nend.", '.'));
+        Assert.DoesNotContain("Done", LabelsIn("program P;\nuses UC;\nbegin\n  TA.TN.$$\nend.", '.'));
+        var instance = LabelsIn("program P;\nuses UC;\nvar A: TA;\nbegin\n  A.$$\nend.", '.');
+        Assert.Contains("Run", instance);
+        Assert.DoesNotContain(instance, hidden.Contains);
+
+        const string Descendant = "program P;\nuses UC;\ntype TD = class(TA) procedure Go; end;\nprocedure TD.Go;\nbegin\n  {@}\nend;\nbegin end.";
+        var statement = LabelsIn(Descendant.Replace("{@}", "$$", StringComparison.Ordinal));
+        Assert.Contains("Run", statement);
+        Assert.DoesNotContain(statement, hidden.Contains);
+        var inherited = LabelsIn(Descendant.Replace("{@}", "inherited $$", StringComparison.Ordinal));
+        Assert.Contains("Run", inherited);
+        Assert.DoesNotContain(inherited, hidden.Contains);
+
+        var markup = MarkupTestFile.Parse("program P;\nuses UC;\nvar A: TA;\nbegin\n  A := TA.Create($$1);\nend.");
+        var doc = MarkupTestFile.Open("P.pas", ("P.pas", markup.Text), unit);
+        var help = SignatureHelpService.GetSignatureHelp(doc, markup.Caret, TestContext.Current.CancellationToken);
+        Assert.NotNull(help);
+        Assert.Contains(help.Signatures, s => s.Label.Contains("N: Integer", StringComparison.Ordinal));
+        Assert.DoesNotContain(help.Signatures, s => s.Label.Contains("class constructor", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// CMP-1400 (C-377), CMP-1399: a type imported from a <c>.pcu</c> carries its class constructor and destructor for display only
+    /// (no declaration site): completion does not offer them, hover and go-to-definition on <c>TA.Create(1)</c> never reach them.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1400")]
+    public void ClassConstructor_FromPcu_NeverOffered()
+    {
+        var source = TestFiles.Files(("P.pas", ClassConstructorFixture.Program), ("UC.pas", ClassConstructorFixture.Unit));
+        var pcu = Compiler.Compilation.Create(TestFiles.Options(), [], source).PcuTexts().Single(t => t.Unit == "UC").Text;
+        Assert.Contains("\"classConstructor\"", pcu, StringComparison.Ordinal);
+        Workspace Open(string program)
+        {
+            var fs = TestFiles.Files(("UC.pas", ClassConstructorFixture.Unit));
+            fs.Add(@"C:\lib\UC.pcu", pcu).Add(@"C:\lib\UC.obj", "").Add(@"C:\q\P.pas", program);
+            var workspace = new Workspace(fs);
+            workspace.SetProject(TestFiles.Options() with { MainFile = @"C:\q\P.pas", SearchPaths = [@"C:\lib"], ObjectDirectory = @"C:\q\obj" });
+            return workspace;
+        }
+
+        var markup = MarkupTestFile.Parse("program P;\nuses UC;\nbegin\n  TA.$$\nend.");
+        var completion = Open(markup.Text).GetDocument(@"C:\q\P.pas");
+        Assert.DoesNotContain(completion.Compilation.SourceUnitPaths, p => p.EndsWith("UC.pas", StringComparison.OrdinalIgnoreCase));
+        var labels = CompletionService.GetCompletions(completion, markup.Caret, new CompletionTrigger(CompletionTriggerKind.Character, '.'),
+                                                      TestContext.Current.CancellationToken).Items.Select(i => i.Label).ToArray();
+        Assert.Contains("Create", labels);
+        Assert.DoesNotContain("Teardown", labels);
+
+        var doc = Open(ClassConstructorFixture.Program).GetDocument(@"C:\q\P.pas");
+        var call = ClassConstructorFixture.IndexOf(ClassConstructorFixture.Program, "TA.Create(1)") + 4;
+        Assert.Equal("constructor TA.Create(N: Integer)", QuickInfoService.GetQuickInfo(doc, call, TestContext.Current.CancellationToken)?.Signature);
+        // a .pcu records declaration sites of unit-level symbols only, so a method of an imported type has none yet; never the class constructor
+        Assert.All(NavigationService.GoToDefinition(doc, call, TestContext.Current.CancellationToken),
+                   l => Assert.Equal(ClassConstructorFixture.IndexOf(ClassConstructorFixture.Unit, "Create(N: Integer);"), l.Span.Start));
+    }
 }

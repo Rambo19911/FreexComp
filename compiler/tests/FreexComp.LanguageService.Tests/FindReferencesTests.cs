@@ -176,4 +176,26 @@ public sealed class FindReferencesTests
         Assert.Contains(NavigationService.FindSymbols(workspace, "run", 10, TestContext.Current.CancellationToken), s => s is { Name: "Run", ContainerName: "U1.TDerived" });
         Assert.Single(NavigationService.FindSymbols(workspace, "o", 1, TestContext.Current.CancellationToken));
     }
+
+    /// <summary>
+    /// CMP-1400 (C-377): the references of a class constructor are its two headings — never the ordinary constructor of the same
+    /// name, its implementation or its calls (LANG-787); those of the ordinary constructor never include the class constructor.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1400")]
+    public void ClassConstructor_ItsTwoHeadingsOnly()
+    {
+        var unit = ClassConstructorFixture.Unit;
+        var doc = MarkupTestFile.Open("UC.pas", ("P.pas", ClassConstructorFixture.Program), ("UC.pas", unit));
+        int NameIn(string piece) => ClassConstructorFixture.IndexOf(unit, piece) + piece.IndexOf("Create", StringComparison.Ordinal);
+        int[] References(string piece) =>
+            [.. NavigationService.FindReferences(doc, NameIn(piece) + 1, TestContext.Current.CancellationToken)
+                .Where(r => r.Location.Path == TestFiles.PathOf("UC.pas")).Select(r => r.Location.Span.Start).Order()];
+
+        Assert.Equal([NameIn("class constructor Create;"), NameIn("class constructor TA.Create;")], References("class constructor Create;"));
+        Assert.Equal([NameIn("class constructor Create;"), NameIn("class constructor TA.Create;")], References("class constructor TA.Create;"));
+        Assert.DoesNotContain(NameIn("class constructor Create;"), References("constructor Create(N: Integer);"));
+        Assert.DoesNotContain(NameIn("class constructor TA.Create;"), References("constructor TA.Create(N: Integer);"));
+    }
 }

@@ -562,7 +562,8 @@ public sealed class SemanticModel
 
                     break;
                 case TypeSymbol type when own:
-                    foreach (var member in type.Members)
+                    // CMP-1400 (C-377): class constructors and destructors are no members (LANG-787) but their headings are declarations
+                    foreach (var member in type.Members.Concat(TypeMembers.ClassConstructors(type)))
                     {
                         Visit(member);
                     }
@@ -575,7 +576,7 @@ public sealed class SemanticModel
                             _openInstances.Add(open);                           // C-355: its method bodies are bound on it
                         }
 
-                        foreach (var member in instance.Members)
+                        foreach (var member in instance.Members.Concat(TypeMembers.ClassConstructors(instance)))
                         {
                             Visit(member);
                         }

@@ -333,4 +333,43 @@ public sealed class GoToDefinitionTests
         Assert.Equal(In("Owner: TOwner"), Go("Larger(Item, Item).Owner", "Owner"));
         Assert.Equal(In("Bounds: TOwner"), Go("Shape.Bounds", "Bounds"));
     }
+
+    /// <summary>
+    /// CMP-1400 (C-377): go-to-definition toggles between a class constructor's (destructor's) declaration heading and its
+    /// implementation heading in both directions, as for methods — also in a nested type, a record and a generic; the ordinary constructor of
+    /// the same name keeps its own pair, and a call <c>TA.Create(1)</c> goes to the ordinary constructor (LANG-787).
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1400")]
+    public void ClassConstructorHeadings()
+    {
+        var unit = ClassConstructorFixture.Unit;
+        var program = ClassConstructorFixture.Program;
+        var doc = MarkupTestFile.Open("UC.pas", ("P.pas", program), ("UC.pas", unit));
+        (string, int) In(string text, string file, string piece, string name) =>
+            (TestFiles.PathOf(file), ClassConstructorFixture.IndexOf(text, piece) + piece.IndexOf(name, StringComparison.Ordinal));
+        (string, int) Go(Document from, (string Path, int Start) at) =>
+            Single(NavigationService.GoToDefinition(from, at.Start + 1, TestContext.Current.CancellationToken));
+
+        (string Declaration, string Implementation, string Name)[] pairs =
+        [
+            ("class constructor Create;", "class constructor TA.Create;", "Create"),
+            ("class destructor Teardown;", "class destructor TA.Teardown;", "Teardown"),
+            ("class destructor Done;", "class destructor TA.TN.Done;", "Done"),
+            ("class constructor Init;", "class constructor TR.Init;", "Init"),
+            ("constructor Create(N: Integer);", "constructor TA.Create(N: Integer);", "Create"),
+            ("class constructor Create;\n  end;", "class constructor TBox<T>.Create;", "Create"),
+        ];
+        foreach (var (declaration, implementation, name) in pairs)
+        {
+            var declared = In(unit, "UC.pas", declaration, name);
+            var implemented = In(unit, "UC.pas", implementation, name);
+            Assert.Equal(implemented, Go(doc, declared));
+            Assert.Equal(declared, Go(doc, implemented));
+        }
+
+        var call = MarkupTestFile.Open("P.pas", ("P.pas", program), ("UC.pas", unit));
+        Assert.Equal(In(unit, "UC.pas", "constructor TA.Create(N: Integer);", "Create"), Go(call, In(program, "P.pas", "TA.Create(1)", "Create")));
+    }
 }
