@@ -164,8 +164,14 @@ public sealed class ParameterInfoSession
     }
 }
 
-/// <summary>What the language service says about a symbol: its declaration, origin and doc comment (IDE-ED-091).</summary>
-public sealed record HoverContent(int Offset, int Length, string Declaration, string? Origin, string? Documentation);
+/// <summary>
+/// What the language service says about a symbol: its declaration, origin and doc comment (IDE-ED-091);
+/// <see cref="HasSourceDeclaration"/>: the symbol is declared in a source file, so the tooltip offers Go to Declaration (UI-ED-134).
+/// </summary>
+public sealed record HoverContent(int Offset, int Length, string Declaration, string? Origin, string? Documentation)
+{
+    public bool HasSourceDeclaration { get; init; }
+}
 
 /// <summary>A shown hover: the hovered range, the symbol content (null = markers only) and the markers there (UI-ED-131).</summary>
 public sealed record HoverInfo(int Offset, int Length, HoverContent? Content, IReadOnlyList<TextMarker> Markers, bool AtCaret)
@@ -200,6 +206,9 @@ public sealed class HoverSession
     /// <c>debugger.evaluateTooltips</c>): the hovered token's range and the value node; null = none. Null before Phase 6.
     /// </summary>
     public Func<int, Task<Debugging.HoverValue?>>? ValueFetch { get; set; }
+
+    /// <summary>UI-ED-134: Go to Declaration (<c>search.goToDeclaration</c>) at a text offset of the document; null = no link.</summary>
+    public Func<int, Task>? GoToDeclaration { get; set; }
 
     private IDisposable? _timer;
     private IDisposable? _closing;
@@ -273,6 +282,23 @@ public sealed class HoverSession
         return Pending;
     }
 
+    /// <summary>UI-ED-134: the shown symbol has a source declaration and the session can go there (the tooltip shows the link).</summary>
+    public bool CanGoToDeclaration => Current is { Content.HasSourceDeclaration: true } && GoToDeclaration is not null;
+
+    /// <summary>
+    /// UI-ED-134: the link was clicked — the tooltip closes, the caret moves to the hovered word and Go to Declaration runs
+    /// there as F12 would (its navigation-history entry departs from the hovered word).
+    /// </summary>
+    public Task GoToDeclarationAsync()
+    {
+        if (!CanGoToDeclaration)
+            return Task.CompletedTask;
+        var offset = Current!.Offset;
+        Close();
+        _document.Selection = Ide.Core.Text.TextSelection.At(offset);
+        return GoToDeclaration!(offset);
+    }
+
     /// <summary>Closes (a key press, scroll, focus loss); a running request is dropped.</summary>
     public void Close()
     {
@@ -337,8 +363,6 @@ public sealed class ParameterInfoController
 {
     public const string CommandId = "edit.parameterInfo";
 
-    private const int DocumentationLines = 10; // IDE-ED-091
-
     private readonly IDocumentService _documents;
     private readonly IProjectService _projects;
     private readonly CodeModelService _codeModel;
@@ -364,6 +388,9 @@ public sealed class ParameterInfoController
     /// </summary>
     public Func<TextDocumentViewModel, int, Task<Debugging.HoverValue?>>? DebugValue { get; set; }
 
+    /// <summary>UI-ED-134: Go to Declaration at an offset of a document (the hover link); null = no link.</summary>
+    public Func<TextDocumentViewModel, int, Task>? GoToDeclaration { get; set; }
+
     public void RegisterCommands(ICommandService commands)
     {
         ArgumentNullException.ThrowIfNull(commands);
@@ -383,6 +410,7 @@ public sealed class ParameterInfoController
             () => TimeSpan.FromMilliseconds(_settings.Get(SettingsCatalog.EditorHoverDelayMs)))
         {
             ValueFetch = DebugValue is null ? null : offset => DebugValue(text, offset),
+            GoToDeclaration = GoToDeclaration is null ? null : offset => GoToDeclaration(text, offset),
         };
     }
 
@@ -408,12 +436,12 @@ public sealed class ParameterInfoController
         var token = model.SyntaxTree.FindToken(quick.Span.Start);
         Symbol? symbol = token.Parent is null ? null : model.GetDeclaredSymbol(token, ct) ?? model.GetSymbolInfo(token.Parent, ct).Symbol;
         string? origin = null;
-        if (quick.DeclaredIn?.Split('.')[0] is { } unit && symbol is { Locations: { IsDefaultOrEmpty: false } locations } && locations[0].Path.Length > 0)
-            origin = string.Format(CultureInfo.CurrentCulture, Strings.Msg_Editor_HoverOrigin, unit, locations[0].LineSpan.Start.Line + 1);
-        var documentation = quick.Documentation is { } doc
-            ? string.Join('\n', doc.ReplaceLineEndings("\n").Split('\n').Take(DocumentationLines))
-            : null;
-        return new HoverContent(quick.Span.Start, quick.Span.Length, quick.Signature, origin, documentation);
+        var inSource = symbol is { Locations: { IsDefaultOrEmpty: false } locations } && locations[0].Path.Length > 0;
+        if (quick.DeclaredIn?.Split('.')[0] is { } unit && inSource)
+            origin = string.Format(CultureInfo.CurrentCulture, Strings.Msg_Editor_HoverOrigin, unit, symbol!.Locations[0].LineSpan.Start.Line + 1);
+        // UI-ED-133: the view lays out and cuts the rendered text (DocumentationLayout).
+        var documentation = quick.Documentation?.ReplaceLineEndings("\n");
+        return new HoverContent(quick.Span.Start, quick.Span.Length, quick.Signature, origin, documentation) { HasSourceDeclaration = inSource };
     }
 
     private sealed class Handler(ParameterInfoController owner) : ICommandHandler

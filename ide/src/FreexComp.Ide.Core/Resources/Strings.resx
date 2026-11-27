@@ -838,6 +838,12 @@ The form change was undone.</value>
   <data name="Msg_Editor_HoverOrigin" xml:space="preserve">
     <value>{0} · line {1}</value>
   </data>
+  <data name="Msg_Editor_HoverGoToDeclaration" xml:space="preserve">
+    <value>Go to Declaration</value>
+  </data>
+  <data name="Msg_Editor_GeneratedTitle" xml:space="preserve">
+    <value>{0} [generated]</value>
+  </data>
   <data name="Msg_NewFile_NameInvalid" xml:space="preserve">
     <value>A file name cannot be empty or contain any of these characters: \ / : * ? " &lt; &gt; |</value>
   </data>

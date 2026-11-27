@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
+using Avalonia.Media;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using AvaloniaEdit;
@@ -112,6 +113,108 @@ public sealed class HoverTests
         h.Press("Escape");
         Dispatcher.UIThread.RunJobs();
         Assert.False(signature.IsVisible);
+    }
+
+    /// <summary>
+    /// I-317 (UI-ED-133, UI-ED-134, IDE-ED-091): the rendered XML documentation is laid out line by line — the labels
+    /// <c>Parameters:</c> / <c>Returns:</c> in <c>type.bodyStrong</c>, parameter names in <c>type.codeSmall</c>, a cut after
+    /// 10 lines marked by <c>…</c> — and the tooltip ends with a pointer-only <c>Go to Declaration</c> link that closes it and
+    /// jumps as F12 at the hovered word (history entry); a built-in shows no link.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Phase", "8")]
+    [Trait("Req", "UI-ED-133")]
+    [Trait("Req", "UI-ED-134")]
+    [Trait("Req", "IDE-ED-091")]
+    public async Task StructuredDocAndGoToDeclarationLink()
+    {
+        var text = "unit Unit1;\r\ninterface\r\nimplementation\r\n"
+            + "/// <summary>Returns the greeting for <paramref name=\"AName\"/>.</summary>\r\n"
+            + "/// <param name=\"AName\">The name; <c>''</c> greets the world.</param>\r\n"
+            + "/// <returns>The text, never empty.</returns>\r\n"
+            + "function Greet(const AName: string): string;\r\nbegin\r\n  Result := AName;\r\nend;\r\n"
+            + string.Concat(Enumerable.Range(1, 12).Select(i => $"/// Line {i}.\r\n"))
+            + "procedure Long;\r\nbegin\r\nend;\r\n"
+            + "var S: string;\r\nbegin\r\n  S := Greet('x');\r\n  Long;\r\n  WriteLn(S);\r\nend.\r\n";
+        await using var h = await BuildScenario.StartAsync(o =>
+        {
+            LiveDiagnosticsTests.AddRealRtl(o);
+            o.InitialFiles[@"Hello\Unit1.pas"] = text;
+        });
+        var doc = Assert.IsType<TextDocumentViewModel>((await h.Services.Documents.OpenAsync(BuildScenario.UnitPath(h))).Value);
+        Dispatcher.UIThread.RunJobs();
+        var editor = h.Find<TextEditor>("Editor.Unit1.pas");
+        Assert.True(editor.TextArea.Focus());
+        var hover = h.Find<HoverView>("Editor.Hover");
+        var textView = editor.TextArea.TextView;
+        var delay = TimeSpan.FromMilliseconds(h.Services.Settings.Get(SettingsCatalog.EditorHoverDelayMs));
+
+        async Task HoverAsync(int offset)
+        {
+            doc.Hover!.Close();
+            textView.EnsureVisualLines();
+            var position = doc.Buffer.GetPosition(offset);
+            var at = textView.GetVisualPosition(new TextViewPosition(position.Line, position.Column), VisualYPosition.LineMiddle) - textView.ScrollOffset;
+            h.Window.MouseMove(textView.TranslatePoint(at + new Point(textView.WideSpaceWidth / 2, 0), h.Window)!.Value);
+            Dispatcher.UIThread.RunJobs();
+            h.Clock.Advance(delay);
+            await doc.Hover!.Pending;
+            Dispatcher.UIThread.RunJobs();
+            Assert.True(hover.IsVisible);
+        }
+
+        List<TextBlock> Lines() => [.. hover.GetVisualDescendants().OfType<TextBlock>().Where(t => t.Classes.Contains("doc"))];
+        static List<Avalonia.Controls.Documents.Run> Runs(TextBlock block) => [.. block.Inlines!.OfType<Avalonia.Controls.Documents.Run>()];
+        static string TextOf(TextBlock block) => string.Concat(Runs(block).Select(r => r.Text));
+        Assert.True(hover.TryFindResource("FxcFontMono", hover.ActualThemeVariant, out var mono));
+
+        // The §3 example: summary, blank line, "Parameters:" (bold), the indented parameter (name in code style), "Returns: …".
+        var call = text.IndexOf("Greet('x')", StringComparison.Ordinal);
+        await HoverAsync(call + 1);
+        Assert.Equal(
+            ["Returns the greeting for AName.", "", "Parameters:", "AName – The name; '' greets the world.", "", "Returns: The text, never empty."],
+            Lines().Select(TextOf));
+        var lines = Lines();
+        Assert.All(lines, l => Assert.Contains("body", l.Classes));
+        Assert.Equal(FontWeight.SemiBold, Assert.Single(Runs(lines[2])).FontWeight);
+        var parameter = Runs(lines[3]);
+        Assert.Equal("AName", parameter[0].Text);
+        Assert.Equal(mono, parameter[0].FontFamily);
+        Assert.Equal(12, parameter[0].FontSize);
+        Assert.Equal(12, lines[3].Margin.Left); // space.5: the parameter line is indented
+        Assert.Equal(" – The name; '' greets the world.", parameter[1].Text);
+        Assert.NotEqual(FontWeight.SemiBold, parameter[1].FontWeight);
+        var returns = Runs(lines[5]);
+        Assert.Equal(("Returns:", FontWeight.SemiBold), (returns[0].Text, returns[0].FontWeight));
+        Assert.Equal(" The text, never empty.", returns[1].Text);
+        Assert.NotEqual(FontWeight.SemiBold, Runs(lines[0])[0].FontWeight);
+
+        // The link: caption, accent.default, never focusable, last in the tooltip.
+        var link = h.Find<Button>("Editor.Hover.GoToDeclaration");
+        Assert.Equal("Go to Declaration", link.Content);
+        Assert.False(link.Focusable);
+        Assert.True(link.TryFindResource("FxcAccentDefaultBrush", link.ActualThemeVariant, out var accent));
+        Assert.Same(accent, link.Foreground);
+        Assert.Equal(11, link.FontSize);
+        Assert.Same(link, ((Panel)hover.Child!).Children[^1]);
+
+        // 12 doc lines: 10 shown, then the cut marker.
+        await HoverAsync(text.IndexOf("  Long;", StringComparison.Ordinal) + 3);
+        Assert.Equal([.. Enumerable.Range(1, 10).Select(i => $"Line {i}."), "…"], Lines().Select(TextOf));
+
+        // Clicking the link closes the tooltip and goes to the declaration as F12 at the hovered word, recording a history entry.
+        await HoverAsync(call + 1);
+        h.Click("Editor.Hover.GoToDeclaration");
+        Assert.False(hover.IsVisible);
+        await h.WaitForAsync(() => doc.ViewState.Caret == new TextPosition(7, 10), "jump to Greet's declaration");
+        var from = doc.Buffer.GetPosition(call);
+        Assert.Equal(new TextPosition(from.Line, from.Column), h.Services.Navigation.History[^1].Position);
+        Assert.Equal("Unit1.pas", h.Services.Navigation.History[^1].Name);
+        Assert.True(editor.TextArea.IsKeyboardFocusWithin);
+
+        // A built-in has no source declaration: no link.
+        await HoverAsync(text.IndexOf("WriteLn", StringComparison.Ordinal) + 1);
+        Assert.Null(h.TryFind<Button>("Editor.Hover.GoToDeclaration"));
     }
 
     /// <summary>

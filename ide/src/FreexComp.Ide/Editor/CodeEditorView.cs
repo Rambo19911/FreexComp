@@ -199,6 +199,11 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
         };
         _signatureHelp.PlacementRequested += (_, _) => PlaceSignatureHelp();
         _hover.PlacementRequested += (_, _) => PlaceHover();
+        _hover.GoToDeclarationClicked += (_, _) =>
+        {
+            _editor.TextArea.Focus(); // UI-ED-134: the link takes no focus; the jump continues in the text
+            _ = _document?.Hover?.GoToDeclarationAsync();
+        };
         area.LostFocus += (_, _) =>
         {
             _document?.Completion?.Close(); // IDE-ED-086

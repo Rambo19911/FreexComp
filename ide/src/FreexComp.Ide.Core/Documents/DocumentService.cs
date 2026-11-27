@@ -206,8 +206,8 @@ public sealed class DocumentService : IDocumentService
         commands.RegisterHandler("file.editLibrarySource", new Handler(
             _ => ActiveDocument is TextDocumentViewModel { IsLibraryProtected: true },
             _ => EditLibrarySource((TextDocumentViewModel)ActiveDocument!)));
-        commands.RegisterHandler("file.saveAs", new AsyncHandler(
-            _ => ActiveDocument is TextDocumentViewModel, _ => PickAndSaveAsAsync(ActiveDocument!)));
+        commands.RegisterHandler("file.saveAs", new AsyncHandler( // IDE-ED-148: a generated view is never written to disk
+            _ => ActiveDocument is TextDocumentViewModel { GeneratedPath: null }, _ => PickAndSaveAsAsync(ActiveDocument!)));
         commands.RegisterHandler("file.saveAll", new AsyncHandler(_ => _documents.Any(d => d.IsModified), _ => SaveAllAsync()));
         // menus.md: modified and the file exists on disk.
         commands.RegisterHandler("file.revert", new AsyncHandler(
@@ -347,6 +347,33 @@ public sealed class DocumentService : IDocumentService
         Add(document);
         return document;
     }
+
+    public TextDocumentViewModel ShowGeneratedDeclaration(string unitName, string text)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(unitName);
+        ArgumentNullException.ThrowIfNull(text);
+        var path = GeneratedPathPrefix + unitName + ".pas";
+        if (_documents.OfType<TextDocumentViewModel>().FirstOrDefault(d => string.Equals(d.GeneratedPath, path, StringComparison.OrdinalIgnoreCase)) is { } open)
+        {
+            if (open.Buffer.Text != text)
+                open.Reload(text);
+            Activate(open);
+            return open;
+        }
+
+        var buffer = _buffers.Create(text, LineEndingKind.Lf);
+        buffer.IsReadOnly = true; // edits are refused with Msg.Editor.ReadOnlyEdit, as in a protected document
+        var title = string.Format(CultureInfo.CurrentCulture, Strings.Msg_Editor_GeneratedTitle, unitName);
+        var document = new TextDocumentViewModel(buffer, null, title, _languages.ForPath(unitName + ".pas"), FileEncoding.Utf8, LineEndingKind.Lf)
+        {
+            GeneratedPath = path,
+        };
+        Add(document);
+        return document;
+    }
+
+    /// <summary>IDE-ED-148: the virtual path of a generated declaration view is <c>generated:/&lt;Unit&gt;.pas</c>.</summary>
+    public const string GeneratedPathPrefix = "generated:/";
 
     public void OpenDocument(DocumentViewModel document)
     {

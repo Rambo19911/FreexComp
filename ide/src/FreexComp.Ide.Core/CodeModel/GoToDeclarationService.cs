@@ -17,6 +17,8 @@ namespace FreexComp.Ide.Core.CodeModel;
 /// <c>Compilation</c> (<c>NavigationService.GoToDefinition</c> of the language service, which also toggles between a
 /// declaration heading and its implementation) and moves the caret to the target's name, opening the file if needed —
 /// a library source outside the project opens as a protected document (IDE-LIB-002, decided by the document service).
+/// A symbol without source (a built-in, a <c>.pcu</c> symbol without its file) opens the generated read-only declaration view
+/// of its unit (<c>NavigationService.GetGeneratedDeclaration</c>, IDE-ED-148, I-323) with the name selected.
 /// </summary>
 public sealed class GoToDeclarationService(IDocumentService documents, IProjectService projects, CodeModelService codeModel,
     INavigationService navigation, IStatusService status)
@@ -47,8 +49,8 @@ public sealed class GoToDeclarationService(IDocumentService documents, IProjectS
 
     /// <summary>
     /// IDE-ED-149: the identifier token at <paramref name="offset"/> when Go to Declaration would find a target for it
-    /// (the same <c>GoToDefinition</c> query, on the worker, cancellable); null on keywords, comments, strings and
-    /// identifiers without a declaration.
+    /// (the same <c>GoToDefinition</c> query, else <c>GetGeneratedDeclaration</c>, on the worker, cancellable); null on
+    /// keywords, comments, strings and identifiers without a declaration.
     /// </summary>
     private async Task<(int Offset, int Length)?> LinkAsync(TextDocumentViewModel document, int offset, CancellationToken ct)
     {
@@ -58,8 +60,9 @@ public sealed class GoToDeclarationService(IDocumentService documents, IProjectS
         var token = source.SyntaxTree.FindToken(offset);
         if (token.Kind != SyntaxKind.IdentifierToken || token.IsMissing || offset < token.Span.Start || offset >= token.Span.End)
             return null;
-        var targets = await codeModel.Worker.RunAsync("declarationLink", t => LsNavigation.GoToDefinition(source, token.Span.Start, t), ct);
-        return targets.IsEmpty ? null : (token.Span.Start, token.Span.Length);
+        var found = await codeModel.Worker.RunAsync("declarationLink", t =>
+            !LsNavigation.GoToDefinition(source, token.Span.Start, t).IsEmpty || LsNavigation.GetGeneratedDeclaration(source, token.Span.Start, t) is not null, ct);
+        return found ? (token.Span.Start, token.Span.Length) : null;
     }
 
     private bool CanGo => documents.ActiveDocument?.VisibleText is { FilePath: not null } d && d.Language.Id == "pascal" && projects.Project is not null; // I-302
@@ -78,6 +81,19 @@ public sealed class GoToDeclarationService(IDocumentService documents, IProjectS
         }
 
         var targets = await codeModel.Worker.RunAsync("goToDeclaration", ct => LsNavigation.GoToDefinition(source, identifier.Span.Start, ct));
+        if (targets.IsEmpty && await codeModel.Worker.RunAsync("generatedDeclaration",
+                ct => LsNavigation.GetGeneratedDeclaration(source, identifier.Span.Start, ct)) is { } generated)
+        {
+            // IDE-ED-148: the generated view of the symbol's unit (its tab reused), the name selected; activating it records
+            // the departure from this document in the navigation history.
+            var view = documents.ShowGeneratedDeclaration(generated.UnitName, generated.Text);
+            var end = Math.Min(generated.NameSpan.End, view.Buffer.Length);
+            view.Folding.Reveal(end);
+            view.Selection = new Ide.Core.Text.TextSelection(Math.Min(generated.NameSpan.Start, end), end);
+            view.RevealCaret(third: true);
+            return true;
+        }
+
         if (targets.IsEmpty)
         {
             status.ShowMessage(string.Format(CultureInfo.CurrentCulture, Strings.Msg_Editor_NoDeclaration, identifier.Text), StatusDuration);

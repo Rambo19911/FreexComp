@@ -208,11 +208,17 @@ public partial class TextDocumentViewModel : DocumentViewModel, ICommandTarget
     public override string? FilePath => _filePath;
 
     /// <summary>
-    /// IDE-ARCH-022: the buffer differs from its save point, or the encoding / line-ending kind changed since then.
-    /// An untitled document is always modified (IDE-P1-033).
+    /// IDE-ED-148 (I-323): the virtual path <c>generated:/&lt;Unit&gt;.pas</c> of a generated read-only declaration view
+    /// (no file, never saved, never modified, not in the session or recent files); null for every other document.
     /// </summary>
-    public override bool IsModified =>
-        _filePath is null || _forcedModified || !Buffer.IsAtSavePoint || _encoding != _savedEncoding || LineEnding.Kind != _savedLineEnding;
+    public string? GeneratedPath { get; init; }
+
+    /// <summary>
+    /// IDE-ARCH-022: the buffer differs from its save point, or the encoding / line-ending kind changed since then.
+    /// An untitled document is always modified (IDE-P1-033); a generated declaration view never is (IDE-ED-148).
+    /// </summary>
+    public override bool IsModified => GeneratedPath is null &&
+        (_filePath is null || _forcedModified || !Buffer.IsAtSavePoint || _encoding != _savedEncoding || LineEnding.Kind != _savedLineEnding);
 
     /// <summary>
     /// The file as last loaded, saved or reloaded (IDE-P1-110); null when unknown (untitled, or the file could not be

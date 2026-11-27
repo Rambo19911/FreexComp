@@ -104,9 +104,54 @@ public sealed class SignatureHelpView : Border
 }
 
 /// <summary>
+/// UI-ED-133 (I-317): the documentation of the hover tooltip and of the completion side panel, one <c>type.body</c> line
+/// (classes <c>body</c>, <c>doc</c>) per line of <see cref="DocumentationLayout"/>: label lines with the label in the
+/// <c>type.bodyStrong</c> weight, parameter lines indented by <c>space.5</c> with the name in <c>type.codeSmall</c>.
+/// </summary>
+public static class DocumentationBlock
+{
+    private const double ParameterIndent = 12; // space.5
+    private const double CodeSmallSize = 12; // type.codeSmall
+
+    /// <param name="maxLines">The hover tooltip's cut (IDE-ED-091); null = all lines (the completion side panel scrolls).</param>
+    public static StackPanel Build(string documentation, int? maxLines)
+    {
+        var panel = new StackPanel();
+        foreach (var line in DocumentationLayout.Lines(documentation, maxLines))
+        {
+            var block = new TextBlock { Classes = { "body", "doc" }, TextWrapping = TextWrapping.Wrap };
+            var inlines = block.Inlines ??= [];
+            switch (line.Kind)
+            {
+                case DocumentationLineKind.Label:
+                    inlines.Add(new Run(line.Lead) { FontWeight = FontWeight.SemiBold });
+                    if (line.Rest.Length > 0)
+                        inlines.Add(new Run(line.Rest));
+                    break;
+                case DocumentationLineKind.Parameter:
+                    var name = new Run(line.Lead) { FontSize = CodeSmallSize };
+                    name.Bind(TextElement.FontFamilyProperty, block.GetResourceObservable("FxcFontMono"));
+                    inlines.Add(name);
+                    inlines.Add(new Run(line.Rest));
+                    block.Margin = new Thickness(ParameterIndent, 0, 0, 0);
+                    break;
+                default:
+                    inlines.Add(new Run(line.Rest));
+                    break;
+            }
+
+            panel.Children.Add(block);
+        }
+
+        return panel;
+    }
+}
+
+/// <summary>
 /// The hover tooltip (editor.md §11.3 UI-ED-130/131, I-116; AutomationId <c>Editor.Hover</c>): the error rows of markers
 /// at the position first, a 1 px <c>border.subtle</c> separator, then the declaration (<c>type.codeSmall</c>), the origin
-/// line (<c>type.caption</c> <c>text.tertiary</c>) and the documentation (<c>type.body</c>). Max width 480; it floats
+/// line (<c>type.caption</c> <c>text.tertiary</c>) and the documentation (<see cref="DocumentationBlock"/>, UI-ED-133);
+/// last the link <c>Go to Declaration</c> for a symbol with a source declaration (UI-ED-134). Max width 480; it floats
 /// below the hovered word and never takes focus.
 /// </summary>
 public sealed class HoverView : Border
@@ -157,6 +202,9 @@ public sealed class HoverView : Border
     public string? ValueLine { get; private set; }
 
     public event EventHandler? PlacementRequested;
+
+    /// <summary>UI-ED-134: the Go to Declaration link was clicked (the owner keeps the focus in the text and runs it).</summary>
+    public event EventHandler? GoToDeclarationClicked;
 
     private void OnChanged(object? sender, EventArgs e) => Sync();
 
@@ -213,11 +261,37 @@ public sealed class HoverView : Border
             }
 
             if (content.Documentation is { Length: > 0 } documentation)
-                _content.Children.Add(new TextBlock { Text = documentation, Classes = { "body" }, TextWrapping = TextWrapping.Wrap });
+                _content.Children.Add(DocumentationBlock.Build(documentation, DocumentationLayout.MaxLines));
+            if (_session!.CanGoToDeclaration)
+                _content.Children.Add(GoToDeclarationLink());
         }
 
         IsVisible = true;
         PlacementRequested?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// UI-ED-134: the link button (<c>type.caption</c>, <c>accent.default</c>, <c>Editor.Hover.GoToDeclaration</c>); it takes
+    /// no keyboard focus (the keyboard path is F12). A click closes the tooltip and goes to the declaration.
+    /// </summary>
+    private Button GoToDeclarationLink()
+    {
+        var link = new Button
+        {
+            Content = Core.Resources.Strings.Msg_Editor_HoverGoToDeclaration,
+            Focusable = false,
+            Background = Brushes.Transparent,
+            BorderThickness = new Thickness(0),
+            Padding = new Thickness(0),
+            FontSize = 11, // type.caption
+            HorizontalAlignment = HorizontalAlignment.Left,
+            Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand),
+        };
+        link.Bind(Button.FontFamilyProperty, link.GetResourceObservable("FxcFontUi"));
+        link.Bind(Button.ForegroundProperty, link.GetResourceObservable("FxcAccentDefaultBrush"));
+        AutomationProperties.SetAutomationId(link, "Editor.Hover.GoToDeclaration");
+        link.Click += (_, _) => GoToDeclarationClicked?.Invoke(this, EventArgs.Empty);
+        return link;
     }
 
     private const double ValueTreeMaxHeight = 320;

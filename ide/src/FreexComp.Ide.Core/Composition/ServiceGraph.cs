@@ -217,6 +217,7 @@ public static class ServiceGraph
         goToDeclaration.AttachDeclarationLinks(); // I-322
         new CodeModel.CompletionController(documents, projects, codeModel, settings, platform.Clock, status).RegisterCommands(commands); // I-114
         var parameterInfo = new CodeModel.ParameterInfoController(documents, projects, codeModel, settings, platform.Clock); // I-116
+        parameterInfo.GoToDeclaration = goToDeclaration.GoAsync; // UI-ED-134 (I-317): the hover's Go to Declaration link
         parameterInfo.RegisterCommands(commands);
         new CodeModel.CodeTemplateController(documents, templates, settings).RegisterCommands(commands);
         build.RegisterCommands(commands);

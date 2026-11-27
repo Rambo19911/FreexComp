@@ -293,7 +293,7 @@ public sealed class CompletionDocView : Border
             }
 
             if (description.Documentation is { Length: > 0 } documentation)
-                _content.Children.Add(new TextBlock { Text = documentation, Classes = { "body" }, TextWrapping = TextWrapping.Wrap });
+                _content.Children.Add(DocumentationBlock.Build(documentation, maxLines: null)); // UI-ED-133
         }
 
         var visible = description is not null;

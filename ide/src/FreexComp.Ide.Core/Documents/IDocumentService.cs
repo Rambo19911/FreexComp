@@ -81,6 +81,14 @@ public interface IDocumentService
     GeneratedTextDocumentViewModel ShowGenerated(string kind, string title, string text, IReadOnlyList<Services.HelpLineKind>? helpLines = null);
 
     /// <summary>
+    /// IDE-ED-148 (I-323): the generated read-only declaration view of <paramref name="unitName"/> — a Pascal document
+    /// titled <c>&lt;Unit&gt; [generated]</c> with the virtual path <c>generated:/&lt;Unit&gt;.pas</c>
+    /// (<see cref="TextDocumentViewModel.GeneratedPath"/>), never modified, saved, in the session or in recent files. The
+    /// open view of the same unit is reused (its text replaced only when it changed) and activated, else a new tab opens.
+    /// </summary>
+    TextDocumentViewModel ShowGeneratedDeclaration(string unitName, string text);
+
+    /// <summary>
     /// Opens a document that is not a file (a diff document, IDE-DIFF-020) as a new tab right of the active one and
     /// activates it. Never part of a session (it has no file path).
     /// </summary>
