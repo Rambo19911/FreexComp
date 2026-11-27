@@ -212,7 +212,13 @@ public sealed class SemanticModel
     /// overload set stays whole); with <paramref name="name"/> only that name. With <paramref name="container"/>: the members of
     /// that type accessible at the position, inherited ones and those of its active helper included.
     /// </summary>
-    public ImmutableArray<Symbol> LookupSymbols(int position, string? name = null, TypeSymbol? container = null)
+    public ImmutableArray<Symbol> LookupSymbols(int position, string? name = null, TypeSymbol? container = null) =>
+        LookupSymbols(position, name, container, receiver: container);
+
+    /// <summary>C-401: the members of <paramref name="container"/> accessible through <c>Self</c> (<c>inherited</c> in a descendant's method).</summary>
+    internal ImmutableArray<Symbol> LookupInheritedSymbols(int position, TypeSymbol container) => LookupSymbols(position, null, container, receiver: null);
+
+    private ImmutableArray<Symbol> LookupSymbols(int position, string? name, TypeSymbol? container, TypeSymbol? receiver)
     {
         var scope = ScopeAt(position);
         IEnumerable<Symbol> symbols;
@@ -242,7 +248,7 @@ public sealed class SemanticModel
                 seen.UnionWith(own.Select(m => m.Name));
             }
 
-            symbols = members.Where(m => IsAccessible(position, m));
+            symbols = members.Where(m => IsAccessible(position, m, receiver));
         }
         else
         {
@@ -383,25 +389,47 @@ public sealed class SemanticModel
         }
     }
 
-    /// <summary>Visibility rules of LANG-611 for a member seen from <paramref name="position"/> in this file.</summary>
-    public bool IsAccessible(int position, Symbol symbol)
+    /// <summary>Visibility rules of LANG-610 for a member seen from <paramref name="position"/> in this file (through <c>Self</c>).</summary>
+    public bool IsAccessible(int position, Symbol symbol) => IsAccessible(position, symbol, receiver: null);
+
+    /// <summary>
+    /// LANG-610 as the binder checks it (<c>ExpressionBinder.CheckAccess</c>): through a receiver whose static type is
+    /// <paramref name="receiver"/> (null: the enclosing type, implicit <c>Self</c>), (strict) protected members open to a descendant's
+    /// code only when the receiver is that descendant or one of its descendants, and protected ones to a unit declaring a descendant D
+    /// when the receiver is D or one of its descendants (C-260; C-401).
+    /// </summary>
+    private bool IsAccessible(int position, Symbol symbol, TypeSymbol? receiver)
     {
         ArgumentNullException.ThrowIfNull(symbol);
         var owner = symbol.ContainingSymbol as TypeSymbol;
         var sameUnit = ReferenceEquals(symbol.ContainingUnit ?? owner?.ContainingUnit, Unit);
         var context = EnclosingType(position);
-        bool Inside(bool descendants) =>
-            context is not null && owner is not null
-            && (ReferenceEquals(context, owner) || TypeMembers.EnclosingTypes(context).Any(t => ReferenceEquals(t, owner))
-                || descendants && context.InheritsFrom(owner));
+        var selves = context is null ? [] : new[] { context }.Concat(TypeMembers.EnclosingTypes(context)).ToList();
+        var own = owner is not null && selves.Any(t => ReferenceEquals(t, owner));
+        var through = receiver ?? context;
+        var descendant = !own && owner is not null && selves.Any(t => t.InheritsFrom(owner) && through is not null && (ReferenceEquals(through, t) || through.InheritsFrom(t)));
         return symbol.Visibility switch
         {
             Visibility.Private => sameUnit,
-            Visibility.StrictPrivate => Inside(descendants: false),
-            Visibility.Protected => sameUnit || Inside(descendants: true),
-            Visibility.StrictProtected => Inside(descendants: true),
+            Visibility.StrictPrivate => own,
+            Visibility.Protected => sameUnit || own || descendant || owner is not null && LocalDescendant(owner, through),
+            Visibility.StrictProtected => own || descendant,
             _ => true,
         };
+    }
+
+    /// <summary>C-260: a class of this unit between <paramref name="receiver"/> (included) and <paramref name="owner"/> (excluded).</summary>
+    private bool LocalDescendant(TypeSymbol owner, TypeSymbol? receiver)
+    {
+        for (var type = receiver as ClassTypeSymbol; type is not null && !ReferenceEquals(type, owner); type = type.Parent)
+        {
+            if (ReferenceEquals(TypeMembers.Outermost(type).ContainingSymbol, Unit) && type.InheritsFrom(owner))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     public DirectiveState GetDirectiveState(int position) => SyntaxTree.FindToken(position).DirectiveState;
@@ -966,6 +994,9 @@ public sealed class SemanticModel
             case BoundWithStatement with:
                 Walk(with.Value);
                 Walk(with.Body);
+                break;
+            case BoundErrorStatement error:
+                Walk(error.Expression);
                 break;
             case BoundLocalsStatement locals:
                 foreach (var local in locals.Locals)

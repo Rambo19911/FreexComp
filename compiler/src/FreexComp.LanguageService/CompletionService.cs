@@ -27,6 +27,7 @@ public static class CompletionService
         ["virtual", "override", "overload", "abstract", "reintroduce", "dynamic", "final", "static", "inline", "stdcall", "cdecl", "register", "external", "forward", "deprecated", "message"];
     private static readonly string[] PropertySpecifiers = ["read", "write", "stored", "default", "nodefault", "index", "implements"];
     private static readonly string[] DeclarationKeywords = ["const", "type", "var", "procedure", "function", "begin"];
+    private static readonly string[] ClassSectionKeywords = ["const", "type", "var", "procedure", "function"];
     private static readonly string[] ClassMemberKeywords = ["private", "protected", "public", "published", "strict", "property", "constructor", "destructor", "class"];
     private static readonly string[] StatementKeywords =
         ["begin", "if", "case", "for", "while", "repeat", "try", "with", "raise", "exit", "inherited", "goto", "var", "const"];
@@ -71,6 +72,10 @@ public static class CompletionService
         {
             Members(builder, parent);
         }
+        else if (DigraphDotLeft(text, previous, replacement.Start) is { } left)
+        {
+            MembersOf(builder, left);
+        }
         else if (previous.Kind != SyntaxKind.None && parent?.FirstAncestorOrSelf<UsesClauseSyntax>() is { } uses && !(uses.SemicolonToken is { IsMissing: false } end && end.Span.End <= replacement.Start))
         {
             UnitNames(builder, doc, uses);
@@ -102,25 +107,23 @@ public static class CompletionService
                  && (parent is not RoutineDeclarationSyntax routine || routine.Block is null || routine.Block.Span.Start >= replacement.Start))
         {
             builder.AddKeywords(RoutineDirectives);
-            builder.AddKeywords(DeclarationKeywords);
+            DeclarationStart(builder, parent);
         }
         else if (IsDeclarationStart(previous))
         {
-            builder.AddKeywords(DeclarationKeywords);
-            if (InClassBody(parent))
-            {
-                builder.AddKeywords(ClassMemberKeywords);
-            }
+            DeclarationStart(builder, parent);
         }
         else if (IsStatementStart(previous))
         {
-            builder.AddVisible(_ => true);
+            var hidden = WithMembers(builder, previous);
+            builder.AddVisible(_ => true, hidden);
             builder.AddKeywords(StatementKeywords);
             builder.AddSnippets(Snippets);
         }
         else
         {
-            builder.AddVisible(s => s is not TypeSymbol || s is ClassTypeSymbol or RecordTypeSymbol or EnumTypeSymbol);
+            var hidden = WithMembers(builder, previous);
+            builder.AddVisible(s => s is not TypeSymbol || s is ClassTypeSymbol or RecordTypeSymbol or EnumTypeSymbol, hidden);
             builder.AddKeywords(ExpressionKeywords);
         }
 
@@ -155,11 +158,41 @@ public static class CompletionService
             QualifiedNameSyntax qualified => qualified.Left,
             _ => null,
         };
-        if (left is null)
+        if (left is not null)
         {
-            return;
+            MembersOf(builder, left);
+        }
+    }
+
+    /// <summary>
+    /// C-401: <c>F(X.)</c> — the caret after a dot that the lexer read together with the following <c>)</c> as the digraph <c>.)</c>
+    /// (an alternative <c>]</c>): the expression left of that dot (a name, member access, index, dereference or call ending right
+    /// before it), else null.
+    /// </summary>
+    private static SyntaxNode? DigraphDotLeft(string text, SyntaxToken previous, int position)
+    {
+        if (position < 1 || text[position - 1] != '.' || position >= text.Length || text[position] != ')'
+            || previous.Kind == SyntaxKind.None || previous.Span.End != position - 1 || previous.Parent is not { } node)
+        {
+            return null;
         }
 
+        if (node is ArgumentListSyntax { Parent: InvocationExpressionSyntax call })
+        {
+            node = call;
+        }
+
+        while (node.Parent is MemberAccessExpressionSyntax access && ReferenceEquals(access.Name, node)
+               || node.Parent is QualifiedNameSyntax qualified && ReferenceEquals(qualified.Right, node))
+        {
+            node = node.Parent;
+        }
+
+        return node is ExpressionSyntax or QualifiedNameSyntax ? node : null;
+    }
+
+    private static void MembersOf(ItemBuilder builder, SyntaxNode left)
+    {
         var model = builder.Model;
         var symbol = model.GetSymbolInfo(left).Symbol;
         switch (symbol)
@@ -178,7 +211,7 @@ public static class CompletionService
                 return;
         }
 
-        if (model.GetTypeInfo(left).Type is { } valueType)
+        if (ValueType(model, left) is { } valueType)
         {
             builder.AddSymbols(model.LookupSymbols(builder.Position, container: valueType));
         }
@@ -226,7 +259,7 @@ public static class CompletionService
         }
 
         var own = type.Methods.Select(m => m.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        foreach (var method in model.LookupSymbols(builder.Position, container: ancestor).OfType<MethodSymbol>()
+        foreach (var method in model.LookupInheritedSymbols(builder.Position, ancestor).OfType<MethodSymbol>()
                      .Where(m => m.VmtSlot >= 0 && !own.Contains(m.Name)))
         {
             var heading = method.ToDisplayString();
@@ -237,12 +270,75 @@ public static class CompletionService
         }
     }
 
+    /// <summary>
+    /// CMP-1423 (C-401): inside <c>with E1, E2 do</c> the accessible members of each target's type, innermost (last-listed) first, in
+    /// group <c>1</c>; a name already taken by a more inner target is not offered again. Returns the names the members took: outer
+    /// symbols of those names are hidden (LANG-310, 375), except locals declared inside that <c>with</c> statement.
+    /// </summary>
+    private static Dictionary<string, WithStatementSyntax> WithMembers(ItemBuilder builder, SyntaxToken previous)
+    {
+        var taken = new Dictionary<string, WithStatementSyntax>(StringComparer.OrdinalIgnoreCase);
+        for (var node = previous.Parent; node is not null; node = node.Parent)
+        {
+            if (node is not WithStatementSyntax with || with.DoKeyword.IsMissing || with.DoKeyword.Span.End > builder.Position)
+            {
+                continue;
+            }
+
+            for (var i = with.Expressions.Count - 1; i >= 0; i--)
+            {
+                if (ValueType(builder.Model, with.Expressions[i]) is not { TypeKind: not TypeKind.Error } type)
+                {
+                    continue;
+                }
+
+                foreach (var member in builder.Model.LookupSymbols(builder.Position, container: type))
+                {
+                    if (!taken.ContainsKey(member.Name) && builder.AddSymbol(member, group: "1"))
+                    {
+                        taken[member.Name] = with;
+                    }
+                }
+            }
+        }
+
+        return taken;
+    }
+
+    /// <summary>
+    /// The type of the value <paramref name="expression"/> denotes: for a constructor call (<c>TFoo.Create</c>) the class, not the
+    /// class reference its receiver has; for a parameterless function name whose call was not bound (<c>F.</c> being typed) its result.
+    /// </summary>
+    private static TypeSymbol? ValueType(SemanticModel model, SyntaxNode expression)
+    {
+        var symbol = model.GetSymbolInfo(expression).Symbol;
+        return model.GetTypeInfo(expression).Type switch
+        {
+            ClassRefTypeSymbol reference when symbol is MethodSymbol { MethodKind: MethodKind.Constructor } => reference.Class,
+            null when symbol is RoutineSymbol { ReturnType: { } result } => result,
+            var type => type,
+        };
+    }
+
+    private static void DeclarationStart(ItemBuilder builder, SyntaxNode? parent)
+    {
+        if (InClassBody(parent))
+        {
+            builder.AddKeywords(ClassSectionKeywords);                     // no 'begin' among the members of a type
+            builder.AddKeywords(ClassMemberKeywords);
+        }
+        else
+        {
+            builder.AddKeywords(DeclarationKeywords);
+        }
+    }
+
     private static void Inherited(ItemBuilder builder)
     {
         var model = builder.Model;
         if (model.GetEnclosingSymbol(builder.Position) is MethodSymbol { ContainingType: ClassTypeSymbol { Parent: { } ancestor } })
         {
-            builder.AddSymbols(model.LookupSymbols(builder.Position, container: ancestor).OfType<MethodSymbol>());
+            builder.AddSymbols(model.LookupInheritedSymbols(builder.Position, ancestor).OfType<MethodSymbol>());     // through Self (LANG-610)
         }
     }
 
@@ -370,12 +466,15 @@ public static class CompletionService
 
         public int Position { get; } = position;
 
-        public void Add(CompletionItem item)
+        public bool Add(CompletionItem item)
         {
             if (_seen.Add((item.Label.ToLowerInvariant(), item.Kind)))
             {
                 _items.Add(item);
+                return true;
             }
+
+            return false;
         }
 
         public void AddKeywords(IEnumerable<string> words)
@@ -397,7 +496,38 @@ public static class CompletionService
         /// <summary>The units this file's uses clauses name (scopes, so not among the visible symbols).</summary>
         public void AddUsedUnits() => AddSymbols(Model.SyntaxTree.Root.DescendantNodes().OfType<UsedUnitSyntax>().Select(u => Model.GetSymbolInfo(u).Symbol).OfType<UnitSymbol>());
 
-        public void AddVisible(Func<Symbol, bool> filter) => AddSymbols(Model.LookupSymbols(Position).Where(filter));
+        /// <summary>
+        /// The symbols visible at the position, members of the enclosing types only where accessible (LANG-610, CMP-1424). A name in
+        /// <paramref name="hidden"/> belongs to a <c>with</c> member: the outer symbol is left out, unless it is a local declared inside
+        /// that <c>with</c> statement, which then replaces the member's item (CMP-1423).
+        /// </summary>
+        public void AddVisible(Func<Symbol, bool> filter, Dictionary<string, WithStatementSyntax>? hidden = null)
+        {
+            foreach (var symbol in Model.LookupSymbols(Position).Where(filter))
+            {
+                if (symbol.ContainingSymbol is TypeSymbol && !Model.IsAccessible(Position, symbol))
+                {
+                    continue;
+                }
+
+                if (hidden is not null && hidden.TryGetValue(symbol.Name, out var with))
+                {
+                    if (!IsLocal(symbol) || !symbol.Locations.Any(l => with.Statement.Span.Contains(l.Span.Start) && PathUtil.AreEqual(l.Path, doc.Path)))
+                    {
+                        continue;
+                    }
+
+                    var name = symbol.Name.ToLowerInvariant();
+                    foreach (var member in _items.Where(i => i.Label.ToLowerInvariant() == name && i.SortText.StartsWith('1')).ToList())
+                    {
+                        _items.Remove(member);                                  // the with member's item gives way to the local
+                        _seen.Remove((name, member.Kind));
+                    }
+                }
+
+                AddSymbol(symbol);
+            }
+        }
 
         public void AddSymbols(IEnumerable<Symbol> symbols)
         {
@@ -407,15 +537,16 @@ public static class CompletionService
             }
         }
 
-        public void AddSymbol(Symbol symbol, string? prefix = null)
+        /// <summary>Adds the symbol's item (in its CMP-723 group, or in <paramref name="group"/>); false when it is not offered.</summary>
+        public bool AddSymbol(Symbol symbol, string? prefix = null, string? group = null)
         {
             if (symbol.Name.Length == 0 || symbol.Name[0] is '$' or '.' || symbol.Name.Contains('<'))
             {
-                return;
+                return false;
             }
 
-            Add(new CompletionItem(symbol.Name, KindOf(symbol), symbol.Name, (prefix ?? "") + Group(symbol) + symbol.Name.ToLowerInvariant(),
-                                   symbol.ToDisplayString(), symbol.IsDeprecated, Id(symbol), OriginOf(symbol)));
+            return Add(new CompletionItem(symbol.Name, KindOf(symbol), symbol.Name, (prefix ?? "") + (group ?? Group(symbol)) + symbol.Name.ToLowerInvariant(),
+                                          symbol.ToDisplayString(), symbol.IsDeprecated, Id(symbol), OriginOf(symbol)));
         }
 
         public string Id(Symbol symbol)

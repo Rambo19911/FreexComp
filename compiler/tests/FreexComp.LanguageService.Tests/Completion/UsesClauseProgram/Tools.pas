@@ -1,0 +1,4 @@
+unit Tools;
+interface
+implementation
+end.

@@ -610,9 +610,11 @@ internal sealed partial class ExpressionBinder
             if (syntax.Expression is GenericNameSyntax || syntax.Expression.DescendantNodes().OfType<GenericNameSyntax>().Any())
             {
                 _ = TypeNamedBy(syntax.Expression);                     // C-347 (CMP-1394): G<X>. being typed — the instance exists for completion
+                return Error(syntax);
             }
 
-            return Error(syntax);
+            // CMP-1421 (C-401): `A[1].`, `P^.`, `F.` being typed — the receiver is kept (bound without diagnostics) so completion knows its type
+            return ProbeBinder(new DiagnosticBag()).BindExpression(syntax.Expression) is { HasErrors: false } typed ? Error(syntax, typed) : Error(syntax);
         }
 
         var name = syntax.Name.Identifier.Value as string ?? syntax.Name.Identifier.Text;
@@ -1248,7 +1250,7 @@ internal sealed partial class ExpressionBinder
                 if (call is null)
                 {
                     // a D.Create(…) value (LANG-271) has consumed its argument list: E2060 like any other value
-                    return value!.HasErrors ? new BoundErrorStatement(statement)
+                    return value!.HasErrors ? new BoundErrorStatement(statement, value)
                         : MemberValueStatement(statement, expression, value, value is BoundArrayConstructor ? null : argumentList);
                 }
 

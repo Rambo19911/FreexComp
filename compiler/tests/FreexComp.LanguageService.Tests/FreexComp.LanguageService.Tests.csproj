@@ -9,5 +9,6 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="GoToDefinition\**\*.pas" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Completion\**\*.pas" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

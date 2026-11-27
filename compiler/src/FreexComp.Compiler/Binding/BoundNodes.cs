@@ -583,10 +583,14 @@ internal sealed class BoundExpressionStatement : BoundStatement
 /// <summary>A statement that could not be bound (already reported).</summary>
 internal sealed class BoundErrorStatement : BoundStatement
 {
-    public BoundErrorStatement(SyntaxNode syntax)
+    public BoundErrorStatement(SyntaxNode syntax, BoundExpression? expression = null)
         : base(syntax)
     {
+        Expression = expression;
     }
+
+    /// <summary>C-401: what was bound of the statement's expression, for the language service only (flow analysis and code ignore it).</summary>
+    public BoundExpression? Expression { get; }
 
     public override BoundKind Kind => BoundKind.ErrorStatement;
 }
