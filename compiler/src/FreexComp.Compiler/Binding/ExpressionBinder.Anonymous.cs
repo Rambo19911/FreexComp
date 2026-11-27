@@ -131,26 +131,68 @@ internal sealed partial class ExpressionBinder
     }
 
     /// <summary>
-    /// LANG-721: a variable or parameter of an enclosing routine referenced from an anonymous method — <c>var</c>/<c>out</c>, open-array
-    /// and untyped parameters cannot be captured (E2720).
+    /// The references bound while an operand that may never be evaluated is bound (<c>SizeOf(V)</c>, LANG-903): checked only once
+    /// the operand turns out to be evaluated (<see cref="CheckDeferredCaptures"/>). Null outside such an operand.
+    /// </summary>
+    private List<(Symbol Symbol, SyntaxNode At)>? _deferredCaptures;
+
+    /// <summary>
+    /// LANG-970: a variable or parameter of an enclosing routine referenced from an anonymous method (at any depth: through an
+    /// anonymous method or a nested routine inside it, C-230) — <c>var</c>/<c>out</c>, open-array and untyped parameters cannot be
+    /// captured, nor <c>Self</c> of a method of a record or of a helper for a type that is not a class (a <c>var</c> reference to
+    /// the value, LANG-730): E2720, once per variable and outermost anonymous-method expression that captures it.
     /// </summary>
     private void CheckCapture(Symbol symbol, SyntaxNode at)
     {
-        if (_routine is null || symbol.ContainingSymbol is not RoutineSymbol owner || ReferenceEquals(owner, _routine))
+        if (_routine is null || symbol.ContainingSymbol is not RoutineSymbol owner || ReferenceEquals(owner, _routine)
+            || symbol is not (ParameterSymbol { Mode: ParameterMode.Var or ParameterMode.Out } or ParameterSymbol { IsOpenArray: true } or ParameterSymbol { IsUntyped: true }))
         {
             return;
         }
 
-        var anonymous = false;
+        if (_deferredCaptures is { } deferred)
+        {
+            deferred.Add((symbol, at));                         // the operand is not evaluated so far: it captures nothing
+            return;
+        }
+
+        MethodSymbol? outermost = null;
         for (var routine = _routine; routine is not null && !ReferenceEquals(routine, owner); routine = ClosureInfo.LexicalParent(routine))
         {
-            anonymous |= routine is MethodSymbol { IsAnonymous: true };
+            outermost = routine is MethodSymbol { IsAnonymous: true } anonymous ? anonymous : outermost;
         }
 
         // C-230: a capture through nested routines as well is moved to the owner's closure after binding (ClosureInfo.ResolveMixedCaptures)
-        if (anonymous && symbol is ParameterSymbol { Mode: ParameterMode.Var or ParameterMode.Out } or ParameterSymbol { IsOpenArray: true } or ParameterSymbol { IsUntyped: true })
+        if (outermost is not null)
         {
-            _diagnostics.Report(at, "E2720", symbol.Name);
+            _diagnostics.ReportUncapturable(at, outermost, symbol);
+        }
+    }
+
+    /// <summary>
+    /// Binds an operand that is evaluated only in some cases; the caller passes the references it took to
+    /// <see cref="CheckDeferredCaptures"/> when the operand is evaluated after all, and drops them otherwise (LANG-970).
+    /// </summary>
+    private (TypeSymbol Type, BoundExpression? Argument) BindUnevaluated(ExpressionSyntax syntax, out List<(Symbol Symbol, SyntaxNode At)> references)
+    {
+        var outer = _deferredCaptures;
+        _deferredCaptures = references = [];
+        try
+        {
+            return BindTypeOrValue(syntax);
+        }
+        finally
+        {
+            _deferredCaptures = outer;
+        }
+    }
+
+    /// <summary>The operand bound by <see cref="BindUnevaluated"/> is evaluated: its references are captures (LANG-970).</summary>
+    private void CheckDeferredCaptures(List<(Symbol Symbol, SyntaxNode At)> references)
+    {
+        foreach (var (symbol, at) in references)
+        {
+            CheckCapture(symbol, at);
         }
     }
 

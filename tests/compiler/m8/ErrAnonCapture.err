@@ -1,0 +1,12 @@
+ErrAnonCapture.pas(25,24): error E2720: Parameter 'X' cannot be captured by an anonymous method
+ErrAnonCapture.pas(35,24): error E2720: Parameter 'X' cannot be captured by an anonymous method
+ErrAnonCapture.pas(44,32): error E2720: Parameter 'A' cannot be captured by an anonymous method
+ErrAnonCapture.pas(53,39): error E2720: Parameter 'A' cannot be captured by an anonymous method
+ErrAnonCapture.pas(62,33): error E2720: Parameter 'X' cannot be captured by an anonymous method
+ErrAnonCapture.pas(71,24): error E2720: Parameter 'X' cannot be captured by an anonymous method
+ErrAnonCapture.pas(84,28): error E2720: Parameter 'X' cannot be captured by an anonymous method
+ErrAnonCapture.pas(95,24): error E2720: Parameter 'X' cannot be captured by an anonymous method
+ErrAnonCapture.pas(96,24): error E2720: Parameter 'X' cannot be captured by an anonymous method
+ErrAnonCapture.pas(106,32): error E2720: Parameter 'Self' cannot be captured by an anonymous method
+ErrAnonCapture.pas(115,32): error E2720: Parameter 'Self' cannot be captured by an anonymous method
+ErrAnonCapture.pas(129,8): error E2130: Local procedure/function 'Inner' cannot be assigned to a procedural variable

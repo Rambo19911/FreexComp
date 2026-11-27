@@ -1368,7 +1368,7 @@ internal sealed partial class ExpressionBinder
         {
             // the operand is never evaluated (LANG-903), so it captures nothing (lead decision C-029)
             var captured = CapturedVariables.Count;
-            var (type, argument) = BindTypeOrValue(syntax);
+            var (type, argument) = BindUnevaluated(syntax, out var references);
             var operandCaptures = CapturedVariables.GetRange(captured, CapturedVariables.Count - captured);
             CapturedVariables.RemoveRange(captured, CapturedVariables.Count - captured);
             if (type.TypeKind == TypeKind.Error)
@@ -1382,6 +1382,7 @@ internal sealed partial class ExpressionBinder
                 // Length/High of a string value: its length at run time (ABI-023, C-060; byte strings in bytes, C-063); the
                 // operand is evaluated
                 CapturedVariables.AddRange(operandCaptures.Where(v => !CapturedVariables.Contains(v)));
+                CheckDeferredCaptures(references);                                 // LANG-970 (C-413): only now a reference
                 return new BoundIntrinsicCallExpression(invocation, intrinsic, [argument!], _types.Integer, constantValue: null);
             }
 
@@ -1918,7 +1919,7 @@ internal sealed partial class ExpressionBinder
     private BoundExpression BindTypeInfo(InvocationExpressionSyntax invocation, IntrinsicSymbol intrinsic, ExpressionSyntax syntax)
     {
         var captured = CapturedVariables.Count;
-        var (type, argument) = BindTypeOrValue(syntax);
+        var (type, argument) = BindUnevaluated(syntax, out _);
         CapturedVariables.RemoveRange(captured, CapturedVariables.Count - captured);
         if (type.TypeKind == TypeKind.Error || argument is { HasErrors: true })
         {
@@ -1941,7 +1942,7 @@ internal sealed partial class ExpressionBinder
     private BoundExpression BindDefault(InvocationExpressionSyntax invocation, ExpressionSyntax syntax)
     {
         var captured = CapturedVariables.Count;
-        var (type, argument) = BindTypeOrValue(syntax);
+        var (type, argument) = BindUnevaluated(syntax, out _);
         CapturedVariables.RemoveRange(captured, CapturedVariables.Count - captured);
         if (type.TypeKind == TypeKind.Error || argument is { HasErrors: true })
         {

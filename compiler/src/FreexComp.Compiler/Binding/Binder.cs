@@ -316,9 +316,12 @@ internal static class Binder
         routines.Clear();
         routines.AddRange(resolved);
 
+        // LANG-970 (C-413): one finding reported from several bodies stays once, at its first place in source order
+        var once = new HashSet<object>();
         var all = diagnostics.ToImmutable().Concat(routines.SelectMany(r => r.Diagnostics))
             .OrderBy(d => d.Location.Path, StringComparer.OrdinalIgnoreCase)
-            .ThenBy(d => d.Location.Span.Start);
+            .ThenBy(d => d.Location.Span.Start)
+            .Where(d => d.OnceKey is null || once.Add(d.OnceKey));
         DocCommentText.Fill(tree, declarations.Unit);                       // C-243: Symbol.Documentation (LANG-142)
         var systemUnit = system
             ?? (declarations.Unit is { IsProgram: false } own && string.Equals(own.Name, "System", StringComparison.OrdinalIgnoreCase) ? own : null);

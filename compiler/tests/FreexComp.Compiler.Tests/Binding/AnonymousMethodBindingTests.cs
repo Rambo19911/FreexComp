@@ -231,4 +231,88 @@ public sealed class AnonymousMethodBindingTests
 
         Assert.Empty(Codes(result));
     }
+
+    /// <summary>The declarations every capture case starts with (C-413).</summary>
+    private const string CapturePrefix =
+        "program P; type TProc = reference to procedure; procedure Use(I: Integer); begin end; procedure UseP(P: Pointer); begin end; ";
+
+    /// <summary>
+    /// LANG-970 (C-413): what an anonymous method cannot capture — E2720 with the name, once per variable and outermost
+    /// anonymous-method expression, at the first evaluated reference (each <c>^</c> marks an expected position). Rows 1–10 are the
+    /// rows of the golden <c>m8/ErrAnonCapture</c>; the others are the remaining paths of the rule.
+    /// </summary>
+    [Theory]
+    [Trait("Phase", "8")]
+    [Trait("Req", "LANG-970")]
+    // rows 1–5: var, out, open-array (value and const) and untyped parameters
+    [InlineData("procedure P1(var X: Integer); var F: TProc; begin F := procedure begin ^X := 1 end end;", "X")]
+    [InlineData("procedure P2(out X: Integer); var F: TProc; begin X := 0; F := procedure begin ^X := 2 end end;", "X")]
+    [InlineData("procedure P3(A: array of Integer); var F: TProc; begin F := procedure begin Use(^A[0]) end end;", "A")]
+    [InlineData("procedure P4(const A: array of string); var F: TProc; begin F := procedure begin Use(Length(^A)) end end;", "A")]
+    [InlineData("procedure P5(const X); var F: TProc; begin F := procedure begin UseP(@^X) end end;", "X")]
+    // row 6: named twice in one anonymous method
+    [InlineData("procedure P6(var X: Integer); var F: TProc; begin F := procedure begin ^X := X + 1 end end;", "X")]
+    // row 7: named only by an anonymous method nested in the outer one
+    [InlineData("procedure P7(var X: Integer); var F: TProc; begin F := procedure var G: TProc; begin G := procedure begin ^X := 7 end end end;", "X")]
+    // row 8: two anonymous-method expressions
+    [InlineData("procedure P8(var X: Integer); var F, G: TProc; begin F := procedure begin ^X := 8 end; G := procedure begin ^X := 9 end end;", "X")]
+    // rows 9, 10: Self of a record method, implied by a field and written
+    [InlineData("type TRec = record Value: Integer; procedure M; end; procedure TRec.M; var F: TProc; begin F := procedure begin Use(^Value) end end;", "Self")]
+    [InlineData("type TRec = record Value: Integer; procedure N; end; procedure TRec.N; var F: TProc; begin F := procedure begin Use(^Self.Value) end end;", "Self")]
+    // Self implied by a property and by an instance method, then written: one variable, one diagnostic
+    [InlineData("type TRec = record Value: Integer; function Get: Integer; property V: Integer read Value; procedure M; end; function TRec.Get: Integer; begin Result := Value end; "
+        + "procedure TRec.M; var F: TProc; begin F := procedure begin Use(^V); Use(Get); Use(Self.Value) end end;", "Self")]
+    // Self of a helper for a type that is not a class
+    [InlineData("type TH = record helper for Integer procedure M; end; procedure TH.M; var F: TProc; begin F := procedure begin Use(^Self) end end;", "Self")]
+    // through a nested routine declared inside the anonymous method, and again in the anonymous method itself
+    [InlineData("procedure P(var X: Integer); var F: TProc; begin F := procedure procedure Inner; begin ^X := 1; X := 2 end; begin Inner; X := 3 end end;", "X")]
+    // an anonymous method inside a nested routine names the var parameter of the routine enclosing it (C-230 path)
+    [InlineData("procedure P(var X: Integer); var F: TProc; procedure Inner; begin F := procedure begin ^X := 1 end end; begin Inner end;", "X")]
+    // an operand that is not evaluated captures nothing, the evaluated reference after it does
+    [InlineData("procedure P(var X: Integer); var F: TProc; begin F := procedure begin Use(SizeOf(X)); Use(High(X)); ^X := 1 end end;", "X")]
+    // High of an open array is read at run time, Low is a constant
+    [InlineData("procedure P(const A: array of Integer); var F: TProc; begin F := procedure begin Use(Low(A)); Use(High(^A)) end end;", "A")]
+    // two variables in one anonymous method: one diagnostic each
+    [InlineData("procedure P(var X: Integer; out Y: Integer); var F: TProc; begin Y := 0; F := procedure begin ^X := 1; ^Y := X; X := Y end end;", "X,Y")]
+    public void Capture_Rejected(string declarations, string names)
+    {
+        var marked = CapturePrefix + declarations + " begin end.";
+        var expected = new List<string>();
+        var name = names.Split(',');
+        for (var at = marked.IndexOf('^'); at >= 0; at = marked.IndexOf('^'))
+        {
+            marked = marked.Remove(at, 1);
+            expected.Add($"E2720(1,{at + 1}): Parameter '{name[Math.Min(expected.Count, name.Length - 1)]}' cannot be captured by an anonymous method");
+        }
+
+        Assert.Equal(expected, Format(BindWithClosures(marked).Diagnostics));
+    }
+
+    /// <summary>
+    /// LANG-970 (C-413): what can be captured — no diagnostic, and the frame of the owner <c>Q</c> gets exactly the fields
+    /// <paramref name="fields"/> (the copies of value and <c>const</c> parameters, <c>Self</c> of a class). An operand that is never
+    /// evaluated and a class var of a record need no field.
+    /// </summary>
+    [Theory]
+    [Trait("Phase", "8")]
+    [Trait("Req", "LANG-970")]
+    [InlineData("procedure Q(V: Integer); var F: TProc; begin F := procedure begin Use(V) end end;", "V")]
+    [InlineData("procedure Q(const S: string); var F: TProc; begin F := procedure begin Use(Length(S)) end end;", "S")]
+    [InlineData("type TRec = record Value: Integer; end; procedure Q(const R: TRec); var F: TProc; begin F := procedure begin Use(R.Value) end end;", "R")]
+    [InlineData("procedure Q(var X: Integer); var F: TProc; begin F := procedure begin Use(SizeOf(X)) end end;", "")]
+    [InlineData("procedure Q(var X: Integer; const A: array of Integer); var F: TProc; begin F := procedure begin Use(High(X)); Use(Low(X)); Use(Low(A)) end end;", "")]
+    [InlineData("type TObj = class FValue: Integer; procedure Q; end; procedure TObj.Q; var F: TProc; begin F := procedure begin FValue := FValue + 1; Use(Self.FValue) end end;", "Self")]
+    [InlineData("type TRec = record class var Count: Integer; procedure Q; end; procedure TRec.Q; var F: TProc; begin F := procedure begin Count := Count + 1 end end;", "")]
+    // a record constructor's Self is the constructed result (LANG-730): captured as Result is
+    [InlineData("type TRec = record Value: Integer; constructor Q(V: Integer); end; constructor TRec.Q(V: Integer); var F: TProc; begin F := procedure begin Value := V end end;", "Result,V")]
+    // a var parameter of a nested routine declared inside the anonymous method belongs to no enclosing body
+    [InlineData("procedure Q; var F: TProc; begin F := procedure var Z: Integer; procedure Inner(var Y: Integer); begin Y := 1 end; begin Inner(Z) end end;", "")]
+    public void Capture_Allowed(string declarations, string fields)
+    {
+        var result = BindWithClosures(CapturePrefix + declarations + " begin end.");
+
+        Assert.Empty(Format(result.Diagnostics));
+        var closure = Assert.IsType<ClosureInfo>(result.Routines.Single(r => r.Routine.Name == "Q").Routine.Closure);
+        Assert.Equal(fields, string.Join(",", closure.Fields.Keys.Select(k => k.Name).Order(StringComparer.Ordinal)));
+    }
 }

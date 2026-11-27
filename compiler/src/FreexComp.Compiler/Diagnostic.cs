@@ -20,6 +20,12 @@ public sealed record Diagnostic(
     /// <summary>Template arguments (for quick fixes).</summary>
     public ImmutableArray<object> Arguments { get; init; } = [];
 
+    /// <summary>
+    /// Diagnostics with equal keys are one finding seen from several bodies (LANG-970: a variable an anonymous method cannot
+    /// capture): a unit keeps the first of them in source order. Null = always kept.
+    /// </summary>
+    internal object? OnceKey { get; init; }
+
     /// <summary>Builds a diagnostic from the catalogue entry: default severity, template filled with <paramref name="args"/>.</summary>
     public static Diagnostic Create(string code, Location location, params object[] args)
     {

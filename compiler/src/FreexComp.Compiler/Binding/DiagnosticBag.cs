@@ -10,6 +10,7 @@ internal sealed class DiagnosticBag
     private readonly List<Diagnostic> _diagnostics = [];
     private readonly HashSet<string> _undeclared = new(IdentifierComparer.Instance);
     private readonly HashSet<(string Path, int Start, string Name)> _hinted = [];
+    private readonly HashSet<object> _uncapturable = [];
 
     public int Count => _diagnostics.Count;
 
@@ -87,6 +88,21 @@ internal sealed class DiagnosticBag
         if (_undeclared.Add(name))
         {
             Report(node, "E2003", name);
+        }
+    }
+
+    /// <summary>
+    /// LANG-970 (C-413): E2720 for <paramref name="variable"/> named at <paramref name="node"/> — once per variable and outermost
+    /// anonymous-method expression (<paramref name="expression"/>: its method, placed at its keyword), so at the first reference
+    /// bound here. A routine nested in the anonymous method is bound with a bag of its own: the key lets the unit drop the later
+    /// one (<see cref="Diagnostic.OnceKey"/>).
+    /// </summary>
+    public void ReportUncapturable(SyntaxNode node, Symbols.Symbol expression, Symbols.Symbol variable)
+    {
+        object key = (expression.Locations[0], variable.Name);
+        if (_uncapturable.Add(key))
+        {
+            _diagnostics.Add(Diagnostic.Create("E2720", LocationOf(node), variable.Name) with { OnceKey = key });
         }
     }
 
