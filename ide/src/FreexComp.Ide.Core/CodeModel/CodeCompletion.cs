@@ -100,8 +100,9 @@ public static class CompletionRules
     }
 
     /// <summary>
-    /// IDE-ED-083: the matching items, ranked by match kind, then by group (the language service's sort-text digit: locals and
-    /// parameters, class members, this unit, used units, the System unit, keywords), then by label ignoring case.
+    /// IDE-ED-083: the matching items, ranked by match kind, then items of the expected type (sort-text prefix <c>!</c>,
+    /// CMP-1426) before the others, then by group (the language service's sort-text digit: locals and parameters, class
+    /// members, this unit, used units, the System unit, keywords), then by label ignoring case.
     /// </summary>
     public static IReadOnlyList<CompletionItem> FilterAndRank(IEnumerable<CompletionItem> items, string typed)
     {
@@ -110,15 +111,20 @@ public static class CompletionRules
             .Select(item => (Item: item, Match: Match(typed, item.Label)))
             .Where(x => x.Match != CompletionMatch.None)
             .OrderBy(x => x.Match)
+            .ThenBy(x => x.Item.SortText.StartsWith('!') ? 0 : 1)
             .ThenBy(x => Group(x.Item))
             .ThenBy(x => x.Item.Label, StringComparer.OrdinalIgnoreCase)
             .Select(x => x.Item)];
     }
 
-    /// <summary>The ranking group: the leading digit of the sort text; keywords last.</summary>
-    private static int Group(CompletionItem item) =>
-        item.Kind is CompletionItemKind.Keyword or CompletionItemKind.Directive ? 8
-            : item.SortText.Length > 0 && char.IsAsciiDigit(item.SortText[0]) ? item.SortText[0] - '0' : 7;
+    /// <summary>The ranking group: the leading digit of the sort text (after an expected-type <c>!</c>); keywords last.</summary>
+    private static int Group(CompletionItem item)
+    {
+        if (item.Kind is CompletionItemKind.Keyword or CompletionItemKind.Directive)
+            return 8;
+        var sort = item.SortText.AsSpan().TrimStart('!');
+        return sort.Length > 0 && char.IsAsciiDigit(sort[0]) ? sort[0] - '0' : 7;
+    }
 
     /// <summary>
     /// IDE-ED-080 (b)–(d): what typing <paramref name="typed"/> (now just left of <paramref name="caret"/> in

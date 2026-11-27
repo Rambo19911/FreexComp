@@ -210,6 +210,10 @@ public sealed class CompletionTests
              Item("string", "9", CompletionItemKind.Keyword), Item("Size", "0size")], "St");
         Assert.Equal(["StringList", "Str", "strong", "string"], ranked.Select(i => i.Label));
         Assert.Equal(["SomeLocal", "Size"], CompletionRules.FilterAndRank([Item("Size", "3size"), Item("SomeLocal", "0somelocal")], "s").Select(i => i.Label));
+        // An expected-type item ('!' before its group digit, CMP-1426) ranks first within its match kind, keeping its group.
+        Assert.Equal(["Size", "Sum", "SomeLocal", "Str", "start"], CompletionRules.FilterAndRank(
+            [Item("SomeLocal", "0somelocal"), Item("Size", "!4size"), Item("Str", "4str"), Item("Sum", "!4sum"), Item("start", "!0start")], "S")
+            .Select(i => i.Label));
 
         var (bed, doc) = await StartAsync();
         var session = doc.Completion!;
@@ -252,6 +256,11 @@ public sealed class CompletionTests
         // A commit character commits a prefix match, then is inserted.
         Type(doc, " := Str");
         await bed.Services.Commands.ExecuteAsync(CompletionController.CommandId);
+        // CMP-1426 seen from the IDE: the items of the target's type (Integer, SortText prefix '!') rank before the other
+        // exact-case prefix matches, e.g. the System routine Str; the best of them is pre-selected.
+        Assert.Equal(["StrCount", "StringList", "StringRefCount"], session.Items.Take(3).Select(i => i.Label));
+        Assert.All(session.Items.Take(3), i => Assert.StartsWith("!", i.SortText, StringComparison.Ordinal));
+        Assert.Equal("StrCount", session.SelectedItem!.Label);
         Type(doc, ";");
         Assert.False(session.IsOpen);
         Assert.Contains("  StringList := StrCount;", doc.Buffer.Text, StringComparison.Ordinal);
