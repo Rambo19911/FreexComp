@@ -36,6 +36,26 @@ internal sealed class SessionRecorder
             _trace.Add(entry);
     }
 
+    /// <summary>Every traced protocol message so far, in order.</summary>
+    public IReadOnlyList<DapTraceEntry> TraceSoFar
+    {
+        get
+        {
+            lock (_gate)
+                return [.. _trace];
+        }
+    }
+
+    /// <summary>All standard output of the debuggee so far, exactly as it was delivered.</summary>
+    public string RawStdoutSoFar
+    {
+        get
+        {
+            lock (_gate)
+                return _stdout.ToString();
+        }
+    }
+
     public void Attach(IDebugSession session)
     {
         session.StateChanged += (_, e) => Add($"StateChanged({e.OldState}→{e.NewState})");

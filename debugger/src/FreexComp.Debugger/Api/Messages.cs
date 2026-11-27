@@ -28,6 +28,7 @@ internal static class Messages
     public const string SessionEnded = "The debug session has ended.";
     public const string MissingPythonRuntime = "The debugger needs its bundled Python runtime, which was not found next to the toolchain.";
     public const string InternalErrorPrefix = "Internal debugger error: ";
+    public const string OutputRelayFailed = "The files for the program's output could not be created: ";
 
     public const string NotBoundYet = "Not bound yet";
     public const string DuplicateBreakpoint = "Duplicate breakpoint";

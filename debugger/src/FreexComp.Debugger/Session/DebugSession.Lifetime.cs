@@ -166,6 +166,8 @@ internal sealed partial class DebugSession
     /// <summary>Session loop only: final transition, then <c>StateChanged</c> immediately before <c>Terminated</c> (DBG-421).</summary>
     private void Terminate(TerminationCause cause, string? message)
     {
+        // Everything the debuggee wrote is reported before the end (DBG-058); the adapter and the debuggee are gone.
+        EndOutputRelay();
         LeaveStop();
         SetState(DebugState.Terminated);
         _events.Raise(() => Terminated, new TerminatedEventArgs(cause, cause == TerminationCause.Exited ? ExitCode : null, message));

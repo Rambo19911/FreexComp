@@ -83,6 +83,18 @@ public sealed class DapJsonTests
     }
 
     [Fact]
+    [Trait("Req", "DBG-058")]
+    public void Serialize_Launch_WithStdio_KeepsTheNullOfStdin()
+    {
+        var json = Encoding.UTF8.GetString(DapJson.SerializeRequest(2, "launch",
+            new LaunchArguments { Program = @"C:\p.exe", Args = [], Cwd = @"C:\", StopOnEntry = false, Stdio = [null, @"C:\t\out.txt", @"C:\t\err.txt"] }));
+
+        Assert.EndsWith("""
+            "sourceMap":[],"stdio":[null,"C:\\t\\out.txt","C:\\t\\err.txt"]}}
+            """, json);
+    }
+
+    [Fact]
     [Trait("Req", "DBG-060")]
     public void Serialize_SetBreakpoints() => AssertRequest("""
         {"seq":3,"type":"request","command":"setBreakpoints","arguments":{

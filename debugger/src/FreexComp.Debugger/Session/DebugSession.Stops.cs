@@ -88,6 +88,8 @@ internal sealed partial class DebugSession
         _values = null;   // handles are numbered anew in the new epoch
         _epoch = stop.Epoch;
         _currentStop = stop;
+        // What the program wrote before it stopped is in the files: it is reported before the stop (DBG-058).
+        _outputRelay?.Pump(RelayRead.ToEnd, RaiseDebuggeeOutput);
         SetState(DebugState.Stopped);
         _events.Raise(() => Stopped, stop);
         CompleteLaunch();

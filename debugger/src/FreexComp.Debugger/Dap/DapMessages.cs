@@ -44,6 +44,8 @@ internal sealed record LaunchArguments
     public string CommandEscapePrefix { get; } = "`";
     public IReadOnlyList<string> InitCommands { get; } = ["settings set target.process.thread.step-avoid-regexp \"\""];
     public IReadOnlyList<IReadOnlyList<string>> SourceMap { get; } = [];
+    /// <summary>The debuggee's stdin, stdout, stderr (null: not redirected); omitted when the adapter relays the output (DBG-058).</summary>
+    public IReadOnlyList<string?>? Stdio { get; init; }
 }
 
 internal sealed record DapSource

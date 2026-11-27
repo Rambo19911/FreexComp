@@ -893,10 +893,10 @@ public sealed class ScriptedSessionTests(IntegrationFixture fixture)
     /// <summary>
     /// A <c>for var</c> loop whose variable an anonymous method captures (CapturedForVar.pas): every iteration has its
     /// own block frame and the variable is a field of it, described through the hidden slot of the frame (CMP-1412,
-    /// sidecar §5). A stop in the body shows each iteration's value in Locals, watch and hover. While the loop
-    /// statement evaluates its bound - after it has set the slot to nil, before the first iteration has made a frame -
-    /// the variable is in scope in the loop's frame and cannot be read (the adapter's own text, DBG-150); before the
-    /// loop it is not declared.
+    /// sidecar §5). A stop in the body shows each iteration's value in Locals, watch and hover. On the loop line and
+    /// while the loop statement evaluates its bound - the slot is nil from the routine's entry (C-399), no iteration
+    /// has made a frame yet - the variable is in scope in the loop's frame and cannot be read (the adapter's own text,
+    /// DBG-150); before the loop it is not declared.
     /// </summary>
     [Fact]
     [Trait("Phase", "8")]
@@ -910,7 +910,7 @@ public sealed class ScriptedSessionTests(IntegrationFixture fixture)
         var recorder = new SessionRecorder(nameof(Phase8_CapturedForVar_ShowsIterationValue));
         await recorder.RunAsync(fixture, program, async session =>
         {
-            int[] lines = [BeforeLine, BoundLine, BodyLine];
+            int[] lines = [BeforeLine, LoopLine, BoundLine, BodyLine];
             await session.LaunchAsync(
                 new LaunchRequest
                 {
@@ -959,14 +959,24 @@ public sealed class ScriptedSessionTests(IntegrationFixture fixture)
             Assert.Equal(["ExpressionEvaluation: Undeclared identifier 'I'"], evaluated);
             await session.ContinueAsync(Ct);
 
-            // In the bound of the loop, called from the loop statement before the first iteration: in Run's frame the
-            // variable is in scope but its frame does not exist yet - the slot is nil and the field (offset 40) cannot
-            // be read, so its address cannot be obtained either: Locals has the adapter's own text (DBG-150), watch and
-            // hover say that the variable is not available. In the top frame (Count) it is not declared.
+            // On the loop line, before the bound is evaluated: the variable is in scope but no iteration has made its
+            // frame - the slot is nil (from the routine's entry, C-399) and the field (offset 40) cannot be read, so its
+            // address cannot be obtained either: Locals has the adapter's own text (DBG-150), watch and hover say that
+            // the variable is not available.
+            const string Unreadable = "I = <error: read memory from 0x28 failed (0 of 4 bytes read)> : int (Raw)";
             stop = await recorder.WaitForStopAsync();
-            AssertStop(session, stop, StopReason.Breakpoint, p, BoundLine, [2]);
+            AssertStop(session, stop, StopReason.Breakpoint, p, LoopLine, [2]);
+            (locals, evaluated) = await InspectAsync(stop, 0, LoopLine);
+            Assert.Equal(["Total = 0 : Integer (Integer)", Unreadable], locals);
+            Assert.Equal(["ExpressionEvaluation: 'I' is not available"], evaluated);
+            await session.ContinueAsync(Ct);
+
+            // In the bound of the loop, called from the loop statement before the first iteration: in Run's frame the
+            // same; in the top frame (Count) the variable is not declared.
+            stop = await recorder.WaitForStopAsync();
+            AssertStop(session, stop, StopReason.Breakpoint, p, BoundLine, [3]);
             (locals, evaluated) = await InspectAsync(stop, 1, LoopLine);
-            Assert.Equal(["Total = 0 : Integer (Integer)", "I = <error: read memory from 0x28 failed (0 of 4 bytes read)> : int (Raw)"], locals);
+            Assert.Equal(["Total = 0 : Integer (Integer)", Unreadable], locals);
             Assert.Equal(["ExpressionEvaluation: 'I' is not available", "ExpressionEvaluation: Undeclared identifier 'I'"], evaluated);
             await session.ContinueAsync(Ct);
 
@@ -974,7 +984,7 @@ public sealed class ScriptedSessionTests(IntegrationFixture fixture)
             foreach (var i in (int[])[1, 2])
             {
                 stop = await recorder.WaitForStopAsync();
-                AssertStop(session, stop, StopReason.Breakpoint, p, BodyLine, [3]);
+                AssertStop(session, stop, StopReason.Breakpoint, p, BodyLine, [4]);
                 (locals, evaluated) = await InspectAsync(stop, 0, BodyLine);
                 Assert.Equal([$"Total = {(i == 1 ? 0 : 1)} : Integer (Integer)", $"I = {i} : Integer (Integer)"], locals);
                 Assert.Equal([$"{i} : Integer (Integer)"], evaluated);
@@ -1133,7 +1143,8 @@ public sealed class ScriptedSessionTests(IntegrationFixture fixture)
             var terminated = await recorder.WaitForTerminatedAsync();
             Assert.Equal(TerminationCause.Exited, terminated.Cause);
             Assert.Equal(0, terminated.ExitCode);
-            Assert.StartsWith("10 7 1048576 a\n", recorder.StdoutSoFar, StringComparison.Ordinal);
+            // All 62 bytes of the program's output, as it wrote them (the session's own relay, DBG-058).
+            Assert.Equal("10 7 1048576 a\r\na\0bx\r\nyconstshort" + UText + "GrüßeTRUE\r\n", recorder.RawStdoutSoFar);
         });
     }
 

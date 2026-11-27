@@ -14,6 +14,9 @@
 // setFunctionBreakpoints (every breakpoint verified, ids from 1001), readMemory, writeMemory.
 // Scenario extension: "variables": { "Name": "0x1000" } answers an "evaluate" of "&Name" that no step claims the way the
 // real adapter does (result = the address as "0x" and 16 lower-case digits; an unknown name fails).
+// "thenEvents" extension: an item { "write": "stdout" | "stderr", "text": "..." } or { "write": …, "hex": "E282" } is
+// no event: the adapter appends the bytes (text as UTF-8) to the file the launch request's "stdio" named for that
+// stream, as the debuggee would, and closes it again before the next item (the session's own output relay, DBG-058).
 
 using System.Diagnostics;
 using System.Globalization;
@@ -40,6 +43,7 @@ internal static class Program
     private static string _launchResponseAfter = "configurationDone";
     private static bool _failOnUnexpected = true;
     private static byte[]? _deferredLaunchResponse;
+    private static string?[] _stdio = [];
     private static int _seq;
 
     private sealed class Step(JsonElement json)
@@ -164,6 +168,9 @@ internal static class Program
         var requestSeq = request.GetProperty("seq").GetInt32();
         var hasArguments = request.TryGetProperty("arguments", out var arguments);
 
+        if (command == "launch" && hasArguments && arguments.TryGetProperty("stdio", out var stdio) && stdio.ValueKind == JsonValueKind.Array)
+            _stdio = [.. stdio.EnumerateArray().Select(e => e.ValueKind == JsonValueKind.String ? e.GetString() : null)];
+
         var step = Steps.FirstOrDefault(s => !s.Consumed && s.On == command);
         byte[]? response;
         if (step is not null)
@@ -226,7 +233,12 @@ internal static class Program
         if (step is not null && step.Json.TryGetProperty("thenEvents", out var events))
         {
             foreach (var item in events.EnumerateArray())
-                Send(Event(item.GetProperty("event").GetString()!, item.TryGetProperty("body", out var body) ? body : null));
+            {
+                if (item.TryGetProperty("write", out var stream))
+                    WriteStdio(stream.GetString()!, item);
+                else
+                    Send(Event(item.GetProperty("event").GetString()!, item.TryGetProperty("body", out var body) ? body : null));
+            }
         }
 
         if (step is not null && step.Json.TryGetProperty("thenRaw", out var raw))
@@ -254,6 +266,23 @@ internal static class Program
             Exit(exitCode.GetInt32());
         if (step is null && command == "disconnect")
             Exit(0);
+    }
+
+    /// <summary>Appends to the debuggee's stdout or stderr file of the launch request (scenario error without one).</summary>
+    private static void WriteStdio(string stream, JsonElement item)
+    {
+        var index = stream switch { "stdout" => 1, "stderr" => 2, _ => -1 };
+        var path = index >= 0 && index < _stdio.Length ? _stdio[index] : null;
+        if (path is null)
+        {
+            Console.Error.WriteLine($"SCENARIO-ERROR: no {stream} file in the launch request's stdio");
+            Exit(ExitBadScenario);
+            return;
+        }
+
+        var bytes = item.TryGetProperty("hex", out var hex) ? Convert.FromHexString(hex.GetString()!) : Encoding.UTF8.GetBytes(item.GetProperty("text").GetString()!);
+        using var file = new FileStream(path, FileMode.Append, FileAccess.Write, FileShare.ReadWrite | FileShare.Delete);
+        file.Write(bytes);
     }
 
     private static byte[]? Unexpected(int requestSeq, string command)

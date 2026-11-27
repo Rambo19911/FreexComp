@@ -9,6 +9,10 @@ internal sealed partial class DebugSession
     // Session loop only: module id (number or string, as text) -> file name of the module (DAP usage §9).
     private readonly Dictionary<string, string> _modules = new(StringComparer.Ordinal);
 
+    // Session loop only: the session's own relay of the debuggee's output (DBG-058) and the timer of its next read.
+    private OutputRelay? _outputRelay;
+    private ITimer? _outputRelayTimer;
+
     private async Task OnAdapterEventAsync(string name, JsonElement body)
     {
         if (State is DebugState.Idle or DebugState.Terminating or DebugState.Terminated)
@@ -103,6 +107,57 @@ internal sealed partial class DebugSession
         if (category is { } value)
             _events.Raise(() => Output, new OutputEventArgs(value, body.Output));
     }
+
+    /// <summary>
+    /// Mode <see cref="OutputRelayMode.Files"/>: creates the two files the debuggee writes to and starts reading them
+    /// (DBG-058). A directory that cannot be created fails the launch.
+    /// </summary>
+    private void StartOutputRelay()
+    {
+        // Mode Events: nothing to do, the adapter's output events are all there is (§10).
+        if (OutputRelay.Mode == OutputRelayMode.Files)
+        {
+            try
+            {
+                _outputRelay = OutputRelay.Create();
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                throw new DebuggerException(DebugErrorCode.LaunchFailed, Messages.OutputRelayFailed + e.Message, null, e);
+            }
+
+            ArmOutputRelay();
+        }
+    }
+
+    private void ArmOutputRelay() =>
+        _outputRelayTimer = _time.CreateTimer(_ => Post(PollOutputRelay), null, OutputRelay.PollInterval, Timeout.InfiniteTimeSpan);
+
+    /// <summary>Session loop: what the debuggee wrote since the last read, as <c>Output</c> events; then the next read is due.</summary>
+    private Task PollOutputRelay()
+    {
+        if (_outputRelay is not { } relay)
+            return Task.CompletedTask;
+        _outputRelayTimer?.Dispose();
+        relay.Pump(RelayRead.Poll, RaiseDebuggeeOutput);
+        ArmOutputRelay();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Session loop: everything still unread is reported, then the files and their directory are removed.</summary>
+    private void EndOutputRelay()
+    {
+        if (_outputRelay is not { } relay)
+            return;
+        _outputRelay = null;
+        _outputRelayTimer?.Dispose();
+        _outputRelayTimer = null;
+        relay.Pump(RelayRead.Final, RaiseDebuggeeOutput);
+        relay.Dispose();
+    }
+
+    private void RaiseDebuggeeOutput(OutputCategory category, string text) =>
+        _events.Raise(() => Output, new OutputEventArgs(category, text));
 
     private void OnModuleEvent(ModuleEventBody body)
     {

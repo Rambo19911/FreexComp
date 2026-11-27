@@ -239,7 +239,7 @@ public sealed class SessionLaunchTests
         });
 
         Assert.Equal(
-            $$"""{"program":"{{Escape(SessionHarness.Program)}}","args":["--verbose","input file.txt"],"cwd":"C:\\work dir","env":{"MY_VAR":"1"},"stopOnEntry":false,"enableAutoVariableSummaries":false,"enableSyntheticChildDebugging":false,"displayExtendedBacktrace":false,"commandEscapePrefix":"`","initCommands":["settings set target.process.thread.step-avoid-regexp \"\""],"sourceMap":[]}""",
+            $$"""{"program":"{{Escape(SessionHarness.Program)}}","args":["--verbose","input file.txt"],"cwd":"C:\\work dir","env":{"MY_VAR":"1"},"stopOnEntry":false,"enableAutoVariableSummaries":false,"enableSyntheticChildDebugging":false,"displayExtendedBacktrace":false,"commandEscapePrefix":"`","initCommands":["settings set target.process.thread.step-avoid-regexp \"\""],"sourceMap":[],"stdio":{{Stdio(harness)}}}""",
             harness.SentArguments("launch"));
         await harness.Session.TerminateAsync(Ct).WaitAsync(Safety, Ct);
         harness.AssertScenarioComplete();
@@ -254,8 +254,15 @@ public sealed class SessionLaunchTests
         await harness.LaunchAsync();
 
         Assert.Equal(
-            $$"""{"program":"{{Escape(SessionHarness.Program)}}","args":[],"cwd":"{{Escape(Path.GetDirectoryName(SessionHarness.Program)!)}}","stopOnEntry":false,"enableAutoVariableSummaries":false,"enableSyntheticChildDebugging":false,"displayExtendedBacktrace":false,"commandEscapePrefix":"`","initCommands":["settings set target.process.thread.step-avoid-regexp \"\""],"sourceMap":[]}""",
+            $$"""{"program":"{{Escape(SessionHarness.Program)}}","args":[],"cwd":"{{Escape(Path.GetDirectoryName(SessionHarness.Program)!)}}","stopOnEntry":false,"enableAutoVariableSummaries":false,"enableSyntheticChildDebugging":false,"displayExtendedBacktrace":false,"commandEscapePrefix":"`","initCommands":["settings set target.process.thread.step-avoid-regexp \"\""],"sourceMap":[],"stdio":{{Stdio(harness)}}}""",
             harness.SentArguments("launch"));
+    }
+
+    /// <summary>The <c>stdio</c> value sent: stdin untouched, stdout and stderr to the session's own files (DBG-058).</summary>
+    private static string Stdio(SessionHarness harness)
+    {
+        var (_, stdout, stderr) = SessionOutputRelayTests.StdioOf(harness);
+        return $"[null,\"{Escape(stdout)}\",\"{Escape(stderr)}\"]";
     }
 
     private static string Escape(string path) => path.Replace(@"\", @"\\");

@@ -26,6 +26,25 @@ public sealed class RealAdapterTests(IntegrationFixture fixture)
             Assert.Equal(hitBreakpointIds.Order(), stop.HitBreakpointIds.Order());
     }
 
+    /// <summary>
+    /// The program's output came through the session's own files (DBG-058, mode Files): the launch request named them,
+    /// the adapter sent no stdout or stderr of the program, the text is the program's bytes, and the files' directory
+    /// is gone once the session has ended.
+    /// </summary>
+    private static void AssertOutputThroughOwnFiles(SessionRecorder recorder, string rawStdout)
+    {
+        var launch = recorder.TraceSoFar.Single(e => e.Direction == DapDirection.ToAdapter && e.Json.Contains("\"command\":\"launch\"", StringComparison.Ordinal));
+        var stdio = System.Text.Json.JsonDocument.Parse(launch.Json).RootElement.GetProperty("arguments").GetProperty("stdio");
+        Assert.Equal(System.Text.Json.JsonValueKind.Null, stdio[0].ValueKind);
+        var directory = Path.GetDirectoryName(stdio[1].GetString())!;
+        Assert.Equal(Path.Combine(directory, "err.txt"), stdio[2].GetString());
+        Assert.DoesNotContain(recorder.TraceSoFar, e => e.Direction == DapDirection.FromAdapter
+            && e.Json.Contains("\"event\":\"output\"", StringComparison.Ordinal)
+            && (e.Json.Contains("\"category\":\"stdout\"", StringComparison.Ordinal) || e.Json.Contains("\"category\":\"stderr\"", StringComparison.Ordinal)));
+        Assert.Equal(rawStdout, recorder.RawStdoutSoFar);
+        Assert.False(Directory.Exists(directory), "The output directory was not removed: " + directory);
+    }
+
     private static LaunchRequest LaunchAtLine69(BuiltProgram program) => new()
     {
         Program = program.ExePath,
@@ -96,6 +115,7 @@ public sealed class RealAdapterTests(IntegrationFixture fixture)
             Assert.Null(session.CurrentStop);
             Assert.Equal("Dog Rex\n24\ndone\n", recorder.StdoutSoFar);
             Assert.Equal("", recorder.StderrSoFar);
+            AssertOutputThroughOwnFiles(recorder, "Dog Rex\r\n24\r\ndone\r\n");
             var late = await Assert.ThrowsAsync<DebuggerException>(() => session.ContinueAsync(Ct));
             Assert.Equal(DebugErrorCode.InvalidState, late.Code);
         });

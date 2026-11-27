@@ -137,6 +137,9 @@ internal sealed partial class DebugSession
                 _ => Post(() => FailLaunchAsync(new DebuggerException(DebugErrorCode.LaunchFailed, Messages.AdapterNotReady))),
                 null, InitializedTimeout, Timeout.InfiniteTimeSpan);
 
+            // The debuggee's output goes to files of the session's own (DBG-058), read from now on.
+            StartOutputRelay();
+
             // The response may arrive before or after the initialized event and before or after the configurationDone
             // response (DBG-053). It is handed to the loop from the reader task so that it keeps its place among the
             // events. Its only time limit is the overall launch limit.
@@ -147,6 +150,7 @@ internal sealed partial class DebugSession
                 Cwd = request.WorkingDirectory ?? Path.GetDirectoryName(Path.GetFullPath(request.Program)) ?? "",
                 Env = request.Environment,
                 StopOnEntry = request.StopOnEntry || request.StopAtMainBody,
+                Stdio = _outputRelay?.StdioArgument,
             };
             _ = _client.RequestAsync("launch", arguments, Timeout.InfiniteTimeSpan, _abort.Token,
                 response =>
