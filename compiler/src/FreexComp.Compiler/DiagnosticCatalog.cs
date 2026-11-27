@@ -99,6 +99,7 @@ public static class DiagnosticCatalog
         new("E2041", null, DiagnosticSeverity.Error, "Variable typecast not allowed for managed types or types of different size"),
         new("E2042", null, DiagnosticSeverity.Error, "Atomic operation needs a naturally aligned variable"),
         new("E2043", null, DiagnosticSeverity.Error, "Ambiguous overloaded call to '%s': the array constructor can be '%s' or '%s'; cast it to one of them"),
+        new("E2044", null, DiagnosticSeverity.Error, "Operator '+' needs dynamic arrays: '%s' is a static or open array; copy it into a dynamic array first"),
         new("E2050", null, DiagnosticSeverity.Error, "Constant expression expected"),
         new("E2051", null, DiagnosticSeverity.Error, "Constant expression overflow"),
         new("E2052", null, DiagnosticSeverity.Error, "Division by zero in constant expression"),

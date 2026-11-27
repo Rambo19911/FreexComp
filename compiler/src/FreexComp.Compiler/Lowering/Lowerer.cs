@@ -885,6 +885,8 @@ internal sealed partial class LoweringContext
                 return StringConversions.DataPointer(this, Lower(conversion.Operand), pointer);    // LANG-290: PChar(s)
             case BoundBinaryExpression { OperatorKind: BoundBinaryOperatorKind.Add, Type: StringTypeSymbol } concatenation:
                 return ManagedRewriter.Value(this, concatenation);                      // LANG-243 (CMP-324)
+            case BoundBinaryExpression { OperatorKind: BoundBinaryOperatorKind.Add, Type: DynamicArrayTypeSymbol } arrays:
+                return ManagedRewriter.Value(this, arrays);                             // LANG-276 / CMP-1417 (C-390): a new array in a temporary
             case BoundArrayConstructor constructor:
                 return ManagedRewriter.Value(this, constructor);                        // LANG-259: a new array in a temporary
             case BoundIndexExpression { IsStringElement: true } element:

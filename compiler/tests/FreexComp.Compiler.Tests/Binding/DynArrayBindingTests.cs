@@ -231,4 +231,74 @@ public sealed class DynArrayBindingTests
         Assert.Equal("(block (call V (array TStrs 'a':string 'bc':string)))", Body8(declarations, "V(['a', 'bc'])"));
         Assert.Equal(["E2013"], Diagnostics8(declarations, "V([1.5])").Select(d => d[..5]));      // no form fits: bound as a set, as before
     }
+
+    // ---- C-390 (F10-025): `+` on dynamic arrays (LANG-275, 276) ----
+
+    private const string ConcatDeclarations = "type TStrs = array of string; var s: TStrs; sa: array[0..1] of Integer; ";
+
+    /// <summary>
+    /// LANG-275 rules 1–4: identical element types join, the result has the left operand's type (the right one's after a constructor
+    /// or <c>nil</c>); a constructor or <c>nil</c> takes the other operand's type, also on the left; chains are left-associative;
+    /// <c>[…] + […]</c> joins two arrays in a dynamic-array context and stays a set union without one.
+    /// </summary>
+    [Theory]
+    [Trait("Phase", "8")]
+    [Trait("Req", "LANG-275")]
+    [Trait("Req", "LANG-276")]
+    [InlineData("a := a + t", "(block (:= a:TInts (Add:TInts a:TInts t:TArray<Integer>)))")]
+    [InlineData("t := t + a", "(block (:= t:TArray<Integer> (Add:TArray<Integer> t:TArray<Integer> a:TInts)))")]
+    [InlineData("a := a + [1, i]", "(block (:= a:TInts (Add:TInts a:TInts (array TInts 1:Integer i:Integer))))")]
+    [InlineData("a := [i] + a", "(block (:= a:TInts (Add:TInts (array TInts i:Integer) a:TInts)))")]
+    [InlineData("t := [i] + t", "(block (:= t:TArray<Integer> (Add:TArray<Integer> (array TArray<Integer> i:Integer) t:TArray<Integer>)))")]
+    [InlineData("a := nil + a", "(block (:= a:TInts (Add:TInts nil:TInts a:TInts)))")]
+    [InlineData("a := a + nil", "(block (:= a:TInts (Add:TInts a:TInts nil:TInts)))")]
+    [InlineData("a := a + []", "(block (:= a:TInts (Add:TInts a:TInts nil:TInts)))")]
+    [InlineData("a := a + t + [i]", "(block (:= a:TInts (Add:TInts (Add:TInts a:TInts t:TArray<Integer>) (array TInts i:Integer))))")]
+    [InlineData("a := (a + a) + [1]", "(block (:= a:TInts (Add:TInts (Add:TInts a:TInts a:TInts) (array TInts 1:Integer))))")]
+    [InlineData("a := [1] + [2]", "(block (:= a:TInts (Add:TInts (array TInts 1:Integer) (array TInts 2:Integer))))")]
+    [InlineData("a := [1] + [2] + [3]", "(block (:= a:TInts (Add:TInts (Add:TInts (array TInts 1:Integer) (array TInts 2:Integer)) (array TInts 3:Integer))))")]
+    [InlineData("st := [1] + [2]", "(block (:= st:TByteSet 6:TByteSet))")]
+    [InlineData("g := g + [[1], []]", "(block (:= g:TGrid (Add:TGrid g:TGrid (array TGrid (array TInts 1:Integer) nil:TInts))))")]
+    [InlineData("i := Length(a + [i])", "(block (:= i:Integer (Length:Integer (Add:TInts a:TInts (array TInts i:Integer)))))")]
+    [InlineData("s := s + ['x']", "(block (:= s:TStrs (Add:TStrs s:TStrs (array TStrs 'x':string))))")]
+    public void Concat_Typing(string statements, string expected) => Assert.Equal(expected, Body8(ConcatDeclarations, statements));
+
+    /// <summary>
+    /// LANG-275 rules 5, 6: different element types are E2011 with both type names; a static array, an open-array parameter or an
+    /// array of <c>const</c> beside a dynamic array is E2044 at that operand; other operand kinds and other operators stay E2011.
+    /// </summary>
+    [Theory]
+    [Trait("Phase", "8")]
+    [Trait("Req", "LANG-275")]
+    [InlineData("", "a := a + s", "E2011: Operator '+' not applicable to operand type(s) 'TInts' and 'TStrs'")]
+    [InlineData("", "a := a + sa", "E2044: Operator '+' needs dynamic arrays: 'array[0..1] of Integer' is a static or open array; copy it into a dynamic array first")]
+    [InlineData("", "a := sa + a", "E2044: Operator '+' needs dynamic arrays: 'array[0..1] of Integer' is a static or open array; copy it into a dynamic array first")]
+    [InlineData("procedure P(const O: array of Integer); var x: TInts; begin x := x + O end; ", "",
+        "E2044: Operator '+' needs dynamic arrays: 'array of Integer' is a static or open array; copy it into a dynamic array first")]
+    [InlineData("type TVarRec = record VType: Byte end; procedure P(const V: array of const); var x: TInts; begin x := V + x end; ", "",
+        "E2044: Operator '+' needs dynamic arrays: 'array of const' is a static or open array; copy it into a dynamic array first")]
+    [InlineData("", "a := a + 1", "E2011: Operator '+' not applicable to operand type(s) 'TInts' and 'Integer'")]
+    [InlineData("", "a := a - a", "E2011: Operator '-' not applicable to operand type(s) 'TInts' and 'TInts'")]
+    [InlineData("", "a := [1.5] + a", "E2010: Incompatible types: 'Double' and 'Integer'")]
+    public void Concat_Errors(string declarations, string statement, string expected) =>
+        Assert.Equal([expected], Diagnostics8(ConcatDeclarations + declarations, statement).Select(d => d[..5] + d[d.IndexOf(':')..]));
+
+    /// <summary>LANG-275 rule 6: E2044 is reported at the operand that is not a dynamic array.</summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "LANG-275")]
+    public void Concat_Errors_AtTheOperand()
+    {
+        var diagnostics = BindDiagnostics("""
+            program T;
+            type TInts = array of Integer; TVarRec = record VType: Byte end;
+            procedure P(const O: array of Integer; const V: array of const; var A: TInts);
+            begin
+              A := A + O;
+              A := V + A;
+            end;
+            begin end.
+            """);
+        Assert.Equal(["E2044(5,12)", "E2044(6,8)"], diagnostics.Select(d => d[..d.IndexOf(':')]));
+    }
 }

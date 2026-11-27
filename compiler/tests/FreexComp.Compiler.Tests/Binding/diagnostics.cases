@@ -280,6 +280,8 @@ var P: Pointer; begin P := Addr(Inc) end.
 type R = packed record B: Byte; I: Integer; end; var X: R; begin AtomicIncrement(X.I) end.
 === E2043 1,143
 type TS = set of Byte; TA = array of Integer; procedure Q(S: TS); overload; begin end; procedure Q(const A: TA); overload; begin end; begin Q([1, 2]) end.
+=== E2044 1,82
+type TA = array of Integer; var A: TA; S: array[0..1] of Integer; begin A := A + S end.
 === E2601 1,40
 type TA = class sealed end; TB = class(TA) end; begin end.
 === E2602 1,24

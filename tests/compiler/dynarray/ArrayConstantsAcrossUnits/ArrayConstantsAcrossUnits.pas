@@ -1,8 +1,9 @@
-// covers: LANG-274, CMP-1416
+// covers: LANG-274, CMP-1416, LANG-275
 program ArrayConstantsAcrossUnits;
 
-{ A program reads, copies and joins the typed dynamic-array constants of unit UPrimes (its interface part): the exported
-  pointer globals refer to the static blocks of the unit's module; a copy is writable and leaves the constant unchanged. }
+{ A program reads, copies and joins (by a loop and by +) the typed dynamic-array constants of unit UPrimes (its
+  interface part): the exported pointer globals refer to the static blocks of the unit's module; a copy is writable
+  and leaves the constant unchanged. }
 
 uses
   UPrimes;
@@ -46,6 +47,8 @@ begin
 
   Show('Joined', Joined(Primes, Steps[0]));
   Show('Joined', Joined(Empty, Steps[1]));
+  Show('Plus', UPrimes.Primes + Steps[0] + Empty);
+  Show('Primes', Primes);
   Show('Evens', Evens);
   Show('Evens', Evens);
 

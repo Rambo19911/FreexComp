@@ -85,10 +85,13 @@ internal sealed partial class ExpressionBinder
 
     /// <summary>
     /// <paramref name="syntax"/> in a context of type <paramref name="expected"/>: a set constructor takes that set type
-    /// (LANG-251); anything else binds as without context.
+    /// (LANG-251); a <c>+</c> in a dynamic-array context passes it to its constructor operands (LANG-275 rule 3); anything else
+    /// binds as without context.
     /// </summary>
     public BoundExpression BindExpression(ExpressionSyntax syntax, TypeSymbol? expected) =>
         InterfaceAsGuid(syntax, expected) is { } guid ? guid :                    // LANG-680 (C-299)
+        expected is DynamicArrayTypeSymbol arrayContext && Unparenthesized(syntax) is BinaryExpressionSyntax { OperatorToken.Kind: SyntaxKind.PlusToken } plus
+            ? BindBinary(plus, arrayContext) :                                    // LANG-275 rule 3 (C-390)
         Unparenthesized(syntax) is SetConstructorSyntax constructor
             ? expected switch
             {
@@ -2486,7 +2489,11 @@ internal sealed partial class ExpressionBinder
 
     // ------------------------------------------------------------------ binary operators (LANG-221…226, 301…305)
 
-    private BoundExpression BindBinary(BinaryExpressionSyntax binary)
+    /// <summary>
+    /// A binary operation; <paramref name="arrayContext"/> is the expected dynamic-array type of a <c>+</c> (LANG-275 rule 3): two
+    /// constructor operands are bound in it, and it passes on to the operands so that a chain <c>[1] + [2] + [3]</c> keeps it.
+    /// </summary>
+    private BoundExpression BindBinary(BinaryExpressionSyntax binary, DynamicArrayTypeSymbol? arrayContext = null)
     {
         var op = binary.OperatorToken;
         if (op.Kind is SyntaxKind.IsKeyword or SyntaxKind.AsKeyword)
@@ -2495,16 +2502,22 @@ internal sealed partial class ExpressionBinder
         }
 
         BoundExpression left, right;
-        // a set constructor takes the set type of the other operand (LANG-251); the element of 'in' gives no set context
+        // a set constructor takes the set type of the other operand (LANG-251), a dynamic-array constructor the other operand's array
+        // type (LANG-275 rule 2); the element of 'in' gives no set context
         if (Unparenthesized(binary.Right) is SetConstructorSyntax && Unparenthesized(binary.Left) is not SetConstructorSyntax && op.Kind != SyntaxKind.InKeyword)
         {
-            left = BindExpression(binary.Left);
+            left = BindExpression(binary.Left, arrayContext);
             right = BindExpression(binary.Right, left.Type);
         }
         else if (Unparenthesized(binary.Left) is SetConstructorSyntax && Unparenthesized(binary.Right) is not SetConstructorSyntax)
         {
-            right = BindExpression(binary.Right);
+            right = BindExpression(binary.Right, arrayContext);
             left = BindExpression(binary.Left, right.Type);
+        }
+        else if (arrayContext is not null)
+        {
+            left = BindExpression(binary.Left, arrayContext);                   // LANG-275 rule 3: [...] + [...] in a dynamic-array context
+            right = BindExpression(binary.Right, arrayContext);
         }
         else if (op.Kind is SyntaxKind.EqualsToken or SyntaxKind.LessThanGreaterThanToken && InterfaceNamedBy(binary.Right) is not null
             && InterfaceNamedBy(binary.Left) is null)
@@ -2552,6 +2565,11 @@ internal sealed partial class ExpressionBinder
     private BoundExpression BindBinaryOperation(BinaryExpressionSyntax binary, BoundExpression left, BoundExpression right)
     {
         var op = binary.OperatorToken;
+        if (op.Kind == SyntaxKind.PlusToken && (left.Type is DynamicArrayTypeSymbol || right.Type is DynamicArrayTypeSymbol))
+        {
+            return ArrayConcatenation(binary, left, right);                    // LANG-275 (C-390), before folding: [] is a constant
+        }
+
         if (left.ConstantValue is { } l && right.ConstantValue is { } r)
         {
             return _folder.FoldBinary(op, l, r) is { } folded
@@ -2972,6 +2990,40 @@ internal sealed partial class ExpressionBinder
         var op = binary.OperatorToken;
         _diagnostics.Report(op, "E2011", op.Text, $"'{left.Type.Name}' and '{right.Type.Name}'");
         return Error(binary, left, right);
+    }
+
+    /// <summary>
+    /// LANG-275 rules 2, 4–6 (C-390): <c>L + R</c> with a dynamic-array operand. Two dynamic arrays with identical element types join
+    /// (the left operand's type; <c>nil</c> becomes the empty array of the other operand's type); a static array, an open-array or
+    /// array-of-const parameter beside a dynamic array is E2044 at that operand; everything else E2011. The value is a new array
+    /// (LANG-276), lowered as one <c>_DynArrayCat</c> per chain (CMP-1417).
+    /// </summary>
+    private BoundExpression ArrayConcatenation(BinaryExpressionSyntax binary, BoundExpression left, BoundExpression right)
+    {
+        if (left.Type is DynamicArrayTypeSymbol && right.Type == _types.Nil)
+        {
+            right = ConvertForAssignment(right, left.Type, binary.Right);
+        }
+        else if (right.Type is DynamicArrayTypeSymbol && left.Type == _types.Nil)
+        {
+            left = ConvertForAssignment(left, right.Type, binary.Left);
+        }
+
+        if (left.Type is DynamicArrayTypeSymbol l && right.Type is DynamicArrayTypeSymbol r)
+        {
+            return Pointers.SameType(l.ElementType, r.ElementType)
+                ? new BoundBinaryExpression(binary, BoundBinaryOperatorKind.Add, left, right, l, l, constantValue: null)
+                : Inapplicable(binary, left, right);
+        }
+
+        var (other, at) = left.Type is DynamicArrayTypeSymbol ? (right, binary.Right) : (left, binary.Left);
+        if (other.Type is ArrayTypeSymbol or OpenArrayTypeSymbol)
+        {
+            _diagnostics.Report(at, "E2044", other.Type.Name);
+            return Error(binary, left, right);
+        }
+
+        return Inapplicable(binary, left, right);
     }
 
     private static BoundBinaryOperatorKind OperatorKind(SyntaxToken op) => op.Kind switch

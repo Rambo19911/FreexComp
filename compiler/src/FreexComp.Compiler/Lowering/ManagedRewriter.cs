@@ -99,6 +99,8 @@ internal static class ManagedRewriter
                 return context.CallInto(target, call.Routine, call.Arguments, call.Target, call.Receiver);
             case BoundBinaryExpression { OperatorKind: BoundBinaryOperatorKind.Add, Type: StringTypeSymbol } concatenation:
                 return Concatenate(context, target, concatenation);
+            case BoundBinaryExpression { OperatorKind: BoundBinaryOperatorKind.Add, Type: DynamicArrayTypeSymbol } arrays:
+                return ConcatenateArrays(context, target, arrays);
             case BoundIntrinsicCallExpression { Intrinsic.Intrinsic: IntrinsicKind.Copy } copy:
                 return StringRewriter.CopyInto(context, AddressOf(context, target), copy);     // C-062: Dest may be the source
             case BoundConversionExpression { Type: StringTypeSymbol } conversion when !ReferenceEquals(conversion.Operand.Type, conversion.Type):
@@ -121,9 +123,20 @@ internal static class ManagedRewriter
     /// </summary>
     private static LStatement Construct(LoweringContext context, LExpression target, BoundArrayConstructor constructor)
     {
+        var built = new LLocalRef(context.NewTemp(constructor.Type));
+        var statements = Build(context, built, constructor);
+        statements.Add(Assign(context, target, built));
+        return new LBlock([.. statements]);
+    }
+
+    /// <summary>
+    /// The statements that make the variable <paramref name="built"/> (nil or a unique array, read by no element) the array of
+    /// <paramref name="constructor"/>: <c>_DynArraySetLen</c> to <c>n</c>, then the element stores.
+    /// </summary>
+    private static List<LStatement> Build(LoweringContext context, LExpression built, BoundArrayConstructor constructor)
+    {
         var types = context.Types;
         var array = (DynamicArrayTypeSymbol)constructor.Type;
-        var built = new LLocalRef(context.NewTemp(array));
         var index = new IntegerTypeSymbol("0..0", (IntegerTypeSymbol)types.Integer, BigInteger.Zero, BigInteger.Zero, containingSymbol: null, []);
         var dims = new LLocalRef(context.NewTemp(new ArrayTypeSymbol("array[0..0] of NativeInt", index, types.NativeInt, containingSymbol: null, [])));
         var statements = new List<LStatement>
@@ -141,8 +154,7 @@ internal static class ManagedRewriter
                 : new LAssign(element, context.Lower(value)));
         }
 
-        statements.Add(Assign(context, target, built));
-        return new LBlock([.. statements]);
+        return statements;
     }
 
     /// <summary>
@@ -218,6 +230,73 @@ internal static class ManagedRewriter
         {
             Flatten(binary.Left, parts);
             Flatten(binary.Right, parts);
+        }
+        else
+        {
+            parts.Add(value);
+        }
+    }
+
+    /// <summary>
+    /// CMP-1417 (C-390): a chain <c>E1 + … + En</c> of dynamic arrays → one <c>_DynArrayCat(@target, TI, n, @sources)</c>. The address
+    /// of a target other than a plain variable is taken once, before the operands; the operands are evaluated left to right into
+    /// <c>sources</c> (a stack <c>[n x ptr]</c>): a variable reference by its value, <c>nil</c>/<c>[]</c> as <c>null</c>, anything else
+    /// (constructors, calls) into a temporary that is released after the call. <c>A := A + …</c> passes <c>A</c> itself as
+    /// <c>sources[0]</c>, so the run time can append in place (RTL-088).
+    /// </summary>
+    private static LStatement ConcatenateArrays(LoweringContext context, LExpression target, BoundBinaryExpression concatenation)
+    {
+        var types = context.Types;
+        var parts = new List<BoundExpression>();
+        FlattenArrays(concatenation, parts);
+        var statements = new List<LStatement>();
+        LExpression destination = AddressOf(context, target);
+        if (target is not (LLocalRef or LGlobalRef or LParamRef))
+        {
+            var slot = new LLocalRef(context.NewTemp(types.Pointer));
+            statements.Add(new LAssign(slot, destination));
+            destination = slot;
+        }
+
+        var n = parts.Count;
+        var index = new IntegerTypeSymbol($"0..{n - 1}", (IntegerTypeSymbol)types.Integer, BigInteger.Zero, n - 1, containingSymbol: null, []);
+        var sources = new LLocalRef(context.NewTemp(new ArrayTypeSymbol($"array[0..{n - 1}] of Pointer", index, types.Pointer, containingSymbol: null, [])));
+        var temporaries = new List<LExpression>();
+        for (var k = 0; k < n; k++)
+        {
+            var part = parts[k];
+            LExpression value;
+            if (part.ConstantValue is { Value: null })
+            {
+                value = new LConst(new ConstantValue(null, types.Pointer), types.Pointer);
+            }
+            else if (ExpressionBinder.IsAddressable(part))
+            {
+                value = context.Lower(part);
+            }
+            else
+            {
+                var temporary = new LLocalRef(context.NewTemp(part.Type));
+                statements.Add(part is BoundArrayConstructor constructor ? new LBlock([.. Build(context, temporary, constructor)]) : Assign(context, temporary, part));
+                temporaries.Add(temporary);
+                value = temporary;
+            }
+
+            statements.Add(new LAssign(new LIndex(sources, context.Constant(k, types.Int64), types.Pointer), value));
+        }
+
+        statements.Add(Call(Helper("_DynArrayCat", types.Pointer, types.Pointer, types.NativeInt, types.Pointer),
+            destination, TypeInfo(context, concatenation.Type), context.Constant(n, types.NativeInt), AddressOf(context, sources)));
+        statements.AddRange(temporaries.Select(t => Clear(context, t)));
+        return new LBlock([.. statements]);
+    }
+
+    private static void FlattenArrays(BoundExpression value, List<BoundExpression> parts)
+    {
+        if (value is BoundBinaryExpression { OperatorKind: BoundBinaryOperatorKind.Add, Type: DynamicArrayTypeSymbol } binary)
+        {
+            FlattenArrays(binary.Left, parts);
+            FlattenArrays(binary.Right, parts);
         }
         else
         {
