@@ -38,6 +38,12 @@ public sealed class VariableSymbol : Symbol
     /// <summary>The typed constant whose static storage this is (LANG-344); null for other variables.</summary>
     internal ConstantSymbol? TypedConstant { get; set; }
 
+    /// <summary>
+    /// The static storage of an inline typed constant of a dynamic-array type (LANG-274, C-389): it is in no declaration scope the
+    /// emitter walks, so each module defines it when a function first refers to it (CMP-1416).
+    /// </summary>
+    internal bool IsInlineConstant { get; init; }
+
     /// <summary>The <c>public name</c> of a global variable (LANG-470); null otherwise.</summary>
     internal string? ExplicitLinkName { get; set; }
 

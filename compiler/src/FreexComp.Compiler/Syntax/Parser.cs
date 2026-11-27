@@ -723,6 +723,11 @@ internal sealed class Parser
 
     private SyntaxNode ParseTypedConstantCore()
     {
+        if (CurrentKind == SyntaxKind.OpenBracketToken)
+        {
+            return ParseBracketedTypedConstant();
+        }
+
         if (CurrentKind != SyntaxKind.OpenParenToken)
         {
             return ParseExpression();
@@ -767,6 +772,59 @@ internal sealed class Parser
 
         return new TypedConstantAggregateSyntax(open, new SeparatedSyntaxList<SyntaxNode>(items.ToImmutable()),
             Expect(SyntaxKind.CloseParenToken));
+    }
+
+    /// <summary>
+    /// LANG-274 (C-389): <c>[ typedConst { , typedConst } ]</c>. When every element is an expression (ranges allowed) the result
+    /// is the set constructor the expression grammar gives, which may continue with operators (<c>[1] + [2]</c>); an element that
+    /// is a record or array aggregate makes a <see cref="TypedConstantAggregateSyntax"/> with bracket tokens (a range there is a
+    /// <see cref="SetElementSyntax"/>).
+    /// </summary>
+    private SyntaxNode ParseBracketedTypedConstant()
+    {
+        var open = Take();
+        var elements = new List<(SyntaxNode Value, SyntaxToken? DotDot, ExpressionSyntax? Upper)>();
+        var commas = new List<SyntaxToken>();
+        if (CurrentKind != SyntaxKind.CloseBracketToken)
+        {
+            while (true)
+            {
+                var value = ParseTypedConstant();
+                if (value is ExpressionSyntax && CurrentKind == SyntaxKind.DotDotToken)
+                {
+                    var dotDot = Take();
+                    elements.Add((value, dotDot, ParseExpression()));
+                }
+                else
+                {
+                    elements.Add((value, null, null));
+                }
+
+                if (CurrentKind != SyntaxKind.CommaToken)
+                {
+                    break;
+                }
+
+                commas.Add(Take());
+            }
+        }
+
+        var close = Expect(SyntaxKind.CloseBracketToken);
+        var items = ImmutableArray.CreateBuilder<SyntaxNodeOrToken>();
+        var expressionsOnly = elements.All(e => e.Value is ExpressionSyntax);
+        for (var i = 0; i < elements.Count; i++)
+        {
+            var (value, dotDot, upper) = elements[i];
+            items.Add(expressionsOnly || dotDot is not null ? new SetElementSyntax((ExpressionSyntax)value, dotDot, upper) : value);
+            if (i < commas.Count)
+            {
+                items.Add(commas[i]);
+            }
+        }
+
+        return expressionsOnly
+            ? ParseExpression(new SetConstructorSyntax(open, new SeparatedSyntaxList<SetElementSyntax>(items.ToImmutable()), close))
+            : new TypedConstantAggregateSyntax(open, new SeparatedSyntaxList<SyntaxNode>(items.ToImmutable()), close);
     }
 
     /// <summary><c>type typeDecl { typeDecl }</c></summary>

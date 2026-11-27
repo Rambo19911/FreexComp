@@ -257,6 +257,18 @@ internal sealed partial class BodyBinder
                 {
                     // a typed inline constant: a read-only local initialised here (LANG-344 for routine-level constants)
                     var type = Declarations().BindLocalType(typeSyntax);
+                    if (type is DynamicArrayTypeSymbol)
+                    {
+                        // LANG-274 (C-389): static storage like a routine-level typed constant (CMP-1416), never a heap block
+                        var constantValue = Declarations().BindTypedConstantValue(typeSyntax, syntax.Value, type);
+                        ImmutableArray<Text.Location> locations = [DiagnosticBag.LocationOf(syntax.Identifier)];
+                        scope.TryDeclare(new ConstantSymbol(text, type, constantValue, isTyped: true, Container, locations)
+                        {
+                            Storage = new VariableSymbol(text, type, isGlobal: true, Container, locations, constantValue) { IsReadOnly = true, IsInlineConstant = true },
+                        }, out _);
+                        break;
+                    }
+
                     var value = _expressions.ConvertForAssignment(_expressions.BindExpression(syntax.Value, type), type, syntax.Value);
                     var local = new VariableSymbol(text, type, isGlobal: false, _routine, [DiagnosticBag.LocationOf(syntax.Identifier)]) { IsReadOnly = true };
                     scope.TryDeclare(local, out _);

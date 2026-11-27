@@ -1,3 +1,6 @@
-ErrArrayCtor.pas(23,12): error E2010: Incompatible types: 'Char' and 'Integer'
-ErrArrayCtor.pas(24,24): error E2010: Incompatible types: 'Double' and 'Integer'
-ErrArrayCtor.pas(25,5): error E2043: Ambiguous overloaded call to 'Q': the array constructor can be 'TByteSet' or 'TInts'; cast it to one of them
+ErrArrayCtor.pas(14,18): error E2010: Incompatible types: 'array constant' and 'TInts'
+ErrArrayCtor.pas(28,12): error E2010: Incompatible types: 'Char' and 'Integer'
+ErrArrayCtor.pas(29,24): error E2010: Incompatible types: 'Double' and 'Integer'
+ErrArrayCtor.pas(30,5): error E2043: Ambiguous overloaded call to 'Q': the array constructor can be 'TByteSet' or 'TInts'; cast it to one of them
+ErrArrayCtor.pas(33,3): error E2053: Left side cannot be assigned to
+ErrArrayCtor.pas(34,13): error E2112: Constant object cannot be passed as var parameter

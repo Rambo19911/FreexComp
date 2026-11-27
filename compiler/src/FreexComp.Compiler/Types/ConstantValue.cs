@@ -6,9 +6,9 @@ namespace FreexComp.Compiler.Types;
 
 /// <summary>
 /// A compile-time value (api.md §5): <see cref="BigInteger"/> for ordinals (characters: the code), <see cref="double"/>, <see cref="string"/>,
-/// <see cref="bool"/>, null for <c>nil</c>; static arrays and records (typed constants, LANG-344) hold an
-/// <c>ImmutableArray&lt;ConstantValue?&gt;</c> of element / field values (null = zero). CLR integer values passed in are stored as
-/// <see cref="BigInteger"/>.
+/// <see cref="bool"/>, null for <c>nil</c> (also the empty dynamic-array constant <c>[]</c>); static arrays, records and non-empty typed
+/// dynamic-array constants (typed constants, LANG-344, LANG-274) hold an <c>ImmutableArray&lt;ConstantValue?&gt;</c> of element / field values
+/// (null = zero). CLR integer values passed in are stored as <see cref="BigInteger"/>.
 /// </summary>
 public sealed class ConstantValue
 {
@@ -44,7 +44,9 @@ public sealed class ConstantValue
         string s => StringText(s),
         System.Collections.Immutable.ImmutableArray<ConstantValue?> fields when Type is RecordTypeSymbol record =>
             "(" + string.Join("; ", fields.Select((f, i) => (f, i)).Where(p => p.f is not null).Select(p => record.Fields[p.i].Name + ": " + p.f!.ToDisplayString())) + ")",
-        System.Collections.Immutable.ImmutableArray<ConstantValue?> elements => "(" + string.Join(", ", elements.Select(e => e?.ToDisplayString() ?? "0")) + ")",
+        System.Collections.Immutable.ImmutableArray<ConstantValue?> elements when Type is DynamicArrayTypeSymbol =>
+            "[" + string.Join(", ", elements.Select(e => e?.ToDisplayString() ?? "0")) + "]",          // LANG-274 (C-389)
+        System.Collections.Immutable.ImmutableArray<ConstantValue?> elements => "(" +string.Join(", ", elements.Select(e => e?.ToDisplayString() ?? "0")) + ")",
         _ => Convert.ToString(Value, CultureInfo.InvariantCulture) ?? "",
     };
 

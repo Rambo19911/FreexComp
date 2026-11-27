@@ -232,8 +232,7 @@ internal sealed partial class DeclarationBinder
 
                 // LANG-344: a read-only variable with static storage, initialised statically (LANG-522)
                 var type = BindType(declaration.Type, declared: declared);
-                var value = type.TypeKind == TypeKind.Error || !IsStaticallyInitializable(type, declaration.Type) ? null
-                    : BindTypedConstant(declaration.Value, type);
+                var value = BindTypedConstantValue(declaration.Type, declaration.Value, type);
                 var locations = ImmutableArray.Create(DiagnosticBag.LocationOf(identifier));
                 symbol = new ConstantSymbol(NameOf(identifier), type, value, isTyped: true, _container, locations, visibility)
                 {
@@ -1089,10 +1088,19 @@ internal sealed partial class DeclarationBinder
     }
 
     /// <summary>
-    /// Managed types are statically initialised only when their managed parts are long strings (C-203: they hold constant
-    /// literals, ABI-020); dynamic arrays, interfaces and <c>Text</c> have no static initialiser yet: E2900 at the type.
+    /// LANG-344 / LANG-274: the value of a typed constant of <paramref name="type"/> declared with <paramref name="typeSyntax"/>
+    /// (a constant section, or an inline constant of a dynamic-array type); null after an error.
     /// </summary>
-    private bool IsStaticallyInitializable(TypeSymbol type, TypeSyntax syntax)
+    internal ConstantValue? BindTypedConstantValue(TypeSyntax typeSyntax, SyntaxNode value, TypeSymbol type) =>
+        type.TypeKind == TypeKind.Error || !IsStaticallyInitializable(type, typeSyntax, typedConstant: true) ? null : BindTypedConstant(value, type);
+
+    /// <summary>
+    /// Managed types are statically initialised only when their managed parts are long strings (C-203: they hold constant
+    /// literals, ABI-020); a typed constant may also be a dynamic array of such elements or of such dynamic arrays (LANG-274,
+    /// static blocks CMP-1416). Other dynamic arrays (and every initialised dynamic-array variable), interfaces and <c>Text</c>
+    /// have no static initialiser: E2900 at the type.
+    /// </summary>
+    private bool IsStaticallyInitializable(TypeSymbol type, TypeSyntax syntax, bool typedConstant = false)
     {
         static bool StringsOnly(TypeSymbol t) => !t.IsManaged || t switch
         {
@@ -1101,6 +1109,14 @@ internal sealed partial class DeclarationBinder
             RecordTypeSymbol record => record.Fields.All(f => StringsOnly(f.Type)),
             _ => false,
         };
+
+        static bool DynamicArrayConstant(TypeSymbol t) =>
+            t is DynamicArrayTypeSymbol array && (DynamicArrayConstant(array.ElementType) || StringsOnly(array.ElementType) && array.ElementType is not TextTypeSymbol);
+
+        if (typedConstant && DynamicArrayConstant(type))
+        {
+            return true;
+        }
 
         if (!StringsOnly(type) || type is TextTypeSymbol)
         {
@@ -1123,6 +1139,13 @@ internal sealed partial class DeclarationBinder
     {
         switch (node)
         {
+            case TypedConstantAggregateSyntax { OpenParenToken.Kind: SyntaxKind.OpenBracketToken } brackets:
+                return BindDynamicArrayConstant(brackets, [.. brackets.Elements], type);          // LANG-274: record elements inside [ ]
+            case SetConstructorSyntax constructor when type is DynamicArrayTypeSymbol && constructor.Elements.All(e => e.UpperBound is null):
+                return BindDynamicArrayConstant(constructor, [.. constructor.Elements.Select(e => e.Expression)], type);
+            case TypedConstantAggregateSyntax aggregate when type is DynamicArrayTypeSymbol:
+                _diagnostics.Report(aggregate, "E2010", "array constant", type.Name);             // LANG-274: not the ( … ) form
+                return null;
             case TypedConstantAggregateSyntax aggregate when aggregate.Elements.Any(e => e is RecordConstantFieldSyntax)
                 || (aggregate.Elements.Count == 0 && type is not ArrayTypeSymbol):
                 return BindRecordConstant(aggregate, type);
@@ -1237,6 +1260,34 @@ internal sealed partial class DeclarationBinder
 
         var values = elements.Select(e => BindTypedConstant(e, array.ElementType)).ToImmutableArray();
         return values.Any(v => v is null) ? null : new ConstantValue(values, type);
+    }
+
+    /// <summary>
+    /// LANG-274: a typed dynamic-array constant <c>[c1, c2, …]</c> — each element a typed constant of the element type (nested
+    /// constructors for nested arrays, record constants for records); <c>[]</c> is <c>nil</c> (a null value). A bracketed
+    /// constructor for another type is E2010, as is a range inside the brackets of a dynamic-array constant.
+    /// </summary>
+    private ConstantValue? BindDynamicArrayConstant(SyntaxNode syntax, IReadOnlyList<SyntaxNode> elements, TypeSymbol type)
+    {
+        if (type is not DynamicArrayTypeSymbol array)
+        {
+            _diagnostics.Report(syntax, "E2010", "array constant", type.Name);
+            return null;
+        }
+
+        if (elements.Count == 0)
+        {
+            return new ConstantValue(null, type);
+        }
+
+        var values = elements.Select(e => e is SetElementSyntax range ? Range(range) : BindTypedConstant(e, array.ElementType)).ToImmutableArray();
+        return values.Any(v => v is null) ? null : new ConstantValue(values, type);
+
+        ConstantValue? Range(SetElementSyntax range)
+        {
+            _diagnostics.Report(range, "E2010", "range", array.ElementType.Name);
+            return null;
+        }
     }
 
     private ConstantValue? BindRecordConstant(TypedConstantAggregateSyntax syntax, TypeSymbol type)

@@ -231,10 +231,18 @@ internal static class IrEmitter
         // the globals' initialisers too: typed constants may hold string literals (C-203; PChar constants since C-063)
         var initializers = variables.Select(v => v.Initializer is { } value && v.Type.Size > 0
             ? StorageConstant(module, value, v.Type) : new IrZeroConstant(TypeLayout.Allocated(v.Type).StorageType)).ToImmutableArray();
+        var inlineConstants = module.InlineConstants.Select(v => (Variable: v, Initializer: v.Initializer is { } value
+            ? StorageConstant(module, value, v.Type) : new IrNullConstant())).ToImmutableArray();          // LANG-274 (C-389)
 
         foreach (var (name, literal) in module.StringLiterals)
         {
             writer.DefineGlobal(new IrGlobalDefinition(name, IrLinkage.Private, IsConstant: true, literal, Alignment: 16, UnnamedAddr: true));
+        }
+
+        foreach (var (name, block) in module.DynArrayBlocks)
+        {
+            // CMP-1416 (C-389): static blocks, 16-byte aligned like heap blocks (ABI-040), never written (ABI-045)
+            writer.DefineGlobal(new IrGlobalDefinition(name, IrLinkage.Private, IsConstant: true, block, Alignment: 16, UnnamedAddr: true));
         }
 
         if (module.UsesEmptyTerminator)
@@ -304,6 +312,12 @@ internal static class IrEmitter
             {
                 DebugVariable = module.Debug?.GlobalVariable(variable, name.Text, isLocal: linkage != IrLinkage.External),       // DBG-140
             });
+        }
+
+        foreach (var (variable, initializer) in inlineConstants)
+        {
+            // C-389: an inline dynamic-array constant, internal like a routine-level typed constant (no debug record of its own)
+            writer.DefineGlobal(new IrGlobalDefinition(module.Globals[variable].Name, IrLinkage.Internal, IsConstant: true, initializer, module.PtrAlign));
         }
 
         foreach (var (variable, name) in unit.BodyGlobals)
@@ -938,6 +952,8 @@ internal static class IrEmitter
                 return module.AnsiStringLiteral(text, ansi.CodePage);                             // C-203: the constant literal (ABI-020)
             case (StringTypeSymbol, string text):
                 return module.StringLiteral(text);
+            case (DynamicArrayTypeSymbol dynamicArray, ImmutableArray<ConstantValue?> elements):
+                return module.DynArrayBlock(dynamicArray, [.. elements.Select(e => Element(e, dynamicArray.ElementType))]);     // CMP-1416 (C-389)
             case (ArrayTypeSymbol array, ImmutableArray<ConstantValue?> elements):
                 return new IrArrayConstant((ArrayIrType)TypeLayout.Of(array).StorageType, [.. elements.Select(e => Element(e, array.ElementType))]);
             case (RecordTypeSymbol { HasVariantPart: true } variant, ImmutableArray<ConstantValue?>):
@@ -1595,9 +1611,58 @@ internal sealed class ModuleState(IIrWriter writer)
         return global;
     }
 
+    /// <summary>
+    /// CMP-1416 (C-389): the static blocks of typed dynamic-array constants in creation order (a nested block before the block
+    /// holding its address): <c>&lt;{ i32 -1, i32 0, iptr Length, [Length x T] }&gt;</c>, element 0 right after the header (ABI-040).
+    /// </summary>
+    public List<(LinkName Name, IrStructConstant Block)> DynArrayBlocks { get; } = [];
+
+    /// <summary>
+    /// CMP-1416: a new static block (RefCount −1, Capacity 0, ABI-045/046) holding <paramref name="elements"/> (memory form) and
+    /// the address of its element 0 — the value of a dynamic-array variable that refers to it.
+    /// </summary>
+    public IrConstant DynArrayBlock(DynamicArrayTypeSymbol type, ImmutableArray<IrConstant> elements)
+    {
+        var payload = new ArrayIrType(elements.Length, TypeLayout.Of(type.ElementType).StorageType);
+        var blockType = new StructIrType([IrType.I32, IrType.I32, NativeInt, payload], IsPacked: true);
+        var name = new LinkName(".dynarr." + DynArrayBlocks.Count.ToString(System.Globalization.CultureInfo.InvariantCulture), AlwaysQuote: false);
+        DynArrayBlocks.Add((name, new IrStructConstant(blockType, [IrIntConstant.I32(-1), IrIntConstant.I32(0), Native(elements.Length), new IrArrayConstant(payload, elements)])));
+        return new IrGepConstant(blockType, new IrGlobal(name), [IrIntConstant.I32(0), IrIntConstant.I32(3)]);
+    }
+
+    /// <summary>The storage of the inline dynamic-array constants the module's functions refer to, in first-use order (C-389).</summary>
+    public List<VariableSymbol> InlineConstants { get; } = [];
+
     /// <summary>The address of a global variable: this unit's own, or one of another unit declared <c>external</c> (CMP-301).</summary>
-    public IrGlobal Global(VariableSymbol variable) =>
-        Globals.TryGetValue(variable, out var own) ? own : External(Mangler.GlobalVariable(variable), variable.Type);
+    /// <remarks>
+    /// The storage of an inline dynamic-array constant (LANG-274) is defined by the module on first use, named like a routine-level
+    /// typed constant with <c>.1</c>, <c>.2</c>, … appended when that name is taken (two inline constants of one name in a routine).
+    /// </remarks>
+    public IrGlobal Global(VariableSymbol variable)
+    {
+        if (Globals.TryGetValue(variable, out var own))
+        {
+            return own;
+        }
+
+        if (!variable.IsInlineConstant)
+        {
+            return External(Mangler.GlobalVariable(variable), variable.Type);
+        }
+
+        var text = Mangler.GlobalVariable(variable).Text;
+        var taken = Globals.Values.Select(g => g.Name.Text).ToHashSet(StringComparer.Ordinal);
+        var unique = text;
+        for (var n = 1; taken.Contains(unique); n++)
+        {
+            unique = text + "." + n.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        var global = new IrGlobal(new LinkName(unique, AlwaysQuote: true));
+        Globals[variable] = global;
+        InlineConstants.Add(variable);
+        return global;
+    }
 
     private IrGlobal External(LinkName name, TypeSymbol type)
     {

@@ -91,7 +91,7 @@ public sealed class TypedConstantBindingTests
     [InlineData("type T = record X: Integer end; const P: T = (X: 1); begin P.X := 2 end.", "E2053(1,60): Left side cannot be assigned to")]
     [InlineData("const A: Integer = 1; begin Inc(A) end.", "E2112(1,33): Constant object cannot be passed as var parameter")]
     [InlineData("const A: Integer = 1; procedure P(var x: Integer); begin end; begin P(A) end.", "E2112(1,71): Constant object cannot be passed as var parameter")]
-    [InlineData("const D: array of Integer = nil; begin end.", "E2900(1,10): Feature not supported: initialised array of Integer")]   // strings: C-203
+    [InlineData("var D: array of Integer = nil; begin end.", "E2900(1,8): Feature not supported: initialised array of Integer")]   // strings: C-203; dynamic-array constants: LANG-274 (C-389)
     public void Errors(string text, string expected) => Assert.Equal([expected], BindDiagnostics(text));
 
     /// <summary>C-203: typed constants (and initialised variables) of strings and of arrays/records of strings bind their literals.</summary>
@@ -108,4 +108,96 @@ public sealed class TypedConstantBindingTests
     [InlineData("type T = array[1..2] of Integer; const A: T = (1, 2); var B: T; begin B := A end.")]
     [InlineData("const R: record a: Byte; b: Word end = (a: 1; b: 2); var x: Integer; begin x := R.a + SizeOf(R) end.")]
     public void Valid(string text) => Assert.Empty(BindDiagnostics(text));
+
+    // ---- C-389 (F10-024 part 2): typed dynamic-array constants (LANG-274) ----
+
+    private const string DynTypes = "type TInts = array of Integer; TGrid = array of TInts; TStrs = array of string; TPair = record N: Integer; S: string end; ";
+
+    /// <summary>The one diagnostic of <paramref name="text"/>: its code, the text from its column on, its message.</summary>
+    private static string DiagnosticAt(string text)
+    {
+        var diagnostic = Assert.Single(BindDiagnostics(text));
+        var match = System.Text.RegularExpressions.Regex.Match(diagnostic, @"^(\w+)\(1,(\d+)\): (.*)$");
+        Assert.True(match.Success, diagnostic);
+        var column = int.Parse(match.Groups[2].Value, System.Globalization.CultureInfo.InvariantCulture);
+        return match.Groups[1].Value + " at '" + text[(column - 1)..] + "': " + match.Groups[3].Value;
+    }
+
+    /// <summary>
+    /// LANG-274: a bracket constructor of constant elements (converted to the element type; nested constructors for nested arrays,
+    /// record constants for record elements) at unit, routine and inline level; <c>[]</c> (and <c>nil</c>) is the empty array.
+    /// </summary>
+    [Theory]
+    [Trait("Phase", "8")]
+    [Trait("Req", "LANG-274")]
+    [InlineData("const Primes: array of Integer = [2, 3, 5, 7];", "Primes", "[2, 3, 5, 7]")]
+    [InlineData("const Reals: array of Double = [1, 2.5];", "Reals", "[1.0, 2.5]")]
+    [InlineData("const Names: TStrs = ['a', '', 'bc'];", "Names", "['a', '', 'bc']")]
+    [InlineData("const Pairs: array of TPair = [(N: 1; S: 'x'), (N: 2)];", "Pairs", "[(N: 1; S: 'x'), (N: 2)]")]
+    [InlineData("const Grid: TGrid = [[1], [2, 3], []];", "Grid", "[[1], [2, 3], nil]")]
+    [InlineData("const None: TInts = [];", "None", "nil")]
+    [InlineData("const Nothing: TInts = nil;", "Nothing", "nil")]
+    [InlineData("procedure P; const L: TInts = [1, 2]; var a: TInts; begin a := L; Writeln(L[1], Length(L)) end;", "", "")]
+    [InlineData("procedure P; begin const C: TInts = [4, 5]; const G: TGrid = [[1], []]; Writeln(C[0], G[0][0], High(C)); for var X in C do Writeln(X) end;", "", "")]
+    public void DynArrayConstant_Accepted(string declarations, string name, string expected)
+    {
+        var result = BindClean(DynTypes + declarations + " begin end.");
+        if (name.Length == 0)
+        {
+            return;
+        }
+
+        var constant = Constant(result, name);
+        Assert.True(constant.IsTyped);
+        Assert.Equal(expected, constant.Value!.ToDisplayString());
+        Assert.Equal((true, true, expected), (constant.Storage!.IsReadOnly, constant.Storage.IsGlobal, constant.Storage.Initializer!.ToDisplayString()));
+    }
+
+    /// <summary>
+    /// LANG-274 rule 1: the constant is read-only at every depth of indexing (E2053); it or an element as a <c>var</c> argument,
+    /// also of <c>Inc</c>, <c>SetLength</c>, <c>Insert</c>, <c>Delete</c>, is E2112. Routine-level and inline constants alike.
+    /// </summary>
+    [Theory]
+    [Trait("Phase", "8")]
+    [Trait("Req", "LANG-274")]
+    [InlineData("Primes := nil", "E2053 at 'Primes := nil end; begin end.': Left side cannot be assigned to")]
+    [InlineData("Primes[0] := 1", "E2053 at 'Primes[0] := 1 end; begin end.': Left side cannot be assigned to")]
+    [InlineData("Grid[1][0] := 1", "E2053 at 'Grid[1][0] := 1 end; begin end.': Left side cannot be assigned to")]
+    [InlineData("Grid[1, 0] := 1", "E2053 at 'Grid[1, 0] := 1 end; begin end.': Left side cannot be assigned to")]
+    [InlineData("Grid[0] := nil", "E2053 at 'Grid[0] := nil end; begin end.': Left side cannot be assigned to")]
+    [InlineData("V(Primes)", "E2112 at 'Primes) end; begin end.': Constant object cannot be passed as var parameter")]
+    [InlineData("W(Grid[0][1])", "E2112 at 'Grid[0][1]) end; begin end.': Constant object cannot be passed as var parameter")]
+    [InlineData("Inc(Primes[0])", "E2112 at 'Primes[0]) end; begin end.': Constant object cannot be passed as var parameter")]
+    [InlineData("SetLength(Primes, 1)", "E2112 at 'Primes, 1) end; begin end.': Constant object cannot be passed as var parameter")]
+    [InlineData("SetLength(Grid[0], 1)", "E2112 at 'Grid[0], 1) end; begin end.': Constant object cannot be passed as var parameter")]
+    [InlineData("Insert(1, Primes, 0)", "E2112 at 'Primes, 0) end; begin end.': Constant object cannot be passed as var parameter")]
+    [InlineData("Delete(Primes, 0, 1)", "E2112 at 'Primes, 0, 1) end; begin end.': Constant object cannot be passed as var parameter")]
+    [InlineData("L[0] := 1", "E2053 at 'L[0] := 1 end; begin end.': Left side cannot be assigned to")]
+    [InlineData("begin const C: TInts = [1]; C[0] := 2 end", "E2053 at 'C[0] := 2 end end; begin end.': Left side cannot be assigned to")]
+    [InlineData("begin const C: TGrid = [[1]]; SetLength(C[0], 2) end", "E2112 at 'C[0], 2) end end; begin end.': Constant object cannot be passed as var parameter")]
+    public void DynArrayConstant_ReadOnly(string statement, string expected) =>
+        Assert.Equal(expected, DiagnosticAt(DynTypes + "const Primes: TInts = [2, 3]; Grid: TGrid = [[1, 2]]; procedure V(var A: TInts); begin end; " +
+            "procedure W(var X: Integer); begin end; procedure P; const L: TInts = [1]; begin " + statement + " end; begin end."));
+
+    /// <summary>LANG-274: other managed element types (interfaces, records with dynamic-array fields) and initialised dynamic-array variables stay E2900.</summary>
+    [Theory]
+    [Trait("Phase", "8")]
+    [Trait("Req", "LANG-274")]
+    [InlineData("type II = interface end; const I: array of II = [];", "E2900 at 'array of II = []; begin end.': Feature not supported: initialised array of II")]
+    [InlineData("type TR = record A: TInts end; const R: array of TR = [];", "E2900 at 'array of TR = []; begin end.': Feature not supported: initialised array of TR")]
+    [InlineData("type TR = record A: TInts end; const R: TR = ();", "E2900 at 'TR = (); begin end.': Feature not supported: initialised TR")]
+    [InlineData("const S: array[0..0] of TInts = ([1]);", "E2900 at 'array[0..0] of TInts = ([1]); begin end.': Feature not supported: initialised array[0..0] of TInts")]
+    [InlineData("var G: TInts = [1];", "E2900 at 'TInts = [1]; begin end.': Feature not supported: initialised TInts")]
+    public void DynArrayConstant_ManagedElement_E2900(string declarations, string expected) =>
+        Assert.Equal(expected, DiagnosticAt(DynTypes + declarations + " begin end."));
+
+    /// <summary>LANG-274: the parenthesised aggregate form of static typed constants is not a dynamic-array constant (E2010); a parenthesised value is converted as usual.</summary>
+    [Theory]
+    [Trait("Phase", "8")]
+    [Trait("Req", "LANG-274")]
+    [InlineData("const P: TInts = (1, 2);", "E2010 at '(1, 2); begin end.': Incompatible types: 'array constant' and 'TInts'")]
+    [InlineData("const P: TGrid = [(1, 2)];", "E2010 at '(1, 2)]; begin end.': Incompatible types: 'array constant' and 'TInts'")]
+    [InlineData("const P: TInts = (1);", "E2010 at '(1); begin end.': Incompatible types: 'Integer' and 'TInts'")]
+    public void DynArrayConstant_ParenthesisedForm_E2010(string declarations, string expected) =>
+        Assert.Equal(expected, DiagnosticAt(DynTypes + declarations + " begin end."));
 }

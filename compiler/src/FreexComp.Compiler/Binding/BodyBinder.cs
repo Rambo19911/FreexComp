@@ -980,16 +980,23 @@ internal sealed partial class BodyBinder
     /// <summary>
     /// <c>SetLength(var s; n)</c>, <c>Delete(var s; index, count)</c>, <c>Insert(const sub; var s; index)</c> on a string
     /// variable <c>s</c> (every string kind, C-067; <c>SetLength</c> also of a dynamic array; other types E2010); <c>sub</c> a string or character; the
-    /// integers converted to <c>Integer</c>. Arguments in parameter order.
+    /// integers converted to <c>Integer</c>. Arguments in parameter order; the variable is checked first (a typed constant there is
+    /// E2112 whatever the other arguments are, LANG-274).
     /// </summary>
     private BoundStatement BindStringEdit(ExpressionStatementSyntax statement, IntrinsicSymbol intrinsic, SeparatedSyntaxList<ArgumentSyntax> arguments)
     {
         var targetIndex = intrinsic.Intrinsic == IntrinsicKind.Insert ? 1 : 0;
+        var target = StringVariable(arguments[targetIndex].Expression, intrinsic);
+        if (target is null)
+        {
+            return new BoundErrorStatement(statement);
+        }
+
         var bound = ImmutableArray.CreateBuilder<BoundExpression>(arguments.Count);
         for (var k = 0; k < arguments.Count; k++)
         {
             var syntax = arguments[k].Expression;
-            var value = k == targetIndex ? StringVariable(syntax, intrinsic)
+            var value = k == targetIndex ? target
                 : k == 0 ? Operand(syntax, v => _expressions.StringOperand(v, syntax, intrinsic.Name))
                 : Operand(syntax, v => _expressions.ConvertForAssignment(v, _types.Integer, syntax));
             if (value is null)
