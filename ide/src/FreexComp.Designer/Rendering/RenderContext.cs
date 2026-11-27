@@ -23,9 +23,12 @@ public sealed class RenderContext
     /// <param name="info">Metadata override (tests strip it); default the object's own, or <c>TComponent</c> when unknown.</param>
     /// <param name="metrics">Text metrics of the drawing canvas; default the deterministic rule of DSG-RND-012.</param>
     /// <param name="padding">The run-time <c>Padding</c> as (left, top, right, bottom) from the layout result; null = stored.</param>
+    /// <param name="tabStrip">The tab-strip geometry from the layout result (<see cref="TabStrip"/>); null = none.</param>
     public RenderContext(FormObject obj, int width, int height, Rect? clientRect = null, Rect? alignRect = null,
-        DesignPalette? palette = null, ComponentInfo? info = null, Func<TextStyle, TextMetrics>? metrics = null, Rect? padding = null)
+        DesignPalette? palette = null, ComponentInfo? info = null, Func<TextStyle, TextMetrics>? metrics = null, Rect? padding = null,
+        Layout.TabStripGeometry? tabStrip = null)
     {
+        TabStrip = tabStrip;
         Object = obj;
         Info = info ?? obj.Info ?? ComponentCatalog.BuiltInRoot;
         Width = width;
@@ -60,7 +63,8 @@ public sealed class RenderContext
         }
 
         align = align with { Left = align.Left + client.Left, Top = align.Top + client.Top };
-        return new RenderContext(obj, bounds.Width, bounds.Height, client, align, palette, metrics: metrics, padding: layout.GetPadding(obj));
+        return new RenderContext(obj, bounds.Width, bounds.Height, client, align, palette, metrics: metrics, padding: layout.GetPadding(obj),
+            tabStrip: layout.GetTabStrip(obj));
     }
 
     /// <summary>The form's client origin below the design caption (DSG-RND-005 exception; <see cref="ContainerRects.Client"/>).</summary>
@@ -70,6 +74,12 @@ public sealed class RenderContext
     internal const int FormClientTop = 31;
 
     public FormObject Object { get; }
+
+    /// <summary>
+    /// DSG-RND-020: the tab strip of a <c>TCustomTabControl</c> descendant as the layout computed it (<see cref="FromLayout"/>);
+    /// null without a layout result (the tab renderers then compute it from the stored properties).
+    /// </summary>
+    public Layout.TabStripGeometry? TabStrip { get; }
 
     public ComponentInfo Info { get; }
 

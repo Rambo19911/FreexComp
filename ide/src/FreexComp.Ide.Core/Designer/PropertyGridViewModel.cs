@@ -779,7 +779,8 @@ public sealed class PropertyGridViewModel : ObservableObject
     /// <summary>
     /// DSG-OI-055: opens <c>Dialog.StringsEditor</c> on the current <c>TStrings</c> row (initial text from the primary);
     /// OK with a changed text sets the list on every object (an empty list removes the property, it is the default) as one
-    /// unit; unchanged text or Cancel changes nothing.
+    /// unit; unchanged text or Cancel changes nothing. A tab control's <c>Tabs</c> brings its <c>TabIndex</c> change into the
+    /// same unit (DSG-RND-024, <see cref="TabControlRules.TabIndexAfterTabsEdit"/>).
     /// </summary>
     public async Task EditStringsAsync()
     {
@@ -799,11 +800,20 @@ public sealed class PropertyGridViewModel : ObservableObject
             return;
         }
 
-        var changes = Selection.Where(o => !Lines(o, row.Path, info).SequenceEqual(result, StringComparer.Ordinal))
-            .Select(o => result.Count == 0
-                ? (FormChange)new RemoveProperty(o.QualifiedName, row.Path)
-                : new SetProperty(o.QualifiedName, row.Path, new StringListValue([.. result])))
-            .ToList();
+        var changes = new List<FormChange>();
+        foreach (var o in Selection.Where(o => !Lines(o, row.Path, info).SequenceEqual(result, StringComparer.Ordinal)))
+        {
+            var before = Lines(o, row.Path, info);
+            changes.Add(result.Count == 0
+                ? new RemoveProperty(o.QualifiedName, row.Path)
+                : new SetProperty(o.QualifiedName, row.Path, new StringListValue([.. result])));
+            if (row.Path.Equals("Tabs", StringComparison.OrdinalIgnoreCase)
+                && TabControlRules.TabIndexAfterTabsEdit(o, before, result) is { } tabIndex)
+            {
+                changes.Add(tabIndex); // DSG-RND-024: in the same unit
+            }
+        }
+
         if (changes.Count > 0)
         {
             _target.Apply(changes);

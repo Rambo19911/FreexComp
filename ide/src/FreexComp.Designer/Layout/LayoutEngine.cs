@@ -32,7 +32,7 @@ public sealed class LayoutEngine
 
     /// <summary>Full layout from stored properties (load sequence of layout.md §12, steps 1, 3, 5).</summary>
     public LayoutResult Compute(FormDocument form, LayoutMode mode = LayoutMode.Design) =>
-        LayoutResult.Capture(Load(form, mode, null).Machine.Root);
+        LayoutResult.Capture(Load(form, mode, null).Machine);
 
     /// <summary>
     /// Load, then apply steps as explicit changes (layout.md UIF-330 grammar: <c>client</c>, <c>set</c>, <c>dump</c>,
@@ -54,7 +54,7 @@ public sealed class LayoutEngine
             switch (words[0].ToLowerInvariant())
             {
                 case "dump" when words.Length == 1:
-                    results.Add(LayoutResult.Capture(machine.Root));
+                    results.Add(LayoutResult.Capture(machine));
                     break;
                 case "client" when words.Length == 3:
                     machine.SetClientWidth(machine.Root, IntArg(words[1], raw));
@@ -73,7 +73,7 @@ public sealed class LayoutEngine
 
         if (results.Count == 0)
         {
-            results.Add(LayoutResult.Capture(machine.Root));
+            results.Add(LayoutResult.Capture(machine));
         }
 
         return results;
@@ -89,7 +89,7 @@ public sealed class LayoutEngine
         var (machine, nodes) = Load(form, LayoutMode.Design, null);
         var node = FindNode(form, nodes, containerName, containerName);
         machine.SetBoundsExplicit(node, node.Left, node.Top, newWidth, newHeight);
-        return LayoutResult.Capture(machine.Root);
+        return LayoutResult.Capture(machine);
     }
 
     /// <summary>
@@ -113,12 +113,12 @@ public sealed class LayoutEngine
             }
         }
 
-        return LayoutResult.Capture(machine.Root);
+        return LayoutResult.Capture(machine);
     }
 
     /// <summary>Layout with overridden stored bounds/properties for some objects (drag previews). Design mode.</summary>
     public LayoutResult ComputeWithOverrides(FormDocument form, IReadOnlyDictionary<string, LayoutOverride> overrides) =>
-        LayoutResult.Capture(Load(form, LayoutMode.Design, overrides).Machine.Root);
+        LayoutResult.Capture(Load(form, LayoutMode.Design, overrides).Machine);
 
     private (LayoutMachine Machine, Dictionary<FormObject, LayoutNode> Nodes) Load(FormDocument form, LayoutMode mode,
         IReadOnlyDictionary<string, LayoutOverride>? overrides)

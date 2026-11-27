@@ -75,11 +75,12 @@ public sealed class RecordingCanvas : IDesignCanvas
         Add("FillHatch", $"{R(r)} {color} {N(spacing)}", RectExtent(r));
 
     public void DrawText(string text, Rect bounds, TextStyle style, Rgba color, HAlign h = HAlign.Left, VAlign v = VAlign.Center,
-        bool wordWrap = false, bool ellipsis = false, bool mnemonic = false)
+        bool wordWrap = false, bool ellipsis = false, bool mnemonic = false, TextRotation rotation = TextRotation.None)
     {
         var flags = new StringBuilder();
         foreach (var (on, name) in new[] { (style.Bold, "bold"), (style.Italic, "italic"), (style.Underline, "underline"),
-                     (style.StrikeOut, "strikeout"), (wordWrap, "wrap"), (ellipsis, "ellipsis"), (mnemonic, "mnemonic") })
+                     (style.StrikeOut, "strikeout"), (wordWrap, "wrap"), (ellipsis, "ellipsis"), (mnemonic, "mnemonic"),
+                     (rotation == TextRotation.Up, "up"), (rotation == TextRotation.Down, "down") })
         {
             if (on)
             {

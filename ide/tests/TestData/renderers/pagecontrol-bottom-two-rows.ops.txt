@@ -1,0 +1,22 @@
+FillRect 0,0,289,193 #F0F0F0FF
+DrawRect 0,0,289,149 #ADADADFF 1 Solid
+FillRect 2,149,60,21 #F0F0F0FF
+DrawRect 2,149,60,21 #ADADADFF 1 Solid
+DrawText "&First" 2,149,60,21 "Segoe UI" 12 #000000FF Center Center mnemonic
+FillRect 122,149,60,21 #F0F0F0FF
+DrawRect 122,149,60,21 #ADADADFF 1 Solid
+DrawText "Third" 122,149,60,21 "Segoe UI" 12 #000000FF Center Center mnemonic
+FillRect 182,149,60,21 #F0F0F0FF
+DrawRect 182,149,60,21 #ADADADFF 1 Solid
+DrawText "Fourth" 182,149,60,21 "Segoe UI" 12 #000000FF Center Center mnemonic
+FillRect 2,170,60,21 #F0F0F0FF
+DrawRect 2,170,60,21 #ADADADFF 1 Solid
+DrawText "Fifth" 2,170,60,21 "Segoe UI" 12 #000000FF Center Center mnemonic
+FillRect 62,170,60,21 #F0F0F0FF
+DrawRect 62,170,60,21 #ADADADFF 1 Solid
+DrawText "Sixth" 62,170,60,21 "Segoe UI" 12 #000000FF Center Center mnemonic
+FillRect 60,147,64,25 #FFFFFFFF
+DrawLine 60,171.5,124,171.5 #ADADADFF 1 Solid
+DrawLine 60.5,147,60.5,172 #ADADADFF 1 Solid
+DrawLine 123.5,147,123.5,172 #ADADADFF 1 Solid
+DrawText "Second" 60,147,64,25 "Segoe UI" 12 #000000FF Center Center mnemonic

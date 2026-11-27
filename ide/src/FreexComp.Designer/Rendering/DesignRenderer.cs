@@ -63,11 +63,11 @@ public abstract class DesignRenderer : IDesignRenderer
 
     /// <summary>Draws text only when its rectangle and the text are non-empty.</summary>
     protected static void Text(IDesignCanvas canvas, RenderContext ctx, string text, Rect r, Rgba color, HAlign h = HAlign.Left,
-        VAlign v = VAlign.Center, bool wordWrap = false, bool ellipsis = false, bool mnemonic = false)
+        VAlign v = VAlign.Center, bool wordWrap = false, bool ellipsis = false, bool mnemonic = false, TextRotation rotation = TextRotation.None)
     {
         if (text.Length > 0 && r.Width > 0 && r.Height > 0)
         {
-            canvas.DrawText(text, r, ctx.Font, color, h, v, wordWrap, ellipsis, mnemonic);
+            canvas.DrawText(text, r, ctx.Font, color, h, v, wordWrap, ellipsis, mnemonic, rotation);
         }
     }
 

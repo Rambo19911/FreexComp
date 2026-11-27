@@ -16,6 +16,7 @@ public sealed class MetadataE2ETests
     [Fact]
     [Trait("Phase", "5")]
     [Trait("Kind", "E2E")]
+    [Trait("Req", "DSG-RND-025")]
     public void RealFrameworkMetadataLoadsWithoutErrors()
     {
         Assert.True(File.Exists(Index), "Framework metadata not found: " + Index);
@@ -35,7 +36,7 @@ public sealed class MetadataE2ETests
 
         // The Phase 4 palette (controls-standard.md): every creatable class has a page and an existing SVG icon.
         var creatable = catalog.All.Where(c => c.Palette is not null).ToList();
-        Assert.Equal(35, creatable.Count);   // 34 of Phase 4 + TRichEdit (U-144)
+        Assert.Equal(36, creatable.Count);   // 34 of Phase 4 + TRichEdit (U-144) + TTabControl (U-173)
         foreach (var component in creatable)
         {
             Assert.Contains(component.Palette!.Page, catalog.PalettePages);
@@ -43,6 +44,18 @@ public sealed class MetadataE2ETests
             Assert.True(File.Exists(component.Palette.Icon), $"{component.ClassName}: icon {component.Palette.Icon} missing");
             Assert.EndsWith(".svg", component.Palette.Icon, StringComparison.OrdinalIgnoreCase);
         }
+
+        // DSG-RND-025: the tab control comes from metadata alone — on Win32 directly before the page control (the palette
+        // sorts by order, ties by class name), drawn by its own renderer, with Tabs and TabIndex for the design-time rules.
+        var win32 = creatable.Where(c => c.Palette!.Page == "Win32").OrderBy(c => c.Palette!.Order).ThenBy(c => c.ClassName, StringComparer.Ordinal)
+            .Select(c => c.ClassName).ToList();
+        Assert.Equal(win32.IndexOf("TPageControl") - 1, win32.IndexOf("TTabControl"));
+        Assert.Equal(0, win32.IndexOf("TTabControl"));
+        var tabControl = catalog.Find("TTabControl")!;
+        Assert.Equal(("tabcontrol", "TCustomTabControl"), (tabControl.RendererId, tabControl.Ancestor));
+        Assert.True(catalog.IsAssignable("TPageControl", "TCustomTabControl"));
+        Assert.Equal(("TStrings", "strings"), (tabControl.FindProperty("Tabs")!.Type, tabControl.FindProperty("Tabs")!.Editor));
+        Assert.Equal(-1L, Convert.ToInt64(tabControl.FindProperty("TabIndex")!.Default, System.Globalization.CultureInfo.InvariantCulture));
 
         // Designer verbs and component editors: controls-standard.md §29.1, the complete list.
         static string Verbs(ComponentInfo c) => string.Join("; ", c.DesignerVerbs.Select(v => $"{v.Id}|{v.Caption}|{v.Command}|{v.Arg}"));

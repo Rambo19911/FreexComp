@@ -144,6 +144,15 @@ public sealed partial class RendererTests
         new("pagecontrol", "hidden-tab-fixed-width", "TPageControl", 289, 193, "TabWidth = 70\nTabHeight = 24", Framework: true,
             Children: HiddenSecondSheet),
         new("pagecontrol", "no-sheets", "TPageControl", 289, 193, Framework: true),
+        // DSG-RND-026 (D-148): every TabPosition with two rows, every Style; the tab control empty and with three tabs.
+        new("pagecontrol", "top-two-rows", "TPageControl", 289, 193, TwoRows + "TabPosition = tpTop", Framework: true, Children: SixSheets),
+        new("pagecontrol", "bottom-two-rows", "TPageControl", 289, 193, TwoRows + "TabPosition = tpBottom", Framework: true, Children: SixSheets),
+        new("pagecontrol", "left-two-columns", "TPageControl", 289, 193, TwoRows + "TabPosition = tpLeft", Framework: true, Children: SixSheets),
+        new("pagecontrol", "right-two-columns", "TPageControl", 289, 193, TwoRows + "TabPosition = tpRight", Framework: true, Children: SixSheets),
+        new("pagecontrol", "buttons", "TPageControl", 289, 193, "Style = tsButtons\nActivePage = S2", Framework: true, Children: Sheets),
+        new("pagecontrol", "flat-buttons", "TPageControl", 289, 193, "Style = tsFlatButtons\nActivePage = S2", Framework: true, Children: Sheets),
+        new("tabcontrol", "empty", "TTabControl", 289, 193, Framework: true),
+        new("tabcontrol", "three-tabs", "TTabControl", 289, 193, "TabIndex = 1\nTabs = (\n'&Alpha'\n'Beta'\n'Gamma'\n)", Framework: true),
         new("tabsheet", "default", "TPageControl", 289, 193, Framework: true, Children: Sheets, Target: "S1"),
         new("stringgrid", "default", "TStringGrid", 320, 120, Framework: true),
         new("stringgrid", "no-fixed-small-cells", "TStringGrid", 200, 80,
@@ -172,6 +181,12 @@ public sealed partial class RendererTests
     private const string Sheets = "object S1: TTabSheet\n  Caption = '&First'\nend\nobject S2: TTabSheet\n  Caption = 'Second'\nend\n"
         + "object S3: TTabSheet\n  Caption = 'Third tab'\nend\n";
 
+    private const string TwoRows = "MultiLine = True\nTabWidth = 60\nActivePage = S2\n";
+
+    private const string SixSheets = "object S1: TTabSheet\n  Caption = '&First'\nend\nobject S2: TTabSheet\n  Caption = 'Second'\nend\n"
+        + "object S3: TTabSheet\n  Caption = 'Third'\nend\nobject S4: TTabSheet\n  Caption = 'Fourth'\nend\n"
+        + "object S5: TTabSheet\n  Caption = 'Fifth'\nend\nobject S6: TTabSheet\n  Caption = 'Sixth'\nend\n";
+
     private const string HiddenSecondSheet = "object S1: TTabSheet\n  Caption = '&First'\nend\nobject S2: TTabSheet\n  Caption = 'Second'\n"
         + "  TabVisible = False\nend\nobject S3: TTabSheet\n  Caption = 'Third tab'\nend\n";
 
@@ -190,6 +205,9 @@ public sealed partial class RendererTests
     [Trait("Req", "DSG-RND-002")]
     [Trait("Req", "DSG-RND-013")]
     [Trait("Req", "DSG-RND-014")]
+    [Trait("Req", "DSG-RND-021")]
+    [Trait("Req", "DSG-RND-022")]
+    [Trait("Req", "DSG-RND-026")]
     public void MatchesGoldenOps(string caseId)
     {
         var c = Cases.Single(x => x.Id == caseId);

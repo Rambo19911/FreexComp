@@ -43,6 +43,12 @@ public sealed class LayoutResult
     /// <summary>The <c>visible</c> value of the dump: own <c>Visible</c>; tab sheets: is the active page.</summary>
     public bool GetVisible(FormObject obj) => Find(obj).Visible;
 
+    /// <summary>
+    /// DSG-RND-020, DSG-RND-021: the tab-strip geometry of a <c>TCustomTabControl</c> descendant in its laid-out state (the
+    /// one the display rectangle came from; text extents as the layout measured them); null for every other object.
+    /// </summary>
+    public TabStripGeometry? GetTabStrip(FormObject obj) => Find(obj).TabStrip;
+
     /// <summary>False for non-visual components, unplaceable preserved objects and objects outside the tree.</summary>
     public bool HasBounds(FormObject obj) => _entries.ContainsKey(obj);
 
@@ -95,41 +101,44 @@ public sealed class LayoutResult
         : throw new ArgumentException($"{obj.Name} has no layout bounds (non-visual or unplaceable)", nameof(obj));
 
     /// <summary>Snapshots the current state of a machine.</summary>
-    internal static LayoutResult Capture(LayoutNode root)
+    internal static LayoutResult Capture(LayoutMachine machine)
     {
+        var root = machine.Root;
         var entries = new Dictionary<FormObject, Entry>(ReferenceEqualityComparer.Instance);
-        var controls = Children(root, 0, 0, entries);
+        var controls = Children(machine, root, 0, 0, entries);
         var (cw, ch) = LayoutMachine.ClientSize(root);
-        entries[root.Object] = MakeEntry(root, 0, 0);
+        entries[root.Object] = MakeEntry(machine, root, 0, 0);
         var dump = new LayoutDumpForm(root.Object.TypeName, root.Object.Name, cw, ch, controls);
         return new LayoutResult(root.Object, entries, dump);
     }
 
-    private static List<LayoutDumpControl> Children(LayoutNode parent, int clientX, int clientY, Dictionary<FormObject, Entry> entries)
+    private static List<LayoutDumpControl> Children(LayoutMachine machine, LayoutNode parent, int clientX, int clientY,
+        Dictionary<FormObject, Entry> entries)
     {
         var list = new List<LayoutDumpControl>(parent.Children.Count);
         foreach (var c in parent.Children)
         {
             var sx = clientX + c.Left;
             var sy = clientY + c.Top;
-            entries[c.Object] = MakeEntry(c, sx, sy);
+            entries[c.Object] = MakeEntry(machine, c, sx, sy);
             var (ox, oy) = LayoutMachine.ClientOrigin(c);
             list.Add(new LayoutDumpControl(c.Object.TypeName, c.Object.Name, c.Left, c.Top, c.Width, c.Height, c.Visible,
-                Children(c, sx + ox, sy + oy, entries)));
+                Children(machine, c, sx + ox, sy + oy, entries)));
         }
 
         return list;
     }
 
-    private static Entry MakeEntry(LayoutNode n, int surfaceX, int surfaceY)
+    private static Entry MakeEntry(LayoutMachine machine, LayoutNode n, int surfaceX, int surfaceY)
     {
         var (ox, oy) = LayoutMachine.ClientOrigin(n);
         var (cw, ch) = LayoutMachine.ClientSize(n);
         var (l, t, r, b) = LayoutMachine.AlignRect(n);
         return new Entry(new Rect(n.Left, n.Top, n.Width, n.Height), new Rect(ox, oy, cw, ch), new Rect(l, t, r - l, b - t),
             new Rect(surfaceX, surfaceY, n.Width, n.Height), n.Visible,
-            new Rect(n.PaddingLeft, n.PaddingTop, n.PaddingRight, n.PaddingBottom));
+            new Rect(n.PaddingLeft, n.PaddingTop, n.PaddingRight, n.PaddingBottom), n.IsTabStrip ? machine.TabStrip(n) : null);
     }
 
-    private readonly record struct Entry(Rect Bounds, Rect Client, Rect Align, Rect Surface, bool Visible, Rect Padding);
+    private readonly record struct Entry(Rect Bounds, Rect Client, Rect Align, Rect Surface, bool Visible, Rect Padding,
+        TabStripGeometry? TabStrip);
 }

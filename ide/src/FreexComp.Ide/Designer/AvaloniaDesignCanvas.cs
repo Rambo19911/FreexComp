@@ -79,12 +79,14 @@ public sealed class AvaloniaDesignCanvas(DrawingContext context, Func<string, IB
     }
 
     public void DrawText(string text, DesignRect bounds, TextStyle style, Rgba color, HAlign h = HAlign.Left, VAlign v = VAlign.Center,
-        bool wordWrap = false, bool ellipsis = false, bool mnemonic = false)
+        bool wordWrap = false, bool ellipsis = false, bool mnemonic = false, TextRotation rotation = TextRotation.None)
     {
+        // A rotated text is laid out upright in a box of the swapped size and turned into the bounds (DSG-RND-021).
+        var box = rotation == TextRotation.None ? bounds : new DesignRect(0, 0, bounds.Height, bounds.Width);
         var (shown, underline) = mnemonic ? StripMnemonic(text) : (text, -1);
         var formatted = Format(shown, style, Brush(color));
         formatted.TextAlignment = h switch { HAlign.Center => TextAlignment.Center, HAlign.Right => TextAlignment.Right, _ => TextAlignment.Left };
-        formatted.MaxTextWidth = Math.Max(0, bounds.Width);
+        formatted.MaxTextWidth = Math.Max(0, box.Width);
         if (!wordWrap)
         {
             formatted.MaxLineCount = 1;
@@ -102,13 +104,22 @@ public sealed class AvaloniaDesignCanvas(DrawingContext context, Func<string, IB
 
         var y = v switch
         {
-            VAlign.Center => bounds.Top + (bounds.Height - formatted.Height) / 2,
-            VAlign.Bottom => bounds.Bottom - formatted.Height,
-            _ => bounds.Top,
+            VAlign.Center => box.Top + (box.Height - formatted.Height) / 2,
+            VAlign.Bottom => box.Bottom - formatted.Height,
+            _ => box.Top,
         };
         using (context.PushClip(ToRect(bounds)))
         {
-            context.DrawText(formatted, new Avalonia.Point(bounds.Left, y));
+            // Up: (u, v) → (Left + v, Bottom − u), a −90° turn; down: (u, v) → (Right − v, Top + u), a +90° turn.
+            using (rotation switch
+            {
+                TextRotation.Up => context.PushTransform(Matrix.CreateRotation(-Math.PI / 2) * Matrix.CreateTranslation(bounds.Left, bounds.Bottom)),
+                TextRotation.Down => context.PushTransform(Matrix.CreateRotation(Math.PI / 2) * Matrix.CreateTranslation(bounds.Right, bounds.Top)),
+                _ => (IDisposable?)null,
+            })
+            {
+                context.DrawText(formatted, new Avalonia.Point(box.Left, y));
+            }
         }
     }
 

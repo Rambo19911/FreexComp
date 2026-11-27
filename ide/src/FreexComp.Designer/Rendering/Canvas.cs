@@ -24,6 +24,12 @@ public enum HAlign { Left, Center, Right }
 
 public enum VAlign { Top, Center, Bottom }
 
+/// <summary>
+/// The direction a text line is drawn in (DSG-RND-021): upright, rotated a quarter turn counter-clockwise (reading
+/// upwards) or clockwise (reading downwards). A rotated text is laid out in the bounds' swapped size and turned into them.
+/// </summary>
+public enum TextRotation { None, Up, Down }
+
 /// <summary>Stroke pattern: <c>Dash</c> = 2 on / 2 off, <c>Dot</c> = 1 on / 2 off.</summary>
 public enum LineStyle { Solid, Dash, Dot }
 
@@ -54,9 +60,12 @@ public interface IDesignCanvas
     /// <summary>45° lines, 1 px, <paramref name="spacing"/> apart.</summary>
     void FillHatch(Rect r, Rgba color, double spacing);
 
-    /// <summary>Draws text clipped to <paramref name="bounds"/>; with <paramref name="mnemonic"/> see DSG-RND-002.</summary>
+    /// <summary>
+    /// Draws text clipped to <paramref name="bounds"/>; with <paramref name="mnemonic"/> see DSG-RND-002; with a
+    /// <paramref name="rotation"/> the alignments apply to the upright text (along its reading direction and across it).
+    /// </summary>
     void DrawText(string text, Rect bounds, TextStyle style, Rgba color, HAlign h = HAlign.Left, VAlign v = VAlign.Center,
-        bool wordWrap = false, bool ellipsis = false, bool mnemonic = false);
+        bool wordWrap = false, bool ellipsis = false, bool mnemonic = false, TextRotation rotation = TextRotation.None);
 
     Size MeasureText(string text, TextStyle style, double maxWidth = double.PositiveInfinity);
 

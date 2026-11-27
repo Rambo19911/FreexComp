@@ -1,2 +1,2 @@
 FillRect 0,0,289,193 #F0F0F0FF
-DrawRect 0,21,289,172 #ADADADFF 1 Solid
+DrawRect 0,0,289,193 #ADADADFF 1 Solid

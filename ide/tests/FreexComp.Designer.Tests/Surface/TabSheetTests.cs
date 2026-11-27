@@ -1,3 +1,4 @@
+using FreexComp.Designer.Model;
 using FreexComp.Designer.Rendering;
 using FreexComp.Designer.Surface;
 using FreexComp.Designer.Tests.Support;
@@ -89,6 +90,52 @@ public sealed class TabSheetTests
         h.Click("Book", (280, 10));
         Assert.Equal(["Book"], h.Selected);
         Assert.Equal(2, h.Undo.UndoCount);
+    }
+
+    /// <summary>
+    /// DSG-RND-023 (D-148): the tab click works at every <c>TabPosition</c> and <c>Style</c> with two rows (columns): the hit
+    /// test uses the laid-out tab rectangles of DSG-RND-020, so a tab of the outer row selects its sheet, and after the rows
+    /// move (the selected row goes innermost with <c>tsTabs</c>) the next click still finds the tab under the pointer.
+    /// </summary>
+    [Theory]
+    [InlineData("tpTop", "tsTabs")]
+    [InlineData("tpBottom", "tsTabs")]
+    [InlineData("tpLeft", "tsTabs")]
+    [InlineData("tpRight", "tsTabs")]
+    [InlineData("tpTop", "tsButtons")]
+    [InlineData("tpBottom", "tsButtons")]
+    [InlineData("tpLeft", "tsFlatButtons")]
+    [InlineData("tpRight", "tsFlatButtons")]
+    [InlineData("tpTop", "tsFlatButtons")]
+    [InlineData("tpBottom", "tsFlatButtons")]
+    [Trait("Phase", "8")]
+    [Trait("Req", "DSG-RND-023")]
+    [Trait("Req", "DSG-RND-020")]
+    public void ClickOnTabSelectsSheetAtEveryPosition(string position, string style)
+    {
+        var sheets = string.Concat(Enumerable.Range(1, 6).Select(i => $"    object S{i}: TTabSheet\n      Caption = 'Sheet {i}'\n    end\n"));
+        using var h = DesignerHarness.FromText(
+            "object Form1: TForm\n  ClientWidth = 400\n  ClientHeight = 300\n  object Book: TPageControl\n    Left = 8\n    Top = 8\n"
+            + $"    Width = 289\n    Height = 193\n    MultiLine = True\n    Style = {style}\n    TabPosition = {position}\n    TabWidth = 60\n"
+            + sheets + "  end\nend\n", catalog: Layout.LayoutHarness.Catalog);
+        (int X, int Y) Centre(string sheet)
+        {
+            var ctx = RenderContext.FromLayout(h.Object("Book"), h.Layout);
+            Assert.Equal(2, ctx.TabStrip!.RowCount);
+            var tab = PageControlRenderer.Tabs(ctx, h.Controller.MeasureCanvas).Single(t => t.Sheet.Name == sheet).Tab;
+            return (tab.Left + tab.Width / 2, tab.Top + tab.Height / 2);
+        }
+
+        var units = 0;
+        foreach (var sheet in (string[])["S6", "S2", "S5", "S4", "S1", "S3"])
+        {
+            h.Click("Book", Centre(sheet));
+            units++;
+            Assert.Equal([sheet], h.Selected);
+            Assert.True(h.Layout.GetVisible(h.Object(sheet)), $"{sheet} is the active page");
+            Assert.Equal(units, h.Undo.UndoCount);
+            Assert.Equal(sheet == "S1" ? null : sheet, PropertyAccess.ReferencedName(h.Object("Book"), "ActivePage"));
+        }
     }
 
     /// <summary>

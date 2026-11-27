@@ -42,7 +42,7 @@ public sealed class RendererRegistry
             new MemoRenderer(), new CheckBoxRenderer(), new RadioButtonRenderer(), new ListBoxRenderer(),
             new ComboBoxRenderer(), new GroupBoxRenderer(), new PanelRenderer(), new ImageRenderer(), new NonVisualRenderer(),
             new ScrollBarRenderer(), new StaticTextRenderer(), new ShapeRenderer(), new BevelRenderer(), new SplitterRenderer(),
-            new ScrollBoxRenderer(), new PageControlRenderer(), new TabSheetRenderer(), new StringGridRenderer(),
+            new ScrollBoxRenderer(), new PageControlRenderer(), new TabControlRenderer(), new TabSheetRenderer(), new StringGridRenderer(),
             new TrackBarRenderer(), new ProgressBarRenderer(), new TreeViewRenderer(), new ListViewRenderer(),
             new StatusBarRenderer(), new ToolBarRenderer(), new ToolButtonRenderer(),
             new DbGridRenderer(), new DbNavigatorRenderer(), // Phase 7 (data design-time.md DAT-339)

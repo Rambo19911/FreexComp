@@ -2,6 +2,8 @@
   "formatVersion": 1,
   "unit": "ComCtrls",
   "types": {
+    "TTabPosition": { "kind": "enum", "values": ["tpTop", "tpBottom", "tpLeft", "tpRight"] },
+    "TTabStyle": { "kind": "enum", "values": ["tsTabs", "tsButtons", "tsFlatButtons"] },
     "TToolButtonStyle": { "kind": "enum", "values": ["tbsButton", "tbsCheck", "tbsDropDown", "tbsSeparator", "tbsDivider"] },
     "TStatusPanelBevel": { "kind": "enum", "values": ["pbNone", "pbLowered", "pbRaised"] },
     "TStatusPanel": { "kind": "object", "properties": [
@@ -37,8 +39,18 @@
       ]
     },
     {
-      "class": "TPageControl",
+      "class": "TCustomTabControl",
       "ancestor": "TWinControl",
+      "abstract": true,
+      "kind": "container",
+      "acceptsChildren": true,
+      "renderer": "generic",
+      "properties": [],
+      "events": []
+    },
+    {
+      "class": "TPageControl",
+      "ancestor": "TCustomTabControl",
       "kind": "container",
       "defaultSize": { "width": 289, "height": 193 },
       "namePrefix": "PageControl",
@@ -53,12 +65,51 @@
       ],
       "properties": [
         { "name": "ActivePage", "type": "TTabSheet", "kind": "component", "category": "Behavior", "affectsLayout": true },
+        { "name": "MultiLine", "type": "Boolean", "default": false, "category": "Behavior", "affectsLayout": true },
+        { "name": "OwnerDraw", "type": "Boolean", "default": false, "category": "Appearance" },
+        { "name": "RaggedRight", "type": "Boolean", "default": false, "category": "Appearance" },
+        { "name": "ScrollOpposite", "type": "Boolean", "default": false, "category": "Behavior", "affectsLayout": true },
+        { "name": "Style", "type": "TTabStyle", "default": "tsTabs", "category": "Appearance", "affectsLayout": true },
         { "name": "TabHeight", "type": "Integer", "default": 0, "category": "Layout", "min": 0, "max": 32767, "affectsLayout": true },
         { "name": "TabOrder", "type": "Integer", "default": -1, "category": "Behavior", "min": -1, "max": 32767 },
-        { "name": "TabStop", "type": "Boolean", "default": true, "category": "Behavior" }
+        { "name": "TabPosition", "type": "TTabPosition", "default": "tpTop", "category": "Behavior", "affectsLayout": true },
+        { "name": "TabStop", "type": "Boolean", "default": true, "category": "Behavior" },
+        { "name": "TabWidth", "type": "Integer", "default": 0, "category": "Layout", "min": 0, "max": 32767 }
       ],
       "events": [
-        { "name": "OnChange", "signature": "TNotifyEvent", "default": true }
+        { "name": "OnChange", "signature": "TNotifyEvent", "default": true },
+        { "name": "OnDrawTab", "signature": "TDrawTabEvent" },
+        { "name": "OnGetImageIndex", "signature": "TTabGetImageEvent" }
+      ]
+    },
+    {
+      "class": "TTabControl",
+      "ancestor": "TCustomTabControl",
+      "palette": { "page": "Win32", "order": 5 },
+      "kind": "container",
+      "defaultSize": { "width": 289, "height": 193 },
+      "namePrefix": "TabControl",
+      "acceptsChildren": true,
+      "renderer": "tabcontrol",
+      "properties": [
+        { "name": "MultiLine", "type": "Boolean", "default": false, "category": "Behavior", "affectsLayout": true },
+        { "name": "OwnerDraw", "type": "Boolean", "default": false, "category": "Appearance" },
+        { "name": "RaggedRight", "type": "Boolean", "default": false, "category": "Appearance" },
+        { "name": "ScrollOpposite", "type": "Boolean", "default": false, "category": "Behavior", "affectsLayout": true },
+        { "name": "Style", "type": "TTabStyle", "default": "tsTabs", "category": "Appearance", "affectsLayout": true },
+        { "name": "TabHeight", "type": "Integer", "default": 0, "category": "Layout", "min": 0, "max": 32767, "affectsLayout": true },
+        { "name": "TabIndex", "type": "Integer", "default": -1, "category": "Data", "min": -1 },
+        { "name": "TabOrder", "type": "Integer", "default": -1, "category": "Behavior", "min": -1, "max": 32767 },
+        { "name": "TabPosition", "type": "TTabPosition", "default": "tpTop", "category": "Behavior", "affectsLayout": true },
+        { "name": "Tabs", "type": "TStrings", "category": "Data", "editor": "strings", "affectsLayout": true, "localizable": true },
+        { "name": "TabStop", "type": "Boolean", "default": true, "category": "Behavior" },
+        { "name": "TabWidth", "type": "Integer", "default": 0, "category": "Layout", "min": 0, "max": 32767 }
+      ],
+      "events": [
+        { "name": "OnChange", "signature": "TNotifyEvent", "default": true },
+        { "name": "OnChanging", "signature": "TTabChangingEvent" },
+        { "name": "OnDrawTab", "signature": "TDrawTabEvent" },
+        { "name": "OnGetImageIndex", "signature": "TTabGetImageEvent" }
       ]
     },
     {
@@ -132,6 +183,13 @@
     }
   ],
   "eventSignatures": {
-    "TNotifyEvent": "procedure(Sender: TObject)"
+    "TNotifyEvent": "procedure(Sender: TObject)",
+    "TTabChangingEvent": "procedure(Sender: TObject; var AllowChange: Boolean)",
+    "TDrawTabEvent": "procedure(Control: TCustomTabControl; TabIndex: Integer; const Rect: TRect; Active: Boolean)",
+    "TTabGetImageEvent": "procedure(Sender: TObject; TabIndex: Integer; var ImageIndex: Integer)"
+  },
+  "eventSignatureUnits": {
+    "TCustomTabControl": "ComCtrls",
+    "TRect": "Types"
   }
 }

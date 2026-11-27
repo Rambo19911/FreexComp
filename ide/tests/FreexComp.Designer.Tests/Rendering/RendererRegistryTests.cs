@@ -9,7 +9,7 @@ public sealed class RendererRegistryTests
     [
         "form", "label", "edit", "memo", "button", "checkbox", "radiobutton", "listbox", "combobox", "groupbox", "panel",
         "image", "nonvisual", "generic", "unknown",
-        "scrollbar", "statictext", "shape", "bevel", "splitter", "scrollbox", "pagecontrol", "tabsheet", "stringgrid",
+        "scrollbar", "statictext", "shape", "bevel", "splitter", "scrollbox", "pagecontrol", "tabcontrol", "tabsheet", "stringgrid",
         "trackbar", "progressbar", "treeview", "listview", "statusbar", "toolbar", "toolbutton",
         "dbgrid", "dbnavigator", // Phase 7 (data design-time.md DAT-339)
     ];
@@ -22,11 +22,14 @@ public sealed class RendererRegistryTests
     [Trait("Phase", "5")]
     [Trait("Req", "DSG-RND-008")]
     [Trait("Req", "DSG-RND-017")]
+    [Trait("Req", "DSG-RND-022")]
     public void AllFrameworkRendererIdsAreRegistered()
     {
         var registry = RendererRegistry.CreateDefault();
         var ids = Layout.LayoutHarness.Catalog.All.Select(c => c.RendererId).OfType<string>().Distinct().Order(StringComparer.Ordinal).ToList();
         Assert.Contains("pagecontrol", ids);
+        Assert.Contains("tabcontrol", ids); // DSG-RND-022 (U-173)
+        Assert.IsType<TabControlRenderer>(registry.Resolve("tabcontrol"));
         Assert.True(ids.Count >= 30, "framework metadata renderer ids: " + string.Join(", ", ids));
         Assert.Equal(ids, ids.Select(id => registry.Resolve(id).Id));
     }
