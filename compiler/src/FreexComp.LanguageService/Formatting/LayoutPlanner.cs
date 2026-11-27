@@ -11,6 +11,7 @@ internal sealed class LayoutPlanner
 {
     private readonly LayoutPlan _plan;
     private readonly bool _sameLine;
+    private readonly UsesWrap _uses;
     private readonly Dictionary<SyntaxNode, int> _levelOf = new(ReferenceEqualityComparer.Instance);
     private readonly CancellationToken _ct;
     private int _visited;
@@ -19,6 +20,7 @@ internal sealed class LayoutPlanner
     {
         _plan = plan;
         _sameLine = profile.Begin == BeginStyle.SameLine;
+        _uses = profile.Uses;
         _ct = ct;
     }
 
@@ -81,6 +83,7 @@ internal sealed class LayoutPlanner
         }
 
         Decide(node, level);
+        MarkBreakable(node);
         foreach (var child in node.ChildNodesAndTokens())
         {
             if (child.AsNode() is { } inner)
@@ -136,6 +139,10 @@ internal sealed class LayoutPlanner
                 Line(u.FinalizationSection?.FinalizationKeyword, 0, BlankRule.One);
                 Line(u.EndKeyword, 0);
                 Join(u.DotToken, 0);
+                break;
+
+            case UsesClauseSyntax u:
+                Uses(u, l);
                 break;
 
             case InterfaceSectionSyntax s:
@@ -369,6 +376,73 @@ internal sealed class LayoutPlanner
                 }
 
                 break;
+        }
+    }
+
+    /// <summary>
+    /// CMP-1450: <see cref="UsesWrap.OnePerLine"/> puts each unit on its own line one level in; <see cref="UsesWrap.Fill"/> puts
+    /// the first unit on its own line one level in and fills the next ones after it up to the maximum line length. In both the
+    /// <c>in 'path'</c> part stays with its unit. <see cref="UsesWrap.AsIs"/> keeps the line breaks (spacing only).
+    /// </summary>
+    private void Uses(UsesClauseSyntax uses, int l)
+    {
+        if (_uses == UsesWrap.AsIs)
+        {
+            return;
+        }
+
+        var items = uses.Units.GetWithSeparators();
+        for (var i = 0; i < items.Length; i += 2)
+        {
+            var unit = (UsedUnitSyntax)items[i].AsNode()!;
+            if (i == 0 || _uses == UsesWrap.OnePerLine)
+            {
+                Line(unit.FirstToken(), l + 1);
+                if (_plan.IndexOf(unit.FirstToken()) is var index and >= 0)
+                {
+                    _plan.CommentsToNext[index] = true;
+                }
+            }
+            else
+            {
+                _plan.SetWrap(unit.FirstToken(), l + 1, i + 1 < items.Length ? items[i + 1].AsToken() : uses.SemicolonToken);
+            }
+
+            Join(unit.InKeyword, l + 1);
+            Join(unit.Path, l + 1);
+        }
+    }
+
+    /// <summary>
+    /// CMP-1451: the separators a long line may be broken after — of argument and index lists, formal parameter lists (their
+    /// <c>;</c>), the name lists of variables, fields and parameters, set / array constructors, array constants, and of
+    /// <c>uses</c> clauses laid out <see cref="UsesWrap.AsIs"/>.
+    /// </summary>
+    private void MarkBreakable(SyntaxNode node)
+    {
+        var separators = node switch
+        {
+            ArgumentListSyntax a => a.Arguments.Separators,
+            ElementAccessExpressionSyntax e => e.Indexes.Separators,
+            ParameterListSyntax p => p.Parameters.Separators,
+            PropertyDeclarationSyntax p => p.Parameters.Separators,
+            ParameterSyntax p => p.Identifiers.Separators,
+            VarDeclarationSyntax v => v.Identifiers.Separators,
+            FieldDeclarationSyntax f => f.Identifiers.Separators,
+            InlineVarStatementSyntax v => v.Identifiers.Separators,
+            SetConstructorSyntax s => s.Elements.Separators,
+            TypedConstantAggregateSyntax c => c.Elements.Separators.Where(t => t.Kind == SyntaxKind.CommaToken),
+            UsesClauseSyntax u when _uses == UsesWrap.AsIs => u.Units.Separators,
+            _ => null,
+        };
+        if (separators is null)
+        {
+            return;
+        }
+
+        foreach (var separator in separators)
+        {
+            _plan.SetBreakAfter(separator);
         }
     }
 

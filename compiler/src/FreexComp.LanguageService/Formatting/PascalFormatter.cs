@@ -15,18 +15,21 @@ public static class PascalFormatter
     /// <summary>The name of a style profile file (CMP-1452).</summary>
     internal const string ProfileFileName = ".pasformat";
 
+    /// <summary>How many times at most the long-line pass (CMP-1451) writes the text again.</summary>
+    private const int MaxLinePasses = 16;
+
     /// <summary>
     /// Formats <paramref name="text"/> with <paramref name="profile"/>. Returns the edits that turn the text into its formatted
-    /// form, or a refusal (syntax error; CMP-1438). <paramref name="range"/> formatting is not available yet (C-405): a non-null
-    /// range throws <see cref="ArgumentException"/>.
+    /// form, or a refusal (syntax error; CMP-1438). With <paramref name="range"/> only the statements and declarations it touches
+    /// are formatted (CMP-1453); a range outside the text throws <see cref="ArgumentOutOfRangeException"/>.
     /// </summary>
     public static FormatResult Format(SourceText text, FormatProfile profile, TextSpan? range, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(text);
         ArgumentNullException.ThrowIfNull(profile);
-        if (range is not null)
+        if (range is { } r && (r.Start < 0 || r.End > text.Text.Length))
         {
-            throw new ArgumentException("Range formatting is not available yet.", nameof(range));
+            throw new ArgumentOutOfRangeException(nameof(range), "The range is outside the text.");
         }
 
         var tree = SyntaxTree.Parse(text);
@@ -41,7 +44,13 @@ public static class PascalFormatter
         var tokens = tree.Root.OwnTokens().Where(t => !t.IsMissing).ToArray();
         var plan = new LayoutPlan(tokens);
         LayoutPlanner.Plan(plan, tree.Root, profile, ct);
+        CaseRules.Apply(plan, text, profile, ct);
         var gaps = new LayoutWriter(text.Text, plan, profile, ct).Write(out var formatted);
+        for (var pass = 0; pass < MaxLinePasses && LineBreaker.Mark(plan, profile, formatted, gaps); pass++)
+        {
+            gaps = new LayoutWriter(text.Text, plan, profile, ct).Write(out formatted);
+        }
+
         ct.ThrowIfCancellationRequested();
 
         if (!TokenStreamsMatch(tokens, SyntaxTree.Parse(text with { Text = formatted })))
@@ -49,29 +58,65 @@ public static class PascalFormatter
             return Refuse("the formatted text would not keep the tokens and comments as they are");
         }
 
+        var (first, last) = range is { } span ? RangeWidener.Widen(plan, span) : (0, tokens.Length - 1);
         var edits = ImmutableArray.CreateBuilder<TextEdit>();
+        var pastRange = false;
         foreach (var gap in gaps)
         {
             var oldText = text.Text.AsSpan(gap.OldStart, gap.OldEnd - gap.OldStart);
             var newText = formatted.AsSpan(gap.NewStart, gap.NewEnd - gap.NewStart);
-            if (oldText.SequenceEqual(newText))
+            if ((gap.Token > first || first == 0) && gap.Token <= last)
             {
-                continue;
+                AddEdit(edits, gap.OldStart, oldText, newText);
+            }
+            else if (gap.Token == first)
+            {
+                // CMP-1453: before the range only the indentation of its first line
+                var o = oldText.LastIndexOfAny('\r', '\n') + 1;
+                var n = newText.LastIndexOfAny('\r', '\n') + 1;
+                if (o > 0 && n > 0)
+                {
+                    AddEdit(edits, gap.OldStart + o, oldText[o..], newText[n..]);
+                }
+            }
+            else if (gap.Token > last && !pastRange)
+            {
+                pastRange = true;
+                // after the range only the end of its last line (trailing whitespace, the space before a comment)
+                var o = oldText.IndexOfAny('\r', '\n');
+                var n = newText.IndexOfAny('\r', '\n');
+                if (o >= 0 && n >= 0)
+                {
+                    AddEdit(edits, gap.OldStart, oldText[..o], newText[..n]);
+                }
             }
 
-            var prefix = oldText.CommonPrefixLength(newText);
-            var suffix = 0;
-            while (suffix < oldText.Length - prefix && suffix < newText.Length - prefix && oldText[^(suffix + 1)] == newText[^(suffix + 1)])
+            if (gap.TokenChanged && gap.Token >= first && gap.Token <= last)
             {
-                suffix++;
+                var token = tokens[gap.Token];
+                AddEdit(edits, token.Span.Start, token.Text, formatted.AsSpan(gap.NewEnd, token.Span.Length));
             }
-
-            edits.Add(new TextEdit(
-                new TextSpan(gap.OldStart + prefix, oldText.Length - prefix - suffix),
-                newText[prefix..^suffix].ToString()));
         }
 
         return new FormatResult(false, null, edits.ToImmutable());
+    }
+
+    /// <summary>One edit replacing <paramref name="oldText"/> at <paramref name="start"/>, trimmed to the differing part.</summary>
+    private static void AddEdit(ImmutableArray<TextEdit>.Builder edits, int start, ReadOnlySpan<char> oldText, ReadOnlySpan<char> newText)
+    {
+        if (oldText.SequenceEqual(newText))
+        {
+            return;
+        }
+
+        var prefix = oldText.CommonPrefixLength(newText);
+        var suffix = 0;
+        while (suffix < oldText.Length - prefix && suffix < newText.Length - prefix && oldText[^(suffix + 1)] == newText[^(suffix + 1)])
+        {
+            suffix++;
+        }
+
+        edits.Add(new TextEdit(new TextSpan(start + prefix, oldText.Length - prefix - suffix), newText[prefix..^suffix].ToString()));
     }
 
     /// <summary>
@@ -130,7 +175,7 @@ public static class PascalFormatter
 
     /// <summary>
     /// CMP-1437, checked on the result: the same tokens (text compared ignoring case, string literals exactly) and the same
-    /// comments, directives and disabled text, in the same order relative to the tokens.
+    /// comments, directives (names compared ignoring case) and disabled text, in the same order relative to the tokens.
     /// </summary>
     private static bool TokenStreamsMatch(SyntaxToken[] original, SyntaxTree formatted) =>
         !formatted.Diagnostics.Any(IsSyntaxError)
@@ -154,7 +199,7 @@ public static class PascalFormatter
         }
     }
 
-    /// <summary>Comments, directives and the core of disabled text (without the whitespace the formatter may change).</summary>
+    /// <summary>Comments, directives (their names in upper case) and the core of disabled text (without the whitespace the formatter may change).</summary>
     private static IEnumerable<(SyntaxKind Kind, string Text)> Kept(ImmutableArray<SyntaxTrivia> trivia)
     {
         foreach (var t in trivia)
@@ -170,6 +215,9 @@ public static class PascalFormatter
                         yield return (t.Kind, core);
                     }
 
+                    break;
+                case SyntaxKind.DirectiveTrivia or SyntaxKind.IncludeDirectiveTrivia:
+                    yield return (t.Kind, CaseRules.Directive(t.Text, KeywordCase.Upper));     // the name in any case (CMP-1448)
                     break;
                 default:
                     yield return (t.Kind, t.Text);

@@ -160,8 +160,9 @@ internal sealed partial class ExpressionBinder
     /// </summary>
     private BoundExpression BindReferenceValue(ExpressionSyntax syntax, InterfaceTypeSymbol type)
     {
+        // without System (white-box binding, the formatter's file-only model) there is no forwarder ancestor: the name binds as a value
         if (Unparenthesized(syntax) is not AnonymousMethodExpressionSyntax && type.Invoke.Parameters.All(p => !p.IsOpenArray && !p.IsUntyped)
-            && RoutineReference(syntax, type) is { } forwarded)
+            && _types.TInterfacedObject is ClassTypeSymbol && RoutineReference(syntax, type) is { } forwarded)
         {
             return forwarded;                                                   // LANG-485 (C-121)
         }

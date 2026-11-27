@@ -1,5 +1,6 @@
 using FreexComp.Compiler;
 using FreexComp.Compiler.Syntax;
+using FreexComp.Compiler.Text;
 using FreexComp.LanguageService.Formatting;
 
 namespace FreexComp.LanguageService.Tests.Formatting;
@@ -9,8 +10,8 @@ internal static class FormatterHarness
 {
     public const string Path = @"C:\p\Unit1.pas";
 
-    public static FormatResult Run(string text, FormatProfile? profile = null, string path = Path) =>
-        PascalFormatter.Format(SourceText.From(path, text), profile ?? FormatProfile.Default, null, TestContext.Current.CancellationToken);
+    public static FormatResult Run(string text, FormatProfile? profile = null, string path = Path, TextSpan? range = null) =>
+        PascalFormatter.Format(SourceText.From(path, text), profile ?? FormatProfile.Default, range, TestContext.Current.CancellationToken);
 
     /// <summary>The formatted text; fails when the formatter refuses.</summary>
     public static string Format(string text, FormatProfile? profile = null, string path = Path)
@@ -34,7 +35,8 @@ internal static class FormatterHarness
     }
 
     /// <summary>
-    /// CMP-1437: kind and text of every token (string literals exactly, other text in upper case), every comment and directive,
+    /// CMP-1437: kind and text of every token (string literals exactly, other text in upper case), every comment and directive
+    /// (its name in upper case, CMP-1448),
     /// and the lines of disabled text (without the blank part of its first and last line, which belong to the directive lines).
     /// </summary>
     public static List<string> Stream(string text, string path = Path)
@@ -61,6 +63,9 @@ internal static class FormatterHarness
                             list.Add("disabled:" + core.TrimEnd('\r'));
                         }
 
+                        break;
+                    case SyntaxKind.DirectiveTrivia or SyntaxKind.IncludeDirectiveTrivia:
+                        list.Add(trivia.Kind + ":" + CaseRules.Directive(trivia.Text, KeywordCase.Upper));
                         break;
                     default:
                         list.Add(trivia.Kind + ":" + trivia.Text);

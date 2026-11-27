@@ -13,6 +13,12 @@ internal enum GapRule : byte
 
     /// <summary>The token is the first token of its line (CMP-1441).</summary>
     Line,
+
+    /// <summary>
+    /// CMP-1450 <see cref="UsesWrap.Fill"/>: the token stays on the previous token's line unless its item (up to
+    /// <see cref="LayoutPlan.WrapEnd"/>) would pass <see cref="FormatProfile.MaxLineLength"/>.
+    /// </summary>
+    Wrap,
 }
 
 /// <summary>Blank lines directly before a token (CMP-1443).</summary>
@@ -49,6 +55,10 @@ internal sealed class LayoutPlan
         CommentLevels = new int[n];
         BlankBefore = new BlankRule[n];
         NoBlankAfter = new bool[n];
+        Texts = new string?[n];
+        BreakAfter = new bool[n];
+        WrapEnd = new int[n];
+        CommentsToNext = new bool[n];
         _ruleSet = new bool[n];
         _commentSet = new bool[n];
         _blankSet = new bool[n];
@@ -72,6 +82,24 @@ internal sealed class LayoutPlan
 
     public bool[] NoBlankAfter { get; }
 
+    /// <summary>The token's text in the result when its case changes (CMP-1448, CMP-1449); null: as written.</summary>
+    public string?[] Texts { get; }
+
+    /// <summary>CMP-1451: the token is a separator of a list a long line may be broken after.</summary>
+    public bool[] BreakAfter { get; }
+
+    /// <summary>For a <see cref="GapRule.Wrap"/> token: the index of the last token of its item (the separator after it).</summary>
+    public int[] WrapEnd { get; }
+
+    /// <summary>
+    /// CMP-1450: the token starts a line and a block comment before it on its line (after the previous token) moves to that line
+    /// with it.
+    /// </summary>
+    public bool[] CommentsToNext { get; }
+
+    /// <summary>The text the token is written with.</summary>
+    public string TextOf(int i) => Texts[i] ?? Tokens[i].Text;
+
     public int IndexOf(SyntaxToken token) =>
         token.Kind != SyntaxKind.None && !token.IsMissing && _indexByStart.TryGetValue(token.Span.Start, out var i) && Tokens[i].Kind == token.Kind ? i : -1;
 
@@ -86,6 +114,27 @@ internal sealed class LayoutPlan
             Levels[i] = level;
         }
     }
+
+    /// <summary>CMP-1450: a <see cref="GapRule.Wrap"/> token whose item ends at <paramref name="end"/>.</summary>
+    public void SetWrap(SyntaxToken? token, int level, SyntaxToken end)
+    {
+        if (token is { } t && IndexOf(t) is var i and >= 0 && !_ruleSet[i] && IndexOf(end) is var e and >= 0)
+        {
+            Set(t, GapRule.Wrap, level);
+            WrapEnd[i] = e;
+        }
+    }
+
+    public void SetBreakAfter(SyntaxToken separator)
+    {
+        if (IndexOf(separator) is var i and >= 0)
+        {
+            BreakAfter[i] = true;
+        }
+    }
+
+    /// <summary>CMP-1451: token <paramref name="i"/> starts a line at its level (a long line broken before it).</summary>
+    public void ForceLine(int i) => Rules[i] = GapRule.Line;
 
     public void SetCommentLevel(SyntaxToken? token, int level)
     {

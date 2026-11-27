@@ -29,8 +29,11 @@ internal sealed partial class LayoutWriter
 
     private readonly record struct El(Piece Kind, int Start, int End, int Token = -1, bool StartsLine = false, bool EndsLine = false);
 
-    /// <summary>The text between two tokens before (<c>Old…</c>, in the source) and after (<c>New…</c>, in the result).</summary>
-    public readonly record struct Gap(int OldStart, int OldEnd, int NewStart, int NewEnd);
+    /// <summary>
+    /// The text between two tokens before (<c>Old…</c>, in the source) and after (<c>New…</c>, in the result), and the token
+    /// <see cref="Token"/> after it (<see cref="TokenChanged"/>: written in another case, CMP-1448 / CMP-1449).
+    /// </summary>
+    public readonly record struct Gap(int OldStart, int OldEnd, int NewStart, int NewEnd, int Token, bool TokenChanged);
 
     private readonly string _text;
     private readonly LayoutPlan _plan;
@@ -44,6 +47,7 @@ internal sealed partial class LayoutWriter
     private bool _atLineStart;      // the current output line is empty (after copied lines of disabled text)
     private bool _lineHasToken;     // a token (or a format:off region) is on the current output line
     private bool _regionToEnd;      // the last region runs to the end of the text
+    private int _lineStart;         // where the current output line starts in _sb
 
     public LayoutWriter(string text, LayoutPlan plan, FormatProfile profile, CancellationToken ct)
     {
@@ -78,10 +82,12 @@ internal sealed partial class LayoutWriter
             var newStart = _sb.Length;
             WriteGap(previous, first, i, el.Token);
             var token = _plan.Tokens[el.Token];
-            gaps.Add(new Gap(previous < 0 ? 0 : _plan.Tokens[previous].Span.End, token.Span.Start, newStart, _sb.Length));
+            var text = _plan.TextOf(el.Token);
+            gaps.Add(new Gap(previous < 0 ? 0 : _plan.Tokens[previous].Span.End, token.Span.Start, newStart, _sb.Length, el.Token,
+                _plan.Texts[el.Token] is not null));
             if (token.Kind != SyntaxKind.EndOfFileToken)
             {
-                _sb.Append(token.Text);
+                _sb.Append(text);
                 _started = true;
                 _atLineStart = false;
                 _lineHasToken = true;
@@ -357,6 +363,13 @@ internal sealed partial class LayoutWriter
                     {
                         Indent(ItemLevel(k, to, n));
                     }
+                    else if (newlines == 0 && _plan.CommentsToNext[n] && el.Kind == Piece.Comment && !LineBreakAfter(k, to))
+                    {
+                        // CMP-1450: a comment written before a unit on its line stays with that unit
+                        Break(1, p, n, first: !broke, last: false);
+                        broke = true;
+                        Indent(_plan.Levels[n]);
+                    }
                     else if (newlines == 0)
                     {
                         if (space)
@@ -400,11 +413,12 @@ internal sealed partial class LayoutWriter
         {
             GapRule.Line => newlines > 0 || _lineHasToken,
             GapRule.Join => afterItem && newlines > 0,
+            GapRule.Wrap => (afterItem && newlines > 0) || Overflows(p, n, afterItem && space),
             _ => newlines > 0,
         };
         if (breakLine)
         {
-            Break(Math.Max(newlines, 1), p, n, first: !broke, last: true);
+            Break(_plan.Rules[n] == GapRule.Wrap && !afterItem ? 1 : Math.Max(newlines, 1), p, n, first: !broke, last: true);
             Indent(_plan.Levels[n]);
         }
         else if (afterItem)
@@ -418,6 +432,27 @@ internal sealed partial class LayoutWriter
         {
             _sb.Append(' ');
         }
+    }
+
+    /// <summary>
+    /// CMP-1450 <see cref="UsesWrap.Fill"/>: true when the item that starts with token <paramref name="n"/> (up to its separator)
+    /// would end past <see cref="FormatProfile.MaxLineLength"/> on the current line.
+    /// </summary>
+    private bool Overflows(int p, int n, bool spaceAfterItem)
+    {
+        if (_profile.MaxLineLength <= 0)
+        {
+            return false;
+        }
+
+        var width = _sb.Length - _lineStart + (spaceAfterItem || (p >= 0 && Space(_plan.Tokens[p], _plan.Tokens[n])) ? 1 : 0);
+        var end = Math.Max(_plan.WrapEnd[n], n);
+        for (var i = n; i <= end && i < _plan.Tokens.Length; i++)
+        {
+            width += _plan.TextOf(i).Length + (i > n && Space(_plan.Tokens[i - 1], _plan.Tokens[i]) ? 1 : 0);
+        }
+
+        return width > _profile.MaxLineLength;
     }
 
     /// <summary>The spaces before a comment or directive on the same line as written (aligned comments stay aligned); a run with a tab becomes one space.</summary>
@@ -435,13 +470,38 @@ internal sealed partial class LayoutWriter
 
     private void Copy(El el)
     {
-        _sb.Append(_text, el.Start, el.End - el.Start);
+        var start = _sb.Length;
+        if (el.Kind == Piece.Directive && _profile.Directives != KeywordCase.AsIs)
+        {
+            _sb.Append(CaseRules.Directive(_text.Substring(el.Start, el.End - el.Start), _profile.Directives));
+        }
+        else
+        {
+            _sb.Append(_text, el.Start, el.End - el.Start);
+        }
+
         _started = true;
         _atLineStart = el.Kind == Piece.Verbatim && el.EndsLine;
-        if (_text.AsSpan(el.Start, el.End - el.Start).IndexOfAny('\r', '\n') >= 0)
+        var lastEol = _text.AsSpan(el.Start, el.End - el.Start).LastIndexOfAny('\r', '\n');
+        if (lastEol >= 0)
         {
             _lineHasToken = false;
+            _lineStart = start + lastEol + 1;
         }
+    }
+
+    /// <summary>True when a line break (or a piece that starts a line) follows piece <paramref name="k"/> before piece <paramref name="to"/>.</summary>
+    private bool LineBreakAfter(int k, int to)
+    {
+        for (var j = k + 1; j < to; j++)
+        {
+            if (_els[j].Kind is Piece.EndOfLine or Piece.Region or Piece.LineComment || _els[j] is { Kind: Piece.Verbatim, StartsLine: true })
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>The level of a comment or directive that starts a line: the next token's when it follows on that line, else the comment level before it.</summary>
@@ -491,6 +551,7 @@ internal sealed partial class LayoutWriter
         }
 
         _lineHasToken = false;
+        _lineStart = _sb.Length;
     }
 
     private void Indent(int level)
