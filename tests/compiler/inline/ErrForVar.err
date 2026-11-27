@@ -1,0 +1,7 @@
+ErrForVar.pas(18,11): error E2003: Undeclared identifier 'I'
+ErrForVar.pas(21,11): error E2003: Undeclared identifier 'X'
+ErrForVar.pas(31,5): error E2053: Left side cannot be assigned to
+ErrForVar.pas(32,9): error E2053: Left side cannot be assigned to
+ErrForVar.pas(33,12): error E2053: Left side cannot be assigned to
+ErrForVar.pas(34,11): error E2053: Left side cannot be assigned to
+ErrForVar.pas(37,5): error E2053: Left side cannot be assigned to

@@ -24,6 +24,7 @@ public sealed class InlayHintTests
                 After("var N", ": Integer"),
                 After("var L", ": TBox<Integer>"),
                 After("for var I", ": Integer"),
+                After("for var Q", ": UInt64"),
                 After("for var B", ": Byte"),
             ],
             Hints(Whole));

@@ -14,6 +14,7 @@ internal static class InlineInferenceFixture
           end;
         var
           U: Integer;
+          V: UInt64;
           Bytes: array of Byte;
         procedure Run;
         begin
@@ -22,6 +23,8 @@ internal static class InlineInferenceFixture
           var W: Integer := 7;
           for var I := 0 to High(U) do
             N := N + I;
+          for var Q := 0 to High(V) do
+            N := N + 1;
           for var B in Bytes do
             W := W + B;
           for var J: Integer := 1 to 2 do

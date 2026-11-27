@@ -273,7 +273,7 @@ internal sealed partial class BodyBinder
         return (locals.ToImmutable(), initialization.ToImmutable(), scope);
     }
 
-    /// <summary>LANG-386 <c>for var i [: T] := a to b do s</c>: <c>i</c> is a local of the loop (type inferred from <c>a</c>).</summary>
+    /// <summary>LANG-386 <c>for var i [: T] := a to b do s</c>: <c>i</c> is a local of the loop (type inferred from both bounds: LANG-575).</summary>
     private BoundStatement BindInlineFor(ForStatementSyntax syntax)
     {
         var start = _expressions.BindExpression(syntax.Start);
@@ -281,6 +281,11 @@ internal sealed partial class BodyBinder
         var identifier = syntax.Variable.Identifier;
         var name = identifier.Value as string ?? identifier.Text;
         var type = syntax.Type is { } typeSyntax ? Declarations().BindLocalType(typeSyntax) : InferredType(start, syntax.Start, syntax.Variable, name);
+        if (syntax.Type is null && type is IntegerTypeSymbol natural && !finish.HasErrors)
+        {
+            type = CountedLoopType(natural, start, finish, syntax.Finish);
+        }
+
         if (identifier.IsMissing || type is null || type.TypeKind == TypeKind.Error || !CheckInlineName(identifier, name))
         {
             return new BoundErrorStatement(syntax);
@@ -295,6 +300,44 @@ internal sealed partial class BodyBinder
             DeclarationScope = scope,
             ScopeRange = LoopScopeRange(syntax, syntax.DoKeyword),
         };
+    }
+
+    /// <summary>
+    /// LANG-575 rule 2 (C-386): the type of a counted <c>for var</c> loop whose start has the integer natural type <paramref name="natural"/>.
+    /// The range of a bound is its value when it is a constant, else the range of its natural type. When the end bound's natural type
+    /// is an integer type whose range does not lie inside <paramref name="natural"/>, the type is the first of <c>Integer</c>,
+    /// <c>Int64</c>, <c>UInt64</c> containing the ranges of both bounds — <c>UInt64</c> with W1010 at the end bound when none does.
+    /// Any other end bound keeps <paramref name="natural"/> (rule 3: converted to it, E2010 when it cannot be).
+    /// </summary>
+    private TypeSymbol CountedLoopType(IntegerTypeSymbol natural, BoundExpression start, BoundExpression finish, ExpressionSyntax finishSyntax)
+    {
+        if (WidenedSubrange(finish.Type) is not IntegerTypeSymbol finishType)
+        {
+            return natural;
+        }
+
+        var (startMin, startMax) = RangeOf(start, natural);
+        var (finishMin, finishMax) = RangeOf(finish, finishType);
+        if (finishMin >= natural.Min && finishMax <= natural.Max)
+        {
+            return natural;
+        }
+
+        var min = BigInteger.Min(startMin, finishMin);
+        var max = BigInteger.Max(startMax, finishMax);
+        foreach (var candidate in new[] { _types.Integer, _types.Int64, _types.UInt64 }.Cast<IntegerTypeSymbol>())
+        {
+            if (candidate.Min <= min && max <= candidate.Max)
+            {
+                return candidate;
+            }
+        }
+
+        _diagnostics.Report(finishSyntax, "W1010");
+        return _types.UInt64;
+
+        static (BigInteger Min, BigInteger Max) RangeOf(BoundExpression bound, IntegerTypeSymbol type) =>
+            bound.ConstantValue is { Type: IntegerTypeSymbol, Value: BigInteger n } ? (n, n) : (type.Min, type.Max);
     }
 
     /// <summary>LANG-386 <c>for var x [: T] in e do s</c>: <c>x</c> is a local of the loop of the element type of <c>e</c>.</summary>

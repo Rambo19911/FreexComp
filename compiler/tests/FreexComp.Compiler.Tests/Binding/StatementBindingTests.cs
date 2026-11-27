@@ -5,7 +5,7 @@ namespace FreexComp.Compiler.Tests.Binding;
 
 /// <summary>Structured statements and the control intrinsics (expressions-statements.md LANG-353…364).</summary>
 [Trait("Phase", "2")]
-public sealed class StatementBindingTests
+public sealed partial class StatementBindingTests
 {
     private const string Variables = "var i, j: Integer; b: Byte; flag: Boolean; bb: ByteBool; ch: Char; d: Double; ";
 

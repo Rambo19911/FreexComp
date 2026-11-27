@@ -1,0 +1,15 @@
+1 2 3 up
+3 2 1 down
+Integer: SizeOf 4
+UInt64: SizeOf 8, values 0 1 2
+18446744073709551613 18446744073709551614 18446744073709551615 near the top
+NativeInt end: SizeOf 8
+253 254 255 Byte
+Byte: SizeOf 1
+abcde Char
+Char: SizeOf 2
+Red 0 Green 1 Blue 2 TColor
+10 20 30 array
+x 2 y 2 z 2 string
+1 4 9 set
+3 2 1 enumerator

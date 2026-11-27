@@ -285,6 +285,7 @@ public sealed class QuickInfoTests
     [InlineData("var $$L := TBox", "var L: TBox<Integer>")]
     [InlineData("$$L.Free", "var L: TBox<Integer>")]
     [InlineData("for var $$I := 0 to High(U)", "var I: Integer")]
+    [InlineData("for var $$Q := 0 to High(V)", "var Q: UInt64")]                         // LANG-575 (C-386): widened by the end bound
     [InlineData("for var $$B in Bytes", "var B: Byte")]
     [InlineData("W := W + $$B", "var B: Byte")]
     public void InlineVariable_ShowsItsInferredType(string marker, string signature)

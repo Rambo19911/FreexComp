@@ -791,6 +791,14 @@ internal sealed partial class ExpressionBinder
             return Error(syntax, operand);
         }
 
+        switch (BoundIndexExpression.RootOf(operand))
+        {
+            case BoundVariableExpression { Variable: var v } when ForVariables.Contains(v):
+            case BoundParameterExpression { Parameter: var p } when ForVariables.Contains(p):
+                _diagnostics.Report(operandSyntax, "E2053");                    // LANG-361 rule 6, LANG-576 (C-386): @v of a loop variable
+                return Error(syntax, operand);
+        }
+
         if (BoundIndexExpression.RootOf(operand) is BoundVariableExpression { Variable: var variable })
         {
             AddressTakenVariables.Add(variable);
