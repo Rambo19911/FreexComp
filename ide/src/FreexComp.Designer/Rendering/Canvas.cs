@@ -39,7 +39,10 @@ public readonly record struct TextStyle(string Family, double SizePx, bool Bold,
 /// <summary>Vertical font metrics in DIP (DSG-RND-012).</summary>
 public readonly record struct TextMetrics(int Ascent, int Descent, int LineHeight);
 
-/// <summary>The drawing surface of design renderers (design-renderers.md §1). Coordinates are DIP = form pixels.</summary>
+/// <summary>
+/// The drawing surface of design renderers (design-renderers.md §1). Coordinates are DIP = form pixels. A canvas with a
+/// render scale snaps rects and the row and column lines of DSG-RND-001 to device pixels (DSG-RND-027, <see cref="DeviceSnap"/>).
+/// </summary>
 public interface IDesignCanvas
 {
     void FillRect(Rect r, Rgba color);
@@ -79,6 +82,14 @@ public interface IDesignCanvas
     IDisposable PushTranslate(double dx, double dy);
 
     IDisposable PushOpacity(double opacity);
+
+    /// <summary>
+    /// DSG-RND-028: until disposed, rects (<see cref="FillRect"/>, <see cref="DrawRect"/>) keep their physical size — the
+    /// top-left corner is snapped to its device pixel and the size is <c>max(1, round(size · scale))</c> device pixels,
+    /// whatever the position. For chrome of a constant on-screen size (grab handles, grid dots, tab-order badges);
+    /// without a render scale (and at a whole one) it changes nothing.
+    /// </summary>
+    IDisposable PushFixedSize();
 }
 
 /// <summary>Helpers every renderer uses for pixel-exact lines (DSG-RND-001).</summary>

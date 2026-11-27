@@ -214,7 +214,8 @@ public sealed class DesignSurfaceControl : Control, ICommandTarget
         RenderCount++;
         var size = Bounds.Size;
         var viewport = new DesignRect(0, 0, (int)Math.Ceiling(size.Width), (int)Math.Ceiling(size.Height));
-        _surface.Render(new AvaloniaDesignCanvas(context, BrushFor), viewport);
+        // DSG-RND-027, UI-TOK-069: snapped to the device pixels of the scale in force at this draw (never kept).
+        _surface.Render(new AvaloniaDesignCanvas(context, BrushFor, TopLevel.GetTopLevel(this)?.RenderScaling ?? 1), viewport);
     }
 
     private IBrush? BrushFor(string token) =>

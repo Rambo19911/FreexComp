@@ -13,10 +13,21 @@ public sealed record DrawOp(string Kind, string Text, (double Left, double Top, 
 /// <summary>
 /// The test canvas (DSG-RND-003): records an ordered list of <see cref="DrawOp"/> and measures text with the
 /// deterministic rule (6 px per character at 12 px, scaled linearly, bold × 1.1, rounded up) and the metrics of
-/// DSG-RND-012.
+/// DSG-RND-012. Created with a render scale it records the geometry snapped to device pixels (DSG-RND-027, 028), in
+/// DIP like the unsnapped one — at scale 1 and 2 the two streams are the same.
 /// </summary>
 public sealed class RecordingCanvas : IDesignCanvas
 {
+    private readonly double? _scale;
+    private int _fixedSize;
+
+    public RecordingCanvas()
+    {
+    }
+
+    /// <param name="scale">The render scale the recorded geometry is snapped at.</param>
+    public RecordingCanvas(double scale) => _scale = scale;
+
     private readonly List<DrawOp> _ops = [];
     private readonly Stack<(double X, double Y)> _offsets = new([(0.0, 0.0)]);
     private readonly Stack<(double L, double T, double R, double B)> _clips =
@@ -40,13 +51,30 @@ public sealed class RecordingCanvas : IDesignCanvas
         return (int)Math.Ceiling(Math.Round(width, 6)); // the rounding absorbs binary noise (6 × 1.1 ≠ 6.6 exactly)
     }
 
-    public void FillRect(Rect r, Rgba color) => Add("FillRect", $"{R(r)} {color}", RectExtent(r));
+    public void FillRect(Rect r, Rgba color)
+    {
+        var (text, extent) = Snapped(r, _fixedSize > 0);
+        Add("FillRect", $"{text} {color}", extent);
+    }
 
-    public void DrawRect(Rect r, Rgba color, double thickness = 1, LineStyle style = LineStyle.Solid) =>
-        Add("DrawRect", $"{R(r)} {color} {N(thickness)} {style}", RectExtent(r));
+    public void DrawRect(Rect r, Rgba color, double thickness = 1, LineStyle style = LineStyle.Solid)
+    {
+        var (text, extent) = Snapped(r, _fixedSize > 0);
+        if (Snap is { } snap)
+        {
+            thickness = snap.Outline(r, thickness).Pen;
+        }
+
+        Add("DrawRect", $"{text} {color} {N(thickness)} {style}", extent);
+    }
 
     public void DrawLine(double x1, double y1, double x2, double y2, Rgba color, double thickness = 1, LineStyle style = LineStyle.Solid)
     {
+        if (Snap is { } snap)
+        {
+            (x1, y1, x2, y2, thickness) = snap.Line(x1, y1, x2, y2, thickness);
+        }
+
         // Butt caps: the stroke is the segment widened by half the thickness on both sides; a zero-length line paints nothing.
         var length = Math.Sqrt((x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1));
         (double, double, double, double)? extent = null;
@@ -121,10 +149,11 @@ public sealed class RecordingCanvas : IDesignCanvas
 
     public IDisposable PushClip(Rect r)
     {
-        Add("PushClip", R(r), null);
+        var (text, s) = Snapped(r, fixedSize: false);
+        Add("PushClip", text, null);
         var (x, y) = _offsets.Peek();
         var c = _clips.Peek();
-        _clips.Push((Math.Max(c.L, r.Left + x), Math.Max(c.T, r.Top + y), Math.Min(c.R, r.Right + x), Math.Min(c.B, r.Bottom + y)));
+        _clips.Push((Math.Max(c.L, s.L + x), Math.Max(c.T, s.T + y), Math.Min(c.R, s.R + x), Math.Min(c.B, s.B + y)));
         return new Pop(() =>
         {
             _clips.Pop();
@@ -148,6 +177,28 @@ public sealed class RecordingCanvas : IDesignCanvas
     {
         Add("PushOpacity", N(opacity), null);
         return new Pop(() => Add("PopOpacity", "", null));
+    }
+
+    /// <summary>Not an operation: nothing is recorded, the rects drawn in the scope are (with a render scale) of fixed size.</summary>
+    public IDisposable PushFixedSize()
+    {
+        _fixedSize++;
+        return new Pop(() => _fixedSize--);
+    }
+
+    /// <summary>The snapping at the translation in force; null without a render scale.</summary>
+    private DeviceSnap? Snap => _scale is { } scale ? new DeviceSnap(scale, _offsets.Peek().X, _offsets.Peek().Y) : null;
+
+    /// <summary>The golden text and the edges of <paramref name="r"/> as recorded: snapped with a render scale, its own without.</summary>
+    private (string Text, (double L, double T, double R, double B) Extent) Snapped(Rect r, bool fixedSize)
+    {
+        if (Snap is not { } snap)
+        {
+            return (R(r), RectExtent(r));
+        }
+
+        var (left, top, width, height) = snap.Fill(r, fixedSize);
+        return ($"{N(left)},{N(top)},{N(width)},{N(height)}", (left, top, left + width, top + height));
     }
 
     private void Add(string kind, string args, (double L, double T, double R, double B)? local)

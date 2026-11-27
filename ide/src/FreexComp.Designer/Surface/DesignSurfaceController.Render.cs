@@ -199,6 +199,7 @@ public sealed partial class DesignSurfaceController
         var x0 = FirstMultiple(left - client.Left, stepX);
         var y0 = FirstMultiple(top - client.Top, stepY);
         var dot = Palette.GridDot;
+        using var physical = canvas.PushFixedSize(); // DSG-RND-028: every dot the same device pixels
         for (var y = client.Top + y0; y < bottom; y += stepY)
         {
             for (var x = client.Left + x0; x < right; x += stepX)
@@ -327,6 +328,7 @@ public sealed partial class DesignSurfaceController
 
     private void DrawHandles(IDesignCanvas canvas, IEnumerable<(HandleKind Kind, int X, int Y)> centers, int size, bool filled, Rgba border)
     {
+        using var physical = canvas.PushFixedSize(); // DSG-RND-028: every handle the same device pixels
         foreach (var (_, x, y) in centers)
         {
             var square = new Rect(x - size / 2, y - size / 2, size, size);
@@ -503,6 +505,7 @@ public sealed partial class DesignSurfaceController
             var tabStop = !(PropertyAccess.EffectiveLine(obj, "TabStop")?.Line.Value is IdentValue { Name: var stop }
                 && stop.Equals("False", StringComparison.OrdinalIgnoreCase));
             using (tabStop ? null : canvas.PushOpacity(0.5))
+            using (canvas.PushFixedSize()) // DSG-RND-028
             {
                 canvas.FillRect(badge, clicked ? p.Accent : p.TabBadgeBackground);
                 canvas.DrawText(number, badge, bold with { StrikeOut = !tabStop }, clicked ? p.OnAccent : p.TabBadgeText, HAlign.Center, VAlign.Center);

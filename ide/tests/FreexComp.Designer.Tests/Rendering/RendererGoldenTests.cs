@@ -217,6 +217,29 @@ public sealed partial class RendererTests
         Golden.Check(TestPaths.Combine($"renderers/{c.Id}.ops.txt"), canvas.ToText());
     }
 
+    /// <summary>
+    /// DSG-RND-027: every renderer draws DSG-RND-001 geometry, so snapping to the device pixels of a whole render scale
+    /// changes none of its operations — the golden lists hold at 100 % and 200 %.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "DSG-RND-027")]
+    public void SnappedOpsAtWholeScalesAreTheUnsnappedOps()
+    {
+        foreach (var c in Cases)
+        {
+            string Render(RecordingCanvas canvas)
+            {
+                c.Resolve().Render(c.Context(), canvas);
+                return canvas.ToText();
+            }
+
+            var unsnapped = Render(new RecordingCanvas());
+            Assert.True(unsnapped == Render(new RecordingCanvas(1.0)), c.Id + " differs snapped at 1.0");
+            Assert.True(unsnapped == Render(new RecordingCanvas(2.0)), c.Id + " differs snapped at 2.0");
+        }
+    }
+
     [Fact]
     [Trait("Phase", "5")]
     [Trait("Req", "DSG-RND-004")]

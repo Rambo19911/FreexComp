@@ -14,26 +14,34 @@ namespace FreexComp.Ide.Designer;
 /// <see cref="IDesignCanvas"/> over an Avalonia <see cref="DrawingContext"/> (design-renderers.md §1; D-078). Coordinates are
 /// DIP; line styles: dash 2 on / 2 off, dot 1 on / 2 off. Icons come from the IDE icon set (<c>builtin:&lt;name&gt;</c> or a
 /// name), coloured by <paramref name="brushForToken"/>; an unknown icon draws the generic component glyph (an outline square).
+/// DSG-RND-027: rects (fills, outlines, clips) and the row and column lines of DSG-RND-001 are snapped to the device
+/// pixels of <paramref name="scale"/>, the render scaling of the surface drawn — which starts on a whole device pixel
+/// (layout rounding); text, icons, ellipses, polygons and diagonals are not. At scale 1 and 2 nothing changes.
 /// </summary>
-public sealed class AvaloniaDesignCanvas(DrawingContext context, Func<string, IBrush?> brushForToken) : IDesignCanvas
+public sealed class AvaloniaDesignCanvas(DrawingContext context, Func<string, IBrush?> brushForToken, double scale = 1) : IDesignCanvas
 {
     private const string GenericIconToken = "text.tertiary";
     private static readonly ImmutableDashStyle Dash = new([2, 2], 0);
     private static readonly ImmutableDashStyle Dot = new([1, 2], 0);
 
     private readonly Dictionary<Rgba, IBrush> _brushes = [];
+    private DeviceSnap _snap = new(scale);
+    private int _fixedSize;
 
-    public void FillRect(DesignRect r, Rgba color) => context.FillRectangle(Brush(color), ToRect(r));
+    public void FillRect(DesignRect r, Rgba color) => context.FillRectangle(Brush(color), ToRect(r, _fixedSize > 0));
 
     public void DrawRect(DesignRect r, Rgba color, double thickness = 1, LineStyle style = LineStyle.Solid)
     {
-        var half = thickness / 2;
-        var rect = new Rect(r.Left + half, r.Top + half, Math.Max(0, r.Width - thickness), Math.Max(0, r.Height - thickness));
-        context.DrawRectangle(null, Pen(color, thickness, style), rect);
+        var (left, top, width, height, pen) = _snap.Outline(r, thickness, _fixedSize > 0);
+        var rect = new Rect(left + pen / 2, top + pen / 2, Math.Max(0, width - pen), Math.Max(0, height - pen));
+        context.DrawRectangle(null, Pen(color, pen, style), rect);
     }
 
-    public void DrawLine(double x1, double y1, double x2, double y2, Rgba color, double thickness = 1, LineStyle style = LineStyle.Solid) =>
+    public void DrawLine(double x1, double y1, double x2, double y2, Rgba color, double thickness = 1, LineStyle style = LineStyle.Solid)
+    {
+        (x1, y1, x2, y2, thickness) = _snap.Line(x1, y1, x2, y2, thickness);
         context.DrawLine(Pen(color, thickness, style), new Avalonia.Point(x1, y1), new Avalonia.Point(x2, y2));
+    }
 
     public void FillEllipse(DesignRect r, Rgba color) =>
         context.DrawEllipse(Brush(color), null, new Avalonia.Point(r.Left + r.Width / 2.0, r.Top + r.Height / 2.0), r.Width / 2.0, r.Height / 2.0);
@@ -151,7 +159,7 @@ public sealed class AvaloniaDesignCanvas(DrawingContext context, Func<string, IB
         // Palette draws it (DSG-TP-009) in the icon colour; a file that is not usable gives the generic glyph.
         if (!builtin && Views.PaletteIcon.Load(iconKey) is { } svg)
         {
-            Views.PaletteIcon.Draw(context, svg, brushForToken(IconCatalog.DefaultToken), ToRect(bounds));
+            Views.PaletteIcon.Draw(context, svg, brushForToken(IconCatalog.DefaultToken), new Rect(bounds.Left, bounds.Top, bounds.Width, bounds.Height));
             return;
         }
 
@@ -190,9 +198,36 @@ public sealed class AvaloniaDesignCanvas(DrawingContext context, Func<string, IB
 
     public IDisposable PushClip(DesignRect r) => context.PushClip(ToRect(r));
 
-    public IDisposable PushTranslate(double dx, double dy) => context.PushTransform(Matrix.CreateTranslation(dx, dy));
+    public IDisposable PushTranslate(double dx, double dy)
+    {
+        var outer = _snap;
+        _snap = outer with { OffsetX = outer.OffsetX + dx, OffsetY = outer.OffsetY + dy }; // snapping is absolute
+        return new Scope(context.PushTransform(Matrix.CreateTranslation(dx, dy)), () => _snap = outer);
+    }
 
     public IDisposable PushOpacity(double opacity) => context.PushOpacity(opacity);
+
+    public IDisposable PushFixedSize()
+    {
+        _fixedSize++;
+        return new Scope(null, () => _fixedSize--);
+    }
+
+    /// <summary>Ends a drawing-context state and restores the canvas's own.</summary>
+    private sealed class Scope(IDisposable? state, Action restore) : IDisposable
+    {
+        private Action? _restore = restore;
+
+        public void Dispose()
+        {
+            if (_restore is { } action)
+            {
+                _restore = null;
+                state?.Dispose();
+                action();
+            }
+        }
+    }
 
     /// <summary>DSG-RND-002: <c>&amp;x</c> underlines x, <c>&amp;&amp;</c> is a literal ampersand.</summary>
     internal static (string Text, int Underline) StripMnemonic(string text)
@@ -253,7 +288,12 @@ public sealed class AvaloniaDesignCanvas(DrawingContext context, Func<string, IB
     private IPen Pen(Rgba color, double thickness, LineStyle style) =>
         new ImmutablePen((IImmutableBrush)Brush(color), thickness, style switch { LineStyle.Dash => Dash, LineStyle.Dot => Dot, _ => null });
 
-    private static Rect ToRect(DesignRect r) => new(r.Left, r.Top, r.Width, r.Height);
+    /// <summary>The rect on its device pixels (DSG-RND-027; of fixed size: DSG-RND-028).</summary>
+    private Rect ToRect(DesignRect r, bool fixedSize = false)
+    {
+        var (left, top, width, height) = _snap.Fill(r, fixedSize);
+        return new Rect(left, top, width, height);
+    }
 
     private static Avalonia.Point ToPoint(DesignPoint p) => new(p.X, p.Y);
 }
