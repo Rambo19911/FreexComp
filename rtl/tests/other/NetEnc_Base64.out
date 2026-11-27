@@ -1,0 +1,328 @@
+# RFC 4648 section 10 through every overload (RTL-1203, RTL-1205)
+ok Base64 "": EncodeBytesToString(bytes)
+ok Base64 "": EncodeBytesToString(pointer, size)
+ok Base64 "": Encode(bytes)
+ok Base64 "": DecodeStringToBytes
+ok Base64 "": Decode(bytes)
+ok Base64 "": Encode(string)
+ok Base64 "": Decode(string)
+ok Base64String "": EncodeBytesToString(bytes)
+ok Base64String "": EncodeBytesToString(pointer, size)
+ok Base64String "": Encode(bytes)
+ok Base64String "": DecodeStringToBytes
+ok Base64String "": Decode(bytes)
+ok Base64String "": Encode(string)
+ok Base64String "": Decode(string)
+ok Base64URL "": EncodeBytesToString(bytes)
+ok Base64URL "": EncodeBytesToString(pointer, size)
+ok Base64URL "": Encode(bytes)
+ok Base64URL "": DecodeStringToBytes
+ok Base64URL "": Decode(bytes)
+ok Base64URL "": Encode(string)
+ok Base64URL "": Decode(string)
+ok Base64 "f": EncodeBytesToString(bytes)
+ok Base64 "f": EncodeBytesToString(pointer, size)
+ok Base64 "f": Encode(bytes)
+ok Base64 "f": DecodeStringToBytes
+ok Base64 "f": Decode(bytes)
+ok Base64 "f": Encode(string)
+ok Base64 "f": Decode(string)
+ok Base64String "f": EncodeBytesToString(bytes)
+ok Base64String "f": EncodeBytesToString(pointer, size)
+ok Base64String "f": Encode(bytes)
+ok Base64String "f": DecodeStringToBytes
+ok Base64String "f": Decode(bytes)
+ok Base64String "f": Encode(string)
+ok Base64String "f": Decode(string)
+ok Base64URL "f": EncodeBytesToString(bytes)
+ok Base64URL "f": EncodeBytesToString(pointer, size)
+ok Base64URL "f": Encode(bytes)
+ok Base64URL "f": DecodeStringToBytes
+ok Base64URL "f": Decode(bytes)
+ok Base64URL "f": Encode(string)
+ok Base64URL "f": Decode(string)
+ok Base64 "fo": EncodeBytesToString(bytes)
+ok Base64 "fo": EncodeBytesToString(pointer, size)
+ok Base64 "fo": Encode(bytes)
+ok Base64 "fo": DecodeStringToBytes
+ok Base64 "fo": Decode(bytes)
+ok Base64 "fo": Encode(string)
+ok Base64 "fo": Decode(string)
+ok Base64String "fo": EncodeBytesToString(bytes)
+ok Base64String "fo": EncodeBytesToString(pointer, size)
+ok Base64String "fo": Encode(bytes)
+ok Base64String "fo": DecodeStringToBytes
+ok Base64String "fo": Decode(bytes)
+ok Base64String "fo": Encode(string)
+ok Base64String "fo": Decode(string)
+ok Base64URL "fo": EncodeBytesToString(bytes)
+ok Base64URL "fo": EncodeBytesToString(pointer, size)
+ok Base64URL "fo": Encode(bytes)
+ok Base64URL "fo": DecodeStringToBytes
+ok Base64URL "fo": Decode(bytes)
+ok Base64URL "fo": Encode(string)
+ok Base64URL "fo": Decode(string)
+ok Base64 "foo": EncodeBytesToString(bytes)
+ok Base64 "foo": EncodeBytesToString(pointer, size)
+ok Base64 "foo": Encode(bytes)
+ok Base64 "foo": DecodeStringToBytes
+ok Base64 "foo": Decode(bytes)
+ok Base64 "foo": Encode(string)
+ok Base64 "foo": Decode(string)
+ok Base64String "foo": EncodeBytesToString(bytes)
+ok Base64String "foo": EncodeBytesToString(pointer, size)
+ok Base64String "foo": Encode(bytes)
+ok Base64String "foo": DecodeStringToBytes
+ok Base64String "foo": Decode(bytes)
+ok Base64String "foo": Encode(string)
+ok Base64String "foo": Decode(string)
+ok Base64URL "foo": EncodeBytesToString(bytes)
+ok Base64URL "foo": EncodeBytesToString(pointer, size)
+ok Base64URL "foo": Encode(bytes)
+ok Base64URL "foo": DecodeStringToBytes
+ok Base64URL "foo": Decode(bytes)
+ok Base64URL "foo": Encode(string)
+ok Base64URL "foo": Decode(string)
+ok Base64 "foob": EncodeBytesToString(bytes)
+ok Base64 "foob": EncodeBytesToString(pointer, size)
+ok Base64 "foob": Encode(bytes)
+ok Base64 "foob": DecodeStringToBytes
+ok Base64 "foob": Decode(bytes)
+ok Base64 "foob": Encode(string)
+ok Base64 "foob": Decode(string)
+ok Base64String "foob": EncodeBytesToString(bytes)
+ok Base64String "foob": EncodeBytesToString(pointer, size)
+ok Base64String "foob": Encode(bytes)
+ok Base64String "foob": DecodeStringToBytes
+ok Base64String "foob": Decode(bytes)
+ok Base64String "foob": Encode(string)
+ok Base64String "foob": Decode(string)
+ok Base64URL "foob": EncodeBytesToString(bytes)
+ok Base64URL "foob": EncodeBytesToString(pointer, size)
+ok Base64URL "foob": Encode(bytes)
+ok Base64URL "foob": DecodeStringToBytes
+ok Base64URL "foob": Decode(bytes)
+ok Base64URL "foob": Encode(string)
+ok Base64URL "foob": Decode(string)
+ok Base64 "fooba": EncodeBytesToString(bytes)
+ok Base64 "fooba": EncodeBytesToString(pointer, size)
+ok Base64 "fooba": Encode(bytes)
+ok Base64 "fooba": DecodeStringToBytes
+ok Base64 "fooba": Decode(bytes)
+ok Base64 "fooba": Encode(string)
+ok Base64 "fooba": Decode(string)
+ok Base64String "fooba": EncodeBytesToString(bytes)
+ok Base64String "fooba": EncodeBytesToString(pointer, size)
+ok Base64String "fooba": Encode(bytes)
+ok Base64String "fooba": DecodeStringToBytes
+ok Base64String "fooba": Decode(bytes)
+ok Base64String "fooba": Encode(string)
+ok Base64String "fooba": Decode(string)
+ok Base64URL "fooba": EncodeBytesToString(bytes)
+ok Base64URL "fooba": EncodeBytesToString(pointer, size)
+ok Base64URL "fooba": Encode(bytes)
+ok Base64URL "fooba": DecodeStringToBytes
+ok Base64URL "fooba": Decode(bytes)
+ok Base64URL "fooba": Encode(string)
+ok Base64URL "fooba": Decode(string)
+ok Base64 "foobar": EncodeBytesToString(bytes)
+ok Base64 "foobar": EncodeBytesToString(pointer, size)
+ok Base64 "foobar": Encode(bytes)
+ok Base64 "foobar": DecodeStringToBytes
+ok Base64 "foobar": Decode(bytes)
+ok Base64 "foobar": Encode(string)
+ok Base64 "foobar": Decode(string)
+ok Base64String "foobar": EncodeBytesToString(bytes)
+ok Base64String "foobar": EncodeBytesToString(pointer, size)
+ok Base64String "foobar": Encode(bytes)
+ok Base64String "foobar": DecodeStringToBytes
+ok Base64String "foobar": Decode(bytes)
+ok Base64String "foobar": Encode(string)
+ok Base64String "foobar": Decode(string)
+ok Base64URL "foobar": EncodeBytesToString(bytes)
+ok Base64URL "foobar": EncodeBytesToString(pointer, size)
+ok Base64URL "foobar": Encode(bytes)
+ok Base64URL "foobar": DecodeStringToBytes
+ok Base64URL "foobar": Decode(bytes)
+ok Base64URL "foobar": Encode(string)
+ok Base64URL "foobar": Decode(string)
+# the two alphabets and the padding (RTL-1205)
+ok standard FB FF: EncodeBytesToString(bytes)
+ok standard FB FF: EncodeBytesToString(pointer, size)
+ok standard FB FF: Encode(bytes)
+ok standard FB FF: DecodeStringToBytes
+ok standard FB FF: Decode(bytes)
+ok URL FB FF: EncodeBytesToString(bytes)
+ok URL FB FF: EncodeBytesToString(pointer, size)
+ok URL FB FF: Encode(bytes)
+ok URL FB FF: DecodeStringToBytes
+ok URL FB FF: Decode(bytes)
+ok standard FB EF BE FF FF FF: EncodeBytesToString(bytes)
+ok standard FB EF BE FF FF FF: EncodeBytesToString(pointer, size)
+ok standard FB EF BE FF FF FF: Encode(bytes)
+ok standard FB EF BE FF FF FF: DecodeStringToBytes
+ok standard FB EF BE FF FF FF: Decode(bytes)
+ok URL FB EF BE FF FF FF: EncodeBytesToString(bytes)
+ok URL FB EF BE FF FF FF: EncodeBytesToString(pointer, size)
+ok URL FB EF BE FF FF FF: Encode(bytes)
+ok URL FB EF BE FF FF FF: DecodeStringToBytes
+ok URL FB EF BE FF FF FF: Decode(bytes)
+ok standard 00: EncodeBytesToString(bytes)
+ok standard 00: EncodeBytesToString(pointer, size)
+ok standard 00: Encode(bytes)
+ok standard 00: DecodeStringToBytes
+ok standard 00: Decode(bytes)
+ok URL 00: EncodeBytesToString(bytes)
+ok URL 00: EncodeBytesToString(pointer, size)
+ok URL 00: Encode(bytes)
+ok URL 00: DecodeStringToBytes
+ok URL 00: Decode(bytes)
+ok standard FF FF: EncodeBytesToString(bytes)
+ok standard FF FF: EncodeBytesToString(pointer, size)
+ok standard FF FF: Encode(bytes)
+ok standard FF FF: DecodeStringToBytes
+ok standard FF FF: Decode(bytes)
+ok URL FF FF: EncodeBytesToString(bytes)
+ok URL FF FF: EncodeBytesToString(pointer, size)
+ok URL FF FF: Encode(bytes)
+ok URL FF FF: DecodeStringToBytes
+ok URL FF FF: Decode(bytes)
+ok Hello, World!: EncodeBytesToString(bytes)
+ok Hello, World!: EncodeBytesToString(pointer, size)
+ok Hello, World!: Encode(bytes)
+ok Hello, World!: DecodeStringToBytes
+ok Hello, World!: Decode(bytes)
+ok Hello, World!: Encode(string)
+ok Hello, World!: Decode(string)
+ok Encode(string) encodes the UTF-8 form: U+00E9
+ok Decode(string) returns the UTF-8 text: U+00E9
+ok the bytes C3 A9 as an array constructor
+ok a lone surrogate is encoded as EF BF BD, not an error
+# lines (RTL-1206)
+ok 57 bytes: one line of 76, no separator at the end: EncodeBytesToString(bytes)
+ok 57 bytes: one line of 76, no separator at the end: EncodeBytesToString(pointer, size)
+ok 57 bytes: one line of 76, no separator at the end: Encode(bytes)
+ok 57 bytes: one line of 76, no separator at the end: DecodeStringToBytes
+ok 57 bytes: one line of 76, no separator at the end: Decode(bytes)
+ok 60 bytes: two lines: EncodeBytesToString(bytes)
+ok 60 bytes: two lines: EncodeBytesToString(pointer, size)
+ok 60 bytes: two lines: Encode(bytes)
+ok 60 bytes: two lines: DecodeStringToBytes
+ok 60 bytes: two lines: Decode(bytes)
+ok 60 bytes without lines: EncodeBytesToString(bytes)
+ok 60 bytes without lines: EncodeBytesToString(pointer, size)
+ok 60 bytes without lines: Encode(bytes)
+ok 60 bytes without lines: DecodeStringToBytes
+ok 60 bytes without lines: Decode(bytes)
+ok Create(4, LF): EncodeBytesToString(bytes)
+ok Create(4, LF): EncodeBytesToString(pointer, size)
+ok Create(4, LF): Encode(bytes)
+ok Create(4, LF): DecodeStringToBytes
+ok Create(4, LF): Decode(bytes)
+ok Create(4, LF): Encode(string)
+ok Create(4, LF): Decode(string)
+ok Create(5): not a multiple of 4: EncodeBytesToString(bytes)
+ok Create(5): not a multiple of 4: EncodeBytesToString(pointer, size)
+ok Create(5): not a multiple of 4: Encode(bytes)
+ok Create(5): not a multiple of 4: DecodeStringToBytes
+ok Create(5): not a multiple of 4: Decode(bytes)
+ok Create(5): not a multiple of 4: Encode(string)
+ok Create(5): not a multiple of 4: Decode(string)
+ok Create(0): no lines: EncodeBytesToString(bytes)
+ok Create(0): no lines: EncodeBytesToString(pointer, size)
+ok Create(0): no lines: Encode(bytes)
+ok Create(0): no lines: DecodeStringToBytes
+ok Create(0): no lines: Decode(bytes)
+ok Create(0): no lines: Encode(string)
+ok Create(0): no lines: Decode(string)
+ok TBase64URLEncoding.Create(4): EncodeBytesToString(bytes)
+ok TBase64URLEncoding.Create(4): EncodeBytesToString(pointer, size)
+ok TBase64URLEncoding.Create(4): Encode(bytes)
+ok TBase64URLEncoding.Create(4): DecodeStringToBytes
+ok TBase64URLEncoding.Create(4): Decode(bytes)
+ok TBase64URLEncoding.Create(4): Encode(string)
+ok TBase64URLEncoding.Create(4): Decode(string)
+ok Create(2): pad characters are counted: EncodeBytesToString(bytes)
+ok Create(2): pad characters are counted: EncodeBytesToString(pointer, size)
+ok Create(2): pad characters are counted: Encode(bytes)
+ok Create(2): pad characters are counted: DecodeStringToBytes
+ok Create(2): pad characters are counted: Decode(bytes)
+ok Create(2): pad characters are counted: Encode(string)
+ok Create(2): pad characters are counted: Decode(string)
+ok Create(4, empty separator): EncodeBytesToString(bytes)
+ok Create(4, empty separator): EncodeBytesToString(pointer, size)
+ok Create(4, empty separator): Encode(bytes)
+ok Create(4, empty separator): DecodeStringToBytes
+ok Create(4, empty separator): Decode(bytes)
+ok Create(4, empty separator): Encode(string)
+ok Create(4, empty separator): Decode(string)
+ok TBase64StringEncoding.Create(3, space tab): EncodeBytesToString(bytes)
+ok TBase64StringEncoding.Create(3, space tab): EncodeBytesToString(pointer, size)
+ok TBase64StringEncoding.Create(3, space tab): Encode(bytes)
+ok TBase64StringEncoding.Create(3, space tab): DecodeStringToBytes
+ok TBase64StringEncoding.Create(3, space tab): Decode(bytes)
+ok TBase64StringEncoding.Create(3, space tab): Encode(string)
+ok TBase64StringEncoding.Create(3, space tab): Decode(string)
+# shared instances (RTL-1202)
+ok Base64 returns the same object twice
+ok Base64String returns the same object twice
+ok Base64URL returns the same object twice
+ok class of Base64
+ok class of Base64String
+ok class of Base64URL
+ok TBase64Encoding is a TCustomBase64Encoding
+# constructors and properties (RTL-1207)
+ok shared Base64: CharsPerLine
+ok shared Base64: LineSeparator
+ok shared Base64: DecodeMode
+ok shared Base64String: CharsPerLine
+ok shared Base64String: LineSeparator
+ok shared Base64String: DecodeMode
+ok shared Base64URL: CharsPerLine
+ok shared Base64URL: LineSeparator
+ok shared Base64URL: DecodeMode
+ok TBase64Encoding.Create: CharsPerLine
+ok TBase64Encoding.Create: LineSeparator
+ok TBase64Encoding.Create: DecodeMode
+ok TBase64StringEncoding.Create: CharsPerLine
+ok TBase64StringEncoding.Create: LineSeparator
+ok TBase64StringEncoding.Create: DecodeMode
+ok TBase64URLEncoding.Create: CharsPerLine
+ok TBase64URLEncoding.Create: LineSeparator
+ok TBase64URLEncoding.Create: DecodeMode
+ok TBase64StringEncoding.Create(10): CharsPerLine
+ok TBase64StringEncoding.Create(10): LineSeparator
+ok TBase64StringEncoding.Create(10): DecodeMode
+ok TBase64URLEncoding.Create(64): CharsPerLine
+ok TBase64URLEncoding.Create(64): LineSeparator
+ok TBase64URLEncoding.Create(64): DecodeMode
+ok TBase64Encoding.Create(10, LF): CharsPerLine
+ok TBase64Encoding.Create(10, LF): LineSeparator
+ok TBase64Encoding.Create(10, LF): DecodeMode
+ok TBase64Encoding.Create(8, space, bdStrict): CharsPerLine
+ok TBase64Encoding.Create(8, space, bdStrict): LineSeparator
+ok TBase64Encoding.Create(8, space, bdStrict): DecodeMode
+ok Create(-1)
+ok Create(-5, empty, bdStrict)
+ok Create(76, x)
+ok a separator with a pad character
+# arguments (RTL-1219)
+ok EncodeBytesToString(nil, -1)
+ok EncodeBytesToString(nil, 0) is empty
+ok EncodeBytesToString(nil, 1)
+# a text kind written by a program (RTL-1201, RTL-1203)
+ok Encode(string) calls the override
+ok Decode(string) calls the override
+ok EncodeBytesToString reads the bytes as UTF-8 text
+ok Encode(bytes) returns the UTF-8 form of the result
+ok Decode(bytes)
+ok DecodeStringToBytes returns the UTF-8 form
+ok EncodeBytesToString(pointer, size)
+ok the argument rules hold for it too
+ok Encode(streams) returns the bytes written
+ok the input is read to its end
+ok the stream form writes the bytes of the array form
+ok Decode(streams)
+ok and back
+ok no block is left
+# passed 320 failed 0

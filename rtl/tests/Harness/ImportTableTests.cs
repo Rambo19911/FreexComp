@@ -281,6 +281,57 @@ public sealed class ImportTableTests
         });
     }
 
+    /// <summary>A console program that encodes three bytes with the shared Base64 instance of <c>NetEncoding</c>.</summary>
+    private const string NetEncodingProgram = """
+        program ImportCheckNetEncoding;
+        uses
+          SysUtils, Classes, NetEncoding;
+        begin
+          Writeln(TNetEncoding.Base64String.Encode('foo'));
+        end.
+        """;
+
+    /// <summary>The same program with <c>SysUtils</c> and <c>Classes</c> only.</summary>
+    private const string NetEncodingBaselineProgram = """
+        program ImportCheckNetEncodingBase;
+        uses
+          SysUtils, Classes;
+        begin
+          Writeln('Zm9v');
+        end.
+        """;
+
+    /// <summary>
+    /// RTL-1200: unit <c>NetEncoding</c> is pure Object Pascal: a console program that uses it and encodes with
+    /// <c>TNetEncoding.Base64String</c> imports exactly the libraries the same program imports with <c>SysUtils</c> and
+    /// <c>Classes</c> only.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "RTL-1200")]
+    [Trait("Phase", "8")]
+    public async Task NetEncodingUnitAddsNoImport()
+    {
+        List<string> baseline = [];
+        await WithProgramAsync("ImportCheckNetEncodingBase", NetEncodingBaselineProgram, async (exe, work) =>
+        {
+            baseline = ImportedDlls(await File.ReadAllBytesAsync(exe, TestContext.Current.CancellationToken));
+            var (exit, output) = await RunAsync(exe, "", work);
+            Assert.Equal(0, exit);
+            Assert.Equal("Zm9v", output.TrimEnd());
+        });
+        Assert.Contains("kernel32.dll", baseline);
+
+        await WithProgramAsync("ImportCheckNetEncoding", NetEncodingProgram, async (exe, work) =>
+        {
+            var dlls = ImportedDlls(await File.ReadAllBytesAsync(exe, TestContext.Current.CancellationToken));
+            Assert.Equal(baseline.Order(StringComparer.Ordinal), dlls.Order(StringComparer.Ordinal));
+
+            var (exit, output) = await RunAsync(exe, "", work);
+            Assert.Equal(0, exit);
+            Assert.Equal("Zm9v", output.TrimEnd());
+        });
+    }
+
     /// <summary>Compiles <paramref name="text"/> against <c>rtl/src</c> in a fresh directory and hands the exe to <paramref name="check"/>.</summary>
     private static async Task WithProgramAsync(string name, string text, Func<string, string, Task> check)
     {

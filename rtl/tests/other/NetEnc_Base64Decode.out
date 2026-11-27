@@ -1,0 +1,234 @@
+# the messages (RTL-1210)
+ok SBase64InvalidChar
+ok SBase64InvalidLength
+ok SBase64InvalidPadding
+# white space is skipped in both modes (RTL-1208, RTL-1209)
+ok Zm9vYmFy: tolerant standard, string
+ok Zm9vYmFy: tolerant standard, bytes
+ok Zm9vYmFy: tolerant URL, string
+ok Zm9vYmFy: tolerant URL, bytes
+ok Zm9vYmFy: strict standard, string
+ok Zm9vYmFy: strict standard, bytes
+ok Zm9vYmFy: strict URL, string
+ok Zm9vYmFy: strict URL, bytes
+ok a space inside: tolerant standard, string
+ok a space inside: tolerant standard, bytes
+ok a space inside: tolerant URL, string
+ok a space inside: tolerant URL, bytes
+ok a space inside: strict standard, string
+ok a space inside: strict standard, bytes
+ok a space inside: strict URL, string
+ok a space inside: strict URL, bytes
+ok CR LF inside: tolerant standard, string
+ok CR LF inside: tolerant standard, bytes
+ok CR LF inside: tolerant URL, string
+ok CR LF inside: tolerant URL, bytes
+ok CR LF inside: strict standard, string
+ok CR LF inside: strict standard, bytes
+ok CR LF inside: strict URL, string
+ok CR LF inside: strict URL, bytes
+ok spaces around the pad characters: tolerant standard, string
+ok spaces around the pad characters: tolerant standard, bytes
+ok spaces around the pad characters: tolerant URL, string
+ok spaces around the pad characters: tolerant URL, bytes
+ok spaces around the pad characters: strict standard, string
+ok spaces around the pad characters: strict standard, bytes
+ok spaces around the pad characters: strict URL, string
+ok spaces around the pad characters: strict URL, bytes
+ok tab and line feed: tolerant standard, string
+ok tab and line feed: tolerant standard, bytes
+ok tab and line feed: tolerant URL, string
+ok tab and line feed: tolerant URL, bytes
+ok tab and line feed: strict standard, string
+ok tab and line feed: strict standard, bytes
+ok tab and line feed: strict URL, string
+ok tab and line feed: strict URL, bytes
+ok white space only: tolerant standard, string
+ok white space only: tolerant standard, bytes
+ok white space only: tolerant URL, string
+ok white space only: tolerant URL, bytes
+ok white space only: strict standard, string
+ok white space only: strict standard, bytes
+ok white space only: strict URL, string
+ok white space only: strict URL, bytes
+ok empty: tolerant standard, string
+ok empty: tolerant standard, bytes
+ok empty: tolerant URL, string
+ok empty: tolerant URL, bytes
+ok empty: strict standard, string
+ok empty: strict standard, bytes
+ok empty: strict URL, string
+ok empty: strict URL, bytes
+# a foreign character (RTL-1208 (1), RTL-1209 (1))
+ok Zm9v*YmFy: tolerant standard, string
+ok Zm9v*YmFy: tolerant standard, bytes
+ok Zm9v*YmFy: tolerant URL, string
+ok Zm9v*YmFy: tolerant URL, bytes
+ok Zm9v*YmFy: strict standard, string
+ok Zm9v*YmFy: strict standard, bytes
+ok Zm9v*YmFy: strict URL, string
+ok Zm9v*YmFy: strict URL, bytes
+ok the position counts white space: tolerant standard, string
+ok the position counts white space: tolerant standard, bytes
+ok the position counts white space: tolerant URL, string
+ok the position counts white space: tolerant URL, bytes
+ok the position counts white space: strict standard, string
+ok the position counts white space: strict standard, bytes
+ok the position counts white space: strict URL, string
+ok the position counts white space: strict URL, bytes
+ok a vertical tab is not white space: tolerant standard, string
+ok a vertical tab is not white space: tolerant standard, bytes
+ok a vertical tab is not white space: tolerant URL, string
+ok a vertical tab is not white space: tolerant URL, bytes
+ok a vertical tab is not white space: strict standard, string
+ok a vertical tab is not white space: strict standard, bytes
+ok a vertical tab is not white space: strict URL, string
+ok a vertical tab is not white space: strict URL, bytes
+# padding and length (RTL-1208 (2) (3), RTL-1209 (2) (3))
+ok Zg: tolerant standard, string
+ok Zg: tolerant standard, bytes
+ok Zg: tolerant URL, string
+ok Zg: tolerant URL, bytes
+ok Zg: strict standard, string
+ok Zg: strict standard, bytes
+ok Zg: strict URL, string
+ok Zg: strict URL, bytes
+ok Zg=: tolerant standard, string
+ok Zg=: tolerant standard, bytes
+ok Zg=: tolerant URL, string
+ok Zg=: tolerant URL, bytes
+ok Zg=: strict standard, string
+ok Zg=: strict standard, bytes
+ok Zg=: strict URL, string
+ok Zg=: strict URL, bytes
+ok Zg==: tolerant standard, string
+ok Zg==: tolerant standard, bytes
+ok Zg==: tolerant URL, string
+ok Zg==: tolerant URL, bytes
+ok Zg==: strict standard, string
+ok Zg==: strict standard, bytes
+ok Zg==: strict URL, string
+ok Zg==: strict URL, bytes
+ok Zg===: tolerant standard, string
+ok Zg===: tolerant standard, bytes
+ok Zg===: tolerant URL, string
+ok Zg===: tolerant URL, bytes
+ok Zg===: strict standard, string
+ok Zg===: strict standard, bytes
+ok Zg===: strict URL, string
+ok Zg===: strict URL, bytes
+ok Zm8: tolerant standard, string
+ok Zm8: tolerant standard, bytes
+ok Zm8: tolerant URL, string
+ok Zm8: tolerant URL, bytes
+ok Zm8: strict standard, string
+ok Zm8: strict standard, bytes
+ok Zm8: strict URL, string
+ok Zm8: strict URL, bytes
+ok Zm8=: tolerant standard, string
+ok Zm8=: tolerant standard, bytes
+ok Zm8=: tolerant URL, string
+ok Zm8=: tolerant URL, bytes
+ok Zm8=: strict standard, string
+ok Zm8=: strict standard, bytes
+ok Zm8=: strict URL, string
+ok Zm8=: strict URL, bytes
+ok Z: tolerant standard, string
+ok Z: tolerant standard, bytes
+ok Z: tolerant URL, string
+ok Z: tolerant URL, bytes
+ok Z: strict standard, string
+ok Z: strict standard, bytes
+ok Z: strict URL, string
+ok Z: strict URL, bytes
+ok Zm9vY: tolerant standard, string
+ok Zm9vY: tolerant standard, bytes
+ok Zm9vY: tolerant URL, string
+ok Zm9vY: tolerant URL, bytes
+ok Zm9vY: strict standard, string
+ok Zm9vY: strict standard, bytes
+ok Zm9vY: strict URL, string
+ok Zm9vY: strict URL, bytes
+ok Zg==Zg==: tolerant standard, string
+ok Zg==Zg==: tolerant standard, bytes
+ok Zg==Zg==: tolerant URL, string
+ok Zg==Zg==: tolerant URL, bytes
+ok Zg==Zg==: strict standard, string
+ok Zg==Zg==: strict standard, bytes
+ok Zg==Zg==: strict URL, string
+ok Zg==Zg==: strict URL, bytes
+ok an alphabet character after a pad character: tolerant standard, string
+ok an alphabet character after a pad character: tolerant standard, bytes
+ok an alphabet character after a pad character: tolerant URL, string
+ok an alphabet character after a pad character: tolerant URL, bytes
+ok an alphabet character after a pad character: strict standard, string
+ok an alphabet character after a pad character: strict standard, bytes
+ok an alphabet character after a pad character: strict URL, string
+ok an alphabet character after a pad character: strict URL, bytes
+ok a pad character alone: tolerant standard, string
+ok a pad character alone: tolerant standard, bytes
+ok a pad character alone: tolerant URL, string
+ok a pad character alone: tolerant URL, bytes
+ok a pad character alone: strict standard, string
+ok a pad character alone: strict standard, bytes
+ok a pad character alone: strict URL, string
+ok a pad character alone: strict URL, bytes
+ok a foreign character before the wrong length is reported first: tolerant standard, string
+ok a foreign character before the wrong length is reported first: tolerant standard, bytes
+ok a foreign character before the wrong length is reported first: tolerant URL, string
+ok a foreign character before the wrong length is reported first: tolerant URL, bytes
+ok a foreign character before the wrong length is reported first: strict standard, string
+ok a foreign character before the wrong length is reported first: strict standard, bytes
+ok a foreign character before the wrong length is reported first: strict URL, string
+ok a foreign character before the wrong length is reported first: strict URL, bytes
+# pad bits (RTL-1208 (3), RTL-1209 (4))
+ok Zh==: tolerant standard, string
+ok Zh==: tolerant standard, bytes
+ok Zh==: tolerant URL, string
+ok Zh==: tolerant URL, bytes
+ok Zh==: strict standard, string
+ok Zh==: strict standard, bytes
+ok Zh==: strict URL, string
+ok Zh==: strict URL, bytes
+ok Zm9=: tolerant standard, string
+ok Zm9=: tolerant standard, bytes
+ok Zm9=: tolerant URL, string
+ok Zm9=: tolerant URL, bytes
+ok Zm9=: strict standard, string
+ok Zm9=: strict standard, bytes
+ok Zm9=: strict URL, string
+ok Zm9=: strict URL, bytes
+ok Zh without padding: strict URL, string
+ok Zh without padding: strict URL, bytes
+ok Zh without padding: tolerant URL, string
+ok Zh without padding: tolerant URL, bytes
+# each class knows its own alphabet only
+ok -_8: tolerant standard, string
+ok -_8: tolerant standard, bytes
+ok -_8: strict standard, string
+ok -_8: strict standard, bytes
+ok -_8: tolerant URL, string
+ok -_8: tolerant URL, bytes
+ok -_8: strict URL, string
+ok -_8: strict URL, bytes
+ok +/8=: tolerant URL, string
+ok +/8=: tolerant URL, bytes
+ok +/8=: strict URL, string
+ok +/8=: strict URL, bytes
+ok +/8=: tolerant standard, string
+ok +/8=: tolerant standard, bytes
+ok +/8=: strict standard, string
+ok +/8=: strict standard, bytes
+# bytes and characters outside ASCII
+ok bytes 5A 6D 39 76 FF: tolerant
+ok bytes 5A 6D 39 76 FF: strict
+ok U+0141 in a string: tolerant
+ok U+0141 in a string: strict (not taken for A)
+# strict objects read what the encoders write; Decode(string) raises too
+ok encoded in lines of 4
+ok and decoded strictly
+ok Decode(string)
+ok Decode(string): length
+ok the shared instances are tolerant
+ok no block is left
+# passed 225 failed 0

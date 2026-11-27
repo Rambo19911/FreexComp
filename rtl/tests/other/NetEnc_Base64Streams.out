@@ -1,0 +1,79 @@
+# 1 MB through Base64String
+ok Base64String: length of the text
+ok Base64String: DecodeStringToBytes gives the bytes back
+ok Base64String: the byte-array form is the text, one byte per character
+ok Base64String: Decode(bytes) gives the bytes back
+ok Base64String: Encode(streams) returns the bytes written
+ok Base64String: the stream form writes the bytes of the byte-array form
+ok Base64String: the input was read to its end
+ok Base64String: Decode(streams) returns the bytes written
+ok Base64String: and gives the bytes back
+ok Base64String: encoding reads at most 65536 bytes at a time
+ok Base64String: encoding writes at most 131072 bytes at a time
+ok Base64String: decoding reads at most 65536 bytes at a time
+ok Base64String: decoding writes at most 131072 bytes at a time
+ok the text ends with two pad characters
+ok no line separator
+# 1 MB through Base64
+ok Base64: length of the text
+ok Base64: DecodeStringToBytes gives the bytes back
+ok Base64: the byte-array form is the text, one byte per character
+ok Base64: Decode(bytes) gives the bytes back
+ok Base64: Encode(streams) returns the bytes written
+ok Base64: the stream form writes the bytes of the byte-array form
+ok Base64: the input was read to its end
+ok Base64: Decode(streams) returns the bytes written
+ok Base64: and gives the bytes back
+ok Base64: encoding reads at most 65536 bytes at a time
+ok Base64: encoding writes at most 131072 bytes at a time
+ok Base64: decoding reads at most 65536 bytes at a time
+ok Base64: decoding writes at most 131072 bytes at a time
+ok every line but the last is 76 characters, CR LF between lines, none at the end
+ok lines
+# 1 MB through Base64URL
+ok Base64URL: length of the text
+ok Base64URL: DecodeStringToBytes gives the bytes back
+ok Base64URL: the byte-array form is the text, one byte per character
+ok Base64URL: Decode(bytes) gives the bytes back
+ok Base64URL: Encode(streams) returns the bytes written
+ok Base64URL: the stream form writes the bytes of the byte-array form
+ok Base64URL: the input was read to its end
+ok Base64URL: Decode(streams) returns the bytes written
+ok Base64URL: and gives the bytes back
+ok Base64URL: encoding reads at most 65536 bytes at a time
+ok Base64URL: encoding writes at most 131072 bytes at a time
+ok Base64URL: decoding reads at most 65536 bytes at a time
+ok Base64URL: decoding writes at most 131072 bytes at a time
+ok none of = + / CR LF
+ok the URL-safe characters occur
+# a long separator is written in blocks too
+ok one character per line: bytes written
+ok at most 131072 bytes at a time
+ok decoded again
+ok to the same bytes
+# positions (RTL-1204)
+ok an input at position 3: bytes written
+ok the input ends where reading ended
+ok the output was written at its position
+ok the output position is behind the text
+ok bytes 3 to the end were encoded
+ok decoding from position 2 writes at position 4
+ok the size of the output
+ok the decoded bytes follow the first four
+# an empty input
+ok Encode at the end of the input returns 0
+ok Decode at the end of the input returns 0
+ok Encode of an empty stream returns 0
+ok Decode of an empty stream returns 0
+ok nothing was written
+# nil streams (RTL-1219)
+ok Encode(nil, Output)
+ok Encode(Input, nil)
+ok Decode(nil, Output)
+ok Decode(Input, nil)
+# a strict object reports the position of a byte in a stream
+ok byte 70000 is *
+ok nothing behind the error was written
+ok positions count the bytes read
+ok no block is left
+# passed 70 failed 0

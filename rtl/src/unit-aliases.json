@@ -16,6 +16,7 @@
     "System.IOUtils": "IOUtils",
     "System.IniFiles": "IniFiles",
     "System.Math": "Math",
+    "System.NetEncoding": "NetEncoding",
     "System.RTLConsts": "RTLConsts",
     "System.StrUtils": "StrUtils",
     "System.SyncObjs": "SyncObjs",

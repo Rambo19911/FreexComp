@@ -124,6 +124,10 @@ resourcestring
   SIniFileWriteError = 'Unable to write to %s';
   SLockNotOwned = 'Lock is not owned by the calling thread';
   SWaitFailed = 'Wait failed: %s';
+  { NetEncoding: strict Base64 decoding (RTL-1210) }
+  SBase64InvalidChar = 'Invalid Base64 character at position %d';
+  SBase64InvalidLength = 'Invalid Base64 data length';
+  SBase64InvalidPadding = 'Invalid Base64 padding';
 
 implementation
 
