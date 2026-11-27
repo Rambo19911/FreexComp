@@ -346,4 +346,71 @@ public sealed class SignatureHelpTests
         Assert.Equal(["class procedure TUtil.Swap<T>(var A: T; var B: T)"], Labels(Help("TUtil.Swap($$);")));
         Assert.Equal(["class procedure TUtil.Swap<T>(var A: T; var B: T)"], Labels(Help("TUtil.Swap(N, L$$);")));        // Integer and Int64
     }
+
+    /// <summary>A class whose method name <c>Show</c> has a non-generic and two generic methods (LANG-980).</summary>
+    internal const string MixedProgram = """
+        program P;
+        type
+          TOut = class
+          public
+            class procedure Show(I: Integer); overload;
+            class procedure Show<T>(const V: T); overload;
+            class procedure Show<K, V>(const A: K; const B: V); overload;
+          end;
+        class procedure TOut.Show(I: Integer); begin end;
+        class procedure TOut.Show<T>(const V: T); begin end;
+        class procedure TOut.Show<K, V>(const A: K; const B: V); begin end;
+        var
+          N: Integer;
+          B: Byte;
+          S: string;
+        begin
+          MAIN_BODY
+        end.
+        """;
+
+    /// <summary>
+    /// CMP-1478 (C-419): signature help on a call lists the non-generic and the generic methods of the name together — a generic one
+    /// with its type-parameter list, or with the type arguments the arguments typed so far infer; the active signature is the
+    /// candidate LANG-980 chooses (the non-generic method only as an equally good match), else the first that takes the arguments.
+    /// A type-argument list names generic methods only.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1478")]
+    [Trait("Req", "LANG-980")]
+    public void GenericAndNonGenericOverloads_AllListed()
+    {
+        static SignatureHelp Help(string main) => HelpIn(MixedProgram.Replace("MAIN_BODY", main, StringComparison.Ordinal))!;
+        static string ActiveSignature(SignatureHelp help) => help.Signatures[help.ActiveSignature].Label;
+        const string plain = "class procedure TOut.Show(I: Integer)";
+        const string openPair = "class procedure TOut.Show<K, V>(const A: K; const B: V)";
+
+        var empty = Help("TOut.Show($$);");
+        Assert.Equal([plain, openPair, "class procedure TOut.Show<T>(const V: T)"], Labels(empty));
+        Assert.Equal(plain, ActiveSignature(empty));
+
+        var integer = Help("TOut.Show(N$$);");
+        Assert.Equal([plain, "class procedure TOut.Show<Integer>(const V: Integer)", openPair], Labels(integer));
+        Assert.Equal(plain, ActiveSignature(integer));                                       // both cost the same: the non-generic one
+        Assert.Equal(plain, ActiveSignature(Help("TOut.Show(5$$);")));
+
+        var text = Help("TOut.Show(S$$);");
+        Assert.Equal([plain, openPair, "class procedure TOut.Show<string>(const V: string)"], Labels(text));
+        Assert.Equal("class procedure TOut.Show<string>(const V: string)", ActiveSignature(text));
+
+        var narrow = Help("TOut.Show(B$$);");
+        Assert.Equal([plain, "class procedure TOut.Show<Byte>(const V: Byte)", openPair], Labels(narrow));
+        Assert.Equal("class procedure TOut.Show<Byte>(const V: Byte)", ActiveSignature(narrow));   // exact against the widening to Integer
+
+        var pair = Help("TOut.Show(N, $$S);");
+        Assert.Equal(
+            [plain, "class procedure TOut.Show<Integer, string>(const A: Integer; const B: string)", "class procedure TOut.Show<Integer>(const V: Integer)"],
+            Labels(pair));
+        Assert.Equal("class procedure TOut.Show<Integer, string>(const A: Integer; const B: string)", ActiveSignature(pair));
+        Assert.Equal("const B: string", Active(pair));
+
+        Assert.Equal(["class procedure TOut.Show<Integer>(const V: Integer)"], Labels(Help("TOut.Show<Integer>($$N);")));
+        Assert.Equal(["class procedure TOut.Show<Byte, string>(const A: Byte; const B: string)"], Labels(Help("TOut.Show<Byte, string>(B, $$S);")));
+    }
 }

@@ -179,6 +179,10 @@ public sealed partial class GenericBindingTests
     [InlineData("N := TUtil.Make", 14)]                                          // no parameter mentions T
     [InlineData("N := TUtil.Only(nil)", 14)]                                     // nil has no argument type
     [InlineData("N := TUtil.Count(CmpObject)", 14)]                              // no instance of TBox among the ancestors
+    // the only source of the type parameter is an argument without an argument type (lead decision 2026-11-28: these stay errors)
+    [InlineData("N := TUtil.Opt(nil)", 14)]
+    [InlineData("N := TUtil.Opt([1, 2])", 14)]                                   // a bracket constructor at a parameter that is no open array
+    [InlineData("N := TUtil.Opt(function: Integer begin Result := 1 end)", 14)]
     public void Inference_Conflicts_AreE2711(string call, int column)
     {
         var name = call[(call.LastIndexOf("TUtil.", StringComparison.Ordinal) + 6)..].Split('(', ';', ' ')[0];

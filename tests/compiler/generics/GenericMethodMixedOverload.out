@@ -1,0 +1,36 @@
+TOut.Show(Integer): 5
+TOut.Show(Integer): 42
+TOut.Show<T>: a string of 8 bytes
+TOut.Show<T>: a string of 8 bytes
+TOut.Show<T>: a real of 8 bytes
+TOut.Show<T>: a real of 8 bytes
+TOut.Show<T>: an integer of 1 byte
+TOut.Show<T>: an integer of 4 bytes
+TOut.Show<T>: an integer of 4 bytes
+TCounter.Put(Integer): 42, call 1
+TCounter.Put<T>: a string of 8 bytes, call 2
+TCounter.Put<T>: an integer of 1 byte, call 3
+TCounter.Put<T>: an integer of 4 bytes, call 4
+TCounter.Put(Integer): 1, call 5
+TCounter.Put<T>: a string of 8 bytes, call 6
+TCounter.Put<T>: a real of 8 bytes, call 7
+TCounter.Put<T>: an integer of 4 bytes, call 8
+TCounter.Mark(Integer): 2
+TCounter.Mark<T>: a string of 8 bytes
+TCounter.Mark(Integer): 42
+TCounter.Mark<T>: a real of 8 bytes
+TCounter.Mark<T>: an integer of 4 bytes
+TPoint.Add(Integer): 42, X = 42
+TPoint.Add<T>: a string of 8 bytes, X = 142
+TPoint.Show(Integer): 42
+TPoint.Show<T>: an object of 8 bytes
+TPoint.Add(Integer): 3, X = 145
+TPoint.Add<T>: a string of 8 bytes, X = 245
+TPoint.Show(Integer): 4
+TPoint.Show<T>: a real of 8 bytes
+TDerived.Log(Integer): 42
+TBase.Log<T>: a string of 8 bytes
+TBase.Log<T>: an integer of 1 byte
+TBase.Log<T>: an integer of 4 bytes
+TProbe.Take(Integer): 42
+TProbe.Take(Integer): 7

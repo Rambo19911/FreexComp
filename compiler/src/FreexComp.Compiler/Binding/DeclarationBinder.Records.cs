@@ -150,7 +150,8 @@ internal sealed partial class DeclarationBinder
         }
 
         record.Methods = boundMethods.ToImmutable();
-        record.GenericMethods = [.. genericMethods.Select(g => inner.BindGenericMethodDeclaration(record, g.Syntax, g.Visibility))];
+        record.GenericMethods = inner.CheckMixedOverloads(boundMethods,                               // LANG-978 (C-419)
+            [.. genericMethods.Select(g => inner.BindGenericMethodDeclaration(record, g.Syntax, g.Visibility))]);
         foreach (var (classConstructor, visibility) in classConstructors)
         {
             inner.BindClassConstructorDeclaration(record, classConstructor, visibility);                  // LANG-786 (C-374)

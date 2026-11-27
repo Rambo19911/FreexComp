@@ -373,18 +373,15 @@ public sealed class SemanticModel
     }
 
     /// <summary>
-    /// CMP-729 (c, d; C-392): for a call of a generic method, the instance the call binds to; else, per generic method of the name, the
+    /// CMP-729 (c, d; C-392), CMP-1478 (C-419): the generic methods a call's name can mean (LANG-980 rule 1: as the binder collects
+    /// them, with a type-argument list those of that number of type parameters) — each as the instance the call binds to, else as the
     /// instance for the written type arguments, or for those the arguments typed so far infer (LANG-979, as the binder infers them),
-    /// else the open instance (its type parameters as types). Empty when the callee names no generic method.
+    /// else as its open instance (its type parameters as types). Empty when the callee names no generic method.
     /// </summary>
     internal ImmutableArray<MethodSymbol> GetGenericMethodCandidates(InvocationExpressionSyntax call)
     {
         ArgumentNullException.ThrowIfNull(call);
-        if (GetSymbolInfo(call.Expression).Symbol is MethodSymbol { GenericMethodDefinition: not null } bound)
-        {
-            return [bound];
-        }
-
+        var bound = GetSymbolInfo(call.Expression).Symbol is MethodSymbol { GenericMethodDefinition: not null } instance ? instance : null;
         var (owner, nameSyntax) = call.Expression switch
         {
             MemberAccessExpressionSyntax access => (ContainerOf(access.Expression) as TypeSymbol, access.Name),
@@ -393,17 +390,19 @@ public sealed class SemanticModel
         };
         if (owner is null || nameSyntax is null)
         {
-            return [];
+            return bound is null ? [] : [bound];
         }
 
         var written = nameSyntax is GenericNameSyntax generic
             ? generic.TypeArgumentList.Arguments.Select(a => a is StringTypeSyntax { Length: null } ? _result.Types.String : GetSymbolInfo(a).Symbol as TypeSymbol).ToArray()
             : null;
         var arguments = call.ArgumentList.Arguments.ToList();
-        return [.. TypeMembers.SelfAndAncestors(owner).SelectMany(t => (IEnumerable<GenericMethodSymbol>)DeclarationBinder.GenericMethodsOf(t))
-            .Where(g => IdentifierComparer.Instance.Equals(g.Name, NameOf(nameSyntax.Identifier)) && (written is null || g.ParameterNames.Length == written.Length))
-            .Select(g => (written is not null ? Instance(g, written) : Inferred(g, arguments)) ?? DeclarationBinder.OpenInstanceOf(_result.Types, g))
+        ImmutableArray<MethodSymbol> candidates = [.. ExpressionBinder.MethodsNamed(owner, NameOf(nameSyntax.Identifier)).Generics
+            .Where(g => written is null || g.ParameterNames.Length == written.Length)
+            .Select(g => ReferenceEquals(bound?.GenericMethodDefinition, g) ? bound
+                : (written is not null ? Instance(g, written) : Inferred(g, arguments)) ?? DeclarationBinder.OpenInstanceOf(_result.Types, g))
             .OfType<MethodSymbol>()];
+        return bound is null || candidates.Contains(bound) ? candidates : [bound];
     }
 
     /// <summary>
@@ -531,6 +530,11 @@ public sealed class SemanticModel
             return genericType;
         }
 
+        if (GenericMethodOfHeading(nameNode, left) is { } genericMethod)
+        {
+            return genericMethod;
+        }
+
         if (left is not null)
         {
             return ContainerOf(left) switch
@@ -602,6 +606,30 @@ public sealed class SemanticModel
             UnitSymbol u => u,
             _ => GetTypeInfo(left).Type,
         };
+    }
+
+    /// <summary>
+    /// CMP-1478 (C-419): the name in the heading of a generic method — its declaration in the type or its implementation
+    /// (<c>TOut.Show&lt;T&gt;</c>) — is that generic method, as its open instance (the same declaration as every instance a call binds
+    /// to); never a non-generic method of the same name, with which it forms one overload set (LANG-980). Null for any other name.
+    /// </summary>
+    private MethodSymbol? GenericMethodOfHeading(SyntaxNode? nameNode, SyntaxNode? left)
+    {
+        var heading = nameNode?.Parent switch
+        {
+            RoutineHeadingSyntax declared when ReferenceEquals(declared.Name, nameNode) => declared,
+            QualifiedNameSyntax { Parent: RoutineHeadingSyntax defined } qualified when ReferenceEquals(qualified.Right, nameNode) && ReferenceEquals(defined.Name, qualified) => defined,
+            _ => null,
+        };
+        if (nameNode is null || heading?.TypeParameterList is null
+            || (left is null ? EnclosingType(nameNode.Span.Start) : ContainerOf(left) as TypeSymbol) is not { } owner)
+        {
+            return null;
+        }
+
+        var method = DeclarationBinder.GenericMethodsOf(owner).FirstOrDefault(g =>
+            ReferenceEquals(g.Declaration.Heading, heading) || ReferenceEquals(g.Implementation?.Declaration.Heading, heading));
+        return method is null ? null : DeclarationBinder.OpenInstanceOf(_result.Types, method);
     }
 
     /// <summary>

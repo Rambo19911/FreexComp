@@ -259,4 +259,32 @@ public sealed class FindReferencesTests
         Assert.Equal(field, Lines("Left.Name := 'managed'"));
         Assert.Equal([4, 15, 20], Lines("Name := 'managed'"));
     }
+
+    /// <summary>
+    /// CMP-1478 (C-419): the references of a non-generic method that shares its name with generic methods are the calls LANG-980
+    /// binds to it — not the calls that bind to an instance of a generic method of the name, and the other way round.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1478")]
+    [Trait("Req", "LANG-980")]
+    public void MixedOverloads_ReferencesFollowTheChosenMethod()
+    {
+        var text = SignatureHelpTests.MixedProgram.Replace("MAIN_BODY",
+            "TOut.Show(N);\n  TOut.Show(5);\n  TOut.Show(S);\n  TOut.Show(B);\n  TOut.Show<Integer>(N);\n  TOut.Show(N, S);",
+            StringComparison.Ordinal).ReplaceLineEndings("\n");
+        var doc = MarkupTestFile.Open("P.pas", ("P.pas", text));
+        string Lines(string piece) =>
+            string.Join(" ", NavigationService.FindReferences(doc, text.IndexOf(piece, StringComparison.Ordinal) + piece.IndexOf("Show", StringComparison.Ordinal) + 1,
+                TestContext.Current.CancellationToken).Select(r => r.Location.LineSpan.Start.Line + 1).Order());
+
+        // lines: 5, 6, 7 the declarations; 9, 10, 11 the implementations; 17…22 the calls
+        Assert.Equal(
+            ["5 9 17 18", "5 9 17 18", "6 10 19 20 21", "6 10 19 20 21", "7 11 22", "7 11 22"],
+            [
+                Lines("procedure Show(I: Integer); overload;"), Lines("TOut.Show(5);"),
+                Lines("procedure Show<T>(const V: T); overload;"), Lines("TOut.Show(B);"),
+                Lines("procedure Show<K, V>(const A: K; const B: V); overload;"), Lines("TOut.Show(N, S);"),
+            ]);
+    }
 }

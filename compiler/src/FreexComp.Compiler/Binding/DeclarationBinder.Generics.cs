@@ -873,10 +873,74 @@ internal sealed partial class DeclarationBinder
     };
 
     /// <summary>
+    /// LANG-978 "Overloads" (LANG-440; C-419): the methods of one name in one type, generic and non-generic together, are one overload
+    /// set — each must carry <c>overload</c> (E2120 at the later declaration; both are kept, so calls give no second diagnostic). Two
+    /// generic methods with the same number of type parameters and the same parameter list after the type parameters are replaced by
+    /// their positions are one declaration (E2121; the later one is dropped). A generic and a non-generic method never clash.
+    /// Non-generic methods among themselves are checked where they are declared (E2004). The result: the generic methods kept.
+    /// </summary>
+    private ImmutableArray<GenericMethodSymbol> CheckMixedOverloads(IEnumerable<MethodSymbol> methods, IEnumerable<GenericMethodSymbol> generics)
+    {
+        static string ParameterKey(GenericMethodSymbol generic)
+        {
+            var key = HeadingKey(generic.Declaration.Heading, generic.ParameterNames);
+            return key[..key.LastIndexOf("->", StringComparison.Ordinal)];        // the result type alone does not distinguish (LANG-440)
+        }
+
+        var kept = ImmutableArray.CreateBuilder<GenericMethodSymbol>();
+        var earlier = new List<(string Name, bool IsOverload, GenericMethodSymbol? Generic)>();
+        var declarations = methods.Select(m => (m.MethodDeclaration.Heading, m.Name, m.IsOverload, Generic: (GenericMethodSymbol?)null))
+            .Concat(generics.Select(g => (g.Declaration.Heading, g.Name, g.IsOverload, Generic: (GenericMethodSymbol?)g)))
+            .OrderBy(d => d.Heading.Name.Span.Start);
+        foreach (var (heading, name, isOverload, generic) in declarations)
+        {
+            var same = earlier.Where(e => IdentifierComparer.Instance.Equals(e.Name, name)).ToList();
+            if (same.Count > 0 && (generic is not null || same.Any(e => e.Generic is not null)))
+            {
+                var identifier = heading.Name is IdentifierNameSyntax { Identifier: var token } ? token : heading.Name.FirstToken();
+                if (!isOverload || same.Any(e => !e.IsOverload))
+                {
+                    _diagnostics.Report(identifier, "E2120", name);
+                }
+                else if (generic is not null && same.Any(e => e.Generic is { } other && other.ParameterNames.Length == generic.ParameterNames.Length
+                             && ParameterKey(other) == ParameterKey(generic)))
+                {
+                    _diagnostics.Report(identifier, "E2121", name);
+                    continue;
+                }
+            }
+
+            earlier.Add((name, isOverload, generic));
+            if (generic is not null)
+            {
+                kept.Add(generic);
+            }
+        }
+
+        return kept.ToImmutable();
+    }
+
+    /// <summary>
     /// LANG-701/711 (C-117): the method instance of <paramref name="generic"/> for <paramref name="arguments"/> — its heading bound with the
     /// type parameters declared as the arguments, once per argument list; the using unit records it (CMP-385). Null after an error.
     /// </summary>
-    internal MethodSymbol? InstantiateMethod(GenericMethodSymbol generic, ImmutableArray<TypeSymbol> arguments, SyntaxNode at)
+    internal MethodSymbol? InstantiateMethod(GenericMethodSymbol generic, ImmutableArray<TypeSymbol> arguments, SyntaxNode at) =>
+        CandidateMethod(generic, arguments, at) is { } candidate ? UseMethod(candidate, at) : null;
+
+    /// <summary>
+    /// A generic method instance as a candidate of a call (<see cref="CandidateMethod"/>), with the generic uses the binding of its
+    /// heading made (the instances its parameters name): they are noted only when the candidate is chosen (<see cref="UseMethod"/>).
+    /// </summary>
+    internal sealed record MethodCandidate(MethodSymbol Instance, List<GenericUses.Use> Uses);
+
+    /// <summary>
+    /// LANG-980 rule 6 (C-419): the instance of <paramref name="generic"/> for <paramref name="arguments"/> as a candidate of a call —
+    /// the instance already made for that argument list, else its heading bound with the type parameters declared as the arguments.
+    /// Nothing records a new one: it is not in the generic method's instance list, no unit notes a use and no body is bound, until
+    /// <see cref="UseMethod"/> makes it the instance because the call chose it. Null after an error (a constraint, E2704; the
+    /// heading), reported to this binder's diagnostics.
+    /// </summary>
+    internal MethodCandidate? CandidateMethod(GenericMethodSymbol generic, ImmutableArray<TypeSymbol> arguments, SyntaxNode at)
     {
         var written = at is MemberAccessExpressionSyntax { Name: GenericNameSyntax name } ? name.TypeArgumentList.Arguments : (SeparatedSyntaxList<TypeSyntax>?)null;
         if (!CheckConstraints(generic.ParameterNames, generic.Constraints, arguments, written, at is MemberAccessExpressionSyntax access ? access.Name : at))
@@ -887,47 +951,80 @@ internal sealed partial class DeclarationBinder
         var unit = GenericUses.Current ?? GenericUses.UnitOf(_scope);
         lock (_types.GenericGate)
         {
-            if (!generic.Instances.TryGetValue(arguments, out var instance) && !(t_open && generic.OpenInstances.TryGetValue(arguments, out instance)))
+            if (generic.Instances.TryGetValue(arguments, out var instance) || t_open && generic.OpenInstances.TryGetValue(arguments, out instance))
             {
-                var scope = new Scope(ScopeKind.Unit, generic.DeclaringScope, generic.DeclaringContainer) { DeclaresTypeParameters = true };
-                for (var i = 0; i < arguments.Length; i++)
-                {
-                    scope.TryDeclare(generic.ParameterNames[i], arguments[i], out _);
-                }
+                return new MethodCandidate(instance, []);
+            }
 
-                var binder = new DeclarationBinder(_types, scope, generic.DeclaringContainer, _diagnostics) { _genericMethodInstance = true };
-                using (GenericUses.For(unit))
-                {
-                    instance = generic.Owner switch
-                    {
-                        ClassTypeSymbol c => binder.BindMethodDeclaration(c, generic.Declaration, generic.Visibility),
-                        RecordTypeSymbol r => binder.BindRecordMethodDeclaration(r, generic.Declaration, generic.Visibility),
-                        _ => null,
-                    };
-                }
+            var scope = new Scope(ScopeKind.Unit, generic.DeclaringScope, generic.DeclaringContainer) { DeclaresTypeParameters = true };
+            for (var i = 0; i < arguments.Length; i++)
+            {
+                scope.TryDeclare(generic.ParameterNames[i], arguments[i], out _);
+            }
 
-                if (instance is null)
+            var binder = new DeclarationBinder(_types, scope, generic.DeclaringContainer, _diagnostics) { _genericMethodInstance = true };
+            var uses = new List<GenericUses.Use>();
+            using (GenericUses.For(unit))
+            using (GenericUses.Capture(uses))
+            {
+                instance = generic.Owner switch
                 {
-                    return null;
-                }
+                    ClassTypeSymbol c => binder.BindMethodDeclaration(c, generic.Declaration, generic.Visibility),
+                    RecordTypeSymbol r => binder.BindRecordMethodDeclaration(r, generic.Declaration, generic.Visibility),
+                    _ => null,
+                };
+            }
 
-                if (instance.IsVirtual || instance.IsOverride || instance.IsAbstract)
-                {
-                    _diagnostics.Report(at, "E2900", "virtual generic method");
-                    return null;
-                }
+            if (instance is null)
+            {
+                return null;
+            }
 
-                instance.GenericMethodDefinition = generic;
-                instance.GenericMethodArguments = arguments;
-                if (!t_open)
-                {
-                    instance.GenericSuffix = "<" + string.Join(",", arguments.Select(Emit.Mangler.TypeName)) + ">";
-                }
+            if (instance.IsVirtual || instance.IsOverride || instance.IsAbstract)
+            {
+                _diagnostics.Report(at, "E2900", "virtual generic method");
+                return null;
+            }
 
+            instance.GenericMethodDefinition = generic;
+            instance.GenericMethodArguments = arguments;
+            if (!t_open)
+            {
+                instance.GenericSuffix = "<" + string.Join(",", arguments.Select(Emit.Mangler.TypeName)) + ">";
+            }
+
+            return new MethodCandidate(instance, uses);
+        }
+    }
+
+    /// <summary>
+    /// LANG-980 rule 6, CMP-1477 (3) (C-419): the chosen <paramref name="candidate"/> becomes the instance of its generic method for
+    /// its argument list (the one made for that list meanwhile is taken instead), and the using unit records it and what its heading
+    /// uses (CMP-385) — it is emitted and written to the <c>.pcu</c> as before.
+    /// </summary>
+    internal MethodSymbol UseMethod(MethodCandidate candidate, SyntaxNode at)
+    {
+        var instance = candidate.Instance;
+        var generic = instance.GenericMethodDefinition!;
+        var arguments = instance.GenericMethodArguments;
+        var unit = GenericUses.Current ?? GenericUses.UnitOf(_scope);
+        lock (_types.GenericGate)
+        {
+            if (generic.Instances.TryGetValue(arguments, out var made) || t_open && generic.OpenInstances.TryGetValue(arguments, out made))
+            {
+                instance = made;
+            }
+            else
+            {
                 (t_open ? generic.OpenInstances : generic.Instances)[arguments] = instance;   // C-358: an open binding's, for navigation only
                 if (generic.Implementation is { } implementation)
                 {
                     DefineGenericMethodInstance(instance, implementation, arguments);
+                }
+
+                foreach (var use in candidate.Uses)
+                {
+                    GenericUses.Note(use.Instance, use.Unit, use.At);
                 }
             }
 
@@ -1046,8 +1143,18 @@ internal static class GenericUses
     /// </summary>
     public static void Note(Symbol? type, UnitSymbol? unit, SyntaxNode? at = null)
     {
-        if (t_suppressed || type is not (TypeSymbol { IsGenericInstance: true } or MethodSymbol { GenericMethodDefinition: not null }) || unit is null
-            || !ArgumentsVisibleIn(type, unit))
+        if (t_suppressed || type is not (TypeSymbol { IsGenericInstance: true } or MethodSymbol { GenericMethodDefinition: not null }) || unit is null)
+        {
+            return;
+        }
+
+        if (t_captured is { } captured)
+        {
+            captured.Add(new Use(type, unit, at));                              // C-419: noted when the candidate is chosen
+            return;
+        }
+
+        if (!ArgumentsVisibleIn(type, unit))
         {
             return;
         }
@@ -1144,6 +1251,29 @@ internal static class GenericUses
     internal readonly struct Restore(UnitSymbol? previous) : IDisposable
     {
         public void Dispose() => t_current = previous;
+    }
+
+    /// <summary>A use <see cref="Note"/> was asked to record while uses were captured (<see cref="Capture"/>).</summary>
+    internal readonly record struct Use(Symbol Instance, UnitSymbol Unit, SyntaxNode? At);
+
+    [ThreadStatic]
+    private static List<Use>? t_captured;
+
+    /// <summary>
+    /// LANG-980 rule 6 (C-419): while the result is not disposed, the uses <see cref="Note"/> would record on this thread go to
+    /// <paramref name="uses"/> instead — those of the heading of a generic method instance that is only a candidate of a call. They
+    /// are noted when the call chooses it (<c>DeclarationBinder.UseMethod</c>) and dropped otherwise.
+    /// </summary>
+    public static Capturing Capture(List<Use> uses)
+    {
+        var previous = t_captured;
+        t_captured = uses;
+        return new Capturing(previous);
+    }
+
+    internal readonly struct Capturing(List<Use>? previous) : IDisposable
+    {
+        public void Dispose() => t_captured = previous;
     }
 
     [ThreadStatic]

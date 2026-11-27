@@ -2241,12 +2241,15 @@ internal sealed partial class ExpressionBinder
     }
 
     /// <summary>
-    /// As above for the given candidates (one procedural type's signature for a call through a value). <paramref name="prebound"/>
-    /// (LANG-979, C-418): the arguments the inference of a generic method call bound already, by position — taken as they are.
+    /// As above for the given candidates (one procedural type's signature for a call through a value). <paramref name="generic"/>
+    /// (LANG-979, 980; C-418, C-419), for a method name with generic methods: the arguments the inference bound already, by position —
+    /// taken as they are; whether the name is overloaded although one candidate is left; and what makes the chosen candidate the
+    /// instance (only that one is used, rule 6).
     /// </summary>
     private (RoutineSymbol? Routine, ImmutableArray<BoundExpression> Arguments) BindCall(SyntaxNode call, ImmutableArray<RoutineSymbol> candidates, ArgumentListSyntax? argumentList,
-        ImmutableArray<BoundExpression?> prebound = default)
+        GenericCandidates? generic = null)
     {
+        var prebound = generic?.Prebound ?? default;
         var syntaxes = argumentList?.Arguments ?? default;
         var builder = ImmutableArray.CreateBuilder<BoundExpression>(syntaxes.Count);
         var hasErrors = false;
@@ -2302,7 +2305,7 @@ internal sealed partial class ExpressionBinder
         }
 
         var routine = candidates[0];
-        if (candidates.Length > 1)
+        if (candidates.Length > 1 || generic is { Overloaded: true })
         {
             var resolver = new OverloadResolver(_conversions);
             Func<RoutineSymbol, ImmutableArray<BoundExpression>?> argumentsOf = forms is null ? _ => arguments : c => ArgumentsFor(c, arguments, forms);
@@ -2340,6 +2343,7 @@ internal sealed partial class ExpressionBinder
             }
         }
 
+        routine = generic?.Chosen(routine) ?? routine;                          // LANG-980 rule 6 (C-419): only the chosen candidate is used
         CheckHintDirectives(routine, call);                                     // LANG-472 (C-127)
         return CheckArguments(call, routine, syntaxes, arguments);
     }

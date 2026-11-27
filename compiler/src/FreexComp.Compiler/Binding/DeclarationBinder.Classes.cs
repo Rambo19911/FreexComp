@@ -198,7 +198,7 @@ internal sealed partial class DeclarationBinder
         type.NestedMembers = nested.ToImmutable();
         type.NestedAliases = nestedAliases.ToImmutable();
         type.Methods = methods.ToImmutable();
-        type.GenericMethods = genericMethods.ToImmutable();
+        type.GenericMethods = CheckMixedOverloads(methods, genericMethods);                // LANG-978 (C-419)
         type.VirtualSlots = AssignSlots(type);
         var implements = new List<(PropertySymbol Property, PropertySpecifierSyntax Specifier)>();
         type.Properties = BindProperties(type, properties, names, implements);  // before the interfaces: `implements` (LANG-690)

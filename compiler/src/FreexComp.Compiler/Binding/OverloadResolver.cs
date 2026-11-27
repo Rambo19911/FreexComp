@@ -10,7 +10,8 @@ namespace FreexComp.Compiler.Binding;
 /// LANG-442/443: picks one routine of an overload candidate set (LANG-441) by conversion cost. A candidate is applicable
 /// when the argument count fits and every argument converts to its parameter; each argument/parameter pair has a cost
 /// (<see cref="Cost"/>). The routine that is better than every other (≤ everywhere, &lt; somewhere) wins, then the unique
-/// smallest sum, then the unique candidate using fewest default parameters; otherwise the call is ambiguous.
+/// smallest sum, then among the equally cheapest the single non-generic method (LANG-980, C-419), then the unique candidate using
+/// fewest default parameters; otherwise the call is ambiguous.
 /// </summary>
 internal sealed class OverloadResolver(Conversions conversions)
 {
@@ -49,6 +50,12 @@ internal sealed class OverloadResolver(Conversions conversions)
 
         var minimum = applicable.Min(a => a.Costs.Sum());
         var tied = applicable.Where(a => a.Costs.Sum() == minimum).ToList();
+        if (tied.Count > 1 && tied.Where(a => a.Routine is not MethodSymbol { GenericMethodDefinition: not null }).ToList() is { Count: 1 } plain)
+        {
+            // LANG-980 rule 4 (C-419): among the equally cheapest the single non-generic method wins over the generic method instances
+            tied = plain;
+        }
+
         if (tied.Count > 1 && tied.All(a => a.Routine is MethodSymbol { ContainingSymbol: ClassTypeSymbol }))
         {
             // C-224 (LANG-442): the method of the more derived class wins first

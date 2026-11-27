@@ -31,6 +31,9 @@ public sealed class GenericMethodSymbol : Symbol
 
     internal MethodDeclarationSyntax Declaration { get; }
 
+    /// <summary>LANG-440, 441 (C-419): the declaration carries <c>overload</c> — generic and non-generic methods of one name are one overload set (LANG-980).</summary>
+    internal bool IsOverload => Declaration.Directives.Any(d => d.Keyword.ContextualKind == SyntaxKind.OverloadKeyword);
+
     /// <summary>The scope the owner's members were bound in; instances bind their heading below it.</summary>
     internal Scope DeclaringScope { get; }
 

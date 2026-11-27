@@ -420,4 +420,31 @@ public sealed class GoToDefinitionTests
         Assert.Equal(Implementation("TUtil.First<T>(const Values: TArray<T>; const Fallback: T): T; begin"), Go("TUtil.First(Reals, 0.5)"));
         Assert.Equal(Implementation("TUtil.Unbox<T>(const Box: TBox<T>; const Fallback: T): T; begin"), Go("TUtil.Unbox(Box, S)"));
     }
+
+    /// <summary>
+    /// CMP-1478 (C-419): go-to-definition on the method name of a call of a name with generic and non-generic methods leads to the
+    /// method LANG-980 chooses — the non-generic one only as an equally good match; for an instance, the generic method.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1478")]
+    [Trait("Req", "LANG-980")]
+    public void MixedOverloads_GoesToTheChosenMethod()
+    {
+        var text = SignatureHelpTests.MixedProgram.Replace("MAIN_BODY",
+            "TOut.Show(N);\n  TOut.Show(5);\n  TOut.Show(S);\n  TOut.Show(B);\n  TOut.Show<Integer>(N);\n  TOut.Show(N, S);",
+            StringComparison.Ordinal).ReplaceLineEndings("\n");
+        var doc = MarkupTestFile.Open("P.pas", ("P.pas", text));
+        Assert.DoesNotContain(doc.Compilation.GetDiagnostics(ct: TestContext.Current.CancellationToken), d => d.Severity == DiagnosticSeverity.Error);
+        (string, int) Implementation(string heading) => (TestFiles.PathOf("P.pas"), text.IndexOf(heading, StringComparison.Ordinal) + "TOut.".Length);
+        (string, int) Go(string call) =>
+            Single(NavigationService.GoToDefinition(doc, text.IndexOf(call, StringComparison.Ordinal) + "TOut.".Length + 1, TestContext.Current.CancellationToken));
+
+        Assert.Equal(Implementation("TOut.Show(I: Integer); begin"), Go("TOut.Show(N);"));
+        Assert.Equal(Implementation("TOut.Show(I: Integer); begin"), Go("TOut.Show(5);"));
+        Assert.Equal(Implementation("TOut.Show<T>(const V: T); begin"), Go("TOut.Show(S);"));
+        Assert.Equal(Implementation("TOut.Show<T>(const V: T); begin"), Go("TOut.Show(B);"));
+        Assert.Equal(Implementation("TOut.Show<T>(const V: T); begin"), Go("TOut.Show<Integer>(N);"));
+        Assert.Equal(Implementation("TOut.Show<K, V>(const A: K; const B: V); begin"), Go("TOut.Show(N, S);"));
+    }
 }

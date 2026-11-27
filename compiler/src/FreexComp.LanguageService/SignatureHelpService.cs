@@ -70,7 +70,9 @@ public static class SignatureHelpService
         if (!routines.IsEmpty)
         {
             var arguments = list.Arguments.ToList();
-            var best = Best(model, routines, arguments, active);
+            // CMP-1478 (C-419): for a name with generic methods, the candidate the call binds to (LANG-980), else the first that fits
+            var chosen = !generics.IsEmpty && model.GetSymbolInfo(call.Expression).Symbol is RoutineSymbol bound ? routines.IndexOf(bound) : -1;
+            var best = chosen >= 0 && routines[chosen].Parameters.Length > active ? chosen : Best(model, routines, arguments, active);
             return new SignatureHelp([.. routines.Select(r => Routine(doc, r))], best, active, applicable);
         }
 

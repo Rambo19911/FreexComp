@@ -590,4 +590,25 @@ public sealed class QuickInfoTests
 
         Assert.Equal(signature, info?.Signature);
     }
+
+    /// <summary>
+    /// CMP-1478 (C-419): hover on the method name of a call of a name with generic and non-generic methods shows the method LANG-980
+    /// chooses — the non-generic one only as an equally good match, else the instance of the generic method.
+    /// </summary>
+    [Theory]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1478")]
+    [Trait("Req", "LANG-980")]
+    [InlineData("TOut.Sh$$ow(N);", "class procedure TOut.Show(I: Integer)")]
+    [InlineData("TOut.Sh$$ow(5);", "class procedure TOut.Show(I: Integer)")]
+    [InlineData("TOut.Sh$$ow(S);", "class procedure TOut.Show(const V: string)")]
+    [InlineData("TOut.Sh$$ow(B);", "class procedure TOut.Show(const V: Byte)")]
+    [InlineData("TOut.Sh$$ow<Integer>(N);", "class procedure TOut.Show(const V: Integer)")]
+    [InlineData("TOut.Sh$$ow(N, S);", "class procedure TOut.Show(const A: Integer; const B: string)")]
+    public void MixedOverloads_ShowsTheChosenMethod(string statement, string signature)
+    {
+        var info = HoverAt(SignatureHelpTests.MixedProgram.Replace("MAIN_BODY", statement, StringComparison.Ordinal));
+
+        Assert.Equal(signature, info?.Signature);
+    }
 }

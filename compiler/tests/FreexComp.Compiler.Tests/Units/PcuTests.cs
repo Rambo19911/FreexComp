@@ -965,6 +965,71 @@ public sealed partial class PcuTests
             """);
 
     /// <summary>
+    /// C-419 (LANG-980, 441): a type of a <c>.pcu</c> with generic and non-generic methods of one name resolves calls as against
+    /// its source — the non-generic method as an equally good match, the generic one otherwise, over an ancestor and a descendant
+    /// in both directions (the <c>overload</c> directive of a generic method is read back with its declaration), and the generic
+    /// method whose body does not compile for <c>Integer</c> is not instantiated for the call the non-generic method takes.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "LANG-980")]
+    [Trait("Req", "CMP-1477")]
+    public void MixedGenericOverloadsFromPcu() =>
+        PcuImportTests.AssertSameIrAgainstPcu("""
+            unit U;
+            interface
+            type
+              TBase = class
+                class procedure Log<T>(const V: T); overload; static;
+                class procedure Note(I: Integer); overload; static;
+              end;
+              TOut = class(TBase)
+                class procedure Show(I: Integer); overload; static;
+                class procedure Show<T>(const V: T); overload; static;
+                class procedure Log(I: Integer); overload; static;
+                class procedure Note<T>(const V: T); overload; static;
+                class procedure Take(I: Integer); overload; static;
+                class procedure Take<T>(const V: T); overload; static;
+              end;
+              TRec = record
+                procedure Put(I: Integer); overload;
+                procedure Put<T>(const V: T); overload;
+              end;
+            implementation
+            class procedure TBase.Log<T>(const V: T); begin Writeln('Log<T> ', SizeOf(T)); end;
+            class procedure TBase.Note(I: Integer); begin Writeln('Note ', I); end;
+            class procedure TOut.Show(I: Integer); begin Writeln('Show ', I); end;
+            class procedure TOut.Show<T>(const V: T); begin Writeln('Show<T> ', SizeOf(T)); end;
+            class procedure TOut.Log(I: Integer); begin Writeln('Log ', I); end;
+            class procedure TOut.Note<T>(const V: T); begin Writeln('Note<T> ', SizeOf(T)); end;
+            class procedure TOut.Take(I: Integer); begin Writeln('Take ', I); end;
+            class procedure TOut.Take<T>(const V: T); begin V.Free; end;
+            procedure TRec.Put(I: Integer); begin Writeln('Put ', I); end;
+            procedure TRec.Put<T>(const V: T); begin Writeln('Put<T> ', SizeOf(T)); end;
+            end.
+            """, """
+            program P;
+            uses U;
+            var
+              B: Byte;
+              R: TRec;
+            begin
+              B := 1;
+              TOut.Show(5);
+              TOut.Show('xy');
+              TOut.Show(B);
+              TOut.Show<Integer>(5);
+              TOut.Log(5);
+              TOut.Log('xy');
+              TOut.Note(5);
+              TOut.Note('xy');
+              TOut.Take(5);
+              R.Put(5);
+              R.Put(B);
+            end.
+            """);
+
+    /// <summary>
     /// C-227: a generic body naming an implementation-only type and variable and an enumeration of a unit used only by the
     /// implementation part compiles from the <c>.pcu</c>.
     /// </summary>
