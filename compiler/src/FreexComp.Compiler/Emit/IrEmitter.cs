@@ -2196,7 +2196,9 @@ internal sealed class FunctionEmitter
         }
 
         parameters.AddRange(_parameters.Skip(_implicitCount).Select(p => new DebugParameterType(p.Type, IrEmitter.IsPassedByAddress(p))));
-        var self = _routine is MethodSymbol { SelfParameter: { } selfParameter } ? selfParameter.Type : null;
+        // CMP-1472 (3): an anonymous method's Self is the captured Self of the enclosing method, never its frame
+        var self = _routine is MethodSymbol { IsAnonymous: true } anonymous ? (FrameChain(anonymous).SelectMany(f => f.Frame.Fields.Keys).FirstOrDefault(IsSourceSelf) as ParameterSymbol)?.Type
+            : _routine is MethodSymbol { SelfParameter: { } selfParameter } ? selfParameter.Type : null;
         _subprogram = di.BeginSubprogram(_routine, DisplayName(_routine, source), _name.Text, heading, begin, end, _linkage != IrLinkage.External, returnType, parameters, self);
         return new DebugBody(di.Location(begin, _subprogram), di.Location(end, _subprogram));
     }
@@ -2261,6 +2263,10 @@ internal sealed class FunctionEmitter
     /// (DBG-142), and one captured by an anonymous method is described on the hidden local of its block frame: the instance
     /// that local points to (<c>DW_OP_deref</c>) plus the offset of its field. In a unit-level body (C-316, C-320) inline variables
     /// are internal globals and so is the hidden local of a block frame: each is declared on a slot holding the global's address.
+    /// CMP-1470 (C-414): a classic local, a parameter or the <c>Result</c> that lives in the body's routine closure (CMP-380) is
+    /// described on the hidden local <c>$closure</c> the same way, and on nothing else. CMP-1471: in an anonymous method the frame
+    /// parameter is <c>$frame</c>, and after the method's own variables every source variable of its frame chain is declared on
+    /// the slot holding that frame's instance — the spilled frame parameter, or a debug-only slot <c>$frame&lt;k&gt;</c> filled here.
     /// </summary>
     private void DeclareVariables(DebugBody debug, ImmutableArray<IrLocal> values, IrValue? hiddenResult, int argumentBase)
     {
@@ -2309,8 +2315,31 @@ internal sealed class FunctionEmitter
                 flags ?? (name.StartsWith('$') ? "DIFlagArtificial" : null), kind, scope is null ? null : DebugInfoEmitter.LineOf(scope.Value.From), toLine);
         }
 
+        // the hidden local of a frame: a slot of this body, or a field of its frame record when a nested routine uses it
+        (IrValue? Address, string At) Holder(VariableSymbol hidden)
+        {
+            if (IsCaptured(hidden))
+            {
+                return (_frameAddress, PlusOffset(_frame!.OffsetOf(hidden)));
+            }
+
+            var holder = _body.Locals.FirstOrDefault(l => ReferenceEquals(l.Variable, hidden));
+            return (holder is null ? null : _locals.GetValueOrDefault(holder), "");
+        }
+
+        // CMP-1470: the routine closure of this body; Self stays on its parameter slot
+        var closure = _routine?.Closure;
+        var (closureAddress, closureAt) = closure is null ? (null, "") : Holder(closure.Local);
+
         void Declare(Symbol variable, string name, int? arg, TypeSymbol type, IrValue? received, IrValue? slot, string? flags, string kind)
         {
+            if (closureAddress is not null && kind != "self" && closure!.Fields.TryGetValue(variable, out var captured))
+            {
+                // the frame holds the value, also of a parameter the ABI passes by address (CMP-1472: param, never varParam)
+                declarations.Add((closureAddress, Node(variable, name, arg, type, flags, kind), Expression(closureAt, "DW_OP_deref", PlusOffset(captured.Offset))));
+                return;
+            }
+
             // DBG-137: the storage holds the variable's address (an untyped parameter is described as that pointer itself)
             var deref = received is not null && type is not UntypedTypeSymbol ? "DW_OP_deref" : "";
             var sidecarKind = kind == "param" && deref.Length > 0 ? "varParam" : kind;                     // debug-info-sidecar.md §5
@@ -2342,7 +2371,9 @@ internal sealed class FunctionEmitter
             var arg = argumentBase + i + (hiddenResult is not null && i >= _implicitCount ? 1 : 0);
             var self = _routine is MethodSymbol { SelfParameter: { } selfParameter } && ReferenceEquals(parameter, selfParameter);
             var byAddress = IrEmitter.IsPassedByAddress(parameter);
-            Declare(parameter, parameter.Name, arg, parameter.Type, byAddress ? values[i] : null, byAddress ? null : _parameterAddresses.GetValueOrDefault(parameter),
+            // CMP-1471 (1): the Self of an anonymous method is its frame; the name Self is left to the object the source means
+            var name = self && _routine is MethodSymbol { IsAnonymous: true } ? "$frame" : parameter.Name;
+            Declare(parameter, name, arg, parameter.Type, byAddress ? values[i] : null, byAddress ? null : _parameterAddresses.GetValueOrDefault(parameter),
                 self ? "DIFlagArtificial | DIFlagObjectPointer" : parameter.Name.Contains('$') ? "DIFlagArtificial" : null, self ? "self" : "param");
         }
 
@@ -2385,13 +2416,98 @@ internal sealed class FunctionEmitter
                 continue;
             }
 
-            // the frame's hidden local: a slot of this body, or a field of its frame record when a nested routine uses it
-            var holder = _body.Locals.FirstOrDefault(l => ReferenceEquals(l.Variable, frame.Local));
-            var (address, at) = IsCaptured(frame.Local) ? (_frameAddress, PlusOffset(_frame!.OffsetOf(frame.Local)))
-                : (holder is null ? null : _locals.GetValueOrDefault(holder), "");
+            var (address, at) = Holder(frame.Local);
             if (address is not null)
             {
                 declarations.Add((address, Node(variable!, variable!.Name, arg: null, variable.Type, flags: null, "local"), Expression(at, "DW_OP_deref", PlusOffset(field.Offset))));
+            }
+        }
+
+        if (_routine is MethodSymbol { IsAnonymous: true, SelfParameter: { } frameParameter } anonymous)
+        {
+            // CMP-1471 (4): the method's own variables hide the captured ones of their name, a nearer frame hides a farther one
+            var named = new HashSet<string>(Syntax.IdentifierComparer.Instance);
+            named.UnionWith(_parameters.Where(p => !ReferenceEquals(p, frameParameter)).Select(p => p.Name));
+            named.UnionWith(_body.Locals.Where(l => l.Variable is not null).Select(l => l.Name));
+            named.UnionWith(inFrames.Select(f => f.Variable!.Name));
+            named.UnionWith(closure?.Fields.Keys.Select(s => s.Name) ?? []);
+
+            // the instance of each frame, loaded once through the links of the chain (they never change: CMP-380, CMP-1183)
+            var instances = new Dictionary<ChainFrame, IrValue>(ReferenceEqualityComparer.Instance);
+            IrValue Instance(ChainFrame frame)
+            {
+                if (instances.TryGetValue(frame, out var instance))
+                {
+                    return instance;
+                }
+
+                if (frame.From is null)
+                {
+                    return instances[frame] = values[_parameters.IndexOf(frameParameter)];
+                }
+
+                var link = _w.GetElementPtr(NewTemp(), IrType.I8, Instance(frame.From), [IrIntConstant.I64(frame.Link!.Offset)]);
+                return instances[frame] = _w.Load(NewTemp(), IrType.Ptr, link, PtrAlign);
+            }
+
+            // a parameter and Self have the line they have in their own body: its heading (this body's, the one around it, …)
+            var headings = new List<int>();
+            for (var node = _body.Source; node is not null; node = node.Parent)
+            {
+                if (node is Syntax.RoutineDeclarationSyntax or Syntax.AnonymousMethodExpressionSyntax)
+                {
+                    headings.Add(DebugInfoEmitter.LineOf(node is Syntax.RoutineDeclarationSyntax declaration ? declaration.Heading.FirstToken() : ((Syntax.AnonymousMethodExpressionSyntax)node).Keyword));
+                }
+            }
+
+            int LineOf(Symbol symbol)
+            {
+                if (symbol is not ParameterSymbol && !symbol.Locations.IsEmpty)
+                {
+                    return symbol.Locations[0].LineSpan.Start.Line + 1;
+                }
+
+                var level = LexicalDistance(anonymous, symbol.ContainingSymbol as RoutineSymbol);
+                return level < headings.Count ? headings[level] : headingLine;
+            }
+
+            var chain = FrameChain(anonymous);
+            for (var k = 1; k <= chain.Count; k++)
+            {
+                var frame = chain[k - 1];
+                if (!frame.Frame.Fields.Keys.Any(IsSourceVariable))
+                {
+                    continue;                                           // CMP-1471 (2): only links in it: no slot
+                }
+
+                IrValue? address;
+                var at = "";
+                if (frame.From is not null)
+                {
+                    address = _w.Alloca(Unique("$frame" + k.ToString(System.Globalization.CultureInfo.InvariantCulture)), IrType.Ptr, PtrAlign);
+                    _w.Store(Instance(frame), address, PtrAlign);
+                }
+                else if (IsCaptured(frameParameter))
+                {
+                    (address, at) = (_frameAddress, PlusOffset(_frame!.OffsetOf(frameParameter)));
+                }
+                else
+                {
+                    address = _parameterAddresses.GetValueOrDefault(frameParameter);
+                }
+
+                foreach (var (symbol, field) in frame.Frame.Fields)
+                {
+                    if (address is null || !IsSourceVariable(symbol) || !named.Add(symbol.Name))
+                    {
+                        continue;
+                    }
+
+                    // CMP-1471 (3), CMP-1472 (2): under its source name, without argument position and line range
+                    var isSelf = IsSourceSelf(symbol);
+                    var variable = di.LocalVariable(subprogram, symbol.Name, arg: null, LineOf(symbol), field.Type, isSelf ? "DIFlagArtificial" : null, isSelf ? "self" : "local");
+                    declarations.Add((address, variable, Expression(at, "DW_OP_deref", PlusOffset(field.Offset))));
+                }
             }
         }
 
@@ -2400,6 +2516,76 @@ internal sealed class FunctionEmitter
             _w.DebugDeclare(address, variable, expression, location);
         }
     }
+
+    /// <summary>
+    /// CMP-1471: one frame of an anonymous method's frame chain — the frame the method belongs to (<see cref="From"/> null: its
+    /// instance is the frame parameter), or one reached from <see cref="From"/> through the field <see cref="Link"/>
+    /// (<c>$outer</c>, <c>$outer.&lt;name&gt;</c>).
+    /// </summary>
+    private sealed record ChainFrame(Binding.ClosureInfo Frame, ChainFrame? From, FieldSymbol? Link);
+
+    /// <summary>
+    /// The frame chain of <paramref name="anonymous"/>, nearest frame first: the frames of a nearer enclosing body before those of a
+    /// farther one, inside one body an inner block frame before the frames around it (the order in which the source text of the
+    /// method resolves a name).
+    /// </summary>
+    private static List<ChainFrame> FrameChain(MethodSymbol anonymous)
+    {
+        var chain = new List<ChainFrame>();
+        void Visit(Binding.ClosureInfo? frame, ChainFrame? from, FieldSymbol? link)
+        {
+            if (frame is null || chain.Exists(c => ReferenceEquals(c.Frame, frame)))
+            {
+                return;
+            }
+
+            var entry = new ChainFrame(frame, from, link);
+            chain.Add(entry);
+            if (frame.Outer is { } outer)
+            {
+                Visit(frame.Enclosing, entry, outer);
+            }
+
+            foreach (var (target, fields) in frame.Links)
+            {
+                Visit(target, entry, fields.Plain);
+            }
+        }
+
+        static int Depth(Binding.ClosureInfo frame)
+        {
+            var depth = 0;
+            for (var at = frame; at is { IsBlock: true }; at = at.Enclosing)
+            {
+                depth++;
+            }
+
+            return depth;
+        }
+
+        Visit(anonymous.AnonymousFrame, from: null, link: null);
+        return [.. chain.OrderBy(f => LexicalDistance(anonymous, f.Frame.Owner)).ThenByDescending(f => Depth(f.Frame))];
+    }
+
+    /// <summary>How many bodies lie between <paramref name="routine"/> (0) and the body of <paramref name="owner"/> around it (null: the unit-level body).</summary>
+    private static int LexicalDistance(RoutineSymbol routine, RoutineSymbol? owner)
+    {
+        var distance = 0;
+        for (var at = routine; at is not null && !ReferenceEquals(at, owner); at = Binding.ClosureInfo.LexicalParent(at))
+        {
+            distance++;
+        }
+
+        return distance;
+    }
+
+    /// <summary>A field of a frame that holds something written in the source: a variable, a parameter, <c>Result</c>, the <c>Self</c> of a method.</summary>
+    private static bool IsSourceVariable(Symbol symbol) =>
+        !symbol.Name.StartsWith('$') && !(symbol.ContainingSymbol is MethodSymbol { IsAnonymous: true, SelfParameter: { } frame } && ReferenceEquals(frame, symbol));
+
+    /// <summary>The captured <c>Self</c> of an enclosing method.</summary>
+    private static bool IsSourceSelf(Symbol symbol) =>
+        symbol.ContainingSymbol is MethodSymbol { IsAnonymous: false, SelfParameter: { } self } && ReferenceEquals(self, symbol);
 
     private void SetLocation(int? location)
     {

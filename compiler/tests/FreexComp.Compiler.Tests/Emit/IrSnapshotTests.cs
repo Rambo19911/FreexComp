@@ -3396,6 +3396,26 @@ public sealed class IrSnapshotToolchainTests
 
         Assert.True(exitCode == 0, "clang failed:\n" + output);
     }
+
+    /// <summary>
+    /// C-414: the source <c>ClosureDebug</c> needs a System with the closure types and is about debug records, so it is emitted
+    /// with <c>-g</c> against <see cref="IrSnapshotTests.ClosureSystemSource"/> (the table above is bound against the stub System
+    /// and emitted without): the pinned clang accepts the module, also when it optimises through the debug-only slots.
+    /// </summary>
+    [Theory]
+    [InlineData("-O0", DebugFormat.CodeView)]
+    [InlineData("-O2", DebugFormat.CodeView)]
+    [InlineData("-O0", DebugFormat.Dwarf)]
+    [InlineData("-O2", DebugFormat.Dwarf)]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1470")]
+    [Trait("Req", "CMP-1471")]
+    public async Task ClosureDebugModule_CompilesWithPinnedClang(string optimisation, DebugFormat format)
+    {
+        var (exitCode, output) = await Clang.CompileToObjectAsync(IrSnapshotTests.EmitClosureDebug(format), optimisation);
+
+        Assert.True(exitCode == 0 && !output.Contains("warning", StringComparison.OrdinalIgnoreCase), "clang:\n" + output);
+    }
 }
 
 /// <summary>Compares text with <c>Snapshots/&lt;name&gt;.ll</c> of the source tree; <c>UPDATE_SNAPSHOTS=1</c> rewrites the file.</summary>

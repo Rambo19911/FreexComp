@@ -147,11 +147,13 @@ public sealed partial class PdiSidecarTests
 
         var blocks = Assert.Single(result.Bodies).Closure!.Blocks;
         Assert.Equal(3, blocks.Count);
+        // the variables of the main block's subprogram: the anonymous methods list the captured ones too, under their source names (C-414)
+        var main = Regex.Match(Function(ir, "$main"), @" !dbg !(\d+) \{").Groups[1].Value;
         foreach (var (name, debugName) in new[] { ("N", "N"), ("M", "M"), ("m", "m$2") })
         {
             var block = blocks.Single(b => b.Fields.Keys.Any(k => k.Name == name));
             var offset = block.Fields.Single(f => f.Key.Name == name).Value.Offset.ToString(CultureInfo.InvariantCulture);
-            var node = Regex.Match(ir, $"""^!(\d+) = !DILocalVariable\(name: "{Regex.Escape(debugName)}",""", RegexOptions.Multiline);
+            var node = Regex.Match(ir, $"""^!(\d+) = !DILocalVariable\(name: "{Regex.Escape(debugName)}", scope: !{main},""", RegexOptions.Multiline);
             Assert.True(node.Success, "no DILocalVariable for " + debugName);
             var declare = Assert.Single(ir.Split('\n'), l => l.Contains($", !{node.Groups[1].Value}, !DIExpression(", StringComparison.Ordinal)).Trim();
             Assert.StartsWith($"#dbg_declare(ptr %{block.Local.Name}.ref, !{node.Groups[1].Value}, !DIExpression(DW_OP_deref, DW_OP_deref, DW_OP_plus_uconst, {offset}), ", declare, StringComparison.Ordinal);
