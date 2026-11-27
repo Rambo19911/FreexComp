@@ -137,7 +137,7 @@ public static class CompletionService
             {
                 if (symbols.TryGetValue(id, out var symbol))
                 {
-                    return new CompletionDescription(symbol.ToDisplayString(), symbol.Documentation, OriginOf(symbol));
+                    return new CompletionDescription(symbol.ToDisplayString(), DocCommentRenderer.Documentation(doc.Compilation, symbol), OriginOf(symbol));
                 }
             }
         }

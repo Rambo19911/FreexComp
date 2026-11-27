@@ -1,3 +1,5 @@
+using FreexComp.Compiler;
+
 namespace FreexComp.LanguageService.Tests;
 
 /// <summary>language-service.md §6 (CMP-730, 731, C-136): one case per row of CMP-731.</summary>
@@ -308,5 +310,197 @@ public sealed class QuickInfoTests
     public void InlineVariable_E2075_NoQuickInfo(string marker)
     {
         Assert.Null(HoverInline(marker));
+    }
+
+    /// <summary>The quick info at the <c>$$</c> of the program <paramref name="markup"/> (<c>P.pas</c>), with further files.</summary>
+    private static QuickInfo? HoverAt(string markup, params (string Name, string Text)[] files)
+    {
+        var parsed = MarkupTestFile.Parse(markup);
+        var doc = MarkupTestFile.Open("P.pas", [("P.pas", parsed.Text), .. files.Select(f => (f.Name, f.Text.ReplaceLineEndings("\n")))]);
+        return QuickInfoService.GetQuickInfo(doc, parsed.Caret, TestContext.Current.CancellationToken);
+    }
+
+    /// <summary>CMP-732 (C-393): the XML tags of a doc comment rendered to plain text with fixed labels.</summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-732")]
+    public void XmlDocComment_RenderedAsPlainText()
+    {
+        const string greet = """
+            program P;
+            /// <summary>Returns the greeting for <paramref name="AName"/>.</summary>
+            /// <param name="AName">The name; <c>''</c> greets the world.</param>
+            /// <returns>The text, never empty.</returns>
+            function Greet(const AName: string): string;
+            begin
+              Result := AName;
+            end;
+            begin
+              Gr$$eet('x');
+            end.
+            """;
+        Assert.Equal("Returns the greeting for AName.\n\nParameters:\n  AName – The name; '' greets the world.\n\nReturns: The text, never empty.",
+            HoverAt(greet)!.Documentation);
+
+        const string rich = """
+            program P;
+            {** Lead text.
+                <summary>First <b>bold</b> part
+                  continues.<para>Second &lt;x&gt; &amp; <see cref="TObject"/>, <seealso cref="Exit"/>.</para></summary>
+                <remarks>Line one<br/>line two; &quot;T&quot; is <typeparamref name="T"/>, &apos;x&apos;.</remarks>
+                <param name="A">First.</param>
+                <param name="B">Second
+                  <para>more.</para></param> }
+            procedure Doit(A, B: Integer);
+            begin
+            end;
+            begin
+              Do$$it(1, 2);
+            end.
+            """;
+        Assert.Equal(
+            "Lead text. First bold part continues.\n\nSecond <x> & TObject, Exit.\n\nParameters:\n  A – First.\n  B – Second more.\n\n"
+            + "Remarks: Line one\nline two; \"T\" is T, 'x'.",
+            HoverAt(rich)!.Documentation);
+
+        const string onlyParams = """
+            program P;
+            /// <param name="A">The value.</param>
+            procedure One(A: Integer);
+            begin
+            end;
+            begin
+              O$$ne(1);
+            end.
+            """;
+        Assert.Equal("Parameters:\n  A – The value.", HoverAt(onlyParams)!.Documentation);
+    }
+
+    /// <summary>CMP-732: a comment that is not well-formed, or has none of the four top-level elements, is shown as before (CMP-730).</summary>
+    [Theory]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-732")]
+    [InlineData("/// <summary>Open <c>code</summary>", "<summary>Open <c>code</summary>")]
+    [InlineData("/// <summary>Unclosed", "<summary>Unclosed")]
+    [InlineData("/// <summary>a < b</summary>", "<summary>a < b</summary>")]
+    [InlineData("/// Uses <c>X</c> only.", "Uses <c>X</c> only.")]
+    [InlineData("/// Plain &amp; simple.", "Plain &amp; simple.")]
+    public void XmlDocComment_NotWellFormed_ShownRaw(string comment, string documentation)
+    {
+        var markup = "program P;\n" + comment + "\nprocedure Doit;\nbegin\nend;\nbegin\n  Do$$it;\nend.";
+
+        Assert.Equal(documentation, HoverAt(markup)!.Documentation);
+    }
+
+    /// <summary>CMP-734 (C-394): the plain comment directly above a source declaration is the fallback documentation.</summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-734")]
+    public void PlainCommentAbove_IsTheFallbackDocumentation()
+    {
+        const string unit = """
+            unit U2;
+            interface
+            type
+              // The shape.
+              //   Second line.
+              TShape = class
+              public
+                { The area,
+                  in square units. }
+                function Area: Integer;
+                (* <summary>The name.</summary> *)
+                Name: string;
+              end;
+            // <summary>Sums.</summary>
+            // <param name="A">Left.</param>
+            function Sum(A, B: Integer): Integer;
+            implementation
+            function TShape.Area: Integer; begin Result := 0 end;
+            function Sum(A, B: Integer): Integer; begin Result := A + B end;
+            end.
+            """;
+        string? Doc(string body) => HoverAt("program P;\nuses U2;\nvar S: TShape;\nbegin\n  " + body + "\nend.", ("U2.pas", unit))!.Documentation;
+
+        Assert.Equal("The shape.\n  Second line.", Doc("S := TSh$$ape.Create;"));
+        Assert.Equal("The area,\nin square units.", Doc("S.Ar$$ea;"));
+        Assert.Equal("The name.", Doc("S.Na$$me := '';"));
+        Assert.Equal("Sums.\n\nParameters:\n  A – Left.", Doc("Su$$m(1, 2);"));
+
+        // the same text in completion and signature help; LANG-142 keeps the symbol's own documentation empty
+        var markup = MarkupTestFile.Parse("program P;\nuses U2;\nbegin\n  Sum($$\nend.");
+        var doc = MarkupTestFile.Open("P.pas", ("P.pas", markup.Text), ("U2.pas", unit.ReplaceLineEndings("\n")));
+        var help = SignatureHelpService.GetSignatureHelp(doc, markup.Caret, TestContext.Current.CancellationToken);
+        var signature = Assert.Single(help!.Signatures);
+        Assert.Equal("Sums.", signature.Documentation);
+        Assert.Equal(["Left.", null], signature.Parameters.Select(p => p.Documentation));
+        var item = CompletionService.GetCompletions(doc, markup.Caret - "Sum(".Length, default, TestContext.Current.CancellationToken).Items
+            .First(i => i.Label == "Sum");
+        Assert.Equal("Sums.\n\nParameters:\n  A – Left.", CompletionService.GetDescription(doc, item, TestContext.Current.CancellationToken).Documentation);
+        var sum = doc.SemanticModel.LookupSymbols(markup.Caret, "Sum").Single();
+        Assert.Null(sum.Documentation);
+    }
+
+    /// <summary>
+    /// CMP-734: no fallback across a blank line, for a comment after a token on its line, above a directive, for a parameter, or from a
+    /// <c>.pcu</c> alone.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-734")]
+    public void PlainComment_NotAdjacentOrTrailingOrDirective_NotDocumentation()
+    {
+        const string unit = """
+            unit U3;
+            interface
+            // Not adjacent.
+
+            procedure Spaced;
+            procedure First; // Trails First.
+            procedure Second;
+            const C = 1; { Trails C,
+              over two lines. }
+            procedure Third;
+            // Above a directive.
+            {$IFNDEF NEVER_DEFINED}
+            procedure Guarded;
+            {$ENDIF}
+            // Kept.
+            procedure Kept(A: Integer);
+            implementation
+            procedure Spaced; begin end;
+            procedure First; begin end;
+            procedure Second; begin end;
+            procedure Third; begin end;
+            procedure Guarded; begin end;
+            procedure Kept(A: Integer); begin end;
+            end.
+            """;
+        string? Doc(string body) => HoverAt("program P;\nuses U3;\nbegin\n  " + body + "\nend.", ("U3.pas", unit))!.Documentation;
+
+        Assert.Null(Doc("Spa$$ced;"));
+        Assert.Null(Doc("Fi$$rst;"));
+        Assert.Null(Doc("Sec$$ond;"));
+        Assert.Null(Doc("Th$$ird;"));
+        Assert.Null(Doc("Gua$$rded;"));
+        Assert.Equal("Kept.", Doc("Ke$$pt(1);"));
+
+        // a parameter is not the routine: no fallback from the routine's comment
+        var parameter = HoverAt("program P;\n// Routine.\nprocedure Q(Arg: Integer);\nbegin\n  Writeln(A$$rg);\nend;\nbegin\nend.");
+        Assert.Equal("param Arg: Integer", parameter!.Signature);
+        Assert.Null(parameter.Documentation);
+
+        // U3 is built to a .pcu; without its source the fallback has no text to read
+        const string program = "program P;\nuses U3;\nbegin\n  Kept(1);\nend.";
+        var pcu = Compilation.Create(TestFiles.Options(), [], TestFiles.Files(("P.pas", program), ("U3.pas", unit.ReplaceLineEndings("\n"))))
+            .PcuTexts().Single(t => t.Unit == "U3").Text;
+        var fs = TestFiles.Files();
+        fs.Add(@"C:\lib\U3.pcu", pcu).Add(@"C:\lib\U3.obj", "").Add(@"C:\q\P.pas", program);
+        var workspace = new Workspace(fs);
+        workspace.SetProject(TestFiles.Options() with { MainFile = @"C:\q\P.pas", SearchPaths = [@"C:\lib"], ObjectDirectory = @"C:\q\obj" });
+        var doc = workspace.GetDocument(@"C:\q\P.pas");
+        var info = QuickInfoService.GetQuickInfo(doc, program.IndexOf("Kept", StringComparison.Ordinal) + 1, TestContext.Current.CancellationToken);
+        Assert.Equal("procedure U3.Kept(A: Integer)", info!.Signature);
+        Assert.Null(info.Documentation);
     }
 }

@@ -486,6 +486,49 @@ internal sealed partial class DeclarationBinder
     }
 
     /// <summary>
+    /// CMP-729 (C-392): the open instance of the generic method <paramref name="generic"/> — its heading bound once with each type parameter
+    /// declared as a <see cref="TypeParameterTypeSymbol"/> of its name (<see cref="BindOpen"/>; its diagnostics are dropped), for signature
+    /// help before the arguments infer the type arguments. Null when the heading does not bind.
+    /// </summary>
+    internal static MethodSymbol? OpenInstanceOf(BuiltInTypes types, GenericMethodSymbol generic)
+    {
+        lock (types.GenericGate)
+        {
+            if (!generic.OpenInstanceAttempted)
+            {
+                generic.OpenInstanceAttempted = true;
+                generic.OpenInstance = OpenInstanceOf(types, generic, [.. generic.ParameterNames.Select((n, i) =>
+                    new TypeParameterTypeSymbol(n, types.Target, i < generic.Constraints.Length ? generic.Constraints[i] : null))]);
+            }
+
+            return generic.OpenInstance;
+        }
+    }
+
+    /// <summary>
+    /// CMP-729 (C-392): the instance of the generic method for <paramref name="arguments"/> as an open binding makes it (no use recorded,
+    /// diagnostics dropped) — for signature help with written or inferred type arguments. Null when its heading does not bind.
+    /// </summary>
+    internal static MethodSymbol? OpenInstanceOf(BuiltInTypes types, GenericMethodSymbol generic, ImmutableArray<TypeSymbol> arguments)
+    {
+        lock (types.GenericGate)
+        {
+            using (BindOpen())
+            {
+                try
+                {
+                    return new DeclarationBinder(types, generic.DeclaringScope, generic.DeclaringContainer, new DiagnosticBag())
+                        .InstantiateMethod(generic, arguments, generic.Declaration);
+                }
+                catch (Exception e) when (e is InvalidOperationException or NotSupportedException)
+                {
+                    return null;                                                // CMP-202
+                }
+            }
+        }
+    }
+
+    /// <summary>
     /// LANG-710/711: the instance of <paramref name="generic"/> for <paramref name="arguments"/> — made once per argument list (under
     /// the compilation's generic lock, units bind in parallel) by binding the declaration below the declaring scope with each type
     /// parameter declared as its argument. The using unit records it (CMP-385).
@@ -872,6 +915,7 @@ internal sealed partial class DeclarationBinder
                 }
 
                 instance.GenericMethodDefinition = generic;
+                instance.GenericMethodArguments = arguments;
                 if (!t_open)
                 {
                     instance.GenericSuffix = "<" + string.Join(",", arguments.Select(Emit.Mangler.TypeName)) + ">";

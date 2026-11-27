@@ -280,7 +280,11 @@ public sealed class SemanticModel
         return span is { } range ? [.. _diagnostics.Where(d => d.Location.Span.IntersectsWith(range) || d.Location.Span.Start == range.Start)] : _diagnostics;
     }
 
-    /// <summary>LANG-441: the routines an invocation's callee name can denote at the call (for signature help).</summary>
+    /// <summary>
+    /// LANG-441: the routines an invocation's callee name can denote at the call (for signature help) — for a class member the overload set
+    /// over the inheritance chain, accessible at the call, without class constructors (CMP-729 a); for <c>inherited Name(</c> the ancestor's
+    /// (CMP-729 b).
+    /// </summary>
     public ImmutableArray<RoutineSymbol> GetOverloadCandidates(InvocationExpressionSyntax call)
     {
         ArgumentNullException.ThrowIfNull(call);
@@ -290,14 +294,92 @@ public sealed class SemanticModel
                 return ScopeAt(call.Span.Start).LookupCandidates(NameOf(simple.Identifier));
             case MemberAccessExpressionSyntax access:
                 var container = ContainerOf(access.Expression);
+                var name = NameOf(access.Name.Identifier);
                 return container switch
                 {
-                    TypeSymbol type => [.. type.GetMembers(NameOf(access.Name.Identifier)).OfType<RoutineSymbol>()],
-                    UnitSymbol unit => [.. unit.InterfaceMembers.OfType<RoutineSymbol>().Where(r => IdentifierComparer.Instance.Equals(r.Name, NameOf(access.Name.Identifier)))],
+                    ClassTypeSymbol type => Accessible(call, ExpressionBinder.MemberCandidates(type, name)),
+                    TypeSymbol type => [.. type.GetMembers(name).OfType<RoutineSymbol>()],
+                    UnitSymbol unit => [.. unit.InterfaceMembers.OfType<RoutineSymbol>().Where(r => IdentifierComparer.Instance.Equals(r.Name, name))],
                     _ => [],
                 };
+            case InheritedExpressionSyntax { Name: { } inherited }:
+                var method = Enclosing(GetEnclosingSymbol(call.Span.Start)).OfType<MethodSymbol>().FirstOrDefault();
+                return (method?.Owner as ClassTypeSymbol)?.Parent is { } parent
+                    ? Accessible(call, ExpressionBinder.MemberCandidates(parent, NameOf(inherited.Identifier)))
+                    : [];
             default:
                 return [];
+        }
+    }
+
+    /// <summary>
+    /// CMP-729 (c, d; C-392): for a call of a generic method, the instance the call binds to; else, per generic method of the name, the
+    /// instance for the written type arguments, or for those the arguments typed so far infer (a parameter of a type parameter's type takes
+    /// its argument's type), else the open instance (its type parameters as types). Empty when the callee names no generic method.
+    /// </summary>
+    internal ImmutableArray<MethodSymbol> GetGenericMethodCandidates(InvocationExpressionSyntax call)
+    {
+        ArgumentNullException.ThrowIfNull(call);
+        if (GetSymbolInfo(call.Expression).Symbol is MethodSymbol { GenericMethodDefinition: not null } bound)
+        {
+            return [bound];
+        }
+
+        var (owner, nameSyntax) = call.Expression switch
+        {
+            MemberAccessExpressionSyntax access => (ContainerOf(access.Expression) as TypeSymbol, access.Name),
+            SimpleNameSyntax simple => (EnclosingType(call.Span.Start), simple),
+            _ => ((TypeSymbol?)null, (SimpleNameSyntax?)null),
+        };
+        if (owner is null || nameSyntax is null)
+        {
+            return [];
+        }
+
+        var written = nameSyntax is GenericNameSyntax generic
+            ? generic.TypeArgumentList.Arguments.Select(a => a is StringTypeSyntax { Length: null } ? _result.Types.String : GetSymbolInfo(a).Symbol as TypeSymbol).ToArray()
+            : null;
+        var arguments = call.ArgumentList.Arguments.ToList();
+        return [.. TypeMembers.SelfAndAncestors(owner).SelectMany(t => (IEnumerable<GenericMethodSymbol>)DeclarationBinder.GenericMethodsOf(t))
+            .Where(g => IdentifierComparer.Instance.Equals(g.Name, NameOf(nameSyntax.Identifier)) && (written is null || g.ParameterNames.Length == written.Length))
+            .Select(g => (written is not null ? Instance(g, written) : Inferred(g, arguments)) ?? DeclarationBinder.OpenInstanceOf(_result.Types, g))
+            .OfType<MethodSymbol>()];
+    }
+
+    /// <summary>CMP-729 (d): the instance for the type arguments the typed arguments give; null while one stays open.</summary>
+    private MethodSymbol? Inferred(GenericMethodSymbol generic, IReadOnlyList<ArgumentSyntax> arguments)
+    {
+        if (DeclarationBinder.OpenInstanceOf(_result.Types, generic) is not { } open)
+        {
+            return null;
+        }
+
+        var inferred = new TypeSymbol?[generic.ParameterNames.Length];
+        for (var i = 0; i < arguments.Count && i < open.Parameters.Length; i++)
+        {
+            var index = open.GenericMethodArguments.IndexOf(open.Parameters[i].Type);
+            if (index >= 0 && !arguments[i].Expression.IsMissing && GetTypeInfo(arguments[i].Expression).Type is { TypeKind: not TypeKind.Error } type)
+            {
+                inferred[index] ??= type;
+            }
+        }
+
+        return Instance(generic, inferred);
+    }
+
+    private MethodSymbol? Instance(GenericMethodSymbol generic, TypeSymbol?[] arguments) =>
+        arguments.Length == 0 || arguments.Any(a => a is null or { TypeKind: TypeKind.Error })
+            ? null
+            : DeclarationBinder.OpenInstanceOf(_result.Types, generic, [.. arguments!]);
+
+    private ImmutableArray<RoutineSymbol> Accessible(SyntaxNode at, ImmutableArray<RoutineSymbol> routines) =>
+        [.. routines.Where(r => IsAccessible(at.Span.Start, r))];
+
+    private static IEnumerable<Symbol> Enclosing(Symbol? symbol)
+    {
+        for (; symbol is not null; symbol = symbol.ContainingSymbol)
+        {
+            yield return symbol;
         }
     }
 

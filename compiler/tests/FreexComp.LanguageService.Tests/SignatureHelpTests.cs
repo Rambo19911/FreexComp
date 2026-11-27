@@ -115,4 +115,148 @@ public sealed class SignatureHelpTests
     {
         Assert.Null(Help(body).Help);
     }
+
+    /// <summary>Signature help at the <c>$$</c> of a whole program <paramref name="markup"/>.</summary>
+    private static SignatureHelp? HelpIn(string markup)
+    {
+        var parsed = MarkupTestFile.Parse(markup);
+        var doc = MarkupTestFile.Open("P.pas", ("P.pas", parsed.Text));
+        return SignatureHelpService.GetSignatureHelp(doc, parsed.Caret, TestContext.Current.CancellationToken);
+    }
+
+    private const string Classes = """
+        program P;
+        type
+          TBase = class
+          strict private
+            constructor Create(P: Pointer); overload;
+          public
+            constructor Create(A: Integer); overload;
+            constructor Create(const S: string); overload;
+            procedure Run(A: Integer); virtual;
+          end;
+          TFoo = class(TBase)
+          public
+            class constructor Create;
+            constructor Create(A, B: Integer); overload;
+            procedure Run(A: Integer); override;
+          end;
+          TBar = class(TBase)
+          end;
+          TBaz = class(TBase)
+          public
+            constructor Create(X: Double);
+          end;
+          TUtil = class
+          public
+            class function Pick<T>(A: T; B: Integer): T;
+            class procedure Show<T>(A: T);
+          end;
+        constructor TBase.Create(P: Pointer); begin end;
+        constructor TBase.Create(A: Integer); begin end;
+        constructor TBaz.Create(X: Double); begin end;
+        constructor TBase.Create(const S: string); begin end;
+        procedure TBase.Run(A: Integer); begin end;
+        class constructor TFoo.Create; begin end;
+        constructor TFoo.Create(A, B: Integer); begin CTOR_BODY end;
+        procedure TFoo.Run(A: Integer); begin RUN_BODY end;
+        class function TUtil.Pick<T>(A: T; B: Integer): T; begin Result := A end;
+        class procedure TUtil.Show<T>(A: T); begin end;
+        var F: TBase; N: Integer;
+        begin
+          MAIN_BODY
+        end.
+        """;
+
+    private static SignatureHelp? HelpInClasses(string main = "", string ctor = "", string run = "") =>
+        HelpIn(Classes.Replace("MAIN_BODY", main, StringComparison.Ordinal).Replace("CTOR_BODY", ctor, StringComparison.Ordinal)
+            .Replace("RUN_BODY", run, StringComparison.Ordinal));
+
+    private static string[] Labels(SignatureHelp? help)
+    {
+        Assert.NotNull(help);
+        return [.. help.Signatures.Select(s => s.Label).Order(StringComparer.Ordinal)];
+    }
+
+    /// <summary>CMP-729 (a): <c>TFoo.Create(</c> lists the accessible constructors named Create of the class and its ancestors (LANG-441), never the class constructor.</summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-729")]
+    public void ConstructorCall_ListsTheConstructorOverloads()
+    {
+        var foo = HelpInClasses(main: "F := TFoo.Create($$1, 2);");
+        Assert.Equal(
+            ["constructor TBase.Create(A: Integer)", "constructor TBase.Create(const S: string)", "constructor TFoo.Create(A: Integer; B: Integer)",
+             "constructor TObject.Create"],
+            Labels(foo));
+        Assert.Equal("constructor TFoo.Create(A: Integer; B: Integer)", foo!.Signatures[foo.ActiveSignature].Label);
+
+        var bar = HelpInClasses(main: "F := TBar.Create('x$$');");
+        Assert.Equal(["constructor TBase.Create(A: Integer)", "constructor TBase.Create(const S: string)", "constructor TObject.Create"], Labels(bar));
+        Assert.Equal("constructor TBase.Create(const S: string)", bar!.Signatures[bar.ActiveSignature].Label);
+
+        // without overload the class's own constructor hides the ancestors' (LANG-441)
+        Assert.Equal(["constructor TBaz.Create(X: Double)"], Labels(HelpInClasses(main: "F := TBaz.Create($$);")));
+    }
+
+    /// <summary>CMP-729 (b): <c>inherited Name(</c> lists the inherited method(s) the call binds to; a bare <c>inherited</c> gives no help.</summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-729")]
+    public void InheritedCall_TheAncestorMethod()
+    {
+        var run = HelpInClasses(run: "inherited Run($$A);");
+        Assert.Equal(["procedure TBase.Run(A: Integer); virtual"], Labels(run));
+        Assert.Equal(0, run!.ActiveParameter);
+
+        var create = HelpInClasses(ctor: "inherited Create($$'x');");
+        Assert.Equal(["constructor TBase.Create(A: Integer)", "constructor TBase.Create(const S: string)", "constructor TObject.Create"], Labels(create));
+        Assert.Equal("constructor TBase.Create(const S: string)", create!.Signatures[create.ActiveSignature].Label);
+
+        Assert.Null(HelpInClasses(run: "inherited;$$"));
+    }
+
+    /// <summary>CMP-729 (c), (d): explicit type arguments are substituted; an inferred call is generic until the arguments infer T.</summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-729")]
+    public void GenericMethodCall_ExplicitAndInferred()
+    {
+        Assert.Equal(["class procedure TUtil.Show<Integer>(A: Integer)"], Labels(HelpInClasses(main: "TUtil.Show<Integer>($$N);")));
+        Assert.Equal(["class procedure TUtil.Show<Integer>(A: Integer)"], Labels(HelpInClasses(main: "TUtil.Show<Integer>($$);")));
+        Assert.Equal(["class function TUtil.Pick<string>(A: string; B: Integer): string"], Labels(HelpInClasses(main: "TUtil.Pick<string>('a', $$1);")));
+
+        Assert.Equal(["class procedure TUtil.Show<T>(A: T)"], Labels(HelpInClasses(main: "TUtil.Show($$);")));
+        Assert.Equal(["class procedure TUtil.Show<Integer>(A: Integer)"], Labels(HelpInClasses(main: "TUtil.Show(N$$);")));
+        Assert.Equal(["class function TUtil.Pick<T>(A: T; B: Integer): T"], Labels(HelpInClasses(main: "TUtil.Pick($$);")));
+        var inferred = HelpInClasses(main: "TUtil.Pick(N, $$);");
+        Assert.Equal(["class function TUtil.Pick<Integer>(A: Integer; B: Integer): Integer"], Labels(inferred));
+        Assert.Equal("B: Integer", Active(inferred!));
+    }
+
+    /// <summary>CMP-733 (C-393): the signature shows the summary only; each parameter the text of its <c>param</c> element (name case-insensitive).</summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-733")]
+    public void DocComment_SummaryAndParameterDocumentation()
+    {
+        var help = HelpIn("""
+            program P;
+            /// <summary>Returns the greeting for <paramref name="AName"/>.</summary>
+            /// <param name="aname">The name; <c>''</c> greets the world.</param>
+            /// <returns>The text, never empty.</returns>
+            /// <remarks>Pure.</remarks>
+            function Greet(const AName: string; Times: Integer): string;
+            begin
+              Result := AName;
+            end;
+            begin
+              Greet('x', $$1);
+            end.
+            """);
+
+        var signature = Assert.Single(help!.Signatures);
+        Assert.Equal("Returns the greeting for AName.", signature.Documentation);
+        Assert.Equal(["The name; '' greets the world.", null], signature.Parameters.Select(p => p.Documentation));
+    }
 }

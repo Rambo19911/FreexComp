@@ -62,7 +62,11 @@ public static class SignatureHelpService
         var list = call.ArgumentList;
         var applicable = Applicable(list.OpenParenToken, list.CloseParenToken, call.Span.End);
         var active = ActiveParameter(list.Arguments.Separators, position);
-        var routines = model.GetOverloadCandidates(call);
+        // CMP-729: constructors, inherited calls and generic methods (an explicit type-argument list names generic methods only)
+        var generics = model.GetGenericMethodCandidates(call);
+        var routines = Callee(call.Expression) is GenericNameSyntax && !generics.IsEmpty
+            ? [.. generics.Cast<RoutineSymbol>()]
+            : model.GetOverloadCandidates(call).AddRange(generics);
         if (!routines.IsEmpty)
         {
             var arguments = list.Arguments.ToList();
@@ -80,6 +84,13 @@ public static class SignatureHelpService
         return intrinsic is null ? null : new SignatureHelp([Intrinsic(intrinsic)], 0, active, applicable);
     }
 
+    private static SimpleNameSyntax? Callee(ExpressionSyntax expression) => expression switch
+    {
+        SimpleNameSyntax simple => simple,
+        MemberAccessExpressionSyntax access => access.Name,
+        _ => null,
+    };
+
     private static SignatureHelp? ForArrayProperty(Document doc, SemanticModel model, ElementAccessExpressionSyntax access, int position)
     {
         var property = model.GetSymbolInfo(access.Expression).Symbol as PropertySymbol;
@@ -96,7 +107,8 @@ public static class SignatureHelpService
 
         var active = ActiveParameter(access.Indexes.Separators, position);
         var label = property.ToDisplayString();
-        return new SignatureHelp([new SignatureInfo(label, property.Documentation, Parameters(label, property.Parameters))], 0, active,
+        var rendered = DocCommentRenderer.Of(doc.Compilation, property);
+        return new SignatureHelp([new SignatureInfo(label, rendered?.Summary, Parameters(label, property.Parameters, rendered))], 0, active,
             Applicable(access.OpenBracketToken, access.CloseBracketToken, access.Span.End));
     }
 
@@ -144,11 +156,25 @@ public static class SignatureHelpService
     private static SignatureInfo Routine(Document doc, RoutineSymbol routine)
     {
         var label = routine.ToDisplayString();
-        return new SignatureInfo(label, routine.Documentation, Parameters(label, routine.Parameters));
+        var rendered = DocCommentRenderer.Of(doc.Compilation, routine);   // CMP-733: the summary; each parameter its <param>
+        if (routine is MethodSymbol { GenericMethodDefinition: { } generic } method && !method.GenericMethodArguments.IsEmpty)
+        {
+            // CMP-729 (c, d): Name<Integer>(…) with the type arguments, Name<T>(…) while they are open
+            var at = label.IndexOf("." + method.Name, StringComparison.OrdinalIgnoreCase);
+            if (at >= 0)
+            {
+                at += 1 + method.Name.Length;
+                label = label[..at] + "<" + string.Join(", ", method.GenericMethodArguments.Select(a => a.Name)) + ">" + label[at..];
+            }
+
+            rendered ??= DocCommentRenderer.Of(doc.Compilation, generic);
+        }
+
+        return new SignatureInfo(label, rendered?.Summary, Parameters(label, routine.Parameters, rendered));
     }
 
     /// <summary>The parameters as they appear in the label (in order, each searched after the previous one).</summary>
-    private static ImmutableArray<ParameterInfo> Parameters(string label, ImmutableArray<ParameterSymbol> parameters)
+    private static ImmutableArray<ParameterInfo> Parameters(string label, ImmutableArray<ParameterSymbol> parameters, DocCommentRenderer.Rendered? rendered)
     {
         var builder = ImmutableArray.CreateBuilder<ParameterInfo>();
         var from = Math.Max(0, label.IndexOfAny(['(', '[']));
@@ -158,11 +184,11 @@ public static class SignatureHelpService
             var at = label.IndexOf(text, from, StringComparison.Ordinal);
             if (at < 0)
             {
-                builder.Add(new ParameterInfo(text, new TextSpan(from, 0), null));
+                builder.Add(new ParameterInfo(text, new TextSpan(from, 0), rendered?.Parameter(parameter.Name)));
                 continue;
             }
 
-            builder.Add(new ParameterInfo(text, new TextSpan(at, text.Length), null));
+            builder.Add(new ParameterInfo(text, new TextSpan(at, text.Length), rendered?.Parameter(parameter.Name)));
             from = at + text.Length;
         }
 

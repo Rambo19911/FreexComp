@@ -164,7 +164,7 @@ internal sealed partial class ExpressionBinder
     /// LANG-441 over the inheritance chain: the methods named <paramref name="name"/> of the nearest class declaring that name,
     /// and of further ancestors while all of them carry <c>overload</c>; empty when the nearest declaration is no method.
     /// </summary>
-    private static ImmutableArray<RoutineSymbol> MemberCandidates(ClassTypeSymbol type, string name)
+    internal static ImmutableArray<RoutineSymbol> MemberCandidates(ClassTypeSymbol type, string name)
     {
         var candidates = ImmutableArray.CreateBuilder<RoutineSymbol>();
         foreach (var owner in type.SelfAndAncestors())

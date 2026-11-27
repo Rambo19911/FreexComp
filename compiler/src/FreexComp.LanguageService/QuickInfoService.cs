@@ -40,7 +40,7 @@ public static class QuickInfoService
             : symbol is TypeSymbol named ? DisplayWithEnclosingTypes(named, inGeneric) : symbol.ToDisplayString();
         var documentation = symbol is UnitSymbol unit
             ? unit.Locations.FirstOrDefault().Path
-            : symbol.Documentation;
+            : DocCommentRenderer.Documentation(doc.Compilation, symbol);       // CMP-732, CMP-734 (C-393, C-394)
         var value = symbol switch
         {
             ConstantSymbol { Value: { } constant } => constant.ToDisplayString(),

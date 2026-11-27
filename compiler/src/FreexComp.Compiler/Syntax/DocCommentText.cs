@@ -81,19 +81,26 @@ internal static class DocCommentText
             pieces.Insert(0, piece.Text);
         }
 
-        if (pieces.Count == 0)
-        {
-            return null;
-        }
+        return pieces.Count == 0 ? null : Strip(pieces);
+    }
 
+    /// <summary>
+    /// CMP-730: comment pieces as plain text — the markers of doc comments (<c>///</c>, <c>{**</c>, <c>(**</c>) or, for the editor's
+    /// plain-comment fallback (CMP-734, C-394), of ordinary comments (<c>//</c>, <c>{</c>, <c>(*</c>) and the common indentation removed.
+    /// </summary>
+    internal static string? Strip(IReadOnlyList<string> pieces)
+    {
         var lines = new List<string>();
         var openingLines = new HashSet<int>();                              // the text after a block comment's opening marker
         foreach (var piece in pieces)
         {
-            var block = !piece.StartsWith("///", StringComparison.Ordinal);
-            var body = !block ? piece[3..]
-                : piece.StartsWith("{**", StringComparison.Ordinal) ? piece[3..^1]
-                : piece.StartsWith("(**", StringComparison.Ordinal) ? piece[3..^2]
+            var block = !piece.StartsWith("//", StringComparison.Ordinal);
+            var body = piece.StartsWith("///", StringComparison.Ordinal) ? piece[3..]
+                : !block ? piece[2..]
+                : piece.StartsWith("{**", StringComparison.Ordinal) && piece.Length >= 4 ? piece[3..^1]
+                : piece.StartsWith("(**", StringComparison.Ordinal) && piece.Length >= 5 ? piece[3..^2]
+                : piece.StartsWith('{') && piece.EndsWith('}') ? piece[1..^1]
+                : piece.StartsWith("(*", StringComparison.Ordinal) && piece.EndsWith("*)", StringComparison.Ordinal) && piece.Length >= 4 ? piece[2..^2]
                 : piece;
             var split = body.ReplaceLineEndings("\n").Split('\n');
             if (block && split.Length > 1)

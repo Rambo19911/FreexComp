@@ -326,6 +326,26 @@ public sealed class CompletionTests
         Assert.Equal("Adds one.", description.Documentation?.Trim());
     }
 
+    /// <summary>CMP-732 (C-393): the completion description renders the XML tags of the doc comment as hover does.</summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-732")]
+    public void GetDescription_RendersXmlDocComment()
+    {
+        var markup = "program P;\n/// <summary>Adds <c>1</c>.</summary>\n/// <param name=\"A\">The start.</param>\n/// <returns>A + 1.</returns>\n"
+            + "function Next(A: Integer): Integer; begin Result := A + 1 end;\nbegin\n  $$\nend.";
+        var caret = markup.IndexOf("$$", StringComparison.Ordinal);
+        var text = markup.Remove(caret, 2);
+        var workspace = new Workspace(TestFiles.Files(("P.pas", text)));
+        workspace.SetProject(TestFiles.Options());
+        var document = workspace.GetDocument(TestFiles.PathOf("P.pas"));
+        var item = CompletionService.GetCompletions(document, caret, default, TestContext.Current.CancellationToken).Items.First(i => i.Label == "Next");
+
+        var description = CompletionService.GetDescription(document, item, TestContext.Current.CancellationToken);
+
+        Assert.Equal("Adds 1.\n\nParameters:\n  A – The start.\n\nReturns: A + 1.", description.Documentation);
+    }
+
     /// <summary>
     /// LANG-572 (C-307): an inline name is offered only inside its declaration scope — not before the declaration (there the
     /// outer entity of that name is), not in its own initialiser and not after the statement list; the <c>until</c> condition

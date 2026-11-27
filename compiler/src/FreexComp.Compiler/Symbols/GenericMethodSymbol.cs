@@ -47,5 +47,10 @@ public sealed class GenericMethodSymbol : Symbol
     /// </summary>
     internal Dictionary<ImmutableArray<TypeSymbol>, MethodSymbol> OpenInstances { get; } = new(GenericTypeSymbol.ArgumentsComparer.Instance);
 
+    /// <summary>CMP-729 (C-392): the instance for the type parameters themselves, for signature help (<c>DeclarationBinder.OpenInstanceOf</c>).</summary>
+    internal MethodSymbol? OpenInstance { get; set; }
+
+    internal bool OpenInstanceAttempted { get; set; }
+
     public override string ToDisplayString() => $"{Owner.Name}.{Name}<{string.Join(", ", ParameterNames)}>";
 }

@@ -84,6 +84,9 @@ public sealed class MethodSymbol : RoutineSymbol
     /// <summary>The generic method this method is an instance of (LANG-701, C-117); null otherwise.</summary>
     public GenericMethodSymbol? GenericMethodDefinition { get; internal set; }
 
+    /// <summary>The type arguments of a generic method instance (CMP-729, C-392: signature help shows them); empty otherwise.</summary>
+    internal ImmutableArray<TypeSymbol> GenericMethodArguments { get; set; } = [];
+
     /// <summary>Introduces a VMT slot (<c>virtual</c> or <c>dynamic</c>, ABI-074).</summary>
     public bool IsVirtual { get; internal set; }
 
