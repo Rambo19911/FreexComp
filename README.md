@@ -105,13 +105,13 @@ RAD Studio is a trademark of its respective owner and is named here only to desc
 | Area | What you get today |
 |---|---|
 | IDE | Main window with docking tool windows, light and dark themes, projects and project groups, build configurations |
-| Code editor | Syntax highlighting, code completion, parameter hints, code templates, Go to Declaration, back/forward navigation, find and replace, bookmarks, folding, error markers |
+| Code editor | Syntax highlighting, code completion that ranks items of the expected type first, parameter hints, code templates, Go to Declaration, back/forward navigation, find and replace, bookmarks, folding, error markers, source formatter (Format Document, Format Selection, format on save, `.pasformat` style files), local file history with compare and revert |
 | Compiler | Object Pascal for Windows x64: console and GUI programs, units, DLLs, generics (also nested in classes and records, qualified names such as `TList<Integer>.TEnumerator`), nested class types, interfaces, COM support, Unicode strings, inline variables, parallel code generation and an on-disk unit cache |
 | Form designer | Visual design with Object Inspector; the saved form compiles to the same layout at run time |
 | UI framework | Native Windows controls written in Object Pascal on top of Win32, including a rich text editor control and image lists with 32-bit alpha icons, overlays and disabled drawing |
 | Debugger | Breakpoints with conditions and pass counts, stepping (also into the library source), Run to Cursor, locals, watches, Evaluate, call stack and threads |
 | Data access | Datasets with SQLite and in-memory tables, filters, data-aware controls including a data grid and a navigator |
-| Build | Build configurations, pre-build and post-build commands with macros; commands of a project run only after you have trusted it |
+| Build | Build configurations, pre-build and post-build commands with macros; commands of a project run only after you have trusted it; application icon, version information and named resources set in Project Options |
 | Actions | Action lists that drive menus, buttons and tool buttons, shortcuts and secondary shortcuts, ready-made edit and file actions, and an Action List Editor with categories |
 | Project groups | Several projects in one group file with one active project; Build All with dependencies first, stop or continue after a failing project, and circular dependencies refused; the same from `pbuild` |
 | Platforms | Several target platforms per project with an active platform, per-platform options and output folders; 64-bit Windows is the installed platform today |
@@ -119,6 +119,7 @@ RAD Studio is a trademark of its respective owner and is named here only to desc
 | Form inheritance | Forms and frames built on other forms and frames of the project (New Inherited Form): inherited controls keep following the ancestor, the descendant adds controls, overrides and reverts values, and its handlers can call the ancestor's |
 | Accessibility | Forms and controls describe themselves to screen readers and UI test tools through Windows UI Automation: names, roles, descriptions, tool-button and grid patterns, change events |
 | Help | Offline help pages shipped next to the IDE, opened from Help > Contents (F1) |
+| Installer | An offline setup program built by `scripts/build-installer.ps1`: per-user install, file associations, Start menu shortcut, clean uninstall; no network |
 
 <!-- Extend this table as backlog features land. -->
 
@@ -224,7 +225,8 @@ Help pages (also shown inside the IDE with F1):
 | `debugger/` | Debugger client |
 | `tests/` | Cross-area tests, compiler golden tests, policy tests |
 | `help/` | User help pages |
-| `scripts/` | Bootstrap and verification scripts |
+| `installer/` | Offline setup program and its tests |
+| `scripts/` | Bootstrap, verification and installer build scripts |
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -249,7 +251,7 @@ Phase 8 implements the full feature set for Windows, area by area. Progress coun
 | Visual data binding | 0 / 16 | `░░░░░░░░░░` | — |
 | Build and deploy | 11 / 36 | `███░░░░░░░` | Build and run from the IDE, clickable errors · build configurations with inheritance · build events with a trust question · resource scripts and the resource compiler `prc` |
 | Language and runtime library | 12 / 118 | `█░░░░░░░░░` | Inline variables and `for var` loops with type inference · dynamic-array constructors, constants, `+`, `Insert`, `Delete` and `Concat` · class constructors and destructors · hardware faults caught by `try` … `except` · `deprecated` / `platform` / `experimental` warnings · runtime library source included |
-| IDE | 22 / 120 | `██░░░░░░░░` | Main window, code editor, project open and save · code completion that ranks items of the expected type first · local file history with a History window, compare and revert · Structure view with component icons and drag to re-parent · code templates with a shared templates folder and a Templates window · parameter hints for every kind of call · hover documentation with Go to Declaration · Go to Declaration into the runtime library and generated views · live diagnostics with a severity choice · recent files on the Welcome page · light and dark themes · code folding · bracket and directive pair matching · named bookmarks and the Bookmarks window · Tool Palette search · copy a library unit into a project · no-network guarantee checked by tests |
+| IDE | 24 / 120 | `██░░░░░░░░` | Main window, code editor, project open and save · Object Pascal source formatter · project resources, icon and version information pages · code completion that ranks items of the expected type first · local file history with a History window, compare and revert · Structure view with component icons and drag to re-parent · code templates with a shared templates folder and a Templates window · parameter hints for every kind of call · hover documentation with Go to Declaration · Go to Declaration into the runtime library and generated views · live diagnostics with a severity choice · recent files on the Welcome page · light and dark themes · code folding · bracket and directive pair matching · named bookmarks and the Bookmarks window · Tool Palette search · copy a library unit into a project · no-network guarantee checked by tests |
 | Source control | 1 / 18 | `█░░░░░░░░░` | Built-in diff viewer (side by side or inline) with Compare with Saved and Compare Files |
 | Refactoring and navigation | 0 / 27 | `░░░░░░░░░░` | — |
 | Debugging | 5 / 41 | `█░░░░░░░░░` | Breakpoints, stepping, locals, call stack · Step Into library code · value visualisers and a text viewer for strings |
@@ -260,7 +262,7 @@ Phase 8 implements the full feature set for Windows, area by area. Progress coun
 | Web front-end framework | 0 / 29 | `░░░░░░░░░░` | — |
 | Bundled components | 0 / 6 | `░░░░░░░░░░` | — |
 | Local web UI | 0 / 18 | `░░░░░░░░░░` | — |
-| **Total** | **77 / 881** | `█░░░░░░░░░` | **9 %** |
+| **Total** | **79 / 881** | `█░░░░░░░░░` | **9 %** |
 
 - [ ] First public release with installer
 
