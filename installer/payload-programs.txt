@@ -1,0 +1,8 @@
+# Files of the published programs (FreexComp.Ide, opc, pbuild, prc): globs relative to the folder the four publish
+# outputs are merged into, "/" separated (INS-002). A line starting with "!" takes files out again; a line that selects
+# or removes nothing fails the build.
+
+# everything the programs publish: their assemblies, the bundled runtime, the licenses folder, NETWORK-POLICY.md
+**
+# no debug symbol files: the setup and the portable zip ship none (the builds still write them)
+!**/*.pdb

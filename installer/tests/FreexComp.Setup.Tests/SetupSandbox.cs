@@ -11,6 +11,9 @@ namespace FreexComp.Setup.Tests;
 /// </summary>
 internal sealed class SetupSandbox : IDisposable
 {
+    /// <summary>A folder name with spaces and letters outside ASCII (e with diaeresis, C with circumflex), INS-020.</summary>
+    public static readonly string SpacesAndNonAscii = "Fr" + (char)0xEB + "e " + (char)0x108 + "omp dir";
+
     public const string TestRegistryParent = @"Software\FreexComp-SetupTest";
 
     public SetupSandbox()

@@ -2,11 +2,15 @@
 
 # SQLite (public domain): loaded by the data-access units and copied next to built programs
 sqlite/sqlite3.dll
-# Python runtime that liblldb.dll imports, with its standard library and licence
+# Python runtime of the debugger library (liblldb.dll loads python3.dll, which forwards to python313.dll), with its
+# standard library (python313.zip), its licence and the file that keeps it isolated: with python313._pth next to the
+# library the runtime ignores PYTHONHOME / PYTHONPATH and the registry, so a Python installed on the machine cannot
+# reach the debugger. vcruntime140.dll is the one library python313.dll imports that Windows does not bring itself.
+# The extension modules of the package (*.pyd and the libraries only they use) and its python.exe are not shipped:
+# a debug session loads none of them.
 python-embed/python3.dll
 python-embed/python313.dll
 python-embed/python313.zip
 python-embed/python313._pth
 python-embed/vcruntime140.dll
-python-embed/vcruntime140_1.dll
 python-embed/LICENSE.txt

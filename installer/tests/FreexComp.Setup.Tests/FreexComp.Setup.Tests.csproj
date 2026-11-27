@@ -6,5 +6,17 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\FreexComp.Setup\FreexComp.Setup.csproj" />
+    <!-- The end-to-end tests debug a program with the installed debug adapter through the product's own client. -->
+    <ProjectReference Include="..\..\..\debugger\src\FreexComp.Debugger\FreexComp.Debugger.csproj" />
+    <!--
+      The end-to-end install test runs the library source layout checks of the policy tests against the installed
+      folder (LSRC-006), as a child process: the project is built first, its output is not referenced.
+    -->
+    <ProjectReference Include="..\..\..\tests\policy\FreexComp.Policy.Tests\FreexComp.Policy.Tests.csproj"
+                      ReferenceOutputAssembly="false" Private="false" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Child-process pipes read on dedicated threads (L-022). -->
+    <Compile Include="..\..\..\tests\Shared\ChildPipe.cs" Link="Shared\ChildPipe.cs" />
   </ItemGroup>
 </Project>

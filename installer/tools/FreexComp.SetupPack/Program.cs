@@ -3,6 +3,7 @@ using FreexComp.Setup;
 // SetupPack: the packaging steps of scripts/build-installer.ps1, in the same code the setup program reads them with.
 //   copy-list <list.txt> <base dir> <target dir>   copies the files a payload list selects (INS-002)
 //   setup <program.exe> <payload dir> <out.exe>     writes payload.sha256 into the payload, then the setup exe (INS-003, INS-004)
+//   portable <payload dir> <out.zip>                writes the portable zip: the payload plus portable.json (INS-020)
 try
 {
     switch (args)
@@ -15,8 +16,12 @@ try
             PackageWriter.WriteSetup(program, payload, output);
             Console.WriteLine($"{output}: {new FileInfo(output).Length} bytes, {PackageWriter.PayloadFiles(payload).Count} payload files");
             return 0;
+        case ["portable", var payload, var output]:
+            PackageWriter.WritePortableZip(payload, output);
+            Console.WriteLine($"{output}: {new FileInfo(output).Length} bytes, {PackageWriter.PayloadFiles(payload).Count} payload files and {PackageWriter.PortableMarkerName}");
+            return 0;
         default:
-            Console.Error.WriteLine("usage: SetupPack copy-list <list> <base> <target> | setup <program> <payload> <output>");
+            Console.Error.WriteLine("usage: SetupPack copy-list <list> <base> <target> | setup <program> <payload> <output> | portable <payload> <output>");
             return 2;
     }
 }

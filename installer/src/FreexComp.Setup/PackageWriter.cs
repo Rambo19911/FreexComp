@@ -39,11 +39,49 @@ public static class PackageWriter
     }
 
     /// <summary>Writes a deterministic zip of every file of <paramref name="payload"/> (the manifest included, as it is on disk).</summary>
-    public static void WriteZip(string payload, Stream output)
+    public static void WriteZip(string payload, Stream output) => WriteZip(payload, output, extraName: null, extraContent: default);
+
+    /// <summary>
+    /// Writes the portable zip (INS-020): every file of the staging folder <paramref name="payload"/> at the root of the zip
+    /// plus the marker <see cref="PortableMarkerName"/>, which exists only inside the zip (the staging folder is also the
+    /// payload of the setup package and stays without it). A staging folder without manifest, or one that already holds the
+    /// marker or a file only a setup run writes, is refused. Deterministic like <see cref="WriteZip(string, Stream)"/>.
+    /// </summary>
+    public static void WritePortableZip(string payload, string output)
+    {
+        if (!File.Exists(Path.Combine(payload, PackageFormat.ManifestName)))
+            throw new InvalidOperationException($"The staging folder has no {PackageFormat.ManifestName}: {payload}");
+        foreach (var name in (string[])[PortableMarkerName, InstallRecord.FileName, InstallRecord.UninstallProgram])
+        {
+            if (File.Exists(Path.Combine(payload, name)) || Directory.Exists(Path.Combine(payload, name)))
+                throw new InvalidOperationException($"The staging folder must not hold '{name}': {payload}");
+        }
+
+        var temporary = output + ".tmp";
+        try
+        {
+            using (var zip = new FileStream(temporary, FileMode.Create, FileAccess.ReadWrite, FileShare.None))
+                WriteZip(payload, zip, PortableMarkerName, PortableMarkerContent);
+            File.Move(temporary, output, overwrite: true);
+        }
+        finally
+        {
+            File.Delete(temporary);
+        }
+    }
+
+    /// <summary>The marker file at the root of a portable folder (INS-020; the IDE only looks for its presence, INS-021).</summary>
+    public const string PortableMarkerName = "portable.json";
+
+    /// <summary>The marker's text.</summary>
+    public static ReadOnlySpan<byte> PortableMarkerContent => "{ \"formatVersion\": 1 }\n"u8;
+
+    private static void WriteZip(string payload, Stream output, string? extraName, ReadOnlySpan<byte> extraContent)
     {
         var root = Path.GetFullPath(payload);
         var files = Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
             .Select(f => Path.GetRelativePath(root, f))
+            .Concat(extraName is null ? [] : [extraName])
             .OrderBy(p => p, StringComparer.OrdinalIgnoreCase)
             .ToList();
         using var zip = new ZipArchive(output, ZipArchiveMode.Create, leaveOpen: true, Encoding.UTF8);
@@ -52,6 +90,12 @@ public static class PackageWriter
             var entry = zip.CreateEntry(PackageFormat.EntryName(path), CompressionLevel.Optimal);
             entry.LastWriteTime = EntryTime;
             using var target = entry.Open();
+            if (ReferenceEquals(path, extraName))
+            {
+                target.Write(extraContent);
+                continue;
+            }
+
             using var source = File.OpenRead(Path.Combine(root, path));
             source.CopyTo(target);
         }

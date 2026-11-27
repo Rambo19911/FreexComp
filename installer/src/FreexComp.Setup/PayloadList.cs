@@ -6,17 +6,19 @@ namespace FreexComp.Setup;
 /// <summary>
 /// A payload list (<c>installer/payload-*.txt</c>, INS-002): one glob per line relative to a base folder, <c>/</c>
 /// separated; <c>*</c> and <c>?</c> stay inside one folder, <c>**</c> matches any number of folders; <c>#</c> starts a
-/// comment. A glob that matches no file is an error.
+/// comment. A line that starts with <c>!</c> is an exclusion: the files its glob matches are taken out of what the other
+/// lines select, wherever it stands. A glob that matches no file, and an exclusion that takes nothing out, is an error.
 /// </summary>
 public static class PayloadList
 {
     /// <summary>The relative paths (<c>\</c>) of the files under <paramref name="baseDirectory"/> the list selects, sorted.</summary>
     public static IReadOnlyList<string> Resolve(string listFile, string baseDirectory)
     {
-        var globs = File.ReadAllLines(listFile)
+        var rules = File.ReadAllLines(listFile)
             .Select(l => (l.IndexOf('#') is var hash and >= 0 ? l[..hash] : l).Trim())
             .Where(l => l.Length > 0)
             .ToList();
+        var globs = rules.Where(r => !r.StartsWith('!')).ToList();
         if (globs.Count == 0)
             throw new InvalidDataException($"{listFile}: the list names no file.");
         var root = Path.GetFullPath(baseDirectory);
@@ -32,6 +34,19 @@ public static class PayloadList
                 throw new InvalidDataException($"{listFile}: '{glob}' matches no file under {root}.");
             selected.UnionWith(matches.Select(m => m.Replace('/', '\\')));
         }
+
+        foreach (var rule in rules.Where(r => r.StartsWith('!')))
+        {
+            var glob = rule[1..].Trim();
+            if (glob.Length == 0)
+                throw new InvalidDataException($"{listFile}: '{rule}' is not a rule (an exclusion needs a glob).");
+            var pattern = ToRegex(glob);
+            if (selected.RemoveWhere(f => pattern.IsMatch(f.Replace('\\', '/'))) == 0)
+                throw new InvalidDataException($"{listFile}: '{rule}' excludes no selected file under {root}.");
+        }
+
+        if (selected.Count == 0)
+            throw new InvalidDataException($"{listFile}: the list selects no file under {root} (every selected file is excluded again).");
 
         return [.. selected];
     }
