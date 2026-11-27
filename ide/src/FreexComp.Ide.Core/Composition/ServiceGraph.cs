@@ -99,6 +99,8 @@ public static class ServiceGraph
         var help = new HelpService(platform.Dialogs, platform.UserPaths, platform.Clipboard, layout, documents, keymap, platform.FileSystem,
             Path.Combine(platform.ToolchainEnvironment.IdeDirectory, "help")); // I-257: the pages shipped next to the IDE
         help.RegisterCommands(commands);
+        new CompareService(documents, platform.FileSystem, platform.TextBuffers, languages, layout, status, platform.Dialogs, platform.FileDialogs,
+            prompts, platform.Clipboard).RegisterCommands(commands, toolWindowPhase ?? ImplementedPhase); // I-330: IDE-DIFF-027, IDE-DIFF-028
         help.ToolchainText = () => toolchain.Resolve().LlvmBinDir is { } llvm
             && ToolchainLocator.ValidateFolder(platform.FileSystem, llvm, ToolchainLocator.LlvmFiles).Valid
             ? "LLVM — " + llvm // the cached clang version joins with the process launcher (I-104)

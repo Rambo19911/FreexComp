@@ -105,6 +105,7 @@ public sealed class FindService : IFindService
     private static TextDocumentViewModel? TextOf(DocumentViewModel? document) => document switch
     {
         GeneratedTextDocumentViewModel generated => generated.Content,
+        DiffDocumentViewModel diff => diff.FocusedText, // IDE-DIFF-025: the focused side
         _ => document?.VisibleText,
     };
 
@@ -114,6 +115,7 @@ public sealed class FindService : IFindService
         FormDocumentViewModel form => [form, form.FormText],
         TextDocumentViewModel text => [text],
         GeneratedTextDocumentViewModel generated => [generated.Content],
+        DiffDocumentViewModel diff => [diff.Left, diff.Right, diff.InlineText],
         _ => [],
     };
 

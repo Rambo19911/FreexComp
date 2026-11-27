@@ -348,6 +348,14 @@ public sealed class DocumentService : IDocumentService
         return document;
     }
 
+    public void OpenDocument(DocumentViewModel document)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+        if (document.FilePath is not null || _documents.Contains(document))
+            throw new ArgumentException("Only a new document without a file opens this way.", nameof(document));
+        Add(document);
+    }
+
     public void Activate(DocumentViewModel document)
     {
         ArgumentNullException.ThrowIfNull(document);

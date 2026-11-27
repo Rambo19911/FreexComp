@@ -60,6 +60,12 @@ public interface ILayoutService
     /// <summary>Stores <c>&lt;section&gt;.&lt;key&gt;</c>; saved with the rest of the UI state.</summary>
     void SetUiFlag(string section, string key, bool value);
 
+    /// <summary>A string of the UI state, <c>&lt;section&gt;.&lt;key&gt;</c> (e.g. <c>diff.mode</c>, IDE-DIFF-021); null when unset.</summary>
+    string? GetUiValue(string section, string key);
+
+    /// <summary>Stores the string <c>&lt;section&gt;.&lt;key&gt;</c>; saved with the rest of the UI state.</summary>
+    void SetUiValue(string section, string key, string value);
+
     /// <summary>Gives the layout the tool-window registry: names → view-models (null = not registered).</summary>
     void AttachToolWindows(Func<string, ToolWindowViewModel?> resolve);
 

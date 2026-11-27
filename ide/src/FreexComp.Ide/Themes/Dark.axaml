@@ -106,6 +106,18 @@
   <Color x:Key="FxcSplitterHover">#3FC1AE</Color>
   <SolidColorBrush x:Key="FxcSplitterHoverBrush" Color="#3FC1AE" />
 
+  <!-- 2.5 diff document (IDE-DIFF-022); diff.filler = bg.panel; spans differ from their line by at least 1.1:1 -->
+  <Color x:Key="FxcDiffAdded">#18261D</Color>
+  <SolidColorBrush x:Key="FxcDiffAddedBrush" Color="#18261D" />
+  <Color x:Key="FxcDiffRemoved">#2C1D1E</Color>
+  <SolidColorBrush x:Key="FxcDiffRemovedBrush" Color="#2C1D1E" />
+  <Color x:Key="FxcDiffAddedInline">#063818</Color>
+  <SolidColorBrush x:Key="FxcDiffAddedInlineBrush" Color="#063818" />
+  <Color x:Key="FxcDiffRemovedInline">#5F1117</Color>
+  <SolidColorBrush x:Key="FxcDiffRemovedInlineBrush" Color="#5F1117" />
+  <Color x:Key="FxcDiffFiller">#222725</Color>
+  <SolidColorBrush x:Key="FxcDiffFillerBrush" Color="#222725" />
+
   <!-- 3.1 Syntax token classes -->
   <Color x:Key="FxcSyntaxText">#E4E8E5</Color>
   <SolidColorBrush x:Key="FxcSyntaxTextBrush" Color="#E4E8E5" />

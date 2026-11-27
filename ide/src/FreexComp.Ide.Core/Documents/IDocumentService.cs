@@ -80,6 +80,12 @@ public interface IDocumentService
     /// </summary>
     GeneratedTextDocumentViewModel ShowGenerated(string kind, string title, string text, IReadOnlyList<Services.HelpLineKind>? helpLines = null);
 
+    /// <summary>
+    /// Opens a document that is not a file (a diff document, IDE-DIFF-020) as a new tab right of the active one and
+    /// activates it. Never part of a session (it has no file path).
+    /// </summary>
+    void OpenDocument(DocumentViewModel document);
+
     void Activate(DocumentViewModel document);
 
     /// <summary>

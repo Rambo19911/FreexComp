@@ -263,6 +263,21 @@ public sealed class LayoutService : ILayoutService
         ScheduleSave();
     }
 
+    public string? GetUiValue(string section, string key) =>
+        _root[section] is JsonObject values && values[key] is JsonValue value && value.TryGetValue(out string? text) ? text : null;
+
+    public void SetUiValue(string section, string key, string value)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+        if (GetUiValue(section, key) == value)
+        {
+            return;
+        }
+
+        Child(_root, section)[key] = value;
+        ScheduleSave();
+    }
+
     public void AttachToolWindows(Func<string, ToolWindowViewModel?> resolve)
     {
         _resolve = resolve;

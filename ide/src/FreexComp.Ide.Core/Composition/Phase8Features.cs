@@ -21,6 +21,9 @@ public static class Phase8Features
         "bookmarks.goToSource", // F11-045
         "bookmarks.rename", // F11-045
         "designer.revertToInherited", // F05-006, F05-007 (D-134)
+        "diff.nextDifference", // F12-014
+        "diff.previousDifference", // F12-014
+        "file.compareWithSaved", // F12-014
         "file.copyLibraryUnitToProject", // F05-099
         "file.editLibrarySource", // F02-004
         "file.newFrame", // F05-006
@@ -55,6 +58,7 @@ public static class Phase8Features
         "project.setPlatform", // F03-003
         "run.toggleLibraryStepping", // F02-004
         "search.bookmark.addNamed", // F11-045
+        "tools.compareFiles", // F12-014
         "toolwindow:Bookmarks", // F11-045
         "view.bookmarks", // F11-045
     ];

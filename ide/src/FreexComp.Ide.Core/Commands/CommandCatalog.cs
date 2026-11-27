@@ -25,6 +25,7 @@ public static class CommandCatalog
         new("file.saveProjectAs", [Global], 8, []),
         new("file.saveGroupAs", [Global], 8, []),
         new("file.revert", [Global], 1, []),
+        new("file.compareWithSaved", [Global], 8, []),
         new("file.close", [Global], 1, ["Ctrl+W", "Ctrl+F4"]),
         new("file.closeAll", [Global], 1, ["Ctrl+Shift+W"]),
         new("file.closeOthers", [Global], 1, []),
@@ -261,6 +262,7 @@ public static class CommandCatalog
         new("tools.options", [Global], 1, ["Ctrl+,"]),
         new("tools.keyMappings", [Global], 1, []),
         new("tools.externalTools", [Global], 8, []),
+        new("tools.compareFiles", [Global], 8, []),
         new("tools.openLogFolder", [Global], 1, []),
         new("tools.openSettingsFolder", [Global], 1, []),
 
@@ -348,6 +350,8 @@ public static class CommandCatalog
         new("searchResults.collapseAll", [ToolList], 3, []),
         new("todo.goToSource", [ToolList], 8, ["Enter"]),
         new("todo.refresh", [ToolList], 8, []),
+        new("diff.nextDifference", [Editor], 8, ["Alt+Down"]),
+        new("diff.previousDifference", [Editor], 8, ["Alt+Up"]),
     ];
 
     private static readonly Dictionary<string, CommandDefinition> ById = All.ToDictionary(c => c.Id, StringComparer.Ordinal);

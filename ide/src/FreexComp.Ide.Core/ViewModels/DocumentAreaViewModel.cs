@@ -54,7 +54,7 @@ public sealed class DocumentAreaViewModel : ObservableObject
     /// <summary>UI-ED-079: the tab context menu; null = separator.</summary>
     private static readonly string?[] TabMenuCommands =
     [
-        "file.close", "file.closeOthers", "file.closeAll", null, "file.save", "file.saveAs", "file.revert", null,
+        "file.close", "file.closeOthers", "file.closeAll", null, "file.save", "file.saveAs", "file.revert", "file.compareWithSaved", null,
         "file.copyPath", "file.showInExplorer", null, "window.splitRight", "window.splitDown",
     ];
 

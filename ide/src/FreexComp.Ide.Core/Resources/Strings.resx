@@ -6004,4 +6004,89 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
     <value>Line break at end of file removed</value>
     <comment>IDE-DIFF-006 diff note: the left text's last line has a line break, the right text's has none</comment>
   </data>
+  <data name="Cmd_file_compareWithSaved" xml:space="preserve">
+    <value>Compare with Saved</value>
+    <comment>IDE-DIFF-027</comment>
+  </data>
+  <data name="Cmd_tools_compareFiles" xml:space="preserve">
+    <value>Compare Files…</value>
+    <comment>IDE-DIFF-028</comment>
+  </data>
+  <data name="Cmd_diff_nextDifference" xml:space="preserve">
+    <value>Next Difference</value>
+    <comment>IDE-DIFF-024</comment>
+  </data>
+  <data name="Cmd_diff_previousDifference" xml:space="preserve">
+    <value>Previous Difference</value>
+    <comment>IDE-DIFF-024</comment>
+  </data>
+  <data name="Menu_file_compareWithSaved" xml:space="preserve">
+    <value>Compare &amp;with Saved</value>
+    <comment>IDE-DIFF-027: File menu after Revert to Saved, document-tab context menu</comment>
+  </data>
+  <data name="Menu_tools_compareFiles" xml:space="preserve">
+    <value>Compare &amp;Files…</value>
+    <comment>IDE-DIFF-028</comment>
+  </data>
+  <data name="Msg_Diff_Changes" xml:space="preserve">
+    <value>{0} changes</value>
+    <comment>IDE-DIFF-020 diff header; 0 = number of change blocks (not 1)</comment>
+  </data>
+  <data name="Msg_Diff_ChangesOne" xml:space="preserve">
+    <value>1 change</value>
+    <comment>IDE-DIFF-020 diff header</comment>
+  </data>
+  <data name="Msg_Diff_NoMoreDifferences" xml:space="preserve">
+    <value>No more differences</value>
+    <comment>IDE-DIFF-024 status: no change block after / before the caret</comment>
+  </data>
+  <data name="Msg_Diff_Identical" xml:space="preserve">
+    <value>The editor text is the same as the saved file</value>
+    <comment>IDE-DIFF-027 status: Compare with Saved on equal texts</comment>
+  </data>
+  <data name="Msg_Diff_Binary" xml:space="preserve">
+    <value>The file appears to be binary and cannot be compared.
+{0}</value>
+    <comment>IDE-DIFF-028 dialog (error); 0 = path</comment>
+  </data>
+  <data name="Msg_Diff_IdenticalBanner" xml:space="preserve">
+    <value>The files are identical.</value>
+    <comment>IDE-DIFF-028 banner of a Compare Files tab with identical texts</comment>
+  </data>
+  <data name="Diff_SavedSuffix" xml:space="preserve">
+    <value>(saved)</value>
+    <comment>IDE-DIFF-020: label suffix of the file on disk in Compare with Saved</comment>
+  </data>
+  <data name="Diff_EditorSuffix" xml:space="preserve">
+    <value>(editor)</value>
+    <comment>IDE-DIFF-020: label suffix of the editor text in Compare with Saved</comment>
+  </data>
+  <data name="Diff_SideBySide" xml:space="preserve">
+    <value>Side by side</value>
+    <comment>IDE-DIFF-020 header toggle</comment>
+  </data>
+  <data name="Diff_Inline" xml:space="preserve">
+    <value>Inline</value>
+    <comment>IDE-DIFF-020 header toggle</comment>
+  </data>
+  <data name="Diff_IgnoreWhitespace" xml:space="preserve">
+    <value>Ignore whitespace</value>
+    <comment>IDE-DIFF-020/026 header toggle</comment>
+  </data>
+  <data name="Diff_Refresh" xml:space="preserve">
+    <value>Refresh</value>
+    <comment>IDE-DIFF-020/026 header button</comment>
+  </data>
+  <data name="Diff_Overview" xml:space="preserve">
+    <value>Overview of the changes</value>
+    <comment>IDE-DIFF-023 accessible name of the overview strip</comment>
+  </data>
+  <data name="FilePrompt_Title_compareLeft" xml:space="preserve">
+    <value>Select Left File</value>
+    <comment>IDE-DIFF-028: the first picker of tools.compareFiles</comment>
+  </data>
+  <data name="FilePrompt_Title_compareRight" xml:space="preserve">
+    <value>Select Right File</value>
+    <comment>IDE-DIFF-028: the second picker of tools.compareFiles</comment>
+  </data>
 </root>

@@ -328,7 +328,7 @@ public sealed class DocumentTabTests
         var menu = Assert.IsType<ContextMenu>(h.Find<Control>("DocumentTab.A.pas").ContextMenu);
         Assert.Equal(
             ["Context.file.close", "Context.file.closeOthers", "Context.file.closeAll", null, "Context.file.save", "Context.file.saveAs",
-             "Context.file.revert", null, "Context.file.copyPath", "Context.file.showInExplorer", null, "Context.window.splitRight",
+             "Context.file.revert", "Context.file.compareWithSaved", null, "Context.file.copyPath", "Context.file.showInExplorer", null, "Context.window.splitRight",
              "Context.window.splitDown"],
             menu.Items.Cast<Control>().Select(c => c is Separator ? null : AutomationIds.Get(c)));
         menu.Close();

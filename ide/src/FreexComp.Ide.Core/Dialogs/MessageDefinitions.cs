@@ -45,6 +45,7 @@ public static class MessageDefinitions
         new("Msg.File.RecentNotFound", Q, ["Remove", "Keep"]),
         new("Msg.File.TooLarge", Q, ["Open", "Cancel"]),
         new("Msg.File.Binary", E, ["OK"]),
+        new("Msg.Diff.Binary", E, ["OK"]), // IDE-DIFF-028
         new("Msg.File.OverwriteExisting", Q, ["Cancel", "Replace"]),
         new("Msg.File.MakeWritableFailed", E, ["OK"]),
         new("Msg.File.ConsoleFailed", E, ["OK"]),
