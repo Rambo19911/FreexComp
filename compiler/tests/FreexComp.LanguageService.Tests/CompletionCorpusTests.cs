@@ -9,7 +9,8 @@ namespace FreexComp.LanguageService.Tests;
 /// go-to-definition corpus (CMP-1419). <c>{|}</c> marks the caret; <c>{#has A, B}</c> labels that must be offered (matched ignoring
 /// case, then the declared casing is checked); <c>{#not A}</c> labels that must not; <c>{#top A}</c> the label sorting first by
 /// <see cref="CompletionItem.SortText"/>, then label (CMP-723); <c>{#kind A=Field}</c> the kind of the one item labelled A;
-/// <c>{#none}</c> an empty result. The markers are removed before the case is opened (line endings LF). The caret's file starts with
+/// <c>{#none}</c> an empty result; <c>{#ranked A}</c> / <c>{#unranked A}</c> the item labelled A is offered with / without the
+/// expected-type prefix <c>!</c> on its <see cref="CompletionItem.SortText"/> (CMP-1426). The markers are removed before the case is opened (line endings LF). The caret's file starts with
 /// <c>{ context: &lt;name&gt; }</c> (CMP-1422). The RTL units (and the Win32 binding units) are on the search path as for a project.
 /// </summary>
 [Trait("Phase", "8")]
@@ -25,12 +26,12 @@ public sealed class CompletionCorpusTests
         "generic-constraint", "interface", "enum-type", "unit-qualifier", "uses-clause", "type-position", "inherited", "raise",
         "on-handler", "override", "directive", "routine-directive", "property-specifier", "declaration-start", "statement-start",
         "expression", "locals", "parameters", "inline-variable", "with", "visibility", "strict-private", "strict-protected", "broken",
-        "none-comment", "none-string", "none-disabled",
+        "none-comment", "none-string", "none-disabled", "expected-type",
     ];
 
     private static readonly Regex ContextLine = new(@"^\{ context: ([a-z\-]+) \}\n", RegexOptions.CultureInvariant);
 
-    private static readonly Regex Marker = new(@"\{#(has|not|top|kind|none)\b([^}]*)\}", RegexOptions.CultureInvariant);
+    private static readonly Regex Marker = new(@"\{#(has|not|top|kind|none|ranked|unranked)\b([^}]*)\}", RegexOptions.CultureInvariant);
 
     private static string Root => Path.Combine(AppContext.BaseDirectory, "Completion");
 
@@ -77,6 +78,7 @@ public sealed class CompletionCorpusTests
         Assert.True(names.Count(n => n.StartsWith("Broken", StringComparison.Ordinal)) >= 3, "CMP-1425: three Broken* cases");
         Assert.Contains(names, n => n.StartsWith("StrictPrivate", StringComparison.Ordinal));
         Assert.Contains(names, n => n.StartsWith("StrictProtected", StringComparison.Ordinal));
+        Assert.True(names.Count(n => n.StartsWith("Expected", StringComparison.Ordinal)) >= 6, "CMP-1426: six Expected* cases");
     }
 
     [Theory]
@@ -140,12 +142,26 @@ public sealed class CompletionCorpusTests
             }
         }
 
+        foreach (var (label, ranked) in e.Ranked)
+        {
+            var found = items.Where(i => string.Equals(i.Label, label, StringComparison.OrdinalIgnoreCase)).ToList();
+            if (found.Count == 0)
+            {
+                problems.Add($"missing {label}");
+            }
+            else if (found.Any(i => i.SortText.StartsWith('!')) != ranked)
+            {
+                problems.Add($"{label}: expected {(ranked ? "" : "no ")}'!' prefix, got {string.Join(", ", found.Select(i => i.SortText))}");
+            }
+        }
+
         Assert.True(problems.Count == 0, $"{name}: {string.Join("; ", problems)}");
     }
 
     private sealed record CaseFile(string Name, string Text, int Caret);
 
-    private sealed record Expectation(List<string> Has, List<string> Not, string? Top, List<(string Label, CompletionItemKind Kind)> Kinds, bool None);
+    private sealed record Expectation(List<string> Has, List<string> Not, string? Top, List<(string Label, CompletionItemKind Kind)> Kinds, bool None,
+                                       List<(string Label, bool Ranked)> Ranked);
 
     private sealed record LoadedCase(IReadOnlyList<CaseFile> Files, CaseFile CaretFile, string Context, Expectation Expect);
 
@@ -155,12 +171,12 @@ public sealed class CompletionCorpusTests
         var paths = Directory.Exists(folder)
             ? Directory.GetFiles(folder, "*.pas").Order(StringComparer.Ordinal).ToArray()
             : [Path.Combine(Root, name + ".pas")];
-        var expect = new Expectation([], [], null, [], false);
+        var expect = new Expectation([], [], null, [], false, []);
         var files = paths.Select(p => Strip(name, Path.GetFileName(p), File.ReadAllText(p), ref expect)).ToArray();
         var caret = Assert.Single(files, f => f.Caret >= 0);
         var context = ContextLine.Match(caret.Text);
         Assert.True(context.Success, $"{name}: the caret's file must start with '{{ context: <name> }}'");
-        Assert.True(expect.None != (expect.Has.Count + expect.Not.Count + expect.Kinds.Count > 0 || expect.Top is not null),
+        Assert.True(expect.None != (expect.Has.Count + expect.Not.Count + expect.Kinds.Count + expect.Ranked.Count > 0 || expect.Top is not null),
             $"{name}: either {{#none}} or at least one other marker");
         return new LoadedCase(files, caret, context.Groups[1].Value, expect);
     }
@@ -190,6 +206,9 @@ public sealed class CompletionCorpusTests
                         break;
                     case "not":
                         expect.Not.AddRange(args);
+                        break;
+                    case "ranked" or "unranked":
+                        expect.Ranked.AddRange(args.Select(a => (a, marker.Groups[1].Value == "ranked")));
                         break;
                     case "top":
                         Assert.True(expect.Top is null && args.Length == 1, $"{@case}: one {{#top X}}");

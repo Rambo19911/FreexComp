@@ -19,7 +19,7 @@ public sealed record CompletionItem(string Label, CompletionItemKind Kind, strin
 
 public sealed record CompletionDescription(string Signature, string? Documentation, string Origin = "");
 
-/// <summary>Code completion (language-service.md §4, CMP-720…724). Returns the whole context set; the IDE filters (CMP-722).</summary>
+/// <summary>Code completion (language-service.md §4, CMP-720…724, 1421…1426). Returns the whole context set; the IDE filters (CMP-722).</summary>
 public static class CompletionService
 {
     private static readonly string[] TypeKeywords = ["array", "record", "class", "set of", "string", "procedure", "function", "interface", "packed"];
@@ -115,6 +115,7 @@ public static class CompletionService
         }
         else if (IsStatementStart(previous))
         {
+            builder.Expected = ExpectedType.At(model, previous, replacement.Start);
             var hidden = WithMembers(builder, previous);
             builder.AddVisible(_ => true, hidden);
             builder.AddKeywords(StatementKeywords);
@@ -122,6 +123,7 @@ public static class CompletionService
         }
         else
         {
+            builder.Expected = ExpectedType.At(model, previous, replacement.Start);
             var hidden = WithMembers(builder, previous);
             builder.AddVisible(s => s is not TypeSymbol || s is ClassTypeSymbol or RecordTypeSymbol or EnumTypeSymbol, hidden);
             builder.AddKeywords(ExpressionKeywords);
@@ -460,11 +462,15 @@ public static class CompletionService
     {
         private readonly List<CompletionItem> _items = [];
         private readonly HashSet<(string, CompletionItemKind)> _seen = [];
+        private readonly HashSet<(string, CompletionItemKind)> _ranked = [];
         private readonly Symbol? _enclosing = model.GetEnclosingSymbol(position);
 
         public SemanticModel Model { get; } = model;
 
         public int Position { get; } = position;
+
+        /// <summary>CMP-1426: the type the context expects at the caret; null when none is known.</summary>
+        public ExpectedType? Expected { get; set; }
 
         public bool Add(CompletionItem item)
         {
@@ -545,6 +551,11 @@ public static class CompletionService
                 return false;
             }
 
+            if (Expected?.Matches(symbol) == true)
+            {
+                _ranked.Add((symbol.Name.ToLowerInvariant(), KindOf(symbol)));      // also when an overload of the name came first
+            }
+
             return Add(new CompletionItem(symbol.Name, KindOf(symbol), symbol.Name, (prefix ?? "") + (group ?? Group(symbol)) + symbol.Name.ToLowerInvariant(),
                                           symbol.ToDisplayString(), symbol.IsDeprecated, Id(symbol), OriginOf(symbol)));
         }
@@ -560,7 +571,26 @@ public static class CompletionService
             }
         }
 
-        public ImmutableArray<CompletionItem> Build() => [.. _items.OrderBy(i => i.SortText, StringComparer.Ordinal)];
+        public ImmutableArray<CompletionItem> Build() => [.. _items.Select(Rank).OrderBy(i => i.SortText, StringComparer.Ordinal)];
+
+        /// <summary>CMP-1426: the prefix <c>!</c> for an item of the expected type, <c>nil</c> and <c>True</c> / <c>False</c> where they fit.</summary>
+        private CompletionItem Rank(CompletionItem item)
+        {
+            if (Expected is not { } expected || item.SortText.StartsWith('!'))
+            {
+                return item;
+            }
+
+            var ranked = item.Kind == CompletionItemKind.Keyword
+                ? item.Label switch
+                {
+                    "nil" => expected.AcceptsNil,
+                    "True" or "False" => expected.IsBoolean,
+                    _ => false,
+                }
+                : _ranked.Contains((item.Label.ToLowerInvariant(), item.Kind));
+            return ranked ? item with { SortText = "!" + item.SortText } : item;
+        }
 
         /// <summary>CMP-723 group digit.</summary>
         private string Group(Symbol symbol)
@@ -586,6 +616,125 @@ public static class CompletionService
         }
 
         private static CompletionItemKind KindOf(Symbol symbol) => SymbolKinds.Of(symbol);
+    }
+}
+
+/// <summary>
+/// CMP-1426 (C-402): the type expected at the caret — the target of <c>:=</c> (so also <c>Result :=</c>), the parameter at the argument's
+/// position of every candidate overload with that many parameters, the selector of a <c>case</c> at a label (ordinal types only), the
+/// left side of <c>=</c> / <c>&lt;&gt;</c>, a set of the left side's type for <c>in</c>, the function result in <c>Exit(</c>.
+/// </summary>
+internal sealed class ExpectedType
+{
+    private readonly ImmutableArray<TypeSymbol> _types;
+    private readonly TypeSymbol? _setElement;
+
+    private ExpectedType(ImmutableArray<TypeSymbol> types, TypeSymbol? setElement)
+    {
+        _types = types;
+        _setElement = setElement;
+    }
+
+    /// <summary><c>nil</c> fits a class, class reference, pointer, interface, dynamic array or procedural type.</summary>
+    public bool AcceptsNil => _types.Any(t => t.TypeKind is TypeKind.Class or TypeKind.ClassRef or TypeKind.Pointer or TypeKind.Interface
+        or TypeKind.DynamicArray or TypeKind.Procedural or TypeKind.MethodPointer or TypeKind.Reference);
+
+    public bool IsBoolean => _types.Any(t => t.TypeKind == TypeKind.Boolean);
+
+    /// <summary>
+    /// True for a value of exactly an expected type (for a class also of a descendant): enum member, constant, variable, parameter, field,
+    /// property, function result; for <c>in</c> a value of a set of the left side's type.
+    /// </summary>
+    public bool Matches(Symbol symbol)
+    {
+        var type = symbol switch
+        {
+            EnumMemberSymbol member => member.Type,
+            ConstantSymbol constant => constant.Type,
+            VariableSymbol variable => variable.Type,
+            ParameterSymbol parameter => parameter.Type,
+            FieldSymbol field => field.Type,
+            PropertySymbol property => property.Type,
+            RoutineSymbol routine => routine.ReturnType,
+            _ => null,
+        };
+        if (type is null)
+        {
+            return false;
+        }
+
+        if (_setElement is not null)
+        {
+            return type is SetTypeSymbol { ElementType: { } element } && ReferenceEquals(element, _setElement);
+        }
+
+        return _types.Any(t => ReferenceEquals(type, t) || t is ClassTypeSymbol && type is ClassTypeSymbol && type.InheritsFrom(t));
+    }
+
+    /// <summary>The expected type for an item starting right after <paramref name="previous"/>; null when none is known.</summary>
+    public static ExpectedType? At(SemanticModel model, SyntaxToken previous, int position)
+    {
+        var parent = previous.Parent;
+        switch (previous.Kind)
+        {
+            case SyntaxKind.ColonEqualsToken when parent is AssignmentStatementSyntax assignment:
+                return Of(TypeOf(model, assignment.Target));
+            case SyntaxKind.OpenParenToken or SyntaxKind.CommaToken when parent is ArgumentListSyntax { Parent: InvocationExpressionSyntax call } list:
+                return Argument(model, call, list, position);
+            case SyntaxKind.OfKeyword when parent is CaseStatementSyntax @case:
+                return CaseLabel(model, @case);
+            case SyntaxKind.SemicolonToken when parent is CaseStatementSyntax @case
+                                                && (@case.ElseKeyword is not { IsMissing: false } elseKeyword || previous.Span.End <= elseKeyword.Span.Start):
+                return CaseLabel(model, @case);                                 // between two arms, not among the else statements
+            case SyntaxKind.CommaToken when parent is CaseArmSyntax { Parent: CaseStatementSyntax @case }:
+                return CaseLabel(model, @case);
+            case SyntaxKind.DotDotToken when parent is CaseLabelSyntax { Parent: CaseArmSyntax { Parent: CaseStatementSyntax @case } }:
+                return CaseLabel(model, @case);
+            case SyntaxKind.EqualsToken or SyntaxKind.LessThanGreaterThanToken when parent is BinaryExpressionSyntax binary:
+                return Of(TypeOf(model, binary.Left));
+            case SyntaxKind.InKeyword when parent is BinaryExpressionSyntax binary:
+                return TypeOf(model, binary.Left) is { IsOrdinal: true } element ? new ExpectedType([], element) : null;
+            default:
+                return null;
+        }
+    }
+
+    private static ExpectedType? Of(TypeSymbol? type) => type is null ? null : new ExpectedType([type], null);
+
+    private static ExpectedType? CaseLabel(SemanticModel model, CaseStatementSyntax @case) =>
+        TypeOf(model, @case.Selector) is { IsOrdinal: true } selector ? Of(selector) : null;
+
+    /// <summary>The parameter types at the argument's position of the candidates; in <c>Exit(</c> the enclosing function's result type.</summary>
+    private static ExpectedType? Argument(SemanticModel model, InvocationExpressionSyntax call, ArgumentListSyntax list, int position)
+    {
+        var active = list.Arguments.Separators.Count(s => !s.IsMissing && s.Span.End <= position);
+        var routines = model.GetOverloadCandidates(call).AddRange(model.GetGenericMethodCandidates(call));
+        if (routines.IsEmpty)
+        {
+            return active == 0 && call.Expression is SimpleNameSyntax simple
+                   && string.Equals(simple.Identifier.Text, "Exit", StringComparison.OrdinalIgnoreCase)
+                   && model.LookupSymbols(call.Span.Start, simple.Identifier.Text).FirstOrDefault() is IntrinsicSymbol
+                   && model.GetEnclosingSymbol(position) is RoutineSymbol { ReturnType: { } result } routine
+                   && routine is not MethodSymbol { MethodKind: MethodKind.Constructor }
+                ? Of(result)
+                : null;
+        }
+
+        var types = routines.Where(r => r.Parameters.Length > active && !r.Parameters[active].IsUntyped).Select(r => r.Parameters[active].Type)
+            .Where(t => t.TypeKind != TypeKind.Error).Distinct().ToImmutableArray();
+        return types.IsEmpty ? null : new ExpectedType(types, null);
+    }
+
+    /// <summary>The value type of an expression (a property access included); null when unknown.</summary>
+    private static TypeSymbol? TypeOf(SemanticModel model, ExpressionSyntax expression)
+    {
+        if (expression.IsMissing)
+        {
+            return null;
+        }
+
+        var type = model.GetTypeInfo(expression).Type ?? (model.GetSymbolInfo(expression).Symbol as PropertySymbol)?.Type;
+        return type is null || type.TypeKind == TypeKind.Error ? null : type;
     }
 }
 
