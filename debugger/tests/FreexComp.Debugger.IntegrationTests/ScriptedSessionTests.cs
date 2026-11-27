@@ -891,6 +891,106 @@ public sealed class ScriptedSessionTests(IntegrationFixture fixture)
     }
 
     /// <summary>
+    /// A <c>for var</c> loop whose variable an anonymous method captures (CapturedForVar.pas): every iteration has its
+    /// own block frame and the variable is a field of it, described through the hidden slot of the frame (CMP-1412,
+    /// sidecar §5). A stop in the body shows each iteration's value in Locals, watch and hover. While the loop
+    /// statement evaluates its bound - after it has set the slot to nil, before the first iteration has made a frame -
+    /// the variable is in scope in the loop's frame and cannot be read (the adapter's own text, DBG-150); before the
+    /// loop it is not declared.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "DBG-142")]
+    [Trait("Req", "DBG-150")]
+    public async Task Phase8_CapturedForVar_ShowsIterationValue()
+    {
+        const int BeforeLine = 16, BoundLine = 8, LoopLine = 17, BodyLine = 20;
+        var program = fixture.Build("CapturedForVar");
+        var p = program.SourcePath;
+        var recorder = new SessionRecorder(nameof(Phase8_CapturedForVar_ShowsIterationValue));
+        await recorder.RunAsync(fixture, program, async session =>
+        {
+            int[] lines = [BeforeLine, BoundLine, BodyLine];
+            await session.LaunchAsync(
+                new LaunchRequest
+                {
+                    Program = program.ExePath,
+                    Breakpoints = [new SourceBreakpoints(p, [.. lines.Select((line, index) => new BreakpointSpec { Id = index + 1, Line = line })])],
+                },
+                Ct);
+            Assert.True(session.HasTypeInfo);
+
+            // What the frame of Run shows: the rows of Locals other than Fs, with their kinds, and "I" through watch and
+            // hover with the frame given and (null) in the top frame of the stop - every distinct outcome once.
+            async Task<(string[] Locals, string[] Evaluated)> InspectAsync(StopInfo stop, int frameIndex, int line)
+            {
+                var frames = (await session.GetStackTraceAsync(stop.ThreadId, ct: Ct)).Frames;
+                Assert.Equal("Run:" + line, Frame(frames[frameIndex]));
+                var scopes = await session.GetScopesAsync(frames[frameIndex].Id, Ct);
+                var locals = await session.GetChildrenAsync(scopes[1].Handle, ct: Ct);
+                Assert.Equal("Fs", locals[0].Name);
+                // The frame slot, its reference and the loop's driver are hidden.
+                Assert.DoesNotContain(locals, l => l.Name.Contains('$'));
+                List<string> evaluated = [];
+                foreach (var context in (EvaluateContext[])[EvaluateContext.Watch, EvaluateContext.Hover])
+                {
+                    foreach (var frameId in (int?[])[frames[frameIndex].Id, null])
+                    {
+                        try
+                        {
+                            var value = (await session.EvaluateAsync("I", frameId, context, Ct)).Value;
+                            evaluated.Add($"{value.Value} : {value.TypeName} ({value.Kind})");
+                        }
+                        catch (DebuggerException error)
+                        {
+                            evaluated.Add($"{error.Code}: {error.Message}");
+                        }
+                    }
+                }
+
+                return ([.. locals.Skip(1).Select(l => $"{Row(l)} ({l.Kind})")], [.. evaluated.Distinct()]);
+            }
+
+            // Before the loop: the variable is not declared yet (the value of Total is not fixed yet).
+            var stop = await recorder.WaitForStopAsync();
+            AssertStop(session, stop, StopReason.Breakpoint, p, BeforeLine, [1]);
+            var (locals, evaluated) = await InspectAsync(stop, 0, BeforeLine);
+            Assert.Equal(["Total"], locals.Select(l => l.Split(' ')[0]));
+            Assert.Equal(["ExpressionEvaluation: Undeclared identifier 'I'"], evaluated);
+            await session.ContinueAsync(Ct);
+
+            // In the bound of the loop, called from the loop statement before the first iteration: in Run's frame the
+            // variable is in scope but its frame does not exist yet - the slot is nil and the field (offset 40) cannot
+            // be read, so its address cannot be obtained either: Locals has the adapter's own text (DBG-150), watch and
+            // hover say that the variable is not available. In the top frame (Count) it is not declared.
+            stop = await recorder.WaitForStopAsync();
+            AssertStop(session, stop, StopReason.Breakpoint, p, BoundLine, [2]);
+            (locals, evaluated) = await InspectAsync(stop, 1, LoopLine);
+            Assert.Equal(["Total = 0 : Integer (Integer)", "I = <error: read memory from 0x28 failed (0 of 4 bytes read)> : int (Raw)"], locals);
+            Assert.Equal(["ExpressionEvaluation: 'I' is not available", "ExpressionEvaluation: Undeclared identifier 'I'"], evaluated);
+            await session.ContinueAsync(Ct);
+
+            // In the body: each iteration's own value, read through that iteration's frame.
+            foreach (var i in (int[])[1, 2])
+            {
+                stop = await recorder.WaitForStopAsync();
+                AssertStop(session, stop, StopReason.Breakpoint, p, BodyLine, [3]);
+                (locals, evaluated) = await InspectAsync(stop, 0, BodyLine);
+                Assert.Equal([$"Total = {(i == 1 ? 0 : 1)} : Integer (Integer)", $"I = {i} : Integer (Integer)"], locals);
+                Assert.Equal([$"{i} : Integer (Integer)"], evaluated);
+                Assert.Equal((i * 10).ToString(CultureInfo.InvariantCulture),
+                    (await session.EvaluateAsync("I * 10", null, EvaluateContext.Watch, Ct)).Value.Value);
+                await session.ContinueAsync(Ct);
+            }
+
+            var terminated = await recorder.WaitForTerminatedAsync();
+            Assert.Equal(TerminationCause.Exited, terminated.Cause);
+            Assert.Equal(0, terminated.ExitCode);
+            Assert.Equal("10 20 3\n", recorder.StdoutSoFar);
+        });
+    }
+
+    /// <summary>
     /// Every string kind of StringKinds.pas at one stop (visualizers.md §8): the plain summaries are unchanged, each
     /// value with a text has a text handle whose details and text match, a <c>nil</c> PChar has none, and the 1 MiB
     /// string is read in 16 chunks of at most 65 536 units to its end.
