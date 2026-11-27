@@ -3379,6 +3379,10 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
     <value>Close _brackets and quotes automatically</value>
     <comment>dialogs.md §9 field label</comment>
   </data>
+  <data name="Options_Field_WrapSelection" xml:space="preserve">
+    <value>_Wrap a selection in brackets and quotes</value>
+    <comment>dialogs.md §9 field label</comment>
+  </data>
   <data name="Options_Field_AutoCloseBeginEnd" xml:space="preserve">
     <value>Complete begin with _end</value>
     <comment>dialogs.md §9 field label</comment>

@@ -63,3 +63,53 @@ command edit.toggleOverwrite
 type 34
 --- after
 X·:=·34|;
+====
+# name: IDE-ED-027 no closer for ( inside a brace comment
+--- before
+X·:=·1;·{·see·|·}
+--- action
+type (
+--- after
+X·:=·1;·{·see·(|·}
+====
+# name: IDE-ED-027 no closer for [ inside a string
+--- before
+S·:=·'a|·b';
+--- action
+type [
+--- after
+S·:=·'a[|·b';
+====
+# name: IDE-ED-027 no closer inside a directive
+--- before
+{$IF·Defined|·}
+--- action
+type (
+--- after
+{$IF·Defined(|·}
+====
+# name: IDE-ED-027 selection still wrapped inside a comment
+--- before
+X·:=·1;·{·see·‹A›·}
+--- action
+type (
+--- after
+X·:=·1;·{·see·(‹A›)·}
+====
+# name: IDE-ED-028 wrap off replaces the selection
+# settings: editor.wrapSelection=false
+--- before
+X·:=·‹A·+·B›;
+--- action
+type (
+--- after
+X·:=·(|);
+====
+# name: IDE-ED-028 wrap on with auto-close off
+# settings: editor.autoCloseBrackets=false editor.wrapSelection=true
+--- before
+X·:=·‹A·+·B›;
+--- action
+type (
+--- after
+X·:=·(‹A·+·B›);

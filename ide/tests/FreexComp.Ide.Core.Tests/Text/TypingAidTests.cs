@@ -125,7 +125,11 @@ public sealed class TypingAidTests
 
     private async Task AutoCloseFollowsTheSettingOnUiThread()
     {
-        var (_, doc) = await OpenAsync("", s => s.Set(SettingsCatalog.EditorAutoCloseBrackets, false));
+        var (_, doc) = await OpenAsync("", s =>
+        {
+            s.Set(SettingsCatalog.EditorAutoCloseBrackets, false);
+            s.Set(SettingsCatalog.EditorWrapSelection, false); // IDE-ED-028: wrap has its own switch
+        });
         Type(doc, "('");
         Assert.Equal("('|", Marked(doc));
         doc.Selection = new TextSelection(0, 2);

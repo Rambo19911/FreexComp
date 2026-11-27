@@ -23,6 +23,7 @@ public sealed class EditorOptions : INotifyPropertyChanged
         [SettingsCatalog.EditorAutoIndent.Name] = nameof(AutoIndent),
         [SettingsCatalog.EditorSmartHome.Name] = nameof(SmartHome),
         [SettingsCatalog.EditorAutoCloseBrackets.Name] = nameof(AutoCloseBrackets),
+        [SettingsCatalog.EditorWrapSelection.Name] = nameof(WrapSelection),
         [SettingsCatalog.EditorRectangularSelection.Name] = nameof(RectangularSelection),
         [SettingsCatalog.EditorHighlightMatchingBrackets.Name] = nameof(HighlightMatchingBrackets),
         [SettingsCatalog.EditorHighlightWordOccurrences.Name] = nameof(HighlightWordOccurrences),
@@ -78,8 +79,11 @@ public sealed class EditorOptions : INotifyPropertyChanged
 
     public bool SmartHome => Get(SettingsCatalog.EditorSmartHome);
 
-    /// <summary>IDE-ED-020/023: <c>editor.autoCloseBrackets</c>.</summary>
+    /// <summary>IDE-ED-020…022, 027: <c>editor.autoCloseBrackets</c>.</summary>
     public bool AutoCloseBrackets => Get(SettingsCatalog.EditorAutoCloseBrackets);
+
+    /// <summary>IDE-ED-023, 028: <c>editor.wrapSelection</c>.</summary>
+    public bool WrapSelection => Get(SettingsCatalog.EditorWrapSelection);
 
     /// <summary>IDE-ED-024 block completion on Enter (Pascal).</summary>
     public bool AutoCloseBeginEnd => Get(SettingsCatalog.EditorAutoCloseBeginEnd);

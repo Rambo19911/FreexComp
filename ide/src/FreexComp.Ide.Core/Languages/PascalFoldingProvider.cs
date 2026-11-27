@@ -38,11 +38,13 @@ public sealed class PascalFoldingProvider : IFoldingProvider
         return FoldRegions.Sorted(regions);
     }
 
-    /// <summary>(f) comments, (g) <c>{$REGION}</c> pairs, (h) conditional blocks.</summary>
+    /// <summary>
+    /// (f) comments, (g) <c>{$REGION}</c> pairs, (h) conditional blocks; (g) and (h) from the directive groups that
+    /// bracket matching uses too (<see cref="PascalDirectiveGroups"/>, IDE-ED-075). An <c>{$IFOPT}</c> group pairs but
+    /// does not fold ((h) lists <c>{$IFDEF}</c>, <c>{$IFNDEF}</c>, <c>{$IF}</c> only).
+    /// </summary>
     internal static void AddTriviaRegions(ITextBuffer buffer, string text, ImmutableArray<SyntaxToken> tokens, List<FoldRegion> regions, Func<int, int> line)
     {
-        var regionStack = new Stack<(int Line, string Title)>();
-        var conditionalStack = new Stack<int>();
         int runFirst = 0, runLast = -1;
 
         void FlushRun()
@@ -76,33 +78,19 @@ public sealed class PascalFoldingProvider : IFoldingProvider
                     case SyntaxKind.DocCommentTrivia:
                         regions.Add(buffer, line(span.Start), line(span.End - 1), FoldKind.Comment);
                         break;
-                    case SyntaxKind.DirectiveTrivia when trivia.Directive is { } directive:
-                        int directiveLine = line(span.Start);
-                        switch (directive.Name)
-                        {
-                            case "REGION":
-                                regionStack.Push((directiveLine, RegionTitle(directive.Argument)));
-                                break;
-                            case "ENDREGION" when regionStack.Count > 0:
-                                var (start, title) = regionStack.Pop();
-                                regions.Add(buffer, start, directiveLine, FoldKind.Region, title);
-                                break;
-                            case "IFDEF" or "IFNDEF" or "IF":
-                                conditionalStack.Push(directiveLine);
-                                break;
-                            case "ENDIF" or "IFEND" when conditionalStack.Count > 0:
-                                int conditionalStart = conditionalStack.Pop();
-                                if (directiveLine - conditionalStart >= 2)
-                                    regions.Add(buffer, conditionalStart, directiveLine, FoldKind.Conditional);
-                                break;
-                        }
-
-                        break;
                 }
             }
         }
 
         FlushRun();
+        foreach (var group in PascalDirectiveGroups.Pair(tokens).Where(g => g.IsClosed))
+        {
+            int start = line(group.Opener.Start), end = line(group.Closer.Start);
+            if (group.IsRegion)
+                regions.Add(buffer, start, end, FoldKind.Region, RegionTitle(group.Opener.Directive.Argument));
+            else if (group.Opener.Directive.Name is not "IFOPT" && end - start >= 2)
+                regions.Add(buffer, start, end, FoldKind.Conditional);
+        }
     }
 
     /// <summary>Only whitespace before <paramref name="offset"/> on its line.</summary>

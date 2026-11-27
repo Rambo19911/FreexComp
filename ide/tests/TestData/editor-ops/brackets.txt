@@ -102,3 +102,48 @@ F|(a);
 command search.goToMatchingBracket
 --- after
 F(a)|;
+====
+# name: IDE-ED-076 from an opener to its else
+--- before
+{$IFDEF A|}
+X := 1;
+{$ELSE}
+X := 2;
+{$ENDIF}
+--- action
+command search.goToMatchingBracket
+--- after
+{$IFDEF A}
+X := 1;
+|{$ELSE}
+X := 2;
+{$ENDIF}
+====
+# name: IDE-ED-076 from the closer back to the opener
+--- before
+{$IFDEF A}
+X := 1;
+{$ELSE}
+X := 2;
+{$EN|DIF}
+--- action
+command search.goToMatchingBracket
+--- after
+|{$IFDEF A}
+X := 1;
+{$ELSE}
+X := 2;
+{$ENDIF}
+====
+# name: IDE-ED-076 unmatched directive
+# status: Msg_Editor_BracketNotFound
+--- before
+begin
+  {$EN|DIF}
+end;
+--- action
+command search.goToMatchingBracket
+--- after
+begin
+  {$EN|DIF}
+end;

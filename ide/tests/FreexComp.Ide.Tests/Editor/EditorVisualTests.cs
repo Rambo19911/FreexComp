@@ -519,6 +519,44 @@ public sealed class EditorVisualTests
         Assert.Empty(Drawn(area.TextView, renderer));
     }
 
+    /// <summary>IDE-ED-075 (I-314): the whole directive group is drawn like a bracket pair; a directive without partner is outlined.</summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Phase", "8")]
+    [Trait("Req", "IDE-ED-075")]
+    public async Task DirectiveGroupIsHighlighted()
+    {
+        const string text = "{$IFDEF A}\r\nX;\r\n{$ELSE}\r\nY;\r\n{$ENDIF}\r\n{$ENDIF}\r\n";
+        await using var h = await HeadlessHarness.StartAsync(o =>
+        {
+            o.Settings["appearance.theme"] = "light";
+            o.InitialFiles["A.pas"] = text;
+        });
+        var (_, editor, probe) = await OpenAsync(h, "A.pas");
+        var area = editor.TextArea;
+        var renderer = area.TextView.BackgroundRenderers.OfType<BracketMatchRenderer>().Single();
+        void CaretAt(int offset)
+        {
+            area.Caret.Offset = offset;
+            Dispatcher.UIThread.RunJobs();
+        }
+
+        // The caret on {$ELSE}: the three directives of the group.
+        CaretAt(text.IndexOf("{$ELSE}", StringComparison.Ordinal) + 3);
+        Assert.Equal([(0, 10), (text.IndexOf("{$ELSE}", StringComparison.Ordinal), 7), (text.IndexOf("{$ENDIF}", StringComparison.Ordinal), 8)],
+            probe.BracketHighlights);
+        var drawn = Drawn(area.TextView, renderer);
+        Assert.Equal(3, drawn.Count(d => d.Fill == Color.Parse("#E3F2EF"))); // editor.bracketMatch.bg
+        Assert.Equal(3, drawn.Count(d => d.Pen == Color.Parse("#0F7B6C"))); // editor.bracketMatch.border
+
+        // The stray {$ENDIF}: alone, with the error outline.
+        var stray = text.LastIndexOf("{$ENDIF}", StringComparison.Ordinal);
+        CaretAt(stray + 2);
+        Assert.Equal([(stray, 8)], probe.BracketHighlights);
+        drawn = Drawn(area.TextView, renderer);
+        Assert.DoesNotContain(drawn, d => d.Fill == Color.Parse("#E3F2EF"));
+        Assert.Contains(drawn, d => d.Pen == Color.Parse("#B3261E")); // editor.squiggle.error
+    }
+
     [AvaloniaFact(Timeout = 30000)]
     [Trait("Req", "UI-ED-056")]
     [Trait("Req", "IDE-ED-073")]

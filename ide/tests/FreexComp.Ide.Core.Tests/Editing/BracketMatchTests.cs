@@ -81,6 +81,68 @@ public sealed class BracketMatchTests
         Assert.Equal("none", Match(new PlainTextLanguage(), "|(a)"));
     }
 
+    /// <summary>
+    /// IDE-ED-075 (I-314): conditional-directive groups and <c>{$REGION}</c> pairs. Each result lists the highlighted
+    /// directives in document order as <c>text@line</c> (0-based), "unmatched" for a directive drawn alone.
+    /// </summary>
+    [Fact(Timeout = 30000)]
+    [Trait("Phase", "8")]
+    [Trait("Req", "IDE-ED-075")]
+    public void ConditionalDirectivesPair()
+    {
+        string[] lines =
+        [
+            "{$IFDEF A}", // 0
+            "x := 1;",
+            "{$IF Defined(B)}", // 2: nested group
+            "y := 2;",
+            "{$IFEND}", // 4
+            "{$ELSE}", // 5
+            "(*$IFOPT R+*)z := 3;(*$ENDIF*)", // 6: the (*$…*) form
+            "{$endif}", // 7: names are case-insensitive
+            "{$ENDIF}", // 8: stray closer
+            "{$REGION 'R'}", // 9
+            "{$ENDREGION}", // 10
+            "s := '{$IFDEF S}';", // 11: inside a string, no token
+            "{$IFDEF U}", // 12: never closed
+        ];
+        var text = string.Join("\r\n", lines);
+        var tokens = new PascalLanguage().ScanCodeTokens(text);
+        int Offset(int line) => lines.Take(line).Sum(l => l.Length + 2);
+        string At(int line, int column)
+        {
+            if (tokens.MatchAt(Offset(line) + column) is not { } match)
+                return "none";
+            string Show(CodeToken t) => text.Substring(t.Offset, t.Length) + "@" + text[..t.Offset].Count(c => c == '\n');
+            return string.Join(" ", match.Highlighted.Select(Show)) + (match.Partner is null ? " unmatched" : "");
+        }
+
+        // The outer group from each of its members: at the start, inside, at the end.
+        const string outer = "{$IFDEF A}@0 {$ELSE}@5 {$endif}@7";
+        Assert.Equal(outer, At(0, 0));
+        Assert.Equal(outer, At(0, 4));
+        Assert.Equal(outer, At(5, 3));
+        Assert.Equal(outer, At(7, 8));
+
+        // The nested group and the (*$…*) group are separate; brackets inside a directive are no tokens.
+        Assert.Equal("{$IF Defined(B)}@2 {$IFEND}@4", At(2, 13));
+        Assert.Equal("{$IF Defined(B)}@2 {$IFEND}@4", At(4, 0));
+        Assert.Equal("(*$IFOPT R+*)@6 (*$ENDIF*)@6", At(6, 5));
+        Assert.Equal("(*$IFOPT R+*)@6 (*$ENDIF*)@6", At(6, 25));
+
+        // {$REGION} pairs.
+        Assert.Equal("{$REGION 'R'}@9 {$ENDREGION}@10", At(9, 2));
+        Assert.Equal("{$REGION 'R'}@9 {$ENDREGION}@10", At(10, 12));
+
+        // Without a partner: alone (drawn with the error outline).
+        Assert.Equal("{$ENDIF}@8 unmatched", At(8, 3));
+        Assert.Equal("{$IFDEF U}@12 unmatched", At(12, 5));
+
+        // Not a directive: code between the directives, a directive in a string.
+        Assert.Equal("none", At(1, 3));
+        Assert.Equal("none", At(11, 9));
+    }
+
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-ED-070")]
     [Trait("Req", "IDE-ARCH-081")]

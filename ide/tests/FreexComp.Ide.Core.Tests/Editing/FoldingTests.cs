@@ -104,6 +104,27 @@ public sealed class FoldingTests
             fixedRegions.Select(r => r.ToString()));
     }
 
+    /// <summary>
+    /// IDE-ED-051 (h) with the directive groups of IDE-ED-075 (I-314): a conditional block nested in an inactive branch
+    /// folds, and an <c>{$IFOPT}</c> group pairs (its <c>{$ENDIF}</c> does not close the enclosing block) but does not fold.
+    /// </summary>
+    [Fact(Timeout = 30000)]
+    [Trait("Phase", "8")]
+    [Trait("Req", "IDE-ED-051")]
+    [Trait("Req", "IDE-ED-075")]
+    public void DirectiveGroupsFoldInInactiveBranches()
+    {
+        string Conditionals(params string[] lines) =>
+            Format(new PascalFoldingProvider().GetRegions(new StringTextBuffer(string.Join("\n", lines), FreexComp.Ide.Core.Services.LineEndingKind.Lf))
+                .Where(r => r.Kind == FoldKind.Conditional));
+
+        // NEVER_DEFINED is not defined: lines 3-8 are an inactive branch.
+        Assert.Equal("2-9 conditional\n3-5 conditional", Conditionals(
+            "program P;", "{$IFDEF NEVER_DEFINED}", "{$IFDEF X}", "a", "{$ENDIF}", "{$IFOPT R+}", "b", "{$ENDIF}", "{$ENDIF}", "begin", "end."));
+        Assert.Equal("2-7 conditional", Conditionals(
+            "program P;", "{$IFNDEF NEVER_DEFINED}", "{$IFOPT R+}", "b", "{$ENDIF}", "x", "{$ENDIF}", "begin", "end."));
+    }
+
     private static TextDocumentViewModel Pascal(string text) =>
         new(new StringTextBuffer(text), @"C:\p\Unit1.pas", null, new PascalLanguage(), FileEncoding.Utf8, FreexComp.Ide.Core.Services.LineEndingKind.Lf);
 

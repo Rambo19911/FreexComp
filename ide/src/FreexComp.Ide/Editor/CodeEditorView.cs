@@ -903,7 +903,7 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
 
     private void OnTokensChanged(object? sender, EventArgs e) => InvalidateBackground();
 
-    /// <summary>UI-ED-053: the bracket or keyword at the caret and its partner, when <c>editor.highlightMatchingBrackets</c> is on.</summary>
+    /// <summary>UI-ED-053 / IDE-ED-075: the bracket, keyword or directive group at the caret, when <c>editor.highlightMatchingBrackets</c> is on.</summary>
     private BracketMatch? CurrentBracketMatch() =>
         _document is { Options.HighlightMatchingBrackets: true } document ? document.Tokens.Current?.MatchAt(_editor.TextArea.Caret.Offset) : null;
 
@@ -949,9 +949,7 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
     }
 
     IReadOnlyList<(int Offset, int Length)> IEditorTestProbe.BracketHighlights =>
-        CurrentBracketMatch() is not { } match ? []
-        : match.Partner is { } partner ? [.. new[] { match.Bracket, partner }.OrderBy(t => t.Offset).Select(t => (t.Offset, t.Length))]
-        : [(match.Bracket.Offset, match.Bracket.Length)];
+        CurrentBracketMatch() is not { } match ? [] : [.. match.Highlighted.Select(t => (t.Offset, t.Length))];
 
     IReadOnlyList<(int Offset, int Length)> IEditorTestProbe.OccurrenceHighlights =>
         _document is null ? [] : [.. _document.WordHighlights.Highlights.Select(t => (t.Offset, t.Length))];

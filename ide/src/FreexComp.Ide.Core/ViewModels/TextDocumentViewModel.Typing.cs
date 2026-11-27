@@ -6,8 +6,9 @@ using FreexComp.Ide.Core.Text;
 namespace FreexComp.Ide.Core.ViewModels;
 
 /// <summary>
-/// Typing aids of editor-features.md §3: auto-close (IDE-ED-020), type-over (021), pair delete (022), selection wrap
-/// (023), overwrite mode (025) and column blocks (026). Typed text enters through <see cref="TypeText"/>.
+/// Typing aids of editor-features.md §3: auto-close (IDE-ED-020, none in comments and strings: 027), type-over (021),
+/// pair delete (022), selection wrap (023, its own switch: 028), overwrite mode (025) and column blocks (026). Typed text
+/// enters through <see cref="TypeText"/>.
 /// </summary>
 public partial class TextDocumentViewModel
 {
@@ -143,12 +144,10 @@ public partial class TextDocumentViewModel
             return true;
         }
 
-        if (!Options.AutoCloseBrackets)
-            return null;
         var closer = ch switch { '(' => ')', '[' => ']', '\'' => '\'', _ => '\0' };
         if (closer == '\0')
             return null;
-        if (!selection.IsEmpty) // IDE-ED-023: wrap and keep the inner text selected
+        if (!selection.IsEmpty && Options.WrapSelection) // IDE-ED-023/028: wrap and keep the inner text selected
         {
             if (!TryEdit([new TextEdit(selection.Start, 0, ch.ToString()), new TextEdit(selection.End, 0, closer.ToString())]))
                 return false;
@@ -156,17 +155,24 @@ public partial class TextDocumentViewModel
             return true;
         }
 
-        if (ViewState.Overwrite || !ClosesHere(ch, caret)) // IDE-ED-025: no auto-close in overwrite mode
+        // IDE-ED-028: without wrap the character replaces the selection and auto-close applies at the resulting caret;
+        // IDE-ED-025: no auto-close in overwrite mode.
+        var start = selection.Start;
+        if (!Options.AutoCloseBrackets || ViewState.Overwrite || !ClosesHere(ch, start, selection.End))
             return null;
-        if (!TryEdit([new TextEdit(caret, 0, $"{ch}{closer}")]))
+        if (!TryEdit([new TextEdit(start, selection.End - start, $"{ch}{closer}")]))
             return false;
-        _pairs.Add(new AutoPair(caret, caret + 1));
-        Selection = TextSelection.At(caret + 1);
+        _pairs.Add(new AutoPair(start, start + 1));
+        Selection = TextSelection.At(start + 1);
         return true;
     }
 
-    /// <summary>IDE-ED-020: where a typed opener gets its closer.</summary>
-    private bool ClosesHere(char opener, int caret)
+    /// <summary>
+    /// IDE-ED-020/027: whether an opener typed at <paramref name="caret"/> gets its closer when the text from there to
+    /// <paramref name="next"/> (a replaced selection) goes away. The lexer state at the caret depends only on the text
+    /// before it, so it is read from the current text.
+    /// </summary>
+    private bool ClosesHere(char opener, int caret, int next)
     {
         if (opener == '\'')
         {
@@ -174,10 +180,10 @@ public partial class TextDocumentViewModel
             return !char.IsLetterOrDigit(left) && left != '\'' && !InStringOrComment(caret);
         }
 
-        if (caret >= Buffer.Length)
-            return true;
-        var right = Buffer.GetText(caret, 1)[0];
-        return char.IsWhiteSpace(right) || right is ')' or ']' or ';' or ',' or '.';
+        if (next < Buffer.Length && Buffer.GetText(next, 1)[0] is var right
+            && !(char.IsWhiteSpace(right) || right is ')' or ']' or ';' or ',' or '.'))
+            return false;
+        return !InStringOrComment(caret); // IDE-ED-027
     }
 
     /// <summary>The lexer state at <paramref name="caret"/> (the language's own tokens): inside a string, comment or directive.</summary>

@@ -9,9 +9,9 @@ using FreexComp.Ide.Core.Text;
 namespace FreexComp.Ide.Editor;
 
 /// <summary>
-/// Bracket match (UI-ED-053): each highlighted bracket or keyword gets <c>editor.bracketMatch.bg</c> and a 1 px
-/// <c>editor.bracketMatch.border</c> outline; a bracket without partner only a 1 px <c>editor.squiggle.error</c>
-/// outline. The highlights are asked for on every draw.
+/// Bracket match (UI-ED-053, IDE-ED-075): each highlighted bracket, keyword or directive of a group gets
+/// <c>editor.bracketMatch.bg</c> and a 1 px <c>editor.bracketMatch.border</c> outline; one without partner only a 1 px
+/// <c>editor.squiggle.error</c> outline. The highlights are asked for on every draw.
 /// </summary>
 public sealed class BracketMatchRenderer(Control themeSource, Func<BracketMatch?> match) : IBackgroundRenderer
 {
@@ -25,7 +25,7 @@ public sealed class BracketMatchRenderer(Control themeSource, Func<BracketMatch?
         var background = paired ? ThemeBrushes.Find(themeSource, "editor.bracketMatch.bg") : null;
         var outline = ThemeBrushes.Find(themeSource, paired ? "editor.bracketMatch.border" : "editor.squiggle.error");
         var pen = outline is null ? null : new Pen(outline, 1);
-        foreach (var token in m.Partner is { } partner ? new[] { m.Bracket, partner } : [m.Bracket])
+        foreach (var token in m.Highlighted)
         {
             foreach (var rect in BackgroundGeometryBuilder.GetRectsForSegment(textView, new TextSegment { StartOffset = token.Offset, Length = token.Length }))
             {

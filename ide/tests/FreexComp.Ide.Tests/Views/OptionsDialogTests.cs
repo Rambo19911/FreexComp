@@ -26,6 +26,7 @@ public sealed partial class OptionsDialogTests
         ("InsertSpaces", "Insert _spaces instead of tabs", SettingsCatalog.EditorInsertSpaces, true),
         ("AutoIndent", "_Automatic indentation", SettingsCatalog.EditorAutoIndent, true),
         ("AutoCloseBrackets", "Close _brackets and quotes automatically", SettingsCatalog.EditorAutoCloseBrackets, true),
+        ("WrapSelection", "_Wrap a selection in brackets and quotes", SettingsCatalog.EditorWrapSelection, true), // I-313 (P8, delivered)
         ("AutoCloseBeginEnd", "Complete begin with _end", SettingsCatalog.EditorAutoCloseBeginEnd, true),
         ("SmartHome", "_Home key goes to first non-blank character", SettingsCatalog.EditorSmartHome, true),
         ("CaretPastEol", "Allow caret beyond end of _line", SettingsCatalog.EditorCaretPastEndOfLine, true),

@@ -36,6 +36,7 @@ public static class SettingsCatalog
     public static readonly SettingKey<bool> EditorInsertSpaces = Bool("editor.insertSpaces", true);
     public static readonly SettingKey<bool> EditorAutoIndent = Bool("editor.autoIndent", true);
     public static readonly SettingKey<bool> EditorAutoCloseBrackets = Bool("editor.autoCloseBrackets", true);
+    public static readonly SettingKey<bool> EditorWrapSelection = Bool("editor.wrapSelection", true); // IDE-ED-028 (P8, F11-047)
     public static readonly SettingKey<bool> EditorAutoCloseBeginEnd = Bool("editor.autoCloseBeginEnd", true);
     public static readonly SettingKey<bool> EditorSmartHome = Bool("editor.smartHome", true);
     public static readonly SettingKey<bool> EditorCaretPastEndOfLine = Bool("editor.caretPastEndOfLine", false);

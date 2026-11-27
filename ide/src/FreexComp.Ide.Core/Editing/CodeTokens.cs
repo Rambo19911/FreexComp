@@ -13,6 +13,9 @@ public enum CodeTokenKind
 
     /// <summary>An identifier (IDE-ED-074).</summary>
     Identifier,
+
+    /// <summary>A compiler directive of a conditional group or region pair (IDE-ED-075; in <see cref="CodeTokens.Directives"/> only).</summary>
+    Directive,
 }
 
 /// <summary>
@@ -24,8 +27,17 @@ public readonly record struct CodeToken(int Offset, int Length, CodeTokenKind Ki
     public int End => Offset + Length;
 }
 
-/// <summary>The bracket or keyword at the caret and its partner (null: none, IDE-ED-070).</summary>
-public readonly record struct BracketMatch(CodeToken Bracket, CodeToken? Partner);
+/// <summary>
+/// The bracket, keyword or directive at the caret and its partner (null: none, IDE-ED-070). For a directive group
+/// (IDE-ED-075) <see cref="Group"/> holds every member in document order and <see cref="Partner"/> is the next one
+/// (IDE-ED-076).
+/// </summary>
+public readonly record struct BracketMatch(CodeToken Bracket, CodeToken? Partner, IReadOnlyList<CodeToken>? Group = null)
+{
+    /// <summary>The tokens to highlight, in document order.</summary>
+    public IReadOnlyList<CodeToken> Highlighted =>
+        Group ?? (Partner is not { } p ? [Bracket] : p.Offset < Bracket.Offset ? [p, Bracket] : [Bracket, p]);
+}
 
 /// <summary>A guide drawn with <c>editor.indentGuide.active</c>: <see cref="Column"/> (0-based visual) over lines <see cref="FirstLine"/>…<see cref="LastLine"/>.</summary>
 public readonly record struct ActiveGuide(int Column, int FirstLine, int LastLine);
@@ -41,20 +53,31 @@ public sealed class CodeTokens
     public const int SearchLimit = 20_000;
 
     private readonly int[] _partners;
+    private readonly int[] _nextInGroup;
 
     /// <param name="partners">Per token the index of its partner in <paramref name="tokens"/>, or -1.</param>
-    public CodeTokens(string text, IReadOnlyList<CodeToken> tokens, IReadOnlyList<int> partners, bool ignoreCase, long version = -1)
+    /// <param name="directives">IDE-ED-075: the directives of groups, sorted by offset (kind <see cref="CodeTokenKind.Directive"/>).</param>
+    /// <param name="nextInGroup">Per directive the index of the next member of its group in <paramref name="directives"/>
+    /// (the last member points back to the first), or -1 for a directive without partner.</param>
+    public CodeTokens(string text, IReadOnlyList<CodeToken> tokens, IReadOnlyList<int> partners, bool ignoreCase, long version = -1,
+        IReadOnlyList<CodeToken>? directives = null, IReadOnlyList<int>? nextInGroup = null)
     {
         ArgumentNullException.ThrowIfNull(text);
         ArgumentNullException.ThrowIfNull(tokens);
         ArgumentNullException.ThrowIfNull(partners);
         if (tokens.Count != partners.Count)
             throw new ArgumentException("One partner per token is required.", nameof(partners));
+        directives ??= [];
+        nextInGroup ??= [];
+        if (directives.Count != nextInGroup.Count)
+            throw new ArgumentException("One group link per directive is required.", nameof(nextInGroup));
         Text = text;
         Tokens = tokens;
         IgnoreCase = ignoreCase;
         Version = version;
+        Directives = directives;
         _partners = [.. partners];
+        _nextInGroup = [.. nextInGroup];
     }
 
     public static CodeTokens Empty { get; } = new("", [], [], ignoreCase: false);
@@ -64,13 +87,16 @@ public sealed class CodeTokens
 
     public IReadOnlyList<CodeToken> Tokens { get; }
 
+    /// <summary>IDE-ED-075: the directives of conditional groups and region pairs, sorted by offset.</summary>
+    public IReadOnlyList<CodeToken> Directives { get; }
+
     /// <summary>Identifiers compare case-insensitively (Object Pascal, IDE-ED-074).</summary>
     public bool IgnoreCase { get; }
 
     /// <summary>The buffer version of <see cref="Text"/> (-1 when built outside a buffer).</summary>
     public long Version { get; }
 
-    internal CodeTokens WithVersion(long version) => new(Text, Tokens, _partners, IgnoreCase, version);
+    internal CodeTokens WithVersion(long version) => new(Text, Tokens, _partners, IgnoreCase, version, Directives, _nextInGroup);
 
     /// <summary>The partner of the token at <paramref name="index"/> within <see cref="SearchLimit"/> tokens, or null.</summary>
     public CodeToken? PartnerOf(int index)
@@ -80,10 +106,45 @@ public sealed class CodeTokens
     }
 
     /// <summary>
-    /// UI-ED-053 / IDE-ED-070/071: a bracket right before the caret, else one right after it, else a block keyword the
-    /// caret is inside of (or at either end of); with its partner.
+    /// UI-ED-053 / IDE-ED-070/071/075: a bracket right before the caret, else one right after it, else a block keyword
+    /// the caret is inside of (or at either end of), else a directive of a group likewise; with its partner.
     /// </summary>
-    public BracketMatch? MatchAt(int caret) => IndexAt(caret) is { } i ? new BracketMatch(Tokens[i], PartnerOf(i)) : null;
+    public BracketMatch? MatchAt(int caret) =>
+        IndexAt(caret) is { } i ? new BracketMatch(Tokens[i], PartnerOf(i)) : DirectiveAt(caret) is { } d ? GroupOf(d) : null;
+
+    /// <summary>The directive the caret is inside of or at either end of (the first one when two touch), or null.</summary>
+    private int? DirectiveAt(int caret)
+    {
+        int low = 0, high = Directives.Count;
+        while (low < high)
+        {
+            int mid = (low + high) / 2;
+            if (Directives[mid].End >= caret) high = mid;
+            else low = mid + 1;
+        }
+
+        return low < Directives.Count && Directives[low].Offset <= caret ? low : null;
+    }
+
+    /// <summary>
+    /// IDE-ED-075/076: the group of the directive at <paramref name="index"/>, limited to the members within
+    /// <see cref="SearchLimit"/> tokens of it; alone (no partner) when no other member is left. The partner is the next
+    /// member in document order, after the last one the first.
+    /// </summary>
+    private BracketMatch GroupOf(int index)
+    {
+        var at = Directives[index];
+        var others = new List<CodeToken>();
+        for (int i = _nextInGroup[index]; i >= 0 && i != index; i = _nextInGroup[i])
+        {
+            if (Math.Abs(Directives[i].LexIndex - at.LexIndex) <= SearchLimit)
+                others.Add(Directives[i]);
+        }
+
+        if (others.Count == 0)
+            return new BracketMatch(at, null);
+        return new BracketMatch(at, others[0], [.. others.Append(at).OrderBy(t => t.Offset)]);
+    }
 
     private int? IndexAt(int caret)
     {
@@ -136,9 +197,9 @@ public sealed class CodeTokens
     }
 
     /// <summary>
-    /// IDE-ED-072: where <c>search.goToMatchingBracket</c> puts the caret — the partner of the bracket at the caret
-    /// (just before an opener, just after a closer, the start of a keyword), else the nearest enclosing opener; null
-    /// when there is none (or the bracket at the caret has no partner).
+    /// IDE-ED-072/076: where <c>search.goToMatchingBracket</c> puts the caret — the partner of the bracket at the caret
+    /// (just before an opener, just after a closer, the start of a keyword or of the next directive of a group), else
+    /// the nearest enclosing opener; null when there is none (or the bracket or directive at the caret has no partner).
     /// </summary>
     public int? MatchingBracketTarget(int caret)
     {
