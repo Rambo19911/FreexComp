@@ -66,38 +66,46 @@ internal sealed partial class BodyBinder
     }
 
     /// <summary>
-    /// LANG-385: the type of <c>var x := e</c> — an integer constant is <c>Integer</c> (<c>Int64</c>/<c>UInt64</c> when it does not fit),
-    /// a character constant <c>Char</c>, a string constant <c>string</c>, a real constant <c>Double</c>; <c>nil</c> and set/array
-    /// constructors are E2075. Null after an error.
+    /// LANG-573, 574 (C-384): the natural type of <c>var x := e</c> — an integer literal is <c>Integer</c> (<c>Int64</c>/<c>UInt64</c>
+    /// when it does not fit), every other expression (untyped constants included, which fold to those types, a character, string or
+    /// real constant to <c>Char</c>, <c>string</c>, <c>Double</c>) has its static type, a subrange widened to its base
+    /// (<see cref="WidenedSubrange"/>); <c>nil</c>, set/array constructors and anonymous-method expressions are E2075. Null after
+    /// an error.
     /// </summary>
-    private TypeSymbol? InferredType(BoundExpression value, SyntaxNode at, string name)
+    private TypeSymbol? InferredType(BoundExpression value, ExpressionSyntax initializer, SyntaxNode at, string name)
     {
         if (value.HasErrors)
         {
             return null;
         }
 
-        if (value is BoundSetConstructor or BoundArrayConstructor || ReferenceEquals(value.Type, _types.Nil))
+        if (value is BoundSetConstructor or BoundArrayConstructor || ReferenceEquals(value.Type, _types.Nil)
+            || ExpressionBinder.IsAnonymousMethod(initializer))
         {
             _diagnostics.Report(at, "E2075", name);
             return null;
         }
 
-        if (value.ConstantValue is not { } constant)
+        if (value.ConstantValue is { Type: IntegerTypeSymbol, Value: BigInteger n } && ExpressionBinder.IsIntegerLiteral(initializer))
         {
-            return value.Type;
+            // LANG-126 types a hex literal $80000000…$FFFFFFFF Cardinal; the inferred type follows the literal rule
+            return n >= int.MinValue && n <= int.MaxValue ? _types.Integer : n >= long.MinValue && n <= long.MaxValue ? _types.Int64 : _types.UInt64;
         }
 
-        return constant.Type switch
-        {
-            IntegerTypeSymbol when constant.Value is BigInteger n => n >= int.MinValue && n <= int.MaxValue ? _types.Integer
-                : n >= long.MinValue && n <= long.MaxValue ? _types.Int64 : _types.UInt64,
-            CharTypeSymbol => _types.Char,
-            StringTypeSymbol => _types.String,
-            RealTypeSymbol => _types.Double,
-            _ => value.Type,
-        };
+        return WidenedSubrange(value.Type);
     }
+
+    /// <summary>
+    /// LANG-573 rule 4: an integer subrange → its computation type (LANG-222), a subrange of an enumeration → the enumeration, a
+    /// subrange of <c>Char</c>/<c>AnsiChar</c> → that type; every other type (named integer types such as <c>Byte</c>) unchanged.
+    /// </summary>
+    private TypeSymbol WidenedSubrange(TypeSymbol type) => type switch
+    {
+        IntegerTypeSymbol { TypeKind: TypeKind.Subrange } subrange => Declarations().Folder.ComputationTypeSymbol(subrange),
+        EnumTypeSymbol { TypeKind: TypeKind.Subrange, BaseType: { } enumeration } => enumeration,
+        CharTypeSymbol { TypeKind: TypeKind.Subrange, BaseType: { } character } => character,
+        _ => type,
+    };
 
     /// <summary>
     /// LANG-569: hint H2011 when the inline name <paramref name="name"/> (not a redeclaration: <see cref="CheckInlineName"/>) hides a
@@ -183,9 +191,9 @@ internal sealed partial class BodyBinder
             case InlineVarStatementSyntax syntax:
             {
                 var type = syntax.Type is { } typeSyntax ? Declarations().BindLocalType(typeSyntax) : null;
-                var value = syntax.Initializer is { } initializer
-                    ? type is null ? _expressions.BindExpression(initializer) : _expressions.BindExpression(initializer, type)
-                    : null;
+                // LANG-574 rule 3: a routine name that is not called is not bound as a call (E2075 below, not E2034/E2110/E2123)
+                var value = syntax.Initializer is not { } initializer || type is null && _expressions.IsUncalledRoutine(initializer) ? null
+                    : type is null ? _expressions.BindExpression(initializer) : _expressions.BindExpression(initializer, type);
                 var first = syntax.Identifiers.Count > 0 ? syntax.Identifiers[0] : null;
                 var firstName = first is null ? "" : first.Identifier.Value as string ?? first.Identifier.Text;
                 if (type is null && first is not null)
@@ -196,7 +204,7 @@ internal sealed partial class BodyBinder
                     }
                     else
                     {
-                        type = InferredType(value, first, firstName);
+                        type = InferredType(value, syntax.Initializer!, first, firstName);
                     }
                 }
 
@@ -272,7 +280,7 @@ internal sealed partial class BodyBinder
         var finish = _expressions.BindExpression(syntax.Finish);
         var identifier = syntax.Variable.Identifier;
         var name = identifier.Value as string ?? identifier.Text;
-        var type = syntax.Type is { } typeSyntax ? Declarations().BindLocalType(typeSyntax) : InferredType(start, syntax.Variable, name);
+        var type = syntax.Type is { } typeSyntax ? Declarations().BindLocalType(typeSyntax) : InferredType(start, syntax.Start, syntax.Variable, name);
         if (identifier.IsMissing || type is null || type.TypeKind == TypeKind.Error || !CheckInlineName(identifier, name))
         {
             return new BoundErrorStatement(syntax);

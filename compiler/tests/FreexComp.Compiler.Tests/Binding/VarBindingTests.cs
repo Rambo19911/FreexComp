@@ -8,7 +8,7 @@ namespace FreexComp.Compiler.Tests.Binding;
 /// <summary>Variable sections and unit/block-level lookup (grammar.md varDecl, LANG-310, 402, 518, units-programs.md).</summary>
 [Trait("Phase", "2")]
 [Trait("Req", "LANG-310")]
-public sealed class VarBindingTests
+public sealed partial class VarBindingTests
 {
     private static VariableSymbol Variable(BindingResult result, string name) =>
         Assert.IsType<VariableSymbol>(result.Scope.Lookup(name));

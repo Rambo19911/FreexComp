@@ -1,0 +1,6 @@
+ErrInlineInfer.pas(19,7): error E2075: Cannot infer the type of 'P'
+ErrInlineInfer.pas(20,7): error E2075: Cannot infer the type of 'S'
+ErrInlineInfer.pas(21,7): error E2075: Cannot infer the type of 'F'
+ErrInlineInfer.pas(22,7): error E2075: Cannot infer the type of 'G'
+ErrInlineInfer.pas(23,7): error E2075: Cannot infer the type of 'H'
+ErrInlineInfer.pas(27,8): error E2010: Incompatible types: 'string' and 'Integer'
