@@ -126,8 +126,12 @@ public sealed class FrameInspectorTests
         var requests = new List<(string FormPath, string Method)>();
         designer.InheritedHandlerRequested += (_, e) => requests.Add((e.Definition.FormPath, e.Method));
         var text = designer.CurrentFormText();
+        var dialogs = (FakeDialogService)_f.Services.Dialogs;
+        dialogs.Answer("Msg.File.NotFound", "OK"); // the frame's unit is not on disk in this fixture
         inspector.ActivateEvent("OnChange");
         Assert.Equal([(@"C:\p\AddressFrameUnit.form", "StreetEditChange")], requests);
+        await ((DocumentService)_f.Services.Documents).InheritedHandlerOpening; // I-320: await the opening, not left to run late
+        Assert.Equal(("Msg.File.NotFound", @"C:\p\AddressFrameUnit.pas"), (dialogs.Requests.Single().MessageId, dialogs.Requests.Single().Args[0]));
         Assert.Equal(text, designer.CurrentFormText());
 
         // DSG-OI-121: the frame's handler name as shown is no change (no override, no method of the form).

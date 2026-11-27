@@ -1066,6 +1066,9 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   <data name="WelcomePage_RecentProjects" xml:space="preserve">
     <value>RECENT PROJECTS</value>
   </data>
+  <data name="WelcomePage_RecentFiles" xml:space="preserve">
+    <value>RECENT FILES</value>
+  </data>
   <data name="WelcomePage_ShowOnStartup" xml:space="preserve">
     <value>Show this page at start-up</value>
   </data>

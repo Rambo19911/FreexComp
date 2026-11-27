@@ -130,6 +130,45 @@ public sealed partial class TokenTests
     }
 
     /// <summary>
+    /// I-319: a selected row of a list without keyboard focus (<c>bg.selected.inactive</c>, UI-TW-010) must stand out
+    /// from the tool-window background (<c>bg.panel</c>) in both themes. Minimum 1.5:1 (design-tokens.md §2.6 pair added
+    /// with I-319): the WCAG 3:1 of non-text UI cannot hold together with <c>text.primary</c> ≥ 7:1 on the same fill
+    /// (at most about 1.75:1 in Dark and 2.2:1 in Light), and 1.5:1 still keeps <c>text.secondary</c> ≥ 4.5:1 on it.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-TOK-006")]
+    [Trait("Req", "UI-TW-010")]
+    public void InactiveSelectionHasContrast()
+    {
+        const double minimum = 1.5;
+        var problems = new List<string>();
+        foreach (var theme in new[] { "Light", "Dark" })
+        {
+            var dict = Load(theme);
+            string Hex(string key)
+            {
+                var c = (Color)dict[key]!;
+                return $"#{c.R:X2}{c.G:X2}{c.B:X2}";
+            }
+
+            var selection = Hex("FxcBgSelectedInactive");
+            foreach (var (fg, bg, min) in new[]
+            {
+                (selection, Hex("FxcBgPanel"), minimum),
+                (Hex("FxcTextPrimary"), selection, 7.0),
+                (Hex("FxcTextSecondary"), selection, 4.5),
+            })
+            {
+                var ratio = ColorContrast.Ratio(fg, bg);
+                if (ratio < min)
+                    problems.Add($"{theme}: {fg} on {bg} = {ratio:0.00}, minimum {min}");
+            }
+        }
+
+        Assert.True(problems.Count == 0, string.Join(Environment.NewLine, problems));
+    }
+
+    /// <summary>
     /// UI-TOK-007: every colour resource the running <see cref="FluentTheme"/> exposes (enumerated at run time, so a
     /// toolkit update that adds keys is caught) resolves, from the application, to a colour token of that theme.
     /// Brushes must be opaque (Opacity 1, otherwise the drawn colour is not the token's); fully transparent

@@ -17,6 +17,7 @@ namespace FreexComp.Ide.Tests.Views;
 public sealed class WelcomePageTests
 {
     private const string Row = "Welcome.Recent.Row.";
+    private const string FileRow = "Welcome.RecentFiles.Row.";
 
     /// <summary>The harness presets the setting to false so other tests start with an empty document area.</summary>
     private static void ShowAtStartup(HarnessOptions o) => o.Settings.Remove(SettingsCatalog.EnvironmentShowWelcomeOnStartup.Name);
@@ -55,12 +56,18 @@ public sealed class WelcomePageTests
     }
 
     /// <summary>The visible rows' paths, top to bottom on screen.</summary>
-    private static IReadOnlyList<string> RowPaths(HeadlessHarness h) =>
+    private static IReadOnlyList<string> RowPaths(HeadlessHarness h, string prefix = Row) =>
     [
-        .. h.FindAll(Row).OfType<ListBoxItem>().Where(i => i.IsEffectivelyVisible)
+        .. h.FindAll(prefix).OfType<ListBoxItem>().Where(i => i.IsEffectivelyVisible)
             .OrderBy(i => Avalonia.VisualExtensions.TranslatePoint(i, default, h.Window)!.Value.Y)
-            .Select(i => AutomationIds.Get(i)![Row.Length..]),
+            .Select(i => AutomationIds.Get(i)![prefix.Length..]),
     ];
+
+    /// <summary>The visible recent-file rows' paths, top to bottom on screen (IDE-WEL-024).</summary>
+    private static IReadOnlyList<string> FileRowPaths(HeadlessHarness h) => RowPaths(h, FileRow);
+
+    private static JsonArray RecentFilesOnDisk(HeadlessHarness h) =>
+        (JsonArray)JsonNode.Parse(File.ReadAllText(Path.Combine(h.UserDir, "roaming", "recent.json")))!["files"]!;
 
     private static JsonArray RecentProjectsOnDisk(HeadlessHarness h) =>
         (JsonArray)JsonNode.Parse(File.ReadAllText(Path.Combine(h.UserDir, "roaming", "recent.json")))!["projects"]!;
@@ -471,5 +478,224 @@ public sealed class WelcomePageTests
         h.Services.Settings.Set(SettingsCatalog.EnvironmentShowWelcomeOnStartup, true);
         Dispatcher.UIThread.RunJobs();
         Assert.True(box.IsChecked);
+    }
+
+    /// <summary>
+    /// IDE-WEL-024: a second list "Recent files" under the recent projects, fed by the recent files of
+    /// <c>recent.json</c> (the store of File › Open Recent): pinned first, then most recent first; the same row look
+    /// (pin, name with extension, folder, date, remove); Enter or a click executes <c>file.openRecentFile</c>.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "IDE-WEL-024")]
+    public async Task RecentFilesListed_MostRecentFirst()
+    {
+        await using var h = await HeadlessHarness.StartAsync(o =>
+        {
+            ShowAtStartup(o);
+            o.InitialFiles[@"Notes\a.txt"] = "alpha";
+            o.InitialFiles[@"Notes\b.pas"] = "unit b;";
+            o.InitialFiles[@"Other\c.inc"] = "{ c }";
+        });
+        var page = await CheckedPageAsync(h);
+
+        // No recent files: the section is not shown at all.
+        Assert.Empty(page.Files);
+        Assert.False(h.Find<Control>("Welcome.RecentFiles").IsVisible);
+
+        string a = Path.Combine(h.TempDir, "Notes", "a.txt"), b = Path.Combine(h.TempDir, "Notes", "b.pas"),
+            c = Path.Combine(h.TempDir, "Other", "c.inc");
+        h.Services.RecentItems.Add(RecentKind.File, a);
+        h.Clock.Advance(TimeSpan.FromMinutes(1));
+        h.Services.RecentItems.Add(RecentKind.File, b);
+        h.Clock.Advance(TimeSpan.FromMinutes(1));
+        h.Services.RecentItems.Add(RecentKind.File, c);
+        await h.WaitForAsync(() => FileRowPaths(h).Count == 3, "three recent files shown");
+
+        // Most recent first, below the recent projects (whose list is still empty).
+        Assert.Equal([c, b, a], FileRowPaths(h));
+        Assert.True(h.Find<Control>("Welcome.RecentFiles").IsEffectivelyVisible);
+        var texts = h.Find<Control>("Welcome").GetLogicalDescendantsTexts();
+        Assert.Contains("RECENT FILES", texts);
+        Assert.Contains("No recent projects", texts);
+        Assert.True(Avalonia.VisualExtensions.TranslatePoint(h.Find<Control>("Welcome.RecentFiles"), default, h.Window)!.Value.Y
+            > Avalonia.VisualExtensions.TranslatePoint(h.Find<Control>("Welcome.Recent.List"), default, h.Window)!.Value.Y);
+
+        // Row look: pin, file name with extension, its folder, the date; tooltips as for projects.
+        var today = "today " + h.Clock.Now.ToLocalTime().ToString("HH:mm", System.Globalization.CultureInfo.CurrentCulture);
+        Assert.Equal(today, page.Files[0].DateText);
+        Assert.Equal(["☆", "b.pas", Path.Combine(h.TempDir, "Notes"), page.Files[1].DateText],
+            h.Find<ListBoxItem>(FileRow + b).GetLogicalDescendantsTexts().Take(4));
+        Assert.StartsWith("today ", page.Files[1].DateText, StringComparison.Ordinal);
+        Assert.Equal("b.pas", h.Find<TextBlock>(FileRow + b + ".Name").Text);
+        Assert.Equal("Pin to top", ToolTip.GetTip(h.Find<Button>(FileRow + b + ".Pin")));
+        Assert.Equal("Remove from list", ToolTip.GetTip(h.Find<Button>(FileRow + b + ".Remove")));
+
+        // Pinning moves the file to the top; recent.json is written at once; focus stays on the row.
+        h.Click(FileRow + a + ".Pin");
+        Assert.Equal([a, c, b], FileRowPaths(h));
+        Assert.Equal([$"{a}|true", $"{c}|false", $"{b}|false"], RecentFilesOnDisk(h).Select(e => Pinned(e!)));
+        Assert.Equal(FileRow + a, h.FocusedAutomationId);
+
+        // Tab order: the start tiles, the file list as one stop (the empty project list is hidden), the check box.
+        h.Find<Button>("Welcome.OpenFile").Focus(NavigationMethod.Tab);
+        h.Press("Tab");
+        Assert.Equal(FileRow + a, h.FocusedAutomationId);
+        h.Press("Tab");
+        Assert.Equal("Welcome.ShowOnStartup", h.FocusedAutomationId);
+        h.Press("Shift+Tab");
+        Assert.Equal(FileRow + a, h.FocusedAutomationId);
+
+        // Delete removes the focused row without asking; focus goes to the nearest remaining row.
+        h.Press("Down");
+        Assert.Equal(FileRow + c, h.FocusedAutomationId);
+        h.Press("Delete");
+        Assert.Equal([a, b], FileRowPaths(h));
+        Assert.Equal(FileRow + b, h.FocusedAutomationId);
+        Assert.Equal([$"{a}|true", $"{b}|false"], RecentFilesOnDisk(h).Select(e => Pinned(e!)));
+        Assert.Empty(h.Messages.Requests);
+
+        // The context menu: Open runs file.openRecentFile; the other items as for projects.
+        var row = page.Files.Single(f => f.Path == a);
+        Assert.Equal(["Context.file.openRecentFile:" + a, "Context.file.showInExplorer:" + a, "Context.welcome.unpin", "Context.welcome.remove"],
+            FreexComp.Ide.Views.MenuBarBuilder.CreateContextMenu(page.RowContextMenu(row, _ => { }, _ => { })).Items.OfType<MenuItem>().Select(AutomationIds.Get));
+
+        // Enter opens the file in an editor (file.openRecentFile); the Welcome tab stays open behind it.
+        h.Press("Enter");
+        await h.WaitForAsync(() => h.Services.Documents.ActiveDocument?.FilePath == b, "b.pas opened");
+        Assert.Single(h.Services.Documents.Documents.OfType<WelcomeDocumentViewModel>());
+
+        // A click on a row opens it too.
+        await h.ExecuteAsync("view.welcomePage");
+        await h.WaitForAsync(() => FileRowPaths(h).Count == 2, "file rows shown again");
+        h.Click(FileRow + a);
+        await h.WaitForAsync(() => h.Services.Documents.ActiveDocument?.FilePath == a, "a.txt opened");
+    }
+
+    /// <summary>IDE-WEL-024 with IDE-WEL-004/005: a missing recent file is flagged and asks <c>Msg.File.RecentNotFound</c>.</summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "IDE-WEL-024")]
+    [Trait("Req", "IDE-P1-132")]
+    public async Task RecentFileMissing_FlaggedAndPrompts()
+    {
+        await using var h = await HeadlessHarness.StartAsync(o =>
+        {
+            ShowAtStartup(o);
+            o.InitialFiles[@"Notes\here.pas"] = "unit here;";
+        });
+        var here = Path.Combine(h.TempDir, "Notes", "here.pas");
+        var gone = Path.Combine(h.TempDir, "Notes", "gone.pas");
+        h.Services.RecentItems.Add(RecentKind.File, here);
+        h.Clock.Advance(TimeSpan.FromMinutes(1));
+        h.Services.RecentItems.Add(RecentKind.File, gone);
+        var page = await CheckedPageAsync(h);
+
+        // " (missing)" after the name, name in text.disabled; the existing file is not flagged.
+        Assert.Equal([gone, here], FileRowPaths(h));
+        Assert.True(page.Files.Single(f => f.Path == gone).IsMissing);
+        Assert.False(page.Files.Single(f => f.Path == here).IsMissing);
+        var name = h.Find<TextBlock>(FileRow + gone + ".Name");
+        Assert.Equal("gone.pas (missing)", name.Text);
+        Assert.True(h.Window.TryFindResource("FxcTextDisabledBrush", h.Window.ActualThemeVariant, out var disabled));
+        Assert.Same(disabled, name.Foreground);
+        Assert.Equal("here.pas", h.Find<TextBlock>(FileRow + here + ".Name").Text);
+
+        // Keep leaves the entry; Remove deletes it from recent.json; nothing is opened.
+        h.Messages.Answer("Msg.File.RecentNotFound", "Keep");
+        h.Find<ListBoxItem>(FileRow + gone).Focus(NavigationMethod.Tab);
+        h.Press("Enter");
+        await h.WaitForAsync(() => h.Messages.Requests.Count == 1, "RecentNotFound asked");
+        Assert.Equal([gone], h.Messages.Requests[0].Args);
+        Assert.Equal([gone, here], FileRowPaths(h));
+
+        h.Messages.Answer("Msg.File.RecentNotFound", "Remove");
+        h.Press("Enter");
+        await h.WaitForAsync(() => h.Messages.Requests.Count == 2, "RecentNotFound asked again");
+        await h.WaitForAsync(() => FileRowPaths(h).Count == 1, "entry removed");
+        Assert.Equal([here], FileRowPaths(h));
+        Assert.Equal([here], RecentFilesOnDisk(h).Select(e => (string)e!["path"]!));
+        Assert.DoesNotContain(h.Services.Documents.Documents, d => d.FilePath == gone);
+
+        // The check runs again when the main window is activated.
+        File.Delete(here);
+        page.OnWindowActivated();
+        await h.WaitForAsync(() => page.Files.Single().IsMissing, "here.pas now missing");
+        Assert.Equal("here.pas (missing)", h.Find<TextBlock>(FileRow + here + ".Name").Text);
+    }
+
+    /// <summary>
+    /// IDE-WEL-024 with IDE-WEL-007: the filter box shows when both lists together hold more than five entries and
+    /// filters both; the projects show <c>Msg.Welcome.FilterEmpty</c> without a match, the recent-files section hides.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "IDE-WEL-024")]
+    [Trait("Req", "IDE-WEL-007")]
+    public async Task FilterAppliesToBothLists()
+    {
+        string[] projects = ["Alpha", "Beta", "Gamma"];
+        string[] files = [@"C:\f\zeta.pas", @"C:\f\theta.txt", @"C:\g\omega.inc"];
+        await using var h = await HeadlessHarness.StartAsync(o =>
+        {
+            ShowAtStartup(o);
+            var root = new JsonObject
+            {
+                ["formatVersion"] = 1,
+                ["projects"] = new JsonArray([.. projects.Select((n, i) => (JsonNode)new JsonObject
+                {
+                    ["path"] = $@"C:\p\{n}\{n}.pproj", ["lastOpened"] = $"2026-11-{10 + i:00}T10:00:00Z", ["pinned"] = false,
+                })]),
+                ["files"] = new JsonArray([.. files.Select((f, i) => (JsonNode)new JsonObject
+                {
+                    ["path"] = f, ["lastOpened"] = $"2026-11-{10 + i:00}T10:00:00Z", ["pinned"] = false,
+                })]),
+            };
+            o.UserFiles[@"roaming\recent.json"] = Encoding.UTF8.GetBytes(root.ToJsonString());
+        });
+        var page = await CheckedPageAsync(h);
+        Assert.Equal(3, RowPaths(h).Count);
+        Assert.Equal([@"C:\g\omega.inc", @"C:\f\theta.txt", @"C:\f\zeta.pas"], FileRowPaths(h));
+
+        // Three projects + three files: more than five entries, so the filter box is shown.
+        var filter = h.Find<TextBox>("Welcome.Recent.Filter");
+        Assert.True(filter.IsEffectivelyVisible);
+
+        // Ctrl+F from a file row; "eta" matches Beta (project) and zeta.pas, theta.txt (files).
+        h.Find<ListBoxItem>(FileRow + @"C:\f\zeta.pas").Focus(NavigationMethod.Tab);
+        h.Press("Ctrl+F");
+        Assert.Equal("Welcome.Recent.Filter", h.FocusedAutomationId);
+        h.Type("ETA");
+        Assert.Equal([@"C:\p\Beta\Beta.pproj"], RowPaths(h));
+        Assert.Equal([@"C:\f\theta.txt", @"C:\f\zeta.pas"], page.Files.Select(f => f.Path));
+        Assert.Equal([@"C:\f\theta.txt", @"C:\f\zeta.pas"], FileRowPaths(h));
+
+        // A path part matches too: no project, only the file under C:\g.
+        filter.Text = @"c:\G\";
+        Dispatcher.UIThread.RunJobs();
+        Assert.Empty(RowPaths(h));
+        Assert.Equal([@"C:\g\omega.inc"], FileRowPaths(h));
+        Assert.Contains(@"No recent project matches c:\G\", h.Find<Control>("Welcome").GetLogicalDescendantsTexts());
+        Assert.True(h.Find<Control>("Welcome.RecentFiles").IsEffectivelyVisible);
+
+        // No file matches: the recent-files section hides; the matching project still shows.
+        filter.Text = "gam";
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal([@"C:\p\Gamma\Gamma.pproj"], RowPaths(h));
+        Assert.Empty(FileRowPaths(h));
+        Assert.False(h.Find<Control>("Welcome.RecentFiles").IsVisible);
+
+        // Clearing the filter shows both lists in full again.
+        filter.Text = "";
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(3, RowPaths(h).Count);
+        Assert.Equal(3, FileRowPaths(h).Count);
+        Assert.True(h.Find<Control>("Welcome.RecentFiles").IsEffectivelyVisible);
+
+        // Five entries or fewer in both lists together: no filter box, and its text no longer applies.
+        filter.Text = "a";
+        Dispatcher.UIThread.RunJobs();
+        h.Services.RecentItems.Remove(RecentKind.File, @"C:\g\omega.inc");
+        Dispatcher.UIThread.RunJobs();
+        Assert.False(filter.IsEffectivelyVisible);
+        Assert.Equal("", page.FilterText);
+        Assert.Equal(2, FileRowPaths(h).Count);
     }
 }

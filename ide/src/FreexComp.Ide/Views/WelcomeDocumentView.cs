@@ -20,16 +20,19 @@ using FreexComp.Ide.Icons;
 namespace FreexComp.Ide.Views;
 
 /// <summary>
-/// The Welcome page (welcome-page.md §1): product mark, start tiles, the recent-projects list and the start-up check
-/// box. All state lives in <see cref="WelcomeDocumentViewModel"/>; the view maps keys and pointer gestures to it and
+/// The Welcome page (welcome-page.md §1): product mark, start tiles, the recent-projects list, the recent-files list
+/// (IDE-WEL-024) and the start-up check box. All state lives in <see cref="WelcomeDocumentViewModel"/>; the view maps keys and pointer gestures to it and
 /// keeps keyboard focus on the nearest row after a change (IDE-WEL-006).
 /// </summary>
 public sealed class WelcomeDocumentView : UserControl
 {
     internal const string RowPrefix = "Welcome.Recent.Row.";
+    internal const string FileRowPrefix = "Welcome.RecentFiles.Row.";
     private const double StackBelowWidth = 700;
 
     private readonly ListBox _list;
+    private readonly ListBox _fileList;
+    private readonly Control _filesSection;
     private readonly TextBox _filter;
     private readonly TextBlock _emptyHeading = new() { TextWrapping = TextWrapping.Wrap };
     private readonly TextBlock _emptySecondary = new() { TextWrapping = TextWrapping.Wrap };
@@ -50,29 +53,12 @@ public sealed class WelcomeDocumentView : UserControl
         _filter.Bind(TextBox.TextProperty, new Binding(nameof(WelcomeDocumentViewModel.FilterText)) { Mode = BindingMode.TwoWay });
         _filter.Bind(IsVisibleProperty, new Binding(nameof(WelcomeDocumentViewModel.ShowFilter)));
 
-        _list = new ListBox
-        {
-            SelectionMode = SelectionMode.Single,
-            ItemTemplate = new FuncDataTemplate<RecentProjectRow>((row, _) => new RecentProjectRowView(this) { DataContext = row }),
-            Background = Brushes.Transparent,
-        };
-        AutomationProperties.SetAutomationId(_list, "Welcome.Recent.List");
-        _list.Bind(ItemsControl.ItemsSourceProperty, new Binding(nameof(WelcomeDocumentViewModel.Projects)));
-        _list.Bind(IsVisibleProperty, new Binding(nameof(WelcomeDocumentViewModel.HasRows)));
+        _list = CreateList("Welcome.Recent.List", nameof(WelcomeDocumentViewModel.Projects), nameof(WelcomeDocumentViewModel.HasRows));
         _list.Bind(IsEnabledProperty, new Binding(nameof(WelcomeDocumentViewModel.RowsEnabled))); // IDE-WEL-005
-        _list.ContainerPrepared += (_, e) =>
-        {
-            if (e.Container is ListBoxItem item && item.DataContext is RecentProjectRow row)
-            {
-                AutomationProperties.SetAutomationId(item, RowPrefix + row.Path);
-                AutomationProperties.SetName(item, row.Name);
-                item.MinHeight = 48;
-            }
-        };
-        _list.AddHandler(KeyDownEvent, OnListKeyDown, RoutingStrategies.Tunnel); // before the list's own keys
-        _list.AddHandler(TappedEvent, OnListTapped);
-        _list.ContextMenu = new ContextMenu();
-        _list.AddHandler(ContextRequestedEvent, OnListContextRequested, RoutingStrategies.Tunnel); // fill before it opens
+        _fileList = CreateList("Welcome.RecentFiles.List", nameof(WelcomeDocumentViewModel.Files), nameof(WelcomeDocumentViewModel.HasFiles));
+        _filesSection = new StackPanel { Margin = new Thickness(0, 24, 0, 0), Children = { SectionHead(Strings.WelcomePage_RecentFiles), _fileList } }; // space.7
+        AutomationProperties.SetAutomationId(_filesSection, "Welcome.RecentFiles");
+        _filesSection.Bind(IsVisibleProperty, new Binding(nameof(WelcomeDocumentViewModel.HasFiles)));
 
         _empty = CreateEmptyState();
         _start = CreateStartColumn();
@@ -149,7 +135,40 @@ public sealed class WelcomeDocumentView : UserControl
         if (_model.Remove(row) is { } target)
             FocusRow(target);
         else
-            _list.Focus();
+            ListOf(row).Focus();
+    }
+
+    /// <summary>The AutomationId prefix of a row: recent projects or recent files (IDE-WEL-024).</summary>
+    internal static string PrefixOf(RecentProjectRow row) => row.Kind == Core.Services.RecentKind.File ? FileRowPrefix : RowPrefix;
+
+    private ListBox ListOf(RecentProjectRow row) => row.Kind == Core.Services.RecentKind.File ? _fileList : _list;
+
+    /// <summary>One recent list (IDE-WEL-002/008): rows 48 high, its keys, clicks and context menu.</summary>
+    private ListBox CreateList(string automationId, string itemsPath, string visiblePath)
+    {
+        var list = new ListBox
+        {
+            SelectionMode = SelectionMode.Single,
+            ItemTemplate = new FuncDataTemplate<RecentProjectRow>((row, _) => new RecentProjectRowView(this) { DataContext = row }),
+            Background = Brushes.Transparent,
+        };
+        AutomationProperties.SetAutomationId(list, automationId);
+        list.Bind(ItemsControl.ItemsSourceProperty, new Binding(itemsPath));
+        list.Bind(IsVisibleProperty, new Binding(visiblePath));
+        list.ContainerPrepared += (_, e) =>
+        {
+            if (e.Container is ListBoxItem item && item.DataContext is RecentProjectRow row)
+            {
+                AutomationProperties.SetAutomationId(item, PrefixOf(row) + row.Path);
+                AutomationProperties.SetName(item, row.Name);
+                item.MinHeight = 48;
+            }
+        };
+        list.AddHandler(KeyDownEvent, OnListKeyDown, RoutingStrategies.Tunnel); // before the list's own keys
+        list.AddHandler(TappedEvent, OnListTapped);
+        list.ContextMenu = new ContextMenu();
+        list.AddHandler(ContextRequestedEvent, OnListContextRequested, RoutingStrategies.Tunnel); // fill before it opens
+        return list;
     }
 
     private void OnWindowActivated(object? sender, EventArgs e) => _model?.OnWindowActivated();
@@ -210,13 +229,14 @@ public sealed class WelcomeDocumentView : UserControl
             return;
         }
 
-        _list.SelectedItem = row;
+        var list = ListOf(row);
+        list.SelectedItem = row;
         var menu = MenuBarBuilder.CreateContextMenu(_model.RowContextMenu(row, TogglePin, Remove));
-        _list.ContextMenu!.Items.Clear();
+        list.ContextMenu!.Items.Clear();
         foreach (var item in menu.Items.Cast<Control>().ToList())
         {
             menu.Items.Remove(item);
-            _list.ContextMenu.Items.Add(item);
+            list.ContextMenu.Items.Add(item);
         }
     }
 
@@ -224,10 +244,12 @@ public sealed class WelcomeDocumentView : UserControl
     private void FocusRow(RecentProjectRow target) =>
         Dispatcher.UIThread.Post(() =>
         {
-            if (_model?.Projects.FirstOrDefault(p => p.Path == target.Path) is not { } row)
+            var rows = target.Kind == Core.Services.RecentKind.File ? _model?.Files : _model?.Projects;
+            if (rows?.FirstOrDefault(p => p.Path == target.Path) is not { } row)
                 return;
-            _list.SelectedItem = row;
-            _list.ContainerFromItem(row)?.Focus(NavigationMethod.Tab);
+            var list = ListOf(row);
+            list.SelectedItem = row;
+            list.ContainerFromItem(row)?.Focus(NavigationMethod.Tab);
         }, DispatcherPriority.Loaded);
 
     /// <summary>Two columns (280, gap space.8, rest ≥ 360); below 700 DIP they stack, Start above Recent.</summary>
@@ -324,7 +346,7 @@ public sealed class WelcomeDocumentView : UserControl
         head.VerticalAlignment = VerticalAlignment.Center;
         var top = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Margin = new Thickness(0, 0, 0, 8), Children = { head, _filter } };
         Grid.SetColumn(_filter, 1);
-        return new StackPanel { Children = { top, _list, _empty } };
+        return new StackPanel { Children = { top, _list, _empty, _filesSection } };
     }
 
     private Control CreateEmptyState()
@@ -337,7 +359,7 @@ public sealed class WelcomeDocumentView : UserControl
     }
 }
 
-/// <summary>One recent-project row (IDE-WEL-002): pin toggle, name, path, date, remove button.</summary>
+/// <summary>One recent-project row (IDE-WEL-002) or recent-file row (IDE-WEL-024): pin toggle, name, path or folder, date, remove button.</summary>
 internal sealed class RecentProjectRowView : Grid
 {
     private readonly WelcomeDocumentView _owner;
@@ -403,10 +425,11 @@ internal sealed class RecentProjectRowView : Grid
         _row?.PropertyChanged += OnRowChanged;
         if (_row is not null)
         {
-            AutomationProperties.SetAutomationId(_pin, WelcomeDocumentView.RowPrefix + _row.Path + ".Pin");
-            AutomationProperties.SetAutomationId(_remove, WelcomeDocumentView.RowPrefix + _row.Path + ".Remove");
-            AutomationProperties.SetAutomationId(_name, WelcomeDocumentView.RowPrefix + _row.Path + ".Name");
-            _path.Text = _row.Path;
+            var prefix = WelcomeDocumentView.PrefixOf(_row) + _row.Path;
+            AutomationProperties.SetAutomationId(_pin, prefix + ".Pin");
+            AutomationProperties.SetAutomationId(_remove, prefix + ".Remove");
+            AutomationProperties.SetAutomationId(_name, prefix + ".Name");
+            _path.Text = _row.Detail;
             ToolTip.SetTip(_path, _row.Path);
         }
 

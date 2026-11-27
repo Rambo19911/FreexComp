@@ -12,12 +12,12 @@ using FreexComp.Ide.Core.Settings;
 namespace FreexComp.Ide.Core.ViewModels;
 
 /// <summary>
-/// The Welcome page (welcome-page.md): start actions, the recent projects of <c>recent.json</c> and the start-up
-/// check box. Local content only (IDE-WEL-021). UI thread only.
+/// The Welcome page (welcome-page.md): start actions, the recent projects and recent files of <c>recent.json</c>
+/// (IDE-WEL-024) and the start-up check box. Local content only (IDE-WEL-021). UI thread only.
 /// </summary>
 public sealed class WelcomeDocumentViewModel : DocumentViewModel
 {
-    /// <summary>The filter box appears above this many entries (welcome-page.md §1).</summary>
+    /// <summary>The filter box appears above this many entries of both lists together (welcome-page.md §1, IDE-WEL-024).</summary>
     public const int FilterThreshold = 5;
 
     private readonly IRecentItemsService _recent;
@@ -72,6 +72,9 @@ public sealed class WelcomeDocumentViewModel : DocumentViewModel
     /// <summary>The rows shown: filtered, pinned first, then newest first (IDE-WEL-001).</summary>
     public ObservableCollection<RecentProjectRow> Projects { get; } = [];
 
+    /// <summary>IDE-WEL-024: the recent files, filtered by the same box, pinned first, then newest first.</summary>
+    public ObservableCollection<RecentProjectRow> Files { get; } = [];
+
     public string FilterText
     {
         get => _filterText;
@@ -82,10 +85,13 @@ public sealed class WelcomeDocumentViewModel : DocumentViewModel
         }
     }
 
-    /// <summary>More than <see cref="FilterThreshold"/> recent projects.</summary>
-    public bool ShowFilter => _recent.Projects.Count > FilterThreshold;
+    /// <summary>More than <see cref="FilterThreshold"/> recent projects and recent files together (IDE-WEL-024).</summary>
+    public bool ShowFilter => _recent.Projects.Count + _recent.Files.Count > FilterThreshold;
 
     public bool HasRows => Projects.Count > 0;
+
+    /// <summary>IDE-WEL-024: the "Recent files" section shows while it has a row (none recorded or none matching: hidden).</summary>
+    public bool HasFiles => Files.Count > 0;
 
     /// <summary>IDE-WEL-007: <c>Msg.Welcome.NoRecent</c> or <c>Msg.Welcome.FilterEmpty</c>; null while rows are shown.</summary>
     public string? EmptyText => _recent.Projects.Count == 0 ? Strings.Msg_Welcome_NoRecent
@@ -108,10 +114,15 @@ public sealed class WelcomeDocumentViewModel : DocumentViewModel
         private set => SetProperty(ref _isCheckingMissing, value);
     }
 
-    /// <summary>IDE-WEL-005: <c>file.openRecentProject:&lt;path&gt;</c> (a missing project asks <c>Msg.File.RecentNotFound</c>).</summary>
+    /// <summary>
+    /// IDE-WEL-005: <c>file.openRecentProject:&lt;path&gt;</c>; IDE-WEL-024: <c>file.openRecentFile:&lt;path&gt;</c> (a missing
+    /// entry asks <c>Msg.File.RecentNotFound</c>).
+    /// </summary>
     public Task OpenAsync(RecentProjectRow row)
     {
         ArgumentNullException.ThrowIfNull(row);
+        if (row.Kind == RecentKind.File)
+            return _commands.ExecuteAsync("file.openRecentFile", row.Path);
         return RowsEnabled ? _commands.ExecuteAsync("file.openRecentProject", row.Path) : Task.CompletedTask;
     }
 
@@ -122,17 +133,18 @@ public sealed class WelcomeDocumentViewModel : DocumentViewModel
     public RecentProjectRow? TogglePin(RecentProjectRow row)
     {
         ArgumentNullException.ThrowIfNull(row);
-        _recent.SetPinned(RecentKind.Project, row.Path, !row.IsPinned);
-        return Projects.FirstOrDefault(p => SamePath(p.Path, row.Path));
+        _recent.SetPinned(row.Kind, row.Path, !row.IsPinned);
+        return RowsOf(row.Kind).FirstOrDefault(p => SamePath(p.Path, row.Path));
     }
 
     /// <summary>IDE-WEL-006: removes the entry without confirmation; returns the nearest remaining row, or null.</summary>
     public RecentProjectRow? Remove(RecentProjectRow row)
     {
         ArgumentNullException.ThrowIfNull(row);
-        var index = Projects.IndexOf(row);
-        _recent.Remove(RecentKind.Project, row.Path);
-        return Projects.Count == 0 ? null : Projects[Math.Clamp(index, 0, Projects.Count - 1)];
+        var rows = RowsOf(row.Kind);
+        var index = rows.IndexOf(row);
+        _recent.Remove(row.Kind, row.Path);
+        return rows.Count == 0 ? null : rows[Math.Clamp(index, 0, rows.Count - 1)];
     }
 
     /// <summary>
@@ -145,7 +157,8 @@ public sealed class WelcomeDocumentViewModel : DocumentViewModel
         ArgumentNullException.ThrowIfNull(row);
         return
         [
-            MenuItemModel.ForCommand(Strings.WelcomePage_Menu_Open, _commands.Get("file.openRecentProject"), row.Path, MenuToggleKind.None),
+            MenuItemModel.ForCommand(Strings.WelcomePage_Menu_Open,
+                _commands.Get(row.Kind == RecentKind.File ? "file.openRecentFile" : "file.openRecentProject"), row.Path, MenuToggleKind.None),
             MenuItemModel.ForCommand(Strings.WelcomePage_Menu_OpenFolder, _commands.Get("file.showInExplorer"), row.Path, MenuToggleKind.None),
             row.IsPinned
                 ? MenuItemModel.ForAction("welcome.unpin", Strings.WelcomePage_Menu_Unpin, () => togglePin(row))
@@ -171,7 +184,7 @@ public sealed class WelcomeDocumentViewModel : DocumentViewModel
     private async Task CheckMissingCoreAsync()
     {
         var check = ++_missingCheck;
-        var paths = _recent.Projects.Select(p => p.Path).ToList();
+        var paths = _recent.Projects.Concat(_recent.Files).Select(p => p.Path).ToList();
         IsCheckingMissing = true;
         bool[] exists;
         try
@@ -192,7 +205,7 @@ public sealed class WelcomeDocumentViewModel : DocumentViewModel
                 _missing.Add(paths[i]);
         }
 
-        foreach (var row in Projects)
+        foreach (var row in Projects.Concat(Files))
             row.IsMissing = _missing.Contains(row.Path);
         IsCheckingMissing = false;
     }
@@ -221,79 +234,98 @@ public sealed class WelcomeDocumentViewModel : DocumentViewModel
             OnPropertyChanged(nameof(ShowOnStartup));
     }
 
-    /// <summary>IDE-WEL-001/007/009: the service's order, filtered; existing row objects are reused.</summary>
+    /// <summary>IDE-WEL-001/007/009/024: the service's order, filtered; existing row objects are reused.</summary>
     private void Rebuild()
     {
         var now = _clock.Now.ToLocalTime().DateTime;
-        var wanted = _recent.Projects
-            .Where(p => Matches(p.Path))
-            .Select(p => new RecentProjectRow(p.Path, p.Pinned,
-                RecentProjectRow.FormatDate(p.LastOpened.ToLocalTime().DateTime, now, CultureInfo.CurrentCulture)) { IsMissing = _missing.Contains(p.Path) })
-            .ToList();
-        for (var i = Projects.Count - 1; i >= 0; i--)
-        {
-            if (!wanted.Any(w => w.Path == Projects[i].Path))
-                Projects.RemoveAt(i);
-        }
-
-        for (var i = 0; i < wanted.Count; i++)
-        {
-            var at = IndexOf(wanted[i].Path);
-            if (at < 0)
-            {
-                Projects.Insert(i, wanted[i]);
-                continue;
-            }
-
-            Projects[at].Update(wanted[i]);
-            if (at != i)
-                Projects.Move(at, i);
-        }
-
+        Sync(Projects, RecentKind.Project, _recent.Projects, now);
+        Sync(Files, RecentKind.File, _recent.Files, now);
         OnPropertyChanged(nameof(HasRows));
+        OnPropertyChanged(nameof(HasFiles));
         OnPropertyChanged(nameof(EmptyText));
         OnPropertyChanged(nameof(EmptySecondaryText));
     }
 
-    private int IndexOf(string path)
+    private void Sync(ObservableCollection<RecentProjectRow> rows, RecentKind kind, IReadOnlyList<RecentItem> items, DateTime now)
     {
-        for (var i = 0; i < Projects.Count; i++)
+        var wanted = items
+            .Where(p => Matches(kind, p.Path))
+            .Select(p => new RecentProjectRow(kind, p.Path, p.Pinned,
+                RecentProjectRow.FormatDate(p.LastOpened.ToLocalTime().DateTime, now, CultureInfo.CurrentCulture)) { IsMissing = _missing.Contains(p.Path) })
+            .ToList();
+        for (var i = rows.Count - 1; i >= 0; i--)
         {
-            if (Projects[i].Path == path)
+            if (!wanted.Any(w => w.Path == rows[i].Path))
+                rows.RemoveAt(i);
+        }
+
+        for (var i = 0; i < wanted.Count; i++)
+        {
+            var at = IndexOf(rows, wanted[i].Path);
+            if (at < 0)
+            {
+                rows.Insert(i, wanted[i]);
+                continue;
+            }
+
+            rows[at].Update(wanted[i]);
+            if (at != i)
+                rows.Move(at, i);
+        }
+    }
+
+    private ObservableCollection<RecentProjectRow> RowsOf(RecentKind kind) => kind == RecentKind.File ? Files : Projects;
+
+    private static int IndexOf(ObservableCollection<RecentProjectRow> rows, string path)
+    {
+        for (var i = 0; i < rows.Count; i++)
+        {
+            if (rows[i].Path == path)
                 return i;
         }
 
         return -1;
     }
 
-    private bool Matches(string path) =>
+    private bool Matches(RecentKind kind, string path) =>
         _filterText.Length == 0
-        || RecentProjectRow.NameOf(path).Contains(_filterText, StringComparison.CurrentCultureIgnoreCase)
+        || RecentProjectRow.NameOf(kind, path).Contains(_filterText, StringComparison.CurrentCultureIgnoreCase)
         || path.Contains(_filterText, StringComparison.CurrentCultureIgnoreCase);
 
     private static bool SamePath(string a, string b) => string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
 }
 
-/// <summary>One row of the recent-projects list (IDE-WEL-002).</summary>
+/// <summary>One row of the recent-projects list (IDE-WEL-002) or of the recent-files list (IDE-WEL-024).</summary>
 public sealed class RecentProjectRow : ObservableObject
 {
     private bool _isPinned;
     private bool _isMissing;
     private string _dateText;
 
-    internal RecentProjectRow(string path, bool isPinned, string dateText)
+    internal RecentProjectRow(RecentKind kind, string path, bool isPinned, string dateText)
     {
+        Kind = kind;
         Path = path;
-        Name = NameOf(path);
+        Name = NameOf(kind, path);
+        Detail = kind == RecentKind.File ? System.IO.Path.GetDirectoryName(path) ?? path : path;
         _isPinned = isPinned;
         _dateText = dateText;
     }
 
-    /// <summary>The absolute project path (row AutomationId <c>Welcome.Recent.Row.&lt;path&gt;</c>).</summary>
+    /// <summary>Which list the row belongs to.</summary>
+    public RecentKind Kind { get; }
+
+    /// <summary>
+    /// The absolute path (row AutomationId <c>Welcome.Recent.Row.&lt;path&gt;</c>, recent files
+    /// <c>Welcome.RecentFiles.Row.&lt;path&gt;</c>).
+    /// </summary>
     public string Path { get; }
 
-    /// <summary>The file name without extension.</summary>
+    /// <summary>A project: the file name without extension; a file: the file name with extension (IDE-WEL-024).</summary>
     public string Name { get; }
+
+    /// <summary>The second line: a project's full path; a file's folder (IDE-WEL-024).</summary>
+    public string Detail { get; }
 
     public string DateText
     {
@@ -348,7 +380,8 @@ public sealed class RecentProjectRow : ObservableObject
         return lastOpened.ToString(lastOpened.Year == now.Year ? "d MMM" : "d MMM yyyy", culture);
     }
 
-    internal static string NameOf(string path) => System.IO.Path.GetFileNameWithoutExtension(path);
+    internal static string NameOf(RecentKind kind, string path) =>
+        kind == RecentKind.File ? System.IO.Path.GetFileName(path) : System.IO.Path.GetFileNameWithoutExtension(path);
 
     internal void Update(RecentProjectRow from)
     {

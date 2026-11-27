@@ -23,8 +23,8 @@
   <SolidColorBrush x:Key="FxcBgPressedBrush" Color="#3A423E" />
   <Color x:Key="FxcBgSelected">#1F4D46</Color>
   <SolidColorBrush x:Key="FxcBgSelectedBrush" Color="#1F4D46" />
-  <Color x:Key="FxcBgSelectedInactive">#333A37</Color>
-  <SolidColorBrush x:Key="FxcBgSelectedInactiveBrush" Color="#333A37" />
+  <Color x:Key="FxcBgSelectedInactive">#3D4441</Color>
+  <SolidColorBrush x:Key="FxcBgSelectedInactiveBrush" Color="#3D4441" />
   <Color x:Key="FxcBgOverlay">#80000000</Color>
   <SolidColorBrush x:Key="FxcBgOverlayBrush" Color="#80000000" />
   <Color x:Key="FxcBorderDefault">#3A423E</Color>

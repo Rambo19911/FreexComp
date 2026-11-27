@@ -205,8 +205,14 @@ public sealed class InheritedFormInspectorTests
         Assert.Equal(Strings.Inspector_ShowInheritedHandler, ShowInherited().Label);
         Assert.False(ShowInherited().IsDisabled);
         var form = designer.CurrentFormText();
+        var baseUnit = Path.ChangeExtension(InheritedDesign.BaseFormPath, ".pas");
+        _f.File(baseUnit, InheritedDesign.BaseUnit);
+        _f.File(InheritedDesign.BaseFormPath, InheritedDesign.BaseDialog);
         ShowInherited().Run!();
         Assert.Equal([(InheritedDesign.BaseFormPath, "OkButtonClick")], requests);
+        await ((DocumentService)_f.Services.Documents).InheritedHandlerOpening; // I-320: await the opening, not left to run late
+        var ancestor = Assert.IsType<FormDocumentViewModel>(_f.Services.Documents.ActiveDocument);
+        Assert.Equal((baseUnit, DocumentView.Code), (ancestor.FilePath, ancestor.ActiveView));
         Assert.Equal(form, designer.CurrentFormText());
 
         // DSG-OI-126: the inherited name is no change; a different one stores an override and an ordinary stub.
