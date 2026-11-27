@@ -175,4 +175,67 @@ public sealed partial class PcuTests
         Assert.Contains("function TList<T>.TBranch<K>.Both: string;", body, StringComparison.Ordinal);
         PcuImportTests.AssertSameIrAgainstPcu(NestedGenericUnit, Program);
     }
+
+    /// <summary>
+    /// CMP-1398 (C-375): the body pieces of a generic hold the implementations of its class constructor and class destructor and of
+    /// those of its nested class, so a program against the <c>.pcu</c> defines, claims and runs the instances exactly as against
+    /// the source.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1398")]
+    [Trait("Req", "LANG-790")]
+    public void GenericClassConstructorFromPcu_GivesTheSameIrAsAgainstTheSource()
+    {
+        const string Unit = """
+            unit U;
+            interface
+            type
+              TRegistry<T> = class
+              public
+                class var Count: Integer;
+                class constructor Create;
+                class destructor Destroy;
+                type
+                  TEntry = class
+                    class var Seen: Boolean;
+                    class constructor Init;
+                  end;
+              end;
+            implementation
+            class constructor TRegistry<T>.Create;
+            begin
+              Count := Count + SizeOf(T);
+            end;
+            class destructor TRegistry<T>.Destroy;
+            begin
+              Writeln('cdtor ', SizeOf(T));
+            end;
+            class constructor TRegistry<T>.TEntry.Init;
+            begin
+              Seen := True;
+            end;
+            end.
+            """;
+        const string Program = """
+            program P;
+            uses U;
+            begin
+              Writeln(TRegistry<Integer>.Count, TRegistry<Byte>.TEntry.Seen);
+            end.
+            """;
+
+        var pcu = Pcu("U", Files(u: Unit, program: Program));
+        var registry = ((JsonArray)pcu["interface"]!["types"]!).Single(t => (string?)t!["name"] == "TRegistry")!;
+        var body = (string)pcu["genericBodies"]![(int)registry["body"]!]!["text"]!;
+        Assert.Contains("class constructor TRegistry<T>.Create;", body, StringComparison.Ordinal);
+        Assert.Contains("class destructor TRegistry<T>.Destroy;", body, StringComparison.Ordinal);
+        Assert.Contains("class constructor TRegistry<T>.TEntry.Init;", body, StringComparison.Ordinal);
+        var sources = Files(u: Unit, program: Program);
+        Assert.True(Compilation.Create(Options(), [], sources).Emit(new EmitOptions { Stage = EmitStage.Ll }, TestContext.Current.CancellationToken).Success);
+        var ir = sources.ReadAllText(@"C:\p\obj\P.ll");
+        Assert.Contains("call void @\"U.TRegistry<Integer>.$cctor\"()", ir, StringComparison.Ordinal);
+        Assert.Contains("call void @\"U.TRegistry<Byte>.TEntry.$cctor\"()", ir, StringComparison.Ordinal);
+        PcuImportTests.AssertSameIrAgainstPcu(Unit, Program);
+    }
 }

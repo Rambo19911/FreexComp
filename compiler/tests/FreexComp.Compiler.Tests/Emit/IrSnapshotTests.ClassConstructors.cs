@@ -93,6 +93,79 @@ public sealed partial class IrSnapshotTests
 
         """;
 
+    /// <summary>C-375: an own class with a class constructor and the instance <c>TBox&lt;Integer&gt;</c> of a generic with both.</summary>
+    internal const string ClassConstructorsOfInstancesSource = """
+        unit M;
+        interface
+        type
+          TBox<T> = class
+            class var Size: Integer;
+            class constructor Create;
+            class destructor Destroy;
+          end;
+          TA = class
+            class constructor Create;
+          end;
+        var
+          Box: TBox<Integer>;
+        implementation
+        class constructor TBox<T>.Create;
+        begin
+          Size := SizeOf(T);
+        end;
+        class destructor TBox<T>.Destroy;
+        begin
+          Size := 0;
+        end;
+        class constructor TA.Create;
+        begin
+          TBox<Integer>.Size := 1;
+        end;
+        end.
+        """;
+
+    /// <summary>
+    /// CMP-1395, CMP-1397 (C-375): the <c>$cctor</c> / <c>$cdtor</c> of the instance are <c>linkonce_odr</c> in their own comdats, its
+    /// image-wide claim <c>$ccstate</c> is a <c>linkonce_odr</c> byte with its comdat; the constructor part stores the claim before
+    /// the call and the done flag after it, the destructor part tests the done flag only.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1395")]
+    [Trait("Req", "CMP-1397")]
+    [Trait("Req", "LANG-790")]
+    public void ClassConstructorsOfInstances()
+    {
+        var text = Emit(ClassConstructorsOfInstancesSource);
+        Snapshot.Verify("ClassConstructorsOfInstances", text);
+        Assert.Contains("$\"M.TBox<Integer>.$ccstate\" = comdat any\n", text);
+        Assert.Contains("@\"M.TBox<Integer>.$ccstate\" = linkonce_odr global i8 0, comdat, align 1\n", text);
+        Assert.Contains("@\"M.$ccdone\" = internal global [2 x i8] zeroinitializer, align 1\n", text);
+        Assert.Contains("define linkonce_odr void @\"M.TBox<Integer>.$cctor\"() #0 comdat {", text);
+        Assert.Contains("define linkonce_odr void @\"M.TBox<Integer>.$cdtor\"() #0 comdat {", text);
+        Assert.Contains("define internal void @\"M.TA.$cctor\"() #0 {", text);
+        Assert.Contains(
+            "  call void @\"M.TA.$cctor\"()\n" +
+            "  store i8 1, ptr @\"M.$ccdone\", align 1\n" +
+            "  %cc1.state = load i8, ptr @\"M.TBox<Integer>.$ccstate\", align 1\n" +
+            "  %cc1.free = icmp eq i8 %cc1.state, 0\n" +
+            "  br i1 %cc1.free, label %cc1.run, label %cc1.done\n" +
+            "cc1.run:\n" +
+            "  store i8 1, ptr @\"M.TBox<Integer>.$ccstate\", align 1\n" +
+            "  call void @\"M.TBox<Integer>.$cctor\"()\n" +
+            "  store i8 1, ptr getelementptr inbounds ([2 x i8], ptr @\"M.$ccdone\", i64 0, i64 1), align 1\n" +
+            "  br label %cc1.done\n" +
+            "cc1.done:\n", text);
+        Assert.Contains(
+            "  %cd1.done = load i8, ptr getelementptr inbounds ([2 x i8], ptr @\"M.$ccdone\", i64 0, i64 1), align 1\n" +
+            "  %cd1.ran = icmp ne i8 %cd1.done, 0\n" +
+            "  br i1 %cd1.ran, label %cd1.run, label %cd1.skip\n" +
+            "cd1.run:\n" +
+            "  call void @\"M.TBox<Integer>.$cdtor\"()\n" +
+            "  br label %cd1.skip\n" +
+            "cd1.skip:\n", text);
+    }
+
     /// <summary>
     /// CMP-1395…1397: <c>$ccdone</c>, internal <c>$cctor</c> / <c>$cdtor</c> with fixed suffixes, the constructor parts in <c>$init</c>
     /// before the initialization statements, the destructor parts in reverse order in <c>$final</c> after the finalization statements

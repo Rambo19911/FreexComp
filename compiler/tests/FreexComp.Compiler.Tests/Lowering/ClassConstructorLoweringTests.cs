@@ -105,4 +105,158 @@ public sealed class ClassConstructorLoweringTests
         Assert.Contains("{ ptr null, ptr @\"P.$final\" }]", ir);                            // the program's own entry, last
         Assert.Contains("define internal void @\"P.$final\"()", ir);
     }
+
+    /// <summary>The display names of the module's class constructor items in run order, instance items marked.</summary>
+    private static string[] RunOrderOf(string source)
+    {
+        var (result, _) = Bind(source);
+        Assert.Empty(Format(result.Diagnostics));
+        return [.. Lowerer.Lower(result).ClassConstructors.Select(i => TypeMembers.DisplayName(i.Type) + (i.IsInstance ? " (instance)" : ""))];
+    }
+
+    /// <summary>
+    /// C-375 (LANG-790 c): an ancestor is a hard prerequisite — the instance <c>TBase&lt;Integer&gt;</c> runs before the own type
+    /// <c>TD</c> derived from it (own items come first in S), and the instance <c>TBase&lt;Byte&gt;</c> before the instance
+    /// <c>TAlpha&lt;Byte&gt;</c> derived from it, although the link-name order puts <c>TAlpha</c> first.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "LANG-790")]
+    [Trait("Req", "CMP-1396")]
+    public void Order_AncestorInstanceBeforeDescendant()
+    {
+        Assert.Equal(["TBase<Byte> (instance)", "TAlpha<Byte> (instance)", "TBase<Integer> (instance)", "TD"], RunOrderOf("""
+            unit M;
+            interface
+            type
+              TBase<T> = class class constructor Create; class destructor Destroy; end;
+              TAlpha<T> = class(TBase<T>) class constructor Create; end;
+              TD = class(TBase<Integer>) class constructor Create; end;
+            var
+              A: TAlpha<Byte>;
+              B: TBase<Byte>;
+            implementation
+            class constructor TBase<T>.Create; begin end;
+            class destructor TBase<T>.Destroy; begin end;
+            class constructor TAlpha<T>.Create; begin end;
+            class constructor TD.Create; begin end;
+            end.
+            """));
+    }
+
+    /// <summary>
+    /// C-375 (LANG-790 c, the spec's example with names that make the soft edge visible): an instance occurring in the type
+    /// arguments of another runs first — <c>TBox&lt;Integer&gt;</c> before <c>TAwrap&lt;TBox&lt;Integer&gt;&gt;</c>, whose link name sorts
+    /// before it; the own type <c>TA</c> comes first; an instance whose generic has neither (<c>TPlain&lt;Byte&gt;</c>) is no item.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "LANG-790")]
+    [Trait("Req", "CMP-1396")]
+    public void Order_TypeArgumentInstanceFirst()
+    {
+        Assert.Equal(["TA", "TBox<Integer> (instance)", "TAwrap<TBox<Integer>> (instance)", "TBox<TA> (instance)"], RunOrderOf("""
+            unit M;
+            interface
+            type
+              TA = class class constructor Create; class destructor Destroy; end;
+              TBox<T> = class class constructor Create; class destructor Destroy; end;
+              TAwrap<T> = class class constructor Create; class destructor Destroy; end;
+              TPlain<T> = class X: T; end;
+            var
+              A: TBox<TA>;
+              B: TBox<Integer>;
+              C: TAwrap<TBox<Integer>>;
+              D: TPlain<Byte>;
+            implementation
+            class constructor TA.Create; begin end;
+            class destructor TA.Destroy; begin end;
+            class constructor TBox<T>.Create; begin end;
+            class destructor TBox<T>.Destroy; begin end;
+            class constructor TAwrap<T>.Create; begin end;
+            class destructor TAwrap<T>.Destroy; begin end;
+            end.
+            """));
+    }
+
+    /// <summary>
+    /// C-375 (LANG-790 c): <c>TC&lt;T&gt; = class(TZBox&lt;TC&lt;T&gt;&gt;)</c> — <c>TC&lt;Integer&gt;</c> has <c>TZBox&lt;TC&lt;Integer&gt;&gt;</c> as hard
+    /// prerequisite, which has <c>TC&lt;Integer&gt;</c> as soft one; the cycle is broken by the hard edge, so the ancestor runs first
+    /// although its link name sorts after its descendant's.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "LANG-790")]
+    [Trait("Req", "CMP-1396")]
+    public void Order_HardEdgeBreaksCycle()
+    {
+        Assert.Equal(["TZBox<TC<Integer>> (instance)", "TC<Integer> (instance)"], RunOrderOf("""
+            unit M;
+            interface
+            type
+              TZBox<T> = class class constructor Create; end;
+              TC<T> = class(TZBox<TC<T>>) class constructor Create; class destructor Destroy; end;
+            var
+              C: TC<Integer>;
+            implementation
+            class constructor TZBox<T>.Create; begin end;
+            class constructor TC<T>.Create; begin end;
+            class destructor TC<T>.Destroy; begin end;
+            end.
+            """));
+    }
+
+    /// <summary>
+    /// C-375 (CMP-1396, C-228 rule): the instance items of a module are exactly the instances whose functions it defines — the
+    /// generic's declaring unit <c>G</c>, which reaches <c>TBox&lt;Integer&gt;</c> only through the signature of
+    /// <c>TMaker&lt;T&gt;.Make</c>, has none; <c>U</c> (which uses <c>TMaker&lt;Integer&gt;</c>, so the <c>TBox&lt;Integer&gt;</c> of its signature,
+    /// and <c>TBox&lt;TImpl&gt;</c> in its implementation part) and the program (<c>TBox&lt;Integer&gt;</c>, <c>TBox&lt;TLocal&gt;</c>) claim and
+    /// run what they define, nothing of another module's private types.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "CMP-1396")]
+    [Trait("Req", "LANG-790")]
+    public void InstanceItems_OnlyInstancesTheModuleDefines()
+    {
+        const string g = """
+            unit G;
+            interface
+            type
+              TBox<T> = class class constructor Create; class destructor Destroy; end;
+              TMaker<T> = class function Make: TBox<T>; end;
+            implementation
+            class constructor TBox<T>.Create; begin end;
+            class destructor TBox<T>.Destroy; begin end;
+            function TMaker<T>.Make: TBox<T>; begin Result := nil end;
+            end.
+            """;
+        const string u = """
+            unit U;
+            interface
+            uses G;
+            var M: TMaker<Integer>;
+            implementation
+            type TImpl = record X: Integer; end;
+            var B: TBox<TImpl>;
+            end.
+            """;
+        const string program = """
+            program P;
+            uses G, U;
+            type TLocal = record X: Byte; end;
+            var A: TBox<Integer>; L: TBox<TLocal>;
+            begin end.
+            """;
+        var fs = new InMemoryFileSystem().Add(@"C:\p\P.pas", program).Add(@"C:\p\G.pas", g).Add(@"C:\p\U.pas", u).AddSystem();
+        var options = new CompilationOptions { MainFile = @"C:\p\P.pas", RtlDirectory = @"C:\rtl", ObjectDirectory = @"C:\p\obj" };
+        var result = Compilation.Create(options, [], fs).Emit(new EmitOptions { Stage = EmitStage.Ll }, TestContext.Current.CancellationToken);
+        Assert.True(result.Success, string.Join("\n", result.Diagnostics.Select(d => d.ToText())));
+
+        static string[] Matches(string text, string pattern) =>
+            [.. System.Text.RegularExpressions.Regex.Matches(text, pattern).Select(m => m.Groups[1].Value).Distinct().Order(StringComparer.Ordinal)];
+        foreach (var (module, expected) in new[] { ("G", Array.Empty<string>()), ("U", ["G.TBox<Integer>", "G.TBox<U.TImpl>"]), ("P", ["G.TBox<Integer>", "G.TBox<P.TLocal>"]) })
+        {
+            var ir = fs.ReadAllText(@"C:\p\obj\" + module + ".ll");
+            Assert.Equal(expected, Matches(ir, "%cc\\d+\\.state = load i8, ptr @\"([^\"]+)\\.\\$ccstate\""));      // claimed and run here
+            Assert.Equal(expected, Matches(ir, "define linkonce_odr void @\"([^\"]+)\\.\\$cctor\"\\(\\)"));      // defined here
+            Assert.Equal(expected.Length != 0, ir.Contains("$ccdone", StringComparison.Ordinal));
+        }
+    }
 }

@@ -2075,6 +2075,7 @@ public sealed partial class IrSnapshotTests
         ["ByteStrings"] = ByteStringsSource,
         ["ClassConstructors"] = ClassConstructorsSource,
         ["DebugInfo_ClassConstructor"] = ClassConstructorDebugSource,
+        ["ClassConstructorsOfInstances"] = ClassConstructorsOfInstancesSource,
         ["DynArrays"] = DynArraysSource,
         ["StringFunctions"] = StringFunctionsSource,
         ["Strings"] = StringsSource,

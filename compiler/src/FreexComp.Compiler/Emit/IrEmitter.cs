@@ -320,6 +320,12 @@ internal static class IrEmitter
             // CMP-1397 (C-374): element k = 1 once item k took its turn and its class constructor (if any) returned normally
             writer.DefineGlobal(new IrGlobalDefinition(Mangler.ClassConstructorsDone(unit.Unit.Name), IrLinkage.Internal, IsConstant: false,
                 new IrZeroConstant(new ArrayIrType(unit.ClassConstructors.Length, IrType.I8)), Alignment: 1));
+            foreach (var item in unit.ClassConstructors.Where(i => i.IsInstance))
+            {
+                // CMP-1397 (C-375): the image-wide claim of an instance, identical in every defining module (CMP-365)
+                writer.DefineGlobal(new IrGlobalDefinition(Mangler.ClassConstructorState(item.Type), IrLinkage.LinkOnceOdr, IsConstant: false,
+                    new IrIntConstant(IrType.I8, 0), Alignment: 1));
+            }
         }
 
         if (!unit.ThreadVars.IsEmpty)
@@ -2635,8 +2641,36 @@ internal sealed class FunctionEmitter
     /// </summary>
     private void AtHeadingOf(MethodSymbol method) => SetLocation(LocationOf(method.MethodDeclaration.Heading.FirstToken()));
 
-    /// <summary>CMP-1397: <c>call void @"&lt;type&gt;.$cctor"()</c> (an invoke inside an EH scope), then the item's done flag.</summary>
+    /// <summary>
+    /// CMP-1397: <c>call void @"&lt;type&gt;.$cctor"()</c> (an invoke inside an EH scope), then the item's done flag. An instance item
+    /// (C-375) runs only when its image-wide claim is still free: the claim is stored before the call (no later module runs it again,
+    /// also when it raises), the done flag after it.
+    /// </summary>
     private void ClassConstructorRun(LClassConstructorRun run)
+    {
+        IrBlock? done = null;
+        if (run.Item.IsInstance)
+        {
+            var k = run.Index.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            var claim = new IrGlobal(Mangler.ClassConstructorState(run.Item.Type));
+            var state = _w.Load(Unique("cc" + k + ".state"), IrType.I8, claim, 1);
+            var free = _w.ICmp(Unique("cc" + k + ".free"), IrIntPredicate.Eq, state, new IrIntConstant(IrType.I8, 0));
+            IrBlock call = new(Unique("cc" + k + ".run"));
+            done = new(Unique("cc" + k + ".done"));
+            _w.CondBr(free, call, done);
+            Start(call);
+            _w.Store(new IrIntConstant(IrType.I8, 1), claim, 1);
+        }
+
+        ClassConstructorCall(run);
+        if (done is not null)
+        {
+            _w.Br(done);
+            Start(done);
+        }
+    }
+
+    private void ClassConstructorCall(LClassConstructorRun run)
     {
         if (run.Item.Constructor is { } constructor)
         {

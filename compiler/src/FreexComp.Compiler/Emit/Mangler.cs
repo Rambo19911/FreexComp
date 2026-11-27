@@ -69,6 +69,9 @@ internal static class Mangler
     /// <summary>CMP-1397 (C-374): the done flags of the module's class constructor items, <c>U.$ccdone</c> (<c>[n x i8]</c>).</summary>
     public static LinkName ClassConstructorsDone(string unitName) => new(unitName + ".$ccdone", AlwaysQuote: true);
 
+    /// <summary>CMP-1397 (C-375): the image-wide claim byte of a generic instance's class constructor, <c>G.TBox&lt;Integer&gt;.$ccstate</c>.</summary>
+    public static LinkName ClassConstructorState(TypeSymbol instance) => new(Qualified(instance) + ".$ccstate", AlwaysQuote: true);
+
     /// <summary>CMP-415: the unit's <c>{$FORM}</c> table and its blob number <paramref name="index"/> (0-based, directive order).</summary>
     public static LinkName FormTable(UnitSymbol unit) => new(unit.Name + ".$forms", AlwaysQuote: true);
 

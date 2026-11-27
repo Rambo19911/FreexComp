@@ -1,0 +1,18 @@
+cctor 4
+entry cctor 4
+cctor 8
+entry cctor 8
+URegA init
+cctor 1
+entry cctor 1
+URegB init
+main
+Runs = 3
+Count = 1 1 1
+Entries = 1 1 1
+A uses 2, B uses 3
+URegB final
+cdtor 1
+URegA final
+cdtor 8
+cdtor 4

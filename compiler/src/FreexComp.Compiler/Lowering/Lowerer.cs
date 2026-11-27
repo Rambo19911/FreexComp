@@ -56,23 +56,76 @@ internal static class Lowerer
     }
 
     /// <summary>
-    /// CMP-1396, LANG-790 c (C-374): the module's own items — its non-generic types (unit level or nested, interface part then
-    /// implementation part, an enclosing type before its nested ones, depth first) that have a class constructor or a class
-    /// destructor — in run order: a stable topological order in which every ancestor among the items comes first. The instance
-    /// items of generic types (LANG-790 a, soft prerequisites) are C-375.
+    /// CMP-1396, LANG-790 c: the module's items S in run order. S = first its own non-generic types (unit level or nested,
+    /// interface part then implementation part, an enclosing type before its nested ones, depth first) that have a class
+    /// constructor or a class destructor (C-374); then (C-375) the generic instances the module defines — those in
+    /// <see cref="UnitSymbol.UsedInstances"/> (C-228 rule) and their nested types, exactly the instances the emitter defines —
+    /// whose generic declares one, by link-name prefix (CMP-1390, ordinal). The run order is a stable topological order of S:
+    /// ancestors are hard prerequisites, the instances that enclose an item or occur in its type arguments soft ones.
     /// </summary>
     public static ImmutableArray<ClassConstructorItem> ClassConstructorItems(UnitSymbol unit)
     {
-        var items = DeclarationBinder.OwnTypesOf(unit)
-            .Where(t => TypeMembers.EnclosingInstance(t) is null && TypeMembers.ClassConstructors(t).Any())
-            .Select(t => t switch
+        TypeSymbol[] used;
+        lock (unit.UsedInstances)
+        {
+            used = [.. unit.UsedInstances.OfType<TypeSymbol>()];
+        }
+
+        var own = DeclarationBinder.OwnTypesOf(unit).Where(t => TypeMembers.EnclosingInstance(t) is null)
+            .Select(t => ItemOf(t, isInstance: false)).OfType<ClassConstructorItem>();
+        var instances = used.SelectMany(TypeMembers.SelfAndNestedTypes).Where(t => t.TypeKind != TypeKind.Error).Distinct()
+            .Select(t => ItemOf(t, isInstance: true)).OfType<ClassConstructorItem>()
+            .OrderBy(i => Mangler.Qualified(i.Type), StringComparer.Ordinal);
+        return RunOrder([.. own, .. instances], item => item.Type is ClassTypeSymbol c ? c.SelfAndAncestors().Skip(1) : [], item => InstancesIn(item.Type));
+    }
+
+    /// <summary>The item of a class or record that has a class constructor or a class destructor; null for any other type.</summary>
+    private static ClassConstructorItem? ItemOf(TypeSymbol type, bool isInstance) => type switch
+    {
+        ClassTypeSymbol c when c.ClassConstructor is not null || c.ClassDestructor is not null =>
+            new ClassConstructorItem(c, c.ClassConstructor, c.ClassDestructor, isInstance),
+        RecordTypeSymbol r when r.ClassConstructor is not null || r.ClassDestructor is not null =>
+            new ClassConstructorItem(r, r.ClassConstructor, r.ClassDestructor, isInstance),
+        _ => null,
+    };
+
+    /// <summary>
+    /// LANG-790 c (C-375): the soft prerequisites of an item — the instances (LANG-790 a: also the nested types of instances) that
+    /// enclose <paramref name="type"/> or occur, at any depth, in the type arguments of it or of its enclosing types.
+    /// </summary>
+    private static List<TypeSymbol> InstancesIn(TypeSymbol type)
+    {
+        var found = new List<TypeSymbol>();
+        var seen = new HashSet<TypeSymbol> { type };
+        var pending = new Queue<TypeSymbol>([type]);
+        void Reach(TypeSymbol reached)
+        {
+            if (seen.Add(reached))
             {
-                ClassTypeSymbol c => new ClassConstructorItem(c, c.ClassConstructor, c.ClassDestructor, IsInstance: false),
-                RecordTypeSymbol r => new ClassConstructorItem(r, r.ClassConstructor, r.ClassDestructor, IsInstance: false),
-                _ => throw new InvalidOperationException("Only classes and records have class constructors."),
-            })
-            .ToList();
-        return RunOrder(items, item => item.Type is ClassTypeSymbol c ? c.SelfAndAncestors().Skip(1) : [], _ => []);
+                if (TypeMembers.EnclosingInstance(reached) is not null)
+                {
+                    found.Add(reached);
+                }
+
+                pending.Enqueue(reached);
+            }
+        }
+
+        while (pending.Count > 0)
+        {
+            var next = pending.Dequeue();
+            foreach (var enclosing in TypeMembers.EnclosingTypes(next))
+            {
+                Reach(enclosing);
+            }
+
+            foreach (var argument in next.TypeArguments)
+            {
+                Reach(argument);
+            }
+        }
+
+        return found;
     }
 
     /// <summary>
