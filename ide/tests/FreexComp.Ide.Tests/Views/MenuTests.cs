@@ -96,6 +96,33 @@ public sealed partial class MenuTests
         view.Close();
     }
 
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-KEY-013")]
+    [Trait("Req", "UI-MENU-005")]
+    public async Task ChordShortcutTextInMenuAndTooltip()
+    {
+        await using var h = await HeadlessHarness.StartAsync();
+        var edit = Item(h, AutomationIds.TopMenu("Edit"));
+        edit.Open();
+        Dispatcher.UIThread.RunJobs();
+        var selection = Item(h, AutomationIds.Menu("edit.formatSelection"));
+
+        // The chord is the second default gesture: the menu shows the first (UI-KEY-005).
+        Assert.Equal("Shift+Alt+S", ShownGesture(selection));
+
+        // A chord as the first gesture is shown whole, both keys, as it is written in keymap.json.
+        h.Services.Keymap.SetGestures("edit.formatSelection", [CoreGesture.Parse("Ctrl+K, Ctrl+F")]);
+        Assert.Equal("Ctrl+K, Ctrl+F", ShownGesture(selection));
+        Assert.Null(selection.HotKey);
+        Assert.Null(selection.InputGesture);
+        edit.Close();
+
+        // Tooltips use the same text.
+        var saveAll = h.Find<Button>(AutomationIds.ToolBarButton("file.saveAll"));
+        h.Services.Keymap.SetGestures("file.saveAll", [CoreGesture.Parse("Ctrl+K, S")]);
+        Assert.Equal("Save All (Ctrl+K, S)", ToolTip.GetTip(saveAll));
+    }
+
     /// <summary>The shortcut text the menu item's template shows.</summary>
     private static string ShownGesture(MenuItem item)
     {

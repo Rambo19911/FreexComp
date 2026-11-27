@@ -14,6 +14,7 @@ public static class KeyMapping
     private static readonly HashSet<string> Punctuation = new([",", ".", "/", ";", "'", "[", "]", "\\", "-", "=", "`"], StringComparer.Ordinal);
     private static readonly Dictionary<Key, string> ToName = ToKey.ToDictionary(p => p.Value, p => p.Key);
 
+    /// <summary>The toolkit key of a single key; of a chord, its first key (press <c>Second</c> after it).</summary>
     public static (Key Key, KeyModifiers Modifiers) ToAvalonia(CoreGesture gesture) =>
         (ToKey[gesture.Key], ToAvalonia(gesture.Modifiers));
 

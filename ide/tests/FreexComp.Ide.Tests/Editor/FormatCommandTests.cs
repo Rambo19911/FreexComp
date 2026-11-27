@@ -158,6 +158,38 @@ public sealed class FormatCommandTests
 
     [AvaloniaFact(Timeout = 30000)]
     [Trait("Req", "IDE-ED-154")]
+    [Trait("Req", "UI-KEY-006")]
+    [Trait("Req", "UI-KEY-010")]
+    public async Task FormatSelectionByChord()
+    {
+        const string Waiting = "Ctrl+K was pressed. Waiting for the second key…";
+        await using var h = await HeadlessHarness.StartAsync(o => o.InitialFiles["Messy.pas"] = Messy);
+        var doc = await OpenAsync(h);
+        var start = Messy.IndexOf("y:=1", StringComparison.Ordinal);
+        var end = Messy.IndexOf("y:=y+1;", StringComparison.Ordinal) + "y:=y+1;".Length;
+        Assert.True(h.Find<TextEditor>("Editor.Messy.pas").TextArea.Focus());
+        Dispatcher.UIThread.RunJobs();
+        doc.Selection = new TextSelection(start, end);
+        Dispatcher.UIThread.RunJobs();
+
+        // Ctrl+K in the editor: nothing happens to the text, the status bar says that the IDE waits (I-342).
+        h.Press("Ctrl+K");
+        Assert.Equal(Messy, doc.Buffer.Text);
+        Assert.True(h.Services.Commands.IsChordPending);
+        Assert.Equal(Waiting, h.Status.Message);
+
+        // Ctrl+F completes the chord: Format Selection runs (and not Find, the command of Ctrl+F alone).
+        h.Press("Ctrl+F");
+        var expected = Formatted(Messy, FormatProfile.Default, (start, end - start));
+        await h.WaitForAsync(() => doc.Buffer.Text == expected, "the selection formatted by the chord");
+        Assert.False(h.Services.Commands.IsChordPending);
+        Assert.NotEqual(Waiting, h.Status.Message);
+        await h.ExecuteAsync("edit.undo");
+        Assert.Equal(Messy, doc.Buffer.Text); // one undo step, as from the single-key shortcut
+    }
+
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "IDE-ED-154")]
     public async Task RefusedShowsStatus()
     {
         var broken = Messy.Replace("y:=y+1;", "y:=;", StringComparison.Ordinal);

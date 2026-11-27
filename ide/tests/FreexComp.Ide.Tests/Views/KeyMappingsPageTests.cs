@@ -201,10 +201,13 @@ public sealed class KeyMappingsPageTests
 
         Assert.True(dlg.Window.IsVisible); // Enter in the capture box did not press OK
 
-        // Accepted: function keys, Ctrl/Alt combinations.
+        // Accepted: function keys, Ctrl/Alt combinations. (I-342: a key pressed after an accepted key makes a chord of
+        // the two, so the box is cleared between the keys; a refused key, as above, is replaced by the next one.)
         foreach (var accepted in new[] { "F7", "Ctrl+K", "Alt+K", "Shift+F7" })
         {
+            Capture(dlg, "Backspace");
             Capture(dlg, accepted);
+            Assert.Equal(accepted, dlg.Find<TextBox>("NewShortcut").Text);
             Assert.Null(dlg.ErrorText("NewShortcut"));
             Assert.True(dlg.Find<Button>("Assign").IsEnabled, accepted);
         }
@@ -221,6 +224,7 @@ public sealed class KeyMappingsPageTests
         Assert.True(dlg.Find<Button>("Assign").IsEnabled);
 
         // Tab is not captured: it moves the focus on.
+        Capture(dlg, "Backspace"); // I-342: without it Ctrl+K would be the second key of the chord "K, Ctrl+K"
         Capture(dlg, "Ctrl+K");
         dlg.Press("Tab");
         Assert.Equal("Ctrl+K", dlg.Find<TextBox>("NewShortcut").Text);

@@ -73,6 +73,13 @@ public sealed class DialogDriver(DialogWindow window, string dialogName)
     public void Press(string gesture)
     {
         var parsed = CoreGesture.Parse(gesture);
+        if (parsed.Second is { } second)
+        {
+            Press(parsed.First.ToString()); // a chord (UI-KEY-006) is pressed as its two keys
+            Press(second.ToString());
+            return;
+        }
+
         var (key, modifiers) = KeyMapping.ToAvalonia(parsed);
         var raw = (modifiers.HasFlag(KeyModifiers.Control) ? RawInputModifiers.Control : RawInputModifiers.None)
                   | (modifiers.HasFlag(KeyModifiers.Shift) ? RawInputModifiers.Shift : RawInputModifiers.None)

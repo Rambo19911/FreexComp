@@ -56,7 +56,7 @@ internal static class KeyMappingsPageView
         {
             if (!model.ByShortcut || CaptureKey(e) is not { } captured)
                 return;
-            model.Filter = captured.Gesture?.ToString() ?? "";
+            model.CaptureFilterKey(captured.Gesture); // UI-KEY-024: a second key after a chord's first key searches the chord
             filter.Text = model.Filter;
         }, RoutingStrategies.Tunnel);
         var byShortcut = new CheckBox { Content = Strings.Options_Keys_ByShortcut, Margin = new Thickness(16, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
@@ -81,23 +81,26 @@ internal static class KeyMappingsPageView
         frame.Bind(Border.BorderBrushProperty, frame.GetResourceObservable("FxcBorderDefaultBrush"));
         frame.Bind(Border.BackgroundProperty, frame.GetResourceObservable("FxcBgEditorBrush"));
 
-        // Current shortcuts of the selected command.
+        // Current shortcuts of the selected command: the label, then the chips. One wrapping row (I-342): a chord's chip
+        // is wide, and chips that do not fit beside the label go to the next line instead of leaving the page.
         var currentLabel = Text("", "body");
-        currentLabel.Margin = new Thickness(0, 12, 8, 0);
+        currentLabel.Margin = new Thickness(0, 8, 8, 0);
         AutomationProperties.SetAutomationId(currentLabel, Id("KeyMappings.CurrentLabel"));
-        var chips = new WrapPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 0) };
-        var currentRow = new StackPanel { Orientation = Orientation.Horizontal };
+        var currentRow = new WrapPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 4, 0, 0) };
         currentRow.Children.Add(currentLabel);
-        currentRow.Children.Add(chips);
 
         // Capture box, Assign, Reset Command; messages under it.
-        var capture = new TextBox { IsReadOnly = true, Width = 160, VerticalAlignment = VerticalAlignment.Center };
+        var capture = new TextBox { IsReadOnly = true, Width = 196, VerticalAlignment = VerticalAlignment.Center }; // a chord fits, and the row stays one line (I-342)
         AutomationProperties.SetAutomationId(capture, Id("NewShortcut"));
         AutomationProperties.SetName(capture, Strings.Options_Keys_NewShortcut.Replace("_", "", StringComparison.Ordinal));
         capture.AddHandler(InputElement.KeyDownEvent, (_, e) =>
         {
-            if (CaptureKey(e) is { } captured)
-                model.Capture(captured.Gesture);
+            if (CaptureKey(e) is not { } captured)
+                return;
+            if (captured.Gesture is { } key)
+                model.CaptureKey(key); // UI-KEY-024: two keys in a row are a chord
+            else
+                model.Capture(null);
         }, RoutingStrategies.Tunnel);
         var assign = CreateButton("Assign", Strings.Options_Keys_Assign);
         assign.Margin = new Thickness(8, 0, 0, 0);
@@ -111,14 +114,17 @@ internal static class KeyMappingsPageView
         foreach (var control in new Control[] { captureLabel, capture, assign, resetCommand })
             captureRow.Children.Add(control);
         var error = Text("", "caption");
+        error.TextWrapping = TextWrapping.Wrap;
         error.Bind(TextBlock.ForegroundProperty, error.GetResourceObservable("FxcStatusErrorBrush"));
         AutomationProperties.SetAutomationId(error, Id("Error.NewShortcut"));
         var glyph = Text("⚠ ", "caption");
         glyph.Bind(TextBlock.ForegroundProperty, glyph.GetResourceObservable("FxcStatusWarningBrush"));
         var conflict = Text("", "caption");
+        conflict.TextWrapping = TextWrapping.Wrap; // the chord conflicts are long sentences (I-342)
         conflict.Bind(TextBlock.ForegroundProperty, conflict.GetResourceObservable("FxcTextPrimaryBrush"));
         AutomationProperties.SetAutomationId(conflict, Id("Conflict"));
-        var conflictRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 4, 0, 0) };
+        var conflictRow = new DockPanel { Margin = new Thickness(0, 4, 0, 0) };
+        DockPanel.SetDock(glyph, Dock.Left);
         conflictRow.Children.Add(glyph);
         conflictRow.Children.Add(conflict);
 
@@ -145,9 +151,9 @@ internal static class KeyMappingsPageView
 
         void UpdateChips()
         {
-            chips.Children.Clear();
+            currentRow.Children.RemoveRange(1, currentRow.Children.Count - 1); // everything after the label
             foreach (var chip in model.Current)
-                chips.Children.Add(CreateChip(model, chip));
+                currentRow.Children.Add(CreateChip(model, chip));
         }
 
         Update();
@@ -163,8 +169,9 @@ internal static class KeyMappingsPageView
     }
 
     /// <summary>
-    /// The gesture of a key press in a capture box: Backspace clears (null gesture); Tab, Shift+Tab, Escape and modifier
-    /// keys are left alone (null result); everything else is captured and handled.
+    /// The key of a key press in a capture box: Backspace clears (null gesture); Tab, Shift+Tab, Escape and modifier
+    /// keys are left alone (null result); everything else is captured and handled. The page model makes a chord of two
+    /// keys in a row.
     /// </summary>
     private static Captured? CaptureKey(KeyEventArgs e)
     {
@@ -208,7 +215,7 @@ internal static class KeyMappingsPageView
             panel.Children.Add(remove);
         }
 
-        var border = new Border { BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(2), Padding = new Thickness(6, 1, 2, 1), Margin = new Thickness(0, 0, 6, 0), Child = panel };
+        var border = new Border { BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(2), Padding = new Thickness(6, 1, 2, 1), Margin = new Thickness(0, 4, 6, 0), Child = panel };
         border.Bind(Border.BorderBrushProperty, border.GetResourceObservable("FxcBorderDefaultBrush"));
         return border;
     }

@@ -150,6 +150,70 @@ public sealed class KeyRoutingTests
         Assert.Equal(CoreGesture.Parse("F5"), KeyMapping.FromKeyEvent(Key.F5, KeyModifiers.None, null));
     }
 
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-KEY-010")]
+    [Trait("Req", "UI-KEY-011")]
+    public async Task ChordWaitsAndIsCancelled()
+    {
+        const string Waiting = "Ctrl+E was pressed. Waiting for the second key…";
+        await using var h = await HeadlessHarness.StartAsync();
+        // tools.openLogFolder: an always-enabled Global command with a visible effect (the fake shell records OpenFolder).
+        var shell = (FreexComp.Ide.TestSupport.FakeShellService)h.Services.Shell;
+        h.Services.Keymap.SetGestures("tools.openLogFolder", [CoreGesture.Parse("Ctrl+E, Ctrl+L"), CoreGesture.Parse("Ctrl+B")]);
+        var first = AddFocusable(h, "StatusBar.TestFirst");
+        var second = AddFocusable(h, "StatusBar.TestSecond");
+        var handled = TrackHandled(h);
+        var commands = h.Services.Commands;
+        Focus(first);
+
+        // Both keys are consumed; the command runs on the second one and the waiting text goes.
+        h.Press("Ctrl+E");
+        Assert.True(commands.IsChordPending);
+        Assert.Equal(Waiting, h.Status.Message);
+        Assert.Empty(shell.Calls);
+        h.Press("Ctrl+L");
+        Assert.Single(shell.Calls);
+        Assert.False(commands.IsChordPending);
+        Assert.Equal("", h.Status.Message);
+        Assert.Equal([true, true], handled);
+
+        // A second key that completes no chord: consumed, its own command does not run, the status bar says why.
+        h.Press("Ctrl+E");
+        h.Press("Ctrl+B");
+        Assert.Single(shell.Calls);
+        Assert.False(commands.IsChordPending);
+        Assert.Equal("Ctrl+E, Ctrl+B is not a shortcut.", h.Status.Message);
+        Assert.Equal([true, true, true, true], handled);
+        h.Press("Ctrl+B"); // on its own it is the command again
+        Assert.Equal(2, shell.Calls.Count);
+
+        // Escape cancels and is consumed; the next key is not a second key.
+        h.Press("Ctrl+E");
+        Assert.Equal(Waiting, h.Status.Message);
+        h.Press("Escape");
+        Assert.False(commands.IsChordPending);
+        Assert.Equal("", h.Status.Message);
+        h.Press("Ctrl+L");
+        Assert.Equal(2, shell.Calls.Count);
+        Assert.Equal([true, true, false], handled.Skip(5));
+
+        // A mouse click cancels (here on the focused element itself: no focus change is involved).
+        h.Press("Ctrl+E");
+        Assert.True(commands.IsChordPending);
+        h.Click("StatusBar.TestFirst");
+        Assert.False(commands.IsChordPending);
+        Assert.Equal("", h.Status.Message);
+
+        // A focus change cancels, also between two elements of the same command scope.
+        h.Press("Ctrl+E");
+        Assert.True(commands.IsChordPending);
+        Focus(second);
+        Assert.False(commands.IsChordPending);
+        Assert.Equal("", h.Status.Message);
+        h.Press("Ctrl+L");
+        Assert.Equal(2, shell.Calls.Count);
+    }
+
     private static Control AddFocusable(HeadlessHarness h, string id)
     {
         var control = new Border { Focusable = true, Width = 20, Height = 10 };

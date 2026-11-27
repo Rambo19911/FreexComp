@@ -57,7 +57,11 @@ public sealed partial class MainWindow : Window
         };
         Closed += (_, _) => _closed = true;
         Activated += (_, _) => ViewModel?.OnActivated(); // IDE-P1-110 (b)
-        Deactivated += (_, _) => ViewModel?.OnDeactivated(); // IDE-ED-086
+        Deactivated += (_, _) =>
+        {
+            ViewModel?.CancelChord(); // UI-KEY-011
+            ViewModel?.OnDeactivated(); // IDE-ED-086
+        };
         ToolBars.EscapeRequested += (_, _) => ViewModel?.Layout.FocusPane(Core.Models.Pane.Documents); // UI-TB-008
         StatusBar.EscapeRequested += (_, _) => ViewModel?.Layout.FocusPane(Core.Models.Pane.Documents);
         MenuBar.Closed += (_, _) => Dispatcher.UIThread.Post(() =>
@@ -71,8 +75,16 @@ public sealed partial class MainWindow : Window
         AddHandler(DragDrop.DragOverEvent, OnDragOver);
         AddHandler(DragDrop.DropEvent, OnDrop);
         AddHandler(KeyDownEvent, OnPreviewKeyDown, RoutingStrategies.Tunnel);
-        AddHandler(PointerPressedEvent, (_, e) => QuickPick.OnPointerPressedOutside(e.Source), RoutingStrategies.Tunnel, handledEventsToo: true);
-        AddHandler(GotFocusEvent, (_, _) => ReportFocus(), RoutingStrategies.Bubble, handledEventsToo: true);
+        AddHandler(PointerPressedEvent, (_, e) =>
+        {
+            ViewModel?.CancelChord(); // UI-KEY-011: a mouse click ends the wait for a chord's second key
+            QuickPick.OnPointerPressedOutside(e.Source);
+        }, RoutingStrategies.Tunnel, handledEventsToo: true);
+        AddHandler(GotFocusEvent, (_, _) =>
+        {
+            ViewModel?.CancelChord(); // UI-KEY-011: so does a focus change, also one that leaves the command scope as it was
+            ReportFocus();
+        }, RoutingStrategies.Bubble, handledEventsToo: true);
         AddHandler(LostFocusEvent, (_, _) => Dispatcher.UIThread.Post(OnFocusMaybeLost), RoutingStrategies.Bubble, handledEventsToo: true);
     }
 
@@ -173,8 +185,21 @@ public sealed partial class MainWindow : Window
 
     private void OnPreviewKeyDown(object? sender, KeyEventArgs e)
     {
-        if (ViewModel is not { } vm || KeyMapping.FromKeyEvent(e.Key, e.KeyModifiers, e.KeySymbol) is not { } gesture)
+        if (ViewModel is not { } vm)
         {
+            return;
+        }
+
+        if (KeyMapping.FromKeyEvent(e.Key, e.KeyModifiers, e.KeySymbol) is not { } gesture)
+        {
+            // UI-KEY-010: while a chord waits, a key without a UI-KEY-001 name completes none: it ends the wait and is not
+            // passed on. Modifier keys are left alone — they are how the second key is reached.
+            if (vm.IsChordPending && !IsModifierKey(e.Key))
+            {
+                vm.CancelChord();
+                e.Handled = true;
+            }
+
             return;
         }
 
@@ -208,6 +233,9 @@ public sealed partial class MainWindow : Window
             e.Handled = true;
         }
     }
+
+    private static bool IsModifierKey(Key key) =>
+        key is Key.LeftCtrl or Key.RightCtrl or Key.LeftShift or Key.RightShift or Key.LeftAlt or Key.RightAlt or Key.LWin or Key.RWin;
 
     private void ReportFocus()
     {

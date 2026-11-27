@@ -24,7 +24,7 @@ public static class KeyboardShortcutsDocument
         var rows = CommandCatalog.All
             .Select(c => (Command: c, Gestures: keymap.GetGestures(c.Id)))
             .Where(r => r.Gestures.Count > 0)
-            .Select(r => new[] { CategoryOf(r.Command), TitleOf(r.Command), string.Join(", ", r.Gestures) })
+            .Select(r => new[] { CategoryOf(r.Command), TitleOf(r.Command), KeyGesture.Join(r.Gestures) })
             .OrderBy(r => r[0], comparer)
             .ThenBy(r => r[1], comparer)
             .Prepend([Strings.KeyboardShortcuts_Column_Category, Strings.KeyboardShortcuts_Column_Command, Strings.KeyboardShortcuts_Column_Shortcut])

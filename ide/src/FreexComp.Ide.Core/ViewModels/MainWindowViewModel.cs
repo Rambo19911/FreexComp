@@ -124,6 +124,12 @@ public sealed class MainWindowViewModel : ObservableObject
     /// <summary>IDE-ARCH-043: a key pressed anywhere in the main window; true when it was consumed.</summary>
     public bool HandleKey(KeyGesture gesture) => _services.Commands.HandleKey(gesture);
 
+    /// <summary>UI-KEY-010: the first key of a chord was pressed; the next key is its second key.</summary>
+    public bool IsChordPending => _services.Commands.IsChordPending;
+
+    /// <summary>UI-KEY-011: a mouse click, a focus change or the deactivated window ends the wait for a chord's second key.</summary>
+    public void CancelChord() => _services.Commands.CancelChord();
+
     /// <summary>IDE-ARCH-042: keyboard focus moved.</summary>
     public void UpdateFocus(FocusState state) => _services.FocusTracker.Update(state);
 

@@ -13,6 +13,8 @@ public sealed class CommandService : ICommandService
     private const string Category = "commands";
     private static readonly TimeSpan UnavailableStatusDuration = TimeSpan.FromSeconds(3);
     private static readonly TimeSpan RepeatedErrorWindow = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan ChordStatusDuration = TimeSpan.FromSeconds(5);
+    private static readonly KeyGesture Escape = KeyGesture.Parse("Escape");
 
     /// <summary>UI-KEY-007: disabled bindings of these keys fall through to the focused control.</summary>
     private static readonly HashSet<string> FallThroughKeys =
@@ -38,6 +40,10 @@ public sealed class CommandService : ICommandService
     private bool _invalidatePending;
     private (string Text, DateTimeOffset At)? _lastError;
 
+    /// <summary>UI-KEY-010: the first key of a started chord, and its waiting text in the status bar.</summary>
+    private KeyGesture? _chordPrefix;
+    private IDisposable? _chordStatus;
+
     public CommandService(IKeymapService keymap, IUiDispatcher dispatcher, IClock clock, ILog log, IDialogService dialogs, IStatusService status, IFocusTracker focus)
     {
         _focus = focus;
@@ -50,7 +56,11 @@ public sealed class CommandService : ICommandService
         Definitions = CommandCatalog.All;
         _definitions = Definitions.ToDictionary(d => d.Id, StringComparer.Ordinal);
         _keymap.Changed += (_, _) => RefreshGestureTexts(); // UI-KEY-023
-        _focus.Changed += (_, _) => InvalidateCanExecute(); // Focus commands follow the focused element
+        _focus.Changed += (_, _) =>
+        {
+            CancelChord(); // UI-KEY-011: the second key belongs to where the first was pressed
+            InvalidateCanExecute(); // Focus commands follow the focused element
+        };
     }
 
     public event EventHandler<CommandExecutedEventArgs>? Executed;
@@ -187,10 +197,20 @@ public sealed class CommandService : ICommandService
         Executed?.Invoke(this, new CommandExecutedEventArgs(commandId, argument, _clock.Now - started, failure));
     }
 
+    public bool IsChordPending => _chordPrefix is not null;
+
+    public void CancelChord()
+    {
+        _chordPrefix = null;
+        _chordStatus?.Dispose(); // takes the waiting text away unless a newer message replaced it
+        _chordStatus = null;
+    }
+
     public bool HandleKey(KeyGesture gesture)
     {
         var state = _focus.Current;
-        if (state.IsTextInput
+        if (_chordPrefix is null
+            && state.IsTextInput
             && _keymap.FindCommand(gesture, CommandScope.Global, null) is { } id
             && _definitions[id].Scope == CommandScope.Focus)
         {
@@ -202,25 +222,66 @@ public sealed class CommandService : ICommandService
 
     public bool HandleKey(KeyGesture gesture, CommandScope focusScope, string? toolWindowName)
     {
+        if (_chordPrefix is { } prefix)
+        {
+            return CompleteChord(prefix, gesture, focusScope, toolWindowName);
+        }
+
         if (_focus.LocalKeys.Contains(gesture))
         {
             return false; // IDE-ARCH-043: a popup of the focused control handles this key
         }
 
-        var binding = _keymap.FindBinding(gesture, focusScope, toolWindowName);
-        if (binding is null || !_handlers.TryGetValue(binding.CommandId, out var handler))
+        if (_keymap.IsChordPrefix(gesture, focusScope, toolWindowName))
         {
-            return false;
+            // UI-KEY-010: the first key of a chord does nothing else; the status bar says that the IDE waits.
+            _chordPrefix = gesture;
+            _chordStatus = _status.ShowStickyMessage(string.Format(CultureInfo.CurrentCulture, Strings.Msg_Status_ChordWaiting, gesture));
+            return true;
         }
 
+        var binding = _keymap.FindBinding(gesture, focusScope, toolWindowName);
+        return binding is not null && _handlers.TryGetValue(binding.CommandId, out var handler) && Run(binding, handler);
+    }
+
+    /// <summary>
+    /// UI-KEY-010 / UI-KEY-011: the key after a chord's first key. It is never passed on: it runs the chord's command, or
+    /// ends the wait — silently for Escape, with <c>Msg.Status.ChordNotAShortcut</c> when no chord ends with it.
+    /// </summary>
+    private bool CompleteChord(KeyGesture prefix, KeyGesture second, CommandScope focusScope, string? toolWindowName)
+    {
+        CancelChord();
+        if (second == Escape || second.IsChord)
+        {
+            return true;
+        }
+
+        var chord = KeyGesture.Chord(prefix, second);
+        if (_keymap.FindBinding(chord, focusScope, toolWindowName) is { } binding && _handlers.TryGetValue(binding.CommandId, out var handler))
+        {
+            Run(binding, handler);
+        }
+        else
+        {
+            _status.ShowMessage(string.Format(CultureInfo.CurrentCulture, Strings.Msg_Status_ChordNotAShortcut, chord), ChordStatusDuration);
+        }
+
+        return true;
+    }
+
+    /// <summary>Executes the binding's command; false when a disabled key falls through to the focused control (UI-KEY-007).</summary>
+    private bool Run(KeyBinding binding, ICommandHandler handler)
+    {
         var commandId = binding.CommandId;
+        var gesture = binding.Gesture;
         if (CanExecute(commandId, binding.Argument))
         {
             _ = ExecuteAsync(commandId, binding.Argument);
             return true;
         }
 
-        if (FallThroughKeys.Contains(gesture.Key) && (gesture.Modifiers == KeyModifiers.None || gesture is { Key: "Tab", Modifiers: KeyModifiers.Shift }))
+        if (!gesture.IsChord && FallThroughKeys.Contains(gesture.Key)
+            && (gesture.Modifiers == KeyModifiers.None || gesture is { Key: "Tab", Modifiers: KeyModifiers.Shift }))
         {
             return false; // UI-KEY-007 exceptions
         }

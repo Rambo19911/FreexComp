@@ -19,6 +19,8 @@ public sealed class KeymapService : IKeymapService
     private static readonly HashSet<KeyGesture> Reserved =
         [KeyGesture.Parse("Alt+F4"), KeyGesture.Parse("Alt+Space"), KeyGesture.Parse("Ctrl+Alt+Delete"), KeyGesture.Parse("Ctrl+Escape")];
 
+    private static readonly KeyGesture Escape = KeyGesture.Parse("Escape");
+
     private readonly IFileSystem _fs;
     private readonly IClock _clock;
     private readonly ILog _log;
@@ -50,8 +52,23 @@ public sealed class KeymapService : IKeymapService
 
     public event EventHandler? Changed;
 
-    /// <summary>A UI-KEY-008 gesture that cannot be re-bound (<c>Alt+F4</c>, <c>Alt+Space</c>, <c>Ctrl+Alt+Delete</c>, <c>Ctrl+Escape</c>).</summary>
-    public static bool IsReserved(KeyGesture gesture) => Reserved.Contains(gesture);
+    /// <summary>
+    /// A UI-KEY-008 gesture that cannot be re-bound (<c>Alt+F4</c>, <c>Alt+Space</c>, <c>Ctrl+Alt+Delete</c>,
+    /// <c>Ctrl+Escape</c>), or a chord with one of them as a key or with <c>Escape</c> as its second key (Escape cancels
+    /// a started chord, UI-KEY-011).
+    /// </summary>
+    public static bool IsReserved(KeyGesture gesture) => ReservedKey(gesture) is not null;
+
+    /// <summary>The key that makes <paramref name="gesture"/> reserved (<see cref="IsReserved"/>), or null.</summary>
+    public static KeyGesture? ReservedKey(KeyGesture gesture)
+    {
+        if (Reserved.Contains(gesture.First))
+        {
+            return gesture.First;
+        }
+
+        return gesture.Second is { } second && (Reserved.Contains(second) || second == Escape) ? second : null;
+    }
 
     public Keymap Current { get; private set; }
 
@@ -163,6 +180,9 @@ public sealed class KeymapService : IKeymapService
     public KeyBinding? FindBinding(KeyGesture gesture, CommandScope focusScope, string? toolWindow) =>
         Current.FindBinding(gesture, focusScope, toolWindow);
 
+    public bool IsChordPrefix(KeyGesture key, CommandScope focusScope, string? toolWindow) =>
+        Current.IsChordPrefix(key, focusScope, toolWindow);
+
     public void SetGestures(string commandId, IReadOnlyList<KeyGesture> gestures)
     {
         if (!_commandIds.Contains(commandId))
@@ -172,24 +192,25 @@ public sealed class KeymapService : IKeymapService
 
         // A reserved default (file.exit's Alt+F4) may stay; it cannot be given to anything else.
         var defaults = Defaults(commandId);
-        if (gestures.FirstOrDefault(g => Reserved.Contains(g) && !defaults.Contains(g)) is { Key: not null } reserved)
+        if (gestures.FirstOrDefault(g => IsReserved(g) && !defaults.Contains(g)) is { Key: not null } reserved)
         {
             throw new ArgumentException($"{reserved} is reserved and cannot be assigned.", nameof(gestures));
         }
 
-        // UI-KEY-021: a gesture already bound at the same scope level moves to this command.
+        // UI-KEY-021: a gesture already bound at the same scope level moves to this command. UI-KEY-012: so does a key
+        // across a chord — a single key takes the chords that start with it, a chord the single key it starts with.
         var places = Places(commandId);
         foreach (var gesture in gestures.Where(g => !Current.GetGestures(commandId).Contains(g)))
         {
             var losers = Current.Bindings
-                .Where(b => b.Gesture == gesture && b.CommandId != commandId
+                .Where(b => b.Gesture.Overlaps(gesture) && b.CommandId != commandId
                             && places.Any(p => SameLevel(p.Scope, b.Scope) && p.ToolWindow == b.ToolWindow))
                 .Select(b => b.CommandId)
                 .Distinct()
                 .ToList();
             foreach (var loser in losers)
             {
-                StoreDifferences(loser, [.. Current.GetGestures(loser).Where(g => g != gesture)]);
+                StoreDifferences(loser, [.. Current.GetGestures(loser).Where(g => !g.Overlaps(gesture))]);
             }
         }
 
@@ -266,15 +287,11 @@ public sealed class KeymapService : IKeymapService
     {
         foreach (var key in keys)
         {
-            if (key.Contains(", ", StringComparison.Ordinal))
-            {
-                _log.Warning(Category, $"'{key}' for {command} is a chord; chords are not supported yet (ignored)");
-            }
-            else if (!KeyGesture.TryParse(key, out var gesture))
+            if (!KeyGesture.TryParse(key, out var gesture))
             {
                 _log.Warning(Category, $"'{key}' for {command} is not a valid gesture (dropped)");
             }
-            else if (Reserved.Contains(gesture))
+            else if (IsReserved(gesture))
             {
                 _log.Warning(Category, $"'{key}' for {command} is reserved (dropped)");
             }
@@ -322,7 +339,7 @@ public sealed class KeymapService : IKeymapService
             {
                 foreach (var (scope, tool) in Places(command))
                 {
-                    var losers = bindings.Where(b => b.Gesture == gesture && b.CommandId != command
+                    var losers = bindings.Where(b => b.Gesture.Overlaps(gesture) && b.CommandId != command // UI-KEY-012: also across a chord
                                                      && SameLevel(b.Scope, scope) && b.ToolWindow == tool).ToList();
                     foreach (var loser in losers)
                     {
@@ -334,7 +351,9 @@ public sealed class KeymapService : IKeymapService
 
                         if (logConflicts)
                         {
-                            _log.Warning(Category, $"{gesture} is bound to both {loser.CommandId} and {command}; {command} keeps it");
+                            _log.Warning(Category, loser.Gesture == gesture
+                                ? $"{gesture} is bound to both {loser.CommandId} and {command}; {command} keeps it"
+                                : $"{loser.Gesture} of {loser.CommandId} and {gesture} of {command} cannot both be bound; {command} keeps its gesture");
                         }
                     }
 

@@ -74,8 +74,21 @@ public interface ICommandService
     /// </summary>
     bool HandleKey(KeyGesture gesture);
 
-    /// <summary>UI-KEY-004 step 3 and UI-KEY-007; true when the key was consumed.</summary>
+    /// <summary>
+    /// UI-KEY-004 step 3 and UI-KEY-007; true when the key was consumed. UI-KEY-010: the first key of a chord is consumed
+    /// and starts the wait (<see cref="IsChordPending"/>); the next key is then always consumed — it runs the chord's
+    /// command, or cancels the wait when it completes no chord or is Escape.
+    /// </summary>
     bool HandleKey(KeyGesture gesture, CommandScope focusScope, string? toolWindowName);
+
+    /// <summary>The first key of a chord was pressed and the next key is taken as its second key (UI-KEY-010).</summary>
+    bool IsChordPending { get; }
+
+    /// <summary>
+    /// UI-KEY-011: ends the wait for a chord's second key without a message — the view calls it for a mouse click, a focus
+    /// change and a deactivated window (a changed <see cref="IFocusTracker"/> state cancels by itself). No-op when nothing waits.
+    /// </summary>
+    void CancelChord();
 
     /// <summary>Coalesced re-query of every command's <c>CanExecute</c> (IDE-ARCH-044).</summary>
     void InvalidateCanExecute();

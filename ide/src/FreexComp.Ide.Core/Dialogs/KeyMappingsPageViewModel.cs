@@ -35,7 +35,7 @@ public sealed class KeyMappingRow : ObservableObject
     /// <summary>A command of a later phase (<c>text.disabled</c>, still assignable).</summary>
     public bool IsLaterPhase { get; }
 
-    /// <summary>All pending gestures joined with <c>, </c>.</summary>
+    /// <summary>All pending gestures as one text (<see cref="KeyGesture.Join"/>: <c>, </c>, or <c>; </c> when a chord is among them).</summary>
     public string ShortcutText
     {
         get => _shortcutText;
@@ -144,11 +144,7 @@ public sealed class KeyMappingsPageViewModel : ObservableObject
 
             foreach (var (row, gesture) in added)
             {
-                foreach (var other in Conflicts(row.Command, gesture))
-                {
-                    _pending[other.Id].Remove(gesture);
-                }
-
+                TakeFromOthers(row.Command, gesture);
                 _pending[row.CommandId].Add(gesture);
             }
 
@@ -165,7 +161,10 @@ public sealed class KeyMappingsPageViewModel : ObservableObject
     /// <summary>The rows the filter lets through.</summary>
     public ObservableCollection<KeyMappingRow> VisibleRows { get; } = [];
 
-    /// <summary>Case-insensitive substring of <c>&lt;Category&gt;: &lt;Title&gt;</c> or the id; with <see cref="ByShortcut"/>, a gesture.</summary>
+    /// <summary>
+    /// Case-insensitive substring of <c>&lt;Category&gt;: &lt;Title&gt;</c> or the id; with <see cref="ByShortcut"/>, a gesture:
+    /// the commands bound to it and, for a single key, also those with a chord that starts with it.
+    /// </summary>
     public string Filter
     {
         get => _filter;
@@ -250,7 +249,11 @@ public sealed class KeyMappingsPageViewModel : ObservableObject
         private set => SetProperty(ref _captureError, value);
     }
 
-    /// <summary><c>Msg.Options.KeyConflict</c> while the captured gesture is bound in an overlapping scope, or null.</summary>
+    /// <summary>
+    /// While the captured gesture cannot stay beside a gesture of another command in an overlapping scope:
+    /// <c>Msg.Options.KeyConflict</c> (the same gesture), <c>Msg.Options.KeyPrefixConflict</c> (it is the first key of a
+    /// chord there) or <c>Msg.Options.KeyChordConflict</c> (it is a chord whose first key is a command there); else null.
+    /// </summary>
     public string? ConflictText
     {
         get => _conflictText;
@@ -264,23 +267,48 @@ public sealed class KeyMappingsPageViewModel : ObservableObject
     /// <summary>Pending gestures of a command.</summary>
     public IReadOnlyList<KeyGesture> PendingGestures(string commandId) => _pending[commandId];
 
-    /// <summary>The capture box received a gesture (null = cleared with Backspace).</summary>
+    /// <summary>The capture box holds <paramref name="gesture"/> (null = cleared with Backspace).</summary>
     public void Capture(KeyGesture? gesture)
     {
         _captured = gesture;
         UpdateCapture();
     }
 
-    /// <summary><c>Assign</c>: adds the captured gesture and removes it from conflicting commands.</summary>
+    /// <summary>
+    /// A key was pressed in the capture box (UI-KEY-024): after one valid single key it is the second key of a chord;
+    /// otherwise — the box is empty, holds a chord already or a refused key — it starts over as the first key.
+    /// </summary>
+    public void CaptureKey(KeyGesture key) =>
+        Capture(_captured is { IsChord: false } first && CaptureError is null ? KeyGesture.Chord(first, key) : key);
+
+    /// <summary>
+    /// A key was pressed in the filter box while <see cref="ByShortcut"/> (null = Backspace, cleared): the filter is that
+    /// key — or, when the filter is a key that some command's chord starts with, the chord of the two (UI-KEY-024).
+    /// </summary>
+    public void CaptureFilterKey(KeyGesture? key)
+    {
+        if (key is not { } pressed)
+        {
+            Filter = "";
+            return;
+        }
+
+        var startsChord = KeyGesture.TryParse(_filter, out var current) && !current.IsChord
+                          && Rows.Any(r => _pending[r.CommandId].Exists(g => g.StartsWith(current)));
+        Filter = (startsChord ? KeyGesture.Chord(current, pressed) : pressed).ToString();
+    }
+
+    /// <summary>
+    /// <c>Assign</c>: adds the captured gesture and removes the conflicting gestures from the other commands — and the
+    /// selected command's own gesture that overlaps it (its chord <c>Ctrl+K, Ctrl+F</c> when <c>Ctrl+K</c> is assigned, or
+    /// the other way round), so that no gesture is left that could never be pressed (UI-KEY-012).
+    /// </summary>
     public void Assign()
     {
         if (!CanAssign || SelectedRow is not { } row || _captured is not { } gesture)
             return;
-        foreach (var other in Conflicts(row.Command, gesture))
-        {
-            _pending[other.Id].Remove(gesture);
-        }
-
+        TakeFromOthers(row.Command, gesture);
+        _pending[row.CommandId].RemoveAll(own => own.Overlaps(gesture)); // the command's own chord or first key gives way too
         _pending[row.CommandId].Add(gesture);
         _captured = null;
         Changed();
@@ -303,10 +331,7 @@ public sealed class KeyMappingsPageViewModel : ObservableObject
         var defaults = _defaults.GetGestures(row.CommandId);
         foreach (var gesture in defaults)
         {
-            foreach (var other in Conflicts(row.Command, gesture))
-            {
-                _pending[other.Id].Remove(gesture);
-            }
+            TakeFromOthers(row.Command, gesture);
         }
 
         _pending[row.CommandId] = [.. defaults];
@@ -371,9 +396,46 @@ public sealed class KeyMappingsPageViewModel : ObservableObject
         return a.Scopes.Any(x => b.Scopes.Any(y => x == y || IsGlobal(x) || IsGlobal(y)));
     }
 
-    /// <summary>Other commands whose pending gestures contain <paramref name="gesture"/> in an overlapping scope.</summary>
-    private List<CommandDefinition> Conflicts(CommandDefinition command, KeyGesture gesture) =>
-        [.. Rows.Where(r => r.CommandId != command.Id && _pending[r.CommandId].Contains(gesture) && Overlap(command, r.Command)).Select(r => r.Command)];
+    /// <summary>
+    /// The pending gestures of other commands in an overlapping scope that cannot stay beside <paramref name="gesture"/>
+    /// (<see cref="KeyGesture.Overlaps"/>, UI-KEY-012): the same gesture, a chord that starts with it, or the single key
+    /// it starts with.
+    /// </summary>
+    private List<(CommandDefinition Command, KeyGesture Gesture)> Conflicts(CommandDefinition command, KeyGesture gesture) =>
+    [
+        .. from row in Rows
+           where row.CommandId != command.Id && Overlap(command, row.Command)
+           from theirs in _pending[row.CommandId]
+           where theirs.Overlaps(gesture)
+           select (row.Command, theirs),
+    ];
+
+    /// <summary>Removes what <see cref="Conflicts"/> lists: <paramref name="gesture"/> goes to <paramref name="command"/> (UI-KEY-021).</summary>
+    private void TakeFromOthers(CommandDefinition command, KeyGesture gesture)
+    {
+        foreach (var (other, theirs) in Conflicts(command, gesture))
+        {
+            _pending[other.Id].Remove(theirs);
+        }
+    }
+
+    /// <summary>One line per kind of conflict: the same gesture, chords that start with it, the single key it starts with.</summary>
+    private string ConflictMessage(KeyGesture gesture, List<(CommandDefinition Command, KeyGesture Gesture)> others)
+    {
+        string? Titles(Func<KeyGesture, bool> kind) =>
+            others.Where(o => kind(o.Gesture)).Select(o => _rows[o.Command.Id].Text).Distinct().ToList() is { Count: > 0 } titles
+                ? string.Join(", ", titles)
+                : null;
+
+        var lines = new List<string>();
+        if (Titles(theirs => theirs == gesture) is { } same)
+            lines.Add(string.Format(CultureInfo.CurrentCulture, Strings.Msg_Options_KeyConflict, gesture, same));
+        if (Titles(theirs => theirs.StartsWith(gesture)) is { } chords)
+            lines.Add(string.Format(CultureInfo.CurrentCulture, Strings.Msg_Options_KeyPrefixConflict, gesture, chords));
+        if (Titles(gesture.StartsWith) is { } singles)
+            lines.Add(string.Format(CultureInfo.CurrentCulture, Strings.Msg_Options_KeyChordConflict, gesture, gesture.First, singles));
+        return string.Join(Environment.NewLine, lines);
+    }
 
     /// <summary>Printable keys, Enter and Space without Ctrl/Alt (dialogs.md §9.5).</summary>
     private static bool PreventsTyping(KeyGesture gesture) =>
@@ -404,7 +466,7 @@ public sealed class KeyMappingsPageViewModel : ObservableObject
     private void UpdateRow(KeyMappingRow row)
     {
         var pending = _pending[row.CommandId];
-        row.ShortcutText = string.Join(", ", pending);
+        row.ShortcutText = KeyGesture.Join(pending);
         row.IsUserChanged = !SameSet(pending, _defaults.GetGestures(row.CommandId));
     }
 
@@ -428,12 +490,13 @@ public sealed class KeyMappingsPageViewModel : ObservableObject
         string? conflict = null;
         if (_captured is { } gesture)
         {
-            if (KeymapService.IsReserved(gesture))
-                error = string.Format(CultureInfo.CurrentCulture, Strings.Msg_Options_KeyReserved, gesture);
-            else if (SelectedRow is { } row && PreventsTyping(gesture) && IsTypingScope(row.Command))
-                error = string.Format(CultureInfo.CurrentCulture, Strings.Msg_Options_KeyNeedsModifier, gesture);
+            // A chord is refused for the key that is wrong: a reserved key in either place, a first key that would be typed.
+            if (KeymapService.ReservedKey(gesture) is { } reserved)
+                error = string.Format(CultureInfo.CurrentCulture, Strings.Msg_Options_KeyReserved, reserved);
+            else if (SelectedRow is { } row && PreventsTyping(gesture.First) && IsTypingScope(row.Command))
+                error = string.Format(CultureInfo.CurrentCulture, Strings.Msg_Options_KeyNeedsModifier, gesture.First);
             if (error is null && SelectedRow is { } selected && Conflicts(selected.Command, gesture) is { Count: > 0 } others)
-                conflict = string.Format(CultureInfo.CurrentCulture, Strings.Msg_Options_KeyConflict, gesture, string.Join(", ", others.Select(o => _rows[o.Id].Text)));
+                conflict = ConflictMessage(gesture, others);
         }
 
         CaptureError = error;
@@ -449,7 +512,9 @@ public sealed class KeyMappingsPageViewModel : ObservableObject
         Func<KeyMappingRow, bool> match;
         if (_byShortcut)
         {
-            match = KeyGesture.TryParse(text, out var gesture) ? r => _pending[r.CommandId].Contains(gesture) : _ => text.Length == 0;
+            match = KeyGesture.TryParse(text, out var gesture)
+                ? r => _pending[r.CommandId].Exists(g => g == gesture || g.StartsWith(gesture))
+                : _ => text.Length == 0;
         }
         else
         {

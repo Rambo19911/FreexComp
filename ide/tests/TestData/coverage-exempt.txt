@@ -39,7 +39,6 @@ UI-ED-032 not checkable headless: drawing geometry, cursors, animation or timing
 UI-ED-033 not checkable headless: drawing geometry, cursors, animation or timing of rendering (IDE-TEST-010)
 UI-ED-051 not checkable headless: drawing geometry, cursors, animation or timing of rendering (IDE-TEST-010)
 UI-ED-059 not checkable headless: drawing geometry, cursors, animation or timing of rendering (IDE-TEST-010)
-UI-KEY-006 absence: states that a feature does not exist in Phases 1-7
 UI-MSG-010 writing style of resource texts: checked by review of Strings.resx
 UI-MSG-011 writing style of resource texts: checked by review of Strings.resx
 UI-MSG-012 writing style of resource texts: checked by review of Strings.resx

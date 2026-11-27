@@ -87,7 +87,7 @@ public sealed partial class KeymapTests
               "formatVersion": 1,
               "bindings": [
                 { "command": "future.command", "keys": ["Ctrl+Q"] },
-                { "command": "file.saveAll", "keys": ["Ctrl+K, Ctrl+S", "Ctrl+Nope", "Ctrl+Alt+Delete", "Ctrl+E"] },
+                { "command": "file.saveAll", "keys": ["Ctrl+K, Ctrl+Nope", "Ctrl+Nope", "Ctrl+Alt+Delete", "Ctrl+E"] },
                 { "command": "file.closeAll", "keys": ["Ctrl+E"] },
                 { "command": "file.revert", "keys": ["Ctrl+O"] }
               ],
@@ -103,9 +103,10 @@ public sealed partial class KeymapTests
         Assert.Equal("file.revert", keymap.FindCommand(G("Ctrl+O"), CommandScope.Global, null));
         Assert.Empty(keymap.GetGestures("file.open"));
         Assert.Equal(["Ctrl+Shift+S"], keymap.GetGestures("file.saveAll").Select(g => g.ToString()));
-        // Chord, unparsable, reserved, Ctrl+E lost by file.saveAll, Ctrl+O lost by file.open.
+        // Invalid chord (I-342: a valid one is honoured, ChordsRoundTripThroughKeymapFile), unparsable, reserved,
+        // Ctrl+E lost by file.saveAll, Ctrl+O lost by file.open.
         Assert.Equal(5, _log.Lines.Count(l => l.StartsWith("WARN keymap: ", StringComparison.Ordinal)));
-        Assert.Contains(_log.Lines, l => l.Contains("Ctrl+K, Ctrl+S", StringComparison.Ordinal));
+        Assert.Contains(_log.Lines, l => l.Contains("Ctrl+K, Ctrl+Nope", StringComparison.Ordinal));
         Assert.Contains(_log.Lines, l => l.Contains("Ctrl+Alt+Delete", StringComparison.Ordinal));
 
         // Unknown command ids are preserved on rewrite; dropped gestures are not.

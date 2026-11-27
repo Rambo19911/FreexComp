@@ -51,7 +51,7 @@ public sealed class KeyGestureTests
     [InlineData("Ctrl+A+B")]
     [InlineData("Win+A")]
     [InlineData("F13")]
-    [InlineData("Ctrl+K, Ctrl+C")]
+    [InlineData("Ctrl+K Ctrl+C")] // a chord is written "Ctrl+K, Ctrl+C" (UI-KEY-006, KeymapTests.ChordGestureParsesAndFormats)
     public void InvalidTextIsRejected(string text)
     {
         Assert.False(KeyGesture.TryParse(text, out _));

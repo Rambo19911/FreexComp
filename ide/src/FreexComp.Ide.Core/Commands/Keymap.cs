@@ -78,6 +78,51 @@ public sealed class Keymap
         return Find(gesture, CommandScope.Focus, null) ?? Find(gesture, CommandScope.Global, null);
     }
 
+    /// <summary>
+    /// The key starts a chord here and the IDE waits for the second key (UI-KEY-010). Scope levels are walked innermost
+    /// first as in <see cref="FindBinding"/>; the first level that binds <paramref name="key"/> decides, and within one
+    /// level a single-key binding wins over the chords that start with that key (UI-KEY-012).
+    /// </summary>
+    public bool IsChordPrefix(KeyGesture key, CommandScope focusScope, string? toolWindow)
+    {
+        if (key.IsChord)
+        {
+            return false;
+        }
+
+        if (focusScope != CommandScope.Global)
+        {
+            if (toolWindow is not null && Starts(key, b => b.Scope == focusScope && string.Equals(b.ToolWindow, toolWindow, StringComparison.Ordinal)) is { } own)
+            {
+                return own;
+            }
+
+            if (Starts(key, b => b.Scope == focusScope && b.ToolWindow is null) is { } scoped)
+            {
+                return scoped;
+            }
+        }
+
+        return Starts(key, b => b.Scope is CommandScope.Focus or CommandScope.Global && b.ToolWindow is null) ?? false;
+    }
+
+    /// <summary>In one scope level: false = <paramref name="key"/> is a command there, true = it starts a chord, null = neither.</summary>
+    private bool? Starts(KeyGesture key, Func<KeyBinding, bool> level)
+    {
+        var chord = false;
+        foreach (var binding in Bindings.Where(level))
+        {
+            if (binding.Gesture == key)
+            {
+                return false;
+            }
+
+            chord |= binding.Gesture.StartsWith(key);
+        }
+
+        return chord ? true : null;
+    }
+
     private static int Rank(List<KeyGesture> order, KeyGesture gesture)
     {
         var index = order.IndexOf(gesture);

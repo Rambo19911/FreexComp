@@ -10,6 +10,9 @@ public sealed partial class KeymapTests
 {
     private static readonly string[] Sections = ["3.1 ", "3.2 ", "3.3 ", "3.4 ", "3.5 "];
 
+    /// <summary>shortcuts.md §3.6 "Two-key chords" (I-342): the tables above hold single keys and lists of them.</summary>
+    private const string ChordSection = "3.6 ";
+
     private static readonly CommandScope[] FocusScopes =
         [CommandScope.Editor, CommandScope.Designer, CommandScope.ProjectManager, CommandScope.ToolList];
 
@@ -17,15 +20,17 @@ public sealed partial class KeymapTests
     [Trait("Req", "UI-KEY-009")]
     [Trait("Req", "UI-KEY-003")]
     [Trait("Req", "UI-KEY-004")]
+    [Trait("Req", "UI-KEY-012")]
     [Trait("Req", "IDE-SET-063")]
     public void DefaultKeymapHasNoConflicts()
     {
         var bindings = DefaultKeymap.Bindings;
+        static CommandScope Level(CommandScope scope) => scope == CommandScope.Focus ? CommandScope.Global : scope;
         var problems = new List<string>();
 
         // At most one command per gesture and scope (Focus and Global are the same, outermost level).
         problems.AddRange(bindings
-            .GroupBy(b => (b.Gesture, Level: b.Scope == CommandScope.Focus ? CommandScope.Global : b.Scope, b.ToolWindow))
+            .GroupBy(b => (b.Gesture, Level: Level(b.Scope), b.ToolWindow))
             .Where(g => g.Select(b => b.CommandId).Distinct().Count() > 1)
             .Select(g => $"{g.Key.Gesture} in {g.Key.Level}/{g.Key.ToolWindow}: {string.Join(", ", g.Select(b => b.CommandId))}"));
 
@@ -38,10 +43,18 @@ public sealed partial class KeymapTests
             }
         }
 
-        // UI-KEY-003: no Ctrl+Alt+<letter, digit or punctuation>.
+        // UI-KEY-003: no Ctrl+Alt+<letter, digit or punctuation>, in either key of a chord.
+        static bool IsAltGr(KeyGesture key) => key.Modifiers.HasFlag(KeyModifiers.Ctrl) && key.Modifiers.HasFlag(KeyModifiers.Alt) && key.Key.Length == 1;
         problems.AddRange(bindings
-            .Where(b => b.Gesture.Modifiers.HasFlag(KeyModifiers.Ctrl) && b.Gesture.Modifiers.HasFlag(KeyModifiers.Alt) && b.Gesture.Key.Length == 1)
+            .Where(b => IsAltGr(b.Gesture.First) || (b.Gesture.Second is { } second && IsAltGr(second)))
             .Select(b => $"{b.Gesture} ({b.CommandId}) is an AltGr combination"));
+
+        // UI-KEY-012: no key is both a command and the first key of a chord in the same scope level (the chord would be dead).
+        problems.AddRange(
+            from chord in bindings.Where(b => b.Gesture.IsChord)
+            from single in bindings.Where(b => b.Gesture == chord.Gesture.First && b.ToolWindow == chord.ToolWindow
+                                               && Level(b.Scope) == Level(chord.Scope))
+            select $"{single.Gesture} ({single.CommandId}) hides the chord {chord.Gesture} ({chord.CommandId})");
 
         // Every binding names a catalog command whose scopes allow it.
         foreach (var b in bindings)
@@ -63,6 +76,7 @@ public sealed partial class KeymapTests
     [Fact(Timeout = 30000)]
     [Trait("Category", "Spec")]
     [Trait("Req", "UI-KEY-009")]
+    [Trait("Req", "UI-KEY-006")]
     public void DefaultKeymapMatchesSpec()
     {
         var path = SpecTables.DocPath("spec/ui/shortcuts.md");
@@ -82,6 +96,18 @@ public sealed partial class KeymapTests
                 {
                     expected.Add(Describe(KeyGesture.Parse(gesture), scope, tool, id));
                 }
+            }
+        }
+
+        // §3.6: one chord per row; the cell is the whole gesture ("Ctrl+K, Ctrl+F"), never a list.
+        foreach (var row in SpecTables.Read(path, ChordSection))
+        {
+            var chord = KeyGesture.Parse(row["Gesture"]);
+            Assert.True(chord.IsChord, $"{row["Gesture"]}: §{ChordSection.Trim()} lists chords only");
+            phases.Add((row["Command id"], int.Parse(PhaseNumber().Match(row["Phase"]).Groups[1].Value, CultureInfo.InvariantCulture)));
+            foreach (var (scope, tool) in Scopes(row["Scope"]))
+            {
+                expected.Add(Describe(chord, scope, tool, row["Command id"]));
             }
         }
 

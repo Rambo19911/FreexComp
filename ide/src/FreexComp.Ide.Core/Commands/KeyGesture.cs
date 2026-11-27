@@ -10,10 +10,16 @@ public enum KeyModifiers
 }
 
 /// <summary>
-/// A key gesture (shortcuts.md UI-KEY-001): <c>[Ctrl+][Shift+][Alt+]&lt;Key&gt;</c>. Parsing is case-insensitive
-/// and accepts any modifier order; <see cref="ToString"/> is the canonical form. Own type: Core has no Avalonia.
+/// A key gesture (shortcuts.md UI-KEY-001): <c>[Ctrl+][Shift+][Alt+]&lt;Key&gt;</c>, or a two-key chord of them written
+/// <c>&lt;gesture&gt;, &lt;gesture&gt;</c> (UI-KEY-006: <c>Ctrl+K, Ctrl+F</c> — the first key, then the second).
+/// Parsing is case-insensitive and accepts any modifier order; <see cref="ToString"/> is the canonical form. Own type:
+/// Core has no Avalonia.
 /// </summary>
-public readonly record struct KeyGesture(KeyModifiers Modifiers, string Key)
+/// <param name="Modifiers">Modifiers of the (first) key.</param>
+/// <param name="Key">The (first) key.</param>
+/// <param name="SecondModifiers">Modifiers of a chord's second key.</param>
+/// <param name="SecondKey">A chord's second key; null for a single key.</param>
+public readonly record struct KeyGesture(KeyModifiers Modifiers, string Key, KeyModifiers SecondModifiers = KeyModifiers.None, string? SecondKey = null)
 {
     private static readonly string[] NamedKeys =
     [
@@ -26,11 +32,69 @@ public readonly record struct KeyGesture(KeyModifiers Modifiers, string Key)
     /// <summary>Every canonical key name of UI-KEY-001.</summary>
     public static IReadOnlyCollection<string> KeyNames => Keys.Values;
 
-    /// <exception cref="FormatException">Not a gesture of UI-KEY-001.</exception>
+    /// <summary>A two-key chord (UI-KEY-006).</summary>
+    public bool IsChord => SecondKey is not null;
+
+    /// <summary>The first key of a chord; a single key is its own first key.</summary>
+    public KeyGesture First => IsChord ? new(Modifiers, Key) : this;
+
+    /// <summary>The second key of a chord; null for a single key.</summary>
+    public KeyGesture? Second => SecondKey is null ? null : new KeyGesture(SecondModifiers, SecondKey);
+
+    /// <summary>The chord <paramref name="first"/>, <paramref name="second"/>.</summary>
+    /// <exception cref="ArgumentException">One of them is itself a chord.</exception>
+    public static KeyGesture Chord(KeyGesture first, KeyGesture second) =>
+        first.IsChord || second.IsChord
+            ? throw new ArgumentException("A chord has two single keys.")
+            : new(first.Modifiers, first.Key, second.Modifiers, second.Key);
+
+    /// <summary>This is a chord whose first key is <paramref name="key"/>.</summary>
+    public bool StartsWith(KeyGesture key) => IsChord && First == key;
+
+    /// <summary>
+    /// The two cannot both be bound in one scope level (UI-KEY-012): the same gesture, or a single key and a chord
+    /// that starts with it. Two chords with the same first key do not overlap.
+    /// </summary>
+    public bool Overlaps(KeyGesture other) => this == other || StartsWith(other) || other.StartsWith(this);
+
+    /// <summary>
+    /// A list of gestures as text (UI-KEY-013): joined with <c>, </c>; with <c>; </c> when one of them is a chord, whose
+    /// own text has the comma.
+    /// </summary>
+    public static string Join(IEnumerable<KeyGesture> gestures)
+    {
+        var list = gestures.ToList();
+        return string.Join(list.Exists(g => g.IsChord) ? "; " : ", ", list);
+    }
+
+    /// <exception cref="FormatException">Not a gesture of UI-KEY-001 / UI-KEY-006.</exception>
     public static KeyGesture Parse(string text) =>
         TryParse(text, out var gesture) ? gesture : throw new FormatException($"'{text}' is not a key gesture.");
 
     public static bool TryParse(string? text, out KeyGesture gesture)
+    {
+        if (TryParseKey(text, out gesture))
+        {
+            return true;
+        }
+
+        // A chord: "<gesture>, <gesture>". The comma is also a key name ("Ctrl+,"), so every comma that is followed by
+        // white space is tried as the separator.
+        for (var i = text?.IndexOf(',', StringComparison.Ordinal) ?? -1; i >= 0; i = text!.IndexOf(',', i + 1))
+        {
+            if (i + 1 < text!.Length && char.IsWhiteSpace(text[i + 1])
+                && TryParseKey(text[..i], out var first) && TryParseKey(text[(i + 1)..], out var second))
+            {
+                gesture = Chord(first, second);
+                return true;
+            }
+        }
+
+        gesture = default;
+        return false;
+    }
+
+    private static bool TryParseKey(string? text, out KeyGesture gesture)
     {
         gesture = default;
         if (string.IsNullOrWhiteSpace(text))
@@ -67,10 +131,13 @@ public readonly record struct KeyGesture(KeyModifiers Modifiers, string Key)
     }
 
     public override string ToString() =>
-        (Modifiers.HasFlag(KeyModifiers.Ctrl) ? "Ctrl+" : "")
-        + (Modifiers.HasFlag(KeyModifiers.Shift) ? "Shift+" : "")
-        + (Modifiers.HasFlag(KeyModifiers.Alt) ? "Alt+" : "")
-        + Key;
+        Format(Modifiers, Key) + (SecondKey is null ? "" : ", " + Format(SecondModifiers, SecondKey));
+
+    private static string Format(KeyModifiers modifiers, string key) =>
+        (modifiers.HasFlag(KeyModifiers.Ctrl) ? "Ctrl+" : "")
+        + (modifiers.HasFlag(KeyModifiers.Shift) ? "Shift+" : "")
+        + (modifiers.HasFlag(KeyModifiers.Alt) ? "Alt+" : "")
+        + key;
 
     private static Dictionary<string, string> BuildKeys()
     {

@@ -182,7 +182,8 @@ public static class DefaultKeymap
         new(KeyGesture.Parse("Ctrl+Shift+Up"), CommandScope.Designer, null, "designer.bringToFront"),
         new(KeyGesture.Parse("Ctrl+Shift+Down"), CommandScope.Designer, null, "designer.sendToBack"),
         new(KeyGesture.Parse("Shift+Alt+F"), Editor, null, "edit.formatDocument"),
-        new(KeyGesture.Parse("Shift+Alt+S"), Editor, null, "edit.formatSelection"), // I-337: chords are not supported yet (UI-KEY-006)
+        new(KeyGesture.Parse("Shift+Alt+S"), Editor, null, "edit.formatSelection"),
+        new(KeyGesture.Parse("Ctrl+K, Ctrl+F"), Editor, null, "edit.formatSelection"), // I-342: the default key map's one chord (UI-KEY-006)
         new(KeyGesture.Parse("Shift+Alt+Enter"), Global, null, "view.fullScreen"),
         new(KeyGesture.Parse("Ctrl+Break"), Global, null, "project.cancelBuild"),
         new(KeyGesture.Parse("Ctrl+Alt+Break"), Global, null, "run.pause"),

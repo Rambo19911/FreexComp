@@ -766,6 +766,12 @@ The form change was undone.</value>
   <data name="Msg_Options_KeyConflict" xml:space="preserve">
     <value>{0} is already assigned to {1}. Assigning it here removes it there.</value>
   </data>
+  <data name="Msg_Options_KeyPrefixConflict" xml:space="preserve">
+    <value>{0} is the first key of a two-key shortcut of {1}. Assigning it here removes that shortcut there.</value>
+  </data>
+  <data name="Msg_Options_KeyChordConflict" xml:space="preserve">
+    <value>{0} starts with {1}, which is already assigned to {2}. Assigning it here removes {1} there.</value>
+  </data>
   <data name="Msg_Options_KeyReserved" xml:space="preserve">
     <value>{0} is reserved by the system and cannot be assigned.</value>
   </data>
@@ -825,6 +831,12 @@ The form change was undone.</value>
   </data>
   <data name="Msg_Status_CommandUnavailable" xml:space="preserve">
     <value>{0} is not available now</value>
+  </data>
+  <data name="Msg_Status_ChordWaiting" xml:space="preserve">
+    <value>{0} was pressed. Waiting for the second key…</value>
+  </data>
+  <data name="Msg_Status_ChordNotAShortcut" xml:space="preserve">
+    <value>{0} is not a shortcut.</value>
   </data>
   <data name="Msg_Welcome_NoRecent" xml:space="preserve">
     <value>No recent projects</value>
