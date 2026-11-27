@@ -275,4 +275,75 @@ public sealed class SignatureHelpTests
         Assert.Equal(label, Assert.Single(help!.Signatures).Label);
         Assert.Equal(0, help.ActiveParameter);
     }
+
+    /// <summary>C-418: generic methods whose type arguments reach the call through <c>var</c>, open-array, dynamic-array and instance-typed parameters.</summary>
+    internal const string InferenceProgram = """
+        program P;
+        type
+          TBox<T> = class
+            Value: T;
+          end;
+          TUtil = class
+          public
+            class procedure Swap<T>(var A, B: T);
+            class function IndexOf<T>(const Values: array of T; const Item: T): Integer;
+            class function First<T>(const Values: TArray<T>; const Fallback: T): T;
+            class function Unbox<T>(const Box: TBox<T>; const Fallback: T): T;
+          end;
+        class procedure TUtil.Swap<T>(var A, B: T); begin end;
+        class function TUtil.IndexOf<T>(const Values: array of T; const Item: T): Integer; begin Result := 0 end;
+        class function TUtil.First<T>(const Values: TArray<T>; const Fallback: T): T; begin Result := Fallback end;
+        class function TUtil.Unbox<T>(const Box: TBox<T>; const Fallback: T): T; begin Result := Fallback end;
+        var
+          N, M: Integer;
+          L: Int64;
+          S: string;
+          Names: array[0..2] of string;
+          Reals: TArray<Double>;
+          Box: TBox<string>;
+        begin
+          MAIN_BODY
+        end.
+        """;
+
+    /// <summary>
+    /// CMP-1477 (1), CMP-1478 (C-418): the semantic model infers as the compiler does (LANG-979) — while the call is typed, the
+    /// arguments so far give the instance through a <c>var</c> parameter, an open array (a variable or a bracket constructor), a
+    /// dynamic array and an instance of a generic class; a finished call shows the instance it binds to; arguments that disagree
+    /// leave the method generic, as the compiler reports them (E2711).
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1477")]
+    [Trait("Req", "CMP-1478")]
+    public void GenericMethodCall_InferredThroughVarAndOpenArray()
+    {
+        static SignatureHelp? Help(string main) => HelpIn(InferenceProgram.Replace("MAIN_BODY", main, StringComparison.Ordinal));
+
+        var swap = Help("TUtil.Swap(N, $$);");
+        Assert.Equal(["class procedure TUtil.Swap<Integer>(var A: Integer; var B: Integer)"], Labels(swap));
+        Assert.Equal("var B: Integer", Active(swap!));
+        Assert.Equal(["class procedure TUtil.Swap<Integer>(var A: Integer; var B: Integer)"], Labels(Help("TUtil.Swap(N, $$M);")));
+        Assert.Equal(["class procedure TUtil.Swap<string>(var A: string; var B: string)"], Labels(Help("TUtil.Swap(Names[0], $$S);")));
+
+        var indexOf = Help("N := TUtil.IndexOf(Names, $$);");
+        Assert.Equal(["class function TUtil.IndexOf<string>(const Values: array of string; const Item: string): Integer"], Labels(indexOf));
+        Assert.Equal("const Item: string", Active(indexOf!));
+        Assert.Equal(
+            ["class function TUtil.IndexOf<Integer>(const Values: array of Integer; const Item: Integer): Integer"],
+            Labels(Help("N := TUtil.IndexOf([N, M], $$);")));
+        Assert.Equal(
+            ["class function TUtil.IndexOf<Integer>(const Values: array of Integer; const Item: Integer): Integer"],
+            Labels(Help("N := TUtil.IndexOf([N, M], $$7);")));
+
+        Assert.Equal(
+            ["class function TUtil.First<Double>(const Values: TArray<Double>; const Fallback: Double): Double"],
+            Labels(Help("TUtil.First(Reals, $$);")));
+        Assert.Equal(
+            ["class function TUtil.Unbox<string>(const Box: TBox<string>; const Fallback: string): string"],
+            Labels(Help("S := TUtil.Unbox(Box, $$S);")));
+
+        Assert.Equal(["class procedure TUtil.Swap<T>(var A: T; var B: T)"], Labels(Help("TUtil.Swap($$);")));
+        Assert.Equal(["class procedure TUtil.Swap<T>(var A: T; var B: T)"], Labels(Help("TUtil.Swap(N, L$$);")));        // Integer and Int64
+    }
 }

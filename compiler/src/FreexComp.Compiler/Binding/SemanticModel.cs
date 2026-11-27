@@ -374,8 +374,8 @@ public sealed class SemanticModel
 
     /// <summary>
     /// CMP-729 (c, d; C-392): for a call of a generic method, the instance the call binds to; else, per generic method of the name, the
-    /// instance for the written type arguments, or for those the arguments typed so far infer (a parameter of a type parameter's type takes
-    /// its argument's type), else the open instance (its type parameters as types). Empty when the callee names no generic method.
+    /// instance for the written type arguments, or for those the arguments typed so far infer (LANG-979, as the binder infers them),
+    /// else the open instance (its type parameters as types). Empty when the callee names no generic method.
     /// </summary>
     internal ImmutableArray<MethodSymbol> GetGenericMethodCandidates(InvocationExpressionSyntax call)
     {
@@ -406,7 +406,11 @@ public sealed class SemanticModel
             .OfType<MethodSymbol>()];
     }
 
-    /// <summary>CMP-729 (d): the instance for the type arguments the typed arguments give; null while one stays open.</summary>
+    /// <summary>
+    /// CMP-729 (d), CMP-1477 (1), CMP-1478: the instance for the type arguments the arguments typed so far infer — by the binder's own
+    /// unification (<see cref="GenericInference"/>, LANG-979), so <c>var</c>, open-array, dynamic-array and instance-typed parameters
+    /// infer as in the compiler; null while a type parameter stays open or two arguments disagree.
+    /// </summary>
     private MethodSymbol? Inferred(GenericMethodSymbol generic, IReadOnlyList<ArgumentSyntax> arguments)
     {
         if (DeclarationBinder.OpenInstanceOf(_result.Types, generic) is not { } open)
@@ -414,17 +418,28 @@ public sealed class SemanticModel
             return null;
         }
 
-        var inferred = new TypeSymbol?[generic.ParameterNames.Length];
-        for (var i = 0; i < arguments.Count && i < open.Parameters.Length; i++)
-        {
-            var index = open.GenericMethodArguments.IndexOf(open.Parameters[i].Type);
-            if (index >= 0 && !arguments[i].Expression.IsMissing && GetTypeInfo(arguments[i].Expression).Type is { TypeKind: not TypeKind.Error } type)
-            {
-                inferred[index] ??= type;
-            }
-        }
+        var inferred = GenericInference.Infer(open, i => i < arguments.Count ? InferenceArgument(arguments[i].Expression) : default);
+        return inferred is { } types ? Instance(generic, [.. types]) : null;
+    }
 
-        return Instance(generic, inferred);
+    /// <summary>LANG-979 rule 1 for an argument as the model knows it: its natural type; for a bracket constructor those of its elements.</summary>
+    private GenericInference.Argument InferenceArgument(ExpressionSyntax expression)
+    {
+        TypeSymbol? Natural(ExpressionSyntax syntax) =>
+            !syntax.IsMissing && GetTypeInfo(syntax).Type is { TypeKind: not TypeKind.Error } type
+                ? GenericInference.Natural(_result.Types, type, GetConstantValue(syntax))
+                : null;
+
+        switch (ExpressionBinder.Unparenthesized(expression))
+        {
+            case AnonymousMethodExpressionSyntax or LiteralExpressionSyntax { Token.Kind: SyntaxKind.NilKeyword }:
+                return default;
+            case SetConstructorSyntax constructor:
+                var elements = constructor.Elements.Select(e => e.UpperBound is null ? Natural(e.Expression) : null).ToList();
+                return elements.Any(e => e is null) ? default : GenericInference.Argument.Constructor([.. elements!]);
+            default:
+                return Natural(expression) is { } natural ? GenericInference.Argument.Of(natural) : default;
+        }
     }
 
     private MethodSymbol? Instance(GenericMethodSymbol generic, TypeSymbol?[] arguments) =>

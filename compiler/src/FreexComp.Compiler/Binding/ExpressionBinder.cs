@@ -2240,8 +2240,12 @@ internal sealed partial class ExpressionBinder
         return BindCall(call, _scope.For(name).LookupCandidates(token.Value as string ?? token.Text), argumentList);
     }
 
-    /// <summary>As above for the given candidates (one procedural type's signature for a call through a value).</summary>
-    private (RoutineSymbol? Routine, ImmutableArray<BoundExpression> Arguments) BindCall(SyntaxNode call, ImmutableArray<RoutineSymbol> candidates, ArgumentListSyntax? argumentList)
+    /// <summary>
+    /// As above for the given candidates (one procedural type's signature for a call through a value). <paramref name="prebound"/>
+    /// (LANG-979, C-418): the arguments the inference of a generic method call bound already, by position — taken as they are.
+    /// </summary>
+    private (RoutineSymbol? Routine, ImmutableArray<BoundExpression> Arguments) BindCall(SyntaxNode call, ImmutableArray<RoutineSymbol> candidates, ArgumentListSyntax? argumentList,
+        ImmutableArray<BoundExpression?> prebound = default)
     {
         var syntaxes = argumentList?.Arguments ?? default;
         var builder = ImmutableArray.CreateBuilder<BoundExpression>(syntaxes.Count);
@@ -2254,6 +2258,13 @@ internal sealed partial class ExpressionBinder
             {
                 _diagnostics.Report(colon, "E2915");
                 hasErrors = true;
+            }
+
+            if (!prebound.IsDefault && i < prebound.Length && prebound[i] is { } inferred)
+            {
+                hasErrors |= inferred.HasErrors;
+                builder.Add(inferred);                                              // bound once, by the inference (CMP-1477 (2))
+                continue;
             }
 
             // a var/out parameter of the only candidate is a variable context (variable typecasts, LANG-290)

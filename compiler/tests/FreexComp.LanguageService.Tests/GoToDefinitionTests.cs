@@ -393,4 +393,31 @@ public sealed class GoToDefinitionTests
         var call = MarkupTestFile.Open("P.pas", ("P.pas", program), ("UC.pas", unit));
         Assert.Equal(In(unit, "UC.pas", "constructor TA.Create(N: Integer);", "Create"), Go(call, In(program, "P.pas", "TA.Create(1)", "Create")));
     }
+
+    /// <summary>
+    /// CMP-1477, CMP-1478 (C-418): a call whose type arguments are inferred through a <c>var</c> parameter, an open array, a dynamic
+    /// array or an instance of a generic class resolves in the semantic model as in the compiler (LANG-979) — its method name
+    /// navigates to the generic method (its implementation heading), not to nothing as for a call that does not bind.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1477")]
+    [Trait("Req", "CMP-1478")]
+    public void InferredGenericMethodCall_ThroughVarParameter()
+    {
+        var text = SignatureHelpTests.InferenceProgram.Replace("MAIN_BODY",
+            "TUtil.Swap(N, M);\n  N := TUtil.IndexOf(Names, S);\n  N := TUtil.IndexOf([N, M], 7);\n  TUtil.First(Reals, 0.5);\n  S := TUtil.Unbox(Box, S);",
+            StringComparison.Ordinal);
+        var doc = MarkupTestFile.Open("P.pas", ("P.pas", text));
+        Assert.DoesNotContain(doc.Compilation.GetDiagnostics(ct: TestContext.Current.CancellationToken), d => d.Severity == DiagnosticSeverity.Error);
+        (string, int) Implementation(string heading) => (TestFiles.PathOf("P.pas"), text.IndexOf(heading, StringComparison.Ordinal) + "TUtil.".Length);
+        (string, int) Go(string call) =>
+            Single(NavigationService.GoToDefinition(doc, text.IndexOf(call, StringComparison.Ordinal) + "TUtil.".Length + 1, TestContext.Current.CancellationToken));
+
+        Assert.Equal(Implementation("TUtil.Swap<T>(var A, B: T); begin"), Go("TUtil.Swap(N, M)"));
+        Assert.Equal(Implementation("TUtil.IndexOf<T>(const Values: array of T; const Item: T): Integer; begin"), Go("TUtil.IndexOf(Names, S)"));
+        Assert.Equal(Implementation("TUtil.IndexOf<T>(const Values: array of T; const Item: T): Integer; begin"), Go("TUtil.IndexOf([N, M], 7)"));
+        Assert.Equal(Implementation("TUtil.First<T>(const Values: TArray<T>; const Fallback: T): T; begin"), Go("TUtil.First(Reals, 0.5)"));
+        Assert.Equal(Implementation("TUtil.Unbox<T>(const Box: TBox<T>; const Fallback: T): T; begin"), Go("TUtil.Unbox(Box, S)"));
+    }
 }

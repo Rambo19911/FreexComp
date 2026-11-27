@@ -208,10 +208,11 @@ internal sealed partial class ExpressionBinder
         && a.Parameters.Zip(b.Parameters).All(p => p.First.Mode == p.Second.Mode && ReferenceEquals(p.First.Type, p.Second.Type));
 
     /// <summary>Binds the arguments, picks the method and determines its receiver (CMP-367 table).</summary>
+    /// <param name="prebound">LANG-979 (C-418): the arguments a generic method's inference already bound, by position (null: bound here).</param>
     private MethodCall BindMethodCall(SyntaxNode call, ImmutableArray<RoutineSymbol> candidates, ReceiverKind kind, BoundExpression? instance,
-        ClassTypeSymbol? className, ArgumentListSyntax? argumentList)
+        ClassTypeSymbol? className, ArgumentListSyntax? argumentList, ImmutableArray<BoundExpression?> prebound = default)
     {
-        var (routine, arguments) = BindCall(call, candidates, argumentList);
+        var (routine, arguments) = BindCall(call, candidates, argumentList, prebound);
         if (routine is not MethodSymbol method)
         {
             return new MethodCall(null, arguments, null);
@@ -498,7 +499,8 @@ internal sealed partial class ExpressionBinder
         }
 
         var candidates = GenericMethodCandidates(owner, name, name, argumentList)!.Value;
-        return candidates.IsEmpty ? new MethodCall(null, [], null) : BindMethodCall(call, candidates, ReceiverKind.Implicit, null, null, argumentList);
+        return candidates.IsEmpty ? new MethodCall(null, [.. candidates.Bound], null)
+            : BindMethodCall(call, candidates.Instances, ReceiverKind.Implicit, null, null, argumentList, candidates.Prebound);
     }
 
     private MethodCall ImplicitMethod(SyntaxNode call, IdentifierNameSyntax name, ArgumentListSyntax? argumentList)
@@ -661,8 +663,9 @@ internal sealed partial class ExpressionBinder
         {
             if (GenericMethodCandidates(className, syntax, argumentList) is { } genericMethod)
             {
-                methodCall = genericMethod.IsEmpty ? null : BindMethodCall(call, genericMethod, ReceiverKind.ClassName, null, className, argumentList);
-                return genericMethod.IsEmpty ? Error(syntax) : null;                // C-117 (LANG-701, 714)
+                methodCall = genericMethod.IsEmpty ? null
+                    : BindMethodCall(call, genericMethod.Instances, ReceiverKind.ClassName, null, className, argumentList, genericMethod.Prebound);
+                return genericMethod.IsEmpty ? Error(syntax, genericMethod.Bound) : null;   // C-117 (LANG-701, 979)
             }
 
             var candidates = MemberCandidates(className, name);
@@ -719,8 +722,9 @@ internal sealed partial class ExpressionBinder
         {
             if (GenericMethodCandidates(type, syntax, argumentList) is { } genericMethod)
             {
-                methodCall = genericMethod.IsEmpty ? null : BindMethodCall(call, genericMethod, ReceiverKind.Instance, receiver, null, argumentList);
-                return genericMethod.IsEmpty ? Error(syntax, receiver) : null;      // C-117
+                methodCall = genericMethod.IsEmpty ? null
+                    : BindMethodCall(call, genericMethod.Instances, ReceiverKind.Instance, receiver, null, argumentList, genericMethod.Prebound);
+                return genericMethod.IsEmpty ? Error(syntax, [receiver, .. genericMethod.Bound]) : null;      // C-117
             }
 
             var candidates = MemberCandidates(type, name);
@@ -845,17 +849,30 @@ internal sealed partial class ExpressionBinder
     }
 
     /// <summary>
-    /// C-117 (LANG-701, 714): the instance of the generic method <c>syntax.Name</c> of <paramref name="type"/> (or an ancestor) — for the
-    /// written type arguments, else inferred from the arguments of value and <c>const</c> parameters typed by a bare type parameter
-    /// (natural types, LANG-222; E2711 when a parameter stays open or two arguments disagree). Null when the type has no generic
-    /// method of that name; empty after an error.
+    /// The candidates of a call of a generic method (<see cref="GenericMethodCandidates(TypeSymbol, MemberAccessExpressionSyntax, ArgumentListSyntax?)"/>):
+    /// the instances — empty after an error — and, by argument position, the arguments the inference bound (LANG-979 rule 1: that
+    /// binding is the one the call uses; null where the argument is bound later, against the parameters of the candidates).
     /// </summary>
-    private ImmutableArray<RoutineSymbol>? GenericMethodCandidates(TypeSymbol type, MemberAccessExpressionSyntax syntax, ArgumentListSyntax? argumentList) =>
+    private readonly record struct GenericCandidates(ImmutableArray<RoutineSymbol> Instances, ImmutableArray<BoundExpression?> Prebound)
+    {
+        public bool IsEmpty => Instances.IsEmpty;
+
+        /// <summary>The arguments bound so far: the children of the error expression of a call that failed.</summary>
+        public BoundExpression[] Bound => Prebound.IsDefault ? [] : [.. Prebound.OfType<BoundExpression>()];
+    }
+
+    /// <summary>
+    /// C-117 (LANG-701), C-418 (LANG-979): the instance of the generic method <c>syntax.Name</c> of <paramref name="type"/> (or an
+    /// ancestor) — for the written type arguments, else inferred by unification of its parameter types with the argument types
+    /// (E2711 when a type parameter stays open or is bound to two types; nothing more when an argument has an error of its own).
+    /// Null when the type has no generic method of that name; empty after an error.
+    /// </summary>
+    private GenericCandidates? GenericMethodCandidates(TypeSymbol type, MemberAccessExpressionSyntax syntax, ArgumentListSyntax? argumentList) =>
         GenericMethodCandidates(type, syntax.Name, syntax, argumentList);
 
     /// <param name="nameSyntax">The method name as written (<c>Max</c> or <c>Max&lt;Integer&gt;</c>).</param>
     /// <param name="at">The member access <c>TUtil.Max</c>, or the name itself for an unqualified call (C-222).</param>
-    private ImmutableArray<RoutineSymbol>? GenericMethodCandidates(TypeSymbol type, SimpleNameSyntax nameSyntax, ExpressionSyntax at, ArgumentListSyntax? argumentList)
+    private GenericCandidates? GenericMethodCandidates(TypeSymbol type, SimpleNameSyntax nameSyntax, ExpressionSyntax at, ArgumentListSyntax? argumentList)
     {
         var name = nameSyntax.Identifier.Value as string ?? nameSyntax.Identifier.Text;
         var definitions = TypeMembers.SelfAndAncestors(type).SelectMany(t => (IEnumerable<GenericMethodSymbol>)DeclarationBinder.GenericMethodsOf(t))
@@ -875,13 +892,13 @@ internal sealed partial class ExpressionBinder
             if (fitting.Count == 0)
             {
                 _diagnostics.Report(nameSyntax, "E2703", name, definitions[0].ParameterNames.Length);
-                return [];
+                return new GenericCandidates([], default);
             }
 
             ImmutableArray<TypeSymbol> arguments = [.. written.TypeArgumentList.Arguments.Select(declarations.BindTypeArgument)];
             if (arguments.Any(a => a.TypeKind == TypeKind.Error))
             {
-                return [];
+                return new GenericCandidates([], default);
             }
 
             foreach (var generic in fitting)
@@ -892,12 +909,22 @@ internal sealed partial class ExpressionBinder
                 }
             }
 
-            return instances.Count == fitting.Count ? instances.ToImmutable() : [];
+            return new GenericCandidates(instances.Count == fitting.Count ? instances.ToImmutable() : [], default);
         }
 
-        foreach (var generic in definitions)
+        // LANG-979 (C-418): the parameter types as declared are those of each method's open instance (null: its heading does not bind)
+        var opens = definitions.Select(d => DeclarationBinder.OpenInstanceOf(_types, d)).ToList();
+        var prebound = BindInferenceArguments(opens, argumentList);
+        if (prebound.Any(a => a is { HasErrors: true }))
         {
-            if (InferTypeArguments(generic, argumentList) is { } inferred && declarations.InstantiateMethod(generic, inferred, at) is { } instance)
+            return new GenericCandidates([], prebound);                             // rule 5: the argument's diagnostic, no E2711
+        }
+
+        var inference = new InferenceArguments(this, argumentList, prebound);
+        for (var d = 0; d < definitions.Count; d++)
+        {
+            if (opens[d] is { } open && GenericInference.Infer(open, i => inference.At(i, open)) is { } inferred
+                && declarations.InstantiateMethod(definitions[d], inferred, at) is { } instance)
             {
                 instances.Add(instance);
             }
@@ -908,54 +935,126 @@ internal sealed partial class ExpressionBinder
             _diagnostics.Report(nameSyntax, "E2711", name);
         }
 
-        return instances.ToImmutable();
+        return new GenericCandidates(instances.ToImmutable(), prebound);
     }
 
-    private ImmutableArray<TypeSymbol>? InferTypeArguments(GenericMethodSymbol generic, ArgumentListSyntax? argumentList)
+    /// <summary>
+    /// LANG-979 rule 1 (CMP-1477 (2)): binds, once for the call and whatever the number of generic methods of the name, every argument
+    /// that has an argument type at a position where a declared parameter type of one of them (<paramref name="opens"/>) mentions a type
+    /// parameter — without an expected type; as a variable where each of them takes it by reference. Null for the others, which the
+    /// call binds against the parameters of its candidates as for any method (<c>BindCall</c>): <c>nil</c>, anonymous methods and
+    /// bracket constructors; arguments of parameters whose type no type parameter reaches; and arguments whose meaning depends on the
+    /// parameter type (<see cref="NeedsParameterType"/>).
+    /// </summary>
+    private ImmutableArray<BoundExpression?> BindInferenceArguments(IReadOnlyList<MethodSymbol?> opens, ArgumentListSyntax? argumentList)
     {
-        var inferred = new TypeSymbol?[generic.ParameterNames.Length];
-        var scratch = new ExpressionBinder(_types, _scope, new DiagnosticBag(), _routine) { CurrentInline = CurrentInline };
-        var index = 0;
-        foreach (var parameter in generic.Declaration.Heading.ParameterList?.Parameters ?? default)
+        var syntaxes = argumentList?.Arguments ?? default;
+        var builder = ImmutableArray.CreateBuilder<BoundExpression?>(syntaxes.Count);
+        for (var i = 0; i < syntaxes.Count; i++)
         {
-            foreach (var _ in parameter.Identifiers)
+            var expression = syntaxes[i].Expression;
+            var parameters = opens.Where(o => o is not null && i < o.Parameters.Length)
+                .Select(o => (Symbol: o!.Parameters[i], Generic: GenericInference.Mentions(o.Parameters[i].Type, o.GenericMethodArguments))).ToList();
+            if (HasNoArgumentType(expression) || !parameters.Any(p => p.Generic)
+                || parameters.Any(p => p.Generic && NeedsParameterType(expression, p.Symbol.Type)))
             {
-                var position = index++;
-                if (parameter.Modifier is { Kind: SyntaxKind.VarKeyword } || parameter.Modifier?.ContextualKind == SyntaxKind.OutKeyword
-                    || parameter.Type is not NamedTypeSyntax { Name: IdentifierNameSyntax { Identifier: var typeName } }
-                    || argumentList is null || position >= argumentList.Arguments.Count)
-                {
-                    continue;
-                }
-
-                var k = generic.ParameterNames.IndexOf(typeName.Value as string ?? typeName.Text, IdentifierComparer.Instance);
-                if (k < 0)
-                {
-                    continue;
-                }
-
-                var argument = scratch.BindExpression(argumentList.Arguments[position].Expression);
-                if (argument.HasErrors)
-                {
-                    return null;
-                }
-
-                var natural = argument.ConstantValue?.Value switch
-                {
-                    System.Numerics.BigInteger value when argument.Type is IntegerTypeSymbol => value >= int.MinValue && value <= int.MaxValue ? _types.Integer : _types.Int64,
-                    double when argument.Type is RealTypeSymbol => _types.Double,
-                    _ => argument.Type,
-                };
-                if (inferred[k] is { } earlier && !ReferenceEquals(earlier, natural))
-                {
-                    return null;
-                }
-
-                inferred[k] = natural;
+                builder.Add(null);
+                continue;
             }
+
+            builder.Add(parameters.All(p => p.Symbol.IsByReference) ? BindVariable(expression) : BindExpression(expression));
         }
 
-        return inferred.Any(t => t is null) ? null : [.. inferred!];
+        return builder.ToImmutable();
+    }
+
+    /// <summary>LANG-979 rule 1: <c>nil</c>, an anonymous method or a bracket constructor — bound only against a candidate's parameter type.</summary>
+    private static bool HasNoArgumentType(ExpressionSyntax expression) =>
+        Unparenthesized(expression) is AnonymousMethodExpressionSyntax or SetConstructorSyntax or LiteralExpressionSyntax { Token.Kind: SyntaxKind.NilKeyword };
+
+    /// <summary>
+    /// The argument means something else in the context of a parameter of that type than alone (<see cref="BindExpression(ExpressionSyntax, TypeSymbol?)"/>):
+    /// at a procedural, method-pointer or method-reference parameter a routine name is its address and a procedural value is not
+    /// called (LANG-480…482); at a dynamic-array parameter <c>+</c> and <c>Concat</c> pass the type to their constructor operands
+    /// (LANG-275 rule 3, LANG-279). Such an argument is bound against the parameter of the candidates, as before C-418.
+    /// </summary>
+    private bool NeedsParameterType(ExpressionSyntax expression, TypeSymbol parameter) =>
+        GenericInference.IsProceduralLike(parameter)
+        || parameter is DynamicArrayTypeSymbol
+        && (Unparenthesized(expression) is BinaryExpressionSyntax { OperatorToken.Kind: SyntaxKind.PlusToken } || ConcatIntrinsicCall(expression).Call is not null);
+
+    /// <summary>
+    /// What each argument of one call gives the inference of a generic method (<see cref="GenericInference.Argument"/>): the natural
+    /// type of a bound argument (at a <c>var</c> / <c>out</c> position the declared type of the variable); for the arguments bound
+    /// later a probe on a scratch binder, once per position and form — the elements of a bracket constructor at an open-array
+    /// parameter, each alone, and the type of an argument that <see cref="NeedsParameterType"/> (at a procedural, method-pointer or
+    /// method-reference parameter without the implicit call).
+    /// </summary>
+    private sealed class InferenceArguments(ExpressionBinder binder, ArgumentListSyntax? argumentList, ImmutableArray<BoundExpression?> prebound)
+    {
+        private enum Form { Constructor, Operand, Value }
+
+        private readonly Dictionary<(int Index, Form Form), GenericInference.Argument> _probed = [];
+
+        public GenericInference.Argument At(int index, MethodSymbol open)
+        {
+            if (index >= prebound.Length)
+            {
+                return default;                                                 // a missing argument (a default value)
+            }
+
+            var parameter = open.Parameters[index];
+            if (prebound[index] is { } bound)
+            {
+                return GenericInference.Argument.Of(
+                    parameter.IsByReference ? bound.Type : GenericInference.Natural(binder._types, bound.Type, bound.ConstantValue));
+            }
+
+            var expression = argumentList!.Arguments[index].Expression;
+            var constructor = Unparenthesized(expression) as SetConstructorSyntax;
+            if ((constructor is null ? HasNoArgumentType(expression) : parameter.Type is not OpenArrayTypeSymbol)
+                || !GenericInference.Mentions(parameter.Type, open.GenericMethodArguments)
+                || expression.DescendantNodes().OfType<AnonymousMethodExpressionSyntax>().Any())
+            {
+                return default;                                                 // an anonymous method is bound once (it makes symbols)
+            }
+
+            var form = constructor is not null ? Form.Constructor : GenericInference.IsProceduralLike(parameter.Type) ? Form.Operand : Form.Value;
+            if (!_probed.TryGetValue((index, form), out var argument))
+            {
+                argument = constructor is not null ? GenericInference.Argument.Constructor(Elements(constructor))
+                    : Probe(expression, form) is { } type ? GenericInference.Argument.Of(type) : default;
+                _probed[(index, form)] = argument;
+            }
+
+            return argument;
+        }
+
+        /// <summary>The natural types of the elements, each bound alone; empty when one is a range, has none or does not bind.</summary>
+        private ImmutableArray<TypeSymbol> Elements(SetConstructorSyntax constructor)
+        {
+            var types = ImmutableArray.CreateBuilder<TypeSymbol>(constructor.Elements.Count);
+            foreach (var element in constructor.Elements)
+            {
+                if (element.UpperBound is not null || HasNoArgumentType(element.Expression) || Probe(element.Expression, Form.Value) is not { } type)
+                {
+                    return [];
+                }
+
+                types.Add(type);
+            }
+
+            return types.ToImmutable();
+        }
+
+        private TypeSymbol? Probe(ExpressionSyntax expression, Form form)
+        {
+            var diagnostics = new DiagnosticBag();
+            var probe = binder.ProbeBinder(diagnostics);
+            var bound = form == Form.Operand ? probe.BindOperand(expression) : probe.BindExpression(expression);
+            return bound.HasErrors || diagnostics.Count != 0 ? null
+                : form == Form.Operand ? bound.Type : GenericInference.Natural(binder._types, bound.Type, bound.ConstantValue);
+        }
     }
 
     /// <summary>C-116: <c>TList&lt;Integer&gt;</c> in an expression — the instance (bound like the type name, LANG-705/710).</summary>
@@ -1073,18 +1172,19 @@ internal sealed partial class ExpressionBinder
     {
         methodCall = null;
         ImmutableArray<RoutineSymbol> candidates = [.. record.Methods.Where(m => IdentifierComparer.Instance.Equals(m.Name, name))];
+        ImmutableArray<BoundExpression?> prebound = default;
         if (GenericMethodCandidates(record, syntax, argumentList) is { } genericMethod)
         {
-            candidates = genericMethod;                                             // C-117
+            (candidates, prebound) = (genericMethod.Instances, genericMethod.Prebound);     // C-117
             if (candidates.IsEmpty)
             {
-                return Error(syntax);
+                return Error(syntax, genericMethod.Bound);
             }
         }
 
         if (!candidates.IsEmpty)
         {
-            methodCall = BindMethodCall(call, candidates, ReceiverKind.ClassName, null, null, argumentList);
+            methodCall = BindMethodCall(call, candidates, ReceiverKind.ClassName, null, null, argumentList, prebound);
             return null;
         }
 
@@ -1119,18 +1219,19 @@ internal sealed partial class ExpressionBinder
         methodCall = null;
         var type = (RecordTypeSymbol)record.Type;
         ImmutableArray<RoutineSymbol> candidates = [.. type.Methods.Where(m => IdentifierComparer.Instance.Equals(m.Name, name))];
+        ImmutableArray<BoundExpression?> prebound = default;
         if (GenericMethodCandidates(type, syntax, argumentList) is { } genericMethod)
         {
-            candidates = genericMethod;                                             // C-117
+            (candidates, prebound) = (genericMethod.Instances, genericMethod.Prebound);     // C-117
             if (candidates.IsEmpty)
             {
-                return Error(syntax, record);
+                return Error(syntax, [record, .. genericMethod.Bound]);
             }
         }
 
         if (!candidates.IsEmpty)
         {
-            methodCall = BindMethodCall(call, candidates, ReceiverKind.Instance, record, null, argumentList);
+            methodCall = BindMethodCall(call, candidates, ReceiverKind.Instance, record, null, argumentList, prebound);
             return null;
         }
 

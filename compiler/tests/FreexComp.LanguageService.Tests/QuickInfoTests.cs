@@ -570,4 +570,24 @@ public sealed class QuickInfoTests
 
         Assert.Equal(signature, info?.Signature);
     }
+
+    /// <summary>
+    /// CMP-1478 (C-418): hover on the method name of a call whose type arguments are inferred through a <c>var</c>, open-array,
+    /// dynamic-array or instance-typed parameter shows the instance the call binds to — its parameters with the inferred types, as for
+    /// any instance of a generic method (before: nothing, the call was E2711).
+    /// </summary>
+    [Theory]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1478")]
+    [InlineData("TUtil.Sw$$ap(N, M);", "class procedure TUtil.Swap(var A: Integer; var B: Integer)")]
+    [InlineData("N := TUtil.Index$$Of(Names, S);", "class function TUtil.IndexOf(const Values: array of string; const Item: string): Integer")]
+    [InlineData("N := TUtil.Index$$Of([N, M], 7);", "class function TUtil.IndexOf(const Values: array of Integer; const Item: Integer): Integer")]
+    [InlineData("TUtil.Fir$$st(Reals, 0.5);", "class function TUtil.First(const Values: TArray<Double>; const Fallback: Double): Double")]
+    [InlineData("S := TUtil.Un$$box(Box, S);", "class function TUtil.Unbox(const Box: TBox<string>; const Fallback: string): string")]
+    public void InferredGenericMethodCall_ShowsTheInstance(string statement, string signature)
+    {
+        var info = HoverAt(SignatureHelpTests.InferenceProgram.Replace("MAIN_BODY", statement, StringComparison.Ordinal));
+
+        Assert.Equal(signature, info?.Signature);
+    }
 }

@@ -1,0 +1,31 @@
+Swap<Integer>: 2 1
+Swap: 1 2
+Swap: right left
+Max<Integer>: 7
+Max: 7
+Max: 9
+MaxBy<Integer>: 7
+MaxBy: 3
+MaxBy: right
+IndexOf<string>: 1
+IndexOf: 2
+IndexOf: 2
+IndexOf: -1
+Sum<Integer>: 6
+Sum: 6
+Sum: 15
+Sum: 9
+Sum: annbobcy
+First<Double>: 1.5
+First: 1.5
+Count<Integer>: 12
+Count: 12
+Count: 3
+Count: 0
+Fill: key of 1, value of 8
+Fill: key of 1, value of 8
+Fill: key of 8, value of 8
+Fill: key of 4, value of 1
+Filled: 0 0.0 0
+Exchange: 20 10 two one in 4 calls
+Advance: 6 1.0 abone in 4 steps
