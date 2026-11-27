@@ -1,0 +1,215 @@
+# defaults (UIF-1505)
+ok Width 289
+ok Height 193
+ok Tabs empty
+ok TabIndex -1
+ok TabStop
+ok TabOrder -1
+ok HotTrack
+ok Images nil
+ok MultiLine
+ok RaggedRight
+ok ScrollOpposite
+ok Style tsTabs
+ok TabHeight 0
+ok TabPosition tpTop
+ok TabWidth 0
+ok ParentFont
+ok a container
+ok a TCustomTabControl
+ok no handle
+ok TabRect without a handle
+ok IndexOfTabAt without a handle
+ok Align published
+ok Anchors published
+ok Constraints published
+ok Enabled published
+ok Font published
+ok Hint published
+ok HotTrack published
+ok Images published
+ok MultiLine published
+ok ParentFont published
+ok ParentShowHint published
+ok PopupMenu published
+ok RaggedRight published
+ok ScrollOpposite published
+ok ShowHint published
+ok Style published
+ok TabHeight published
+ok TabIndex published
+ok TabOrder published
+ok TabPosition published
+ok Tabs published
+ok TabStop published
+ok TabWidth published
+ok Visible published
+ok OnChange published
+ok OnChanging published
+ok OnClick published
+ok OnContextPopup published
+ok OnEnter published
+ok OnExit published
+ok OnGetImageIndex published
+ok OnKeyDown published
+ok OnMouseDown published
+ok OnResize published
+ok no ActivePage
+ok TabIndex not published on the page control
+# .form defaults (UIF-1516)
+ok MultiLine default (not written to .form)
+ok RaggedRight default (not written to .form)
+ok ScrollOpposite default (not written to .form)
+ok Style default (not written to .form)
+ok TabIndex default (not written to .form)
+ok TabPosition default (not written to .form)
+ok TabStop default (not written to .form)
+ok Tabs: no default (written when not empty)
+# TabIndex in code without a handle (UIF-1507)
+ok empty: 0 ignored
+ok the first tab of an empty control is selected
+ok later tabs keep the selection
+ok TabIndex 2
+ok 3 = Count ignored
+ok -2 ignored
+ok -1 deselects
+ok TabIndex 1
+# tab edits keep the selected tab (UIF-1507)
+ok insert at 1
+ok insert at TabIndex: + 1
+ok insert after TabIndex: unchanged
+ok delete 0
+ok delete before TabIndex: - 1
+ok delete after TabIndex: unchanged
+ok selected tab deleted
+ok deleting the selected tab: the tab now at that index
+ok deleting the selected last tab: the new last one
+ok no tab left: -1
+ok auto-select again
+ok Move(1, 3)
+ok Move of the selected tab: followed
+ok Move(0, 3)
+ok Move across the selected tab (down): followed
+ok Move(3, 0)
+ok Move across the selected tab (up): followed
+ok Exchange(3, 0)
+ok Exchange of the selected tab: followed
+ok Exchange of other tabs: unchanged
+ok Put
+ok Put: unchanged
+ok objects held
+ok Clear: -1
+ok Tabs := copies the strings
+ok Tabs := does not take the list
+ok Assign of a non-empty list: 0
+ok Assign replaces: 0
+ok Text
+ok Text: 0
+ok no OnChanging / OnChange in code
+# children (UIF-1511, corpus E47)
+ok DisplayRect at 96 DPI
+ok alClient child fills the display rectangle
+ok alClient child follows TabPosition
+ok anchored child: anchors follow the client size (UIF-231), not the strip
+ok anchored child follows a resize
+ok alClient child after the resize
+ok children not switched by the selection
+# native items (UIF-1506)
+ok CreateWnd inserts every tab
+ok texts
+ok CreateWnd selects TabIndex
+ok Insert -> TCM_INSERTITEMW
+ok selection restored after Insert
+ok Delete -> TCM_DELETEITEM
+ok selection restored after Delete
+ok Put -> TCM_SETITEMW
+ok Move
+ok selection follows Move
+ok Exchange
+ok selection follows Exchange
+ok BeginUpdate defers the native items
+ok EndUpdate rebuilds them
+ok TabIndex followed the selected tab during the update
+ok selection restored after the rebuild
+ok Clear -> TCM_DELETEALLITEMS
+ok nothing selected
+ok the first tab of an empty control is selected natively too
+ok tab edits keep the window
+ok no events from tab edits
+# recreation (UIF-1506)
+ok Style recreates the window
+ok TCS_BUTTONS
+ok tabs kept through RecreateWnd
+ok selection kept through RecreateWnd
+ok TabIndex kept
+ok objects kept
+ok tabs kept through a second recreation
+# TabIndex in code (UIF-1507)
+ok TCM_SETCURSEL 0
+ok TCM_SETCURSEL 1
+ok ignored value: selection unchanged
+ok -1: no tab selected
+ok setting TabIndex in code fires nothing
+# user selection (UIF-1509, card acceptance)
+ok click on the second tab: OnChanging, then OnChange
+ok TabIndex 1
+ok TCM_GETCURSEL 1
+ok vetoed: no OnChange
+ok vetoed: TabIndex 0
+ok vetoed: TCM_GETCURSEL 0
+# keys (UIF-1510)
+ok Right on the strip (native)
+ok Left on the strip (native)
+ok Ctrl+Tab with the focus on a child: next tab
+ok the focus stays on the child
+ok Ctrl+Tab on the strip
+ok Ctrl+Tab wraps to the first tab
+ok Ctrl+Shift+Tab: previous tab (wrapping)
+ok native selection follows
+ok Ctrl+Tab vetoed
+ok tab unchanged
+ok Ctrl+Tab outside the tab control: no change
+ok other character: not consumed
+ok accelerator consumed
+ok accelerator selects the tab
+ok accelerator of the selected tab consumed
+ok no events for the selected tab
+ok vetoed accelerator consumed
+ok accelerator vetoed
+ok tab unchanged
+# images (UIF-1512)
+ok without Images: -1
+ok TCM_SETIMAGELIST
+ok default: tab i shows image i
+ok an inserted tab gets its image
+ok OnGetImageIndex for the inserted tab (default 0 -> 3)
+ok the image-list link re-queries every tab
+ok Images nil: -1
+ok Images assigned: re-queried
+ok images after RecreateWnd
+ok page control: OnGetImageIndex gets the page's ImageIndex
+# display rectangle at the form's DPI (UIF-1511)
+ok alClient child = DisplayRect
+ok the child equals DisplayRect
+ok a user selection does not hide children
+# streaming (UIF-1508, UIF-1516)
+ok MultiLine = True
+ok RaggedRight = True
+ok ScrollOpposite = True
+ok Style = tsFlatButtons
+ok TabPosition = tpBottom
+ok Tabs = ( ... )
+ok TabIndex = 2 read before Tabs
+ok OnChange bound
+ok OnGetImageIndex bound
+ok no events while loading
+ok native tabs
+ok native selection
+ok alClient child of the loaded control
+ok tabs read
+ok a stored TabIndex out of range becomes -1 in Loaded
+ok no auto-select while loading
+ok no native selection either
+ok TabIndex before Tabs is kept
+ok after loading the rules apply again
+# passed 201 failed 0

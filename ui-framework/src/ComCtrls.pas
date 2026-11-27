@@ -251,6 +251,67 @@ type
     property OnResize;
   end;
 
+  { phase8/tab-control.md section 5: the plain tab strip; Tabs held by the control (UIF-1506), the selection is
+    TabIndex (UIF-1507), children are not switched by it (UIF-1511) }
+  TTabControl = class(TCustomTabControl)
+  private
+    FTabs: TStrings;
+    FTabsUpdating: Boolean;
+    procedure SetTabs(Value: TStrings);
+    { the native item Index (text and image, UIF-1512) inserted or re-set }
+    procedure SendItem(Index: Integer; Insert: Boolean);
+    { UIF-1506: after a Tabs change: the selection restored and the control realigned }
+    procedure TabsEdited;
+    { UIF-1509, UIF-1510: a selection by the user: OnChanging (veto), TabIndex, OnChange }
+    procedure SelectTab(Index: Integer);
+  protected
+    function VisibleTabCount: Integer; override;
+    function TabCaption(Index: Integer): string; override;
+    procedure UpdateTabItems; override;
+    procedure SetTabIndex(Value: Integer); override;
+    procedure CreateWnd; override;
+    procedure Loaded; override;
+    procedure WndProc(var Message: TMessage); override;
+  public
+    constructor Create(AOwner: TComponent); override;
+    destructor Destroy; override;
+    { UIF-1511: the align rect is DisplayRect }
+    procedure AdjustClientRect(var Rect: TRect); override;
+  published
+    property Font;
+    property HotTrack;
+    property Images;
+    property MultiLine;
+    property ParentFont;
+    property RaggedRight;
+    property ScrollOpposite;
+    property Style;
+    property TabHeight;
+    property TabIndex;
+    property TabOrder;
+    property TabPosition;
+    property Tabs: TStrings read FTabs write SetTabs;
+    property TabStop default True;
+    property TabWidth;
+    property OnChange;
+    property OnChanging;
+    property OnClick;
+    property OnContextPopup;
+    property OnDblClick;
+    property OnEnter;
+    property OnExit;
+    property OnGetImageIndex;
+    property OnKeyDown;
+    property OnKeyPress;
+    property OnKeyUp;
+    property OnMouseDown;
+    property OnMouseEnter;
+    property OnMouseLeave;
+    property OnMouseMove;
+    property OnMouseUp;
+    property OnResize;
+  end;
+
   TStatusPanelBevel = (pbNone, pbLowered, pbRaised);
 
   TStatusBar = class;
@@ -2479,6 +2540,353 @@ begin
             Exit;
           end;
         end;
+        inherited WndProc(Message);
+      end;
+    CM_FONTCHANGED:
+      begin
+        inherited WndProc(Message);
+        TabSizeChanged;
+      end;
+  else
+    inherited WndProc(Message);
+  end;
+end;
+
+{ ---------------------------------------------------------------- TTabStrings }
+
+type
+  { UIF-1506: the strings and objects of TTabControl.Tabs, held here (nothing is read back from the window) and
+    mirrored to the native items; the TabIndex rules of UIF-1507 (not while loading, UIF-1508) }
+  TTabStrings = class(TStrings)
+  private
+    FControl: TTabControl;
+    FList: TStringList;
+    { UIF-1507: the selected tab after an edit (not while loading) }
+    procedure Follow(Value: Integer);
+  protected
+    function Get(Index: Integer): string; override;
+    function GetCount: Integer; override;
+    function GetObject(Index: Integer): TObject; override;
+    procedure Put(Index: Integer; const S: string); override;
+    procedure PutObject(Index: Integer; AObject: TObject); override;
+    { BeginUpdate / EndUpdate: one rebuild at the outermost EndUpdate }
+    procedure SetUpdateState(Updating: Boolean); override;
+  public
+    constructor Create(AControl: TTabControl);
+    destructor Destroy; override;
+    procedure Clear; override;
+    procedure Delete(Index: Integer); override;
+    procedure Exchange(Index1, Index2: Integer); override;
+    procedure Insert(Index: Integer; const S: string); override;
+    procedure Move(CurIndex, NewIndex: Integer); override;
+  end;
+
+constructor TTabStrings.Create(AControl: TTabControl);
+begin
+  inherited Create;
+  FControl := AControl;
+  FList := TStringList.Create;
+end;
+
+destructor TTabStrings.Destroy;
+begin
+  FList.Free;
+  FList := nil;
+  inherited Destroy;
+end;
+
+procedure TTabStrings.Follow(Value: Integer);
+begin
+  if not (csLoading in FControl.ComponentState) then
+    FControl.FTabIndex := Value;
+end;
+
+function TTabStrings.Get(Index: Integer): string;
+begin
+  Result := FList[Index];
+end;
+
+function TTabStrings.GetCount: Integer;
+begin
+  Result := FList.Count;
+end;
+
+function TTabStrings.GetObject(Index: Integer): TObject;
+begin
+  Result := FList.Objects[Index];
+end;
+
+procedure TTabStrings.Put(Index: Integer; const S: string);
+begin
+  FList[Index] := S;
+  if not FControl.FTabsUpdating then
+    FControl.SendItem(Index, False);
+  FControl.TabsEdited;
+end;
+
+procedure TTabStrings.PutObject(Index: Integer; AObject: TObject);
+begin
+  FList.Objects[Index] := AObject;
+end;
+
+procedure TTabStrings.SetUpdateState(Updating: Boolean);
+begin
+  FControl.FTabsUpdating := Updating;
+  if not Updating then
+  begin
+    FControl.UpdateTabItems;
+    FControl.TabsEdited;
+  end;
+end;
+
+procedure TTabStrings.Clear;
+begin
+  FList.Clear;
+  Follow(-1);
+  if not FControl.FTabsUpdating and FControl.HandleAllocated then
+    SendMessageW(FControl.Handle, TCM_DELETEALLITEMS, 0, 0);
+  FControl.TabsEdited;
+end;
+
+procedure TTabStrings.Delete(Index: Integer);
+var
+  T: Integer;
+begin
+  FList.Delete(Index);
+  T := FControl.FTabIndex;
+  if Index < T then
+    Follow(T - 1)
+  else if (Index = T) and (T >= FList.Count) then
+    Follow(FList.Count - 1);                                 { the new last one, -1 when none is left }
+  if not FControl.FTabsUpdating and FControl.HandleAllocated then
+    SendMessageW(FControl.Handle, TCM_DELETEITEM, WPARAM(Index), 0);
+  FControl.TabsEdited;
+end;
+
+procedure TTabStrings.Exchange(Index1, Index2: Integer);
+var
+  T: Integer;
+begin
+  FList.Exchange(Index1, Index2);
+  T := FControl.FTabIndex;
+  if T = Index1 then
+    Follow(Index2)
+  else if T = Index2 then
+    Follow(Index1);
+  if not FControl.FTabsUpdating then
+  begin
+    FControl.SendItem(Index1, False);
+    FControl.SendItem(Index2, False);
+  end;
+  FControl.TabsEdited;
+end;
+
+procedure TTabStrings.Insert(Index: Integer; const S: string);
+var
+  T: Integer;
+begin
+  FList.Insert(Index, S);
+  T := FControl.FTabIndex;
+  if (FList.Count = 1) and (T = -1) then
+    Follow(0)                                                { UIF-1507: the first tab of an empty control }
+  else if Index <= T then
+    Follow(T + 1);
+  if not FControl.FTabsUpdating then
+    FControl.SendItem(Index, True);
+  FControl.TabsEdited;
+end;
+
+procedure TTabStrings.Move(CurIndex, NewIndex: Integer);
+var
+  T, I, Lo, Hi: Integer;
+begin
+  if CurIndex = NewIndex then
+    Exit;
+  FList.Move(CurIndex, NewIndex);
+  T := FControl.FTabIndex;
+  if T = CurIndex then
+    Follow(NewIndex)
+  else if (CurIndex < T) and (T <= NewIndex) then
+    Follow(T - 1)
+  else if (NewIndex <= T) and (T < CurIndex) then
+    Follow(T + 1);
+  if not FControl.FTabsUpdating then
+  begin
+    if CurIndex < NewIndex then
+    begin
+      Lo := CurIndex;
+      Hi := NewIndex;
+    end
+    else
+    begin
+      Lo := NewIndex;
+      Hi := CurIndex;
+    end;
+    for I := Lo to Hi do
+      FControl.SendItem(I, False);
+  end;
+  FControl.TabsEdited;
+end;
+
+{ ---------------------------------------------------------------- TTabControl }
+
+constructor TTabControl.Create(AOwner: TComponent);
+begin
+  inherited Create(AOwner);
+  FTabs := TTabStrings.Create(Self);
+end;
+
+destructor TTabControl.Destroy;
+begin
+  inherited Destroy;
+  FTabs.Free;
+  FTabs := nil;
+end;
+
+procedure TTabControl.SetTabs(Value: TStrings);
+begin
+  FTabs.Assign(Value);
+end;
+
+function TTabControl.VisibleTabCount: Integer;
+begin
+  if FTabs = nil then
+    Result := 0
+  else
+    Result := FTabs.Count;
+end;
+
+function TTabControl.TabCaption(Index: Integer): string;
+begin
+  Result := FTabs[Index];
+end;
+
+procedure TTabControl.SendItem(Index: Integer; Insert: Boolean);
+var
+  Item: TTCItemW;
+  S: string;
+begin
+  if not HandleAllocated then
+    Exit;
+  S := FTabs[Index];
+  FillChar(Item, SizeOf(Item), 0);
+  Item.mask := TCIF_TEXT or TCIF_IMAGE;
+  Item.pszText := PChar(S);
+  if Images <> nil then
+    Item.iImage := GetImageIndex(Index)
+  else
+    Item.iImage := -1;
+  if Insert then
+    SendMessageW(Handle, TCM_INSERTITEMW, WPARAM(Index), LPARAM(@Item))
+  else
+    SendMessageW(Handle, TCM_SETITEMW, WPARAM(Index), LPARAM(@Item));
+end;
+
+procedure TTabControl.TabsEdited;
+begin
+  if FTabsUpdating or (csDestroying in ComponentState) then
+    Exit;
+  if HandleAllocated then
+    SendMessageW(Handle, TCM_SETCURSEL, WPARAM(FTabIndex), 0);
+  Realign;
+end;
+
+{ UIF-1506: TCM_DELETEALLITEMS, every tab inserted, TabIndex selected }
+procedure TTabControl.UpdateTabItems;
+var
+  I: Integer;
+begin
+  if not HandleAllocated or (FTabs = nil) then
+    Exit;
+  SendMessageW(Handle, TCM_DELETEALLITEMS, 0, 0);
+  for I := 0 to FTabs.Count - 1 do
+    SendItem(I, True);
+  SendMessageW(Handle, TCM_SETCURSEL, WPARAM(FTabIndex), 0);
+end;
+
+{ UIF-1507: a value outside -1 ... Count - 1 is ignored; UIF-1508: stored unchecked while loading }
+procedure TTabControl.SetTabIndex(Value: Integer);
+begin
+  if csLoading in ComponentState then
+  begin
+    FTabIndex := Value;
+    Exit;
+  end;
+  if (Value < -1) or (Value >= FTabs.Count) then
+    Exit;
+  inherited SetTabIndex(Value);
+  if ScrollOppositeInEffect then
+    Realign;                                                 { UIF-1502: K follows the selected tab }
+end;
+
+procedure TTabControl.CreateWnd;
+begin
+  inherited CreateWnd;
+  UpdateTabItems;
+end;
+
+{ UIF-1508: the streamed TabIndex applied; out of range -> -1 }
+procedure TTabControl.Loaded;
+begin
+  if (FTabIndex < -1) or (FTabIndex >= FTabs.Count) then
+    FTabIndex := -1;
+  inherited Loaded;
+  UpdateTabItems;
+  Realign;
+end;
+
+procedure TTabControl.AdjustClientRect(var Rect: TRect);
+begin
+  Rect := DisplayRect;
+end;
+
+procedure TTabControl.SelectTab(Index: Integer);
+begin
+  if (Index < 0) or (Index >= FTabs.Count) or (Index = FTabIndex) then
+    Exit;
+  if not CanChange then
+    Exit;
+  TabIndex := Index;
+  Change;
+end;
+
+procedure TTabControl.WndProc(var Message: TMessage);
+var
+  I: Integer;
+begin
+  case Message.Msg of
+    CN_NOTIFY:
+      case PNMHdr(Message.LParam)^.code of
+        TCN_SELCHANGING:
+          if CanChange then
+            Message.Result := 0
+          else
+            Message.Result := 1;
+        TCN_SELCHANGE:
+          begin
+            TabIndex := Integer(SendMessageW(Handle, TCM_GETCURSEL, 0, 0));
+            Change;
+          end;
+      else
+        inherited WndProc(Message);
+      end;
+    CM_DIALOGKEY:
+      if (Message.WParam = VK_TAB) and (GetKeyState(VK_CONTROL) < 0) then
+      begin
+        SelectNextTab(GetKeyState(VK_SHIFT) >= 0);
+        Message.Result := 1;
+      end
+      else
+        inherited WndProc(Message);
+    CM_DIALOGCHAR:
+      begin
+        for I := 0 to FTabs.Count - 1 do
+          if IsAccel(Word(Message.WParam), FTabs[I]) then
+          begin
+            SelectTab(I);
+            Message.Result := 1;
+            Exit;
+          end;
         inherited WndProc(Message);
       end;
     CM_FONTCHANGED:
@@ -6901,8 +7309,8 @@ begin
 end;
 
 initialization
-  RegisterClasses([TPageControl, TTabSheet, TStatusBar, TToolBar, TToolButton, TProgressBar, TTrackBar, TListView, TTreeView,
-    TRichEdit]);
+  RegisterClasses([TTabControl, TPageControl, TTabSheet, TStatusBar, TToolBar, TToolButton, TProgressBar, TTrackBar,
+    TListView, TTreeView, TRichEdit]);
   RegisterAutomationProvider(TTabSheet, TTabSheetAutomationProvider);
   RegisterAutomationProvider(TToolBar, TToolBarAutomationProvider);
   RegisterAutomationProvider(TToolButton, TToolButtonAutomationProvider);
