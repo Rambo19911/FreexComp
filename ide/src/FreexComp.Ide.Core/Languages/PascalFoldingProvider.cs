@@ -206,6 +206,14 @@ public sealed class PascalFoldingProvider : IFoldingProvider
                         && (i == 0 || prev is SyntaxKind.SemicolonToken or SyntaxKind.ClassKeyword or SyntaxKind.CloseBracketToken or SyntaxKind.ImplementationKeyword))
                     {
                         int headingLine = line(tokens[prev == SyntaxKind.ClassKeyword ? i - 1 : i].Span.Start);
+                        if (stack.Count > 0)
+                        {
+                            // IDE-ED-059: openers still open here are never closed (valid code has none at a heading);
+                            // they get no region and pairing restarts for the new routine.
+                            stack.Clear();
+                            pendings.Clear();
+                        }
+
                         pendings.Add(new Pending(headingLine, stack.Count));
                     }
 

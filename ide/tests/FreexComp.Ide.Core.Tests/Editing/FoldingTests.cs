@@ -19,12 +19,13 @@ public sealed class FoldingTests
     [Trait("Req", "IDE-ED-052")]
     [Trait("Req", "IDE-ED-053")]
     [Trait("Req", "IDE-P1-060")]
+    [Trait("Req", "IDE-ED-059")]
     public void GoldenFilesMatch()
     {
         var registry = new LanguageRegistry();
         var directory = Path.Combine(AppContext.BaseDirectory, "TestData", "folding");
         var sources = Directory.GetFiles(directory).Where(f => !f.EndsWith(".folds", StringComparison.Ordinal)).Order(StringComparer.Ordinal).ToList();
-        string[] pascalCases = ["blocks", "classes", "comments", "conditionals", "regions", "routines", "sections", "unbalanced"];
+        string[] pascalCases = ["blocks", "broken", "classes", "comments", "conditionals", "regions", "routines", "sections", "unbalanced"];
         Assert.Equal(pascalCases, sources.Where(f => f.EndsWith(".pas", StringComparison.Ordinal)).Select(Path.GetFileNameWithoutExtension));
         Assert.Contains(sources, f => Path.GetFileName(f) == "sample.form");
         Assert.Contains(sources, f => Path.GetFileName(f) == "sample.json");
@@ -70,6 +71,37 @@ public sealed class FoldingTests
                 language.CreateFoldingProvider()!.GetRegions(new StringTextBuffer(soup));
             }
         }
+    }
+
+    /// <summary>
+    /// IDE-ED-059: a routine whose body is not closed gets no region and does not swallow the later routines, through
+    /// the editor's own provider (tree, with the token fallback for text with syntax errors); typing the missing
+    /// <c>end;</c> gives it its region and leaves the others as they were.
+    /// </summary>
+    [Fact(Timeout = 30000)]
+    [Trait("Phase", "8")]
+    [Trait("Req", "IDE-ED-059")]
+    public void BrokenCodeKeepsIntactRoutineFolds()
+    {
+        var path = Path.Combine(AppContext.BaseDirectory, "TestData", "folding", "broken.pas");
+        var provider = new LanguageRegistry().ForPath("x.pas").CreateFoldingProvider();
+        Assert.NotNull(provider);
+        var buffer = new StringTextBuffer(File.ReadAllText(path).ReplaceLineEndings("\n"), FreexComp.Ide.Core.Services.LineEndingKind.Lf);
+
+        var broken = provider.GetRegions(buffer);
+        Assert.Equal(File.ReadAllText(path + ".folds").ReplaceLineEndings("\n").TrimEnd('\n'), Format(broken));
+        Assert.DoesNotContain(broken, r => r.StartLine == 7);
+        Assert.Equal(["16-19 routine", "21-24 routine"], broken.Where(r => r.Kind == FoldKind.Routine).Select(r => r.ToString()));
+
+        Assert.Equal("{ the end of A is missing }", buffer.GetText(buffer.GetLine(14).Offset, buffer.GetLine(14).Length));
+        buffer.ApplyEdits([new TextEdit(buffer.GetLine(14).Offset, 0, "end;\n")]);
+        Assert.Equal("end;", buffer.GetText(buffer.GetLine(14).Offset, buffer.GetLine(14).Length));
+
+        var fixedRegions = provider.GetRegions(buffer);
+        Assert.Equal(["7-14 routine", "17-20 routine", "22-25 routine"], fixedRegions.Where(r => r.Kind == FoldKind.Routine).Select(r => r.ToString()));
+        Assert.Equal(
+            ["3-4 section", "5-26 section", "7-14 routine", "10-12 block", "17-20 routine", "22-25 routine"],
+            fixedRegions.Select(r => r.ToString()));
     }
 
     private static TextDocumentViewModel Pascal(string text) =>
