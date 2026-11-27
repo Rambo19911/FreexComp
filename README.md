@@ -252,7 +252,7 @@ Phase 8 implements the full feature set for Windows, area by area. Progress coun
 | Visual data binding | 0 / 16 | `░░░░░░░░░░` | — |
 | Build and deploy | 11 / 36 | `███░░░░░░░` | Build and run from the IDE, clickable errors · build configurations with inheritance · build events with a trust question · resource scripts and the resource compiler `prc` |
 | Language and runtime library | 12 / 118 | `█░░░░░░░░░` | Inline variables and `for var` loops with type inference · dynamic-array constructors, constants, `+`, `Insert`, `Delete` and `Concat` · class constructors and destructors · hardware faults caught by `try` … `except` · `deprecated` / `platform` / `experimental` warnings · runtime library source included |
-| IDE | 24 / 120 | `██░░░░░░░░` | Main window, code editor, project open and save · Object Pascal source formatter · project resources, icon and version information pages · code completion that ranks items of the expected type first · local file history with a History window, compare and revert · Structure view with component icons and drag to re-parent · code templates with a shared templates folder and a Templates window · parameter hints for every kind of call · hover documentation with Go to Declaration · Go to Declaration into the runtime library and generated views · live diagnostics with a severity choice · recent files on the Welcome page · light and dark themes · code folding · bracket and directive pair matching · named bookmarks and the Bookmarks window · Tool Palette search · copy a library unit into a project · no-network guarantee checked by tests |
+| IDE | 26 / 120 | `██░░░░░░░░` | Main window, code editor, project open and save · Object Pascal source formatter · project resources, icon and version information pages · code completion that ranks items of the expected type first · local file history with a History window, compare and revert · automatic recovery of unsaved files with a differences view · sharp rendering on high-DPI screens, also in the form designer · Structure view with component icons and drag to re-parent · code templates with a shared templates folder and a Templates window · parameter hints for every kind of call · hover documentation with Go to Declaration · Go to Declaration into the runtime library and generated views · live diagnostics with a severity choice · recent files on the Welcome page · light and dark themes · code folding · bracket and directive pair matching · named bookmarks and the Bookmarks window · Tool Palette search · copy a library unit into a project · no-network guarantee checked by tests |
 | Source control | 1 / 18 | `█░░░░░░░░░` | Built-in diff viewer (side by side or inline) with Compare with Saved and Compare Files |
 | Refactoring and navigation | 0 / 27 | `░░░░░░░░░░` | — |
 | Debugging | 5 / 41 | `█░░░░░░░░░` | Breakpoints, stepping, locals, call stack · Step Into library code · value visualisers and a text viewer for strings |
@@ -263,7 +263,7 @@ Phase 8 implements the full feature set for Windows, area by area. Progress coun
 | Web front-end framework | 0 / 29 | `░░░░░░░░░░` | — |
 | Bundled components | 0 / 6 | `░░░░░░░░░░` | — |
 | Local web UI | 0 / 18 | `░░░░░░░░░░` | — |
-| **Total** | **79 / 881** | `█░░░░░░░░░` | **9 %** |
+| **Total** | **81 / 881** | `█░░░░░░░░░` | **9 %** |
 
 - [ ] First public release with installer
 
