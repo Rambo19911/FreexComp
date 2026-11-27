@@ -21,7 +21,7 @@ public sealed class FileSystemWatcherFactory : IFileWatcherFactory
             _watcher = new FileSystemWatcher(directory)
             {
                 IncludeSubdirectories = false,
-                NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size | NotifyFilters.Attributes,
+                NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName | NotifyFilters.LastWrite | NotifyFilters.Size | NotifyFilters.Attributes,
             };
             _watcher.Created += (_, e) => Changed?.Invoke(this, new FileChange(FileChangeKind.Created, e.FullPath));
             _watcher.Changed += (_, e) => Changed?.Invoke(this, new FileChange(FileChangeKind.Changed, e.FullPath));

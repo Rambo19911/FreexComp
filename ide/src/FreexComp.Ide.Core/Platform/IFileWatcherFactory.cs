@@ -12,7 +12,7 @@ public enum FileChangeKind
 public sealed record FileChange(FileChangeKind Kind, string Path, string? OldPath = null);
 
 /// <summary>
-/// Watches the files directly in one directory (not recursive). Events may arrive on any thread; consumers
+/// Watches the files (and the names of the sub-directories, IDE-SET-083) directly in one directory (not recursive). Events may arrive on any thread; consumers
 /// marshal through <see cref="IUiDispatcher"/>. <see cref="Error"/> means changes may have been lost (IDE-P1-118).
 /// </summary>
 public interface IFileWatcher : IDisposable

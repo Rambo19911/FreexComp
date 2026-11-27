@@ -681,3 +681,6 @@ public sealed class EventLogView() : DebugToolWindowView(EventLogViewModel.ToolN
 
 /// <summary>Bookmarks (tool-windows.md §18, F11-045).</summary>
 public sealed class BookmarksView() : DebugToolWindowView(BookmarksViewModel.ToolName);
+
+/// <summary>Templates (code-templates.md §5, F11-052).</summary>
+public sealed class TemplatesView() : DebugToolWindowView(TemplatesViewModel.ToolName);

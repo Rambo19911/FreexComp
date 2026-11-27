@@ -83,6 +83,9 @@ public abstract class ToolWindowViewModel : ObservableObject
     /// <summary>True when the tool bar has a filter box (UI-TW-008).</summary>
     public virtual bool HasFilter => false;
 
+    /// <summary>The filter box's placeholder and automation name (UI-TW-008: <c>Filter</c>; the Templates window's own, UI-TW-1600).</summary>
+    public virtual string FilterPlaceholder => Strings.ToolWindow_FilterPlaceholder;
+
     /// <summary>UI-TW-008: a tool-bar button is 24 × 24.</summary>
     public const double ToolBarButtonSize = 24;
 

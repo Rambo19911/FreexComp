@@ -98,6 +98,15 @@ public sealed class OptionsViewModel : DialogViewModel<bool>
     public const string ColorsPage = "Colors";
 
     public const string CodeTemplatesPage = "Editor.CodeTemplates";
+
+    /// <summary>
+    /// UI-TW-1601: <c>Editor.CodeTemplates#&lt;abbreviation&gt;</c> opens the Code Templates page with that template selected;
+    /// <c>Editor.CodeTemplates#+</c> opens it and performs <c>Templates.Add</c>.
+    /// </summary>
+    public const string TemplateSuffix = "#";
+
+    /// <summary>The <see cref="TemplateSuffix"/> argument that adds a template.</summary>
+    public const string NewTemplate = "+";
     public const string KeyMappingsPage = "KeyMappings";
     public const string EnvironmentGeneralPage = "Environment.General";
     public const string EnvironmentFilesPage = "Environment.Files";
@@ -131,7 +140,7 @@ public sealed class OptionsViewModel : DialogViewModel<bool>
     private string _filter = "";
     private string? _filterEmptyText;
 
-    /// <param name="pageId">The page to open (a <c>tools.options</c> argument); null = the page last shown.</param>
+    /// <param name="pageId">The page to open (a <c>tools.options</c> argument; <see cref="TemplateSuffix"/> also selects or adds a template); null = the page last shown.</param>
     /// <param name="implementedPhase">Pages and fields of later phases are shown disabled.</param>
     /// <param name="actualTheme">The theme in effect: the Colors page edits its set first.</param>
     public OptionsViewModel(ISettingsService settings, IKeymapService keymap, ILayoutService layout, IDialogService dialogs, FilePrompts prompts,
@@ -148,6 +157,9 @@ public sealed class OptionsViewModel : DialogViewModel<bool>
         _prompts = prompts;
         _layout = layout;
         _dialogs = dialogs;
+        string? template = null; // UI-TW-1601
+        if (pageId?.IndexOf(TemplateSuffix, StringComparison.Ordinal) is int hash and >= 0)
+            (pageId, template) = (pageId[..hash], pageId[(hash + 1)..]);
 
         var general = Page(EditorGeneralPage, 1,
         [
@@ -308,6 +320,10 @@ public sealed class OptionsViewModel : DialogViewModel<bool>
 
         var initial = pageId ?? layout.GetDialogValue(DialogName, "page");
         _selectedPage = Pages.FirstOrDefault(p => p.Id == initial) ?? general;
+        if (template == NewTemplate)
+            CodeTemplates.AddTemplate();
+        else if (template is not null && CodeTemplates.Rows.FirstOrDefault(r => r.Abbreviation.Equals(template, StringComparison.OrdinalIgnoreCase)) is { } row)
+            CodeTemplates.Selected = row;
         Update();
     }
 

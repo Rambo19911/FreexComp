@@ -150,6 +150,7 @@ public static class DefaultKeymap
         new(KeyGesture.Parse("Enter"), ToolList, "Structure", "structure.goToSource"),
         new(KeyGesture.Parse("Enter"), ToolList, "Breakpoints", "breakpoints.goToSource"),
         new(KeyGesture.Parse("Enter"), ToolList, "Bookmarks", "bookmarks.goToSource"),
+        new(KeyGesture.Parse("Enter"), ToolList, "Templates", "templates.insert"),
         new(KeyGesture.Parse("Enter"), ToolList, "CallStack", "callStack.goToFrame"),
         new(KeyGesture.Parse("Enter"), ToolList, "Threads", "threads.switchTo"),
         new(KeyGesture.Parse("Enter"), ToolList, "ToolPalette", "toolPalette.placeSelected"),

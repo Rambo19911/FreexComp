@@ -271,6 +271,50 @@ Add the existing file to the project and open it?</value>
   <data name="Msg_Editor_TemplateNotFound" xml:space="preserve">
     <value>No code template named {0}</value>
   </data>
+  <data name="Msg_Templates_FileSkipped" xml:space="preserve">
+    <value>Template file skipped: {0}: {1}</value>
+    <comment>code-templates.md IDE-SET-083: 0 = file name, 1 = reason</comment>
+  </data>
+  <data name="Msg_Templates_Empty" xml:space="preserve">
+    <value>No templates match the filter.</value>
+    <comment>code-templates.md UI-TW-1602</comment>
+  </data>
+  <data name="Msg_Templates_InvalidJson" xml:space="preserve">
+    <value>invalid JSON at line {0}, column {1}</value>
+    <comment>IDE-SET-083 reason</comment>
+  </data>
+  <data name="Msg_Templates_WrongFormat" xml:space="preserve">
+    <value>formatVersion 1 and a templates array are required</value>
+    <comment>IDE-SET-083 reason</comment>
+  </data>
+  <data name="Msg_Templates_DeletedNotAllowed" xml:space="preserve">
+    <value>template {0}: "deleted" is not allowed in a templates folder file</value>
+    <comment>IDE-SET-083 reason; 0 = abbreviation</comment>
+  </data>
+  <data name="Msg_Templates_InvalidAbbreviation" xml:space="preserve">
+    <value>invalid abbreviation "{0}"</value>
+    <comment>IDE-SET-083 reason</comment>
+  </data>
+  <data name="Msg_Templates_EmptyBody" xml:space="preserve">
+    <value>template {0}: the body is empty</value>
+    <comment>IDE-SET-083 reason</comment>
+  </data>
+  <data name="Msg_Templates_UnknownLanguage" xml:space="preserve">
+    <value>template {0}: unknown language "{1}"</value>
+    <comment>IDE-SET-083 reason</comment>
+  </data>
+  <data name="Msg_Templates_Unterminated" xml:space="preserve">
+    <value>template {0}: unterminated $ at body line {1}, column {2} (write $$ for a dollar sign)</value>
+    <comment>IDE-SET-083 reason</comment>
+  </data>
+  <data name="Msg_Templates_UnknownFunction" xml:space="preserve">
+    <value>template {0}: unknown function {1}</value>
+    <comment>IDE-ED-152 / IDE-SET-083 reason; 1 = the name called</comment>
+  </data>
+  <data name="Msg_Templates_Unreadable" xml:space="preserve">
+    <value>the file cannot be read ({0})</value>
+    <comment>IDE-SET-083 reason; 0 = system message</comment>
+  </data>
   <data name="Msg_Editor_BookmarkSet" xml:space="preserve">
     <value>Bookmark {0} set at line {1}</value>
   </data>
@@ -1543,6 +1587,9 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   <data name="Cmd_view_bookmarks" xml:space="preserve">
     <value>Bookmarks</value>
   </data>
+  <data name="Cmd_view_templates" xml:space="preserve">
+    <value>Templates</value>
+  </data>
   <data name="Cmd_view_welcomePage" xml:space="preserve">
     <value>Welcome Page</value>
   </data>
@@ -2047,6 +2094,15 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   </data>
   <data name="Cmd_bookmarks_delete" xml:space="preserve">
     <value>Delete Bookmark</value>
+  </data>
+  <data name="Cmd_templates_insert" xml:space="preserve">
+    <value>Insert Template</value>
+  </data>
+  <data name="Cmd_templates_edit" xml:space="preserve">
+    <value>Edit Template…</value>
+  </data>
+  <data name="Cmd_templates_new" xml:space="preserve">
+    <value>New Template…</value>
   </data>
   <data name="Cmd_callStack_goToFrame" xml:space="preserve">
     <value>Go to Frame</value>
@@ -2575,6 +2631,10 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   </data>
   <data name="Menu_view_bookmarks" xml:space="preserve">
     <value>Boo&amp;kmarks</value>
+  </data>
+  <data name="Menu_view_templates" xml:space="preserve">
+    <value>Template Catalo&amp;g</value>
+    <comment>code-templates.md UI-TW-1600; every letter of Templates is taken in the View menu (UI-MENU-003)</comment>
   </data>
   <data name="Menu_View_DebugWindows" xml:space="preserve">
     <value>De&amp;bug Windows</value>
@@ -4979,6 +5039,29 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   <data name="Options_Templates_Reset" xml:space="preserve">
     <value>_Reset</value>
   </data>
+  <data name="Options_Templates_Origin" xml:space="preserve">
+    <value>Origin: {0}</value>
+    <comment>code-templates.md IDE-SET-082: tooltip of a folder template description cell; 0 = file name</comment>
+  </data>
+  <data name="Templates_FilterPlaceholder" xml:space="preserve">
+    <value>Filter templates</value>
+    <comment>code-templates.md UI-TW-1600</comment>
+  </data>
+  <data name="Templates_Column_Abbreviation" xml:space="preserve">
+    <value>Abbreviation</value>
+  </data>
+  <data name="Templates_Column_Description" xml:space="preserve">
+    <value>Description</value>
+  </data>
+  <data name="Templates_Column_Origin" xml:space="preserve">
+    <value>Origin</value>
+  </data>
+  <data name="Templates_Origin_BuiltIn" xml:space="preserve">
+    <value>Built-in</value>
+  </data>
+  <data name="Templates_Origin_User" xml:space="preserve">
+    <value>User</value>
+  </data>
   <data name="DocumentView_Code" xml:space="preserve">
     <value>Code</value>
     <comment>designer.md UI-DSG-001 view switcher (I-129)</comment>
@@ -6094,5 +6177,197 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   <data name="FilePrompt_Title_compareRight" xml:space="preserve">
     <value>Select Right File</value>
     <comment>IDE-DIFF-028: the second picker of tools.compareFiles</comment>
+  </data>
+  <data name="Template_begin" xml:space="preserve">
+    <value>begin … end block</value>
+    <comment>code-templates.md IDE-ED-153: description of the built-in template begin</comment>
+  </data>
+  <data name="Template_if" xml:space="preserve">
+    <value>if statement</value>
+    <comment>code-templates.md IDE-ED-153: description of the built-in template if</comment>
+  </data>
+  <data name="Template_ife" xml:space="preserve">
+    <value>if … else statement</value>
+    <comment>code-templates.md IDE-ED-153: description of the built-in template ife</comment>
+  </data>
+  <data name="Template_ifb" xml:space="preserve">
+    <value>if statement with begin … end</value>
+    <comment>code-templates.md IDE-ED-153: description of the built-in template ifb</comment>
+  </data>
+  <data name="Template_for" xml:space="preserve">
+    <value>for loop</value>
+    <comment>code-templates.md IDE-ED-153: description of the built-in template for</comment>
+  </data>
+  <data name="Template_forb" xml:space="preserve">
+    <value>for loop with begin … end</value>
+    <comment>code-templates.md IDE-ED-153: description of the built-in template forb</comment>
+  </data>
+  <data name="Template_forin" xml:space="preserve">
+    <value>for … in loop</value>
+    <comment>code-templates.md IDE-ED-153: description of the built-in template forin</comment>
+  </data>
+  <data name="Template_while" xml:space="preserve">
+    <value>while loop</value>
+    <comment>code-templates.md IDE-ED-153: description of the built-in template while</comment>
+  </data>
+  <data name="Template_repeat" xml:space="preserve">
+    <value>repeat … until loop</value>
+    <comment>code-templates.md IDE-ED-153: description of the built-in template repeat</comment>
+  </data>
+  <data name="Template_case" xml:space="preserve">
+    <value>case statement</value>
+    <comment>code-templates.md IDE-ED-153: description of the built-in template case</comment>
+  </data>
+  <data name="Template_try" xml:space="preserve">
+    <value>try … finally</value>
+    <comment>code-templates.md IDE-ED-153: description of the built-in template try</comment>
+  </data>
+  <data name="Template_trye" xml:space="preserve">
+    <value>try … except</value>
+    <comment>code-templates.md IDE-ED-153: description of the built-in template trye</comment>
+  </data>
+  <data name="Template_proc" xml:space="preserve">
+    <value>procedure</value>
+    <comment>code-templates.md IDE-ED-153: description of the built-in template proc</comment>
+  </data>
+  <data name="Template_func" xml:space="preserve">
+    <value>function</value>
+    <comment>code-templates.md IDE-ED-153: description of the built-in template func</comment>
+  </data>
+  <data name="Template_class" xml:space="preserve">
+    <value>class declaration</value>
+    <comment>code-templates.md IDE-ED-153: description of the built-in template class</comment>
+  </data>
+  <data name="Template_wl" xml:space="preserve">
+    <value>WriteLn call</value>
+    <comment>code-templates.md IDE-ED-153: description of the built-in template wl</comment>
+  </data>
+  <data name="Template_else" xml:space="preserve">
+    <value>else branch</value>
+    <comment>code-templates.md IDE-ED-153: description of the built-in template else</comment>
+  </data>
+  <data name="Template_elseb" xml:space="preserve">
+    <value>else branch with begin … end</value>
+    <comment>code-templates.md IDE-ED-153: description of the built-in template elseb</comment>
+  </data>
+  <data name="Template_ifeb" xml:space="preserve">
+    <value>if … else with begin … end blocks</value>
+    <comment>code-templates.md IDE-ED-153: description of the built-in template ifeb</comment>
+  </data>
+  <data name="Template_ifa" xml:space="preserve">
+    <value>if a reference is assigned</value>
+    <comment>code-templates.md IDE-ED-153: description of the built-in template ifa</comment>
+  </data>
+  <data name="Template_ifn" xml:space="preserve">
+    <value>if a reference is nil</value>
+    <comment>code-templates.md IDE-ED-153: description of the built-in template ifn</comment>
+  </data>
+  <data name="Template_fordown" xml:space="preserve">
+    <value>for … downto loop</value>
+    <comment>code-templates.md IDE-ED-153: description of the built-in template fordown</comment>
+  </data>
+  <data name="Template_forinb" xml:space="preserve">
+    <value>for … in loop with begin … end</value>
+    <comment>code-templates.md IDE-ED-153: description of the built-in template forinb</comment>
+  </data>
+  <data name="Template_forv" xml:space="preserve">
+    <value>for loop with an inline variable</value>
+    <comment>code-templates.md IDE-ED-153: description of the built-in template forv</comment>
+  </data>
+  <data name="Template_forinv" xml:space="preserve">
+    <value>for … in loop with an inline variable</value>
+    <comment>code-templates.md IDE-ED-153: description of the built-in template forinv</comment>
+  </data>
+  <data name="Template_with" xml:space="preserve">
+    <value>with statement</value>
+    <comment>code-templates.md IDE-ED-153: description of the built-in template with</comment>
+  </data>
+  <data name="Template_tryef" xml:space="preserve">
+    <value>try … except inside try … finally</value>
+    <comment>code-templates.md IDE-ED-153: description of the built-in template tryef</comment>
+  </data>
+  <data name="Template_raise" xml:space="preserve">
+    <value>raise an exception</value>
+    <comment>code-templates.md IDE-ED-153: description of the built-in template raise</comment>
+  </data>
+  <data name="Template_rec" xml:space="preserve">
+    <value>record type</value>
+    <comment>code-templates.md IDE-ED-153: description of the built-in template rec</comment>
+  </data>
+  <data name="Template_intf" xml:space="preserve">
+    <value>interface type</value>
+    <comment>code-templates.md IDE-ED-153: description of the built-in template intf</comment>
+  </data>
+  <data name="Template_enum" xml:space="preserve">
+    <value>enumerated type</value>
+    <comment>code-templates.md IDE-ED-153: description of the built-in template enum</comment>
+  </data>
+  <data name="Template_arr" xml:space="preserve">
+    <value>static array type</value>
+    <comment>code-templates.md IDE-ED-153: description of the built-in template arr</comment>
+  </data>
+  <data name="Template_const" xml:space="preserve">
+    <value>constant section</value>
+    <comment>code-templates.md IDE-ED-153: description of the built-in template const</comment>
+  </data>
+  <data name="Template_var" xml:space="preserve">
+    <value>variable section</value>
+    <comment>code-templates.md IDE-ED-153: description of the built-in template var</comment>
+  </data>
+  <data name="Template_type" xml:space="preserve">
+    <value>type section</value>
+    <comment>code-templates.md IDE-ED-153: description of the built-in template type</comment>
+  </data>
+  <data name="Template_ctor" xml:space="preserve">
+    <value>constructor implementation</value>
+    <comment>code-templates.md IDE-ED-153: description of the built-in template ctor</comment>
+  </data>
+  <data name="Template_dtor" xml:space="preserve">
+    <value>destructor implementation</value>
+    <comment>code-templates.md IDE-ED-153: description of the built-in template dtor</comment>
+  </data>
+  <data name="Template_procm" xml:space="preserve">
+    <value>method procedure implementation</value>
+    <comment>code-templates.md IDE-ED-153: description of the built-in template procm</comment>
+  </data>
+  <data name="Template_funcm" xml:space="preserve">
+    <value>method function implementation</value>
+    <comment>code-templates.md IDE-ED-153: description of the built-in template funcm</comment>
+  </data>
+  <data name="Template_prop" xml:space="preserve">
+    <value>property with a field to read and write</value>
+    <comment>code-templates.md IDE-ED-153: description of the built-in template prop</comment>
+  </data>
+  <data name="Template_propr" xml:space="preserve">
+    <value>read-only property</value>
+    <comment>code-templates.md IDE-ED-153: description of the built-in template propr</comment>
+  </data>
+  <data name="Template_unit" xml:space="preserve">
+    <value>unit skeleton</value>
+    <comment>code-templates.md IDE-ED-153: description of the built-in template unit</comment>
+  </data>
+  <data name="Template_prog" xml:space="preserve">
+    <value>console program skeleton</value>
+    <comment>code-templates.md IDE-ED-153: description of the built-in template prog</comment>
+  </data>
+  <data name="Template_region" xml:space="preserve">
+    <value>region around the selection</value>
+    <comment>code-templates.md IDE-ED-153: description of the built-in template region</comment>
+  </data>
+  <data name="Template_todo" xml:space="preserve">
+    <value>to-do comment</value>
+    <comment>code-templates.md IDE-ED-153: description of the built-in template todo</comment>
+  </data>
+  <data name="Template_hdr" xml:space="preserve">
+    <value>file header comment</value>
+    <comment>code-templates.md IDE-ED-153: description of the built-in template hdr</comment>
+  </data>
+  <data name="Template_wlf" xml:space="preserve">
+    <value>WriteLn with Format</value>
+    <comment>code-templates.md IDE-ED-153: description of the built-in template wlf</comment>
+  </data>
+  <data name="Template_fan" xml:space="preserve">
+    <value>FreeAndNil call</value>
+    <comment>code-templates.md IDE-ED-153: description of the built-in template fan</comment>
   </data>
 </root>

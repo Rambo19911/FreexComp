@@ -58,9 +58,14 @@ public static class Phase8Features
         "project.setPlatform", // F03-003
         "run.toggleLibraryStepping", // F02-004
         "search.bookmark.addNamed", // F11-045
+        "templates.edit", // F11-052
+        "templates.insert", // F11-052
+        "templates.new", // F11-052
         "tools.compareFiles", // F12-014
         "toolwindow:Bookmarks", // F11-045
+        "toolwindow:Templates", // F11-052
         "view.bookmarks", // F11-045
+        "view.templates", // F11-052
     ];
 
     private static readonly FrozenSet<string> Shipped = DeliveredIds.ToFrozenSet(StringComparer.Ordinal);

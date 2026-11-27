@@ -226,19 +226,19 @@ public sealed class ToolWindowFrame : DockPanel
         e.Handled = true;
     }
 
-    /// <summary>Right-aligned, 26 high, 120…240 wide, placeholder "Filter", clear button when non-empty (UI-TW-008).</summary>
+    /// <summary>Right-aligned, 26 high, 120…240 wide, placeholder "Filter" (or the window's own), clear button when non-empty (UI-TW-008).</summary>
     private Control CreateFilter()
     {
         _filter = new TextBox
         {
             MinWidth = ToolWindowViewModel.FilterMinWidth,
             MaxWidth = ToolWindowViewModel.FilterMaxWidth,
-            PlaceholderText = Strings.ToolWindow_FilterPlaceholder,
+            PlaceholderText = _model.FilterPlaceholder,
             VerticalAlignment = VerticalAlignment.Center,
         };
         FitFilterBox(_filter);
         AutomationProperties.SetAutomationId(_filter, AutomationIds.Tool(_model.Name) + ".Filter");
-        AutomationProperties.SetName(_filter, Strings.ToolWindow_FilterPlaceholder); // UI-A11Y-020
+        AutomationProperties.SetName(_filter, _model.FilterPlaceholder); // UI-A11Y-020
         _filter.Bind(TextBox.TextProperty, new Binding(nameof(ToolWindowViewModel.FilterText)) { Source = _model, Mode = BindingMode.TwoWay });
         _filter.AddHandler(KeyDownEvent, OnFilterKeyDown, RoutingStrategies.Tunnel);
 

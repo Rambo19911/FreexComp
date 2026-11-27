@@ -34,8 +34,8 @@ public sealed class MessageItem
         IsSummary = isSummary;
     }
 
-    /// <summary>Arrival index within the current build.</summary>
-    public int Index { get; }
+    /// <summary>Arrival index within the current build (a tool row inserted before the summary moves the summary up).</summary>
+    public int Index { get; internal set; }
 
     public MessageSeverity Severity { get; }
 
@@ -62,6 +62,13 @@ public sealed class MessageItem
 
     /// <summary>A row with a file and a line can be navigated to (IDE-P3-062).</summary>
     public bool IsNavigable => Location is { FilePath: not null, Line: > 0 };
+
+    /// <summary>A row of an IDE tool (code empty, no related rows) for <see cref="IMessagesService.AddToolMessage"/> (IDE-SET-083).</summary>
+    public static MessageItem ToolRow(MessageSeverity severity, string text, MessageLocation? location)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+        return new MessageItem(-1, severity, "", text, location, [], false);
+    }
 }
 
 /// <summary>The Messages model (phase3-build-run.md §7.1). UI thread only.</summary>
@@ -77,6 +84,12 @@ public interface IMessagesService
     int HintCount { get; }
 
     void Clear();
+
+    /// <summary>
+    /// Appends a tool row (<see cref="MessageItem.ToolRow"/>, e.g. a skipped template file, IDE-SET-083) before the summary
+    /// row when there is one; counted by its severity; the next build clears it like every row.
+    /// </summary>
+    void AddToolMessage(MessageItem item);
 
     Task NavigateToAsync(MessageItem item);
 
@@ -193,6 +206,19 @@ public sealed partial class MessagesService : IMessagesService
     {
         _items.List.Add(new MessageItem(_items.Count, MessageSeverity.Warning, "", text, null, [], false));
         WarningCount++;
+        Changed?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <inheritdoc />
+    public void AddToolMessage(MessageItem item)
+    {
+        ArgumentNullException.ThrowIfNull(item);
+        var at = _items.Count > 0 && _items[_items.Count - 1].IsSummary ? _items.Count - 1 : _items.Count;
+        _items.List.Insert(at, item);
+        for (var i = at; i < _items.Count; i++)
+            _items[i].Index = i;
+        Count(item.Severity);
+        OnAdded(item);
         Changed?.Invoke(this, EventArgs.Empty);
     }
 

@@ -49,8 +49,10 @@ public partial class TextDocumentViewModel
     /// <summary>
     /// Expands <paramref name="template"/> in place of <c>[start, start + length)</c> as one undo step (IDE-ED-060): later
     /// lines get the line's indentation, a leading tab one indent unit; then field mode, or the caret at <c>$end$</c>.
+    /// Template functions (IDE-ED-152) are computed on the document's syntax tree at <paramref name="start"/>.
     /// </summary>
-    public bool ExpandTemplate(CodeTemplate template, int start, int length)
+    /// <param name="selection">The text of <c>$selection$</c>.</param>
+    public bool ExpandTemplate(CodeTemplate template, int start, int length, string selection = "")
     {
         ArgumentNullException.ThrowIfNull(template);
         EndFieldMode();
@@ -58,7 +60,7 @@ public partial class TextDocumentViewModel
         var lineStart = Buffer.GetLine(Buffer.GetPosition(start).Line).Offset;
         var indent = new string([.. lineText.TakeWhile(c => c is ' ' or '\t').Take(start - lineStart)]);
         var unit = Options.InsertSpaces ? new string(' ', Math.Max(1, Options.TabWidth)) : "\t";
-        var expansion = CodeTemplateExpander.Expand(template.Body, indent, unit, LineEnding.NewLine);
+        var expansion = CodeTemplateExpander.Expand(template.Body, indent, unit, LineEnding.NewLine, selection, TemplateFunction(start));
         var done = Command(() =>
         {
             if (!TryInsertText(start, length, expansion.Text))
@@ -72,6 +74,23 @@ public partial class TextDocumentViewModel
         SelectField(0);
         TemplateFieldsChanged?.Invoke(this, EventArgs.Empty);
         return true;
+    }
+
+    /// <summary>IDE-ED-152: the template functions at <paramref name="offset"/>; the document is parsed once, when a function needs it.</summary>
+    private Func<string, string> TemplateFunction(int offset)
+    {
+        FreexComp.Compiler.Syntax.SyntaxTree? tree = null;
+        FreexComp.Compiler.Syntax.SyntaxTree Tree() => tree ??= FreexComp.Compiler.Syntax.SyntaxTree.Parse(
+            FreexComp.Compiler.SourceText.From(FreexComp.Compiler.Text.PathUtil.Normalize(FilePath ?? ""), Buffer.Text));
+        var now = (Clock?.Now ?? DateTimeOffset.UnixEpoch).LocalDateTime;
+        return function => function switch
+        {
+            "UnitName" => TemplateFunctions.UnitName(Tree(), FilePath),
+            "ClassName" => TemplateFunctions.ClassName(Tree(), offset),
+            "Date" => TemplateFunctions.Date(now),
+            "Time" => TemplateFunctions.Time(now),
+            _ => "",
+        };
     }
 
     /// <summary>IDE-ED-064: Tab right after an abbreviation, without a selection, outside strings and comments.</summary>

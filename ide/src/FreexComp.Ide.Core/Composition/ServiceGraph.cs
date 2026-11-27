@@ -196,6 +196,7 @@ public static class ServiceGraph
         outputView.Content.FindSource = find.For; // UI-TW-500: Ctrl+F in the Output
         find.FocusedText = () => focus.Current.ToolWindowName == ViewModels.OutputViewModel.ToolName ? outputView.Content : null;
         var messages = new MessagesService(documents, navigation, platform.FileSystem, status, layout) { IsProjectFile = projects.IsMember };
+        templates.Start(platform.FileWatchers, platform.Clock, platform.Dispatcher, messages, platform.Log); // IDE-SET-081…083 (I-325)
         var engine = platform.BuildEngine;
         var build = new BuildService(engine, projects, documents, settings, state, toolchain, output, messages, platform.Clock,
             platform.Dispatcher, platform.Dialogs, status, platform.Log, platform.Processes, trust)
@@ -379,6 +380,11 @@ public static class ServiceGraph
         if (Phase8Features.IsAvailable("toolwindow:" + ViewModels.BookmarksViewModel.ToolName, 8, toolWindowPhase ?? ImplementedPhase))
             bookmarksView.RegisterCommands();
 
+        // I-328: the Templates window and its commands (F11-052), where its phase-8 delivery applies.
+        var templatesView = new ViewModels.TemplatesViewModel(commands, templates, documents);
+        if (Phase8Features.IsAvailable("toolwindow:" + ViewModels.TemplatesViewModel.ToolName, 8, toolWindowPhase ?? ImplementedPhase))
+            templatesView.RegisterCommands();
+
         // A test phase below the product's (testing.md §2.1) gives the later commands the stubs of UI-CMD-004 as before I-207.
         EditorCommandRoute.Register(commands, toolWindowPhase ?? ImplementedPhase, () => documents.ActiveDocument?.CommandTarget); // I-158
         commands.RegisterLaterPhaseStubs(toolWindowPhase ?? ImplementedPhase);
@@ -394,6 +400,7 @@ public static class ServiceGraph
             production = [.. production, .. debugShell.ToolWindows];
         production = [.. production, new ViewModels.DataExplorerViewModel().Definition]; // I-137: registers from Phase 7 (UI-TW-1401)
         production = [.. production, bookmarksView.Definition]; // I-316: registers where delivered (UI-TW-006)
+        production = [.. production, templatesView.Definition]; // I-328: registers where delivered (UI-TW-006)
         foreach (var definition in production)
         {
             if (!extras.Any(e => e.Name == definition.Name))
@@ -442,6 +449,7 @@ public static class ServiceGraph
             Find = find,
             Navigation = navigation,
             Bookmarks = bookmarks,
+            Templates = templates,
             Application = application,
             Help = help,
             State = state,

@@ -12,8 +12,9 @@ public sealed class CodeTemplateRow : ObservableObject
     private string _description;
     private string _body;
 
-    internal CodeTemplateRow(CodeTemplate template)
+    internal CodeTemplateRow(CodeTemplate template, string? originToolTip = null)
     {
+        OriginToolTip = originToolTip;
         _abbreviation = template.Abbreviation;
         _description = template.Description;
         _body = template.Body;
@@ -40,6 +41,9 @@ public sealed class CodeTemplateRow : ObservableObject
 
     public string Language { get; }
 
+    /// <summary>IDE-SET-082: <c>Origin: &lt;file&gt;</c> on the description cell of a template from the templates folder; else null.</summary>
+    public string? OriginToolTip { get; }
+
     internal CodeTemplate ToTemplate() => new(Abbreviation, Description, Language, Body);
 }
 
@@ -57,7 +61,7 @@ public sealed class CodeTemplatesPageViewModel : ObservableObject
     {
         _service = service;
         foreach (var template in (service?.Templates ?? CodeTemplateService.BuiltIns).OrderBy(t => t.Abbreviation, StringComparer.OrdinalIgnoreCase))
-            Add(new CodeTemplateRow(template));
+            Add(new CodeTemplateRow(template, OriginToolTipOf(service, template)));
         _selected = Rows.FirstOrDefault();
     }
 
@@ -161,6 +165,11 @@ public sealed class CodeTemplatesPageViewModel : ObservableObject
         _service.Save([.. Rows.Select(r => r.ToTemplate())]);
         Changed();
     }
+
+    private static string? OriginToolTipOf(CodeTemplateService? service, CodeTemplate template) =>
+        service?.OriginOf(template) is { Kind: CodeTemplateOriginKind.Folder, FileName: { } file }
+            ? string.Format(System.Globalization.CultureInfo.CurrentCulture, Strings.Options_Templates_Origin, file)
+            : null;
 
     private void Add(CodeTemplateRow row)
     {

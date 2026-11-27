@@ -64,6 +64,9 @@ public sealed record IdeServices
 
     /// <summary>Bookmarks (I-121, IDE-ED-110…114).</summary>
     public required BookmarkService Bookmarks { get; init; }
+
+    /// <summary>The code templates: built-ins, the templates folder, <c>templates.json</c> (IDE-SET-080…083).</summary>
+    public required Editing.CodeTemplateService Templates { get; init; }
     public required IApplicationService Application { get; init; }
     public required IHelpService Help { get; init; }
 

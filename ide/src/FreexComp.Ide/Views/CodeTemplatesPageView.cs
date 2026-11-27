@@ -41,6 +41,8 @@ public static class CodeTemplatesPageView
                 var description = Text("", "body");
                 description.TextTrimming = TextTrimming.CharacterEllipsis;
                 description.Bind(TextBlock.TextProperty, new Avalonia.Data.Binding(nameof(CodeTemplateRow.Description)));
+                if (row?.OriginToolTip is { } origin)
+                    ToolTip.SetTip(description, origin); // IDE-SET-082: a template from the templates folder
                 Grid.SetColumn(description, 1);
                 grid.Children.Add(abbreviation);
                 grid.Children.Add(description);
