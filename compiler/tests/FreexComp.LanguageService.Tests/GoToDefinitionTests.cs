@@ -167,6 +167,27 @@ public sealed class GoToDefinitionTests
         Assert.Equal(U1Text[..target.Span.Start].Count(c => c == '\n'), target.LineSpan.Start.Line);
     }
 
+    /// <summary>C-398: a pointer type read back from a <c>.pcu</c> keeps its declaration in the unit's source file.</summary>
+    [Fact]
+    [Trait("Req", "CMP-740")]
+    public void PointerTypeFromPcu()
+    {
+        const string unit2 = "unit U2;\ninterface\ntype\n  PCount = ^Integer;\nvar\n  Counter: PCount;\nimplementation\nend.\n";
+        const string program = "program P;\nuses U2;\nvar C: PCount;\nbegin\n  C := Counter;\nend.\n";
+        var pcu = Compilation.Create(TestFiles.Options(), [], TestFiles.Files(("P.pas", program), ("U2.pas", unit2))).PcuTexts().Single(t => t.Unit == "U2").Text;
+        var fs = TestFiles.Files(("U2.pas", unit2));
+        fs.Add(@"C:\lib\U2.pcu", pcu).Add(@"C:\lib\U2.obj", "").Add(@"C:\q\P.pas", program);
+        var workspace = new Workspace(fs);
+        workspace.SetProject(TestFiles.Options() with { MainFile = @"C:\q\P.pas", SearchPaths = [@"C:\lib"], ObjectDirectory = @"C:\q\obj" });
+        var doc = workspace.GetDocument(@"C:\q\P.pas");
+        Assert.DoesNotContain(doc.Compilation.SourceUnitPaths, p => p.EndsWith("U2.pas", StringComparison.OrdinalIgnoreCase));   // imported from the .pcu
+
+        var target = Assert.Single(NavigationService.GoToDefinition(doc, At(program, "PCount;"), TestContext.Current.CancellationToken));
+
+        Assert.Equal((TestFiles.PathOf("U2.pas"), unit2.IndexOf("PCount", StringComparison.Ordinal), "PCount".Length),
+            (target.Path, target.Span.Start, target.Span.Length));
+    }
+
     [Fact]
     [Trait("Req", "CMP-741")]
     public void Implementation_OfAVirtualMethod_AllOverrides()

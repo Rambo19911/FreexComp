@@ -94,6 +94,18 @@ public sealed partial class StatementBindingTests
     [InlineData("for i := 1 to d do ;", "E2010(1,99): Incompatible types: 'Double' and 'Integer'")]
     public void For_Errors(string body, string expected) => Assert.Equal([expected], Diagnostics(body));
 
+    /// <summary>C-395: a constant start or end bound outside a written <c>Integer</c> control variable's range is E2012 at the bound.</summary>
+    [Theory]
+    [Trait("Req", "LANG-361")]
+    [InlineData("for i := 0 to 3000000000 do ;", "E2012(1,99): Constant value 3000000000 is out of range for type 'Integer'")]
+    [InlineData("for i := 3000000000 to 1 do ;", "E2012(1,94): Constant value 3000000000 is out of range for type 'Integer'")]
+    [InlineData("for i := 3000000000 downto 0 do ;", "E2012(1,94): Constant value 3000000000 is out of range for type 'Integer'")]
+    [InlineData("for i := 0 downto -3000000000 do ;", "E2012(1,103): Constant value -3000000000 is out of range for type 'Integer'")]
+    [InlineData("for i := 0 to High(Int64) do ;", "E2012(1,99): Constant value 9223372036854775807 is out of range for type 'Integer'")]
+    [InlineData("for var k: Integer := 0 to 3000000000 do ;", "E2012(1,112): Constant value 3000000000 is out of range for type 'Integer'")]
+    [InlineData("for var k: Integer := 3000000000 downto 0 do ;", "E2012(1,107): Constant value 3000000000 is out of range for type 'Integer'")]
+    public void ForLoop_ConstantBoundOutOfRange_E2012(string body, string expected) => Assert.Equal([expected], Diagnostics(body));
+
     [Fact]
     [Trait("Req", "LANG-361")]
     public void For_ConstantAsVariable_IsE2065() =>

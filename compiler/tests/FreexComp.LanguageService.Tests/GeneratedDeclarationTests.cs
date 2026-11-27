@@ -196,6 +196,27 @@ public sealed class GeneratedDeclarationTests
         Assert.Equal(("Count", "  Count: Integer;"), Selected(Generated(doc, At(QText, "Count"))));
     }
 
+    /// <summary>C-398: a pointer type read back from a <c>.pcu</c> without source is shown in its own unit's view, not in System's.</summary>
+    [Fact]
+    public void PcuPointerTypeInItsUnit()
+    {
+        const string unit2 = "unit U2;\ninterface\ntype\n  PCount = ^Integer;\nvar\n  Counter: PCount;\nimplementation\nend.\n";
+        const string program = "program P;\nuses U2;\nvar C: PCount;\nbegin\n  C := Counter;\nend.\n";
+        var pcu = Compilation.Create(TestFiles.Options(), [], TestFiles.Files(("P.pas", program), ("U2.pas", unit2))).PcuTexts().Single(t => t.Unit == "U2").Text;
+        var fs = TestFiles.Files();
+        fs.Add(@"C:\lib\U2.pcu", pcu).Add(@"C:\lib\U2.obj", "").Add(@"C:\q\P.pas", program);
+        var workspace = new Workspace(fs);
+        workspace.SetProject(TestFiles.Options() with { MainFile = @"C:\q\P.pas", SearchPaths = [@"C:\lib"], ObjectDirectory = @"C:\q\obj" });
+        var doc = workspace.GetDocument(@"C:\q\P.pas");
+        Assert.Empty(NavigationService.GoToDefinition(doc, At(program, "PCount;"), TestContext.Current.CancellationToken));
+
+        var generated = Generated(doc, At(program, "PCount;"));
+
+        Assert.Equal("U2", generated.UnitName);
+        Assert.Equal(("PCount", "  PCount;"), Selected(generated));                    // the QuickInfo form of a type (CMP-1420)
+        Assert.Equal(("Counter", "  Counter: PCount;"), Selected(Generated(doc, At(program, "Counter;"))));
+    }
+
     [Fact]
     public void SymbolWithSourceGivesNull()
     {

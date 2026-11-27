@@ -33,11 +33,15 @@ public abstract class Symbol
     /// <summary>Unit, type or routine; null for built-ins.</summary>
     public Symbol? ContainingSymbol { get; internal set; }
 
+    /// <summary>
+    /// The unit that declares this symbol; null for built-ins. A named pointer type has no containing symbol (C-366): its unit is
+    /// that of <see cref="Types.PointerTypeSymbol.DeclaredIn"/> (C-398: also when read back from a <c>.pcu</c>).
+    /// </summary>
     public UnitSymbol? ContainingUnit
     {
         get
         {
-            for (var s = ContainingSymbol; s != null; s = s.ContainingSymbol)
+            for (var s = this is Types.PointerTypeSymbol { DeclaredIn: { } declaredIn } ? declaredIn : ContainingSymbol; s != null; s = s.ContainingSymbol)
             {
                 if (s is UnitSymbol unit)
                 {

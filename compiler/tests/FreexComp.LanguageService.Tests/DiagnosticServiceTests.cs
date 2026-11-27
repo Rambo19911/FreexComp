@@ -76,6 +76,20 @@ public sealed class DiagnosticServiceTests
         Assert.Equal("P.pas(2,10): hint H2004: Unit 'U2' is used but nothing from it is referenced", hint.ToText()[(TestFiles.Dir.Length + 1)..]);
     }
 
+    /// <summary>C-398: a named pointer type belongs to its declaring unit, so a unit used only for one is no H2004.</summary>
+    [Fact]
+    public void UnitUsedOnlyForItsPointerType_IsNoH2004()
+    {
+        var workspace = new Workspace(TestFiles.Files(
+            ("P.pas", "program P;\nuses U2;\nvar C: PCount;\nbegin\nend."),
+            ("U2.pas", "unit U2;\ninterface\ntype PCount = ^Integer;\nimplementation\nend.")));
+        workspace.SetProject(TestFiles.Options());
+
+        var diagnostics = DiagnosticService.GetSemanticDiagnostics(workspace.GetDocument(TestFiles.PathOf("P.pas")), TestContext.Current.CancellationToken);
+
+        Assert.DoesNotContain(diagnostics, d => d.Code == "H2004");
+    }
+
     [Fact]
     public void SyntaxAndSemanticDiagnosticsDoNotOverlap()
     {
