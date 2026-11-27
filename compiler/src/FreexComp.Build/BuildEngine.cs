@@ -589,6 +589,12 @@ public sealed class BuildEngine : IBuildEngine
 
             _reachedCompile = true;
             var output = ProjectOptions.GetOutputPath(project, configuration, target.Id);      // CMP-1371
+            if (GenerateResourceScript(options, output) is not { } generated)
+            {
+                return (false, null);
+            }
+
+            options = generated.Options;
             _exe = output;
             _exeTimeBefore = _fs.FileExists(output) ? _fs.GetLastWriteTimeUtc(output) : null;
             _objectDirectory = options.ObjectDirectory;
@@ -607,7 +613,10 @@ public sealed class BuildEngine : IBuildEngine
                 InfoSink = line =>
                 {
                     didWork = true;
-                    sink.Info(line);
+                    if (request.Verbose || line != "Compiling resources " + Path.GetFileName(generated.Script))
+                    {
+                        sink.Info(line);                                                // CMP-1429: the generated script only in verbose output
+                    }
                 },
             };
             var compilation = Compilation.Create(options, request.OpenFiles, _fs);
@@ -620,8 +629,12 @@ public sealed class BuildEngine : IBuildEngine
             var projectResources = options.ResourceFiles
                 .SelectMany(f => new[] { f, Path.Combine(options.ObjectDirectory, Path.GetFileNameWithoutExtension(f) + ".res") })
                 .ToHashSet(PathUtil.Comparer);
+            // UI-DLG-335: an error in the generated script (CMP-1429) is located at the project file
             diagnostics.AddRange(result.Diagnostics.Select(d =>
-                d.Code is "E3114" or "E3115" or "E3116" or "E3117" && d.Arguments is [.., string file] && projectResources.Contains(file) ? d with { Location = location } : d));
+                (d.Code is "E3114" or "E3115" or "E3116" or "E3117" && d.Arguments is [.., string file] && projectResources.Contains(file))
+                || PathUtil.AreEqual(d.Location.Path, generated.Script)
+                    ? d with { Location = location }
+                    : d));
             if (!result.Success)
             {
                 return (false, null);
@@ -638,6 +651,61 @@ public sealed class BuildEngine : IBuildEngine
             }
 
             return (!didWork, result.OutputPath);
+        }
+
+        /// <summary>
+        /// resource-manager.md CMP-1428…1433: a file named by <c>icon</c> or <c>resources</c> that does not exist is W9002 and left out;
+        /// the script of <see cref="ProjectResources.RenderScript"/> is written to <c>&lt;objdir&gt;\&lt;name&gt;.project.rc</c> only when its
+        /// bytes differ (so the up-to-date check of CMP-1317 holds) and becomes the first resource input. With nothing to generate the
+        /// script and what was compiled from it are deleted, so the next link drops it. Null after an error (reported).
+        /// </summary>
+        private (CompilationOptions Options, string Script)? GenerateResourceScript(CompilationOptions options, string output)
+        {
+            var script = ProjectResources.ScriptPath(options.ObjectDirectory, project);
+            var missing = new List<string>();
+            IEnumerable<string> paths = project.Icon is { } icon ? [icon] : [];
+            foreach (var path in paths.Concat(project.Resources.IsDefault ? [] : project.Resources.Select(r => r.Path)))
+            {
+                var full = PathUtil.Normalize(Path.Combine(project.Directory, path.Replace('/', '\\')));
+                if (!_fs.FileExists(full) && !missing.Contains(full, PathUtil.Comparer))
+                {
+                    diagnostics.Add(Diagnostic.Create("W9002", location, full));
+                    missing.Add(full);
+                }
+            }
+
+            var text = ProjectResources.RenderScript(project, options.DebugInfo, Path.GetFileName(output), missing);
+            var current = script;
+            try
+            {
+                if (text is null)
+                {
+                    var compiled = Path.ChangeExtension(script, ".res");
+                    foreach (var file in new[] { script, script + ".pp", script + ".i", compiled, compiled + ".json", compiled + ".tmp" })
+                    {
+                        current = file;
+                        if (_fs.FileExists(file))
+                        {
+                            _fs.Delete(file);
+                        }
+                    }
+
+                    return (options, script);
+                }
+
+                var bytes = new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false).GetBytes(text);
+                if (!(_fs.FileExists(script) && _fs.ReadAllBytes(script).AsSpan().SequenceEqual(bytes)))
+                {
+                    _fs.WriteAllBytes(script, bytes);
+                }
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                diagnostics.Add(Diagnostic.Create("E0004", location, current, e.Message));
+                return null;
+            }
+
+            return (options with { ResourceFiles = [script, .. options.ResourceFiles] }, script);
         }
 
         /// <summary>

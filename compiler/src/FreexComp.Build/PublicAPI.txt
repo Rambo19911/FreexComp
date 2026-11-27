@@ -278,9 +278,11 @@ sealed record FreexComp.Build.Project : System.IEquatable<FreexComp.Build.Projec
   public FreexComp.Build.ManifestSettings ManifestSettings { get; init; }
   public FreexComp.Build.Project <Clone>$()
   public FreexComp.Build.ProjectEvents Events { get; init; }
+  public FreexComp.Build.ProjectVersionInfo VersionInfo { get; init; }
   public FreexComp.Build.RunSettings Run { get; init; }
   public System.Boolean Equals(FreexComp.Build.Project other)
   public System.Collections.Immutable.ImmutableArray<FreexComp.Build.ProjectFile> Files { get; init; }
+  public System.Collections.Immutable.ImmutableArray<FreexComp.Build.ProjectResource> Resources { get; init; }
   public System.Collections.Immutable.ImmutableArray<System.String> ConfigurationNames { get; }
   public System.Collections.Immutable.ImmutableArray<System.String> Defines { get; init; }
   public System.Collections.Immutable.ImmutableArray<System.String> Dependencies { get; init; }
@@ -297,6 +299,7 @@ sealed record FreexComp.Build.Project : System.IEquatable<FreexComp.Build.Projec
   public System.String AppType { get; init; }
   public System.String Directory { get; }
   public System.String FilePath { get; init; }
+  public System.String Icon { get; init; }
   public System.String Language { get; init; }
   public System.String MainSource { get; init; }
   public System.String Manifest { get; init; }
@@ -401,6 +404,23 @@ static class FreexComp.Build.ProjectOptions
   public static System.String GetOutputDirectory(FreexComp.Build.Project project, System.String configuration, System.String platformId)
   public static System.String GetOutputPath(FreexComp.Build.Project project, System.String configuration)
   public static System.String GetOutputPath(FreexComp.Build.Project project, System.String configuration, System.String platformId)
+sealed record FreexComp.Build.ProjectResource : System.IEquatable<FreexComp.Build.ProjectResource>
+  public FreexComp.Build.ProjectResource <Clone>$()
+  public System.Boolean Equals(FreexComp.Build.ProjectResource other)
+  public System.String Name { get; init; }
+  public System.String Path { get; init; }
+  public System.String Type { get; init; }
+  public System.Void Deconstruct(out System.String Path, out System.String Type, out System.String Name)
+  public ctor(System.String Path, System.String Type, System.String Name)
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public static System.Boolean op_Equality(FreexComp.Build.ProjectResource left, FreexComp.Build.ProjectResource right)
+  public static System.Boolean op_Inequality(FreexComp.Build.ProjectResource left, FreexComp.Build.ProjectResource right)
+static class FreexComp.Build.ProjectResources
+  public static System.Boolean IsValidName(System.String name)
+  public static System.Boolean IsValidVersion(System.String version)
+  public static System.Collections.Immutable.ImmutableArray<System.String> Types { get; }
 static class FreexComp.Build.ProjectSerializer
   public const System.Int32 SupportedFormatVersion = 1
   public static FreexComp.Build.LoadResult<FreexComp.Build.Project> LoadProject(System.String path, FreexComp.Compiler.IFileSystem fs)
@@ -416,6 +436,22 @@ static class FreexComp.Build.ProjectTrust
   public static System.Collections.Immutable.ImmutableArray<FreexComp.Build.UntrustedProject> FindUntrusted(FreexComp.Compiler.IFileSystem fs, System.String projectOrGroupPath, System.String projectInGroup, FreexComp.Build.ITrustStore store)
   public static System.String CommandsHash(FreexComp.Build.Project project)
   public static System.String DefaultStorePath(System.Func<System.String, System.String> environment)
+sealed record FreexComp.Build.ProjectVersionInfo : System.IEquatable<FreexComp.Build.ProjectVersionInfo>
+  public FreexComp.Build.ProjectVersionInfo <Clone>$()
+  public System.Boolean Equals(FreexComp.Build.ProjectVersionInfo other)
+  public System.String Comments { get; init; }
+  public System.String CompanyName { get; init; }
+  public System.String FileDescription { get; init; }
+  public System.String FileVersion { get; init; }
+  public System.String LegalCopyright { get; init; }
+  public System.String ProductName { get; init; }
+  public System.String ProductVersion { get; init; }
+  public ctor()
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public static System.Boolean op_Equality(FreexComp.Build.ProjectVersionInfo left, FreexComp.Build.ProjectVersionInfo right)
+  public static System.Boolean op_Inequality(FreexComp.Build.ProjectVersionInfo left, FreexComp.Build.ProjectVersionInfo right)
 sealed record FreexComp.Build.RunSettings : System.IEquatable<FreexComp.Build.RunSettings>
   public FreexComp.Build.RunSettings <Clone>$()
   public System.Boolean Equals(FreexComp.Build.RunSettings other)

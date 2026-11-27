@@ -85,6 +85,21 @@ public sealed record Project
 
     public ProjectEvents Events { get; init; } = new([], []);
 
+    /// <summary>
+    /// Optional key <c>icon</c> (resource-manager.md CMP-1427): the application icon (<c>.ico</c>, relative to the project directory
+    /// or absolute, '/'), linked as icon group 1; null = absent.
+    /// </summary>
+    public string? Icon { get; init; }
+
+    /// <summary>Optional key <c>versionInfo</c> (CMP-1427): null = absent, no generated version resource.</summary>
+    public ProjectVersionInfo? VersionInfo { get; init; }
+
+    /// <summary>
+    /// Optional key <c>resources</c> (CMP-1427): named data files linked into the image, in file order. Written when non-empty or
+    /// present in the loaded file.
+    /// </summary>
+    public ImmutableArray<ProjectResource> Resources { get; init; } = [];
+
     public ImmutableArray<string> Dependencies { get; init; } = [];
 
     /// <summary>Absolute, normalised path of the .pproj; not serialised. "" for a project not yet saved.</summary>
@@ -130,6 +145,35 @@ public sealed record ProjectFile(string Path, string? Form, string? Kind)
             ".rc" or ".res" => "resource",
             _ => "other",
         };
+}
+
+/// <summary>
+/// One entry of <c>resources</c> (resource-manager.md CMP-1427, 1428): <paramref name="Path"/> relative to the project directory or
+/// absolute ('/'), <paramref name="Type"/> one of <see cref="ProjectResources.Types"/>, <paramref name="Name"/> an identifier or a
+/// number 1…65535 (<see cref="ProjectResources.IsValidName"/>).
+/// </summary>
+public sealed record ProjectResource(string Path, string Type, string Name);
+
+/// <summary>
+/// The <c>.pproj</c> <c>versionInfo</c> object (CMP-1427, 1430): each member null = key absent. A version is 1–4 numbers
+/// 0…65535 separated by '.' (<see cref="ProjectResources.IsValidVersion"/>); an absent <see cref="FileVersion"/> builds as
+/// <c>1.0.0.0</c>, an absent <see cref="ProductVersion"/> as the file version, an absent text as "".
+/// </summary>
+public sealed record ProjectVersionInfo
+{
+    public string? FileVersion { get; init; }
+
+    public string? ProductVersion { get; init; }
+
+    public string? CompanyName { get; init; }
+
+    public string? FileDescription { get; init; }
+
+    public string? ProductName { get; init; }
+
+    public string? LegalCopyright { get; init; }
+
+    public string? Comments { get; init; }
 }
 
 /// <summary>

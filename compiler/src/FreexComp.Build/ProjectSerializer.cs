@@ -236,6 +236,8 @@ public static class ProjectSerializer
             }
         }
 
+        var (icon, versionInfo, resources) = ReadResourceKeys(root);
+
         return new Project
         {
             FormatVersion = root.Required("formatVersion").Int(),
@@ -259,6 +261,9 @@ public static class ProjectSerializer
             ActiveConfiguration = root.Optional("activeConfiguration")?.String() ?? "Debug",
             Run = run,
             Events = events,
+            Icon = icon,
+            VersionInfo = versionInfo,
+            Resources = resources,
             Dependencies = root.Optional("dependencies")?.Strings(path: true) ?? [],
             FilePath = path,
             Source = root.Element,
@@ -304,6 +309,100 @@ public static class ProjectSerializer
         }
 
         return new ManifestSettings(level, dpi, customFile);
+    }
+
+    /// <summary>
+    /// resource-manager.md CMP-1427, 1428, 1431: the keys <c>icon</c>, <c>versionInfo</c> and <c>resources</c>. A value of the wrong
+    /// JSON type, a missing or empty <c>path</c>, a missing <c>type</c> / <c>name</c> or an empty <c>icon</c> is E9002 at its token;
+    /// then every entry is checked and each faulty one gives one diagnostic at the token concerned (E3120 type, E3121 name, E3122
+    /// type and name already used — by an earlier entry, or icon group 1 by <c>icon</c> —, E3123 a version), all reported together.
+    /// Whether a file exists is checked by the build (W9002), not here.
+    /// </summary>
+    private static (string? Icon, ProjectVersionInfo? VersionInfo, ImmutableArray<ProjectResource> Resources) ReadResourceKeys(Node root)
+    {
+        static string NonEmpty(Node node) =>
+            node.String() is { Length: > 0 } value ? value : throw ProjectFileException.Invalid(node.Offset, $"'{node.Display}' must not be empty");
+
+        var errors = new List<ProjectFileException>();
+        var icon = root.Optional("icon") is { } iconNode ? Slashes(NonEmpty(iconNode)) : null;
+
+        ProjectVersionInfo? versionInfo = null;
+        if (root.Optional("versionInfo") is { } info)
+        {
+            info.RequireObject();
+            string? Text(string key) => info.Optional(key)?.String();
+            string? Version(string key)
+            {
+                if (info.Optional(key) is not { } node)
+                {
+                    return null;
+                }
+
+                var value = node.String();
+                if (!ProjectResources.IsValidVersion(value))
+                {
+                    errors.Add(new ProjectFileException("E3123", node.Offset, key, value));
+                }
+
+                return value;
+            }
+
+            versionInfo = new ProjectVersionInfo
+            {
+                FileVersion = Version("fileVersion"),
+                ProductVersion = Version("productVersion"),
+                CompanyName = Text("companyName"),
+                FileDescription = Text("fileDescription"),
+                ProductName = Text("productName"),
+                LegalCopyright = Text("legalCopyright"),
+                Comments = Text("comments"),
+            };
+        }
+
+        var resources = ImmutableArray.CreateBuilder<ProjectResource>();
+        var defined = new Dictionary<(string Type, string Name), string>();
+        if (icon is not null)
+        {
+            defined[("ICON", "1")] = icon;                                          // CMP-1431: icon group 1 belongs to `icon`
+        }
+
+        if (root.Optional("resources") is { } list)
+        {
+            foreach (var item in list.Items())
+            {
+                item.RequireObject();
+                var path = Slashes(NonEmpty(item.Required("path")));
+                var typeNode = item.Required("type");
+                var nameNode = item.Required("name");
+                var type = typeNode.String();
+                var name = nameNode.String();
+                resources.Add(new ProjectResource(path, type, name));
+                if (!ProjectResources.Types.Contains(type, StringComparer.Ordinal))
+                {
+                    errors.Add(new ProjectFileException("E3120", typeNode.Offset, path, type));
+                }
+                else if (!ProjectResources.IsValidName(name))
+                {
+                    errors.Add(new ProjectFileException("E3121", nameNode.Offset, path, name));
+                }
+                else if (defined.TryGetValue((type, ProjectResources.CanonicalName(name)), out var first))
+                {
+                    errors.Add(new ProjectFileException("E3122", nameNode.Offset, path, type, name, first));
+                }
+                else
+                {
+                    defined[(type, ProjectResources.CanonicalName(name))] = path;
+                }
+            }
+        }
+
+        if (errors.Count > 0)
+        {
+            errors.Sort((a, b) => a.Offset.CompareTo(b.Offset));
+            throw new ProjectFileException(errors[0].Code, errors[0].Offset, errors[0].Arguments) { Additional = errors.GetRange(1, errors.Count - 1) };
+        }
+
+        return (icon, versionInfo, resources.ToImmutable());
     }
 
     /// <summary>CMP-1133: an integer from 0 to 256 (0 = automatic).</summary>
@@ -612,6 +711,22 @@ public static class ProjectSerializer
                     : null),
             ])),
             ("events", w => WriteEvents(w, p.Events, Child(source, "events"), always: true)),
+            ("icon", p.Icon is { } icon ? w => w.WriteStringValue(Slashes(icon)) : null),                   // CMP-1427
+            ("versionInfo", p.VersionInfo is { } info
+                ? w => WriteObject(w, Child(source, "versionInfo"),
+                [
+                    ("fileVersion", Text(info.FileVersion)),
+                    ("productVersion", Text(info.ProductVersion)),
+                    ("companyName", Text(info.CompanyName)),
+                    ("fileDescription", Text(info.FileDescription)),
+                    ("productName", Text(info.ProductName)),
+                    ("legalCopyright", Text(info.LegalCopyright)),
+                    ("comments", Text(info.Comments)),
+                ])
+                : null),
+            ("resources", Has(source, "resources") || !p.Resources.IsDefaultOrEmpty
+                ? w => WriteResources(w, p.Resources, Child(source, "resources"))
+                : null),
             ("dependencies", w => WriteStrings(w, p.Dependencies, path: true)),
         ]);
     }
@@ -659,6 +774,41 @@ public static class ProjectSerializer
             .Except(entries.Select(entry => entry.Key), StringComparer.Ordinal)
             .Select(name => (name, (Action<Utf8JsonWriter>?)null));
         return w => WriteObject(w, source, [.. entries, .. dropped]);
+    }
+
+    private static Action<Utf8JsonWriter>? Text(string? value) => value is null ? null : w => w.WriteStringValue(value);
+
+    /// <summary>
+    /// CMP-1427: the entries of <c>resources</c> with the keys <c>path</c>, <c>type</c>, <c>name</c>; an entry keeps its unknown keys
+    /// by matching a loaded entry with the same path (ordinal ignore-case, first unused one), so reordering is safe.
+    /// </summary>
+    private static void WriteResources(Utf8JsonWriter w, ImmutableArray<ProjectResource> resources, JsonElement? source)
+    {
+        var unused = source is { ValueKind: JsonValueKind.Array } array
+            ? array.EnumerateArray().Where(e => e.ValueKind == JsonValueKind.Object).ToList()
+            : [];
+        w.WriteStartArray();
+        foreach (var resource in resources.IsDefault ? [] : resources)
+        {
+            var match = unused.FindIndex(e =>
+                e.TryGetProperty("path", out var path) && path.ValueKind == JsonValueKind.String
+                && PathUtil.Comparer.Equals(Slashes(path.GetString()!), Slashes(resource.Path)));
+            JsonElement? entry = null;
+            if (match >= 0)
+            {
+                entry = unused[match];
+                unused.RemoveAt(match);
+            }
+
+            WriteObject(w, entry,
+            [
+                ("path", w => w.WriteStringValue(Slashes(resource.Path))),
+                ("type", w => w.WriteStringValue(resource.Type)),
+                ("name", w => w.WriteStringValue(resource.Name)),
+            ]);
+        }
+
+        w.WriteEndArray();
     }
 
     /// <summary>File entries keep their unknown keys by path (ordinal ignore-case), so reordering is safe.</summary>
