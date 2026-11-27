@@ -266,4 +266,46 @@ public sealed class QuickInfoTests
 
         Assert.Equal("constructor TA.Create(N: Integer)", At("P.pas", program, "TA.Create(1)", "Create")?.Signature);
     }
+
+    /// <summary>The quick info at the <c>$$</c> of <paramref name="marker"/> in the inline-inference fixture.</summary>
+    private static QuickInfo? HoverInline(string marker)
+    {
+        var caret = marker.IndexOf("$$", StringComparison.Ordinal);
+        var at = InlineInferenceFixture.Offset(marker.Remove(caret, 2)) + caret;
+        return QuickInfoService.GetQuickInfo(InlineInferenceFixture.Open(), at, TestContext.Current.CancellationToken);
+    }
+
+    /// <summary>CMP-1413 (C-385): an inferred inline or <c>for var</c> variable shows its inferred type, at its declaration and its uses.</summary>
+    [Theory]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1413")]
+    [InlineData("var $$N := 5", "var N: Integer")]
+    [InlineData("N := N + $$I", "var I: Integer")]
+    [InlineData("N := $$N + I", "var N: Integer")]
+    [InlineData("var $$L := TBox", "var L: TBox<Integer>")]
+    [InlineData("$$L.Free", "var L: TBox<Integer>")]
+    [InlineData("for var $$I := 0 to High(U)", "var I: Integer")]
+    [InlineData("for var $$B in Bytes", "var B: Byte")]
+    [InlineData("W := W + $$B", "var B: Byte")]
+    public void InlineVariable_ShowsItsInferredType(string marker, string signature)
+    {
+        var info = HoverInline(marker);
+
+        Assert.NotNull(info);
+        Assert.Equal(signature, info.Signature);
+        Assert.Equal("P", info.DeclaredIn);
+    }
+
+    /// <summary>CMP-1413 (C-385): a declaration rejected with E2075 gives no quick info, at the declaration or a use.</summary>
+    [Theory]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1413")]
+    [InlineData("var $$X := nil")]
+    [InlineData("var $$A := [1, 2]")]
+    [InlineData("$$X := A;")]
+    [InlineData("X := $$A;")]
+    public void InlineVariable_E2075_NoQuickInfo(string marker)
+    {
+        Assert.Null(HoverInline(marker));
+    }
 }

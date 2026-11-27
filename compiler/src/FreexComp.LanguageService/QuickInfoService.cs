@@ -29,6 +29,12 @@ public static class QuickInfoService
             return null;
         }
 
+        // CMP-1413 (C-385): a variable whose declaration was rejected (E2075, an unknown type) keeps the error type: nothing to show
+        if (symbol is VariableSymbol { Type.TypeKind: TypeKind.Error })
+        {
+            return null;
+        }
+
         var signature = symbol is TypeSymbol type && !IdentifierComparer.Instance.Equals(type.GenericDefinition?.Name ?? type.Name, token.Value as string ?? token.Text)
             ? $"type {token.Text} = {symbol.Name}"                       // an alias names the type it stands for
             : symbol is TypeSymbol named ? DisplayWithEnclosingTypes(named, inGeneric) : symbol.ToDisplayString();
