@@ -1000,6 +1000,296 @@ public sealed class ScriptedSessionTests(IntegrationFixture fixture)
         });
     }
 
+    // ClosureFrame.pas: the stops A (in the anonymous function), C (in the anonymous procedure nested in it) and B (in
+    // the method that owns the closure), the lines of the calls on the way, and the call-stack names.
+    private const int ClosureStopA = 36, ClosureStopC = 39, ClosureStopB = 45;
+    private const string ClosureOwner = "TCounter.MakeAdder", ClosureFunction = "MakeAdder.$closure1.Anon1", ClosureProcedure = "Anon1.$closure2.Anon1";
+    private const string ClosureInFunction = ClosureFunction + ":36", ClosureLogCall = ClosureFunction + ":41", ClosureFirstCall = ClosureOwner + ":44";
+
+    private static async Task LaunchClosureFrameAsync(IDebugSession session, BuiltProgram program)
+    {
+        int[] lines = [ClosureStopA, ClosureStopC, ClosureStopB];
+        await session.LaunchAsync(
+            new LaunchRequest
+            {
+                Program = program.ExePath,
+                Breakpoints = [new SourceBreakpoints(program.SourcePath, [.. lines.Select((line, index) => new BreakpointSpec { Id = index + 1, Line = line })])],
+            },
+            Ct);
+        Assert.True(session.HasTypeInfo);
+    }
+
+    /// <summary>The user-code frames of a stop, innermost first: the top of the stack, nothing else between them.</summary>
+    private static async Task<List<StackFrameInfo>> UserFramesAsync(IDebugSession session, StopInfo stop)
+    {
+        var frames = (await session.GetStackTraceAsync(stop.ThreadId, ct: Ct)).Frames;
+        List<StackFrameInfo> user = [.. frames.TakeWhile(f => f.IsUserCode)];
+        Assert.True(user.Count > 0 && !frames.Skip(user.Count).Any(f => f.IsUserCode), string.Join(", ", frames.Select(Frame)));
+        return user;
+    }
+
+    /// <summary>
+    /// What one frame of ClosureFrame.pas shows: the rows of its Arguments scope and of its Locals scope with their
+    /// kinds, then every name of <paramref name="names"/> through watch, hover and Evaluate (in the top frame of the
+    /// stop also without a frame) - one outcome each. Addresses read <c>$…</c>; the result of the anonymous function is not
+    /// assigned at any stop and reads <c>?</c>. No row has a <c>$</c> in its name (hidden names, frame objects).
+    /// </summary>
+    private static async Task<string[]> ClosureFrameShowsAsync(IDebugSession session, StackFrameInfo frame, params string[] names)
+    {
+        string Shown(VariableInfo v)
+        {
+            var value = frame.Name == ClosureFunction && v.Name == "Result"
+                ? "?"
+                : System.Text.RegularExpressions.Regex.Replace(v.Value, @"\$[0-9A-F]{16}", "$…");
+            return $"{v.Name} = {value} : {v.TypeName} ({v.Kind})";
+        }
+
+        List<string> shown = [];
+        var scopes = await session.GetScopesAsync(frame.Id, Ct);
+        Assert.Equal([ScopeKind.Arguments, ScopeKind.Locals, ScopeKind.Globals], scopes.Select(s => s.Kind));
+        foreach (var scope in scopes.Take(2))
+        {
+            var rows = await session.GetChildrenAsync(scope.Handle, ct: Ct);
+            Assert.DoesNotContain(rows, row => row.Name.Contains('$'));
+            shown.AddRange(rows.Select(row => $"{scope.Kind}: {Shown(row)}"));
+        }
+
+        foreach (var name in names)
+        {
+            List<string> outcomes = [];
+            foreach (var context in (EvaluateContext[])[EvaluateContext.Watch, EvaluateContext.Hover, EvaluateContext.Console])
+            {
+                foreach (var frameId in frame.Index == 0 ? (int?[])[frame.Id, null] : [frame.Id])
+                {
+                    try
+                    {
+                        var value = (await session.EvaluateAsync(name, frameId, context, Ct)).Value;
+                        outcomes.Add($"{value.Value} : {value.TypeName}");
+                    }
+                    catch (DebuggerException error)
+                    {
+                        outcomes.Add($"{error.Code}: {error.Message}");
+                    }
+                }
+            }
+
+            shown.Add($"{name} → {string.Join(" / ", outcomes.Distinct())}");
+        }
+
+        return [.. shown];
+    }
+
+    /// <summary>
+    /// Variables that anonymous methods capture, in a real session (ClosureFrame.pas; CMP-1470…1472, sidecar §5). The
+    /// method <c>MakeAdder</c> owns a closure with its parameter <c>Start</c> and its local <c>Count</c>; its nested
+    /// routine uses the closure, so the method's frame describes them through its frame record. The anonymous function
+    /// reaches them through its frame parameter, which its own nested routine uses (frame record again), and holds
+    /// <c>Twice</c> in a closure of its own; the anonymous procedure nested in it reaches <c>Twice</c> through its frame
+    /// parameter and the method's variables through a hidden frame slot. Every frame shows each captured variable once,
+    /// under its source name, with the value all of them share at that moment; the captured <c>Self</c> is the frame's
+    /// <c>Self</c> (an implicit <c>FName</c> resolves through it); no frame object and no <c>$</c> name is listed.
+    /// After the method returned, the closure's frames still show its variables and the stack has no frame of it.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "DBG-081")]
+    [Trait("Req", "DBG-142")]
+    [Trait("Req", "DBG-150")]
+    public async Task Phase8_ClosureFrame_ShowsCapturedLocals()
+    {
+        const string Self = "Arguments: Self = TCounter($…) : TCounter (ClassInstance)";
+        const string Undeclared = "ExpressionEvaluation: Undeclared identifier";
+        var program = fixture.Build("ClosureFrame");
+        var p = program.SourcePath;
+        var recorder = new SessionRecorder(nameof(Phase8_ClosureFrame_ShowsCapturedLocals));
+        await recorder.RunAsync(fixture, program, async session =>
+        {
+            await LaunchClosureFrameAsync(session, program);
+            string[] names = ["Count", "Start", "Twice", "Delta", "FName", "Self.FName"];
+
+            // What the frame of the method shows, whatever is above it.
+            string[] Owner(int count, int start) =>
+            [
+                Self,
+                $"Arguments: Start = {start} : Integer (Integer)",
+                $"Locals: Count = {count} : Integer (Integer)",
+                "Locals: Result = $… : TIntFunc (Interface)",
+                $"Count → {count} : Integer",
+                $"Start → {start} : Integer",
+                $"Twice → {Undeclared} 'Twice'",
+                $"Delta → {Undeclared} 'Delta'",
+                "FName → 'ctr' : string",
+                "Self.FName → 'ctr' : string",
+            ];
+
+            // What the frame of the anonymous function shows: its own variables, then the method's.
+            string[] Function(int delta, int twice, string log, int count, int start) =>
+            [
+                Self,
+                $"Arguments: Delta = {delta} : Integer (Integer)",
+                $"Locals: Twice = {twice} : Integer (Integer)",
+                $"Locals: Log = {log} : TProc (Interface)",
+                $"Locals: Start = {start} : Integer (Integer)",
+                $"Locals: Count = {count} : Integer (Integer)",
+                "Locals: Result = ? : Integer (Integer)",
+                $"Count → {count} : Integer",
+                $"Start → {start} : Integer",
+                $"Twice → {twice} : Integer",
+                $"Delta → {delta} : Integer",
+                "FName → 'ctr' : string",
+                "Self.FName → 'ctr' : string",
+            ];
+
+            // What the frame of the nested anonymous procedure shows: the function's captured local, then the method's
+            // variables; a variable of the function that it does not capture is not declared there.
+            string[] Procedure(int twice, int count, int start) =>
+            [
+                Self,
+                $"Locals: Twice = {twice} : Integer (Integer)",
+                $"Locals: Start = {start} : Integer (Integer)",
+                $"Locals: Count = {count} : Integer (Integer)",
+                $"Count → {count} : Integer",
+                $"Start → {start} : Integer",
+                $"Twice → {twice} : Integer",
+                $"Delta → {Undeclared} 'Delta'",
+                "FName → 'ctr' : string",
+                "Self.FName → 'ctr' : string",
+            ];
+
+            // ---- Stop A, first: the method calls the function it made.
+            var stop = await recorder.WaitForStopAsync();
+            AssertStop(session, stop, StopReason.Breakpoint, p, ClosureStopA, [1]);
+            var frames = await UserFramesAsync(session, stop);
+            Assert.Equal([ClosureInFunction, ClosureFirstCall, "ClosureFrame:54"], frames.Select(Frame));
+            Assert.Equal(Function(delta: 5, twice: 10, log: "nil", count: 1, start: 10), await ClosureFrameShowsAsync(session, frames[0], names));
+            Assert.Equal(Owner(count: 1, start: 10), await ClosureFrameShowsAsync(session, frames[1], names));
+            Assert.Equal("31", (await session.EvaluateAsync("Count + Start + Twice * 2", null, EvaluateContext.Watch, Ct)).Value.Value);
+            await session.ContinueAsync(Ct);
+
+            // ---- Stop C, first: the nested procedure, called by the function, called by the method.
+            stop = await recorder.WaitForStopAsync();
+            AssertStop(session, stop, StopReason.Breakpoint, p, ClosureStopC, [2]);
+            frames = await UserFramesAsync(session, stop);
+            Assert.Equal([ClosureProcedure + ":39", ClosureLogCall, ClosureFirstCall, "ClosureFrame:54"], frames.Select(Frame));
+            Assert.Equal(Procedure(twice: 10, count: 1, start: 20), await ClosureFrameShowsAsync(session, frames[0], names));
+            Assert.Equal(Function(delta: 5, twice: 10, log: "$…", count: 1, start: 20), await ClosureFrameShowsAsync(session, frames[1], names));
+            Assert.Equal(Owner(count: 1, start: 20), await ClosureFrameShowsAsync(session, frames[2], names));
+            await session.ContinueAsync(Ct);
+            await recorder.WaitForStdoutAsync("ctr 1 20 10\n");
+
+            // ---- Stop B: back in the method, the values the function left.
+            stop = await recorder.WaitForStopAsync();
+            AssertStop(session, stop, StopReason.Breakpoint, p, ClosureStopB, [3]);
+            frames = await UserFramesAsync(session, stop);
+            Assert.Equal([ClosureOwner + ":45", "ClosureFrame:54"], frames.Select(Frame));
+            Assert.Equal(Owner(count: 1, start: 20), await ClosureFrameShowsAsync(session, frames[0], names));
+            await session.ContinueAsync(Ct);
+
+            // ---- Stop A, second: the method has returned; the main block calls the function.
+            stop = await recorder.WaitForStopAsync();
+            AssertStop(session, stop, StopReason.Breakpoint, p, ClosureStopA, [1]);
+            frames = await UserFramesAsync(session, stop);
+            Assert.Equal([ClosureInFunction, "ClosureFrame:55"], frames.Select(Frame));
+            Assert.Equal(Function(delta: 1, twice: 2, log: "nil", count: 2, start: 20), await ClosureFrameShowsAsync(session, frames[0], names));
+            await session.ContinueAsync(Ct);
+
+            // ---- Stop C, second.
+            stop = await recorder.WaitForStopAsync();
+            AssertStop(session, stop, StopReason.Breakpoint, p, ClosureStopC, [2]);
+            frames = await UserFramesAsync(session, stop);
+            Assert.Equal([ClosureProcedure + ":39", ClosureLogCall, "ClosureFrame:55"], frames.Select(Frame));
+            Assert.Equal(Procedure(twice: 2, count: 2, start: 22), await ClosureFrameShowsAsync(session, frames[0], names));
+            Assert.Equal(Function(delta: 1, twice: 2, log: "$…", count: 2, start: 22), await ClosureFrameShowsAsync(session, frames[1], names));
+            await session.ContinueAsync(Ct);
+
+            var terminated = await recorder.WaitForTerminatedAsync();
+            Assert.Equal(TerminationCause.Exited, terminated.Cause);
+            Assert.Equal(0, terminated.ExitCode);
+            Assert.Equal("ctr 1 20 10\n1 20\nctr 2 22 2\n22\n", recorder.StdoutSoFar);
+            Assert.Equal(5, recorder.Events.Count(e => e.StartsWith("Stopped(", StringComparison.Ordinal)));
+        });
+    }
+
+    /// <summary>
+    /// Modify writes the storage the closures share (ClosureFrame.pas). While the method that owns the closure is on
+    /// the stack, a value set in its frame is the value in the frame of the anonymous function, and back. <c>Count</c>
+    /// set to 40 in the frame of the anonymous function, after the method has returned, is 40 in that frame, in the
+    /// frame of the nested anonymous procedure at the next stop, and in what the program writes.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "DBG-150")]
+    public async Task Phase8_ClosureFrame_ModifiedValueIsShared()
+    {
+        var program = fixture.Build("ClosureFrame");
+        var p = program.SourcePath;
+        var recorder = new SessionRecorder(nameof(Phase8_ClosureFrame_ModifiedValueIsShared));
+        await recorder.RunAsync(fixture, program, async session =>
+        {
+            await LaunchClosureFrameAsync(session, program);
+
+            // The row of a variable in the Arguments and Locals scopes of a frame.
+            async Task<VariableInfo> RowOfAsync(StackFrameInfo frame, string name)
+            {
+                List<VariableInfo> rows = [];
+                foreach (var scope in (await session.GetScopesAsync(frame.Id, Ct)).Take(2))
+                    rows.AddRange(await session.GetChildrenAsync(scope.Handle, ct: Ct));
+                return rows.Single(row => row.Name == name);
+            }
+
+            // ---- Stop A, first: the method's parameter, set in the method's frame and set back in the function's.
+            var stop = await recorder.WaitForStopAsync();
+            AssertStop(session, stop, StopReason.Breakpoint, p, ClosureStopA, [1]);
+            var frames = await UserFramesAsync(session, stop);
+            Assert.Equal([ClosureInFunction, ClosureFirstCall, "ClosureFrame:54"], frames.Select(Frame));
+            Assert.Equal("Start = 13 : Integer", Row(await session.SetValueAsync("Start", "13", frames[1].Id, Ct)));
+            Assert.Equal("13", (await RowOfAsync(frames[0], "Start")).Value);
+            Assert.Equal("Start = 10 : Integer", Row(await session.SetValueAsync("Start", "10", frames[0].Id, Ct)));
+            Assert.Equal("10", (await RowOfAsync(frames[1], "Start")).Value);
+            await session.ContinueAsync(Ct);
+
+            foreach (var (line, id) in ((int, int)[])[(ClosureStopC, 2), (ClosureStopB, 3)])
+            {
+                stop = await recorder.WaitForStopAsync();
+                AssertStop(session, stop, StopReason.Breakpoint, p, line, [id]);
+                await session.ContinueAsync(Ct);
+            }
+
+            // ---- Stop A, second: only the anonymous function is on the stack.
+            stop = await recorder.WaitForStopAsync();
+            AssertStop(session, stop, StopReason.Breakpoint, p, ClosureStopA, [1]);
+            frames = await UserFramesAsync(session, stop);
+            Assert.Equal([ClosureInFunction, "ClosureFrame:55"], frames.Select(Frame));
+            var count = await RowOfAsync(frames[0], "Count");
+            Assert.Equal("2", count.Value);
+            Assert.True(count.CanModify);
+            Assert.Equal("Count", count.EvaluateName);
+
+            Assert.Equal("Count = 40 : Integer", Row(await session.SetValueAsync("Count", "40", frames[0].Id, Ct)));
+            Assert.Equal("40", (await RowOfAsync(frames[0], "Count")).Value);
+            Assert.Equal("40", (await session.EvaluateAsync("Count", null, EvaluateContext.Watch, Ct)).Value.Value);
+            await session.ContinueAsync(Ct);
+
+            // ---- Stop C, second: the nested procedure and the function read the same storage.
+            stop = await recorder.WaitForStopAsync();
+            AssertStop(session, stop, StopReason.Breakpoint, p, ClosureStopC, [2]);
+            frames = await UserFramesAsync(session, stop);
+            Assert.Equal([ClosureProcedure + ":39", ClosureLogCall, "ClosureFrame:55"], frames.Select(Frame));
+            foreach (var frame in frames.Take(2))
+            {
+                Assert.Equal("40", (await RowOfAsync(frame, "Count")).Value);
+                Assert.Equal("22", (await RowOfAsync(frame, "Start")).Value);
+                Assert.Equal("40", (await session.EvaluateAsync("Count", frame.Id, EvaluateContext.Watch, Ct)).Value.Value);
+            }
+
+            await session.ContinueAsync(Ct);
+            var terminated = await recorder.WaitForTerminatedAsync();
+            Assert.Equal(TerminationCause.Exited, terminated.Cause);
+            Assert.Equal(0, terminated.ExitCode);
+            Assert.Equal("ctr 1 20 10\n1 20\nctr 40 22 2\n22\n", recorder.StdoutSoFar);
+        });
+    }
+
     /// <summary>
     /// Every string kind of StringKinds.pas at one stop (visualizers.md §8): the plain summaries are unchanged, each
     /// value with a text has a text handle whose details and text match, a <c>nil</c> PChar has none, and the 1 MiB
