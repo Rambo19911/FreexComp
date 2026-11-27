@@ -1,0 +1,19 @@
+# the names by group (RTL-1217)
+ok Latin-1: 96 names
+ok symbols, mathematical symbols and Greek letters: 124 names
+ok markup-significant and internationalization characters: 32 names
+ok added: apos
+# the list itself
+ok names
+ok different names
+ok the Latin-1 names stand for U+00A0 to U+00FF in order
+ok names whose first letter may have either case (two names each)
+ok all names in one text decode to 253 characters
+ok each of them the character of its name
+ok and the 253 characters survive Encode and Decode
+# code points of the Living Standard; names outside the list
+ok lang and rang are U+27E8 and U+27E9
+ok long names and names with digits
+ok names of other lists and near misses are copied
+ok no block is left
+# passed 15 failed 0

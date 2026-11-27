@@ -1,0 +1,91 @@
+# the card vector: one text, each component rule (RTL-1212, RTL-1214)
+ok EncodePath keeps "&", "=" and "/"
+ok EncodeQuery encodes every delimiter
+ok EncodeForm writes "+" for the space
+ok EncodeAuth keeps "&" and "=" but not "/"
+ok Encode with one parameter is EncodeQuery
+ok path, query and form: three different results
+# every printable ASCII character through each routine (RTL-1212)
+ok 95 characters
+ok EncodePath: unreserved, sub-delims, ":", "@", "/" are kept
+ok EncodeAuth: unreserved and sub-delims are kept
+ok EncodeQuery: only unreserved is kept
+ok EncodeForm: letters, digits, "*", "-", ".", "_" are kept; "~" is not
+ok Encode with one parameter
+ok EncodePath with "/" as an extra unsafe character
+ok EncodeQuery with extra unsafe characters
+ok EncodeAuth with an extra unsafe character
+ok EncodeForm with an extra unsafe character
+ok empty text stays empty
+# UTF-8 first, then percent-encoding with upper-case hex (RTL-1211)
+ok a tab, U+007F and U+1F600 (one 4-byte sequence)
+ok a lone high surrogate becomes EF BF BD
+ok a pair in the wrong order is two lone surrogates
+ok U+20AC and control characters
+ok another encoding supplies the bytes: ASCII
+ok an empty extra set written out
+ok the result holds ASCII characters only
+# the general encoder: set and options (RTL-1211)
+ok empty set, no option: printable ASCII is copied, "%" too
+ok SpacesAsPlus, EncodePercent and "+" in the set
+ok non-ASCII and control characters are always encoded
+ok "%" in the set is encoded without the option
+ok EncodePercent, spelled with the type name
+ok a space in the set
+ok SpacesAsPlus comes before the set
+ok without SpacesAsPlus a space outside the set is copied
+ok U+007F in the set; without it:
+ok U+007F outside the set is copied
+ok the bytes of the given encoding: UTF-16
+# decoding (RTL-1213)
+ok hex digits of either case
+ok URLDecode keeps "+"
+ok FormDecode reads "+" as a space
+ok Decode with PlusAsSpaces
+ok Decode without options
+ok a byte that is not UTF-8 becomes U+FFFD, no exception
+ok %00 is one character U+0000
+ok unescaped non-ASCII input is kept
+ok an unescaped lone surrogate becomes U+FFFD
+ok FormDecode with another encoding
+ok escaped bytes and the bytes of a character: UTF-16
+ok empty text stays empty
+ok URLDecode(%zz) raises
+ok one hex digit at the end
+ok a "%" at the end
+ok TNetEncoding.URL.Decode(%zz) raises the same
+ok FormDecode(%zz)
+ok Decode(bytes) of %zz
+ok the second digit is not hex
+ok "%" after "%"
+ok "+" is not a hex digit; the position counts characters
+ok a digit outside ASCII is not a hex digit
+# round trips (RTL-1212)
+ok URLDecode(EncodePath(S)) = S
+ok URLDecode(EncodeAuth(S)) = S
+ok URLDecode(EncodeQuery(S)) = S
+ok FormDecode(EncodeForm(S)) = S
+ok Decode(Encode(S)) = S
+ok Encode(Decode(V)) = V for an encoded query component
+ok a "%" in raw text is encoded: decoding once gives the text back
+# the inherited forms (RTL-1214, RTL-1203, RTL-1204)
+ok Encode(bytes) reads UTF-8 text
+ok Decode(bytes) returns the UTF-8 form
+ok EncodeBytesToString(bytes)
+ok EncodeBytesToString(pointer, size)
+ok DecodeStringToBytes
+ok Encode(streams) returns the bytes written
+ok and writes the bytes of the array form
+ok Decode(streams)
+ok gives the UTF-8 form of the card text
+ok Decode(streams) of a malformed escape
+ok nothing was written
+ok a nil stream
+# the shared instance (RTL-1202)
+ok URL returns the same object twice
+ok class of URL
+ok TURLEncoding is a TNetEncoding
+ok an object the program creates is its own
+ok and works the same
+ok no block is left
+# passed 82 failed 0

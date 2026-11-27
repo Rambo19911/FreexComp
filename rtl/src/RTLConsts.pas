@@ -128,6 +128,8 @@ resourcestring
   SBase64InvalidChar = 'Invalid Base64 character at position %d';
   SBase64InvalidLength = 'Invalid Base64 data length';
   SBase64InvalidPadding = 'Invalid Base64 padding';
+  { NetEncoding: a "%" that is not followed by two hex digits (RTL-1213) }
+  SUrlInvalidEscape = 'Invalid URL escape sequence at position %d';
 
 implementation
 

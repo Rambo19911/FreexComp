@@ -1,0 +1,122 @@
+# Encode: five characters (RTL-1215)
+ok the card vector
+ok and back
+ok the apostrophe is written as &#39;
+ok the five, side by side
+ok non-ASCII text and a tab are copied
+ok control characters and a lone surrogate are copied: no numeric reference
+ok empty text stays empty
+ok text that is encoded already is encoded again
+ok Decode(Encode(S)) = S
+# Decode: named references (RTL-1216)
+ok the markup characters, &apos; included
+ok ten names
+ok replaced text is not scanned again
+ok one level only
+ok text around references
+ok a "&" before and after a reference
+ok names are case-sensitive
+ok the name ends at the ";"
+# Decode: numeric references (RTL-1216, RTL-1218)
+ok &#x1F600; is the surrogate pair D83D DE00
+ok the same in decimal
+ok decimal, hex with "x" and "X", leading zeros
+ok hex digits of either case
+ok 0 is U+FFFD
+ok 0 in other spellings
+ok above U+10FFFF is U+FFFD
+ok D800 is U+FFFD
+ok DFFF is U+FFFD
+ok a number of any length is read: too large is U+FFFD
+ok a value that would wrap to 65 in 32 bits is too large, not "A"
+ok nor in 64 bits
+ok leading zeros do not make a value too large
+ok U+10FFFF is the last code point
+ok U+10000 is the first pair
+ok the neighbours of the surrogates
+ok noncharacters are kept
+ok control characters are kept
+ok &#150; is U+2013
+ok &#x80; is U+20AC
+ok &#x81; stays U+0081
+ok the neighbours of 80..9F
+# the table for 80..9F (RTL-1218)
+ok 80 is U+20AC
+ok 81 is U+0081
+ok 82 is U+201A
+ok 83 is U+0192
+ok 84 is U+201E
+ok 85 is U+2026
+ok 86 is U+2020
+ok 87 is U+2021
+ok 88 is U+02C6
+ok 89 is U+2030
+ok 8A is U+0160
+ok 8B is U+2039
+ok 8C is U+0152
+ok 8D is U+008D
+ok 8E is U+017D
+ok 8F is U+008F
+ok 90 is U+0090
+ok 91 is U+2018
+ok 92 is U+2019
+ok 93 is U+201C
+ok 94 is U+201D
+ok 95 is U+2022
+ok 96 is U+2013
+ok 97 is U+2014
+ok 98 is U+02DC
+ok 99 is U+2122
+ok 9A is U+0161
+ok 9B is U+203A
+ok 9C is U+0153
+ok 9D is U+009D
+ok 9E is U+017E
+ok 9F is U+0178
+ok rows
+ok values without a row
+# what is not a reference is copied (RTL-1216)
+ok unchanged: &unknown; &amp &AMP; &#; &#x; &#xZZ; &#12 & &; &
+ok unchanged: a&b
+ok unchanged: &
+ok unchanged: &&
+ok unchanged: &;
+ok unchanged: &#
+ok unchanged: &#x
+ok unchanged: &#65
+ok unchanged: &#x41
+ok unchanged: &lt
+ok unchanged: &LT;
+ok unchanged: &Amp;
+ok unchanged: &# 65;
+ok unchanged: &#-65;
+ok unchanged: &#+65;
+ok unchanged: &#65x;
+ok unchanged: &#xG1;
+ok unchanged: &#x 41;
+ok unchanged: &#x41 ;
+ok unchanged: &lt ;
+ok unchanged: & lt;
+ok unchanged: &#x;41;
+ok unchanged: &eacute
+ok a digit outside ASCII is not a digit
+ok scanning goes on after a "&" that is copied
+ok a reference without ";" in front of a complete one
+ok runs of "&"
+# the inherited forms (RTL-1203, RTL-1204)
+ok Encode(bytes) reads UTF-8 text
+ok Decode(bytes) returns the UTF-8 form
+ok EncodeBytesToString(bytes)
+ok EncodeBytesToString(pointer, size)
+ok DecodeStringToBytes: one 4-byte sequence
+ok Encode(streams) returns the bytes written
+ok and writes the bytes of the array form
+ok Decode(streams)
+ok gives the card text back
+# the shared instance (RTL-1202)
+ok HTML returns the same object twice
+ok class of HTML
+ok an object the program creates is its own
+ok and works the same
+ok no block is left
+# passed 114 failed 0
