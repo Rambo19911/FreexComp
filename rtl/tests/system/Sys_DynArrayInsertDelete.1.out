@@ -1,0 +1,52 @@
+insert start: 100 1 2 3 (rc 1 cap 4 nil FALSE)
+insert middle: 100 1 100 101 2 3 (rc 1 cap 6 nil FALSE)
+insert end: 100 1 100 101 2 3 101 (rc 1 cap 9 nil FALSE)
+insert past end: 100 1 100 101 2 3 101 100 (rc 1 cap 9 nil FALSE)
+insert before start: 101 100 1 100 101 2 3 101 100 (rc 1 cap 9 nil FALSE)
+  in room, count <= 0: same block TRUE length 9
+nil, nothing: nil TRUE
+into nil: 100 101 (rc 1 cap 0 nil FALSE)
+delete start: 2 3 4 5 6 (rc 1 cap 6 nil FALSE)
+delete middle: 2 5 6 (rc 1 cap 6 nil FALSE)
+delete end clipped: 2 5 (rc 1 cap 6 nil FALSE)
+  no-ops: same block TRUE
+  unchanged: 2 5 (rc 1 cap 6 nil FALSE)
+delete all: (rc 0 cap 0 nil TRUE)
+delete from nil: (rc 0 cap 0 nil TRUE)
+room reused: 1 100 101 4 (rc 1 cap 4 nil FALSE)
+  same block TRUE
+insert(a, a, 1): 1 1 2 3 2 3 (rc 1 cap 6 nil FALSE)
+source across index: 1 2 2 3 3 4 (rc 1 cap 6 nil FALSE)
+source in the moved part: 2 1 2 3 (rc 1 cap 4 nil FALSE)
+strings into themselves: 4 pqpq refs 5
+  deleted 3: 1 refs 2
+  released 1
+interfaces: freed 0 rc 2 2
+  element inserted: 3 rc 3 2 TRUETRUE
+  insert(a, a, 0): 6 rc 5 3
+  deleted 3: 3 rc 3 2 first TRUE
+  deleted to 1: 1 rc 2 1
+  deleted all: nil TRUE rc 1 1
+  released: freed 2
+shared insert: 9 1 2 3 (rc 1 cap 4 nil FALSE)
+  other: 1 2 3 (rc 1 cap 0 nil FALSE)
+shared delete: 1 2 3 (rc 1 cap 4 nil FALSE)
+  other: 9 1 2 3 (rc 1 cap 4 nil FALSE)
+shared no-op delete copies: TRUE rc 11
+  other unchanged 1
+shared no-op insert copies: TRUE
+shared, source the old block: 7 7 2 3 2 3 (rc 1 cap 6 nil FALSE)
+  other: 7 2 3 (rc 1 cap 0 nil FALSE)
+read-only TRUE
+static insert: 10 5 20 30 (rc 1 cap 4 nil FALSE)
+static delete: 20 30 (rc 1 cap 3 nil FALSE)
+static no-op delete: 10 20 30 (rc 1 cap 0 nil FALSE)
+  copied TRUE
+static delete all: (rc 0 cap 0 nil TRUE)
+static source: 10 20 30 (rc 1 cap 0 nil FALSE)
+rows: 2 copied TRUETRUE1
+  row written: 11 20 30 (rc 1 cap 0 nil FALSE)
+static grid delete: 1 rc 1 row copied TRUE
+  row written: 7 12 (rc 1 cap 0 nil FALSE)
+statics unchanged: rc -1 -1 -1 10 8 TRUE
+leaks 0

@@ -396,6 +396,11 @@ procedure _DynArrayCopy(var Dest: Pointer; Src: Pointer; TI: Pointer; Index, Cou
 { Dest := Sources[0] + ... + Sources[Count - 1] (element-0 pointers, nil = empty; Dest may alias a source); a unique
   first source is extended in place with growth room (system.md RTL-088) }
 procedure _DynArrayCat(var Dest: Pointer; TI: Pointer; Count: NativeInt; Sources: PPointer);
+{ Insert / Delete on dynamic arrays (system.md RTL-084, RTL-089): A is made unique first (also for a no-op); Insert
+  takes Count elements from the element memory at Src (it may lie inside A), at Index clipped to 0..Length(A), growing
+  by the append rule; Delete removes Count elements (clipped) from a valid Index, keeps the room, empty gives nil }
+procedure _DynArrayInsert(var A: Pointer; TI: Pointer; Index: NativeInt; Src: Pointer; Count: NativeInt);
+procedure _DynArrayDelete(var A: Pointer; TI: Pointer; Index, Count: NativeInt);
 procedure _Finalize(P: Pointer; TI: Pointer);
 procedure _FinalizeArray(P: Pointer; TI: Pointer; Count: NativeInt);
 procedure _AddRef(P: Pointer; TI: Pointer);
@@ -1702,7 +1707,7 @@ end;
   RefCount > 0, counted with atomic increments (RTL-080); the last release finalises the managed elements in index
   order, then frees the block (RTL-085). A static block (RefCount -1, read-only, ABI-045) is never counted, freed or
   written: assigning it stores a heap copy (RTL-087), the modifying helpers copy it first. Writing an element never
-  copies; SetLength, Copy and _DynArrayCat return unique blocks (ABI-042). }
+  copies; SetLength, Copy, _DynArrayCat, _DynArrayInsert and _DynArrayDelete return unique blocks (ABI-042). }
 
 const
   KindUString = 9;                     { rtl-abi.md section 10 kind values }
@@ -1971,6 +1976,41 @@ begin
   ReleaseDynArray(Old, TI);
 end;
 
+{ the RTL-088 growth of the unique heap block A to room for NewLen elements (its Length unchanged): nothing while the
+  room (Capacity, or Length when Capacity is 0) suffices, else a reallocation to max(NewLen, Room + Room div 2, 4)
+  elements recorded in Capacity (exactly NewLen and Capacity 0 when that exceeds High(Integer)) }
+procedure GrowDynRoom(var A: Pointer; ElSize, NewLen: NativeInt; Addr: Pointer);
+var
+  R: PDynArrayRec;
+  Room, NewCap: NativeInt;
+  Exact: Boolean;
+begin
+  R := DynRec(A);
+  Room := R^.Capacity;
+  if Room = 0 then
+    Room := R^.Length;
+  if NewLen <= Room then
+    Exit;
+  Exact := Room > High(Integer) - Room div 2;
+  NewCap := NewLen;
+  if not Exact then
+  begin
+    if NewCap < Room + Room div 2 then
+      NewCap := Room + Room div 2;
+    if NewCap < 4 then
+      NewCap := 4;
+    Exact := NewCap > High(Integer);
+    if Exact then
+      NewCap := NewLen;
+  end;
+  R := ReallocMemAt(R, SizeOf(TDynArrayRec) + DynPayload(NewCap, ElSize, Addr), Addr);
+  if Exact then
+    R^.Capacity := 0
+  else
+    R^.Capacity := NewCap;
+  A := PByte(R) + SizeOf(TDynArrayRec);
+end;
+
 { RTL-088. The total is checked before anything changes (runtime error 203 as SetLength). In place: Sources[0] is
   Dest, a heap block with RefCount 1 that no later source repeats; the other sources' elements are appended, the block
   growing to max(Total, Room + Room div 2, 4) elements (Room = Capacity, or Length when Capacity is 0; exactly Total
@@ -1979,9 +2019,8 @@ end;
 procedure _DynArrayCat(var Dest: Pointer; TI: Pointer; Count: NativeInt; Sources: PPointer);
 var
   Info: PDynArrayTypeInfo;
-  R: PDynArrayRec;
-  Total, L, I, Pos, Room, NewCap: NativeInt;
-  InPlace, Exact: Boolean;
+  Total, L, I, Pos: NativeInt;
+  InPlace: Boolean;
   N, Old: Pointer;
 begin
   Info := TI;
@@ -2005,33 +2044,9 @@ begin
       InPlace := False;
   if InPlace then
   begin
-    R := DynRec(Dest);
-    Pos := R^.Length;
-    Room := R^.Capacity;
-    if Room = 0 then
-      Room := Pos;
-    if Total > Room then
-    begin
-      Exact := Room > High(Integer) - Room div 2;
-      NewCap := Total;
-      if not Exact then
-      begin
-        if NewCap < Room + Room div 2 then
-          NewCap := Room + Room div 2;
-        if NewCap < 4 then
-          NewCap := 4;
-        Exact := NewCap > High(Integer);
-        if Exact then
-          NewCap := Total;
-      end;
-      R := ReallocMemAt(R, SizeOf(TDynArrayRec) + DynPayload(NewCap, Info^.ElSize, _ReturnAddress), _ReturnAddress);
-      if Exact then
-        R^.Capacity := 0
-      else
-        R^.Capacity := NewCap;
-      Dest := PByte(R) + SizeOf(TDynArrayRec);
-    end;
-    R^.Length := Total;
+    Pos := DynRec(Dest)^.Length;
+    GrowDynRoom(Dest, Info^.ElSize, Total, _ReturnAddress);
+    DynRec(Dest)^.Length := Total;
     for I := 1 to Count - 1 do
     begin
       L := DynLength(Sources[I]);
@@ -2051,6 +2066,106 @@ begin
   Old := Dest;
   Dest := N;
   ReleaseDynArray(Old, TI);
+end;
+
+{ RTL-089 first step: a non-nil A that is shared or static is replaced by an exact unique copy (managed elements gain a
+  reference, static nested parts are copied, RTL-087) and the old value is released }
+procedure DynUnique(var A: Pointer; TI: Pointer; Addr: Pointer);
+var
+  N, Old: Pointer;
+  Len: NativeInt;
+begin
+  if (A = nil) or (DynRec(A)^.RefCount = 1) then
+    Exit;
+  Len := DynRec(A)^.Length;
+  N := NewDynArray(Len, PDynArrayTypeInfo(TI)^.ElSize, False, Addr);
+  CopyDynElements(N, A, TI, Len);
+  Old := A;
+  A := N;
+  ReleaseDynArray(Old, TI);
+end;
+
+{ RTL-089. The new length is checked before anything changes (runtime error 203 as SetLength). The source elements
+  are read as they were before the call: a source inside the unique block of A is first copied raw to a temporary
+  buffer, since the block may move and its later elements move up. The inserted elements gain a reference and their
+  static parts are copied (the source need not be a block, so a static origin cannot be told apart). }
+procedure _DynArrayInsert(var A: Pointer; TI: Pointer; Index: NativeInt; Src: Pointer; Count: NativeInt);
+var
+  Info: PDynArrayTypeInfo;
+  ES, Len: NativeInt;
+  Tmp, P: Pointer;
+begin
+  Info := TI;
+  ES := Info^.ElSize;
+  Len := DynLength(A);
+  if Count > 0 then
+  begin
+    if Count > High(NativeInt) - Len then
+      RunErrorAt(203, _ReturnAddress);
+    DynPayload(Len + Count, ES, _ReturnAddress);
+  end;
+  DynUnique(A, TI, _ReturnAddress);
+  if Count <= 0 then
+    Exit;
+  if Index < 0 then
+    Index := 0;
+  if Index > Len then
+    Index := Len;
+  Tmp := nil;
+  if (A <> nil) and (PByte(Src) < PByte(A) + Len * ES) and (PByte(Src) + Count * ES > PByte(A)) then
+  begin
+    Tmp := GetMemAt(Count * ES, _ReturnAddress);
+    Move(Src^, Tmp^, Count * ES);
+    Src := Tmp;
+  end;
+  if A = nil then
+    A := NewDynArray(Count, ES, False, _ReturnAddress)
+  else
+  begin
+    GrowDynRoom(A, ES, Len + Count, _ReturnAddress);
+    DynRec(A)^.Length := Len + Count;
+    Move(PByte(A)[Index * ES], PByte(A)[(Index + Count) * ES], (Len - Index) * ES);
+  end;
+  P := PByte(A) + Index * ES;
+  Move(Src^, P^, Count * ES);
+  if Info^.ManagedElType <> nil then
+  begin
+    _AddRefArray(P, Info^.ManagedElType, Count);
+    UnshareStatic(P, Info^.ManagedElType, Count);
+  end;
+  if Tmp <> nil then
+    FreeMemAt(Tmp, _ReturnAddress);
+end;
+
+{ RTL-089: the removed managed elements are finalised, the later ones move down, the block keeps its room
+  (Capacity := max(Capacity, old Length); a length beyond High(Integer) is not recorded, which only understates the
+  room); removing every element frees the block and sets A := nil }
+procedure _DynArrayDelete(var A: Pointer; TI: Pointer; Index, Count: NativeInt);
+var
+  Info: PDynArrayTypeInfo;
+  R: PDynArrayRec;
+  ES, Len: NativeInt;
+begin
+  Info := TI;
+  ES := Info^.ElSize;
+  DynUnique(A, TI, _ReturnAddress);
+  Len := DynLength(A);
+  if (Index < 0) or (Index >= Len) or (Count <= 0) then
+    Exit;
+  if Count > Len - Index then
+    Count := Len - Index;
+  if Count = Len then
+  begin
+    _DynArrayClr(A, TI);
+    Exit;
+  end;
+  if Info^.ManagedElType <> nil then
+    _FinalizeArray(PByte(A) + Index * ES, Info^.ManagedElType, Count);
+  Move(PByte(A)[(Index + Count) * ES], PByte(A)[Index * ES], (Len - Index - Count) * ES);
+  R := DynRec(A);
+  if (Len <= High(Integer)) and (R^.Capacity < Len) then
+    R^.Capacity := Len;
+  R^.Length := Len - Count;
 end;
 
 { Count consecutive values of type TI at P: every managed part released and set to nil (nil parts are skipped) }
