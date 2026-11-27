@@ -161,7 +161,8 @@ No Visual Studio, MSVC or Windows SDK is needed. Details: [supported platforms](
    ```powershell
    powershell -ExecutionPolicy Bypass -File scripts/bootstrap.ps1
    ```
-   This puts the LLVM toolchain, an embeddable Python runtime (used by the debugger back end) and the SQLite DLL into
+   This puts the LLVM toolchain, an embeddable Python runtime (used by the debugger back end), the SQLite DLL and
+   the Unicode character data file (`UnicodeData.txt`, input of the runtime library's character tables) into
    `third_party/`. Nothing is installed system-wide.
 3. Build
    ```sh

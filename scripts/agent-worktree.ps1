@@ -42,7 +42,7 @@ switch ($Action) {
         New-Item -ItemType Directory -Force $root | Out-Null
         Invoke-Git @('worktree', 'add', '-b', $branch, $wt, 'main') | Out-Null
         New-Item -ItemType Directory -Force (Join-Path $wt 'third_party') | Out-Null
-        foreach ($d in 'llvm', 'python-embed', 'sqlite') {
+        foreach ($d in 'llvm', 'python-embed', 'sqlite', 'unicode') {
             $src = Join-Path $repo "third_party\$d"
             if (Test-Path $src) { New-Item -ItemType Junction -Path (Join-Path $wt "third_party\$d") -Target $src | Out-Null }
         }
@@ -76,7 +76,7 @@ switch ($Action) {
         $ahead = (Invoke-Git @('rev-list', '--count', "main..$branch") | Out-String).Trim()
         if ($ahead -ne '0') { Fail "$branch has $ahead commit(s) not on main; land them first" }
         # Junctions first, with rmdir (removes the link only, never the target's contents).
-        foreach ($j in 'docs', 'third_party\llvm', 'third_party\python-embed', 'third_party\sqlite') {
+        foreach ($j in 'docs', 'third_party\llvm', 'third_party\python-embed', 'third_party\sqlite', 'third_party\unicode') {
             $p = Join-Path $wt $j
             if (Test-Path $p) { & cmd.exe /c rmdir "$p" | Out-Null }
         }

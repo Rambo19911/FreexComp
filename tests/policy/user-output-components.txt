@@ -7,7 +7,7 @@
 #                a file deployed beside the program is named between back-quotes in the last cell
 #   system       a library of the operating system that the runtime loads or imports; never redistributed
 # Licences allowed for own and third-party entries: Apache-2.0 WITH LLVM-exception, MIT, BSD-2-Clause,
-# BSD-3-Clause, Zlib, ISC, Public domain.
+# BSD-3-Clause, Zlib, ISC, Public domain, Unicode-3.0.
 
 own | rtl/src | Apache-2.0 WITH LLVM-exception | the runtime library; its units are compiled into every program
 own | rtl/winapi/src | Apache-2.0 WITH LLVM-exception | the declarations of the Windows functions and types; compiled into the programs that use them
@@ -18,6 +18,7 @@ own | compiler output | Apache-2.0 WITH LLVM-exception | start-up code, unit ini
 
 third-party | LLVM | Apache-2.0 WITH LLVM-exception | machine code is produced by the code generator; no library of it is linked
 third-party | SQLite | Public domain | `sqlite3.dll` is deployed beside programs that use the data-access library
+third-party | Unicode Character Database | Unicode-3.0 | the character tables of the runtime library are generated from its data and compiled into programs that use them
 
 system | advapi32.dll | — | part of Windows; imported by the runtime library
 system | comctl32.dll | — | part of Windows; imported by the runtime library

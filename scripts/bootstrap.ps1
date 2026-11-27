@@ -85,6 +85,17 @@ foreach ($f in $cfg.sqlite.requiredFiles) { Say (Test-Path (Join-Path $sqlDir $f
 $sqlDll = Join-Path $sqlDir 'sqlite3.dll'
 if (Test-Path $sqlDll) { Say ((Get-FileHash $sqlDll -Algorithm SHA256).Hash.ToLower() -eq $cfg.sqlite.dllSha256.ToLower()) "SQLite DLL hash matches the pin" }
 
+# --- Unicode Character Database (UnicodeData.txt: input of the runtime library's character tables) --------
+$ucdDir = Join-Path $root $cfg.unicode.installDir
+$ucdFile = Join-Path $ucdDir 'UnicodeData.txt'
+if (-not (Test-Path $ucdFile) -and -not $CheckOnly) {
+    $txt = Get-Package $cfg.unicode.package $cfg.unicode.url $cfg.unicode.sha256
+    New-Item -ItemType Directory -Force $ucdDir | Out-Null
+    Copy-Item -LiteralPath $txt -Destination $ucdFile -Force
+}
+foreach ($f in $cfg.unicode.requiredFiles) { Say (Test-Path (Join-Path $ucdDir $f)) "Unicode data file $f" }
+if (Test-Path $ucdFile) { Say ((Get-FileHash $ucdFile -Algorithm SHA256).Hash.ToLower() -eq $cfg.unicode.sha256.ToLower()) "UnicodeData.txt hash matches the pin ($($cfg.unicode.version))" }
+
 # --- lldb must start using ONLY the bundled Python -------------------------------------------------------
 if ((Test-Path (Join-Path $llvmBin 'lldb.exe')) -and (Test-Path (Join-Path $pyDir 'python3.dll'))) {
     $old = $env:PATH

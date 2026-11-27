@@ -547,6 +547,43 @@ public sealed class DependencyLicenceTests
         Assert.Contains(report.Exceptions, e => e.Kind == "toolchain" && e.Name == "python" && e.Version == python.Version && e.Licence == python.Licence);
     }
 
+    /// <summary>
+    /// L-046: the Unicode Character Database file the character tables are generated from is a pinned build input —
+    /// an entry of the manifest with its licence, a reviewed exception bound to its version, a download by
+    /// <c>scripts/bootstrap.ps1</c> only, and a local copy whose bytes have the pinned hash. Fails (never skips) when the
+    /// copy is missing; reads local files only.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "LIC-076")]
+    [Trait("Req", "LIC-077")]
+    public void UnicodeDataIsAPinnedBuildInput()
+    {
+        using var manifest = JsonDocument.Parse(File.ReadAllBytes(RepoPaths.Combine("scripts", "toolchain.json")));
+        Assert.True(manifest.RootElement.TryGetProperty("unicode", out var entry), "scripts/toolchain.json has no entry 'unicode'");
+        var version = entry.GetProperty("version").GetString()!;
+        Assert.Matches(@"^\d+\.\d+\.\d+$", version);
+        Assert.Equal("Unicode-3.0", entry.GetProperty("license").GetString());
+        Assert.Equal($"https://www.unicode.org/Public/{version}/ucd/UnicodeData.txt", entry.GetProperty("url").GetString());
+        var pinned = entry.GetProperty("sha256").GetString()!;
+        Assert.Matches("^[0-9a-f]{64}$", pinned);
+        Assert.Equal(["UnicodeData.txt"], entry.GetProperty("requiredFiles").EnumerateArray().Select(f => f.GetString()!));
+
+        // not on the allow-list of what the product may depend on: it passes with its reviewed exception only
+        var report = DependencyLicences.Check(RepoPaths.Root, packages: false);
+        Assert.True(report.Problems.Count == 0, Lines(report.Problems));
+        var tool = report.Tools.Single(t => t.Key == "unicode");
+        Assert.False(DependencyLicences.IsAllowed(tool.Licence));
+        Assert.Contains(report.Exceptions, e => e.Kind == "toolchain" && e.Name == "unicode" && e.Version == version && e.Licence == "Unicode-3.0");
+
+        // the one script that may download fetches it with the pinned hash
+        Assert.Contains("Get-Package $cfg.unicode.package $cfg.unicode.url $cfg.unicode.sha256",
+            File.ReadAllText(RepoPaths.Combine("scripts", "bootstrap.ps1")), StringComparison.Ordinal);
+
+        var file = Path.Combine([RepoPaths.Root, .. entry.GetProperty("installDir").GetString()!.Split('/'), "UnicodeData.txt"]);
+        Assert.True(File.Exists(file), "missing " + file + " (run scripts/bootstrap.ps1)");
+        Assert.Equal(pinned, Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(file))));
+    }
+
     [Fact]
     [Trait("Req", "LIC-076")]
     [Trait("Req", "LIC-077")]
@@ -597,7 +634,9 @@ public sealed class DependencyLicenceTests
             File.WriteAllText(exceptions, string.Join("\n", lines.Where(l => l != entry)) + "\n");
             Assert.Equal(["toolchain.json: entry 'python': licence 'PSF-2.0' is not allowed"], ToolchainProblems(temp));
 
-            File.WriteAllText(exceptions, $"toolchain | python | 0.0.1 | PSF-2.0 | {Reason}\n");
+            // the other entries stay as they are (line 1 is the changed one)
+            File.WriteAllText(exceptions, string.Join("\n",
+                [$"toolchain | python | 0.0.1 | PSF-2.0 | {Reason}", .. lines.Where(l => l != entry && l.Length > 0 && !l.StartsWith('#'))]) + "\n");
             Assert.Equal(
                 ["toolchain.json: entry 'python': licence 'PSF-2.0' is not allowed", "licence-exceptions.txt(1): toolchain python 0.0.1: no such dependency"],
                 ToolchainProblems(temp));

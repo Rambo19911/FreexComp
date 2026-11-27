@@ -40,6 +40,7 @@ internal static partial class DependencyLicences
         ["llvm"] = "LLVM",
         ["python"] = "Python embeddable package",
         ["sqlite"] = "SQLite",
+        ["unicode"] = "Unicode Character Database",
     };
 
     /// <summary>One package of the resolved graph; <see cref="Expression"/> is null when it declares no licence expression.</summary>

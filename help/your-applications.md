@@ -27,6 +27,7 @@ apply to that program.
 | compiler output | Apache-2.0 WITH LLVM-exception | start-up code, unit initialisation tables, type information and the application manifest that the compiler generates for the program |
 | LLVM | Apache-2.0 WITH LLVM-exception | machine code is produced by the code generator; no library of it is linked |
 | SQLite | Public domain | `sqlite3.dll` is deployed beside programs that use the data-access library |
+| Unicode Character Database | Unicode-3.0 | the character tables of the runtime library are generated from its data and compiled into programs that use them |
 
 The directories are those of the library source below the FreexComp directory; see *Library source*.
 
@@ -34,6 +35,9 @@ The directories are those of the library source below the FreexComp directory; s
 - If you pass on the library source code itself, changed or unchanged, keep its licence file with it.
 - A program that uses the data-access library is deployed together with the SQLite library file
   (`sqlite3.dll`). SQLite is in the public domain; you may ship it freely.
+- The character tables inside your program are made from the Unicode Character Database. Its licence
+  (Unicode License V3) lets you use and sell them freely; put its copyright and permission notice into your
+  program's documentation. The notice is in the `licenses` folder, in the file `THIRD-PARTY-NOTICES.txt`.
 
 ## Windows libraries
 Your program calls libraries that are part of Windows. They are already on every computer the program

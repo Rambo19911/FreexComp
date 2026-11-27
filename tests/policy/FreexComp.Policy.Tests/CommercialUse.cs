@@ -23,7 +23,7 @@ internal static partial class CommercialUse
 
     /// <summary>LIC-058: the licences allowed for anything inside or beside a user's program. Changing this list is an owner decision.</summary>
     public static readonly IReadOnlyList<string> AllowedLicences =
-        [RuntimeLicence, "MIT", "BSD-2-Clause", "BSD-3-Clause", "Zlib", "ISC", "Public domain"];
+        [RuntimeLicence, "MIT", "BSD-2-Clause", "BSD-3-Clause", "Zlib", "ISC", "Public domain", "Unicode-3.0"];
 
     public const string ListName = "user-output-components.txt";
 

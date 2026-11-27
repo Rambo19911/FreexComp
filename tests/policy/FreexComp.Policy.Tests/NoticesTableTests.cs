@@ -20,6 +20,7 @@ public sealed partial class NoticesTableTests
         ["llvm"] = "LLVM",
         ["python"] = "Python embeddable package",
         ["sqlite"] = "SQLite",
+        ["unicode"] = "Unicode Character Database",
     };
 
     [GeneratedRegex(@"^[A-Za-z][A-Za-z0-9]*(\.[A-Za-z0-9]+)+$")]

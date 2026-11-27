@@ -169,12 +169,12 @@ public sealed class CommercialUseTests
         Assert.Empty(CommercialUse.LicenceProblems(entries));
         Assert.EndsWith("\n", File.ReadAllText(ListFile), StringComparison.Ordinal);
 
-        // LIC-061: the product's own parts first, in the stated order, then the two components of other origin
+        // LIC-061: the product's own parts first, in the stated order, then the components of other origin
         Assert.Equal(
             (string[])[.. CommercialUse.SourceRoots, CommercialUse.CompilerOutput],
             entries.Where(e => e.Kind == "own").Select(e => e.Name));
         Assert.Equal(
-            (string[])["LLVM|Apache-2.0 WITH LLVM-exception", "SQLite|Public domain"],
+            (string[])["LLVM|Apache-2.0 WITH LLVM-exception", "SQLite|Public domain", "Unicode Character Database|Unicode-3.0"],
             entries.Where(e => e.Kind == "third-party").Select(e => e.Name + "|" + e.Licence));
         Assert.Contains(entries, e => e.Kind == "system");
 
@@ -246,6 +246,7 @@ public sealed class CommercialUseTests
     [InlineData("Zlib", true)]
     [InlineData("ISC", true)]
     [InlineData("Public domain", true)]
+    [InlineData("Unicode-3.0", true)]
     public void DisallowedLicenceIsReported(string licence, bool allowed)
     {
         var temp = Directory.CreateTempSubdirectory("policy-commercial-");
@@ -279,7 +280,7 @@ public sealed class CommercialUseTests
     public void AllowListIsTheDecidedOne()
     {
         Assert.Equal(
-            (string[])["Apache-2.0 WITH LLVM-exception", "MIT", "BSD-2-Clause", "BSD-3-Clause", "Zlib", "ISC", "Public domain"],
+            (string[])["Apache-2.0 WITH LLVM-exception", "MIT", "BSD-2-Clause", "BSD-3-Clause", "Zlib", "ISC", "Public domain", "Unicode-3.0"],
             CommercialUse.AllowedLicences);
     }
 

@@ -31,5 +31,15 @@
     "note": "Official x64 DLL (public domain). SHA3-256 published on sqlite.org matched on 2026-11-13. Built with column metadata; no encryption API (own page encryption is a backlog card).",
     "requiredFiles": ["sqlite3.dll", "sqlite3.def"]
   },
+  "unicode": {
+    "version": "18.0.0",
+    "license": "Unicode-3.0",
+    "package": "UnicodeData-18.0.0.txt",
+    "url": "https://www.unicode.org/Public/18.0.0/ucd/UnicodeData.txt",
+    "sha256": "0736451de439ae7baf1425136617da495e09ee5afbe6e394374db7009ea08950",
+    "installDir": "third_party/unicode",
+    "note": "UnicodeData.txt of the Unicode Character Database (final data of version 18.0.0, 2243593 bytes). Build input only: the character tables of the runtime library are generated from it; the file itself is not shipped.",
+    "requiredFiles": ["UnicodeData.txt"]
+  },
   "dotnetSdk": "10.0"
 }
