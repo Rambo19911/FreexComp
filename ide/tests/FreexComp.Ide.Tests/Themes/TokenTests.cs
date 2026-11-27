@@ -186,6 +186,213 @@ public sealed partial class TokenTests
         Assert.True(problems.Count == 0, problems.Count + " Fluent colour resources not overridden:" + Environment.NewLine + string.Join(Environment.NewLine, problems));
     }
 
+    /// <summary>
+    /// UI-TOK-008: the view code of <c>FreexComp.Ide</c> (<c>*.axaml</c> and <c>*.cs</c> outside <c>Themes/</c>) holds
+    /// no colour literal; every hit is named as <c>&lt;path&gt;(&lt;line&gt;): &lt;text&gt;</c>.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "UI-TOK-008")]
+    public void NoColourLiteralsInViews()
+    {
+        var root = SpecTables.RepoRootPath();
+        var views = Path.Combine(root, "ide", "src", "FreexComp.Ide");
+        var themes = Path.Combine(views, "Themes") + Path.DirectorySeparatorChar;
+        var files = Directory.EnumerateFiles(views, "*.*", SearchOption.AllDirectories)
+            .Where(f => f.EndsWith(".cs", StringComparison.OrdinalIgnoreCase) || f.EndsWith(".axaml", StringComparison.OrdinalIgnoreCase))
+            .Where(f => !f.StartsWith(themes, StringComparison.OrdinalIgnoreCase))
+            .Where(f => !IsBuildOutput(Path.GetRelativePath(views, f)))
+            .Order(StringComparer.Ordinal)
+            .ToList();
+        Assert.True(files.Count > 50, $"only {files.Count} view files found under {views}");
+
+        var hits = new List<string>();
+        foreach (var file in files)
+        {
+            var path = Path.GetRelativePath(root, file).Replace('\\', '/');
+            hits.AddRange(ColourLiterals(File.ReadAllText(file)).Select(h => $"{path}({h.Line}): {h.Text}"));
+        }
+
+        Assert.True(hits.Count == 0, hits.Count + " colour literals in view code (UI-TOK-008):" + Environment.NewLine + string.Join(Environment.NewLine, hits));
+    }
+
+    /// <summary>UI-TOK-008: the scanner of <see cref="NoColourLiteralsInViews"/> finds each form and nothing that is allowed.</summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "UI-TOK-008")]
+    public void NoColourLiteralsInViews_FindsEachForm()
+    {
+        string[] found =
+        [
+            "var a = \"#FFF\";",                                  // (a) #RGB
+            "var a = \"#8FFF\";",                                 // (a) #ARGB
+            "var a = \"#1E1E1E\";",                               // (a) #RRGGBB
+            "var a = \"#801E1E1E\";",                             // (a) #AARRGGBB
+            "<Border Background=\"#FFFFFF\" />",                  // (a) as an .axaml attribute value
+            "var c = Color.Parse(\"#FFFFFF\");",                  // (b) string literal (also (a))
+            "var c = Color.FromRgb(255, 255, 255);",              // (b) number literal
+            "var c = Color.FromArgb(0xFF, r, g, b);",             // (b) hexadecimal number literal
+            "var c = Color.FromUInt32(0xFFFFFFFF);",              // (b)
+            "var c = Avalonia.Media.Color.FromArgb( 255, 1, 2, 3);", // (b) qualified, space before the argument
+            "var b = Brushes.White;",                             // (c)
+            "var c = Colors.Red;",                                // (c)
+            "var p = new Pen(Avalonia.Media.Brushes.Gray, 1);",   // (c) qualified
+            "var b = x ?? Brushes.Black; // fallback",            // (c) before a comment
+        ];
+        string[] allowed =
+        [
+            "var b = Brushes.Transparent;",
+            "var c = Colors.Transparent;",
+            "var c = Color.Parse(value);",
+            "var c = Color.FromArgb(c.A, c.R, c.G, c.B);",
+            "var b = ThemeBrushes.Find(this, \"editor.breakpoint\");",
+            "var s = \"#1\";",
+            "#region Colours",
+            "var s = \"#region\";",
+            "var s = \"#FFFFF\";",                                // five digits: no colour form
+            "var b = Brush(\"bg.editor\"); // was \"#FFFFFF\" and Brushes.White",
+            "/// <summary>Draws in \"#FFFFFF\" like Brushes.White.</summary>",
+            "Id(\"Colors.Element.\" + token);",                   // a string, not code
+            "Id(\"Brushes.White\");",                             // a string, not code
+            "var x = model.Colors.Count;",                        // Count is no named colour
+            "var x = SomeColors.Red;",                            // another type
+            "var u = \"http://host/#FFFFFF\";",                   // // inside a string is no comment; not a whole colour string
+        ];
+
+        foreach (var sample in found)
+        {
+            var hits = ColourLiterals(sample);
+            Assert.True(hits.Count == 1 && hits[0].Line == 1 && hits[0].Text == sample.Trim(), $"expected one hit: {sample}");
+        }
+
+        foreach (var sample in allowed)
+        {
+            Assert.True(ColourLiterals(sample).Count == 0, $"expected no hit: {sample}");
+        }
+
+        var lines = ColourLiterals("var a = 1;\n  var b = Brushes.White;\r\nvar c = 2;\nvar d = \"#000\";");
+        Assert.Equal(new (int, string)[] { (2, "var b = Brushes.White;"), (4, "var d = \"#000\";") }, lines);
+    }
+
+    /// <summary>Named colours of Avalonia's <see cref="Colors"/> (by reflection) except <c>Transparent</c> (UI-TOK-008 (c)).</summary>
+    private static readonly HashSet<string> NamedColours = typeof(Colors)
+        .GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
+        .Where(p => p.PropertyType == typeof(Color) && p.Name != nameof(Colors.Transparent))
+        .Select(p => p.Name)
+        .ToHashSet(StringComparer.Ordinal);
+
+    private static bool IsBuildOutput(string relative)
+    {
+        var first = relative.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)[0];
+        return first.Equals("bin", StringComparison.OrdinalIgnoreCase) || first.Equals("obj", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// The colour literals of a C# or .axaml text (UI-TOK-008): (a) on the string literals, (b) and (c) on the code with
+    /// string contents blanked; <c>//</c> and <c>///</c> comments are skipped. One hit per line.
+    /// </summary>
+    private static List<(int Line, string Text)> ColourLiterals(string text)
+    {
+        var hits = new List<(int, string)>();
+        var lines = text.Split('\n');
+        for (var i = 0; i < lines.Length; i++)
+        {
+            var line = lines[i].TrimEnd('\r');
+            var (code, strings) = SplitLine(line);
+            var hit = strings.Any(s => HexColour().IsMatch(s))
+                || LiteralColourCall().IsMatch(code)
+                || NamedColour().Matches(code).Any(m => NamedColours.Contains(m.Groups[1].Value));
+            if (hit)
+            {
+                hits.Add((i + 1, line.Trim()));
+            }
+        }
+
+        return hits;
+    }
+
+    /// <summary>
+    /// Splits one line into its code without the <c>//</c> comment (string contents replaced by spaces, quotes kept) and
+    /// its string literals (each with its quotes). Handles <c>"…"</c> with escapes, verbatim <c>@"…"</c> and char literals.
+    /// </summary>
+    private static (string Code, List<string> Strings) SplitLine(string line)
+    {
+        var code = new System.Text.StringBuilder(line.Length);
+        var strings = new List<string>();
+        var i = 0;
+        while (i < line.Length)
+        {
+            var c = line[i];
+            if (c == '/' && i + 1 < line.Length && line[i + 1] == '/')
+            {
+                break;
+            }
+
+            if (c == '\'' && i + 2 < line.Length)
+            {
+                var end = line[i + 1] == '\\' ? line.IndexOf('\'', i + 3) : (line[i + 2] == '\'' ? i + 2 : -1);
+                if (end > 0)
+                {
+                    code.Append('\'').Append(' ', end - i - 1).Append('\'');
+                    i = end + 1;
+                    continue;
+                }
+            }
+
+            if (c == '"')
+            {
+                var verbatim = i > 0 && (line[i - 1] == '@' || (line[i - 1] == '$' && i > 1 && line[i - 2] == '@'));
+                var j = i + 1;
+                while (j < line.Length)
+                {
+                    if (!verbatim && line[j] == '\\')
+                    {
+                        j += 2;
+                        continue;
+                    }
+
+                    if (line[j] == '"')
+                    {
+                        if (verbatim && j + 1 < line.Length && line[j + 1] == '"')
+                        {
+                            j += 2;
+                            continue;
+                        }
+
+                        break;
+                    }
+
+                    j++;
+                }
+
+                var close = Math.Min(j, line.Length - 1);
+                strings.Add(line[i..(close + 1)]);
+                code.Append('"').Append(' ', Math.Max(0, close - i - 1));
+                if (j < line.Length)
+                {
+                    code.Append('"');
+                }
+
+                i = j + 1;
+                continue;
+            }
+
+            code.Append(c);
+            i++;
+        }
+
+        return (code.ToString(), strings);
+    }
+
+    [GeneratedRegex(@"^""#(?:[0-9A-Fa-f]{3,4}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})""$")]
+    private static partial Regex HexColour();
+
+    [GeneratedRegex(@"\bColor\s*\.\s*(?:Parse|FromRgb|FromArgb|FromUInt32)\s*\(\s*(?:\(\s*\w+\s*\)\s*)?(?:""|'|[0-9])")]
+    private static partial Regex LiteralColourCall();
+
+    [GeneratedRegex(@"\b(?:Colors|Brushes)\s*\.\s*([A-Za-z]+)\b")]
+    private static partial Regex NamedColour();
+
     private static void CollectKeys(IResourceDictionary dict, ISet<string> keys)
     {
         foreach (var key in dict.Keys)

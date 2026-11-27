@@ -125,7 +125,7 @@ public sealed class AvaloniaDesignCanvas(DrawingContext context, Func<string, IB
 
     public DesignSize MeasureText(string text, TextStyle style, double maxWidth = double.PositiveInfinity)
     {
-        var formatted = Format(text, style, Brushes.Black);
+        var formatted = Format(text, style, Brushes.Transparent); // measured only (UI-TOK-008)
         if (!double.IsInfinity(maxWidth))
         {
             formatted.MaxTextWidth = Math.Max(0, maxWidth);
@@ -136,7 +136,7 @@ public sealed class AvaloniaDesignCanvas(DrawingContext context, Func<string, IB
 
     public TextMetrics GetMetrics(TextStyle style)
     {
-        var formatted = Format("Xg", style, Brushes.Black);
+        var formatted = Format("Xg", style, Brushes.Transparent); // measured only (UI-TOK-008)
         var lineHeight = (int)Math.Ceiling(formatted.Height);
         var ascent = (int)Math.Round(formatted.Baseline);
         return new TextMetrics(ascent, Math.Max(0, lineHeight - ascent), lineHeight);

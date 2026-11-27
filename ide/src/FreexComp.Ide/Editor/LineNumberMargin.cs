@@ -24,7 +24,7 @@ public sealed class LineNumberMargin : GutterMargin
         area.Caret.PositionChanged += (_, _) => InvalidateVisual();
 
     /// <summary>Advance width of <c>0</c> in the editor font (UI-ED-010).</summary>
-    public double CharWidth => Format("0", Brushes.Black).WidthIncludingTrailingWhitespace;
+    public double CharWidth => Format("0", Brushes.Transparent).WidthIncludingTrailingWhitespace; // measured only (UI-TOK-008)
 
     public override double MarginWidth => (Math.Max(3, _digits) + 1) * CharWidth;
 
@@ -47,7 +47,7 @@ public sealed class LineNumberMargin : GutterMargin
 
     protected override void RenderLine(DrawingContext context, VisualLine line, int lineNumber, double top, double rowHeight, double height)
     {
-        var brush = Brush(lineNumber == Area.Caret.Line ? "editor.lineNumber.current" : "editor.lineNumber") ?? Brushes.Gray;
+        var brush = Brush(lineNumber == Area.Caret.Line ? "editor.lineNumber.current" : "editor.lineNumber") ?? Brushes.Transparent;
         var text = Format(lineNumber.ToString(CultureInfo.InvariantCulture), brush);
         var x = MarginWidth - CharWidth - text.WidthIncludingTrailingWhitespace;
         context.DrawText(text, new Point(x, top + (rowHeight - text.Height) / 2));

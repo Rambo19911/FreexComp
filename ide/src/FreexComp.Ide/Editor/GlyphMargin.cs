@@ -90,7 +90,7 @@ public sealed class GlyphMargin(TextArea area) : GutterMargin(area)
                 break;
             case LineGlyphKind.BreakpointConditional:
                 context.DrawEllipse(Brush("editor.breakpoint"), null, center, 6, 6);
-                DrawEqualsBars(context, Brushes.White);
+                DrawEqualsBars(context, Brush("editor.glyph.onFill"));
                 break;
             case LineGlyphKind.BreakpointDisabled:
                 DrawRing(context, Brush);
@@ -143,13 +143,13 @@ public sealed class GlyphMargin(TextArea area) : GutterMargin(area)
             DrawCenteredText(context, number.ToString(CultureInfo.InvariantCulture), 7, Brush("text.onAccent"), new Point(8, 5.5));
     }
 
-    /// <summary>Filled octagon, diameter 8, with a 1 px white ✕.</summary>
+    /// <summary>Filled octagon, diameter 8, with a 1 px ✕ in <c>editor.glyph.onFill</c>.</summary>
     private static void DrawErrorMarker(DrawingContext context, Func<string, IBrush?> Brush)
     {
         const double r = 4, k = 1.657; // half side of a regular octagon of circumradius ≈ 4
         context.DrawGeometry(Brush("editor.squiggle.error"), null,
             Polygon((8 - k, 8 - r), (8 + k, 8 - r), (8 + r, 8 - k), (8 + r, 8 + k), (8 + k, 8 + r), (8 - k, 8 + r), (8 - r, 8 + k), (8 - r, 8 - k)));
-        var pen = new Pen(Brushes.White, 1);
+        var pen = new Pen(Brush("editor.glyph.onFill"), 1);
         context.DrawLine(pen, new Point(6.5, 6.5), new Point(9.5, 9.5));
         context.DrawLine(pen, new Point(9.5, 6.5), new Point(6.5, 9.5));
     }

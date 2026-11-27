@@ -159,6 +159,7 @@ public static class SettingsCatalog
         ("editor.breakpoint", "#C23A31", "#E8695F", null),
         ("editor.breakpoint.disabled", "#9AA29A", "#66706A", null),
         ("editor.breakpoint.line.bg", "#FBE9E7", "#3D1F1C", null),
+        ("editor.glyph.onFill", "#FFFFFF", "#FFFFFF", null),
         ("editor.execution", "#C28A00", "#E5B454", null),
         ("editor.execution.line.bg", "#FFF1C2", "#4A3C12", null),
         ("editor.callFrame.line.bg", "#E7F4E8", "#1C3320", null),

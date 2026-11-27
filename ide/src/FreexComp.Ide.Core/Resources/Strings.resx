@@ -3707,6 +3707,10 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
     <value>Breakpoint line</value>
     <comment>dialogs.md §9.4 element label</comment>
   </data>
+  <data name="Options_Color_editor_glyph_onFill" xml:space="preserve">
+    <value>Marks on gutter glyphs</value>
+    <comment>dialogs.md §9.4 element label</comment>
+  </data>
   <data name="Options_Color_editor_execution" xml:space="preserve">
     <value>Execution point</value>
     <comment>dialogs.md §9.4 element label</comment>

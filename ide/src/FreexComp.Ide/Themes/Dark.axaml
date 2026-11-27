@@ -185,6 +185,8 @@
   <SolidColorBrush x:Key="FxcEditorBreakpointDisabledBrush" Color="#66706A" />
   <Color x:Key="FxcEditorBreakpointLineBg">#3D1F1C</Color>
   <SolidColorBrush x:Key="FxcEditorBreakpointLineBgBrush" Color="#3D1F1C" />
+  <Color x:Key="FxcEditorGlyphOnFill">#FFFFFF</Color>
+  <SolidColorBrush x:Key="FxcEditorGlyphOnFillBrush" Color="#FFFFFF" />
   <Color x:Key="FxcEditorExecution">#E5B454</Color>
   <SolidColorBrush x:Key="FxcEditorExecutionBrush" Color="#E5B454" />
   <Color x:Key="FxcEditorExecutionLineBg">#4A3C12</Color>
