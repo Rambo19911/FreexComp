@@ -2544,11 +2544,80 @@ begin
     Result := MinW;
 end;
 
+{ UIF-1499: the length of row Row: its tabs and the spacing in front of each }
+function TabRowLength(const RowOf, Len, Gap: TIntegerDynArray; Row: Integer): Integer;
+var
+  I: Integer;
+begin
+  Result := 0;
+  for I := 0 to Length(RowOf) - 1 do
+    if RowOf[I] = Row then
+      Result := Result + Len[I] + Gap[I];
+end;
+
+{ the first tab of row Row; -1 for a row without tabs }
+function TabRowFirst(const RowOf: TIntegerDynArray; Row: Integer): Integer;
+var
+  I: Integer;
+begin
+  Result := -1;
+  for I := 0 to Length(RowOf) - 1 do
+    if RowOf[I] = Row then
+    begin
+      Result := I;
+      Exit;
+    end;
+end;
+
+{ UIF-1499, balanced rows (the system's rule as measured at U-179, finding UIF-1521): what the native control does
+  with the greedy rows before it stretches them. Step t = 1 ... Rows: the last row takes the last tab of the row
+  before it when that row is longer by more than an eighth of the extent (8 x the difference > L), the tab fits
+  (length + tab + Fit <= L) and it is not tab 0; else everything ends. Then up to t - 1 rows refill in turn, each
+  from the row before it: the row that has just given a tab takes the last tab of its predecessor when it fits (the
+  difference is not looked at, tab 0 may move); a refill that does not fit ends everything, a row left without tabs
+  or without a predecessor ends the turn. A moved tab stands in front of its new row without the along spacing
+  (Gap 0), as natively; a row left without tabs keeps its place, so the number of rows never changes }
+procedure BalanceTabRows(var RowOf, Gap: TIntegerDynArray; const Len: TIntegerDynArray; Rows, Fit, L: Integer);
+var
+  T, D, I, Last, From, Row: Integer;
+begin
+  Last := Rows - 1;
+  for T := 1 to Rows do
+  begin
+    I := TabRowFirst(RowOf, Last) - 1;
+    if I <= 0 then
+      Exit;
+    From := RowOf[I];
+    if 8 * (TabRowLength(RowOf, Len, Gap, From) - TabRowLength(RowOf, Len, Gap, Last)) <= L then
+      Exit;
+    if TabRowLength(RowOf, Len, Gap, Last) + Len[I] + Fit > L then
+      Exit;
+    RowOf[I] := Last;
+    Gap[I] := 0;
+    Row := From;
+    for D := 1 to T - 1 do
+    begin
+      I := TabRowFirst(RowOf, Row) - 1;
+      if I < 0 then
+        Break;
+      if TabRowLength(RowOf, Len, Gap, Row) + Len[I] + Fit > L then
+        Exit;
+      From := RowOf[I];
+      RowOf[I] := Row;
+      Gap[I] := 0;
+      Row := From;
+    end;
+  end;
+end;
+
 { UIF-1499: one row unless effective multi-line; else the visible tabs packed greedily in order, a row of k tabs
-  fitting when k = 1 or w_1 + ... + w_k + (k - 1) Sa + E <= L }
+  fitting when k = 1 or w_1 + ... + w_k + (k - 1) Sa + E <= L; with automatic lengths and without RaggedRight the
+  rows are then balanced as the system balances them (BalanceTabRows; Fit = E + 1 for tsTabs, Sa for the button
+  styles) }
 function TCustomTabControl.RowOfTab(Index: Integer; out Rows: Integer): Integer;
 var
-  N, I, K, Sum, W, Sa, E, L, DPI: Integer;
+  N, I, K, Sum, Sa, E, L, DPI: Integer;
+  RowOf, Len, Gap: TIntegerDynArray;
 begin
   Result := -1;
   N := VisibleTabCount;
@@ -2584,23 +2653,38 @@ begin
     L := Width
   else
     L := Height;
+  SetLength(RowOf, N);
+  SetLength(Len, N);
+  SetLength(Gap, N);
   Rows := 1;
   K := 0;
   Sum := 0;
   for I := 0 to N - 1 do
   begin
-    W := TabLength(I);
-    if (K > 0) and (Sum + W + K * Sa + E > L) then
+    Len[I] := TabLength(I);
+    if (K > 0) and (Sum + Len[I] + K * Sa + E > L) then
     begin
       Inc(Rows);
       K := 0;
       Sum := 0;
     end;
-    Sum := Sum + W;
+    if K = 0 then
+      Gap[I] := 0
+    else
+      Gap[I] := Sa;
+    Sum := Sum + Len[I];
     Inc(K);
-    if I = Index then
-      Result := Rows - 1;
+    RowOf[I] := Rows - 1;
   end;
+  if (Rows > 1) and not FRaggedRight and (FTabWidth = 0) then
+  begin
+    if FStyle = tsTabs then
+      BalanceTabRows(RowOf, Gap, Len, Rows, E + 1, L)
+    else
+      BalanceTabRows(RowOf, Gap, Len, Rows, Sa, L);
+  end;
+  if (Index >= 0) and (Index < N) then
+    Result := RowOf[Index];
 end;
 
 function TCustomTabControl.RowCount: Integer;

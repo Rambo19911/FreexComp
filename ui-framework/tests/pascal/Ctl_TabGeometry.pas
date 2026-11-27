@@ -18,8 +18,14 @@ program Ctl_TabGeometry;
   it, RTL-1147) GetWindowTheme is 0 for bottom/left/right (UIF-1494) and non-zero exactly when IsAppThemed for top
   tabs. U-176: tsFlatButtons keeps 10 pixels between tabs at every position (bottom 4 x 60 in W 260 gives 2 rows,
   left/right 12 tabs in H 193 give 6 columns) and automatic lengths process mnemonic prefixes ('&Mnemonic',
-  'Mne&monic' measure as 'Mnemonic', 'a&&bcdefghijk' as 'a&bcdefghijk'). Constants at the form's DPI; the output
-  names the checks only, so it is the same at every DPI. }
+  'Mne&monic' measure as 'Mnemonic', 'a&&bcdefghijk' as 'a&bcdefghijk'). U-179 (finding UIF-1521): with automatic
+  lengths and RaggedRight = False the system balances the rows before it stretches them; the rows of the formula
+  (RowOfTab) are the rows of TCM_GETITEMRECT, RowCount = TCM_GETROWCOUNT and DisplayRect = TCM_ADJUSTRECT for the
+  measured case (8 captions, W 280: 4 + 4, not the greedy 5 + 3), over ranges of extents for the three styles at the
+  top, tsTabs at the bottom, on the left and on the right, with images, and with ScrollOpposite for every selected tab
+  (two and three rows; top, bottom, left, right); a row that the balancing empties (button styles) keeps its place; a
+  fixed TabWidth and RaggedRight = True keep the greedy rows, OwnerDraw changes nothing. Constants at the form's DPI;
+  the output names the checks only, so it is the same at every DPI. }
 uses
   Windows, Messages, Types, SysUtils, Classes, CommCtrl, Graphics, Controls, Forms, ImgList, ComCtrls, UxTheme,
   TestKit;
@@ -228,6 +234,131 @@ begin
   end;
 end;
 
+{ U-179: the rows as lists of tab indexes ('0 1 2 3 | 4 5 6 7'); Key(I) tells the rows apart }
+function RowsText(PC: TPageControl; Native: Boolean): string;
+var
+  I, Key, Last, Rows: Integer;
+  R: TRect;
+begin
+  Result := '';
+  Last := 0;
+  for I := 0 to PC.PageCount - 1 do
+  begin
+    if Native then
+    begin
+      R := PC.TabRect(I);
+      if PC.TabPosition in [tpLeft, tpRight] then
+        Key := R.Left
+      else
+        Key := R.Top;
+    end
+    else
+      Key := TTabAccess(PC).RowOfTab(I, Rows);
+    if I > 0 then
+    begin
+      if Key <> Last then
+        Result := Result + ' |';
+      Result := Result + ' ';
+    end;
+    Result := Result + IntToStr(I);
+    Last := Key;
+  end;
+end;
+
+{ U-179: what differs from the native control: the rows (TCM_GETITEMRECT), RowCount (TCM_GETROWCOUNT) and - for
+  tsTabs and for top tabs - DisplayRect (TCM_ADJUSTRECT); '' when nothing does }
+function Differences(PC: TPageControl): string;
+begin
+  Result := '';
+  if RowsText(PC, True) <> RowsText(PC, False) then
+    Result := Result + Format(' rows %s, native %s;', [RowsText(PC, False), RowsText(PC, True)]);
+  if PC.RowCount <> SendMessageW(PC.Handle, TCM_GETROWCOUNT, 0, 0) then
+    Result := Result + Format(' RowCount %d, native %d;', [PC.RowCount,
+      SendMessageW(PC.Handle, TCM_GETROWCOUNT, 0, 0)]);
+  if ((PC.Style = tsTabs) or (PC.TabPosition = tpTop)) and (RectText(Native(PC)) <> RectText(PC.DisplayRect)) then
+    Result := Result + Format(' DisplayRect %s, native %s;', [RectText(PC.DisplayRect), RectText(Native(PC))]);
+end;
+
+{ U-179: multi-line books with automatic lengths at every extent L0, L0 + Step ... L1 (the width, or the height of
+  vertical tabs; 600 across, so that every row fits); one check: nothing differs from the native control at any extent }
+procedure Sweep(const Name: string; Pos: TTabPosition; St: TTabStyle; Ragged, Images: Boolean;
+  const Captions: array of string; L0, L1, Step: Integer);
+var
+  L, I, Several: Integer;
+  PC: TPageControl;
+  D, All: string;
+begin
+  All := '';
+  Several := 0;
+  L := L0;
+  while L <= L1 do
+  begin
+    if Pos in [tpLeft, tpRight] then
+      PC := Book(600, L, Length(Captions), 0, Pos, St, True, False, Ragged, Captions)
+    else
+      PC := Book(L, 600, Length(Captions), 0, Pos, St, True, False, Ragged, Captions);
+    try
+      if Images then
+      begin
+        PC.Images := IL;
+        for I := 0 to PC.PageCount - 1 do
+          if Odd(I) then
+            PC.Pages[I].ImageIndex := -1
+          else
+            PC.Pages[I].ImageIndex := 0;
+      end;
+      if PC.RowCount > 1 then
+        Inc(Several);
+      D := Differences(PC);
+      if D <> '' then
+        All := All + Format(' [%d]%s', [L, D]);
+    finally
+      PC.Free;
+    end;
+    L := L + Step;
+  end;
+  Check(Several > 0, Name + ': several rows in the range');
+  CheckEqS('', All, Name + ': rows, RowCount and DisplayRect as the native control at every extent');
+end;
+
+{ U-179, UIF-1500: ScrollOpposite with every tab selected in turn: K is the row of the selected tab among the
+  balanced rows, so DisplayRect = TCM_ADJUSTRECT }
+procedure SweepSelection(const Name: string; W, H: Integer; Pos: TTabPosition; const Captions: array of string;
+  const ExpectedRows: string);
+var
+  I, Rows: Integer;
+  PC: TPageControl;
+  All: string;
+begin
+  PC := Book(W, H, Length(Captions), 0, Pos, tsTabs, True, True, False, Captions);
+  try
+    CheckEqS(ExpectedRows, RowsText(PC, False), Name + ': rows');
+    All := '';
+    for I := 0 to PC.PageCount - 1 do
+    begin
+      PC.ActivePageIndex := I;
+      if TTabAccess(PC).OppositeRows <> TTabAccess(PC).RowOfTab(I, Rows) then
+        All := All + Format(' [tab %d] K %d;', [I, TTabAccess(PC).OppositeRows]);
+      if Differences(PC) <> '' then
+        All := All + Format(' [tab %d]%s', [I, Differences(PC)]);
+    end;
+    CheckEqS('', All, Name + ': with every tab selected K = its row, rows and DisplayRect as the native control');
+  finally
+    PC.Free;
+  end;
+end;
+
+const
+  { the captions of finding UIF-1521 }
+  Eight: array[0..7] of string = ('&General', 'Options', 'Advanced', 'Colours', 'Fonts', 'Keys', 'Paths', 'Tools');
+  Mixed: array[0..9] of string = ('i', 'Alpha', 'Settings and more', 'Mnemonic', 'A very long caption indeed', 'x',
+    'Medium one', 'Zed', 'Environment variables', 'ok');
+  { lengths of the minimum only: the same at every position }
+  Short: array[0..8] of string = ('a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i');
+  Thirteen: array[0..12] of string = ('a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm');
+  { one long tab among short ones: the balancing of the button styles can empty its row }
+  Lonely: array[0..4] of string = ('a', 'b', 'c', 'Wxxxxxxxxxx', 'e');
+
 procedure Run;
 var
   PC: TPageControl;
@@ -357,6 +488,112 @@ begin
       CheckEqI(TTabAccess(PC).TabLength(0), TTabAccess(PC).TabLength(1), '&Mnemonic measures as Mnemonic');
       CheckEqI(TTabAccess(PC).TabLength(0), TTabAccess(PC).TabLength(2), 'Mne&monic measures as Mnemonic');
       CheckAll('mnemonic prefixes', PC);
+    finally
+      PC.Free;
+    end;
+
+    Section('balanced rows: automatic lengths, RaggedRight = False (U-179, UIF-1521, UIF-1499)');
+    PC := Book(280, 193, 8, 0, tpTop, tsTabs, True, False, False, Eight);
+    try
+      CheckEqS('0 1 2 3 | 4 5 6 7', RowsText(PC, False), '8 captions, W 280: rows 4 + 4');
+      CheckEqS('', Differences(PC), '8 captions, W 280: rows, RowCount and DisplayRect as the native control');
+      CheckStyle('8 captions, W 280', PC);
+    finally
+      PC.Free;
+    end;
+    PC := Book(280, 193, 8, 0, tpTop, tsTabs, True, False, True, Eight);
+    try
+      CheckEqS('0 1 2 3 4 | 5 6 7', RowsText(PC, False), 'RaggedRight = True, W 280: the greedy rows 5 + 3');
+      CheckEqS('', Differences(PC), 'RaggedRight = True, W 280: rows, RowCount and DisplayRect as the native control');
+    finally
+      PC.Free;
+    end;
+    PC := Book(330, 193, 7, 60, tpTop, tsTabs, True, False, False, Eight);
+    try
+      CheckEqS('0 1 2 3 4 | 5 6', RowsText(PC, False), 'TabWidth 60, W 330: the greedy rows 5 + 2');
+      CheckEqS('', Differences(PC), 'TabWidth 60, W 330: rows, RowCount and DisplayRect as the native control');
+    finally
+      PC.Free;
+    end;
+    PC := Book(280, 193, 8, 0, tpTop, tsTabs, True, False, False, Eight);
+    try
+      PC.OwnerDraw := True;
+      CheckEqS('0 1 2 3 | 4 5 6 7', RowsText(PC, False), 'OwnerDraw, W 280: rows 4 + 4');
+      CheckEqS('', Differences(PC), 'OwnerDraw, W 280: rows, RowCount and DisplayRect as the native control');
+    finally
+      PC.Free;
+    end;
+    PC := Book(202, 193, 8, 0, tpTop, tsTabs, True, False, False, Eight);
+    try
+      CheckEqS('0 1 | 2 3 4 | 5 6 7', RowsText(PC, False), '8 captions, W 202: rows 2 + 3 + 3 (greedy 3 + 4 + 1)');
+      CheckEqS('', Differences(PC), '8 captions, W 202: rows, RowCount and DisplayRect as the native control');
+    finally
+      PC.Free;
+    end;
+    PC := Book(252, 193, 8, 0, tpTop, tsTabs, True, False, False, Eight);
+    try
+      CheckEqS('0 1 2 | 3 4 5 6 7', RowsText(PC, False), '8 captions, W 252: rows 3 + 5 (the last row takes a tab)');
+      CheckEqS('', Differences(PC), '8 captions, W 252: rows, RowCount and DisplayRect as the native control');
+    finally
+      PC.Free;
+    end;
+    PC := Book(384, 193, 13, 0, tpTop, tsTabs, True, False, False, Thirteen);
+    try
+      CheckEqS('0 1 2 3 4 5 6 | 7 8 9 10 11 12', RowsText(PC, False),
+        '13 equal tabs, W 384: rows 7 + 6 (8 x the difference = W)');
+      CheckEqS('', Differences(PC), '13 equal tabs, W 384: rows, RowCount and DisplayRect as the native control');
+    finally
+      PC.Free;
+    end;
+    PC := Book(383, 193, 13, 0, tpTop, tsTabs, True, False, False, Thirteen);
+    try
+      CheckEqS('0 1 2 3 4 5 | 6 7 8 9 10 11 12', RowsText(PC, False), '13 equal tabs, W 383: rows 6 + 7');
+      CheckEqS('', Differences(PC), '13 equal tabs, W 383: rows, RowCount and DisplayRect as the native control');
+    finally
+      PC.Free;
+    end;
+
+    Section('balanced rows over ranges of extents (U-179)');
+    Sweep('tsTabs top, 8 captions, W 100 ... 430', tpTop, tsTabs, False, False, Eight, 100, 430, 3);
+    Sweep('tsTabs top, 10 mixed captions, W 110 ... 800', tpTop, tsTabs, False, False, Mixed, 110, 800, 7);
+    Sweep('tsTabs top, 13 equal tabs, W 100 ... 640', tpTop, tsTabs, False, False, Thirteen, 100, 640, 4);
+    Sweep('tsTabs top with images, W 110 ... 900', tpTop, tsTabs, False, True, Mixed, 110, 900, 7);
+    Sweep('tsTabs bottom, 10 mixed captions, W 110 ... 800', tpBottom, tsTabs, False, False, Mixed, 110, 800, 9);
+    Sweep('tsButtons top, 10 mixed captions, W 110 ... 820', tpTop, tsButtons, False, False, Mixed, 110, 820, 7);
+    Sweep('tsFlatButtons top, 10 mixed captions, W 110 ... 880', tpTop, tsFlatButtons, False, False, Mixed, 110, 880,
+      7);
+    Sweep('tsButtons bottom, 13 equal tabs, W 100 ... 680', tpBottom, tsButtons, False, False, Thirteen, 100, 680, 9);
+    Sweep('tsTabs left, 9 short captions, H 100 ... 440', tpLeft, tsTabs, False, False, Short, 100, 440, 5);
+    Sweep('tsTabs right, 9 short captions, H 100 ... 440', tpRight, tsTabs, False, False, Short, 100, 440, 5);
+    Sweep('tsButtons left, 13 equal tabs, H 100 ... 680', tpLeft, tsButtons, False, False, Thirteen, 100, 680, 9);
+    Sweep('RaggedRight = True, 10 mixed captions, W 110 ... 800', tpTop, tsTabs, True, False, Mixed, 110, 800, 9);
+
+    Section('a row emptied by the balancing keeps its place (U-179, button styles)');
+    Sweep('tsButtons top, one long tab, W 118 ... 130', tpTop, tsButtons, False, False, Lonely, 118, 130, 1);
+    Sweep('tsFlatButtons top, one long tab, W 124 ... 140', tpTop, tsFlatButtons, False, False, Lonely, 124, 140, 1);
+    PC := Book(125, 193, 5, 0, tpTop, tsButtons, True, False, False, Lonely);
+    try
+      CheckEqI(4, PC.RowCount, 'tsButtons, one long tab, W 125: 4 rows');
+      CheckEqS('0 1 | 2 | 3 4', RowsText(PC, False),
+        'tsButtons, one long tab, W 125: the long tab moved to the last row');
+      CheckEqI(3, TTabAccess(PC).RowOfTab(3, I),
+        'tsButtons, one long tab, W 125: row 2 is empty, the last row is row 3');
+    finally
+      PC.Free;
+    end;
+
+    Section('ScrollOpposite with balanced rows (U-179, UIF-1500, UIF-1501)');
+    SweepSelection('top, W 280', 280, 193, tpTop, Eight, '0 1 2 3 | 4 5 6 7');
+    SweepSelection('top, W 200, three rows', 200, 193, tpTop, Eight, '0 1 2 | 3 4 | 5 6 7');
+    SweepSelection('top, W 252', 252, 193, tpTop, Eight, '0 1 2 | 3 4 5 6 7');
+    SweepSelection('bottom, W 280', 280, 193, tpBottom, Eight, '0 1 2 3 | 4 5 6 7');
+    SweepSelection('left, H 345', 289, 345, tpLeft, Short, '0 1 2 3 4 | 5 6 7 8');
+    SweepSelection('right, H 250', 289, 250, tpRight, Short, '0 1 2 3 | 4 5 6 7 8');
+    PC := Book(280, 193, 8, 0, tpTop, tsTabs, True, True, False, Eight);
+    try
+      PC.ActivePageIndex := 4;
+      CheckEqI(1, TTabAccess(PC).OppositeRows, 'W 280, tab 4 selected: K = 1');
+      CheckEqS(RectText(Native(PC)), RectText(PC.DisplayRect), 'W 280, tab 4 selected: DisplayRect = TCM_ADJUSTRECT');
     finally
       PC.Free;
     end;

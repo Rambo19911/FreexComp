@@ -193,4 +193,70 @@ ok mnemonic prefixes: visual styles as the program
 ok mnemonic prefixes: RowCount = TCM_GETROWCOUNT
 ok mnemonic prefixes: DisplayRect = TCM_ADJUSTRECT
 ok mnemonic prefixes: tab lengths = TCM_GETITEMRECT
-# passed 189 failed 0
+# balanced rows: automatic lengths, RaggedRight = False (U-179, UIF-1521, UIF-1499)
+ok 8 captions, W 280: rows 4 + 4
+ok 8 captions, W 280: rows, RowCount and DisplayRect as the native control
+ok 8 captions, W 280: style bits
+ok RaggedRight = True, W 280: the greedy rows 5 + 3
+ok RaggedRight = True, W 280: rows, RowCount and DisplayRect as the native control
+ok TabWidth 60, W 330: the greedy rows 5 + 2
+ok TabWidth 60, W 330: rows, RowCount and DisplayRect as the native control
+ok OwnerDraw, W 280: rows 4 + 4
+ok OwnerDraw, W 280: rows, RowCount and DisplayRect as the native control
+ok 8 captions, W 202: rows 2 + 3 + 3 (greedy 3 + 4 + 1)
+ok 8 captions, W 202: rows, RowCount and DisplayRect as the native control
+ok 8 captions, W 252: rows 3 + 5 (the last row takes a tab)
+ok 8 captions, W 252: rows, RowCount and DisplayRect as the native control
+ok 13 equal tabs, W 384: rows 7 + 6 (8 x the difference = W)
+ok 13 equal tabs, W 384: rows, RowCount and DisplayRect as the native control
+ok 13 equal tabs, W 383: rows 6 + 7
+ok 13 equal tabs, W 383: rows, RowCount and DisplayRect as the native control
+# balanced rows over ranges of extents (U-179)
+ok tsTabs top, 8 captions, W 100 ... 430: several rows in the range
+ok tsTabs top, 8 captions, W 100 ... 430: rows, RowCount and DisplayRect as the native control at every extent
+ok tsTabs top, 10 mixed captions, W 110 ... 800: several rows in the range
+ok tsTabs top, 10 mixed captions, W 110 ... 800: rows, RowCount and DisplayRect as the native control at every extent
+ok tsTabs top, 13 equal tabs, W 100 ... 640: several rows in the range
+ok tsTabs top, 13 equal tabs, W 100 ... 640: rows, RowCount and DisplayRect as the native control at every extent
+ok tsTabs top with images, W 110 ... 900: several rows in the range
+ok tsTabs top with images, W 110 ... 900: rows, RowCount and DisplayRect as the native control at every extent
+ok tsTabs bottom, 10 mixed captions, W 110 ... 800: several rows in the range
+ok tsTabs bottom, 10 mixed captions, W 110 ... 800: rows, RowCount and DisplayRect as the native control at every extent
+ok tsButtons top, 10 mixed captions, W 110 ... 820: several rows in the range
+ok tsButtons top, 10 mixed captions, W 110 ... 820: rows, RowCount and DisplayRect as the native control at every extent
+ok tsFlatButtons top, 10 mixed captions, W 110 ... 880: several rows in the range
+ok tsFlatButtons top, 10 mixed captions, W 110 ... 880: rows, RowCount and DisplayRect as the native control at every extent
+ok tsButtons bottom, 13 equal tabs, W 100 ... 680: several rows in the range
+ok tsButtons bottom, 13 equal tabs, W 100 ... 680: rows, RowCount and DisplayRect as the native control at every extent
+ok tsTabs left, 9 short captions, H 100 ... 440: several rows in the range
+ok tsTabs left, 9 short captions, H 100 ... 440: rows, RowCount and DisplayRect as the native control at every extent
+ok tsTabs right, 9 short captions, H 100 ... 440: several rows in the range
+ok tsTabs right, 9 short captions, H 100 ... 440: rows, RowCount and DisplayRect as the native control at every extent
+ok tsButtons left, 13 equal tabs, H 100 ... 680: several rows in the range
+ok tsButtons left, 13 equal tabs, H 100 ... 680: rows, RowCount and DisplayRect as the native control at every extent
+ok RaggedRight = True, 10 mixed captions, W 110 ... 800: several rows in the range
+ok RaggedRight = True, 10 mixed captions, W 110 ... 800: rows, RowCount and DisplayRect as the native control at every extent
+# a row emptied by the balancing keeps its place (U-179, button styles)
+ok tsButtons top, one long tab, W 118 ... 130: several rows in the range
+ok tsButtons top, one long tab, W 118 ... 130: rows, RowCount and DisplayRect as the native control at every extent
+ok tsFlatButtons top, one long tab, W 124 ... 140: several rows in the range
+ok tsFlatButtons top, one long tab, W 124 ... 140: rows, RowCount and DisplayRect as the native control at every extent
+ok tsButtons, one long tab, W 125: 4 rows
+ok tsButtons, one long tab, W 125: the long tab moved to the last row
+ok tsButtons, one long tab, W 125: row 2 is empty, the last row is row 3
+# ScrollOpposite with balanced rows (U-179, UIF-1500, UIF-1501)
+ok top, W 280: rows
+ok top, W 280: with every tab selected K = its row, rows and DisplayRect as the native control
+ok top, W 200, three rows: rows
+ok top, W 200, three rows: with every tab selected K = its row, rows and DisplayRect as the native control
+ok top, W 252: rows
+ok top, W 252: with every tab selected K = its row, rows and DisplayRect as the native control
+ok bottom, W 280: rows
+ok bottom, W 280: with every tab selected K = its row, rows and DisplayRect as the native control
+ok left, H 345: rows
+ok left, H 345: with every tab selected K = its row, rows and DisplayRect as the native control
+ok right, H 250: rows
+ok right, H 250: with every tab selected K = its row, rows and DisplayRect as the native control
+ok W 280, tab 4 selected: K = 1
+ok W 280, tab 4 selected: DisplayRect = TCM_ADJUSTRECT
+# passed 251 failed 0
