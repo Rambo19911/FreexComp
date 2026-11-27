@@ -79,6 +79,22 @@ internal static class Messages
     public static string IncompatibleTypes(string source, string target) => "Incompatible types: " + source + " and " + target;
     public static string FormatSuffixNotSupported(int count) => "Format suffix '," + count + "' is not supported";
     public static string NotModifiable(string name) => "'" + name + "' cannot be modified.";
+    public static string UnknownFormatSpecifier(string spec) => "Unknown format specifier '" + spec + "'";
+
+    // ---- visualisers (visualizers.md DBG-509 ... DBG-512) ----
+    public static string VisualizerFailed(string id, string typeName, string reason) =>
+        "Visualizer '" + id + "' failed for " + typeName + ": " + reason
+        + (reason.EndsWith('.') || reason.EndsWith('!') || reason.EndsWith('?') ? "" : ".") + " Raw values are shown.";
+    public static string VisualizerTurnedOff(string id, int failures) =>
+        "Visualizer '" + id + "' was turned off for this debug session after " + failures + " failures.";
+    public static string VisualizerChildFailed(string reason) => "<visualizer failed: " + reason + ">";
+    public static string VisualizerTimedOut(TimeSpan limit) =>
+        "timed out after " + limit.TotalSeconds.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture) + " s";
+    public const string VisualizerReadBudgetExceeded = "read budget exceeded";
+    public const string VisualizerSecondPointerLevel = "more than one pointer level in a nested summary";
+    public const string VisualizerReturnedNothing = "the visualiser returned nothing";
+    public static string VisualizerNoField(string field, string typeName) => "no field '" + field + "' in " + typeName;
+    public const string VisualizerCallEnded = "the visualiser call has ended";
 
     // ---- breakpoints, run to line (features §2, §4) ----
     public static string ConditionError(string message) => "Breakpoint condition error: " + message;

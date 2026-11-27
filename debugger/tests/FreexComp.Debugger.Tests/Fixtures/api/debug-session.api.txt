@@ -32,6 +32,8 @@ ValueFormatOptions.HexIntegers : bool { get; init; }
 ValueFormatOptions.MaxStringChars : int { get; init; }
 ValueFormatOptions.MaxSummaryElements : int { get; init; }
 ValueFormatOptions.ChildPageSize : int { get; init; }
+ValueFormatOptions.UseVisualizers : bool { get; init; }
+ValueFormatOptions.VisualizerTimeout : TimeSpan { get; init; }
 
 type LaunchRequest : sealed record
 LaunchRequest..ctor()

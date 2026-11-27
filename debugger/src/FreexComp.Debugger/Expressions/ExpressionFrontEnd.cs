@@ -4,8 +4,8 @@ using FreexComp.Compiler.Syntax;
 
 namespace FreexComp.Debugger.Expressions;
 
-/// <summary>Format suffix of a watch or evaluate expression (Pascal values §9.1).</summary>
-internal enum FormatSpec { None, Hex, Decimal, Count }
+/// <summary>Format suffix of a watch or evaluate expression (Pascal values §9.1; <c>r</c>: raw, visualizers.md DBG-508).</summary>
+internal enum FormatSpec { None, Hex, Decimal, Count, Raw }
 
 /// <summary>An expression parsed by the compiler's parser, with its format suffix split off.</summary>
 /// <param name="Text">The expression text without the suffix, trimmed.</param>
@@ -50,7 +50,7 @@ internal static partial class ExpressionFrontEnd
 
     /// <summary>
     /// The last comma outside parentheses, brackets and quotes, when what follows it is a format: <c>x</c> / <c>h</c>,
-    /// <c>d</c> or an element count.
+    /// <c>d</c>, an element count or <c>r</c>. <c>r</c> combined with another of them faults (DBG-508).
     /// </summary>
     private static (int Comma, FormatSpec Format, int Count)? FindSuffix(string text)
     {
@@ -79,6 +79,10 @@ internal static partial class ExpressionFrontEnd
             return (comma, FormatSpec.Hex, 0);
         if (spec.Equals("d", StringComparison.OrdinalIgnoreCase))
             return (comma, FormatSpec.Decimal, 0);
+        if (spec.Equals("r", StringComparison.OrdinalIgnoreCase))
+            return (comma, FormatSpec.Raw, 0);
+        if (spec.Length > 1 && spec.Any(c => c is 'r' or 'R') && spec.All(c => char.IsAsciiDigit(c) || "rRxXhHdD".Contains(c)))
+            throw new DebuggerException(DebugErrorCode.ExpressionSyntax, Messages.UnknownFormatSpecifier(spec));
         if (spec.Length > 0 && spec.All(char.IsAsciiDigit)
             && int.TryParse(spec, NumberStyles.None, CultureInfo.InvariantCulture, out var count))
             return (comma, FormatSpec.Count, count);

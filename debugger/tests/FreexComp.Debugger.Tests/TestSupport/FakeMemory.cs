@@ -72,6 +72,24 @@ internal sealed class FakeMemory : IDebuggeeAccess
     public FakeMemory PutVmt(ulong vmt, string className, ulong parentVmt, ulong namePayload) =>
         PutPointer(vmt, parentVmt).PutPointer(vmt + 8, 0).PutPointer(vmt + 16, namePayload).PutUnicodeString(namePayload, className);
 
+    /// <summary>Everything put, as the <c>memory</c> array of a FakeAdapter scenario (one entry per contiguous run).</summary>
+    public string ScenarioJson()
+    {
+        var runs = new List<string>();
+        var addresses = _bytes.Keys.Order().ToList();
+        for (var i = 0; i < addresses.Count;)
+        {
+            var start = i;
+            while (i + 1 < addresses.Count && addresses[i + 1] == addresses[i] + 1)
+                i++;
+            var bytes = addresses[start..(i + 1)].Select(a => _bytes[a]).ToArray();
+            runs.Add($$"""{ "address": "0x{{addresses[start]:X}}", "hex": "{{Convert.ToHexString(bytes)}}" }""");
+            i++;
+        }
+
+        return "[ " + string.Join(", ", runs) + " ]";
+    }
+
     public void Remove(ulong address, int count)
     {
         for (var i = 0; i < count; i++)

@@ -4,6 +4,7 @@ using FreexComp.Debugger.Dap;
 using FreexComp.Debugger.Expressions;
 using FreexComp.Debugger.Values;
 using FreexComp.Debugger.Values.TypeInfo;
+using FreexComp.Debugger.Values.Visualizers;
 
 namespace FreexComp.Debugger.Session;
 
@@ -19,6 +20,7 @@ internal sealed partial class DebugSession
 
     // Session loop only; everything here is valid for one stop.
     private ValueService? _values;
+    private VisualizerHost? _visualizers;                                // the session's: failure counters outlive the stops (DBG-512)
     private FrameEntry? _stopTopFrame;                                   // top frame of the stopping thread
     private readonly Dictionary<int, IReadOnlyList<DapScope>> _adapterScopes = [];   // adapter frame id -> its scopes
     private readonly Dictionary<int, IReadOnlyList<RawVariable>> _adapterVariables = [];   // variables reference -> list
@@ -29,8 +31,10 @@ internal sealed partial class DebugSession
         {
             if (_values is null)
             {
+                _visualizers ??= new VisualizerHost(_options.Visualizers, _time,
+                    text => _events.Raise(() => Output, new OutputEventArgs(OutputCategory.Debugger, text)));
                 _values = new ValueService(_typeInfo, Debuggee, _options.Format,
-                    HasCapability("supportsWriteMemoryRequest"), HasCapability("supportsSetVariable"));
+                    HasCapability("supportsWriteMemoryRequest"), HasCapability("supportsSetVariable"), _visualizers);
                 _values.Reset(_epoch);
             }
 

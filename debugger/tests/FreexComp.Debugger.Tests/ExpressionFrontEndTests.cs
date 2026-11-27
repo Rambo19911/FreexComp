@@ -199,6 +199,26 @@ public sealed class ExpressionFrontEndTests
     }
 
     [Fact]
+    [Trait("Req", "DBG-508")]
+    public void RawSuffix_SplitOff_CombinedSuffixRejected()
+    {
+        foreach (var (text, expression) in new[] { ("L,r", "L"), (" L , R ", "L"), ("A[1, 2],r", "A[1, 2]"), ("S + ',r',r", "S + ',r'") })
+        {
+            var parsed = ExpressionFrontEnd.Parse(text, allowFormatSuffix: true);
+            Assert.Equal(expression, parsed.Text);
+            Assert.Equal(FormatSpec.Raw, parsed.Format);
+        }
+
+        // r cannot be combined with another suffix.
+        Assert.Equal("Unknown format specifier 'rx'", SyntaxError("L,rx", allowFormatSuffix: true));
+        Assert.Equal("Unknown format specifier 'xr'", SyntaxError("L,xr", allowFormatSuffix: true));
+        Assert.Equal("Unknown format specifier 'r10'", SyntaxError("L,r10", allowFormatSuffix: true));
+        Assert.Equal("Unknown format specifier 'Rd'", SyntaxError("L, Rd", allowFormatSuffix: true));
+        // Conditions and log points take no suffix (unchanged).
+        Assert.Equal("Unexpected ',' at column 2", SyntaxError("L,r"));
+    }
+
+    [Fact]
     public void ErrorColumn_CountsFromTheStartOfTheTypedText()
     {
         Assert.Equal("Expression expected at column 11", SyntaxError("   Total +,x", allowFormatSuffix: true));

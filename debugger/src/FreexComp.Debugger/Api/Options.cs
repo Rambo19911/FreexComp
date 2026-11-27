@@ -32,6 +32,9 @@ public sealed record DebugSessionOptions
 
     /// <summary>Value display options.</summary>
     public ValueFormatOptions Format { get; init; } = new();
+
+    /// <summary>The visualiser table of the session (DBG-501): the built-in one; tests inject another.</summary>
+    internal Values.Visualizers.VisualizerRegistry Visualizers { get; init; } = Values.Visualizers.VisualizerRegistry.BuiltIn;
 }
 
 /// <summary>How long the end of a session waits for the adapter before it goes on (DBG-020).</summary>
@@ -70,6 +73,14 @@ public sealed record ValueFormatOptions
 
     /// <summary>Children fetched per page.</summary>
     public int ChildPageSize { get; init; } = 100;
+
+    /// <summary>
+    /// Values may be shown through visualisers (DBG-427); false shows every value in its plain rendering (raw mode).
+    /// </summary>
+    public bool UseVisualizers { get; init; } = true;
+
+    /// <summary>Time limit of one visualiser call, measured on the session's clock; expiry shows the plain rendering.</summary>
+    public TimeSpan VisualizerTimeout { get; init; } = TimeSpan.FromSeconds(2);
 }
 
 /// <summary>What to launch and how.</summary>

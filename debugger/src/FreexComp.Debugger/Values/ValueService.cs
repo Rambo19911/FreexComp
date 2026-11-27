@@ -1,13 +1,15 @@
 using System.Buffers.Binary;
 using FreexComp.Debugger.Expressions;
 using FreexComp.Debugger.Values.TypeInfo;
+using FreexComp.Debugger.Values.Visualizers;
 
 namespace FreexComp.Debugger.Values;
 
 /// <summary>
 /// The values of one stop (Pascal values §1, §8; DAP usage §5.4, §5.5): the three scopes of a frame, lazily decoded
 /// children behind our own handles, raw and error nodes, and the presentation of expression results. Handles are
-/// numbered from 1 per stop and die with it (architecture §8). Used by the session loop only.
+/// numbered from 1 per stop and die with it (architecture §8). Every value it renders from a decoded node passes the
+/// visualiser selection first (visualizers.md DBG-500). Used by the session loop only.
 /// </summary>
 internal sealed class ValueService
 {
@@ -18,14 +20,24 @@ internal sealed class ValueService
     private readonly ValueFormatter _formatter;
     private readonly bool _canWriteMemory;
     private readonly bool _canSetVariable;
+    private readonly VisualizerHost _visualizers;
     private readonly Dictionary<int, Handle> _handles = [];
     private int _lastHandle;
     private int _epoch;
+
+    /// <summary>The name of the last child of a visualised node: the plain rendering (DBG-506).</summary>
+    public const string RawChildName = "[Raw]";
 
     /// <summary>What a handle stands for: a decoded node whose children are decoded on demand, or a list made on first use.</summary>
     private sealed class Handle
     {
         public ValueNode? Node { get; init; }
+
+        /// <summary>The node's children are decoded in raw mode (DBG-508).</summary>
+        public bool Raw { get; init; }
+
+        /// <summary>The node is visualised: its children are the visualiser's (or the plain ones), then <c>[Raw]</c>.</summary>
+        public Visualized? Visual { get; init; }
         public Func<CancellationToken, Task<IReadOnlyList<VariableInfo>>>? Load { get; init; }
         public IReadOnlyList<VariableInfo>? Items { get; set; }
 
@@ -33,12 +45,21 @@ internal sealed class ValueService
         public Dictionary<int, VariableInfo> Children { get; } = [];
     }
 
+    /// <summary>A visualised node: the selected row, the context its calls share, its children (null: the plain ones).</summary>
+    private sealed record Visualized(VisualizerRegistration Registration, VisualizerContext Context, VisualizerChildren? Children, ValueFormatter Formatter)
+    {
+        /// <summary>Every child including <c>[Raw]</c>.</summary>
+        public int Count(ValueNode node) => (Children is { } children ? Math.Max(children.Count, 0) : node.ChildCount) + 1;
+    }
+
     /// <param name="pdi">Type information of the program; null: values are shown as the adapter prints them.</param>
     /// <param name="debuggee">Memory, addresses and the adapter's own variable lists.</param>
     /// <param name="options">Display options.</param>
     /// <param name="canWriteMemory">The adapter can write memory.</param>
     /// <param name="canSetVariable">The adapter can set a root variable by name (fallback for root scalars, DBG-176).</param>
-    public ValueService(PdiFile? pdi, IDebuggeeAccess debuggee, ValueFormatOptions options, bool canWriteMemory, bool canSetVariable = false)
+    /// <param name="visualizers">The session's visualisers; null: none.</param>
+    public ValueService(PdiFile? pdi, IDebuggeeAccess debuggee, ValueFormatOptions options, bool canWriteMemory, bool canSetVariable = false,
+        VisualizerHost? visualizers = null)
     {
         _pdi = pdi;
         _debuggee = debuggee;
@@ -47,6 +68,7 @@ internal sealed class ValueService
         _formatter = new ValueFormatter(options);
         _canWriteMemory = canWriteMemory;
         _canSetVariable = canSetVariable;
+        _visualizers = visualizers ?? VisualizerHost.None;
     }
 
     /// <summary>A new stop: every handle of the previous one is gone; ids start at 1 again.</summary>
@@ -85,13 +107,14 @@ internal sealed class ValueService
             return [.. entry.Items.Skip(start).Take(limit)];
         }
 
-        var end = (int)Math.Min(node.ChildCount, (long)start + limit);
+        var total = entry.Visual?.Count(node) ?? node.ChildCount;
+        var end = (int)Math.Min(total, (long)start + limit);
         var children = new List<VariableInfo>(Math.Max(end - start, 0));
         for (var index = start; index < end; index++)
         {
             if (!entry.Children.TryGetValue(index, out var child))
             {
-                child = ToInfo((await _decoder!.GetChildrenAsync(node, index, 1, ct).ConfigureAwait(false))[0]);
+                child = await ChildAsync(entry, node, index, total, ct).ConfigureAwait(false);
                 entry.Children.Add(index, child);
             }
 
@@ -151,7 +174,8 @@ internal sealed class ValueService
             var high = type.Kind == PdiTypeKind.OpenArray
                 ? await Evaluator.OpenArrayHighAsync(_debuggee, frame, declaredName, ct).ConfigureAwait(false)
                 : null;
-            result.Add(ToInfo(await _decoder.DecodeAsync(name, type, address, name, ct, high).ConfigureAwait(false)));
+            result.Add(await ToInfoAsync(await _decoder.DecodeAsync(name, type, address, name, ct, high).ConfigureAwait(false),
+                _formatter, expandable: true, raw: false, immediate: false, ct).ConfigureAwait(false));
         }
 
         // A local the adapter lists but the type information does not know is shown as the adapter prints it, except
@@ -215,14 +239,107 @@ internal sealed class ValueService
         return new VariableHandle(_epoch, _lastHandle);
     }
 
-    /// <summary>The public form of a decoded node; an expandable node gets a handle.</summary>
-    private VariableInfo ToInfo(ValueNode node, ValueFormatter? formatter = null, bool expandable = true)
+    /// <summary>
+    /// The public form of a node (DBG-500): the selected visualiser's summary and children with a last <c>[Raw]</c> child
+    /// (DBG-505, DBG-506), or, without one or when it fails (DBG-511), the plain rendering with the nested forms of
+    /// visualisers that summarise nested values (DBG-507). An expandable node gets a handle.
+    /// </summary>
+    /// <param name="node">The decoded node.</param>
+    /// <param name="formatter">Renders it (the result's format suffix applied).</param>
+    /// <param name="expandable">False when no handle may be made.</param>
+    /// <param name="raw">Raw mode: no non-transparent visualiser for the node or below it (DBG-508).</param>
+    /// <param name="immediate">A computed value: only visualisers whose kinds contain its kind (DBG-500).</param>
+    /// <param name="ct">Cancellation.</param>
+    private async Task<VariableInfo> ToInfoAsync(
+        ValueNode node, ValueFormatter formatter, bool expandable, bool raw, bool immediate, CancellationToken ct)
     {
-        VariableHandle? children = node.ChildCount > 0 && expandable ? NewHandle(new Handle { Node = node }) : null;
+        raw |= !_options.UseVisualizers;
         // DBG-176: memory can be written, or the adapter sets root variables by name.
         var isRoot = node.EvaluateName is { } name && name.IndexOfAny(['.', '[', '^', '(']) < 0;
-        return (formatter ?? _formatter).ToVariableInfo(node, children, _canWriteMemory || (_canSetVariable && isRoot));
+        var canWrite = _canWriteMemory || (_canSetVariable && isRoot);
+        if (_pdi is not null && _visualizers.Select(node, raw, immediate) is { Transparent: false } registration)
+        {
+            var context = new VisualizerContext(_pdi, _debuggee, formatter.Options, nested: false, node);
+            var summary = await _visualizers.CallAsync(registration, node, context, _options.VisualizerTimeout,
+                token => registration.Visualizer.SummaryAsync(node, context, token), ct).ConfigureAwait(false);
+            if (summary.Ok)
+            {
+                var children = await _visualizers.CallAsync(registration, node, context, _options.VisualizerTimeout,
+                    token => registration.Visualizer.ChildrenAsync(node, context, token), ct).ConfigureAwait(false);
+                if (children.Ok)
+                {
+                    var visual = new Visualized(registration, context, children.Result, formatter);
+                    return formatter.ToVariableInfo(node, null, canWrite) with
+                    {
+                        Value = summary.Result ?? "",
+                        Children = expandable ? NewHandle(new Handle { Node = node, Visual = visual }) : null,
+                        ChildCount = visual.Count(node),
+                    };
+                }
+            }
+        }
+
+        var nestedForms = raw ? null : await NestedFormsAsync(node, formatter, ct).ConfigureAwait(false);
+        VariableHandle? handle = node.ChildCount > 0 && expandable ? NewHandle(new Handle { Node = node, Raw = raw }) : null;
+        return formatter.ToVariableInfo(node, handle, canWrite, nestedForms);
     }
+
+    /// <summary>DBG-507: the nested forms of the summary children whose visualiser summarises nested values.</summary>
+    private async Task<Dictionary<ValueNode, string>?> NestedFormsAsync(ValueNode node, ValueFormatter formatter, CancellationToken ct)
+    {
+        Dictionary<ValueNode, string>? forms = null;
+        foreach (var child in node.SummaryChildren)
+        {
+            if (_pdi is null || _visualizers.Select(child, raw: false, immediate: false) is not { Transparent: false, SummarizesNested: true } registration)
+                continue;
+            var context = new VisualizerContext(_pdi, _debuggee, formatter.Options, nested: true, child);
+            var summary = await _visualizers.CallAsync(registration, child, context, _options.VisualizerTimeout,
+                token => registration.Visualizer.SummaryAsync(child, context, token), ct).ConfigureAwait(false);
+            if (summary.Ok)
+                (forms ??= new(ReferenceEqualityComparer.Instance))[child] = summary.Result ?? "";
+        }
+
+        return forms;
+    }
+
+    /// <summary>
+    /// Child <paramref name="index"/> of a node's handle: a plain child (in the handle's mode), or of a visualised node
+    /// the visualiser's child (a failed one is an error node, DBG-511), the plain child, or the last, <c>[Raw]</c>.
+    /// </summary>
+    private async Task<VariableInfo> ChildAsync(Handle entry, ValueNode node, int index, int total, CancellationToken ct)
+    {
+        if (entry.Visual is not { } visual || (visual.Children is null && index < total - 1))
+        {
+            return await ToInfoAsync(await PlainChildAsync(node, index, ct).ConfigureAwait(false),
+                _formatter, expandable: true, entry.Raw, immediate: false, ct).ConfigureAwait(false);
+        }
+
+        if (index == total - 1)
+            return RawChild(node, visual.Formatter);
+
+        var children = visual.Children!;
+        var (ok, child, reason) = await _visualizers.CallAsync(visual.Registration, node, visual.Context, _options.VisualizerTimeout,
+            token => children.ChildAt(index, token), ct).ConfigureAwait(false);
+        if (!ok || child is null)
+        {
+            return new VariableInfo("[" + index + "]", Messages.VisualizerChildFailed(reason ?? Messages.VisualizerReturnedNothing), "",
+                ValueKind.Error, null, 0, false, null, null);
+        }
+
+        var info = await ToInfoAsync(child.Node.Renamed(child.Name, child.EvaluateName),
+            _formatter, expandable: true, raw: false, immediate: false, ct).ConfigureAwait(false);
+        // A row without an expression cannot be modified.
+        return child.EvaluateName is null ? info with { CanModify = false } : info;
+    }
+
+    private async Task<ValueNode> PlainChildAsync(ValueNode node, int index, CancellationToken ct) =>
+        (await _decoder!.GetChildrenAsync(node, index, 1, ct).ConfigureAwait(false))[0];
+
+    /// <summary>DBG-506: the plain summary and type, the plain children decoded in raw mode, the expression with <c>,r</c>, not modifiable.</summary>
+    private VariableInfo RawChild(ValueNode node, ValueFormatter formatter) =>
+        new(RawChildName, formatter.Format(node), node.TypeName, node.Kind,
+            node.ChildCount > 0 ? NewHandle(new Handle { Node = node, Raw = true }) : null, node.ChildCount, false,
+            node.EvaluateName is { } evaluateName ? evaluateName + ",r" : null, node.Address);
 
     // ---- expressions (§9) ----
 
@@ -248,7 +365,8 @@ internal sealed class ValueService
             throw Evaluator.Error(Messages.FormatSuffixNotSupported(lowered.Count));
         var value = await NewEvaluator(frame).EvaluateAsync(lowered.Tree, ct).ConfigureAwait(false);
         bool? hex = lowered.Format switch { FormatSpec.Hex => true, FormatSpec.Decimal => false, _ => null };
-        return await PresentAsync(value, expression.Trim(), lowered.Tree.ToPascal(), hex, expandable, ct).ConfigureAwait(false);
+        return await PresentAsync(value, expression.Trim(), lowered.Tree.ToPascal(), hex, expandable, ct, raw: lowered.Format == FormatSpec.Raw)
+            .ConfigureAwait(false);
     }
 
     /// <summary>A breakpoint condition (DBG-210): must yield Boolean.</summary>
@@ -314,8 +432,9 @@ internal sealed class ValueService
     /// <param name="hexIntegers">Format suffix: integers of this result in hexadecimal (true) or decimal (false); null: the session's option.</param>
     /// <param name="expandable">False when no handle may be made (the result is only rendered, e.g. for a log point).</param>
     /// <param name="ct">Cancellation.</param>
+    /// <param name="raw">The raw suffix: no visualiser for the result or below it (DBG-508).</param>
     public async Task<VariableInfo> PresentAsync(
-        Value value, string name, string evaluateName, bool? hexIntegers, bool expandable, CancellationToken ct)
+        Value value, string name, string evaluateName, bool? hexIntegers, bool expandable, CancellationToken ct, bool raw = false)
     {
         var formatter = hexIntegers is { } hex && hex != _options.HexIntegers
             ? new ValueFormatter(_options with { HexIntegers = hex })
@@ -323,13 +442,13 @@ internal sealed class ValueService
         if (value is LocationValue location)
         {
             var node = await _decoder!.DecodeAsync(name, location.Type, location.Address, evaluateName, ct, location.OpenArrayHigh).ConfigureAwait(false);
-            return ToInfo(node, formatter, expandable);
+            return await ToInfoAsync(node, formatter, expandable, raw, immediate: false, ct).ConfigureAwait(false);
         }
 
-        var immediate = Immediate(value, name);
-        return formatter.ToVariableInfo(immediate, null, canWriteMemory: false) with
+        var info = await ToInfoAsync(Immediate(value, name), formatter, expandable, raw, immediate: true, ct).ConfigureAwait(false);
+        return info with
         {
-            TypeName = value is NilValue ? SyntheticTypes.Pointer.Name : value.TypeName, EvaluateName = null, Address = null,
+            TypeName = value is NilValue ? SyntheticTypes.Pointer.Name : value.TypeName, EvaluateName = null, Address = null, CanModify = false,
         };
     }
 

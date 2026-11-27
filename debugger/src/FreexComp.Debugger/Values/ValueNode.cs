@@ -55,6 +55,14 @@ internal sealed class ValueNode
     /// <summary>Decodes the child with the given index; null for a leaf.</summary>
     internal Func<int, CancellationToken, Task<ValueNode>>? ChildAt { get; init; }
 
+    /// <summary>The same value under another name and expression (a visualiser's child, visualizers.md DBG-506).</summary>
+    public ValueNode Renamed(string name, string? evaluateName) => new()
+    {
+        Name = name, EvaluateName = evaluateName, Kind = Kind, Type = Type, TypeName = TypeName, Address = Address, Bytes = Bytes,
+        Error = Error, Pointer = Pointer, Text = Text, Length = Length, Partial = Partial, Capped = Capped,
+        InvalidInstance = InvalidInstance, ChildCount = ChildCount, SummaryChildren = SummaryChildren, ChildAt = ChildAt,
+    };
+
     /// <summary>DBG-176, the part that does not depend on the adapter: a scalar or pointer with a known address.</summary>
     public bool IsModifiableKind =>
         Address is not null && Kind is ValueKind.Integer or ValueKind.Float or ValueKind.Boolean or ValueKind.Char or ValueKind.Enum or ValueKind.Pointer;

@@ -17,25 +17,32 @@ internal sealed class ValueFormatter(ValueFormatOptions options)
     private const string Ellipsis = "…";
     private const int MaxOpaqueBytes = 16;
 
+    /// <summary>The options this formatter renders with.</summary>
+    public ValueFormatOptions Options => options;
+
     /// <summary>The node's one-line summary: the value column of Locals and Watches.</summary>
-    public string Format(ValueNode node) => Render(node, nested: false);
+    /// <param name="node">Decoded value.</param>
+    /// <param name="nestedForms">Nested forms of summary children made by visualisers (DBG-507); the others get the plain one.</param>
+    public string Format(ValueNode node, IReadOnlyDictionary<ValueNode, string>? nestedForms = null) => Render(node, nested: false, nestedForms);
 
     /// <summary>The form used inside another value's summary (DBG-174).</summary>
-    public string FormatNested(ValueNode node) => Render(node, nested: true);
+    public string FormatNested(ValueNode node) => Render(node, nested: true, null);
 
     /// <param name="node">Decoded value.</param>
     /// <param name="children">Handle for the node's children; ignored for a leaf.</param>
     /// <param name="canWriteMemory">The adapter can modify memory (DBG-176).</param>
-    public VariableInfo ToVariableInfo(ValueNode node, VariableHandle? children, bool canWriteMemory) =>
-        new(node.Name, Format(node), node.TypeName, node.Kind,
+    /// <param name="nestedForms">See <see cref="Format"/>.</param>
+    public VariableInfo ToVariableInfo(ValueNode node, VariableHandle? children, bool canWriteMemory, IReadOnlyDictionary<ValueNode, string>? nestedForms = null) =>
+        new(node.Name, Format(node, nestedForms), node.TypeName, node.Kind,
             node.ChildCount > 0 ? children : null,
             node.ChildCount,
             canWriteMemory && node.IsModifiableKind,
             node.Kind is ValueKind.Raw or ValueKind.Error ? null : node.EvaluateName,
             node.Address);
 
-    private string Render(ValueNode node, bool nested)
+    private string Render(ValueNode node, bool nested, IReadOnlyDictionary<ValueNode, string>? nestedForms)
     {
+        string Nested(ValueNode child) => nestedForms is not null && nestedForms.TryGetValue(child, out var form) ? form : FormatNested(child);
         var type = node.Type;
         switch (node.Kind)
         {
@@ -64,14 +71,14 @@ internal sealed class ValueFormatter(ValueFormatOptions options)
                 if (nested)
                     return "(" + Ellipsis + ")";
                 var elided = node.Length > node.SummaryChildren.Count;
-                return "(" + string.Join(", ", node.SummaryChildren.Select(FormatNested)) + (elided ? ", " + Ellipsis + ")" : ")")
+                return "(" + string.Join(", ", node.SummaryChildren.Select(Nested)) + (elided ? ", " + Ellipsis + ")" : ")")
                     + (elided ? LengthSuffix(node.Length) : "");
             case ValueKind.Record:
                 if (node.ChildCount == 0)
                     return "()";
                 if (nested)
                     return "(" + Ellipsis + ")";
-                return "(" + string.Join("; ", node.SummaryChildren.Select(child => child.Name + ": " + FormatNested(child)))
+                return "(" + string.Join("; ", node.SummaryChildren.Select(child => child.Name + ": " + Nested(child)))
                     + (node.ChildCount > node.SummaryChildren.Count ? "; " + Ellipsis + ")" : ")");
             case ValueKind.ClassInstance:
                 return node.Pointer == 0
