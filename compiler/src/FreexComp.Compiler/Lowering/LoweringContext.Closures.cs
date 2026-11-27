@@ -120,11 +120,12 @@ internal sealed partial class LoweringContext
     /// closures hold it), <c>$outer</c>/<c>$outerRef</c> := the frame the list runs on. The captured variables are its fields,
     /// empty in a new instance (LANG-562, LANG-566).
     /// </summary>
-    private ImmutableArray<LStatement> BlockPrologue(ClosureInfo frame)
+    private ImmutableArray<LStatement> BlockPrologue(ClosureInfo frame) => BlockCreation(frame, HandlerVariable(frame.Local), HandlerVariable(frame.Keep));
+
+    /// <summary>The statements of <see cref="BlockPrologue"/> on the declared storage <paramref name="local"/>/<paramref name="keep"/>.</summary>
+    private ImmutableArray<LStatement> BlockCreation(ClosureInfo frame, LExpression local, LExpression keep)
     {
         var syntax = frame.Syntax;
-        var local = HandlerVariable(frame.Local);
-        var keep = HandlerVariable(frame.Keep);
         var root = (InterfaceTypeSymbol)Types.IInterface!;
         var enclosing = frame.Enclosing!;
         return

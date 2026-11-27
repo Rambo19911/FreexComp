@@ -1,0 +1,30 @@
+counted 10 20 30
+downto 3 2 1
+array 7 8 9
+string xyz
+set 2 5 8
+enumerator 100 200 300
+shared 1002 2002
+nested 11 12 21 22
+1 4 9 inside
+in anonymous 101 102
+classic 40 40 40
+counted 10 20 30
+array 7 8 9
+enumerator 100 200 300
+shared 1002 2002
+nested 11 12 21 22
+1 4 9 inside
+in anonymous 101 102
+loop left 0
+kept 0: 1 3
+loop left 1
+kept 1: 1 3
+kept 2: 1 3
+raised 3
+kept 3: 1 3
+loop left 4
+kept 4: 1 3
+leaked: 0
+main 41 42 43
+main leaked: 0

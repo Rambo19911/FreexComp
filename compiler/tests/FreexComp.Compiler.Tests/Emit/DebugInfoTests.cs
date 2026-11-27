@@ -316,6 +316,89 @@ public sealed class DebugInfoTests
     }
 
     public static TheoryData<string> Names() => [.. Sources.Keys];
+
+    /// <summary>Captured <c>for var</c> variables of both loop forms (C-387; line markers are significant).</summary>
+    private const string ForVarCapturedSource = """
+        program P;
+        type TF = reference to function: Integer;
+
+        procedure Run(const Values: array of Integer);
+        var Fs: array[0..2] of TF;
+        begin
+          for var I := 0 to 2 do // counted
+          begin
+            Fs[I] := function: Integer begin Result := I * 10 end;
+          end; // counted end
+          for var X in Values do // in
+            Fs[0] := function: Integer begin Result := X end; // in end
+        end;
+
+        begin
+          Run([1, 2]);
+        end.
+        """;
+
+    /// <summary>
+    /// CMP-1412 (C-387): a captured <c>for var</c> variable is described like a captured inline variable (CMP-1184) — its
+    /// <c>DILocalVariable</c> is declared on the hidden local <c>$block&lt;m&gt;</c> of its loop's per-iteration frame with
+    /// <c>DW_OP_deref, DW_OP_plus_uconst &lt;field offset&gt;</c>, and its sidecar range is the first and last line of the loop.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1412")]
+    [Trait("Req", "LANG-577")]
+    public void ForVarCaptured_DescribedThroughItsBlockFrame()
+    {
+        const string path = @"C:\p\P.pas";
+        var tree = SyntaxTree.Parse(SourceText.From(path, ForVarCapturedSource));
+        Assert.Empty(tree.Diagnostics);
+        var types = new FreexComp.Compiler.Types.BuiltInTypes();
+        var system = Binder.BindCompilationUnit(SyntaxTree.Parse(SourceText.From(@"C:\p\System.pas", IrSnapshotTests.ClosureSystemSource)), types);
+        Assert.Empty(Format(system.Diagnostics));
+        var result = Binder.BindCompilationUnit(tree, types, system);
+        Assert.Empty(Format(result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error)));
+        var writer = new LlvmTextWriter();
+        var options = new DebugInfoOptions(DebugFormat.CodeView, IsOptimized: false)
+        {
+            ReadFile = p => PathUtil.Comparer.Equals(p, path) ? Encoding.UTF8.GetBytes(ForVarCapturedSource) : null,
+        };
+        var fragment = IrEmitter.EmitUnit(Lowerer.Lower(result), writer, debug: options);
+        var ir = writer.GetText();
+        Assert.NotNull(fragment);
+        var pdi = System.Text.Json.Nodes.JsonNode.Parse(fragment)!.AsObject();
+        SidecarTests.ValidateSchema(pdi);
+        var unit = pdi["units"]!.AsArray().Single()!.AsObject();
+        var run = unit["routines"]!.AsArray().Single(r => r!["displayName"]!.GetValue<string>() == "Run")!.AsObject();
+        int Line(string marker) =>
+            Assert.Single(ForVarCapturedSource.Split('\n').Select((l, i) => (Text: l.TrimEnd(), Number: i + 1)), l => l.Text.EndsWith("// " + marker, StringComparison.Ordinal)).Number;
+        string Range(string name)
+        {
+            var entry = run["vars"]!.AsArray().Single(v => v!["name"]!.GetValue<string>() == name)!;
+            return $"{entry["kind"]!.GetValue<string>()} {entry["fromLine"]!.GetValue<int>()}..{entry["toLine"]!.GetValue<int>()}";
+        }
+
+        Assert.Equal($"local {Line("counted")}..{Line("counted end")}", Range("I"));
+        Assert.Equal($"local {Line("in")}..{Line("in end")}", Range("X"));
+
+        var blocks = result.Routines.Single(r => r.Routine.Name == "Run").Routine.Closure!.Blocks;
+        Assert.Equal(2, blocks.Count);
+        foreach (var name in new[] { "I", "X" })
+        {
+            var block = blocks.Single(b => b.Fields.Keys.Any(k => k.Name == name));
+            var offset = block.Fields.Single(f => f.Key.Name == name).Value.Offset.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            var node = Regex.Match(ir, $"""^!(\d+) = !DILocalVariable\(name: "{name}",""", RegexOptions.Multiline);
+            Assert.True(node.Success, "no DILocalVariable for " + name);
+            var declare = Assert.Single(ir.Split('\n'), l => l.Contains($", !{node.Groups[1].Value}, !DIExpression(", StringComparison.Ordinal)).Trim();
+            Assert.StartsWith($"#dbg_declare(ptr %{block.Local.Name}.addr, !{node.Groups[1].Value}, !DIExpression(DW_OP_deref, DW_OP_plus_uconst, {offset}), ",
+                declare, StringComparison.Ordinal);
+        }
+
+        // the counted loop's driver is a hidden local like the index of a for … in loop: artificial, not in the sidecar (DBG-145)
+        Assert.DoesNotContain(run["vars"]!.AsArray(), v => v!["name"]!.GetValue<string>().StartsWith('$'));
+        var counted = blocks.Single(b => b.Fields.Keys.Any(k => k.Name == "I"));
+        var driver = Assert.Single(ir.Split('\n'), l => l.Contains($"!DILocalVariable(name: \"$for{counted.Local.Name["$block".Length..]}\",", StringComparison.Ordinal));
+        Assert.Contains("flags: DIFlagArtificial", driver, StringComparison.Ordinal);
+    }
 }
 
 /// <summary>debug-info.md §8 <c>DebugInfo_VerifierClean</c>: the pinned clang (with its verifier) accepts every module emitted with <c>-g</c>.</summary>

@@ -294,9 +294,10 @@ internal sealed partial class BodyBinder
         var scope = new Scope(ScopeKind.Block, _scope, _routine);
         var local = InlineLocal(scope, identifier, name, type);
         local.InlineScope = (syntax.FirstToken(), syntax.LastToken());
-        var loop = InScope(scope, () => BindForLoop(syntax, new BoundVariableExpression(syntax.Variable, local), start, finish));
+        var (loop, inline) = InLoopScope(scope, local, () => BindForLoop(syntax, new BoundVariableExpression(syntax.Variable, local), start, finish));
         return new BoundLocalsStatement(syntax, [local], loop, LocalsScopeKind.Loop)
         {
+            Inline = inline,
             DeclarationScope = scope,
             ScopeRange = LoopScopeRange(syntax, syntax.DoKeyword),
         };
@@ -365,12 +366,33 @@ internal sealed partial class BodyBinder
         var scope = new Scope(ScopeKind.Block, _scope, _routine);
         var local = InlineLocal(scope, identifier, name, type);
         local.InlineScope = (syntax.FirstToken(), syntax.LastToken());
-        var loop = InScope(scope, () => BindForInLoop(syntax, new BoundVariableExpression(syntax.Variable, local), collection));
+        var (loop, inline) = InLoopScope(scope, local, () => BindForInLoop(syntax, new BoundVariableExpression(syntax.Variable, local), collection));
         return new BoundLocalsStatement(syntax, [local], loop, LocalsScopeKind.Loop)
         {
+            Inline = inline,
             DeclarationScope = scope,
             ScopeRange = LoopScopeRange(syntax, syntax.DoKeyword),
         };
+    }
+
+    /// <summary>
+    /// LANG-577 (C-387): binds a <c>for var</c> loop (its bounds or collection already bound) with the loop variable as an inline
+    /// declaration of its own (CMP-1183): when an anonymous method in the body captures it, the loop gets a block frame, made at
+    /// the start of every iteration (CMP-1410, 1411), and the anonymous methods of the body belong to it.
+    /// </summary>
+    private (BoundStatement Loop, InlineScope Inline) InLoopScope(Scope scope, VariableSymbol local, Func<BoundStatement> bind)
+    {
+        var outer = _expressions.CurrentInline;
+        var inline = new InlineScope(outer, continuesList: false, [local]);
+        _expressions.CurrentInline = inline;
+        try
+        {
+            return (InScope(scope, bind), inline);
+        }
+        finally
+        {
+            _expressions.CurrentInline = outer;
+        }
     }
 
     /// <summary>The element type of a <c>for…in</c> collection (LANG-362), the enumerator's <c>Current</c> included; null when none.</summary>

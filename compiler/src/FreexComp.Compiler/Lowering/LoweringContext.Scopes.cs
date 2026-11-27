@@ -77,7 +77,19 @@ internal sealed partial class LoweringContext
                 _scopeFinalised.Add(frame.Keep);
             }
 
-            prologue = BlockPrologue(frame);
+            if (locals.ScopeKind == LocalsScopeKind.Loop)
+            {
+                // CMP-1410, 1411 (C-387): a captured for var variable — the frame is made at the start of every iteration; until
+                // then the frame slot is nil (CMP-1412: the debugger reads no stale instance of an earlier execution of the loop)
+                var instance = HandlerVariable(frame.Local);
+                HandlerVariable(frame.Keep);
+                _iterationFrames.Add(locals.Locals.Single(), frame);
+                prologue = [new LAssign(instance, new LConst(new ConstantValue(null, Types.Nil), frame.Class))];
+            }
+            else
+            {
+                prologue = BlockPrologue(frame);
+            }
         }
 
         foreach (var local in locals.Locals)
@@ -96,6 +108,38 @@ internal sealed partial class LoweringContext
         }
 
         return prologue;
+    }
+
+    /// <summary>
+    /// CMP-1410, 1411 (C-387): the <c>for var</c> variables whose loop scope is being lowered and whose per-iteration block frame
+    /// is not made yet — taken by the loop's counted driver (<see cref="ForRewriter"/>) or by the store of a <c>for…in</c> element.
+    /// </summary>
+    private readonly Dictionary<VariableSymbol, ClosureInfo> _iterationFrames = new(ReferenceEqualityComparer.Instance);
+
+    /// <summary>
+    /// CMP-1410, 1411: when <paramref name="variable"/> is a captured <c>for var</c> variable of the loop being lowered, the
+    /// statements that make its iteration's block frame (<see cref="BlockCreation"/>), once; null otherwise.
+    /// </summary>
+    internal ImmutableArray<LStatement>? TakeIterationFrame(BoundExpression variable)
+    {
+        if (variable is not BoundVariableExpression { Variable: var symbol } || !_iterationFrames.Remove(symbol, out var frame))
+        {
+            return null;
+        }
+
+        return BlockCreation(frame, Reach(frame.Local), Reach(frame.Keep));
+    }
+
+    /// <summary>
+    /// CMP-1410: the hidden, uncaptured driver <c>$for&lt;m&gt;</c> of a counted loop over a captured variable (<c>&lt;m&gt;</c>: the
+    /// number of the loop's block frame), in the routine frame (a unit-level body: an internal global).
+    /// </summary>
+    internal BoundVariableExpression ForDriver(BoundExpression variable)
+    {
+        var number = ((BoundVariableExpression)variable).Variable.BlockFrame!.Local.Name["$block".Length..];
+        var driver = new VariableSymbol("$for" + number, variable.Type, isGlobal: false, (Symbol?)Routine ?? Unit!, []);
+        HandlerVariable(driver);
+        return new BoundVariableExpression(variable.Syntax, driver);
     }
 
     /// <summary>The scope's body after the statements that make its block frame.</summary>

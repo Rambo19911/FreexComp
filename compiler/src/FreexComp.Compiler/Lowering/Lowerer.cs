@@ -652,6 +652,8 @@ internal sealed partial class LoweringContext
         {
             case BoundBlock block:
                 return new LBlock([.. block.Statements.Select(Lower)]);
+            case BoundAssignmentStatement store when TakeIterationFrame(store.Target) is { } creation:
+                return new LBlock([.. creation, LowerStatement(store)]);                         // CMP-1411 (C-387): a new frame, then the element
             case BoundAssignmentStatement { Target.Type.IsManaged: true } assignment:
                 return ManagedRewriter.Assign(this, Lower(assignment.Target), assignment.Value);
             case BoundAssignmentStatement { Target.Type: StringTypeSymbol { Variant: StringVariant.Short } } assignment:

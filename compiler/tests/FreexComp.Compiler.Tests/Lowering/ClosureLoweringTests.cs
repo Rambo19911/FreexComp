@@ -196,12 +196,62 @@ public sealed class ClosureLoweringTests
     }
 
     /// <summary>
-    /// A routine whose anonymous methods capture no inline variable of a statement list compiles as before: one closure with the
-    /// captured parameter, classic local and <c>for var</c> variable (LANG-721 until card F10-017), all methods on it, no block frame.
+    /// A routine whose anonymous methods capture no inline variable of a statement list (nor a <c>for var</c> variable: LANG-577,
+    /// <see cref="CapturedForVarHasAFramePerIteration"/>) compiles as before: one closure with the captured parameter and classic
+    /// local, all methods on it, no block frame.
     /// </summary>
     [Fact]
     [Trait("Req", "LANG-722")]
     public void NoBlockFrameWithoutCapturedInline()
+    {
+        var result = BindProgram("""
+            procedure F(p: Integer);
+            var k: Integer; f, g: TF;
+            begin
+              k := p;
+              for var i := 1 to 2 do
+              begin
+                var unused := i + k;
+                f := function: Integer begin Result := p + k end;
+                begin
+                  var deeper := unused;
+                  g := function: Integer begin Result := k end;
+                end;
+              end
+            end;
+            """);
+
+        var closure = Routine(result, "F").Routine.Closure!;
+        Assert.Empty(closure.Blocks);
+        Assert.Equal(["p", "k"], Names(closure.Fields.Keys));
+        Assert.Equal(["Anon1", "Anon2"], Names(closure.Methods.Select(m => m.Method)));
+        Assert.All(closure.Methods, m =>
+        {
+            Assert.Same(closure.Class, m.Method.ContainingType);
+            Assert.Same(closure, m.Method.AnonymousFrame);
+            Assert.Null(m.Interface.BlockFrame);
+        });
+        Assert.Equal(["F.$closure1"], Names(ClosureInfo.Of(result.Unit)));
+
+        var lowered = Lowerer.Lower(result).Routines.Single(r => r.Routine!.Name == "F");
+        var text = string.Join(" ", lowered.Body.Statements.Select(LoweredDump.Of));
+        Assert.DoesNotContain("$block", text);
+        Assert.DoesNotContain("$Block", text);
+        Assert.DoesNotContain("(scope", text);
+        Assert.Contains("unused", lowered.Locals.Select(l => l.Name));
+        Assert.Contains("deeper", lowered.Locals.Select(l => l.Name));
+    }
+
+    /// <summary>
+    /// C-387 (LANG-577, CMP-1410): a captured <c>for var</c> variable is the field of the loop's block frame, on the routine's
+    /// closure; the anonymous methods of the body — also one inside a nested list that captures nothing — are its methods. The
+    /// loop runs on the hidden <c>$for&lt;m&gt;</c>; each iteration makes a new frame and stores <c>$for&lt;m&gt;</c> into it; the
+    /// frame slot is nil before the loop, and the loop's region releases <c>$block&lt;m&gt;Ref</c>.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "LANG-577")]
+    [Trait("Req", "CMP-1410")]
+    public void CapturedForVarHasAFramePerIteration()
     {
         var result = BindProgram("""
             procedure F(p: Integer);
@@ -221,23 +271,24 @@ public sealed class ClosureLoweringTests
             """);
 
         var closure = Routine(result, "F").Routine.Closure!;
-        Assert.Empty(closure.Blocks);
-        Assert.Equal(["p", "k", "i"], Names(closure.Fields.Keys));
-        Assert.Equal(["Anon1", "Anon2"], Names(closure.Methods.Select(m => m.Method)));
-        Assert.All(closure.Methods, m =>
-        {
-            Assert.Same(closure.Class, m.Method.ContainingType);
-            Assert.Same(closure, m.Method.AnonymousFrame);
-            Assert.Null(m.Interface.BlockFrame);
-        });
-        Assert.Equal(["F.$closure1"], Names(ClosureInfo.Of(result.Unit)));
+        Assert.Equal(["p", "k"], Names(closure.Fields.Keys));
+        Assert.Empty(closure.Methods);
+        var block = Assert.Single(closure.Blocks);
+        Assert.Equal("F.$Block2", block.Class.Name);
+        Assert.Equal(["i"], Names(block.Fields.Keys));
+        Assert.Equal(["$outer", "$outerRef", "i"], Names(block.Class.Fields));
+        Assert.Same(closure, block.Enclosing);
+        Assert.Equal(["Anon1", "Anon2"], Names(block.Methods.Select(m => m.Method)));
 
         var lowered = Lowerer.Lower(result).Routines.Single(r => r.Routine!.Name == "F");
         var text = string.Join(" ", lowered.Body.Statements.Select(LoweredDump.Of));
-        Assert.DoesNotContain("$block", text);
-        Assert.DoesNotContain("$Block", text);
-        Assert.DoesNotContain("(scope", text);
-        Assert.Contains("unused", lowered.Locals.Select(l => l.Name));
-        Assert.Contains("deeper", lowered.Locals.Select(l => l.Name));
+        Assert.Contains("$for2", lowered.Locals.Select(l => l.Name));
+        Assert.DoesNotContain("i", lowered.Locals.Select(l => l.Name));
+        Assert.Contains("(:= $block2 nil:", text);
+        Assert.Single(System.Text.RegularExpressions.Regex.Matches(text, @"\(:= \$block2 \(call Create:TObject\)\)"));
+        Assert.Contains("(:= (deref (+ptr $block2 32:Int64)) $for2)", text);
+        Assert.Contains("(block (call _IntfClr (addr $block2Ref)))", text);
+        Assert.True(text.IndexOf("(:= $block2 nil:", StringComparison.Ordinal) < text.IndexOf("(:= $block2 (call Create:TObject))", StringComparison.Ordinal), text);
+        Assert.DoesNotContain("$block2Ref", LoweredDump.Of(lowered.Cleanup!));
     }
 }
