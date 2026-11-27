@@ -1,11 +1,12 @@
-// covers: LANG-275, LANG-276, CMP-1417
+// covers: LANG-275, LANG-276, LANG-279, CMP-1417
 program ArrayConcat;
 
 { '+' joins dynamic arrays of integers, strings, records and interfaces into a new array: the operands are unchanged and
   writing an element of the result changes no operand. A constructor takes the other operand's type on either side; nil
   and [] are empty operands; [..] + [..] joins two arrays where a dynamic array is expected; a chain of four is joined
   at once. The target may be an operand (A := A + A, A := B + A), a field, an element or a property; a function result
-  may be an operand. Interface elements are counted: no instance is left at the end. }
+  may be an operand. Concat(A1, ...) of arrays is the same chain (Concat(A) a copy). Interface elements are counted: no
+  instance is left at the end. }
 
 type
   TInts = array of Integer;
@@ -201,11 +202,36 @@ begin
   U := nil;
 end;
 
+procedure Concats;
+var
+  A, B, C: TInts;
+  T, U: TThings;
+begin
+  A := [1, 2];
+  B := [3];
+  C := Concat(A, B, [4, 5]);
+  Show('Concat(A, B, [4, 5])', C);
+  C := Concat(A);
+  C[0] := 50;
+  Show('Concat(A) copied, A', A);
+  Show('Concat(nil, B, [])', Concat(nil, B, []));
+  C := Concat([6], [7]);
+  Show('Concat([6], [7])', C);
+  A := Concat(A, A);
+  Show('A := Concat(A, A)', A);
+  T := [TThing.Create(1)];
+  U := Concat(T, [TThing.Create(2)], T);
+  Writeln('Concat of things ', Length(U), ' ids ', U[0].Id, U[1].Id, U[2].Id, ' live ', Live);
+  T := nil;
+  U := nil;
+end;
+
 begin
   Integers;
   Strings;
   Records;
   Things;
+  Concats;
   { managed temporaries are released at routine exit (CMP-325 rule 5), so the count is read after the call }
   Writeln('live at end: ', Live);
 end.

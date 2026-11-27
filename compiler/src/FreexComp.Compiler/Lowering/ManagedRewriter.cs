@@ -101,6 +101,8 @@ internal static class ManagedRewriter
                 return Concatenate(context, target, concatenation);
             case BoundBinaryExpression { OperatorKind: BoundBinaryOperatorKind.Add, Type: DynamicArrayTypeSymbol } arrays:
                 return ConcatenateArrays(context, target, arrays);
+            case BoundIntrinsicCallExpression { Intrinsic.Intrinsic: IntrinsicKind.Concat, Type: DynamicArrayTypeSymbol } copy:
+                return ConcatenateArrays(context, target, copy.Type, [copy.Arguments[0]]);    // LANG-279 (C-391): Concat(A), a new copy
             case BoundIntrinsicCallExpression { Intrinsic.Intrinsic: IntrinsicKind.Copy } copy:
                 return StringRewriter.CopyInto(context, AddressOf(context, target), copy);     // C-062: Dest may be the source
             case BoundConversionExpression { Type: StringTypeSymbol } conversion when !ReferenceEquals(conversion.Operand.Type, conversion.Type):
@@ -246,9 +248,15 @@ internal static class ManagedRewriter
     /// </summary>
     private static LStatement ConcatenateArrays(LoweringContext context, LExpression target, BoundBinaryExpression concatenation)
     {
-        var types = context.Types;
         var parts = new List<BoundExpression>();
         FlattenArrays(concatenation, parts);
+        return ConcatenateArrays(context, target, concatenation.Type, parts);
+    }
+
+    /// <summary>The <c>_DynArrayCat</c> of <paramref name="parts"/> (one or more) into <paramref name="target"/>, of the array type <paramref name="type"/>.</summary>
+    private static LStatement ConcatenateArrays(LoweringContext context, LExpression target, TypeSymbol type, List<BoundExpression> parts)
+    {
+        var types = context.Types;
         var statements = new List<LStatement>();
         LExpression destination = AddressOf(context, target);
         if (target is not (LLocalRef or LGlobalRef or LParamRef))
@@ -286,9 +294,65 @@ internal static class ManagedRewriter
         }
 
         statements.Add(Call(Helper("_DynArrayCat", types.Pointer, types.Pointer, types.NativeInt, types.Pointer),
-            destination, TypeInfo(context, concatenation.Type), context.Constant(n, types.NativeInt), AddressOf(context, sources)));
+            destination, TypeInfo(context, type), context.Constant(n, types.NativeInt), AddressOf(context, sources)));
         statements.AddRange(temporaries.Select(t => Clear(context, t)));
         return new LBlock([.. statements]);
+    }
+
+    /// <summary>
+    /// CMP-1418 (C-391) <c>Insert(Source, A, Index)</c> on a dynamic array (arguments in that order). The element form: the converted
+    /// value in a temporary of the element type (a managed one assigned by its helper and cleared after the call), then
+    /// <c>_DynArrayInsert(@A, TI, Index, @tmp, 1)</c>. The array form: the source in a counted temporary of its type (a constructor
+    /// built there, an array assigned, so it stays alive while <c>A</c> changes), then
+    /// <c>_DynArrayInsert(@A, TI, Index, tmp, Length(tmp))</c> and the temporary cleared; <c>nil</c>/<c>[]</c> pass <c>null</c> and 0.
+    /// </summary>
+    public static LStatement DynArrayInsert(LoweringContext context, DynamicArrayTypeSymbol array, ImmutableArray<BoundExpression> arguments)
+    {
+        var types = context.Types;
+        var source = arguments[0];
+        var statements = new List<LStatement>();
+        LStatement? release = null;
+        LExpression data, count;
+        if (source.ConstantValue is { Value: null })
+        {
+            data = new LConst(new ConstantValue(null, types.Pointer), types.Pointer);
+            count = context.Constant(BigInteger.Zero, types.NativeInt);
+        }
+        else
+        {
+            var temporary = new LLocalRef(context.NewTemp(source.Type));
+            statements.Add(source is BoundArrayConstructor constructor ? new LBlock([.. Build(context, temporary, constructor)])
+                : source.Type.IsManaged ? Assign(context, temporary, source)
+                : new LAssign(temporary, context.Lower(source)));
+            release = source.Type.IsManaged ? Clear(context, temporary) : null;
+            if (ExpressionBinder.IsArrayInsertSource(source.Type, array))
+            {
+                data = temporary;
+                count = context.Convert(new LArrayLength(temporary, types.Integer), types.NativeInt);
+            }
+            else
+            {
+                data = AddressOf(context, temporary);
+                count = context.Constant(BigInteger.One, types.NativeInt);
+            }
+        }
+
+        statements.Add(Call(Helper("_DynArrayInsert", types.Pointer, types.Pointer, types.NativeInt, types.Pointer, types.NativeInt),
+            AddressOf(context, context.Lower(arguments[1])), TypeInfo(context, array), context.Lower(arguments[2]), data, count));
+        if (release is not null)
+        {
+            statements.Add(release);
+        }
+
+        return new LBlock([.. statements]);
+    }
+
+    /// <summary>CMP-1418 (C-391) <c>Delete(A, Index, Count)</c> on a dynamic array → <c>_DynArrayDelete(@A, TI, Index, Count)</c>.</summary>
+    public static LStatement DynArrayDelete(LoweringContext context, DynamicArrayTypeSymbol array, ImmutableArray<BoundExpression> arguments)
+    {
+        var types = context.Types;
+        return Call(Helper("_DynArrayDelete", types.Pointer, types.Pointer, types.NativeInt, types.NativeInt),
+            AddressOf(context, context.Lower(arguments[0])), TypeInfo(context, array), context.Lower(arguments[1]), context.Lower(arguments[2]));
     }
 
     private static void FlattenArrays(BoundExpression value, List<BoundExpression> parts)

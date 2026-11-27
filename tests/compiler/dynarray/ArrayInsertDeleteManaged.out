@@ -1,0 +1,22 @@
+two inserted: 12 live 2
+variable inserted and dropped: 132 live 3
+itself: 132132 live 3
+deleted from a shared array: T 132 U 132132 live 3
+after U := nil live 3
+deleted 3: 12 live 2
+constructor inserted: 1452 live 4
+all deleted: assigned FALSE live 0
+strings: a wx b w (4)
+itself: a wx a wx b w b w (8)
+deleted: a w b w (4)
+B after Insert into the shared S: a w b w (4)
+S: new a w b w (5)
+B after Delete from the shared S: new a w b w (5)
+S: a w b w (4)
+records 2 1uno 3three Q 3 one two
+B after B := A; Delete(A, 0, 1): 1 2 3 (3)
+B after B := A; Insert(7, A, 0): 20 3 (2)
+A: 7 30 3 (3)
+B after a no-op Delete on the shared A: 7 30 3 (3)
+B after a no-op Insert on the shared A: 70 30 3 (3)
+live at end: 0

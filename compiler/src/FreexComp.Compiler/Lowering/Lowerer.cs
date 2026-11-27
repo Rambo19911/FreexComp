@@ -937,6 +937,8 @@ internal sealed partial class LoweringContext
                 return Call(call.Routine, call.Arguments, call.Target, call.Receiver);
             case BoundIntrinsicCallExpression { Intrinsic.Intrinsic: IntrinsicKind.Copy } copy:
                 return ManagedRewriter.Value(this, copy);                               // C-062: a string value in a temporary
+            case BoundIntrinsicCallExpression { Intrinsic.Intrinsic: IntrinsicKind.Concat, Type: DynamicArrayTypeSymbol } concat:
+                return ManagedRewriter.Value(this, concat);                             // LANG-279 (C-391): Concat(A), a new array
             case BoundIntrinsicCallExpression intrinsic:
                 return IntrinsicRewriter.Rewrite(this, intrinsic);
             case BoundSetConstructor constructor:

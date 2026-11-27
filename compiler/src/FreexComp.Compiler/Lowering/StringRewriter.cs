@@ -28,6 +28,10 @@ internal static class StringRewriter
         {
             case IntrinsicKind.SetLength when arguments[0].Type is DynamicArrayTypeSymbol array:
                 return DynArraySetLength(context, array, arguments);
+            case IntrinsicKind.Insert when arguments[1].Type is DynamicArrayTypeSymbol array:
+                return ManagedRewriter.DynArrayInsert(context, array, arguments);              // CMP-1418 (C-391)
+            case IntrinsicKind.Delete when arguments[0].Type is DynamicArrayTypeSymbol array:
+                return ManagedRewriter.DynArrayDelete(context, array, arguments);
             case IntrinsicKind.SetLength when arguments[0].Type is StringTypeSymbol { Variant: StringVariant.Ansi } ansi:
                 return new LCallStatement(new LHelperCallee(Helper("_AStrSetLen", null, types.Pointer, types.Integer, types.Word)),
                     [AddressOf(context, context.Lower(arguments[0])), context.Lower(arguments[1]), context.Constant(ansi.CodePage, types.Word)]);

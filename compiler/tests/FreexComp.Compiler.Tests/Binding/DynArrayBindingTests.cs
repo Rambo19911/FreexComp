@@ -301,4 +301,115 @@ public sealed class DynArrayBindingTests
             """);
         Assert.Equal(["E2044(5,12)", "E2044(6,8)"], diagnostics.Select(d => d[..d.IndexOf(':')]));
     }
+
+    // ---- C-391 (F10-026): Insert, Delete, Concat on dynamic arrays (LANG-277…279) ----
+
+    private const string EditDeclarations = """
+        type TStrs = array of string; TBytes = array of Byte;
+          TBox = class FItems: TInts; property Items: TInts read FItems write FItems; end;
+        const Primes: TInts = [2, 3];
+        var s: TStrs; bb: TBytes; sa: array[0..1] of Integer; box: TBox; u: string;
+        """;
+
+    /// <summary>
+    /// LANG-277, 278: <c>Insert</c> takes the array form for a dynamic array whose element type is the destination's, a bracket
+    /// constructor whose elements fit the element type (typed as the destination) and <c>nil</c>/<c>[]</c>; otherwise the source is
+    /// one element converted to the element type (so <c>[1, 2]</c> into an array of <c>TInts</c> is one element). The index and
+    /// <c>Delete</c>'s two integers are <c>NativeInt</c>; the string forms are unchanged.
+    /// </summary>
+    [Theory]
+    [Trait("Phase", "8")]
+    [Trait("Req", "LANG-277")]
+    [Trait("Req", "LANG-278")]
+    [InlineData("Insert(i, a, 0)", "(block (Insert i:Integer a:TInts 0:NativeInt))")]
+    [InlineData("Insert(7, bb, i)", "(block (Insert 7:Byte bb:TBytes (conv NativeInt i:Integer)))")]
+    [InlineData("Insert('x', s, 1)", "(block (Insert 'x':string s:TStrs 1:NativeInt))")]
+    [InlineData("Insert(t, a, 0)", "(block (Insert t:TArray<Integer> a:TInts 0:NativeInt))")]
+    [InlineData("Insert(a, a, 1)", "(block (Insert a:TInts a:TInts 1:NativeInt))")]
+    [InlineData("Insert([1, i], a, 1)", "(block (Insert (array TInts 1:Integer i:Integer) a:TInts 1:NativeInt))")]
+    [InlineData("Insert([1, 2], g, 0)", "(block (Insert (array TInts 1:Integer 2:Integer) g:TGrid 0:NativeInt))")]
+    [InlineData("Insert([[1], []], g, 0)", "(block (Insert (array TGrid (array TInts 1:Integer) nil:TInts) g:TGrid 0:NativeInt))")]
+    [InlineData("Insert(a, g, 0)", "(block (Insert a:TInts g:TGrid 0:NativeInt))")]
+    [InlineData("Insert(nil, a, 0)", "(block (Insert nil:TInts a:TInts 0:NativeInt))")]
+    [InlineData("Insert([], a, 0)", "(block (Insert nil:TInts a:TInts 0:NativeInt))")]
+    [InlineData("Insert(a + [1], a, 0)", "(block (Insert (Add:TInts a:TInts (array TInts 1:Integer)) a:TInts 0:NativeInt))")]
+    [InlineData("Insert(i, g[0], 0)", "(block (Insert i:Integer ([] g:TGrid 0:Integer):TInts 0:NativeInt))")]
+    [InlineData("Delete(a, i, 2)", "(block (Delete a:TInts (conv NativeInt i:Integer) 2:NativeInt))")]
+    [InlineData("Delete(g[i], 0, 1)", "(block (Delete ([] g:TGrid i:Integer):TInts 0:NativeInt 1:NativeInt))")]
+    [InlineData("Insert('ab', u, 1); Delete(u, 1, 1)", "(block (Insert 'ab':string u:string 1:Integer) (Delete u:string 1:Integer 1:Integer))")]
+    public void InsertDelete_Forms(string statements, string expected) => Assert.Equal(expected, Body8(EditDeclarations, statements));
+
+    /// <summary>
+    /// LANG-277, 278: a source that is neither form is E2010 against the element type (a static array too); a non-integer index
+    /// E2010; a typed constant destination E2112, a property or other non-variable E2113 (checked before the other arguments);
+    /// other destination types keep the string form's E2010.
+    /// </summary>
+    [Theory]
+    [Trait("Phase", "8")]
+    [Trait("Req", "LANG-277")]
+    [Trait("Req", "LANG-278")]
+    [InlineData("Insert(1.5, a, 0)", "E2010: Incompatible types: 'Double' and 'Integer'")]
+    [InlineData("Insert(s, a, 0)", "E2010: Incompatible types: 'TStrs' and 'Integer'")]
+    [InlineData("Insert(sa, a, 0)", "E2010: Incompatible types: 'array[0..1] of Integer' and 'Integer'")]
+    [InlineData("Insert(1, a, 1.5)", "E2010: Incompatible types: 'Double' and 'NativeInt'")]
+    [InlineData("Delete(a, 0, 'x')", "E2010: Incompatible types: 'Char' and 'NativeInt'")]
+    [InlineData("Insert(1, Primes, 0)", "E2112: Constant object cannot be passed as var parameter")]
+    [InlineData("Delete(Primes, 0, 1)", "E2112: Constant object cannot be passed as var parameter")]
+    [InlineData("Insert(1.5, Primes, 0)", "E2112: Constant object cannot be passed as var parameter")]
+    [InlineData("Insert(1, box.Items, 0)", "E2113: Variable required")]
+    [InlineData("Delete(box.Items, 0, 1)", "E2113: Variable required")]
+    [InlineData("Delete(a + a, 0, 1)", "E2113: Variable required")]
+    [InlineData("Insert(1, i, 0)", "E2010: Incompatible types: 'Integer' and 'string'")]
+    public void InsertDelete_Errors(string statement, string expected) =>
+        Assert.Equal([expected], Diagnostics8(EditDeclarations, statement).Select(d => d[..5] + d[d.IndexOf(':')..]));
+
+    /// <summary>
+    /// LANG-279: <c>Concat</c> with a dynamic-array argument, or with constructor/<c>nil</c> arguments where a dynamic array is
+    /// expected, is the <c>+</c> chain of its arguments (LANG-275 typing); <c>Concat(A)</c> of one array is a new copy.
+    /// </summary>
+    [Theory]
+    [Trait("Phase", "8")]
+    [Trait("Req", "LANG-279")]
+    [InlineData("a := Concat(a, t)", "(block (:= a:TInts (Add:TInts a:TInts t:TArray<Integer>)))")]
+    [InlineData("a := Concat(a, [i], t)", "(block (:= a:TInts (Add:TInts (Add:TInts a:TInts (array TInts i:Integer)) t:TArray<Integer>)))")]
+    [InlineData("a := Concat([1], a)", "(block (:= a:TInts (Add:TInts (array TInts 1:Integer) a:TInts)))")]
+    [InlineData("a := Concat(nil, a, [])", "(block (:= a:TInts (Add:TInts (Add:TInts nil:TInts a:TInts) nil:TInts)))")]
+    [InlineData("a := Concat([1], [2])", "(block (:= a:TInts (Add:TInts (array TInts 1:Integer) (array TInts 2:Integer))))")]
+    [InlineData("a := Concat(a)", "(block (:= a:TInts (Concat:TInts a:TInts)))")]
+    [InlineData("a := Concat([1, 2])", "(block (:= a:TInts (Concat:TInts (array TInts 1:Integer 2:Integer))))")]
+    [InlineData("t := Concat(t, a)", "(block (:= t:TArray<Integer> (Add:TArray<Integer> t:TArray<Integer> a:TInts)))")]
+    [InlineData("g := Concat(g, [[1]])", "(block (:= g:TGrid (Add:TGrid g:TGrid (array TGrid (array TInts 1:Integer)))))")]
+    [InlineData("i := Length(Concat(a, a))", "(block (:= i:Integer (Length:Integer (Add:TInts a:TInts a:TInts))))")]
+    [InlineData("i := Length(Concat(a))", "(block (:= i:Integer (Length:Integer (Concat:TInts a:TInts))))")]
+    [InlineData("s := Concat(s, ['x'])", "(block (:= s:TStrs (Add:TStrs s:TStrs (array TStrs 'x':string))))")]
+    public void ConcatIntrinsic_ArrayForm(string statements, string expected) => Assert.Equal(expected, Body8(EditDeclarations, statements));
+
+    /// <summary>LANG-279 with LANG-275 rules 5, 6: E2011 for different element types, E2044 for a static array beside a dynamic one.</summary>
+    [Theory]
+    [Trait("Phase", "8")]
+    [Trait("Req", "LANG-279")]
+    [InlineData("a := Concat(a, s)", "E2011: Operator '+' not applicable to operand type(s) 'TInts' and 'TStrs'")]
+    [InlineData("a := Concat(a, a, 1)", "E2011: Operator '+' not applicable to operand type(s) 'TInts' and 'Integer'")]
+    [InlineData("a := Concat(sa, a)", "E2044: Operator '+' needs dynamic arrays: 'array[0..1] of Integer' is a static or open array; copy it into a dynamic array first")]
+    [InlineData("a := Concat(a, [1.5])", "E2010: Incompatible types: 'Double' and 'Integer'")]
+    public void ConcatIntrinsic_ArrayForm_Errors(string statement, string expected) =>
+        Assert.Equal([expected], Diagnostics8(EditDeclarations, statement).Select(d => d[..5] + d[d.IndexOf(':')..]));
+
+    /// <summary>LANG-279: without an array argument (and no dynamic-array context) <c>Concat</c> stays the string function (LANG-243).</summary>
+    [Theory]
+    [Trait("Phase", "8")]
+    [Trait("Req", "LANG-279")]
+    [InlineData("u := Concat(u, 'x', u)", "(block (:= u:string (Add:string (Add:string u:string 'x':string) u:string)))")]
+    [InlineData("u := Concat(u)", "(block (:= u:string u:string))")]
+    [InlineData("i := Length(Concat('a', u))", "(block (:= i:Integer (Length:Integer (Add:string 'a':string u:string))))")]
+    public void ConcatIntrinsic_StringFormUnchanged(string statements, string expected) => Assert.Equal(expected, Body8(EditDeclarations, statements));
+
+    /// <summary>LANG-279: the string form's errors are unchanged (a non-string argument is E2010 against string).</summary>
+    [Theory]
+    [Trait("Phase", "8")]
+    [Trait("Req", "LANG-279")]
+    [InlineData("u := Concat(u, 1)", "E2010: Incompatible types: 'Integer' and 'string'")]
+    [InlineData("a := Concat(u, 'x')", "E2010: Incompatible types: 'string' and 'TInts'")]
+    public void ConcatIntrinsic_StringFormUnchanged_Errors(string statement, string expected) =>
+        Assert.Equal([expected], Diagnostics8(EditDeclarations, statement).Select(d => d[..5] + d[d.IndexOf(':')..]));
 }

@@ -92,6 +92,8 @@ internal sealed partial class ExpressionBinder
         InterfaceAsGuid(syntax, expected) is { } guid ? guid :                    // LANG-680 (C-299)
         expected is DynamicArrayTypeSymbol arrayContext && Unparenthesized(syntax) is BinaryExpressionSyntax { OperatorToken.Kind: SyntaxKind.PlusToken } plus
             ? BindBinary(plus, arrayContext) :                                    // LANG-275 rule 3 (C-390)
+        expected is DynamicArrayTypeSymbol concatContext && ConcatIntrinsicCall(syntax) is var (concat, intrinsic) && concat is not null
+            ? BindStringFunction(concat, intrinsic!, concatContext) :             // LANG-279 (C-391): Concat([…], […]) in that context
         Unparenthesized(syntax) is SetConstructorSyntax constructor
             ? expected switch
             {
@@ -1664,7 +1666,7 @@ internal sealed partial class ExpressionBinder
     /// String operands accept characters (LANG-245); integer operands convert to <c>Integer</c>. Other string kinds and dynamic
     /// arrays: E2900 (C-063, C-064); other types E2010.
     /// </summary>
-    private BoundExpression BindStringFunction(InvocationExpressionSyntax invocation, IntrinsicSymbol intrinsic)
+    private BoundExpression BindStringFunction(InvocationExpressionSyntax invocation, IntrinsicSymbol intrinsic, DynamicArrayTypeSymbol? arrayContext = null)
     {
         var arguments = invocation.ArgumentList.Arguments;
         var (min, max) = intrinsic.Intrinsic switch
@@ -1693,6 +1695,11 @@ internal sealed partial class ExpressionBinder
                 _diagnostics.Report(colon, "E2915");
                 return Error(invocation);
             }
+        }
+
+        if (intrinsic.Intrinsic == IntrinsicKind.Concat)
+        {
+            return BindConcat(invocation, intrinsic, arrayContext);
         }
 
         var operands = ImmutableArray.CreateBuilder<BoundExpression>(arguments.Count);
@@ -1736,7 +1743,6 @@ internal sealed partial class ExpressionBinder
             {
                 IntrinsicKind.Copy => k == 0,
                 IntrinsicKind.Pos => k < 2,
-                IntrinsicKind.Concat => true,
                 _ => false,
             };
             var value = BindExpression(syntax);
@@ -1755,15 +1761,6 @@ internal sealed partial class ExpressionBinder
 
         switch (intrinsic.Intrinsic)
         {
-            case IntrinsicKind.Concat:
-                // intrinsics.md: the same as '+' (LANG-243): left-nested additions of the operands
-                var result = operands[0];
-                for (var k = 1; k < operands.Count; k++)
-                {
-                    result = new BoundBinaryExpression(invocation, BoundBinaryOperatorKind.Add, result, operands[k], _types.String, _types.String, constantValue: null);
-                }
-
-                return result;
             case IntrinsicKind.Copy:
                 return new BoundIntrinsicCallExpression(invocation, intrinsic, operands.ToImmutable(), Strings.IsAnsi(operands[0].Type) ? operands[0].Type : _types.String,
                     constantValue: null);
@@ -1773,6 +1770,119 @@ internal sealed partial class ExpressionBinder
                 return new BoundIntrinsicCallExpression(invocation, intrinsic, operands.ToImmutable(), _types.Char, constantValue: null);
         }
     }
+
+    /// <summary>
+    /// <c>Concat(e1, …)</c> (intrinsics.md, LANG-279, C-391). Bracket constructors are bound last, in the dynamic-array context of the
+    /// call or else of the first dynamic-array argument (LANG-275 rules 2, 3), <c>nil</c> takes the context's type. With a
+    /// dynamic-array operand the call is the <c>+</c> chain of LANG-275 (E2011/E2044 as there; one argument: a
+    /// <see cref="BoundIntrinsicCallExpression"/> that is a new copy, CMP-1417); otherwise it is the string function, the left-nested
+    /// <c>+</c> of its UnicodeString operands (LANG-243; one argument is that string).
+    /// </summary>
+    private BoundExpression BindConcat(InvocationExpressionSyntax invocation, IntrinsicSymbol intrinsic, DynamicArrayTypeSymbol? arrayContext)
+    {
+        var arguments = invocation.ArgumentList.Arguments;
+        var operands = new BoundExpression?[arguments.Count];
+        for (var k = 0; k < arguments.Count; k++)
+        {
+            if (Unparenthesized(arguments[k].Expression) is SetConstructorSyntax)
+            {
+                continue;
+            }
+
+            var value = BindExpression(arguments[k].Expression);
+            if (value.HasErrors)
+            {
+                return Error(invocation, [.. operands.OfType<BoundExpression>(), value]);
+            }
+
+            operands[k] = value;
+        }
+
+        var arrayType = arrayContext ?? operands.Select(o => o?.Type).OfType<DynamicArrayTypeSymbol>().FirstOrDefault();
+        for (var k = 0; k < arguments.Count; k++)
+        {
+            var syntax = arguments[k].Expression;
+            var value = operands[k] is { } bound
+                ? arrayContext is not null && bound.Type == _types.Nil ? ConvertForAssignment(bound, arrayContext, syntax) : bound
+                : BindExpression(syntax, arrayType);
+            if (value.HasErrors)
+            {
+                return Error(invocation, [.. operands.OfType<BoundExpression>(), value]);
+            }
+
+            operands[k] = value;
+        }
+
+        if (!operands.Any(o => o!.Type is DynamicArrayTypeSymbol))
+        {
+            BoundExpression? text = null;
+            for (var k = 0; k < arguments.Count; k++)
+            {
+                var value = StringOperand(operands[k]!, arguments[k].Expression, intrinsic.Name);
+                if (value.HasErrors)
+                {
+                    return Error(invocation, value);
+                }
+
+                text = text is null ? value : new BoundBinaryExpression(invocation, BoundBinaryOperatorKind.Add, text, value, _types.String, _types.String, constantValue: null);
+            }
+
+            return text!;
+        }
+
+        if (operands.Length == 1)
+        {
+            return new BoundIntrinsicCallExpression(invocation, intrinsic, [operands[0]!], operands[0]!.Type, constantValue: null);
+        }
+
+        var chain = operands[0]!;
+        for (var k = 1; k < operands.Length && !chain.HasErrors; k++)
+        {
+            chain = JoinArrays(invocation, arguments[k].Expression, arguments[k - 1].Expression, arguments[k].Expression, chain, operands[k]!, "+");
+        }
+
+        return chain;
+    }
+
+    /// <summary><paramref name="syntax"/> when it is a call of the intrinsic <c>Concat</c> (looked up without diagnostics), else null.</summary>
+    private (InvocationExpressionSyntax? Call, IntrinsicSymbol? Intrinsic) ConcatIntrinsicCall(ExpressionSyntax syntax) =>
+        Unparenthesized(syntax) is InvocationExpressionSyntax invocation
+        && _scope.Unqualified(invocation.Expression) is IdentifierNameSyntax { Identifier: { IsMissing: false } identifier } name
+        && _scope.For(name).Lookup(identifier.Value as string ?? identifier.Text) is IntrinsicSymbol { Intrinsic: IntrinsicKind.Concat } concat
+            ? (invocation, concat)
+            : (null, null);
+
+    /// <summary>
+    /// LANG-277 (C-391): the <c>Source</c> of <c>Insert(Source, var A, Index)</c> for a dynamic array <paramref name="target"/>. The
+    /// array form: <c>nil</c> (converted to the target's type), a bracket constructor whose elements all fit the element type (bound
+    /// as the target's type), or a dynamic array whose element type is the target's (unconverted); otherwise the element form, the
+    /// source converted to the element type (E2010).
+    /// </summary>
+    internal BoundExpression BindInsertSource(ExpressionSyntax syntax, DynamicArrayTypeSymbol target)
+    {
+        if (Unparenthesized(syntax) is SetConstructorSyntax && ProbeBinder(new DiagnosticBag()) is var probe
+            && probe.BindExpression(syntax, target) is { HasErrors: false, Type: DynamicArrayTypeSymbol } && probe._diagnostics.Count == 0)
+        {
+            return BindExpression(syntax, target);
+        }
+
+        var value = BindExpression(syntax, target.ElementType);
+        if (value.HasErrors)
+        {
+            return value;
+        }
+
+        if (value.Type == _types.Nil)
+        {
+            return ConvertForAssignment(value, target, syntax);
+        }
+
+        return IsArrayInsertSource(value.Type, target) ? value : ConvertForAssignment(value, target.ElementType, syntax);
+    }
+
+    /// <summary>LANG-277: a source of this type is inserted element-wise (the array form) into <paramref name="target"/>.</summary>
+    internal static bool IsArrayInsertSource(TypeSymbol source, DynamicArrayTypeSymbol target) =>
+        source is DynamicArrayTypeSymbol array && Pointers.SameType(array.ElementType, target.ElementType);
 
     /// <summary>
     /// A UnicodeString operand of a string intrinsic (C-062): a UnicodeString or a character (converted, LANG-245); other string
@@ -2998,32 +3108,48 @@ internal sealed partial class ExpressionBinder
     /// array-of-const parameter beside a dynamic array is E2044 at that operand; everything else E2011. The value is a new array
     /// (LANG-276), lowered as one <c>_DynArrayCat</c> per chain (CMP-1417).
     /// </summary>
-    private BoundExpression ArrayConcatenation(BinaryExpressionSyntax binary, BoundExpression left, BoundExpression right)
+    private BoundExpression ArrayConcatenation(BinaryExpressionSyntax binary, BoundExpression left, BoundExpression right) =>
+        JoinArrays(binary, binary.OperatorToken, binary.Left, binary.Right, left, right, binary.OperatorToken.Text);
+
+    /// <summary>
+    /// The typing of <see cref="ArrayConcatenation"/> for <c>left + right</c> (also a step of an array <c>Concat</c>, LANG-279): the
+    /// node <paramref name="syntax"/>, E2011 at <paramref name="at"/> naming <paramref name="op"/>, E2044 at the operand's syntax.
+    /// </summary>
+    private BoundExpression JoinArrays(SyntaxNode syntax, SyntaxNodeOrToken at, ExpressionSyntax leftSyntax, ExpressionSyntax rightSyntax,
+        BoundExpression left, BoundExpression right, string op)
     {
         if (left.Type is DynamicArrayTypeSymbol && right.Type == _types.Nil)
         {
-            right = ConvertForAssignment(right, left.Type, binary.Right);
+            right = ConvertForAssignment(right, left.Type, rightSyntax);
         }
         else if (right.Type is DynamicArrayTypeSymbol && left.Type == _types.Nil)
         {
-            left = ConvertForAssignment(left, right.Type, binary.Left);
+            left = ConvertForAssignment(left, right.Type, leftSyntax);
         }
 
-        if (left.Type is DynamicArrayTypeSymbol l && right.Type is DynamicArrayTypeSymbol r)
+        if (left.Type is DynamicArrayTypeSymbol l && right.Type is DynamicArrayTypeSymbol r && Pointers.SameType(l.ElementType, r.ElementType))
         {
-            return Pointers.SameType(l.ElementType, r.ElementType)
-                ? new BoundBinaryExpression(binary, BoundBinaryOperatorKind.Add, left, right, l, l, constantValue: null)
-                : Inapplicable(binary, left, right);
+            return new BoundBinaryExpression(syntax, BoundBinaryOperatorKind.Add, left, right, l, l, constantValue: null);
         }
 
-        var (other, at) = left.Type is DynamicArrayTypeSymbol ? (right, binary.Right) : (left, binary.Left);
+        var (other, operand) = left.Type is DynamicArrayTypeSymbol ? (right, rightSyntax) : (left, leftSyntax);
         if (other.Type is ArrayTypeSymbol or OpenArrayTypeSymbol)
         {
-            _diagnostics.Report(at, "E2044", other.Type.Name);
-            return Error(binary, left, right);
+            _diagnostics.Report(operand, "E2044", other.Type.Name);
+            return Error(syntax, left, right);
         }
 
-        return Inapplicable(binary, left, right);
+        var message = $"'{left.Type.Name}' and '{right.Type.Name}'";
+        if (at.AsNode() is { } node)
+        {
+            _diagnostics.Report(node, "E2011", op, message);
+        }
+        else
+        {
+            _diagnostics.Report(at.AsToken(), "E2011", op, message);
+        }
+
+        return Error(syntax, left, right);
     }
 
     private static BoundBinaryOperatorKind OperatorKind(SyntaxToken op) => op.Kind switch

@@ -30,4 +30,10 @@ records 2 1uno 2two P one
 things 5 ids 12312 live 3
 after T := nil live 3
 U := U + U 10 live 3
+Concat(A, B, [4, 5]): 1 2 3 4 5 (5)
+Concat(A) copied, A: 1 2 (2)
+Concat(nil, B, []): 3 (1)
+Concat([6], [7]): 6 7 (2)
+A := Concat(A, A): 1 2 1 2 (4)
+Concat of things 3 ids 121 live 2
 live at end: 0

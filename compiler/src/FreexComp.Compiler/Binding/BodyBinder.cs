@@ -992,6 +992,11 @@ internal sealed partial class BodyBinder
             return new BoundErrorStatement(statement);
         }
 
+        if (target.Type is DynamicArrayTypeSymbol array && intrinsic.Intrinsic != IntrinsicKind.SetLength)
+        {
+            return BindArrayEdit(statement, intrinsic, arguments, target, array);
+        }
+
         var bound = ImmutableArray.CreateBuilder<BoundExpression>(arguments.Count);
         for (var k = 0; k < arguments.Count; k++)
         {
@@ -1017,6 +1022,33 @@ internal sealed partial class BodyBinder
         return new BoundIntrinsicCallStatement(statement, intrinsic, bound.ToImmutable());
     }
 
+    /// <summary>
+    /// LANG-277 <c>Insert(Source, var A, Index)</c> and LANG-278 <c>Delete(var A, Index, Count)</c> on a dynamic-array variable
+    /// (C-391): the source in the array or element form (<see cref="ExpressionBinder.BindInsertSource"/>), the integers converted to
+    /// <c>NativeInt</c>; arguments in parameter order, lowered by CMP-1418.
+    /// </summary>
+    private BoundStatement BindArrayEdit(ExpressionStatementSyntax statement, IntrinsicSymbol intrinsic, SeparatedSyntaxList<ArgumentSyntax> arguments,
+        BoundExpression target, DynamicArrayTypeSymbol array)
+    {
+        var targetIndex = intrinsic.Intrinsic == IntrinsicKind.Insert ? 1 : 0;
+        var bound = ImmutableArray.CreateBuilder<BoundExpression>(arguments.Count);
+        for (var k = 0; k < arguments.Count; k++)
+        {
+            var syntax = arguments[k].Expression;
+            var value = k == targetIndex ? target
+                : intrinsic.Intrinsic == IntrinsicKind.Insert && k == 0 ? _expressions.BindInsertSource(syntax, array)
+                : Operand(syntax, v => _expressions.ConvertForAssignment(v, _types.NativeInt, syntax));
+            if (value is null or { HasErrors: true })
+            {
+                return new BoundErrorStatement(statement);
+            }
+
+            bound.Add(value);
+        }
+
+        return new BoundIntrinsicCallStatement(statement, intrinsic, bound.ToImmutable());
+    }
+
     /// <summary>An expression bound and then checked/converted by <paramref name="check"/>; null after any error.</summary>
     private BoundExpression? Operand(ExpressionSyntax syntax, Func<BoundExpression, BoundExpression> check)
     {
@@ -1030,7 +1062,7 @@ internal sealed partial class BodyBinder
         return value.HasErrors ? null : value;
     }
 
-    /// <summary>The <c>var s: string</c> argument: an assignable string variable (or a dynamic array for <c>SetLength</c>); null after E2112/E2113/E2010.</summary>
+    /// <summary>The <c>var s: string</c> argument: an assignable string variable (or a dynamic array for <c>SetLength</c>, <c>Insert</c>, <c>Delete</c>); null after E2112/E2113/E2010.</summary>
     private BoundExpression? StringVariable(ExpressionSyntax syntax, IntrinsicSymbol intrinsic)
     {
         var target = _expressions.BindVariable(syntax);
@@ -1044,7 +1076,8 @@ internal sealed partial class BodyBinder
             // UnicodeString: its helpers; SetLength: _AStrSetLen (C-063), the short-string length byte (C-067); Delete/Insert/Str of
             // the byte-string kinds edit a UnicodeString copy (C-067)
             case StringTypeSymbol:
-            case DynamicArrayTypeSymbol when intrinsic.Intrinsic == IntrinsicKind.SetLength:                               // _DynArraySetLen (C-064)
+            case DynamicArrayTypeSymbol when intrinsic.Intrinsic is IntrinsicKind.SetLength or IntrinsicKind.Insert or IntrinsicKind.Delete:
+                // SetLength: _DynArraySetLen (C-064); Insert/Delete: LANG-277, 278 (C-391)
                 return target;
             default:
                 _diagnostics.Report(syntax, "E2010", target.Type.Name, _types.String.Name);
