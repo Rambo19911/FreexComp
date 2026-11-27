@@ -264,6 +264,63 @@ public abstract class TextBufferContractTests
         Assert.True(b.IsAtSavePoint);
     }
 
+    /// <summary>IDE-REFAC-025: <see cref="ITextBuffer.ClearRedo"/> drops the redo history and nothing else.</summary>
+    [Fact(Timeout = 30000)]
+    [Trait("Phase", "8")]
+    [Trait("Req", "IDE-REFAC-025")]
+    public void ClearRedoDropsRedoOnly()
+    {
+        var b = CreateBuffer("abc");
+        b.ApplyEdits([new TextEdit(3, 0, "d")]);
+        b.MarkSavePoint();                          // saved "abcd"
+        b.ApplyEdits([new TextEdit(4, 0, "e")]);
+        b.Undo();                                   // back at the save point; "e" can be redone
+        var changes = Record(b);
+        var version = b.Version;
+        Assert.True(b.CanRedo);
+        Assert.True(b.IsAtSavePoint);
+
+        b.ClearRedo();
+
+        Assert.False(b.CanRedo);
+        Assert.Throws<InvalidOperationException>(b.Redo);
+        Assert.Equal(("abcd", version), (b.Text, b.Version));
+        Assert.Empty(changes);
+        Assert.True(b.CanUndo);
+        Assert.True(b.IsAtSavePoint);
+        b.ClearRedo();                              // nothing to drop: nothing happens
+        Assert.Equal(("abcd", version), (b.Text, b.Version));
+        Assert.True(b.IsAtSavePoint);
+        b.Undo();                                   // the undo history is whole
+        Assert.Equal("abc", b.Text);
+        Assert.False(b.CanUndo);
+        b.Redo();
+        Assert.True(b.IsAtSavePoint);
+
+        // Not at the save point: it stays that way, and a save point that only a redo could reach is gone with the redo.
+        b.Undo();
+        Assert.False(b.IsAtSavePoint);
+        b.ClearRedo();
+        Assert.False(b.CanRedo);
+        Assert.False(b.IsAtSavePoint);
+        b.ApplyEdits([new TextEdit(3, 0, "d")]);    // the same text and undo depth as the save point, in another history
+        Assert.Equal("abcd", b.Text);
+        Assert.False(b.IsAtSavePoint);
+        b.Undo();
+        Assert.Equal("abc", b.Text);
+        Assert.True(b.CanRedo);
+
+        // Inside an open undo group it throws and drops nothing.
+        using (b.OpenUndoGroup())
+        {
+            Assert.Throws<InvalidOperationException>(b.ClearRedo);
+        }
+
+        Assert.True(b.CanRedo);
+        b.Redo();
+        Assert.Equal("abcd", b.Text);
+    }
+
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-ARCH-022")]
     public void SavePointIsCurrentInsideChangedDuringUndoRedo()

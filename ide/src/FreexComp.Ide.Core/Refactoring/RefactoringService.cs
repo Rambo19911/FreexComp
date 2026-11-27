@@ -1,7 +1,9 @@
 using System.Globalization;
+using System.Security.Cryptography;
 using System.Text;
 using FreexComp.Ide.Core.Build;
 using FreexComp.Ide.Core.CodeModel;
+using FreexComp.Ide.Core.Commands;
 using FreexComp.Ide.Core.Documents;
 using FreexComp.Ide.Core.Logging;
 using FreexComp.Ide.Core.Platform;
@@ -16,6 +18,12 @@ namespace FreexComp.Ide.Core.Refactoring;
 /// <inheritdoc cref="IRefactoringService"/>
 public sealed class RefactoringService : IRefactoringService
 {
+    /// <summary>The command that takes the newest operation back (IDE-REFAC-021).</summary>
+    public const string UndoCommandId = "refactor.undo";
+
+    /// <summary>IDE-REFAC-020: the history keeps at most this many operations.</summary>
+    internal const int MaxHistoryOperations = 20;
+
     private const string LogCategory = "Refactoring";
     private const int MaxBlockedLines = 10; // IDE-REFAC-006
     private static readonly TimeSpan StatusDuration = TimeSpan.FromSeconds(5); // UI-MSG-003 "Status"
@@ -30,6 +38,8 @@ public sealed class RefactoringService : IRefactoringService
     private readonly IClock _clock;
     private readonly ILog _log;
     private readonly CodeModelService _codeModel;
+    private readonly List<Operation> _history = []; // IDE-REFAC-020: the applied operations, oldest first
+    private string? _historyProject; // the project file the history belongs to; null without a project
 
     public RefactoringService(IDocumentService documents, IProjectService projects, ILibrarySourceService library, IFileSystem fileSystem,
         IDialogService dialogs, IStatusService status, IClock clock, ILog log, CodeModelService codeModel)
@@ -43,11 +53,67 @@ public sealed class RefactoringService : IRefactoringService
         _clock = clock;
         _log = log;
         _codeModel = codeModel;
+        _historyProject = projects.Project?.FilePath;
+        projects.ProjectChanged += (_, _) => OnProjectChanged();
+        // IDE-REFAC-024: edit.undo of a text document (a form document's unit included) asks here first.
+        documents.DocumentOpened += (_, e) =>
+        {
+            if (e.Document is TextDocumentViewModel text)
+                text.OperationUndo = UndoFromEditor;
+        };
     }
 
     public bool IsBusy { get; private set; }
 
     public event EventHandler? Changed;
+
+    /// <summary>IDE-REFAC-020: the history keeps at most this many characters of before and after texts (the newest operation always stays).</summary>
+    internal long MaxHistoryCharacters { get; set; } = 64_000_000;
+
+    /// <summary>The number of operations on the history.</summary>
+    internal int HistoryCount => _history.Count;
+
+    public bool CanUndo => _history.Count > 0;
+
+    public string? UndoTitle => _history.Count > 0 ? _history[^1].Title : null;
+
+    /// <summary>
+    /// Registers <c>refactor.undo</c> (IDE-REFAC-021): enabled while the history is not empty and no operation runs; its
+    /// main-menu label names the operation it takes back.
+    /// </summary>
+    public void RegisterCommands(ICommandService commands)
+    {
+        ArgumentNullException.ThrowIfNull(commands);
+        commands.RegisterHandler(UndoCommandId, new UndoHandler(this));
+        Changed += (_, _) => commands.InvalidateCanExecute();
+    }
+
+    private sealed class UndoHandler(RefactoringService owner) : ICommandHandler
+    {
+        public bool CanExecute(string? argument) => owner.CanUndo && !owner.IsBusy;
+
+        public Task ExecuteAsync(string? argument) => CanExecute(argument) ? owner.UndoAsync() : Task.CompletedTask;
+
+        /// <summary><c>&amp;Undo &lt;Title&gt;</c>: the mnemonic stays U; an ampersand of the title would be read as a second mnemonic and is left out.</summary>
+        public string? MenuLabelOverride =>
+            owner.UndoTitle is { } title ? "&" + UndoTitleOf(title.Replace("&", "", StringComparison.Ordinal)) : null;
+    }
+
+    /// <summary>The name of the undo of the operation <paramref name="title"/>: the menu label and the title of the undo step it makes.</summary>
+    private static string UndoTitleOf(string title) => Format(Strings.Undo_Refactoring, title);
+
+    /// <summary>IDE-REFAC-020: the history belongs to the open project; it is emptied when that project closes or another one is loaded.</summary>
+    private void OnProjectChanged()
+    {
+        var project = _projects.Project?.FilePath;
+        if (string.Equals(project, _historyProject, StringComparison.OrdinalIgnoreCase))
+            return;
+        _historyProject = project;
+        if (_history.Count == 0)
+            return;
+        _history.Clear();
+        Changed?.Invoke(this, EventArgs.Empty);
+    }
 
     /// <summary>
     /// The preview of IDE-REFAC-007: shows the changes of a checked edit and returns the edit reduced to the chosen ones,
@@ -88,6 +154,7 @@ public sealed class RefactoringService : IRefactoringService
 
     private async Task<RefactoringResult> ApplyCoreAsync(WorkspaceEdit edit, PreviewMode preview, WorkingStatus working, CancellationToken ct)
     {
+        var project = _historyProject;
         working.Start();
         var (prepared, stop) = await PrepareAsync(edit, working);
         if (stop is not null)
@@ -144,15 +211,24 @@ public sealed class RefactoringService : IRefactoringService
         }
 
         var edited = new List<Target>();
+        var records = new List<FileRecord>(); // IDE-REFAC-020: what the operation did, file by file
         try
         {
             foreach (var target in open)
             {
                 edited.Add(target);
                 if (target.Form is { } form)
+                {
                     form.Designer.RevertFormText(Apply(target.Edit.BaseText, target.Edit.Edits), prepared.Title); // IDE-REFAC-011: through the designer, not saved
+                    // The after text is the designer's current form text: what a later undo compares with (IDE-REFAC-004).
+                    records.Add(new FileRecord(target.Edit.Path, TargetKind.FormText, target.FormText!, form.Designer.CurrentFormText()));
+                }
                 else
-                    target.Document!.Buffer.ApplyEdits(target.Edit.Edits, prepared.Title); // IDE-REFAC-010: one undo step, not saved
+                {
+                    var buffer = target.Document!.Buffer;
+                    buffer.ApplyEdits(target.Edit.Edits, prepared.Title); // IDE-REFAC-010: one undo step, not saved
+                    records.Add(new FileRecord(target.Edit.Path, TargetKind.Buffer, target.Edit.BaseText, buffer.Text) { Buffer = buffer, Version = buffer.Version });
+                }
             }
         }
         catch (Exception e)
@@ -174,9 +250,16 @@ public sealed class RefactoringService : IRefactoringService
             return Result(RefactoringOutcome.Failed, error: e.Message);
         }
 
-        // (4) The code model reads the written files again; status.
+        // (4) The code model reads the written files again; the operation goes on the history; status.
         foreach (var file in written.Written)
             _codeModel.Workspace.NotifyFileChangedOnDisk(file.Path);
+        records.AddRange(files.Zip(written.Written, (target, file) => new FileRecord(file.Path, TargetKind.File, target.File!.Detection!.Text, file.Text)
+        {
+            OriginalBytes = file.Original,
+            WrittenHash = SHA256.HashData(file.New),
+        }));
+        if (string.Equals(project, _historyProject, StringComparison.OrdinalIgnoreCase)) // not when the project was closed meanwhile
+            Record(new Operation(prepared.Title, _clock.Now, [.. records.OrderBy(r => r.Path, StringComparer.OrdinalIgnoreCase)]));
         var editCount = prepared.Files.Sum(f => f.Edits.Length);
         var fileCount = prepared.Files.Length;
         working.Stop();
@@ -363,11 +446,17 @@ public sealed class RefactoringService : IRefactoringService
     private async Task<RefactoringResult> BlockedAsync(string title, IReadOnlyList<BlockedFile> blocked, WorkingStatus working)
     {
         working.Stop();
+        await _dialogs.ShowMessageAsync(new MessageRequest("Msg.Refactoring.Blocked", [title, BlockedLines(blocked)]));
+        return Result(RefactoringOutcome.Blocked, blocked: blocked);
+    }
+
+    /// <summary>IDE-REFAC-006: one line <c>&lt;full path&gt; — &lt;reason&gt;</c> per file, at most ten, then the number of the others.</summary>
+    private static string BlockedLines(IReadOnlyList<BlockedFile> blocked)
+    {
         var lines = blocked.Take(MaxBlockedLines).Select(b => $"{b.Path} — {ReasonText(b.Reason)}").ToList();
         if (blocked.Count > MaxBlockedLines)
             lines.Add(Format(Strings.Reason_Refactoring_More, blocked.Count - MaxBlockedLines));
-        await _dialogs.ShowMessageAsync(new MessageRequest("Msg.Refactoring.Blocked", [title, string.Join('\n', lines)]));
-        return Result(RefactoringOutcome.Blocked, blocked: blocked);
+        return string.Join('\n', lines);
     }
 
     private static string ReasonText(BlockReason reason) => reason switch
@@ -382,11 +471,13 @@ public sealed class RefactoringService : IRefactoringService
         _ => throw new ArgumentOutOfRangeException(nameof(reason)),
     };
 
-    /// <summary>A written file with the bytes it had before (kept for the rollback).</summary>
-    private sealed record WrittenFile(string Path, byte[] Original);
+    /// <summary>
+    /// One file to write: the bytes it has (kept for the rollback, and for the undo), the bytes it gets and the text those hold.
+    /// </summary>
+    private sealed record FileWrite(string Path, byte[] Original, byte[] New, string Text);
 
-    /// <summary>What step (2) did: the files written; after a failure the file that failed, the system's reason and the files that could not be put back.</summary>
-    private sealed record WriteResult(IReadOnlyList<WrittenFile> Written, string? FailedPath, string? Error,
+    /// <summary>What a write step did: the files written; after a failure the file that failed, the system's reason and the files that could not be put back.</summary>
+    private sealed record WriteResult(IReadOnlyList<FileWrite> Written, string? FailedPath, string? Error,
         IReadOnlyList<(string Path, string Error)> Unrestored);
 
     /// <summary>
@@ -395,13 +486,14 @@ public sealed class RefactoringService : IRefactoringService
     /// </summary>
     private WriteResult WriteFiles(IReadOnlyList<Target> files)
     {
-        var writes = new List<(string Path, byte[] Original, byte[] New)>();
+        var writes = new List<FileWrite>();
         foreach (var target in files)
         {
             var detection = target.File!.Detection!;
+            var text = Apply(detection.Text, target.Edit.Edits);
             try
             {
-                writes.Add((target.Edit.Path, target.File.Bytes!, FileEncodings.Encode(Apply(detection.Text, target.Edit.Edits), detection.Encoding)));
+                writes.Add(new FileWrite(target.Edit.Path, target.File.Bytes!, FileEncodings.Encode(text, detection.Encoding), text));
             }
             catch (EncoderFallbackException e)
             {
@@ -409,17 +501,23 @@ public sealed class RefactoringService : IRefactoringService
             }
         }
 
-        var written = new List<WrittenFile>();
-        foreach (var (path, original, bytes) in writes)
+        return Write(writes);
+    }
+
+    /// <summary>The writes, in order, through the atomic writer. The first failure stops and puts back what was written. Thread pool.</summary>
+    private WriteResult Write(IReadOnlyList<FileWrite> writes)
+    {
+        var written = new List<FileWrite>();
+        foreach (var write in writes)
         {
             try
             {
-                AtomicFileWriter.Write(_fileSystem, path, bytes);
-                written.Add(new WrittenFile(path, original));
+                AtomicFileWriter.Write(_fileSystem, write.Path, write.New);
+                written.Add(write);
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException)
             {
-                return new WriteResult([], path, e.Message, Restore(written));
+                return new WriteResult([], write.Path, e.Message, Restore(written));
             }
         }
 
@@ -439,7 +537,7 @@ public sealed class RefactoringService : IRefactoringService
     /// IDE-REFAC-008: the written files get their original bytes back, in reverse order, through the same writer.
     /// Returns the files that could not be restored (logged). Thread pool.
     /// </summary>
-    private List<(string Path, string Error)> Restore(IReadOnlyList<WrittenFile> written)
+    private List<(string Path, string Error)> Restore(IReadOnlyList<FileWrite> written)
     {
         var failed = new List<(string Path, string Error)>();
         foreach (var file in written.Reverse())
@@ -476,13 +574,19 @@ public sealed class RefactoringService : IRefactoringService
         }
     }
 
-    /// <summary>Takes back the undo step an operation made in <paramref name="buffer"/>, if it made one; never throws.</summary>
+    /// <summary>
+    /// Takes back the undo step an operation made in <paramref name="buffer"/>, if it made one, and leaves nothing of it
+    /// to redo; never throws.
+    /// </summary>
     private void UndoQuietly(ITextBuffer buffer, long versionBefore)
     {
         try
         {
             if (buffer.Version != versionBefore && buffer.CanUndo)
+            {
                 buffer.Undo();
+                buffer.ClearRedo();
+            }
         }
         catch (Exception e)
         {
@@ -505,6 +609,317 @@ public sealed class RefactoringService : IRefactoringService
         {
             _log.Warning(LogCategory, "A form edit cannot be taken back", e);
         }
+    }
+
+    /// <summary>What a file edit changed at apply time (IDE-REFAC-004).</summary>
+    private enum TargetKind
+    {
+        Buffer,
+        FormText,
+        File,
+    }
+
+    /// <summary>
+    /// What an applied operation did to one file (IDE-REFAC-020): the text before and after; for a file target the bytes
+    /// it had and the SHA-256 of the bytes written; for a buffer target the buffer and its version right after the edit.
+    /// </summary>
+    private sealed record FileRecord(string Path, TargetKind Kind, string Before, string After)
+    {
+        public byte[]? OriginalBytes { get; init; }
+
+        public byte[]? WrittenHash { get; init; }
+
+        public ITextBuffer? Buffer { get; init; }
+
+        public long Version { get; init; }
+    }
+
+    /// <summary>An applied operation (IDE-REFAC-020): its files in path order.</summary>
+    private sealed record Operation(string Title, DateTimeOffset Time, IReadOnlyList<FileRecord> Files)
+    {
+        /// <summary>The characters of the before and after texts: what the operation costs on the history.</summary>
+        public long Characters { get; } = Files.Sum(f => (long)f.Before.Length + f.After.Length);
+    }
+
+    /// <summary>IDE-REFAC-020: the operation is the newest of the history; the oldest go while there are too many or they are too large.</summary>
+    private void Record(Operation operation)
+    {
+        _history.Add(operation);
+        while (_history.Count > 1 && (_history.Count > MaxHistoryOperations || _history.Sum(o => o.Characters) > MaxHistoryCharacters))
+            _history.RemoveAt(0);
+    }
+
+    public Task<RefactoringResult> UndoAsync()
+    {
+        if (IsBusy)
+            throw new InvalidOperationException("A refactoring operation is running.");
+        if (_history.Count == 0)
+            throw new InvalidOperationException("There is no refactoring operation to undo.");
+        return UndoNewestAsync(_history[^1]);
+    }
+
+    private async Task<RefactoringResult> UndoNewestAsync(Operation operation) => (await RunUndoAsync(operation, fromEditor: false)).Result;
+
+    /// <summary>
+    /// IDE-REFAC-024: <c>edit.undo</c> in <paramref name="document"/>. Null — the document's own undo is the answer —
+    /// unless its buffer is a buffer target of the newest operation in which nothing happened since; then the whole
+    /// operation is undone, and the result says whether the document's own undo is to run instead (the undo was blocked
+    /// or failed, nothing changed, and the user chose <c>Undo in This File</c>).
+    /// </summary>
+    private Task<bool>? UndoFromEditor(TextDocumentViewModel document)
+    {
+        if (IsBusy || _history.Count == 0)
+            return null;
+        var operation = _history[^1];
+        var buffer = document.Buffer;
+        return operation.Files.Any(f => ReferenceEquals(f.Buffer, buffer) && f.Version == buffer.Version)
+            ? UndoThisFileOnlyAsync(operation)
+            : null;
+    }
+
+    private async Task<bool> UndoThisFileOnlyAsync(Operation operation) => (await RunUndoAsync(operation, fromEditor: true)).ThisFileOnly;
+
+    /// <summary>One undo from its start to its result: busy state and the "working" status text around it.</summary>
+    private async Task<(RefactoringResult Result, bool ThisFileOnly)> RunUndoAsync(Operation operation, bool fromEditor)
+    {
+        var working = new WorkingStatus(_clock, _status, Format(Strings.Msg_Refactoring_Working, UndoTitleOf(operation.Title)));
+        SetBusy(true);
+        try
+        {
+            working.Start();
+            return await UndoCoreAsync(operation, fromEditor, working);
+        }
+        finally
+        {
+            working.Stop();
+            SetBusy(false);
+        }
+    }
+
+    /// <summary>IDE-REFAC-021: the sequence of an undo. <c>ThisFileOnly</c>: asked from the editor, it did not go through and the user wants the document's own undo.</summary>
+    private async Task<(RefactoringResult Result, bool ThisFileOnly)> UndoCoreAsync(Operation operation, bool fromEditor, WorkingStatus working)
+    {
+        // (1) Where every file of the operation is now and what text it has; (2) a conflict: nothing changes.
+        var states = await ClassifyAsync(operation);
+        var conflicts = states.Where(s => s.Conflict is not null).Select(s => new BlockedFile(s.Record.Path, s.Conflict!.Value)).ToList();
+        if (conflicts.Count > 0)
+            return await UndoBlockedAsync(operation.Title, conflicts, fromEditor, working);
+        var restore = states.Where(s => s.Restore).ToList();
+        var open = restore.Where(s => !s.IsFile).ToList();
+
+        // (3) The closed files, on the thread pool, in path order; a failed write puts back what was written.
+        var written = await Task.Run(() => RestoreFiles(restore.Where(s => s.IsFile).ToList()));
+        if (written.FailedPath is { } failedPath)
+        {
+            working.Stop();
+            var thisFileOnly = false;
+            if (fromEditor)
+                thisFileOnly = await AskThisFileOnlyAsync(operation.Title, $"{failedPath} — {written.Error}");
+            else
+                await _dialogs.ShowMessageAsync(new MessageRequest("Msg.Refactoring.UndoFailed", [operation.Title, failedPath, written.Error!]));
+            return (Result(RefactoringOutcome.Failed, error: written.Error), thisFileOnly);
+        }
+
+        // (4) One block on the UI thread: every document is as step 1 found it; then the form texts and buffers, in path order.
+        var changed = open.Select(s => (State: s, Reason: ChangeSince(s))).Where(c => c.Reason is not null)
+            .Select(c => new BlockedFile(c.State.Record.Path, c.Reason!.Value)).ToList();
+        if (changed.Count > 0)
+        {
+            await Task.Run(() => Restore(written.Written)); // a file that cannot be put back keeps its earlier text: a later undo skips it
+            return await UndoBlockedAsync(operation.Title, changed, fromEditor, working);
+        }
+
+        foreach (var state in open)
+            RestoreDocument(state, UndoTitleOf(operation.Title));
+
+        // (5) The operation leaves the history; the code model reads the written files again; status.
+        _history.Remove(operation);
+        foreach (var file in written.Written)
+            _codeModel.Workspace.NotifyFileChangedOnDisk(file.Path);
+        working.Stop();
+        _status.ShowMessage(
+            restore.Count == 0 ? Format(Strings.Msg_Refactoring_AlreadyUndone, operation.Title)
+            : restore.Count == 1 ? Format(Strings.Msg_Refactoring_UndoneOne, operation.Title)
+            : Format(Strings.Msg_Refactoring_UndoneMany, operation.Title, restore.Count),
+            StatusDuration);
+        return (restore.Count == 0 ? Result(RefactoringOutcome.NoChanges) : new RefactoringResult(RefactoringOutcome.Applied, 0, restore.Count, [], null), false);
+    }
+
+    /// <summary>
+    /// A file of the operation to undo as it is now (IDE-REFAC-021 (1)): the document it belongs to, or the file on disk
+    /// (<paramref name="File"/>, null when it does not exist); <see cref="Restore"/> — it has the operation's text and gets
+    /// its earlier text back; <see cref="Conflict"/> — it blocks the undo; neither — it has its earlier text already.
+    /// </summary>
+    private sealed record UndoState(FileRecord Record, TextDocumentViewModel? Document, FormDocumentViewModel? Form)
+    {
+        public bool IsFile => Document is null && Form is null;
+
+        public FileState? File { get; init; }
+
+        /// <summary>A buffer: its version when it was judged.</summary>
+        public long Version { get; init; }
+
+        /// <summary>A form: the designer's current form text when it was judged.</summary>
+        public string? FormText { get; init; }
+
+        public bool Restore { get; init; }
+
+        public BlockReason? Conflict { get; init; }
+    }
+
+    /// <summary>
+    /// IDE-REFAC-021 (1): the current target and text of every file of <paramref name="operation"/>, judged. The closed
+    /// files are read on the thread pool; everything is judged on the UI thread after that read, in one block (a
+    /// document opened or closed during the read repeats it).
+    /// </summary>
+    private async Task<List<UndoState>> ClassifyAsync(Operation operation)
+    {
+        while (true)
+        {
+            var located = operation.Files.Select(r => DocumentOf(r.Path)).ToList();
+            var closed = operation.Files.Where((_, i) => located[i] is (null, null)).Select(r => r.Path).ToList();
+            var files = closed.Count == 0 ? [] : await Task.Run(() => closed.Select(ReadState).ToList()); // IDE-ARCH-081
+            if (!located.SequenceEqual(operation.Files.Select(r => DocumentOf(r.Path))))
+                continue;
+            var states = new List<UndoState>();
+            var read = 0;
+            foreach (var (record, (document, form)) in operation.Files.Zip(located))
+            {
+                var state = new UndoState(record, document, form);
+                state = state switch
+                {
+                    { Form: not null } => state with { FormText = form!.Designer.CurrentFormText() },
+                    { Document: not null } => state with { Version = document!.Buffer.Version },
+                    _ => state with { File = files[read++] },
+                };
+                states.Add(Judge(state));
+            }
+
+            return states;
+        }
+    }
+
+    /// <summary>
+    /// IDE-REFAC-021 (1): the operation's text → restore (not writable: a conflict); the earlier text → nothing to do; a
+    /// missing file, a file that cannot be read, or any other text → a conflict.
+    /// </summary>
+    private static UndoState Judge(UndoState state)
+    {
+        string? text;
+        bool writable;
+        if (state.Form is { } form)
+            (text, writable) = (state.FormText, !form.IsReadOnly && !form.FormText.IsReadOnly);
+        else if (state.Document is { } document)
+            (text, writable) = (document.Buffer.Text, !document.Buffer.IsReadOnly);
+        else if (state.File is not { } file)
+            return state with { Conflict = BlockReason.NotFound };
+        else if (file.Bytes is null)
+            return state with { Conflict = BlockReason.NotWritable }; // it exists and cannot be read: in use
+        else
+            (text, writable) = (file.Detection is { IsBinary: false } detection ? detection.Text : null, file.Writable);
+
+        if (string.Equals(text, state.Record.After, StringComparison.Ordinal))
+            return writable ? state with { Restore = true } : state with { Conflict = BlockReason.NotWritable };
+        return string.Equals(text, state.Record.Before, StringComparison.Ordinal) ? state : state with { Conflict = BlockReason.ChangedAfterwards };
+    }
+
+    /// <summary>
+    /// IDE-REFAC-021 (4): why a document judged in step 1 cannot be restored any more — it was closed, something happened
+    /// in its buffer or to its form text, or it became read only — or null when it is as it was.
+    /// </summary>
+    private BlockReason? ChangeSince(UndoState state)
+    {
+        if (state.Form is { } form)
+        {
+            if (!_documents.Documents.Contains(form) || !string.Equals(form.Designer.CurrentFormText(), state.FormText, StringComparison.Ordinal))
+                return BlockReason.ChangedAfterwards;
+            return form.IsReadOnly || form.FormText.IsReadOnly ? BlockReason.NotWritable : null;
+        }
+
+        var document = state.Document!;
+        if (!_documents.Documents.Contains(document) || document.Buffer.Version != state.Version)
+            return BlockReason.ChangedAfterwards;
+        return document.Buffer.IsReadOnly ? BlockReason.NotWritable : null;
+    }
+
+    /// <summary>
+    /// IDE-REFAC-021 (2): nothing changed and the operation stays; <c>Msg.Refactoring.UndoBlocked</c> names the files —
+    /// from the editor <c>Msg.Refactoring.UndoBlockedLocal</c>, which offers the document's own undo (IDE-REFAC-024).
+    /// </summary>
+    private async Task<(RefactoringResult Result, bool ThisFileOnly)> UndoBlockedAsync(string title, IReadOnlyList<BlockedFile> conflicts, bool fromEditor,
+        WorkingStatus working)
+    {
+        working.Stop();
+        var thisFileOnly = false;
+        if (fromEditor)
+            thisFileOnly = await AskThisFileOnlyAsync(title, BlockedLines(conflicts));
+        else
+            await _dialogs.ShowMessageAsync(new MessageRequest("Msg.Refactoring.UndoBlocked", [title, BlockedLines(conflicts)]));
+        return (Result(RefactoringOutcome.Blocked, blocked: conflicts), thisFileOnly);
+    }
+
+    /// <summary>IDE-REFAC-024: <c>Undo in This File</c> or <c>Cancel</c>.</summary>
+    private async Task<bool> AskThisFileOnlyAsync(string title, string lines) =>
+        await _dialogs.ShowMessageAsync(new MessageRequest("Msg.Refactoring.UndoBlockedLocal", [title, lines])) == "UndoInThisFile";
+
+    /// <summary>
+    /// IDE-REFAC-023: the closed files get their earlier content back — the bytes they had when nothing rewrote them since
+    /// the operation (the SHA-256 of their bytes is the recorded one), else the earlier text in the encoding the file has
+    /// now. All new bytes are computed before the first write. Thread pool.
+    /// </summary>
+    private WriteResult RestoreFiles(IReadOnlyList<UndoState> files)
+    {
+        var writes = new List<FileWrite>();
+        foreach (var state in files)
+        {
+            var (record, current) = (state.Record, state.File!);
+            try
+            {
+                var untouched = record is { OriginalBytes: not null, WrittenHash: { } hash } && SHA256.HashData(current.Bytes!).AsSpan().SequenceEqual(hash);
+                writes.Add(new FileWrite(record.Path, current.Bytes!,
+                    untouched ? record.OriginalBytes! : FileEncodings.Encode(record.Before, current.Detection!.Encoding), record.Before));
+            }
+            catch (EncoderFallbackException e)
+            {
+                return new WriteResult([], record.Path, e.Message, []); // the file's encoding of today cannot store the earlier text
+            }
+        }
+
+        return Write(writes);
+    }
+
+    /// <summary>
+    /// IDE-REFAC-022: a form gets its earlier text through the designer; a buffer the operation edited and in which
+    /// nothing happened since takes its step back and keeps nothing of it to redo — text, undo history and save point are
+    /// as before the operation; any other buffer gets one undo step that replaces the differing middle of its text.
+    /// </summary>
+    private static void RestoreDocument(UndoState state, string undoTitle)
+    {
+        var record = state.Record;
+        if (state.Form is { } form)
+        {
+            form.Designer.RevertFormText(record.Before, undoTitle);
+            return;
+        }
+
+        var buffer = state.Document!.Buffer;
+        // The version does not move when a history is reset around an unchanged text (a reload): then there is no step to take back.
+        if (ReferenceEquals(buffer, record.Buffer) && buffer.Version == record.Version && buffer.CanUndo)
+        {
+            buffer.Undo();
+            buffer.ClearRedo();
+            return;
+        }
+
+        var (current, earlier) = (record.After, record.Before); // the buffer has the operation's text (step 1)
+        var shorter = Math.Min(current.Length, earlier.Length);
+        var prefix = 0;
+        while (prefix < shorter && current[prefix] == earlier[prefix])
+            prefix++;
+        var suffix = 0;
+        while (suffix < shorter - prefix && current[current.Length - 1 - suffix] == earlier[earlier.Length - 1 - suffix])
+            suffix++;
+        buffer.ApplyEdits([new TextEdit(prefix, current.Length - prefix - suffix, earlier[prefix..(earlier.Length - suffix)])], undoTitle);
     }
 
     /// <summary>

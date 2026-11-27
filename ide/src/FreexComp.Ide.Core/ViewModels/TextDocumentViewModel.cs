@@ -305,11 +305,28 @@ public partial class TextDocumentViewModel : DocumentViewModel, ICommandTarget
             return ExecuteLineEndingAsync(commandId, argument);
         if (!((ICommandTarget)this).CanExecute(commandId, argument))
             return Task.FromResult(false);
-        if (commandId == UndoCommandId)
-            UndoStep();
-        else
+        if (commandId == RedoCommandId)
             RedoStep();
+        else if (OperationUndo?.Invoke(this) is { } operation)
+            return UndoOperationAsync(operation);
+        else
+            UndoStep();
         return Task.FromResult(true);
+    }
+
+    /// <summary>
+    /// IDE-REFAC-024: asked on <c>edit.undo</c>. Null — the document's own undo runs, as always; otherwise the undo of a
+    /// whole multi-file operation that edited this document last, whose result says whether the document's own undo is to
+    /// run after all (that undo did not go through, nothing changed, and the user chose <c>Undo in This File</c>).
+    /// <c>edit.redo</c> never asks.
+    /// </summary>
+    internal Func<TextDocumentViewModel, Task<bool>?>? OperationUndo { get; set; }
+
+    private async Task<bool> UndoOperationAsync(Task<bool> operation)
+    {
+        if (await operation && ((ICommandTarget)this).CanExecute(UndoCommandId, null))
+            UndoStep();
+        return true;
     }
 
     /// <summary><c>edit.convertLineEndings</c> (one undo step, IDE-P1-077) keeps the selections around it for undo/redo.</summary>

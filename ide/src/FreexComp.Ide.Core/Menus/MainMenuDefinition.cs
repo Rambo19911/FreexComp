@@ -102,6 +102,8 @@ public static class MainMenuDefinition
             ]),
             Submenu("Edit.Refactor",
             [
+                Command("refactor.undo"),
+                Separator,
                 Command("refactor.rename"),
                 Command("refactor.extractMethod"),
                 Command("refactor.declareVariable"),

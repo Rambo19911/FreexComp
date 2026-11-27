@@ -17,148 +17,8 @@ namespace FreexComp.Ide.Core.Tests.Refactoring;
 /// edited as one undo step and not saved; a failed write and a buffer changed meanwhile roll everything back.
 /// </summary>
 [Trait("Phase", "8")]
-public sealed partial class WorkspaceEditTests
+public sealed partial class WorkspaceEditTests : RefactoringTestBase
 {
-    private const string Dir = @"C:\p\App";
-    private const string ProjectPath = Dir + @"\App.pproj";
-    private const string A = Dir + @"\A.pas";
-    private const string B = Dir + @"\B.pas";
-    private const string C = Dir + @"\C.pas";
-    private const string D = Dir + @"\D.pas";
-    private const string Title = "Rename Symbol";
-
-    private const string ProjectFile = """
-        { "formatVersion": 1, "name": "App", "appType": "console", "mainSource": "App.pas",
-          "files": [ { "path": "App.pas" }, { "path": "A.pas" }, { "path": "B.pas" }, { "path": "C.pas" }, { "path": "D.pas" } ] }
-        """;
-
-    private static readonly byte[] Utf8Bom = [0xEF, 0xBB, 0xBF];
-
-    private readonly InMemoryFileSystem _fs = new();
-    private readonly RecordingFileSystem _recording;
-    private readonly ManualClock _clock = new();
-    private readonly IdeServices _services;
-
-    public WorkspaceEditTests()
-    {
-        _recording = new RecordingFileSystem(_fs);
-        _services = TestComposition.Build(o =>
-        {
-            o.FileSystem = _recording;
-            o.Clock = _clock;
-        });
-    }
-
-    private IRefactoringService Engine => _services.Refactoring;
-
-    private FakeDialogService Dialogs => (FakeDialogService)_services.Dialogs;
-
-    private RecordingLog Log => (RecordingLog)_services.Log;
-
-    private static string Unit(string name, string newLine = "\n") =>
-        $"unit {name};\n\ninterface\n\nprocedure Old;\n\nimplementation\n\nprocedure Old;\nbegin\nend;\n\nend.\n".Replace("\n", newLine, StringComparison.Ordinal);
-
-    private void Write(string path, byte[] bytes)
-    {
-        _fs.CreateDirectory(Path.GetDirectoryName(path)!);
-        _fs.WriteAllBytes(path, bytes);
-    }
-
-    private void File(string path, string text) => Write(path, Encoding.UTF8.GetBytes(text));
-
-    private byte[] Bytes(string path) => _fs.ReadAllBytes(path);
-
-    private string Text(string path) => EncodingDetector.Detect(Bytes(path)).Text;
-
-    /// <summary>The project at <see cref="Dir"/> with the units A … D (UTF-8, LF), open, no document open.</summary>
-    private async Task OpenProjectAsync(string? projectFile = null)
-    {
-        File(ProjectPath, projectFile ?? ProjectFile);
-        File(Dir + @"\App.pas", "program App;\n\nuses A, B, C, D;\n\nbegin\nend.\n");
-        foreach (var path in (string[])[A, B, C, D])
-            File(path, Unit(Path.GetFileNameWithoutExtension(path)));
-        Assert.True(await _services.Projects.OpenAsync(ProjectPath));
-        Assert.True(await _services.Documents.CloseAllAsync()); // the main source opened with the project
-        await _services.ProjectManager.MissingFileChecks;
-    }
-
-    private async Task<TextDocumentViewModel> OpenAsync(string path) =>
-        Assert.IsType<TextDocumentViewModel>((await _services.Documents.OpenAsync(path)).Value);
-
-    /// <summary>The file edit that replaces every <c>Old</c> of <paramref name="baseText"/> by <c>Renamed</c>.</summary>
-    private static FileEdit Rename(string path, string baseText)
-    {
-        var edits = ImmutableArray.CreateBuilder<TextEdit>();
-        for (var at = baseText.IndexOf("Old", StringComparison.Ordinal); at >= 0; at = baseText.IndexOf("Old", at + 3, StringComparison.Ordinal))
-            edits.Add(new TextEdit(at, 3, "Renamed"));
-        Assert.NotEmpty(edits);
-        return new FileEdit(path, baseText, edits.ToImmutable());
-    }
-
-    private static string Renamed(string text) => text.Replace("Old", "Renamed", StringComparison.Ordinal);
-
-    /// <summary>A file edit that inserts <c>{x}</c> at the start of the current text of an open document or of a file.</summary>
-    private FileEdit Insert(string path)
-    {
-        var open = _services.Documents.Documents.OfType<TextDocumentViewModel>()
-            .FirstOrDefault(d => string.Equals(d.FilePath, path, StringComparison.OrdinalIgnoreCase));
-        return new FileEdit(path, open?.Buffer.Text ?? Text(path), [new TextEdit(0, 0, "{x}")]);
-    }
-
-    private static WorkspaceEdit Edit(params FileEdit[] files) => new(Title, [.. files]);
-
-    private static string Format(string resource, params object[] args) => string.Format(CultureInfo.CurrentCulture, resource, args);
-
-    /// <summary>Every file with its bytes: equal before and after = no file changed and no temporary file is left.</summary>
-    private string FilesSnapshot() =>
-        string.Join('\n', _fs.AllFiles.Order(StringComparer.OrdinalIgnoreCase).Select(p => p + " = " + Convert.ToHexString(_fs.ReadAllBytes(p))));
-
-    /// <summary><see cref="FilesSnapshot"/> and every open text document with its buffer version: equal before and after = nothing changed.</summary>
-    private string Snapshot() => FilesSnapshot() + "\n--\n"
-        + string.Join('\n', _services.Documents.Documents.OfType<TextDocumentViewModel>().Select(d => d.FilePath + " @ " + d.Buffer.Version));
-
-    private static bool IsWrite(string call) => ((string[])["WriteAllBytes", "ReplaceFile", "OverwriteFile", "MoveFile", "DeleteFile"])
-        .Any(m => call.StartsWith(m, StringComparison.Ordinal));
-
-    /// <summary>The calls since <paramref name="from"/> that replaced <paramref name="path"/> (the atomic writer's last step).</summary>
-    private int Replacements(int from, string path) =>
-        _recording.Calls.Skip(from).Count(c => c.StartsWith("ReplaceFile ", StringComparison.Ordinal) && c.EndsWith(" -> " + path, StringComparison.Ordinal));
-
-    /// <summary>
-    /// While <paramref name="path"/> is written for the first time (thread pool), <paramref name="action"/> runs on the
-    /// UI thread; the write goes on only after it ran.
-    /// </summary>
-    private void DuringFirstWriteOf(string path, Action action)
-    {
-        var ui = SynchronizationContext.Current!;
-        var ran = 0;
-        _recording.FailWhen = call =>
-        {
-            if (!call.StartsWith("WriteAllBytesDurable " + path, StringComparison.Ordinal) || Interlocked.Exchange(ref ran, 1) != 0)
-                return false;
-            using var done = new ManualResetEventSlim();
-            ui.Post(_ =>
-            {
-                try
-                {
-                    action();
-                }
-                finally
-                {
-                    done.Set();
-                }
-            }, null);
-            done.Wait();
-            return false;
-        };
-    }
-
-    /// <summary>Opens <paramref name="gate"/> when the test ends, however it ends: the held write is let go.</summary>
-    private sealed class Releaser(ManualResetEventSlim gate) : IDisposable
-    {
-        public void Dispose() => gate.Set();
-    }
-
     [Fact(Timeout = 60000)]
     [Trait("Req", "IDE-REFAC-001")]
     [Trait("Req", "IDE-REFAC-004")]
@@ -227,6 +87,65 @@ public sealed partial class WorkspaceEditTests
         Assert.Equal(aText, a.Buffer.Text);
         b.Buffer.Undo();
         Assert.Equal(bText, b.Buffer.Text);
+    }
+
+    /// <summary>F13-003 acceptance 1: the operation over three files, one of them closed, then <c>refactor.undo</c>.</summary>
+    [Fact(Timeout = 60000)]
+    [Trait("Req", "IDE-REFAC-020")]
+    [Trait("Req", "IDE-REFAC-021")]
+    [Trait("Req", "IDE-REFAC-022")]
+    [Trait("Req", "IDE-REFAC-023")]
+    public Task ThreeFilesOneClosed_ApplyThenUndoIsByteIdentical() => TestUiThread.RunAsync(() => ThreeFilesOneClosed_ApplyThenUndoIsByteIdenticalOnUiThread());
+
+    private async Task ThreeFilesOneClosed_ApplyThenUndoIsByteIdenticalOnUiThread()
+    {
+        Assert.False(Engine.CanUndo);
+        Assert.Null(Engine.UndoTitle);
+        Assert.False(_services.Commands.CanExecute("refactor.undo"));
+        var before = await ApplyToThreeFilesAsync();
+        Assert.True(Engine.CanUndo);
+        Assert.Equal(Title, Engine.UndoTitle);
+        Assert.True(_services.Commands.CanExecute("refactor.undo"));
+        Assert.Equal("&Undo Rename Symbol", _services.Commands.Get("refactor.undo").MenuLabel);
+        Assert.NotEqual(before.CBytes, Bytes(C));
+        var changed = 0;
+        Engine.Changed += (_, _) => changed++;
+        var reread = new List<string?>();
+        _services.CodeModel.Workspace.Changed += (_, e) =>
+        {
+            if (e.Kind == FreexComp.LanguageService.WorkspaceChangeKind.FileChangedOnDisk)
+                reread.Add(e.Path);
+        };
+        var calls = _recording.Calls.Count;
+
+        await _services.Commands.ExecuteAsync("refactor.undo");
+
+        // C has the bytes it had; A is unmodified again and has nothing to redo; B has its unsaved text from before.
+        AssertRestored(before);
+        Assert.False(before.A.Buffer.CanUndo); // text, undo stack and save point as before the operation
+        before.B.Buffer.Undo();
+        Assert.Equal(Unit("B"), before.B.Buffer.Text); // B's own step from before the operation is still there
+        Assert.False(before.B.IsModified);
+        Assert.Empty(Dialogs.Requests);
+
+        // Only the closed file was written; the code model reads it again.
+        Assert.DoesNotContain(_recording.Calls.Skip(calls), c => IsWrite(c) && (c.Contains(A, StringComparison.Ordinal) || c.Contains(B, StringComparison.Ordinal)));
+        Assert.Equal(1, Replacements(calls, C));
+        Assert.DoesNotContain(_fs.AllFiles, f => f.Contains(".~tmp", StringComparison.Ordinal));
+        Assert.Equal(C, Assert.Single(reread), ignoreCase: true);
+        Assert.Equal(before.CText, _services.CodeModel.Synchronize()!.GetSyntaxTree(C).Text.Text);
+        Assert.Equal(2, _services.Documents.Documents.Count);
+
+        // The operation left the history; there is no redo.
+        Assert.False(Engine.CanUndo);
+        Assert.Null(Engine.UndoTitle);
+        Assert.False(Engine.IsBusy);
+        Assert.True(changed > 0);
+        Assert.False(_services.Commands.CanExecute("refactor.undo"));
+        Assert.Null(_services.Commands.Get("refactor.undo").MenuLabel);
+        Assert.Equal("Undid Rename Symbol in 3 files", _services.Status.Message);
+        Assert.Equal(Format(Strings.Msg_Refactoring_UndoneMany, Title, 3), _services.Status.Message);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => Engine.UndoAsync());
     }
 
     [Fact(Timeout = 60000)]
@@ -487,9 +406,11 @@ public sealed partial class WorkspaceEditTests
         Assert.Equal([Title], request.Args);
         Assert.Contains(B, Assert.Single(Log.Lines.Skip(logged), l => l.StartsWith("ERROR Refactoring: ", StringComparison.Ordinal)), StringComparison.Ordinal);
 
-        // A was edited before B failed: its undo step is undone. The written file has its bytes back.
+        // A was edited before B failed: its undo step is undone and cannot be redone. The written file has its bytes back.
         Assert.Equal(Unit("A"), a.Buffer.Text);
         Assert.False(a.IsModified);
+        Assert.False(a.Buffer.CanRedo);
+        Assert.False(Engine.CanUndo);
         Assert.Equal(Unit("B"), b.Buffer.Text);
         Assert.Equal(2, Replacements(calls, C));
         Assert.Equal(files, FilesSnapshot());
@@ -690,6 +611,7 @@ public sealed partial class WorkspaceEditTests
             _services.Status.ShowMessage("before", TimeSpan.FromSeconds(1));
             var none = await Engine.ApplyAsync(empty, PreviewMode.Never);
             Assert.Equal((RefactoringOutcome.NoChanges, 0, 0, null), (none.Outcome, none.EditCount, none.FileCount, none.Error));
+            Assert.Equal(2, HistoryCount); // an operation that changes nothing is not recorded
             Assert.Empty(none.Blocked);
             Assert.Equal("Rename Symbol: nothing to change", _services.Status.Message);
             Assert.Equal(Format(Strings.Msg_Refactoring_NoChanges, Title), _services.Status.Message);

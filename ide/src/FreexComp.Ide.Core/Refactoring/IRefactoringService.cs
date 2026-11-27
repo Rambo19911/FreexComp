@@ -19,6 +19,28 @@ public interface IRefactoringService
     /// <exception cref="InvalidOperationException">An operation is running (<see cref="IsBusy"/>).</exception>
     Task<RefactoringResult> ApplyAsync(WorkspaceEdit edit, PreviewMode preview = PreviewMode.Auto, CancellationToken ct = default);
 
-    /// <summary>The busy state changed (an operation started or ended).</summary>
+    /// <summary>
+    /// IDE-REFAC-020: an applied operation is on the history. The history is in memory, last in first out, limited in
+    /// number and size, and cleared when the project closes or another one is loaded.
+    /// </summary>
+    bool CanUndo { get; }
+
+    /// <summary>The title of the newest operation of the history (the one <see cref="UndoAsync"/> takes back); null without one.</summary>
+    string? UndoTitle { get; }
+
+    /// <summary>
+    /// IDE-REFAC-021: takes the newest operation back in every file. A file that has the text the operation gave it is
+    /// restored — a buffer in which nothing happened since by its own undo, any other buffer by one new undo step, a form
+    /// through the designer, a closed file on disk (byte for byte when nothing rewrote it); a file that already has its
+    /// earlier text is left alone; any other state of a file blocks the undo: nothing changes and the operation stays
+    /// on the history. The result: <see cref="RefactoringOutcome.Applied"/> with the number of restored files as
+    /// <see cref="RefactoringResult.FileCount"/> (edit count 0), <see cref="RefactoringOutcome.NoChanges"/> when every
+    /// file was back already, <see cref="RefactoringOutcome.Blocked"/> or <see cref="RefactoringOutcome.Failed"/>.
+    /// Messages and the status text are shown here. There is no redo.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">An operation is running (<see cref="IsBusy"/>), or nothing can be undone.</exception>
+    Task<RefactoringResult> UndoAsync();
+
+    /// <summary>The busy state or the history changed (an operation started or ended, the history was cleared).</summary>
     event EventHandler? Changed;
 }

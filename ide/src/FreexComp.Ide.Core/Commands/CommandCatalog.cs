@@ -72,6 +72,7 @@ public static class CommandCatalog
         new("edit.unfold", [Editor], 1, ["Ctrl+Shift+]"]),
         new("edit.foldAll", [Editor], 1, ["Ctrl+Shift+-"]),
         new("edit.unfoldAll", [Editor], 1, ["Ctrl+Shift+="]),
+        new("refactor.undo", [Global], 8, []),
         new("refactor.rename", [Editor], 8, ["F2"]),
         new("refactor.extractMethod", [Editor], 8, []),
         new("refactor.declareVariable", [Editor], 8, []),

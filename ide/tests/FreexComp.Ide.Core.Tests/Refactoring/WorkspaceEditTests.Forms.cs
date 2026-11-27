@@ -22,59 +22,6 @@ namespace FreexComp.Ide.Core.Tests.Refactoring;
 /// </summary>
 public sealed partial class WorkspaceEditTests
 {
-    private const string FormUnitPath = Dir + @"\MainForm.pas";
-    private const string FormPath = Dir + @"\MainForm.form";
-    private const string Z = Dir + @"\Z.pas";
-
-    private const string FormProjectFile = """
-        { "formatVersion": 1, "name": "App", "appType": "console", "mainSource": "App.pas",
-          "files": [ { "path": "App.pas" }, { "path": "A.pas" }, { "path": "B.pas" }, { "path": "C.pas" }, { "path": "D.pas" },
-                     { "path": "MainForm.pas", "form": "MainForm.form" } ] }
-        """;
-
-    private static string Form => DesignerFixture.Form;
-
-    /// <summary>The file edit that makes <paramref name="handler"/> the handler of <c>GreetButton.OnClick</c> in the form text <paramref name="baseText"/>.</summary>
-    private static FileEdit Handler(string path, string baseText, string handler)
-    {
-        const string Value = "OnClick = ";
-        var at = baseText.IndexOf(Value, StringComparison.Ordinal) + Value.Length;
-        var end = baseText.IndexOf('\n', at);
-        Assert.True(at >= Value.Length && end > at);
-        return new FileEdit(path, baseText, [new TextEdit(at, end - at, handler)]);
-    }
-
-    private static string WithHandler(string formText, string handler) =>
-        formText.Replace("OnClick = GreetButtonClick", "OnClick = " + handler, StringComparison.Ordinal);
-
-    private static string? OnClick(FormDocumentViewModel document) => DesignerFixture.Stored(document.Designer, "GreetButton", "OnClick");
-
-    /// <summary>A change made in the Design view: the form's caption, one unit on the designer's undo stack.</summary>
-    private static void SetCaption(FormDocumentViewModel document, string caption)
-    {
-        var change = new SetProperty("MainForm", "Caption", new StringValue(caption));
-        var inverse = document.Designer.Editor!.Apply([change]);
-        document.Designer.Undo.Push(new DesignerUndoUnit("Undo_Designer_Property", [change], inverse, [], SelectionSnapshot.Empty, SelectionSnapshot.Empty));
-    }
-
-    /// <summary>The form unit with its form on disk; with <paramref name="project"/> the project of <see cref="Dir"/> is open and lists them.</summary>
-    private async Task FormFilesAsync(bool project = true)
-    {
-        ((DocumentService)_services.Documents).DesignCatalog = CodeSyncTests.Catalog;
-        File(FormUnitPath, DesignerFixture.Unit);
-        File(FormPath, Form);
-        if (project)
-            await OpenProjectAsync(FormProjectFile);
-    }
-
-    private async Task<FormDocumentViewModel> OpenFormAsync(string path = FormUnitPath)
-    {
-        var document = Assert.IsType<FormDocumentViewModel>((await _services.Documents.OpenAsync(path)).Value);
-        Assert.True(document.ShowView(DocumentView.Design));
-        Assert.False(document.IsModified);
-        return document;
-    }
-
     [Fact(Timeout = 60000)]
     [Trait("Req", "IDE-REFAC-004")]
     [Trait("Req", "IDE-REFAC-006")]

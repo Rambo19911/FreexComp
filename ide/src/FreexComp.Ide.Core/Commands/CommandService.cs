@@ -136,6 +136,7 @@ public sealed class CommandService : ICommandService
             var handler = _handlers.GetValueOrDefault(commandId);
             command = new IdeCommand(this, definition, handler?.TitleOverride ?? TitleOf(definition), GestureText(commandId))
             {
+                MenuLabel = handler?.MenuLabelOverride,
                 IsChecked = handler?.IsChecked(null) ?? false,
             };
             _commands[commandId] = command;

@@ -76,6 +76,13 @@ public interface ITextBuffer
     bool CanRedo { get; }
     void Undo();
     void Redo();
+
+    /// <summary>
+    /// IDE-REFAC-025: drops the redo history. Text, <see cref="Version"/>, the undo history and the save point stay as
+    /// they are (a save point that could only be reached by a redo is lost with it); <see cref="CanRedo"/> becomes false.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">An undo group is open.</exception>
+    void ClearRedo();
     void MarkSavePoint();
     bool IsAtSavePoint { get; }
 

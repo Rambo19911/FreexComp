@@ -152,6 +152,13 @@ public sealed class StringTextBuffer : ITextBuffer
         Replay(step);
     }
 
+    public void ClearRedo()
+    {
+        if (_groupDepth > 0) throw new InvalidOperationException("Cannot clear the redo history while an undo group is open.");
+        if (_savePoint > _undo.Count) _savePoint = -1; // the save point was in the dropped redo history
+        _redo.Clear();
+    }
+
     public void MarkSavePoint()
     {
         _savePoint = _undo.Count;

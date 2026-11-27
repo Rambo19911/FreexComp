@@ -1469,6 +1469,9 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   <data name="Cmd_edit_unfoldAll" xml:space="preserve">
     <value>Unfold All</value>
   </data>
+  <data name="Cmd_refactor_undo" xml:space="preserve">
+    <value>Undo Refactoring</value>
+  </data>
   <data name="Cmd_refactor_rename" xml:space="preserve">
     <value>Rename Symbol…</value>
   </data>
@@ -2540,6 +2543,9 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   <data name="Menu_Edit_Refactor" xml:space="preserve">
     <value>R&amp;efactor</value>
   </data>
+  <data name="Menu_refactor_undo" xml:space="preserve">
+    <value>&amp;Undo Refactoring</value>
+  </data>
   <data name="Menu_refactor_rename" xml:space="preserve">
     <value>&amp;Rename Symbol…</value>
   </data>
@@ -3273,6 +3279,10 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   </data>
   <data name="Button_StopAndBuild" xml:space="preserve">
     <value>Stop and Build</value>
+    <comment>UI-DLG-024: message-box button</comment>
+  </data>
+  <data name="Button_UndoInThisFile" xml:space="preserve">
+    <value>Undo in This File</value>
     <comment>UI-DLG-024: message-box button</comment>
   </data>
   <data name="Button_RunLastBuild" xml:space="preserve">
@@ -6686,6 +6696,34 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
     <value>{0} produced changes that cannot be applied. Nothing was changed.</value>
     <comment>IDE-REFAC-002</comment>
   </data>
+  <data name="Msg_Refactoring_UndoneOne" xml:space="preserve">
+    <value>Undid {0} in 1 file</value>
+    <comment>IDE-REFAC-021</comment>
+  </data>
+  <data name="Msg_Refactoring_UndoneMany" xml:space="preserve">
+    <value>Undid {0} in {1} files</value>
+    <comment>IDE-REFAC-021</comment>
+  </data>
+  <data name="Msg_Refactoring_AlreadyUndone" xml:space="preserve">
+    <value>{0} was already undone</value>
+    <comment>IDE-REFAC-021</comment>
+  </data>
+  <data name="Msg_Refactoring_UndoBlocked" xml:space="preserve">
+    <value>{0} cannot be undone because these files were changed afterwards. Nothing was changed.
+{1}</value>
+    <comment>IDE-REFAC-021</comment>
+  </data>
+  <data name="Msg_Refactoring_UndoBlockedLocal" xml:space="preserve">
+    <value>{0} cannot be undone in every file. Nothing was changed.
+{1}</value>
+    <comment>IDE-REFAC-024</comment>
+  </data>
+  <data name="Msg_Refactoring_UndoFailed" xml:space="preserve">
+    <value>{0} cannot be undone. Nothing was changed.
+{1}
+{2}</value>
+    <comment>IDE-REFAC-021</comment>
+  </data>
   <data name="Reason_Refactoring_NotFound" xml:space="preserve">
     <value>The file does not exist.</value>
     <comment>IDE-REFAC-006</comment>
@@ -6717,5 +6755,9 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   <data name="Reason_Refactoring_More" xml:space="preserve">
     <value>… and {0} more files</value>
     <comment>IDE-REFAC-006</comment>
+  </data>
+  <data name="Undo_Refactoring" xml:space="preserve">
+    <value>Undo {0}</value>
+    <comment>IDE-REFAC-021, 022: the menu label of refactor.undo and the title of the undo step an undone operation makes</comment>
   </data>
 </root>

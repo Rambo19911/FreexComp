@@ -156,6 +156,15 @@ public sealed class AvaloniaEditTextBuffer : ITextBuffer
         });
     }
 
+    public void ClearRedo()
+    {
+        if (_groupDepth > 0)
+            throw new InvalidOperationException("Cannot clear the redo history while an undo group is open.");
+        Document.UndoStack.ClearRedoStack();
+        if (_side == SavePointSide.Below)
+            _side = SavePointSide.Lost; // only a redo could have reached the save point
+    }
+
     public void MarkSavePoint()
     {
         Document.UndoStack.MarkAsOriginalFile();
