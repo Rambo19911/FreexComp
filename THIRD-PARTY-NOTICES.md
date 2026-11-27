@@ -17,6 +17,7 @@ FreexComp uses the following third-party components. Each is used unmodified und
 | AvaloniaEdit | 12.0.0 | MIT | https://github.com/AvaloniaUI/AvaloniaEdit |
 | CommunityToolkit.Mvvm | 8.4.2 | MIT | https://github.com/CommunityToolkit/dotnet |
 | .NET runtime | 10.0 | MIT | https://github.com/dotnet/runtime |
+| Windows Desktop runtime (Windows Forms, inside the setup program) | 10.0 | MIT | https://github.com/dotnet/winforms |
 
 ## Development and test only (not shipped)
 | Component | Version | License | Source |

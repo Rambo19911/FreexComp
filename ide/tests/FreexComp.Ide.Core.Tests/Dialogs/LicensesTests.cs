@@ -55,6 +55,31 @@ public sealed class LicensesTests
         }
     }
 
+    /// <summary>
+    /// I-341: a shipped project that uses the Windows Forms library (the setup program, a self-contained single file)
+    /// carries the Windows Desktop runtime inside it; that runtime is not a package of any project, so it has its own
+    /// notice with the licence text of its repository.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "UI-DLG-161")]
+    public void DesktopRuntimeOfTheSetupProgramHasNotice()
+    {
+        var root = SpecTables.RepoRootPath();
+        var users = Directory.EnumerateFiles(root, "*.csproj", SearchOption.AllDirectories)
+            .Where(p => Path.GetRelativePath(root, p).Split(Path.DirectorySeparatorChar) is [_, "src", ..])
+            .Where(p => XDocument.Load(p).Descendants("UseWindowsForms").Any(e => e.Value.Trim().Equals("true", StringComparison.OrdinalIgnoreCase)))
+            .Select(p => Path.GetFileNameWithoutExtension(p))
+            .ToList();
+        Assert.Contains("FreexComp.Setup", users);
+
+        var notices = ThirdPartyNotices.LoadEmbedded();
+        Assert.True(notices.Any(n => n.Name == "Windows Desktop runtime"), "No notice for the Windows Desktop runtime (used by " + string.Join(", ", users) + ")");
+        var notice = notices.Single(n => n.Name == "Windows Desktop runtime");
+        Assert.Equal("MIT", notice.License);
+        Assert.Equal(notices.Single(n => n.Name == ".NET runtime").Version, notice.Version);
+        Assert.StartsWith("The MIT License (MIT)\n\nCopyright (c) .NET Foundation and Contributors\n", notice.Text.ReplaceLineEndings("\n"), StringComparison.Ordinal);
+    }
+
     /// <summary>Build-only packages in the IDE's resolved graph: not shipped, so they need no notice (lead note 2026-11-14).</summary>
     private static readonly string[] BuildOnlyPackages = ["Avalonia.BuildServices"];
 
