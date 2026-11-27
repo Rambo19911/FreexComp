@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using System.Numerics;
 using FreexComp.Compiler.Symbols;
+using FreexComp.Compiler.Syntax;
 using FreexComp.Compiler.Types;
 
 namespace FreexComp.Compiler.Binding;
@@ -17,12 +18,19 @@ internal sealed class OverloadResolver(Conversions conversions)
     public readonly record struct Resolution(RoutineSymbol? Routine, ImmutableArray<RoutineSymbol> Tied);
 
     /// <param name="isVariable">Whether an argument is an assignable variable reference (for <c>var</c>/<c>out</c> parameters).</param>
-    public Resolution Resolve(ImmutableArray<RoutineSymbol> candidates, ImmutableArray<BoundExpression> arguments, Func<BoundExpression, bool> isVariable)
+    public Resolution Resolve(ImmutableArray<RoutineSymbol> candidates, ImmutableArray<BoundExpression> arguments, Func<BoundExpression, bool> isVariable) =>
+        Resolve(candidates, _ => arguments, isVariable);
+
+    /// <summary>
+    /// As above with the arguments as each candidate sees them (LANG-273, C-388: a constructor argument bound in the candidate's
+    /// dynamic-array or open-array parameter type); null = the candidate is not applicable. All lists have one length.
+    /// </summary>
+    public Resolution Resolve(ImmutableArray<RoutineSymbol> candidates, Func<RoutineSymbol, ImmutableArray<BoundExpression>?> argumentsOf, Func<BoundExpression, bool> isVariable)
     {
         var applicable = new List<(RoutineSymbol Routine, int[] Costs, int Defaults)>();
         foreach (var candidate in candidates)
         {
-            if (Costs(candidate, arguments, isVariable) is { } costs)
+            if (argumentsOf(candidate) is { } arguments && Costs(candidate, arguments, isVariable) is { } costs)
             {
                 applicable.Add((candidate, costs, candidate.Parameters.Length - arguments.Length));
             }
@@ -60,6 +68,11 @@ internal sealed class OverloadResolver(Conversions conversions)
 
         return tied.Count == 1 ? new Resolution(tied[0].Routine, []) : new Resolution(null, [.. tied.Select(a => a.Routine)]);
     }
+
+    /// <summary>The candidates applicable to their arguments (<see cref="Resolve(ImmutableArray{RoutineSymbol}, Func{RoutineSymbol, ImmutableArray{BoundExpression}?}, Func{BoundExpression, bool})"/>), in order.</summary>
+    public ImmutableArray<RoutineSymbol> Applicable(ImmutableArray<RoutineSymbol> candidates, Func<RoutineSymbol, ImmutableArray<BoundExpression>?> argumentsOf,
+        Func<BoundExpression, bool> isVariable) =>
+        [.. candidates.Where(c => argumentsOf(c) is { } arguments && Costs(c, arguments, isVariable) is not null)];
 
     /// <summary>Per-argument costs, or null when <paramref name="candidate"/> is not applicable.</summary>
     private int[]? Costs(RoutineSymbol candidate, ImmutableArray<BoundExpression> arguments, Func<BoundExpression, bool> isVariable)
@@ -141,6 +154,11 @@ internal sealed class OverloadResolver(Conversions conversions)
         if (argument is BoundArrayConstructor && destination is OpenArrayTypeSymbol)
         {
             return conversions.Classify(source, destination).Exists ? 3 : null;    // LANG-442: array constructor → open array
+        }
+
+        if (argument is BoundArrayConstructor { Syntax: SetConstructorSyntax } && destination is DynamicArrayTypeSymbol)
+        {
+            return ReferenceEquals(source, destination) ? 3 : null;                // LANG-273 (C-388): bracket constructor → dynamic array
         }
 
         if (!ReferenceEquals(source, destination) && (source is RecordTypeSymbol || destination is RecordTypeSymbol))

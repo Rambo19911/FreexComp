@@ -627,6 +627,11 @@ internal sealed partial class ExpressionBinder
             return HelperMember(syntax, call, argumentList, typeHelper, instance: null, name, out methodCall);   // C-124: Integer.Parse
         }
 
+        if (qualifierType is DynamicArrayTypeSymbol dynamicArray && IdentifierComparer.Instance.Equals(name, "Create"))
+        {
+            return BindDynArrayCreate(argumentList is null ? syntax : call, argumentList, dynamicArray);   // LANG-271 (C-388): TInts.Create(1, 2)
+        }
+
         if (qualifierType is HelperTypeSymbol helperName && TypeMembers.MemberNestedMember(helperName, name) is { } helperNested
             && NestedValue(syntax, helperNested) is { } helperValue)
         {
@@ -1242,7 +1247,9 @@ internal sealed partial class ExpressionBinder
                 var value = BindMemberCall(member, expression, argumentList, out call);
                 if (call is null)
                 {
-                    return value!.HasErrors ? new BoundErrorStatement(statement) : MemberValueStatement(statement, expression, value, argumentList);
+                    // a D.Create(…) value (LANG-271) has consumed its argument list: E2060 like any other value
+                    return value!.HasErrors ? new BoundErrorStatement(statement)
+                        : MemberValueStatement(statement, expression, value, value is BoundArrayConstructor ? null : argumentList);
                 }
 
                 break;

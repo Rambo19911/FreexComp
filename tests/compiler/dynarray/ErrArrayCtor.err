@@ -1,0 +1,3 @@
+ErrArrayCtor.pas(23,12): error E2010: Incompatible types: 'Char' and 'Integer'
+ErrArrayCtor.pas(24,24): error E2010: Incompatible types: 'Double' and 'Integer'
+ErrArrayCtor.pas(25,5): error E2043: Ambiguous overloaded call to 'Q': the array constructor can be 'TByteSet' or 'TInts'; cast it to one of them

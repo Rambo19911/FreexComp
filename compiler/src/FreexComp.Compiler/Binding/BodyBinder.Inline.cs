@@ -79,7 +79,9 @@ internal sealed partial class BodyBinder
             return null;
         }
 
-        if (value is BoundSetConstructor or BoundArrayConstructor || ReferenceEquals(value.Type, _types.Nil)
+        // a bracket constructor has no type of its own; D.Create(…) and D([…]) are values of D (LANG-271, 272; C-388)
+        if (value is BoundSetConstructor || value is BoundArrayConstructor && ExpressionBinder.Unparenthesized(initializer) is SetConstructorSyntax
+            || ReferenceEquals(value.Type, _types.Nil)
             || ExpressionBinder.IsAnonymousMethod(initializer))
         {
             _diagnostics.Report(at, "E2075", name);

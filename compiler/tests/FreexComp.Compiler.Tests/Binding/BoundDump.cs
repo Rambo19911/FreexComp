@@ -36,6 +36,7 @@ internal static class BoundDump
         BoundWithStatement w => $"(with {w.Variable.Name}:{w.Variable.Type.Name} {Of(w.Value)} {Of(w.Body)})",
         BoundErrorExpression => "<error>",
         BoundBlock block => List("block", block.Statements),
+        BoundLocalsStatement l => $"(locals {string.Join(" ", l.Locals.Select(v => $"{v.Name}:{v.Type.Name}"))} {Of(l.Body)})",
         BoundAssignmentStatement a => $"(:= {Of(a.Target)} {Of(a.Value)})",
         BoundExpressionStatement e => $"(expr {Of(e.Expression)})",
         BoundCallStatement c => List($"call {c.Routine.Name}", c.Arguments),

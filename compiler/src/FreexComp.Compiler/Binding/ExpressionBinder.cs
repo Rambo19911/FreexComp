@@ -476,13 +476,38 @@ internal sealed partial class ExpressionBinder
     /// LANG-259 / LANG-280 rule 12 (C-067): <c>[e1, …]</c> in a dynamic-array context; every element is bound in the context of
     /// the element type (so nested constructors work) and converted to it. A range element keeps the set meaning (E2010 later).
     /// </summary>
-    private BoundExpression BindArrayConstructor(SetConstructorSyntax syntax, TypeSymbol array, TypeSymbol elementType)
+    private BoundExpression BindArrayConstructor(SetConstructorSyntax syntax, TypeSymbol array, TypeSymbol elementType) =>
+        BindArrayElements(syntax, [.. syntax.Elements.Select(e => e.Expression)], array, elementType);
+
+    /// <summary>
+    /// LANG-271 (C-388): <c>D.Create(e1, …)</c> of a named dynamic-array type — the value <c>[e1, …]</c> of type <paramref name="array"/>,
+    /// every argument bound and converted like a constructor element (no argument list or <c>()</c>: <c>nil</c> of that type).
+    /// </summary>
+    private BoundExpression BindDynArrayCreate(SyntaxNode syntax, ArgumentListSyntax? argumentList, DynamicArrayTypeSymbol array)
     {
-        var elements = ImmutableArray.CreateBuilder<BoundExpression>(syntax.Elements.Count);
-        foreach (var element in syntax.Elements)
+        var arguments = argumentList?.Arguments ?? default;
+        var expressions = ImmutableArray.CreateBuilder<ExpressionSyntax>(arguments.Count);
+        for (var i = 0; i < arguments.Count; i++)
         {
-            var value = BindExpression(element.Expression, elementType);
-            elements.Add(value.HasErrors ? value : ConvertForAssignment(value, elementType, element.Expression));
+            if (arguments[i].WidthColonToken is { } colon)
+            {
+                _diagnostics.Report(colon, "E2915");
+                return Error(syntax);
+            }
+
+            expressions.Add(arguments[i].Expression);
+        }
+
+        return BindArrayElements(syntax, expressions.MoveToImmutable(), array, array.ElementType);
+    }
+
+    private BoundExpression BindArrayElements(SyntaxNode syntax, ImmutableArray<ExpressionSyntax> syntaxes, TypeSymbol array, TypeSymbol elementType)
+    {
+        var elements = ImmutableArray.CreateBuilder<BoundExpression>(syntaxes.Length);
+        foreach (var element in syntaxes)
+        {
+            var value = BindExpression(element, elementType);
+            elements.Add(value.HasErrors ? value : ConvertForAssignment(value, elementType, element));
         }
 
         var built = elements.MoveToImmutable();
@@ -512,7 +537,7 @@ internal sealed partial class ExpressionBinder
         return built.Any(e => e.HasErrors) ? Error(syntax, [.. built]) : new BoundArrayConstructor(syntax, built, array);
     }
 
-    private static ExpressionSyntax Unparenthesized(ExpressionSyntax syntax)
+    internal static ExpressionSyntax Unparenthesized(ExpressionSyntax syntax)
     {
         while (syntax is ParenthesizedExpressionSyntax parenthesized)
         {
@@ -1178,7 +1203,9 @@ internal sealed partial class ExpressionBinder
                 {
                     // o.M(x), TFoo.Create(x) (CMP-367); r.F(x) through a procedural field (LANG-484)
                     var value = BindMemberCall(member, invocation, invocation.ArgumentList, out var call);
-                    return call is { } method ? MethodCallExpression(invocation, method) : CallThrough(invocation, value!);
+                    return call is { } method ? MethodCallExpression(invocation, method)
+                        : value is BoundArrayConstructor ? value                            // LANG-271 (C-388): D.Create(…) is a value
+                        : CallThrough(invocation, value!);
                 }
 
                 case InheritedExpressionSyntax inherited:
@@ -1248,6 +1275,20 @@ internal sealed partial class ExpressionBinder
         {
             _diagnostics.Report(colon, "E2915");
             return Error(invocation);
+        }
+
+        // LANG-272 (C-388): D([…]) builds the constructor in D's context (as D.Create(…)), S([…]) the set constructor of S
+        if (Unparenthesized(arguments[0].Expression) is SetConstructorSyntax constructor && target.TypeKind != TypeKind.Error)
+        {
+            switch (target)
+            {
+                case DynamicArrayTypeSymbol array when constructor.Elements.All(e => e.UpperBound is null):
+                    return BindArrayConstructor(constructor, array, array.ElementType);
+                // a constructor that does not fit S element-wise keeps the former value cast (same size only), so no cast changes meaning
+                case SetTypeSymbol { ElementType: not null } set when ProbeBinder(new DiagnosticBag()) is var probe
+                                                                    && !probe.BindSetConstructor(constructor, set).HasErrors && probe._diagnostics.Count == 0:
+                    return BindSetConstructor(constructor, set);
+            }
         }
 
         // the operand of a cast to a non-procedural type is a value (LANG-482); Pointer(p) / NativeInt(p) cast the procedural value itself
@@ -2038,6 +2079,7 @@ internal sealed partial class ExpressionBinder
         var syntaxes = argumentList?.Arguments ?? default;
         var builder = ImmutableArray.CreateBuilder<BoundExpression>(syntaxes.Count);
         var hasErrors = false;
+        List<ConstructorForms>? forms = null;                                    // LANG-273 (C-388)
         for (var i = 0; i < syntaxes.Count; i++)
         {
             var argument = syntaxes[i];
@@ -2062,6 +2104,13 @@ internal sealed partial class ExpressionBinder
             expected ??= InterfaceNamedBy(argument.Expression) is null ? null
                 : candidates.Where(c => i < c.Parameters.Length && !c.Parameters[i].IsByReference && GuidValues.IsGuidType(c.Parameters[i].Type))
                     .Select(c => c.Parameters[i].Type).FirstOrDefault();
+            if (ConstructorFormsAt(candidates, i, argument.Expression, expected) is { } constructorForms)
+            {
+                (forms ??= []).Add(constructorForms);
+                builder.Add(constructorForms.Placeholder);
+                continue;
+            }
+
             var bound = untyped ? BindDereference((DereferenceExpressionSyntax)Unparenthesized(argument.Expression), untyped: true)
                 : byReference ? BindVariable(argument.Expression) : BindExpression(argument.Expression, expected);
             hasErrors |= bound.HasErrors;
@@ -2077,7 +2126,14 @@ internal sealed partial class ExpressionBinder
         var routine = candidates[0];
         if (candidates.Length > 1)
         {
-            var resolution = new OverloadResolver(_conversions).Resolve(candidates, arguments, IsVariableArgument);
+            var resolver = new OverloadResolver(_conversions);
+            Func<RoutineSymbol, ImmutableArray<BoundExpression>?> argumentsOf = forms is null ? _ => arguments : c => ArgumentsFor(c, arguments, forms);
+            if (forms is not null && SetOrArrayAmbiguity(resolver.Applicable(candidates, argumentsOf, IsVariableArgument), forms, syntaxes, candidates[0].Name))
+            {
+                return (null, arguments);
+            }
+
+            var resolution = resolver.Resolve(candidates, argumentsOf, IsVariableArgument);
             if (resolution.Routine is null)
             {
                 if (resolution.Tied.IsEmpty)
@@ -2093,10 +2149,108 @@ internal sealed partial class ExpressionBinder
             }
 
             routine = resolution.Routine;
+            if (forms is not null)
+            {
+                // the probes only decided the candidate: the chosen form is bound once for real (captures, address-taken variables)
+                var final = arguments.ToBuilder();
+                foreach (var form in forms)
+                {
+                    final[form.Index] = BindExpression(syntaxes[form.Index].Expression, FormType(routine, form.Index) ?? form.Expected);
+                }
+
+                arguments = final.ToImmutable();
+            }
         }
 
         CheckHintDirectives(routine, call);                                     // LANG-472 (C-127)
         return CheckArguments(call, routine, syntaxes, arguments);
+    }
+
+    /// <summary>
+    /// LANG-273 (C-388): a bracket constructor argument at <see cref="Index"/> of an overloaded call where a candidate has a value or
+    /// <c>const</c> dynamic-array parameter: its binding in the usual context (<see cref="Default"/>, null when that fails) and in
+    /// each dynamic-array or open-array parameter type of a candidate there (<see cref="ByType"/>, null when the elements do not fit).
+    /// </summary>
+    private sealed record ConstructorForms(int Index, TypeSymbol? Expected, BoundExpression? Default, Dictionary<TypeSymbol, BoundExpression?> ByType)
+    {
+        /// <summary>The argument kept in the list until a candidate is chosen (a form that bound, so the call is not reported early).</summary>
+        public BoundExpression Placeholder => Default ?? ByType.Values.First(v => v is not null)!;
+    }
+
+    /// <summary>
+    /// The <see cref="ConstructorForms"/> of argument <paramref name="index"/>, probed on scratch binders; null when the argument is no
+    /// constructor (or holds an anonymous method, which is bound once), no candidate has a dynamic-array parameter there, or no form
+    /// binds (the argument is then bound as usual and reports its errors).
+    /// </summary>
+    private ConstructorForms? ConstructorFormsAt(ImmutableArray<RoutineSymbol> candidates, int index, ExpressionSyntax syntax, TypeSymbol? expected)
+    {
+        if (candidates.Length < 2 || Unparenthesized(syntax) is not SetConstructorSyntax constructor || constructor.Elements.Any(e => e.UpperBound is not null)
+            || constructor.DescendantNodes().OfType<AnonymousMethodExpressionSyntax>().Any()
+            || !candidates.Any(c => FormType(c, index) is DynamicArrayTypeSymbol))
+        {
+            return null;
+        }
+
+        BoundExpression? Probe(TypeSymbol? type)
+        {
+            var probe = new DiagnosticBag();
+            var bound = ProbeBinder(probe).BindExpression(syntax, type);
+            return bound.HasErrors || probe.Count != 0 ? null : bound;
+        }
+
+        var byType = new Dictionary<TypeSymbol, BoundExpression?>(ReferenceEqualityComparer.Instance);
+        foreach (var type in candidates.Select(c => FormType(c, index)).OfType<TypeSymbol>().Distinct())
+        {
+            byType[type] = Probe(type);
+        }
+
+        var forms = new ConstructorForms(index, expected, Probe(expected), byType);
+        return forms.Default is null && byType.Values.All(v => v is null) ? null : forms;
+    }
+
+    /// <summary>The value/<c>const</c> dynamic-array or open-array parameter type of <paramref name="candidate"/> at <paramref name="index"/>, else null.</summary>
+    private static TypeSymbol? FormType(RoutineSymbol candidate, int index) =>
+        index < candidate.Parameters.Length && candidate.Parameters[index] is { IsByReference: false, Type: DynamicArrayTypeSymbol or OpenArrayTypeSymbol } parameter
+            ? parameter.Type
+            : null;
+
+    /// <summary>The arguments as <paramref name="candidate"/> sees them: each constructor in its parameter's form; null = not applicable.</summary>
+    private static ImmutableArray<BoundExpression>? ArgumentsFor(RoutineSymbol candidate, ImmutableArray<BoundExpression> arguments, List<ConstructorForms> forms)
+    {
+        var builder = arguments.ToBuilder();
+        foreach (var form in forms)
+        {
+            if ((FormType(candidate, form.Index) is { } type ? form.ByType[type] : form.Default) is not { } value)
+            {
+                return null;
+            }
+
+            builder[form.Index] = value;
+        }
+
+        return builder.ToImmutable();
+    }
+
+    /// <summary>
+    /// LANG-273 (C-388): E2043 when the applicable candidates take one constructor argument both as a set and as a dynamic array
+    /// (whatever the costs); true after reporting. The two types are named in candidate order.
+    /// </summary>
+    private bool SetOrArrayAmbiguity(ImmutableArray<RoutineSymbol> applicable, List<ConstructorForms> forms, SeparatedSyntaxList<ArgumentSyntax> syntaxes, string name)
+    {
+        foreach (var form in forms)
+        {
+            var kinds = applicable.Where(c => form.Index < c.Parameters.Length && !c.Parameters[form.Index].IsByReference
+                                              && c.Parameters[form.Index].Type is SetTypeSymbol or DynamicArrayTypeSymbol)
+                .Select(c => c.Parameters[form.Index].Type).ToList();
+            if (kinds.FirstOrDefault(t => t is SetTypeSymbol) is { } set && kinds.FirstOrDefault(t => t is DynamicArrayTypeSymbol) is { } array)
+            {
+                var (first, second) = kinds.IndexOf(set) < kinds.IndexOf(array) ? (set, array) : (array, set);
+                _diagnostics.Report(syntaxes[form.Index].Expression, "E2043", name, first.Name, second.Name);
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>
