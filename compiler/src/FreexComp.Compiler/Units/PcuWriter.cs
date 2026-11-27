@@ -418,6 +418,10 @@ internal sealed class PcuWriter(PcuContext context)
                     else
                     {
                         entry["value"] = Value(constant.Value, constant.Type);
+                        if (constant.IsTypeQueryDependent)
+                        {
+                            entry["typeQuery"] = true;                          // LANG-977 (C-417): written only when set
+                        }
                     }
 
                     return entry;
@@ -716,14 +720,7 @@ internal sealed class PcuWriter(PcuContext context)
                     ["name"] = t.Name,
                     ["type"] = TypeId(t),
                     ["visibility"] = VisibilityName(t.NestedVisibility),
-                }), .. constants.Select(c => (JsonNode?)new JsonObject
-                {
-                    ["name"] = c.Name,
-                    ["type"] = TypeId(c.Type),
-                    ["const"] = true,
-                    ["value"] = Value(c.Value, c.Type),
-                    ["visibility"] = VisibilityName(c.Visibility),
-                }), .. TypeMembers.NestedAliases(type).Select(a => (JsonNode?)new JsonObject
+                }), .. constants.Select(c => (JsonNode?)NestedConstant(c)), .. TypeMembers.NestedAliases(type).Select(a => (JsonNode?)new JsonObject
                 {
                     ["name"] = a.Name,
                     ["type"] = TypeId(a.Target),
@@ -739,6 +736,25 @@ internal sealed class PcuWriter(PcuContext context)
             }
 
             return id;
+        }
+
+        /// <summary>C-361: a nested true constant of a class or record; LANG-977 (C-417): <c>typeQuery</c> only when it is set.</summary>
+        private JsonObject NestedConstant(ConstantSymbol constant)
+        {
+            var item = new JsonObject
+            {
+                ["name"] = constant.Name,
+                ["type"] = TypeId(constant.Type),
+                ["const"] = true,
+                ["value"] = Value(constant.Value, constant.Type),
+                ["visibility"] = VisibilityName(constant.Visibility),
+            };
+            if (constant.IsTypeQueryDependent)
+            {
+                item["typeQuery"] = true;
+            }
+
+            return item;
         }
 
         private void Describe(JsonObject entry, TypeSymbol type)

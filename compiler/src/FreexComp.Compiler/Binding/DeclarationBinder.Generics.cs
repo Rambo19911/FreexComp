@@ -428,6 +428,9 @@ internal sealed partial class DeclarationBinder
     [ThreadStatic]
     private static bool t_open;
 
+    /// <summary>C-417 (LANG-976): this thread binds an open instance or its method bodies — nothing is pruned there.</summary>
+    internal static bool IsOpenBinding => t_open;
+
     /// <summary>
     /// C-355: while the result is not disposed, this thread binds an open instance or its method bodies: the instances it makes go to
     /// <see cref="GenericTypeSymbol.OpenInstances"/> (generic method instances to <see cref="GenericMethodSymbol.OpenInstances"/>, C-358), no unit

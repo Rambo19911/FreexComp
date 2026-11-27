@@ -30,6 +30,13 @@ public sealed class ConstantSymbol : Symbol
     public bool IsTyped { get; }
 
     /// <summary>
+    /// LANG-977 (C-417): the declared value of this true constant is type-query dependent — its expression contains a type query
+    /// (<c>IsManagedType</c>, <c>HasWeakRef</c>, <c>GetTypeKind</c>, <c>IsConstValue</c>) or names a constant that is. A condition that
+    /// names it is a type-query condition.
+    /// </summary>
+    internal bool IsTypeQueryDependent { get; init; }
+
+    /// <summary>
     /// A typed constant's static storage (LANG-344): a read-only global variable with the same name, type and value that
     /// references to the constant bind to. Null for true constants.
     /// </summary>

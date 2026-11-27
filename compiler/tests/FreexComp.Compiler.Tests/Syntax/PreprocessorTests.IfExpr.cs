@@ -83,6 +83,43 @@ public sealed partial class PreprocessorTests
             Lexer.GetDiagnostics(SourceText.From(Path, "{$IF Limit} a {$ENDIF}"), BinderOptions([])).Single().Message);
     }
 
+    /// <summary>
+    /// C-417 (lead decision 2026-11-27): a directive condition is folded by the constant folder, so the type queries of
+    /// intrinsics.md LANG-972 are constants there too — of the types declared before the directive; a type declared later is the
+    /// undeclared identifier of every directive condition (E1203, the branch is inactive).
+    /// </summary>
+    [Theory]
+    [Trait("Phase", "8")]
+    [Trait("Req", "LANG-862")]
+    [Trait("Req", "LANG-976")]
+    [InlineData("", "IsManagedType(string)", "a", "")]
+    [InlineData("", "IsManagedType(Integer)", "b", "")]
+    [InlineData("", "not IsManagedType(Integer) and (SizeOf(Integer) = 4)", "a", "")]
+    [InlineData("", "HasWeakRef(string)", "b", "")]
+    [InlineData("", "IsConstValue(1 + 2)", "a", "")]
+    [InlineData("type TRec = record S: string; end;", "IsManagedType(TRec)", "a", "")]
+    [InlineData("type TKind = (kA, kB);", "GetTypeKind(TKind) = tkEnumeration", "a", "")]
+    [InlineData("", "GetTypeKind(Int64) in [tkInteger, tkInt64]", "a", "")]
+    [InlineData("const Wide = GetTypeKind(Int64) = tkInt64;", "Wide", "a", "")]
+    [InlineData("", "IsManagedType(TLater)", "b", "E1203(2,21)")]
+    [InlineData("", "GetTypeKind(TLater) = tkUString", "b", "E1203(2,19)")]
+    [InlineData("var V: Integer;", "IsManagedType(V)", "b", "E2002(2,36)")]
+    public void IfExpr_TypeQueryInIfDirective(string before, string condition, string branch, string diagnostic)
+    {
+        var text = $"program T;\n{before} {{$IF {condition}}} var a: Integer; {{$ELSE}} var b: Integer; {{$ENDIF}}\ntype TLater = string;\nbegin\nend.";
+        var fs = new InMemoryFileSystem().Add(Path, text).AddSystem();
+        var options = new CompilationOptions { MainFile = Path, RtlDirectory = @"C:\rtl", ObjectDirectory = @"C:\p\obj" };
+        var compilation = Compilation.Create(options, [], fs);
+
+        var tokens = compilation.GetSemanticModel(Path).SyntaxTree.Root.DescendantTokens().Select(t => t.Text).ToList();
+        Assert.Contains(branch, tokens);
+        Assert.DoesNotContain(branch == "a" ? "b" : "a", tokens);
+        Assert.Equal(
+            diagnostic.Length == 0 ? [] : [diagnostic],
+            compilation.GetDiagnostics(ct: TestContext.Current.CancellationToken).Where(d => d.Severity == DiagnosticSeverity.Error)
+                .Select(d => $"{d.Code}({d.Location.LineSpan.Start.Line + 1},{d.Location.LineSpan.Start.Column + 1})"));
+    }
+
     [Theory]
     [Trait("Req", "LANG-862")]
     [InlineData("{$IF 1} a {$ENDIF} b", "E2061(1,6)")]

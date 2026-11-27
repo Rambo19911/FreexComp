@@ -40,6 +40,23 @@ internal sealed class ConstantFolder
         init => _generic = value;
     }
 
+    /// <summary>
+    /// LANG-977 (C-417): counts the type queries and the type-query dependent constants folded so far; an expression folded to a
+    /// constant between two readings that differ is type-query dependent.
+    /// </summary>
+    internal int TypeQueryUses { get; private set; }
+
+    /// <summary>The value of the true constant <paramref name="constant"/> named in a constant expression (counted for LANG-977).</summary>
+    private ConstantValue? ValueOf(ConstantSymbol constant)
+    {
+        if (constant.IsTypeQueryDependent)
+        {
+            TypeQueryUses++;
+        }
+
+        return constant.Value;
+    }
+
     private readonly NestedNames.GenericSegment? _generic;
     private readonly Dictionary<GenericNameSyntax, TypeSymbol> _segments = new(ReferenceEqualityComparer.Instance);
 
@@ -104,7 +121,7 @@ internal sealed class ConstantFolder
 
                 return nested switch                                            // LANG-770 (C-122): TOuter.Limit
                 {
-                    ConstantSymbol { IsTyped: false } constant => constant.Value,
+                    ConstantSymbol { IsTyped: false } constant => ValueOf(constant),
                     EnumMemberSymbol element => element.Value,
                     _ => NotConstant(memberAccess),
                 };
@@ -163,7 +180,7 @@ internal sealed class ConstantFolder
             case null:
                 return null;
             case ConstantSymbol { IsTyped: false } constant:
-                return NestedNames.ReportInaccessibleNestedValue(_scope, name, constant, _diagnostics) ? null : constant.Value;   // LANG-774 (C-361): inherited
+                return NestedNames.ReportInaccessibleNestedValue(_scope, name, constant, _diagnostics) ? null : ValueOf(constant);   // LANG-774 (C-361): inherited
             case EnumMemberSymbol member:
                 return NestedNames.ReportInaccessibleNestedValue(_scope, name, member, _diagnostics) ? null : member.Value;     // LANG-774 (C-363): inherited
             case TypeSymbol type:
@@ -875,6 +892,7 @@ internal sealed class ConstantFolder
     /// </summary>
     private ConstantValue? FoldTypeQueryCall(InvocationExpressionSyntax invocation, IntrinsicSymbol intrinsic, ExpressionSyntax argument)
     {
+        TypeQueryUses++;                                                        // LANG-977 (C-417)
         var type = TypeOperand(argument, out var failed);
         if (failed)
         {

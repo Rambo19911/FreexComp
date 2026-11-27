@@ -238,4 +238,75 @@ public sealed partial class PcuTests
         Assert.Contains("call void @\"U.TRegistry<Byte>.TEntry.$cctor\"()", ir, StringComparison.Ordinal);
         PcuImportTests.AssertSameIrAgainstPcu(Unit, Program);
     }
+
+    /// <summary>
+    /// C-417 (LANG-977 definition ii): a true constant whose declared value depends on a type query keeps that property through the
+    /// <c>.pcu</c> — a unit-level constant and a constant nested in a class — so a condition naming it prunes in a program against
+    /// the <c>.pcu</c> exactly as against the source: the same IR, and no E2710 for the statement a generic instance does not take.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "LANG-977")]
+    [Trait("Req", "CMP-1475")]
+    public void TypeQueryConstantFromPcu_PrunesAsAgainstTheSource()
+    {
+        const string Unit = """
+            unit U;
+            interface
+            const
+              WideInt = GetTypeKind(Int64) = tkInt64;
+              Plain = SizeOf(Int64) = 8;
+            type
+              THolder = class
+              public
+                const Managed = IsManagedType(string);
+              end;
+              TBox<T> = class
+                class function Pick(const V: T): Integer;
+              end;
+            implementation
+            class function TBox<T>.Pick(const V: T): Integer;
+            begin
+              if WideInt then
+                Result := 1
+              else
+                Result := Integer(V);
+            end;
+            end.
+            """;
+        const string Program = """
+            program P;
+            uses U;
+            type
+              TLocal<T> = class
+                class function Size(const V: T): Integer;
+              end;
+            class function TLocal<T>.Size(const V: T): Integer;
+            begin
+              if WideInt then
+                Result := 8
+              else
+                Result := Integer(V);
+              if THolder.Managed then
+                Result := Result + 1
+              else
+                Result := Result + Integer(V);
+            end;
+            begin
+              Writeln(TLocal<string>.Size('a'), TBox<string>.Pick('b'));
+              if U.WideInt then
+                Writeln('wide')
+              else
+                Writeln('narrow');
+              if Plain then
+                Writeln('plain');
+            end.
+            """;
+
+        PcuImportTests.AssertSameIrAgainstPcu(Unit, Program);
+
+        var pcu = Pcus(Files(u: Unit, program: Program))["U"];
+        Assert.Contains("\"name\":\"WideInt\"", pcu, StringComparison.Ordinal);
+        Assert.Equal(2, System.Text.RegularExpressions.Regex.Matches(pcu, "\"typeQuery\":true").Count);      // WideInt and THolder.Managed, not Plain
+    }
 }

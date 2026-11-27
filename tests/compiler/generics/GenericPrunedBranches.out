@@ -1,0 +1,38 @@
+Integer:
+  raw move of 4 bytes
+  integer, the next one is 42
+  twice the number is 82
+  numbers checked
+  raw, small
+  not boxed
+  scratch 12 6
+  scratch done
+  measure 4
+string:
+  managed copy
+  string of length 6
+  numbers checked
+  managed
+  not boxed
+  measure 106
+  pruned
+TNamed:
+  managed copy
+  something else of 16 bytes
+  numbers checked
+  managed
+  not boxed
+  measure 16
+  7 seven
+TThing:
+  raw move of 8 bytes
+  object of class TThing
+  numbers checked
+  raw, a reference to a TThing
+  boxed TThing
+  measure 8
+  TRUE
+TNamed is managed
+constant and query
+TNamed is a record
+I is a variable

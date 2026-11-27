@@ -241,13 +241,16 @@ internal sealed partial class DeclarationBinder
             }
             else
             {
+                var queries = _folder.TypeQueryUses;
                 var value = declaration.Value is ExpressionSyntax expression ? _folder.Fold(expression) : NotConstant(declaration.Value);
                 if (isResourceString && value != null)
                 {
                     value = AsResourceString(value, declaration.Value);
                 }
 
-                symbol = Constant(identifier, value?.Type ?? _types.Error, value, isTyped: false, visibility);
+                // LANG-977 (C-417): a constant whose value came from a type query makes the conditions that name it type-query conditions
+                symbol = Constant(identifier, value?.Type ?? _types.Error, value, isTyped: false, visibility,
+                    typeQuery: value is not null && _folder.TypeQueryUses != queries);
             }
 
             symbol.Hints = BindHints(declaration.HintDirectives);                                 // LANG-472 (C-232)
@@ -2190,8 +2193,9 @@ internal sealed partial class DeclarationBinder
         return null;
     }
 
-    private ConstantSymbol Constant(SyntaxToken identifier, TypeSymbol type, ConstantValue? value, bool isTyped, Visibility visibility) =>
-        new(NameOf(identifier), type, value, isTyped, _container, [DiagnosticBag.LocationOf(identifier)], visibility);
+    private ConstantSymbol Constant(SyntaxToken identifier, TypeSymbol type, ConstantValue? value, bool isTyped, Visibility visibility,
+        bool typeQuery = false) =>
+        new(NameOf(identifier), type, value, isTyped, _container, [DiagnosticBag.LocationOf(identifier)], visibility) { IsTypeQueryDependent = typeQuery };
 
     /// <summary>Adds the symbol to the scope; E2004 when the scope already declares the name (LANG-402, LANG-518).</summary>
     private void Declare(SyntaxToken identifier, Symbol symbol, ImmutableArray<Symbol>.Builder declared)

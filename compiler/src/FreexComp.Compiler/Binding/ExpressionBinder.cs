@@ -32,6 +32,12 @@ internal sealed partial class ExpressionBinder
         _folder = new ConstantFolder(types, scope, diagnostics);
     }
 
+    /// <summary>
+    /// LANG-977 (C-417): counts the type queries and the type-query dependent constants bound so far; a constant expression bound
+    /// between two readings that differ is type-query dependent (its syntax contains a type query or names such a constant).
+    /// </summary>
+    internal int TypeQueryUses { get; private set; }
+
     /// <summary>Binds with <paramref name="scope"/> (a block scope inside the current one, LANG-821's handler variable) as the scope.</summary>
     public T InScope<T>(Scope scope, Func<T> bind)
     {
@@ -735,6 +741,7 @@ internal sealed partial class ExpressionBinder
             case ConstantSymbol constant when NestedNames.ReportInaccessibleNestedValue(_scope, name, constant, _diagnostics):
                 return Error(name);                                                 // LANG-774 (C-361): an inherited nested constant
             case ConstantSymbol { IsTyped: false, Value: { } value } constant:
+                TypeQueryUses += constant.IsTypeQueryDependent ? 1 : 0;         // LANG-977 (C-417)
                 return new BoundConstantExpression(name, constant, value);
             case ConstantSymbol { IsTyped: true, Storage: { } storage }:
                 return new BoundVariableExpression(name, storage);             // LANG-344: a read-only variable
@@ -1983,6 +1990,7 @@ internal sealed partial class ExpressionBinder
     /// </summary>
     private BoundExpression BindTypeQuery(InvocationExpressionSyntax invocation, IntrinsicSymbol intrinsic, ExpressionSyntax syntax)
     {
+        TypeQueryUses++;                                                        // LANG-977 (C-417)
         var captured = CapturedVariables.Count;
         var (type, argument) = BindUnevaluated(syntax, out _);
         CapturedVariables.RemoveRange(captured, CapturedVariables.Count - captured);

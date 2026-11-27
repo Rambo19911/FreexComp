@@ -103,4 +103,62 @@ public sealed class DiagnosticServiceTests
         Assert.NotEmpty(syntax);
         Assert.Empty(semantic.Intersect(syntax));
     }
+
+    /// <summary>
+    /// CMP-1476 (LANG-977 rule 3): for a file whose generic instances prune statements the language service reports exactly what the
+    /// <c>--check</c> stage reports — nothing for a pruned statement (no E2710, no hint for a name only it uses), the error of a kept
+    /// one once, and the error of a statement behind a plain constant condition.
+    /// </summary>
+    [Theory]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1476")]
+    [InlineData("Result := Length(string(V))", "if GetTypeKind(T) = tkInteger then", "")]
+    [InlineData("Result := V + 1", "if GetTypeKind(T) = tkInteger then", "(16,17): error E2710: In instantiation 'TOps<string>': ")]
+    [InlineData("Result := 0", "if SizeOf(T) = 4 then", "(13,15): error E2710: In instantiation 'TOps<string>': ")]
+    public void TypeQueryPruning_SameAsCompiler(string otherwise, string condition, string expected)
+    {
+        var text = $$"""
+            program P;
+            type
+              TOps<T> = class
+                class function Bump(const V: T): Integer;
+              end;
+            class function TOps<T>.Bump(const V: T): Integer;
+            var
+              Extra: Integer;
+            begin
+              {{condition}}
+              begin
+                Extra := 1;
+                Result := Integer(V) + Extra;
+              end
+              else
+                {{otherwise}};
+            end;
+            begin
+              Writeln(TOps<Integer>.Bump(1), TOps<string>.Bump('ab'));
+            end.
+            """.ReplaceLineEndings("\n");
+        var fs = TestFiles.Files(("P.pas", text));
+        var ct = TestContext.Current.CancellationToken;
+
+        var cli = Compilation.Create(TestFiles.Options(), [], fs).Emit(new EmitOptions { Stage = EmitStage.Check }, ct).Diagnostics
+            .Where(d => string.Equals(d.Location.Path, TestFiles.PathOf("P.pas"), StringComparison.OrdinalIgnoreCase)).Select(Key).ToList();
+        var workspace = new Workspace(fs);
+        workspace.SetProject(TestFiles.Options());
+        var document = workspace.GetDocument(TestFiles.PathOf("P.pas"));
+        var service = DiagnosticService.GetSyntaxDiagnostics(document).Concat(DiagnosticService.GetSemanticDiagnostics(document, ct))
+            .Where(d => d.Code != "H2004").Select(Key).ToList();
+
+        if (expected.Length == 0)
+        {
+            Assert.Empty(cli);
+        }
+        else
+        {
+            Assert.StartsWith(TestFiles.PathOf("P.pas") + expected, Assert.Single(cli), StringComparison.Ordinal);
+        }
+
+        Assert.Equal(cli, service);
+    }
 }

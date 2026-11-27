@@ -8,7 +8,7 @@ namespace FreexComp.Compiler.Tests.Binding;
 /// <c>(cast Type operand)</c>, a variable typecast as <c>(vcast Type variable)</c>, an operator as <c>(Kind:Type operands…)</c>. Statements: <c>(block …)</c>,
 /// <c>(:= target value)</c>, <c>(if c then [else])</c>, <c>(while c body)</c>, <c>(repeat block c)</c>,
 /// <c>(for v to|downto start finish body)</c>, <c>(case selector (arm [labels] body)… [(else block)])</c>,
-/// <c>(break)</c>, <c>(continue)</c>, <c>(exit [value])</c>, <c>(halt [code])</c>; intrinsics <c>(Name:Type args…)</c> /
+/// <c>(pruned condition [[labels of every arm]] [kept] [(checked statements…)])</c> for a type-query condition (LANG-977), <c>(break)</c>, <c>(continue)</c>, <c>(exit [value])</c>, <c>(halt [code])</c>; intrinsics <c>(Name:Type args…)</c> /
 /// <c>(Name args…)</c>; calls <c>(call F:Type args…)</c> in
 /// expressions, <c>(call P args…)</c> as statements; parameters print like variables.
 /// </summary>
@@ -47,6 +47,7 @@ internal static class BoundDump
         BoundRepeatStatement r => $"(repeat {Of(r.Body)} {Of(r.Condition)})",
         BoundForStatement f => $"(for {Of(f.Variable)} {(f.IsDownTo ? "downto" : "to")} {Of(f.Start)} {Of(f.Finish)} {Of(f.Body)})",
         BoundCaseStatement c => Case(c),
+        BoundPrunedStatement p => Pruned(p),
         BoundBreakStatement => "(break)",
         BoundContinueStatement => "(continue)",
         BoundExitStatement x => x.Value is null ? "(exit)" : $"(exit {Of(x.Value)})",
@@ -65,6 +66,27 @@ internal static class BoundDump
         foreach (var a in w.Arguments)
         {
             parts.Add(a.Width is null ? Of(a.Value) : a.Decimals is null ? $"(: {Of(a.Value)} {Of(a.Width)})" : $"(: {Of(a.Value)} {Of(a.Width)} {Of(a.Decimals)})");
+        }
+
+        return "(" + string.Join(" ", parts) + ")";
+    }
+
+    private static string Pruned(BoundPrunedStatement p)
+    {
+        var parts = new List<string> { "pruned", Of(p.Condition) };
+        if (!p.Labels.IsEmpty)
+        {
+            parts.Add("[" + string.Join(", ", p.Labels.Select(l => l.High is null ? Value(l.Low) : $"{Value(l.Low)}..{Value(l.High)}")) + "]");
+        }
+
+        if (p.Kept is { } kept)
+        {
+            parts.Add(Of(kept));
+        }
+
+        if (!p.Checked.IsEmpty)
+        {
+            parts.Add(List("checked", p.Checked));
         }
 
         return "(" + string.Join(" ", parts) + ")";

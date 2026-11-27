@@ -1,0 +1,8 @@
+ErrTypeQueries.pas(32,5): error E2003: Undeclared identifier 'Missing'
+ErrTypeQueries.pas(42,22): error E2002: 'V' is not a type identifier
+ErrTypeQueries.pas(43,8): error E2110: Not enough actual parameters for 'IsConstValue'
+ErrTypeQueries.pas(44,8): error E2110: Not enough actual parameters for 'IsManagedType'
+ErrTypeQueries.pas(45,9): error E2910: Intrinsic routine 'IsManagedType' cannot be used as a procedural value
+ErrTypeQueries.pas(46,13): error E2910: Intrinsic routine 'GetTypeKind' cannot be used as a procedural value
+ErrTypeQueries.pas(17,17): error E2710: In instantiation 'TCheck<string>': Operator '+' not applicable to operand type(s) 'string' and 'Integer'
+ErrTypeQueries.pas(25,15): error E2710: In instantiation 'TCheck<string>': Variable typecast not allowed for managed types or types of different size

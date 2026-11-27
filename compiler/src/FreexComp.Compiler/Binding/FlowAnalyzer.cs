@@ -79,6 +79,14 @@ internal sealed class FlowAnalyzer
             analyzer._tracked.Add(result);
         }
 
+        // LANG-977 rule 5 (C-417): a local named in a statement that a type-query condition does not take counts as used and as
+        // assigned — no H2001 and no H2002 for it; W1041 and W1042 work on what is kept (rule 6)
+        foreach (var local in locals.Where(v => body.Routine.IsNamedInPrunedStatement(v.Name)))
+        {
+            analyzer._referenced.Add(local);
+            analyzer._deadStoreTracked.Remove(local);
+        }
+
         var diagnostics = analyzer.Run(body.Body, locals.Where(v => !captured.Contains(v)), body.Body.Syntax.LastToken());     // the body's 'end' (also of an anonymous method)
         return [.. diagnostics.OrderBy(d => d.Location.Span.Start)];
     }
@@ -372,6 +380,9 @@ internal sealed class FlowAnalyzer
                 var @else = @if.Else is null ? whenFalse : Visit(@if.Else, whenFalse);
                 return Join(then, @else);
             }
+
+            case BoundPrunedStatement pruned:
+                return pruned.Kept is null ? state : Visit(pruned.Kept, state);     // LANG-977 rule 6 (C-417): the kept statement stands alone
 
             case BoundWhileStatement @while:
                 return VisitWhile(@while, state);

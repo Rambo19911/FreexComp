@@ -198,4 +198,65 @@ public sealed class FindReferencesTests
         Assert.DoesNotContain(NameIn("class constructor Create;"), References("constructor Create(N: Integer);"));
         Assert.DoesNotContain(NameIn("class constructor TA.Create;"), References("constructor TA.Create(N: Integer);"));
     }
+
+    /// <summary>
+    /// CMP-1476 (C-417): a statement that a type-query condition prunes from the instance in this file (LANG-977 rule 3) is bound on
+    /// the open instance for code insight; its names are references to the symbols the kept code refers to — a parameter and a
+    /// field named in both parts have one set of references, from the declaration, from the kept use and from the pruned use, and
+    /// the same set as with an ordinary condition (the control).
+    /// </summary>
+    [Theory]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1476")]
+    [InlineData("if IsManagedType(T) then")]
+    [InlineData("if Count > 100 then")]
+    public void PrunedBranchOfAnInstance_SameSymbolsAsTheKeptCode(string condition)
+    {
+        var text = """
+            program P;
+            type
+              TItem = class
+                Name: string;
+              end;
+              TStore<T> = class
+              public
+                Left: TItem;
+                procedure Put(const V: T; Count: Integer);
+              end;
+            procedure TStore<T>.Put(const V: T; Count: Integer);
+            begin
+              {IF}
+              begin
+                Left.Name := 'managed';
+                Count := Count + 1;
+              end
+              else
+              begin
+                Left.Name := 'plain';
+                Count := Count - 1;
+              end;
+            end;
+            var
+              S: TStore<Integer>;
+            begin
+              S := TStore<Integer>.Create;
+              S.Put(1, 2);
+              S.Left := nil;
+              S.Free;
+            end.
+            """.ReplaceLineEndings("\n").Replace("{IF}", condition, StringComparison.Ordinal);
+        var doc = MarkupTestFile.Open("P.pas", ("P.pas", text));
+        int[] Lines(string piece) =>
+            [.. NavigationService.FindReferences(doc, text.IndexOf(piece, StringComparison.Ordinal), TestContext.Current.CancellationToken)
+                .Select(r => r.Location.LineSpan.Start.Line + 1).Where(line => line != 13)];        // line 13: the condition itself
+
+        int[] parameter = [11, 16, 16, 21, 21];                                    // the implementation's heading, both parts
+        Assert.Equal(parameter, Lines("Count: Integer);\nbegin"));
+        Assert.Equal(parameter, Lines("Count - 1"));                               // the part Integer keeps
+        Assert.Equal(parameter, Lines("Count + 1"));                               // the part Integer prunes
+        int[] field = [15, 20, 29];                                                // the instance's field: both parts and the program
+        Assert.Equal(field, Lines("Left.Name := 'plain'"));
+        Assert.Equal(field, Lines("Left.Name := 'managed'"));
+        Assert.Equal([4, 15, 20], Lines("Name := 'managed'"));
+    }
 }

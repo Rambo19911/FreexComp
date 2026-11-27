@@ -34,6 +34,7 @@ internal sealed partial class BodyBinder
         _diagnostics = diagnostics;
         _routine = routine;
         _expressions = new ExpressionBinder(types, scope, diagnostics, routine);
+        _inInstance = InGenericInstance(routine);                               // LANG-977 rule 3 (C-417)
     }
 
     /// <summary>The expression binder of this body (its anonymous methods and closure, C-120).</summary>
@@ -270,9 +271,15 @@ internal sealed partial class BodyBinder
 
     // ------------------------------------------------------------------ if, while, repeat (LANG-354, 360)
 
-    private BoundIfStatement BindIf(IfStatementSyntax syntax)
+    private BoundStatement BindIf(IfStatementSyntax syntax)
     {
+        var queries = _expressions.TypeQueryUses;
         var condition = _expressions.BindCondition(syntax.Condition);
+        if (IsTypeQueryCondition(condition, queries) && condition.ConstantValue is { Value: bool taken })
+        {
+            return BindPrunedIf(syntax, condition, taken);                      // LANG-977 (C-417)
+        }
+
         var then = BindStatement(syntax.Statement);
         var otherwise = syntax.ElseStatement is { } elseStatement ? BindStatement(elseStatement) : null;
         return new BoundIfStatement(syntax, condition, then, otherwise);
@@ -500,8 +507,9 @@ internal sealed partial class BodyBinder
 
     // ------------------------------------------------------------------ case (LANG-355…357)
 
-    private BoundCaseStatement BindCase(CaseStatementSyntax syntax)
+    private BoundStatement BindCase(CaseStatementSyntax syntax)
     {
+        var queries = _expressions.TypeQueryUses;
         var selector = _expressions.BindExpression(syntax.Selector);
         var checkLabels = !selector.HasErrors;
         if (checkLabels && !selector.Type.IsOrdinal)
@@ -510,6 +518,14 @@ internal sealed partial class BodyBinder
             selector = new BoundErrorExpression(syntax.Selector, _types.Error, [selector]);
             checkLabels = false;
         }
+
+        // LANG-977 rule 1 (C-417): on a type-query selector the arm whose labels contain its value is kept, else the else list, else
+        // nothing; every other arm statement is pruned. The labels of every arm are bound and checked as usual.
+        BigInteger? chosen = checkLabels && IsTypeQueryCondition(selector, queries) ? Ordinal(selector.ConstantValue!) : null;
+        var pruning = new Pruning();
+        var allLabels = ImmutableArray.CreateBuilder<BoundCaseLabel>();
+        BoundStatement? kept = null;
+        var found = false;
 
         var seen = new List<(BigInteger Low, BigInteger High)>();
         var arms = ImmutableArray.CreateBuilder<BoundCaseArm>();
@@ -521,7 +537,39 @@ internal sealed partial class BodyBinder
                 labels.Add(BindCaseLabel(label, checkLabels ? selector.Type : null, seen));
             }
 
-            arms.Add(new BoundCaseArm(arm, labels.ToImmutable(), BindStatement(arm.Statement)));
+            if (chosen is not { } value)
+            {
+                arms.Add(new BoundCaseArm(arm, labels.ToImmutable(), BindStatement(arm.Statement)));
+                continue;
+            }
+
+            allLabels.AddRange(labels);
+            if (!found && labels.Any(l => LabelContains(l, value)))
+            {
+                found = true;
+                kept = BindStatement(arm.Statement);
+            }
+            else
+            {
+                Prune(pruning, arm, arm.Statement);
+            }
+        }
+
+        if (chosen is not null)
+        {
+            if (syntax.ElseKeyword is not null)
+            {
+                if (found)
+                {
+                    Prune(pruning, syntax, statement: null, syntax.ElseStatements);
+                }
+                else
+                {
+                    kept = BindBlock(syntax, syntax.ElseStatements);
+                }
+            }
+
+            return new BoundPrunedStatement(syntax, selector, allLabels.ToImmutable(), kept, pruning.Checked.ToImmutable(), pruning.HasUnbound);
         }
 
         var otherwise = syntax.ElseKeyword is null ? null : BindBlock(syntax, syntax.ElseStatements);

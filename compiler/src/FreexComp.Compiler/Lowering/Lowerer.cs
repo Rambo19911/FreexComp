@@ -662,6 +662,9 @@ internal sealed partial class LoweringContext
                 return new LAssign(Lower(assignment.Target), Lower(assignment.Value));
             case BoundIfStatement ifStatement:
                 return new LIf(Lower(ifStatement.Condition), Lower(ifStatement.Then), ifStatement.Else is null ? null : Lower(ifStatement.Else));
+            case BoundPrunedStatement pruned:
+                // CMP-1475 (C-417): the kept statement only — the condition is not evaluated, the other parts leave nothing
+                return pruned.Kept is null ? new LBlock([]) : Lower(pruned.Kept);
             case BoundWhileStatement loop:
             {
                 var label = NewLoop("while");

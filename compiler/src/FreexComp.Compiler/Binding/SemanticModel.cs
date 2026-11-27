@@ -33,6 +33,27 @@ public sealed class SemanticModel
     private readonly List<(int Start, int End, Scope Scope)> _inlineScopes = [];
     private readonly List<TypeSymbol> _openInstances = [];
 
+    /// <summary>
+    /// CMP-1476 (C-417): the method definitions in this file with an instance body that did not bind a statement (LANG-977 rule 3: a
+    /// type-query condition pruned it). Their open bodies are bound too, for the code insight of those statements.
+    /// </summary>
+    private readonly HashSet<TextSpan> _prunedDefinitions = [];
+
+    /// <summary>The body being walked did not bind a pruned statement.</summary>
+    private bool _unboundPruned;
+
+    /// <summary>
+    /// While the open bodies of <see cref="_prunedDefinitions"/> are walked: the expressions the instance bodies bound. They keep
+    /// what the instance says (the type argument, not the type parameter); the open body only adds what was pruned.
+    /// </summary>
+    private HashSet<SyntaxNode>? _boundByInstances;
+
+    /// <summary>
+    /// With <see cref="_boundByInstances"/>: the symbols indexed so far by kind and declaration site in this file — first what the
+    /// bound bodies refer to, then what is declared (<see cref="Canonical"/>).
+    /// </summary>
+    private Dictionary<(SymbolKind Kind, int Start), Symbol>? _indexedBySite;
+
     /// <param name="bodies">C-244: for a position model, the bodies it binds (null: all); C-355 binds open method bodies only among them.</param>
     internal SemanticModel(Compilation compilation, SyntaxTree tree, BindingResult result, ImmutableArray<Diagnostic> diagnostics,
                            Func<string, UnitSymbol?> findUnit, Func<SyntaxNode, bool>? bodies = null)
@@ -60,7 +81,21 @@ public sealed class SemanticModel
                 Declare(symbol);
             }
 
+            _unboundPruned = false;
             Walk(routine.Body);
+            if (_unboundPruned)
+            {
+                var outermost = routine.Routine;
+                while (ClosureInfo.LexicalParent(outermost) is { } parent)
+                {
+                    outermost = parent;                                         // a nested routine or anonymous method: its method is bound open
+                }
+
+                if (outermost.Definition is { } method && ReferenceEquals(method.SyntaxTree, tree))
+                {
+                    _prunedDefinitions.Add(method.Span);
+                }
+            }
         }
 
         BindOpenBodies(bodies);
@@ -73,7 +108,23 @@ public sealed class SemanticModel
     /// </summary>
     private void BindOpenBodies(Func<SyntaxNode, bool>? filter)
     {
-        var covered = _bodies.Select(b => b.Span).ToHashSet();
+        // CMP-1476 (C-417): a definition whose instance bodies pruned a statement is not covered for that statement
+        var covered = _bodies.Select(b => b.Span).Where(s => !_prunedDefinitions.Contains(s)).ToHashSet();
+        if (_prunedDefinitions.Count > 0)
+        {
+            _boundByInstances = new HashSet<SyntaxNode>(_expressions.Keys, ReferenceEqualityComparer.Instance);
+            _indexedBySite = [];
+            foreach (var symbol in _references.OrderBy(r => r.Key).Select(r => r.Value).Concat(_declared.OrderBy(d => d.Key).Select(d => d.Value)))
+            {
+                foreach (var location in symbol.Locations)
+                {
+                    if (location.Span.Length > 0 && PathUtil.AreEqual(location.Path, SyntaxTree.Text.Path))
+                    {
+                        _indexedBySite.TryAdd((symbol.Kind, location.Span.Start), symbol);
+                    }
+                }
+            }
+        }
         var pending = new Queue<RoutineSymbol>(_openInstances.SelectMany(TypeMembers.SelfAndNestedTypes).SelectMany(t => TypeMembers.Methods(t))
             .Where(m => m.Definition is { } definition && ReferenceEquals(definition.SyntaxTree, SyntaxTree) && (filter is null || filter(definition))
                         && covered.Add(definition.Span)));
@@ -111,6 +162,9 @@ public sealed class SemanticModel
                 }
             }
         }
+
+        _boundByInstances = null;
+        _indexedBySite = null;
     }
 
     public Compilation Compilation { get; }
@@ -759,6 +813,8 @@ public sealed class SemanticModel
             return;
         }
 
+        symbol = Canonical(symbol);
+
         var token = NameToken(syntax);
         if (token.Kind is SyntaxKind.IdentifierToken or SyntaxKind.InheritedKeyword && !token.IsMissing && IsOwn(token))
         {
@@ -788,8 +844,34 @@ public sealed class SemanticModel
         var token = label.FirstToken();
         if (SyntaxFacts.IsNameToken(token) && !token.IsMissing && IsOwn(token))
         {
-            _references.TryAdd(token.Span.Start, symbol);
+            _references.TryAdd(token.Span.Start, Canonical(symbol));
         }
+    }
+
+    /// <summary>
+    /// CMP-1476 (C-417): while open bodies add what instance bodies pruned, a symbol declared in this file is the one the instance
+    /// bodies already refer to (else the one declared) at one of its declaration sites — the instance's local, parameter or member,
+    /// not the open instance's twin — so that the references inside and outside a pruned statement are references to one symbol.
+    /// Otherwise <paramref name="symbol"/> itself.
+    /// </summary>
+    private Symbol Canonical(Symbol symbol)
+    {
+        if (_indexedBySite is null)
+        {
+            return symbol;
+        }
+
+        foreach (var location in symbol.Locations)
+        {
+            if (location.Span.Length > 0 && PathUtil.AreEqual(location.Path, SyntaxTree.Text.Path)
+                && _indexedBySite.TryGetValue((symbol.Kind, location.Span.Start), out var known)
+                && IdentifierComparer.Instance.Equals(known.Name, symbol.Name))
+            {
+                return known;
+            }
+        }
+
+        return symbol;
     }
 
     private static PropertySymbol? PropertyNamed(TypeSymbol type, string name) =>
@@ -802,7 +884,7 @@ public sealed class SemanticModel
             return;
         }
 
-        if (node is BoundExpression expression)
+        if (node is BoundExpression expression && _boundByInstances?.Contains(node.Syntax) != true)
         {
             _expressions[node.Syntax] = _expressions.TryGetValue(node.Syntax, out var known) ? (known.Outer, expression) : (expression, expression);
         }
@@ -936,6 +1018,19 @@ public sealed class SemanticModel
                 Walk(@if.Condition);
                 Walk(@if.Then);
                 Walk(@if.Else);
+                break;
+            case BoundPrunedStatement pruned:
+                // LANG-977 (C-417): the condition, every case label, the kept statement and — outside generics — the checked ones
+                Walk(pruned.Condition);
+                foreach (var label in pruned.Labels)
+                {
+                    Walk(label.Low);
+                    Walk(label.High);
+                }
+
+                Walk(pruned.Kept);
+                WalkAll(pruned.Checked);
+                _unboundPruned |= pruned.HasUnbound;
                 break;
             case BoundWhileStatement @while:
                 Walk(@while.Condition);

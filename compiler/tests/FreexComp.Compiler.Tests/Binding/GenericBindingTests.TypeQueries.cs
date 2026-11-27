@@ -82,11 +82,11 @@ public sealed partial class GenericBindingTests
             Body("TInfo<string>", "Managed"));
         Assert.Equal(
             "(block (:= Result:TTypeKind 1:TTypeKind) (:= Result:TTypeKind 1:TTypeKind) "
-            + "(case 1:TTypeKind (arm [1] (:= Result:TTypeKind 0:TTypeKind))))",
+            + "(pruned 1:TTypeKind [1] (:= Result:TTypeKind 0:TTypeKind)))",                 // LANG-977 (C-417): the selector is a type query
             Body("TInfo<Integer>", "Kind"));
         Assert.Equal(
             "(block (:= Result:TTypeKind 9:TTypeKind) (:= Result:TTypeKind 9:TTypeKind) "
-            + "(case 9:TTypeKind (arm [9] (:= Result:TTypeKind 0:TTypeKind))))",
+            + "(pruned 9:TTypeKind [9] (:= Result:TTypeKind 0:TTypeKind)))",
             Body("TInfo<string>", "Kind"));
     }
 

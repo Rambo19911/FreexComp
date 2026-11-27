@@ -1047,15 +1047,22 @@ internal sealed partial class ExpressionBinder
     /// A nested constant or enumeration element used as a value (LANG-770); null for other members. A constant of a section this code
     /// may not access is E2610 at the member name (LANG-774, C-361), so is an element of such an enumeration (C-363).
     /// </summary>
-    private BoundExpression? NestedValue(SyntaxNode syntax, Symbol member) => member switch
+    private BoundExpression? NestedValue(SyntaxNode syntax, Symbol member)
     {
-        ConstantSymbol or EnumMemberSymbol
-            when NestedNames.ReportInaccessibleNestedValue(_scope, syntax is MemberAccessExpressionSyntax access ? access.Name : syntax, member, _diagnostics)
-            => Error(syntax),
-        ConstantSymbol { IsTyped: false, Value: { } value } constant => new BoundConstantExpression(syntax, constant, value),
-        EnumMemberSymbol element => new BoundLiteral(syntax, element.Value),
-        _ => null,
-    };
+        switch (member)
+        {
+            case ConstantSymbol or EnumMemberSymbol
+                when NestedNames.ReportInaccessibleNestedValue(_scope, syntax is MemberAccessExpressionSyntax access ? access.Name : syntax, member, _diagnostics):
+                return Error(syntax);
+            case ConstantSymbol { IsTyped: false, Value: { } value } constant:
+                TypeQueryUses += constant.IsTypeQueryDependent ? 1 : 0;         // LANG-977 (C-417)
+                return new BoundConstantExpression(syntax, constant, value);
+            case EnumMemberSymbol element:
+                return new BoundLiteral(syntax, element.Value);
+            default:
+                return null;
+        }
+    }
 
     /// <summary>
     /// <c>TRec.Name</c> (LANG-730): a constructor or static method (sets <paramref name="methodCall"/>), a class var, a class property

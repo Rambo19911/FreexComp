@@ -173,6 +173,35 @@ public class RoutineSymbol : Symbol
     /// </summary>
     internal Binding.ClosureInfo? Closure { get; set; }
 
+    /// <summary>
+    /// LANG-977 rule 5 (C-417): the identifiers inside the statements that type-query conditions of this routine's body — and of the
+    /// routines and anonymous methods nested in it — do not take. A local of this name counts as used and as assigned for the
+    /// unused-symbol hints. Null when nothing was pruned.
+    /// </summary>
+    private HashSet<string>? _prunedNames;
+
+    internal void NotePrunedNames(IEnumerable<string> names)
+    {
+        var set = _prunedNames ?? Interlocked.CompareExchange(ref _prunedNames, new HashSet<string>(IdentifierComparer.Instance), null) ?? _prunedNames!;
+        lock (set)
+        {
+            set.UnionWith(names);
+        }
+    }
+
+    internal bool IsNamedInPrunedStatement(string name)
+    {
+        if (_prunedNames is not { } set)
+        {
+            return false;
+        }
+
+        lock (set)
+        {
+            return set.Contains(name);
+        }
+    }
+
     /// <summary>Declared without a body (<c>forward</c> or in an interface section) and not yet defined (E2100).</summary>
     internal bool AwaitsDefinition => Definition is null && !IsExternal;
 

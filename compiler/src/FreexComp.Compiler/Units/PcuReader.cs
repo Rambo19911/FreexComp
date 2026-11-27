@@ -339,7 +339,12 @@ internal static class PcuReader
                 case "const":
                 {
                     var type = Type(entry, "type");
-                    return new ConstantSymbol(name, type, Value(entry["value"], type), isTyped: false, _unit, locations) { Documentation = Doc(entry), Hints = Hints(entry) };
+                    return new ConstantSymbol(name, type, Value(entry["value"], type), isTyped: false, _unit, locations)
+                    {
+                        Documentation = Doc(entry),
+                        Hints = Hints(entry),
+                        IsTypeQueryDependent = entry["typeQuery"]?.GetValue<bool>() == true,       // LANG-977 (C-417); absent: false
+                    };
                 }
 
                 case "var":
@@ -487,7 +492,10 @@ internal static class PcuReader
                     {
                         // C-361: a nested constant with its section's visibility; an entry without one reads as public
                         members.Add(new ConstantSymbol(Text(item, "name"), type, Value(item["value"], type), isTyped: false, pending.Owner, [],
-                            item["visibility"] is JsonValue cv ? VisibilityOf(cv.GetValue<string>()) : Visibility.Public));
+                            item["visibility"] is JsonValue cv ? VisibilityOf(cv.GetValue<string>()) : Visibility.Public)
+                        {
+                            IsTypeQueryDependent = item["typeQuery"]?.GetValue<bool>() == true,     // LANG-977 (C-417); absent: false
+                        });
                         continue;
                     }
 

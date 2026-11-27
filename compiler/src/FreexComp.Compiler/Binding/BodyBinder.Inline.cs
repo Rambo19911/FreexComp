@@ -277,9 +277,14 @@ internal sealed partial class BodyBinder
                     break;
                 }
 
-                var folded = Declarations().Folder.Fold(syntax.Value);                // C-353: generic instance names too
+                var folder = Declarations().Folder;
+                var queries = folder.TypeQueryUses;
+                var folded = folder.Fold(syntax.Value);                               // C-353: generic instance names too
                 scope.TryDeclare(new ConstantSymbol(text, folded?.Type ?? _types.Error, folded, isTyped: false, Container,
-                    [DiagnosticBag.LocationOf(syntax.Identifier)]), out _);
+                    [DiagnosticBag.LocationOf(syntax.Identifier)])
+                {
+                    IsTypeQueryDependent = folded is not null && folder.TypeQueryUses != queries,     // LANG-977 (C-417)
+                }, out _);
                 break;
             }
         }

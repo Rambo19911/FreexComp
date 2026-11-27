@@ -76,7 +76,21 @@ internal sealed partial class BodyBinder
 
         foreach (var label in _labels.Values.Where(l => l.Definition is null))
         {
-            _diagnostics.Report(label.Declaration, "E2073", label.Label.Name);
+            if (_prunedLabels?.Contains(label.Label.Name) != true)
+            {
+                _diagnostics.Report(label.Declaration, "E2073", label.Label.Name);
+                continue;
+            }
+
+            // LANG-977 rule 5 (C-417): placed only in a statement pruned from this instance, the label counts as defined; the kept code
+            // cannot jump to it — the pruned statement is not there (rule 2), as for a jump into a statement (E2072)
+            foreach (var (statement, target, _) in _gotos)
+            {
+                if (ReferenceEquals(target, label))
+                {
+                    _diagnostics.Report(statement.GotoKeyword, "E2072");
+                }
+            }
         }
 
         return block;

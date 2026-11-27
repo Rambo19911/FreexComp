@@ -46,6 +46,7 @@ internal enum BoundKind
     RepeatStatement,
     ForStatement,
     CaseStatement,
+    PrunedStatement,
     BreakStatement,
     ContinueStatement,
     ExitStatement,
@@ -613,6 +614,44 @@ internal sealed class BoundIfStatement : BoundStatement
     public BoundStatement Then { get; }
 
     public BoundStatement? Else { get; }
+}
+
+/// <summary>
+/// LANG-977 (C-417): an <c>if</c> or <c>case</c> statement whose condition or selector is a type-query condition. Only
+/// <see cref="Kept"/> is compiled, as if it stood there alone (CMP-1475: no test, no branch); flow analysis works on it.
+/// </summary>
+internal sealed class BoundPrunedStatement : BoundStatement
+{
+    public BoundPrunedStatement(SyntaxNode syntax, BoundExpression condition, ImmutableArray<BoundCaseLabel> labels, BoundStatement? kept,
+        ImmutableArray<BoundStatement> @checked, bool hasUnbound)
+        : base(syntax)
+    {
+        Condition = condition;
+        Labels = labels;
+        Kept = kept;
+        Checked = @checked;
+        HasUnbound = hasUnbound;
+    }
+
+    public override BoundKind Kind => BoundKind.PrunedStatement;
+
+    /// <summary>The constant condition of the <c>if</c> or selector of the <c>case</c>; never evaluated at run time.</summary>
+    public BoundExpression Condition { get; }
+
+    /// <summary>The labels of every arm of a <c>case</c> (bound and checked as usual); empty for an <c>if</c>.</summary>
+    public ImmutableArray<BoundCaseLabel> Labels { get; }
+
+    /// <summary>The statement the condition takes; null when it takes none (no <c>else</c> part, no matching arm).</summary>
+    public BoundStatement? Kept { get; }
+
+    /// <summary>
+    /// Rule 4: the statements the condition does not take, bound and checked in a body that is not generic — for the language service
+    /// only (flow analysis and code ignore them). Empty in a generic instance body, where they are not bound (rule 3).
+    /// </summary>
+    public ImmutableArray<BoundStatement> Checked { get; }
+
+    /// <summary>Rule 3: a statement the condition does not take was not bound (a generic instance body).</summary>
+    public bool HasUnbound { get; }
 }
 
 /// <summary><c>while Condition do Body</c> (LANG-360).</summary>

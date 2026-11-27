@@ -693,4 +693,172 @@ public sealed class CompletionTests
 
         Assert.Equal(items.Select(i => i.SortText).Order(StringComparer.Ordinal), items.Select(i => i.SortText));   // CMP-723: the order contract
     }
+
+    // ------------------------------------------------------------------ CMP-1476 (C-417): both parts of a type-query condition
+
+    private const string TypeQueryUnit = """
+        unit UO;
+        interface
+        type
+          TItem = class
+            Name: string;
+            procedure Rename(const S: string);
+          end;
+          TPoint = record
+            X, Y: Integer;
+          end;
+          TStore<T> = class
+          public
+            Left: TItem;
+            Right: TPoint;
+            procedure Put(const V: T);
+            procedure Pick(const V: T);
+            procedure ByConstant(const V: T);
+          end;
+        implementation
+        procedure TItem.Rename(const S: string);
+        begin
+          Name := S;
+        end;
+        procedure TStore<T>.Put(const V: T);
+        begin
+          if IsManagedType(T) then
+          begin
+            var Managed := Left;
+            Managed.Rename('managed');
+          end
+          else
+          begin
+            var Plain := Right;
+            Plain.X := 1;
+          end;
+        end;
+        procedure TStore<T>.Pick(const V: T);
+        begin
+          case GetTypeKind(T) of
+            tkInteger:
+              begin
+                var Number := Left;
+                Number.Rename('integer');
+              end;
+            tkUString:
+              begin
+                var Text := Right;
+                Text.Y := 2;
+              end;
+          else
+            var Other := Left;
+            Other.Name := 'else';
+          end;
+        end;
+        procedure TStore<T>.ByConstant(const V: T);
+        const
+          Raw = not IsManagedType(T);
+        begin
+          if Raw then
+          begin
+            var Fast := Left;
+            Fast.Rename('raw');
+          end
+          else
+          begin
+            var Slow := Right;
+            Slow.X := 3;
+          end;
+          if IsManagedType(string) then
+            Right.Y := 4
+          else
+          begin
+            var Never := Left;
+            Never.Rename('never');
+          end;
+        end;
+        end.
+        """;
+
+    private static readonly string[] ItemMembers = ["Name", "Rename"];
+
+    private static readonly string[] PointMembers = ["X", "Y"];
+
+    /// <summary>The members offered after each <c>Variable.</c> of <paramref name="text"/>, and the hover of that variable.</summary>
+    private static void AssertBothParts(Document doc, string text, params (string Piece, string[] Members)[] expected)
+    {
+        foreach (var (piece, members) in expected)
+        {
+            var caret = GenericNamesFixture.Offset(text, piece) + piece.Length;
+            var labels = CompletionService.GetCompletions(doc, caret, new CompletionTrigger(CompletionTriggerKind.Character, '.'), TestContext.Current.CancellationToken)
+                .Items.Select(i => i.Label).ToList();
+            Assert.All(members, m => Assert.True(labels.Contains(m), $"{piece}: {m} is not offered ({string.Join(", ", labels.Take(8))})"));
+            var hover = QuickInfoService.GetQuickInfo(doc, caret - 2, TestContext.Current.CancellationToken);    // the inline variable before the dot
+            Assert.True(hover?.Signature.Contains(piece.Trim().TrimEnd('.'), StringComparison.Ordinal), $"{piece}: hover is '{hover?.Signature}'");
+        }
+    }
+
+    /// <summary>
+    /// CMP-1476 (LANG-976): in a generic nothing instantiates (the open instance) nothing is pruned — both parts of an <c>if</c> on a
+    /// type query, every arm and the <c>else</c> list of a <c>case</c> on one, both parts of an <c>if</c> on a constant whose value is a
+    /// type query on the type parameter (it has no value there), and both parts of an <c>if</c> on a type query that is a constant even
+    /// there (<c>IsManagedType(string)</c>) have their inline variables, member lists and hover.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1476")]
+    public void UninstantiatedGeneric_BothBranchesOfATypeQueryIf()
+    {
+        var text = TypeQueryUnit.ReplaceLineEndings("\n");
+        var doc = GenericNamesFixture.OpenUninstantiated(text);
+
+        AssertBothParts(doc, text,
+            ("    Managed.", ItemMembers), ("    Plain.", PointMembers),
+            ("        Number.", ItemMembers), ("        Text.", PointMembers), ("    Other.", ItemMembers),
+            ("    Fast.", ItemMembers), ("    Slow.", PointMembers), ("    Never.", ItemMembers));
+
+        // the constant itself: declared, shown and found from its use although it has no value in the open instance
+        var use = GenericNamesFixture.Offset(text, "if Raw then") + "if ".Length;
+        Assert.Equal("const Raw = ?", QuickInfoService.GetQuickInfo(doc, use, TestContext.Current.CancellationToken)?.Signature);
+        var declaration = GenericNamesFixture.Offset(text, "  Raw = not");
+        Assert.Equal(
+            [declaration + 2, use],
+            NavigationService.FindReferences(doc, use, TestContext.Current.CancellationToken).Select(r => r.Location.Span.Start));
+        Assert.DoesNotContain(
+            DiagnosticService.GetSemanticDiagnostics(doc, TestContext.Current.CancellationToken), d => d.Severity == Compiler.DiagnosticSeverity.Error);
+    }
+
+    /// <summary>
+    /// CMP-1476 with LANG-977 rule 3: an instance in the same file prunes the part its type argument does not take and does not bind
+    /// it; code insight in that part comes from the open instance — inline variables, member lists, hover, and the references of a
+    /// local that both parts use.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1476")]
+    public void InstantiatedGeneric_PrunedBranchKeepsCodeInsight()
+    {
+        var text = TypeQueryUnit.ReplaceLineEndings("\n")
+            .Replace("unit UO;\ninterface\n", "program P;\n", StringComparison.Ordinal)
+            .Replace("implementation\n", "", StringComparison.Ordinal)
+            .Replace("procedure TStore<T>.Put(const V: T);\nbegin\n", "procedure TStore<T>.Put(const V: T);\nvar\n  Shared: Integer;\nbegin\n  Shared := 0;\n", StringComparison.Ordinal)
+            .Replace("    Managed.Rename('managed');\n", "    Managed.Rename('managed');\n    Shared := Shared + 1;\n", StringComparison.Ordinal)
+            .Replace("    Plain.X := 1;\n", "    Plain.X := Shared;\n", StringComparison.Ordinal)
+            .Replace("end.", "var\n  S: TStore<Integer>;\nbegin\n  S := TStore<Integer>.Create;\n  S.Put(1);\n  S.Pick(2);\n  S.ByConstant(3);\n  S.Free;\nend.", StringComparison.Ordinal);
+        var doc = MarkupTestFile.Open("P.pas", ("P.pas", text));
+        Assert.Empty(DiagnosticService.GetSemanticDiagnostics(doc, TestContext.Current.CancellationToken).Where(d => d.Severity == Compiler.DiagnosticSeverity.Error));
+
+        AssertBothParts(doc, text,
+            ("    Managed.", ItemMembers), ("    Plain.", PointMembers),                 // Integer keeps Plain
+            ("        Number.", ItemMembers), ("        Text.", PointMembers), ("    Other.", ItemMembers),
+            ("    Fast.", ItemMembers), ("    Slow.", PointMembers), ("    Never.", ItemMembers));
+
+        var declaration = GenericNamesFixture.Offset(text, "  Shared: Integer;") + 2;
+        int[] uses =
+        [
+            declaration, GenericNamesFixture.Offset(text, "  Shared := 0;") + 2, GenericNamesFixture.Offset(text, "    Shared := Shared + 1;") + 4,
+            GenericNamesFixture.Offset(text, ":= Shared + 1;") + 3, GenericNamesFixture.Offset(text, "Plain.X := Shared;") + "Plain.X := ".Length,
+        ];
+        Assert.Equal(uses, NavigationService.FindReferences(doc, declaration, TestContext.Current.CancellationToken).Select(r => r.Location.Span.Start));
+        Assert.Equal(uses, NavigationService.FindReferences(doc, uses[2], TestContext.Current.CancellationToken).Select(r => r.Location.Span.Start));   // from the pruned part
+        var renamed = RenameService.Rename(doc, declaration, "Common", TestContext.Current.CancellationToken);
+        Assert.True(renamed.Success, renamed.Error);
+        Assert.Equal(uses, Assert.Single(renamed.Edits).Changes.Select(c => c.Span.Start));
+    }
 }
