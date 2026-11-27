@@ -1,33 +1,120 @@
 #:property PublishAot=false
 // GenCharTables - dev-time generator of rtl/src/CharTables.inc (unit Character, other-units.md section 5, RTL-640).
-// Run from the repository root:  dotnet run rtl/tools/GenCharTables.cs -- rtl/src/CharTables.inc
-// Source data: the Unicode general categories and simple case mappings built into the .NET runtime
-// (System.Globalization.CharUnicodeInfo, invariant char casing), which are derived from the Unicode Character
-// Database. Only the BMP (UTF-16 code units) is tabulated. Each table is two-level: a block index per 2^Shift code
+// Run from the repository root:  dotnet run rtl/tools/GenCharTables.cs
+// (optional arguments: the data file, then the output file).
+// Source data: UnicodeData.txt of the Unicode Character Database, the pinned build input third_party/unicode
+// (field 2 = general category, fields 12 and 13 = simple uppercase and lowercase mapping). The file carries no version,
+// so the version and the SHA-256 of the pinned file are constants here and the generator refuses any other file: when
+// the pin moves, change both, run the generator and put the printed checksums into rtl/tests/other/Char_Classify.pas.
+// Nothing else is read (no globalization data of the runtime, no network), so the output depends on the data file only.
+// Only the BMP (UTF-16 code units) is tabulated. Each table is two-level: a block index per 2^Shift code
 // units and the distinct blocks; case mappings are stored as indexes into a small table of deltas. The generator also
 // prints checksums that the Char_Classify test compares with a scan of the generated lookup functions.
 using System.Globalization;
+using System.Security.Cryptography;
 using System.Text;
 
+const string UnicodeVersion = "18.0.0";
+const string UnicodeDataSha256 = "0736451de439ae7baf1425136617da495e09ee5afbe6e394374db7009ea08950";
 const int Shift = 6;
 const int BlockSize = 1 << Shift;
+const int Unassigned = 29;
 
-var output = args.Length > 0 ? args[0] : "CharTables.inc";
+// the two-letter general categories in TUnicodeCategory order (unit Character)
+List<string> categoryCodes =
+[
+    "Lu", "Ll", "Lt", "Lm", "Lo", "Mn", "Mc", "Me", "Nd", "Nl", "No", "Zs", "Zl", "Zp", "Cc", "Cf", "Cs", "Co",
+    "Pc", "Pd", "Ps", "Pe", "Pi", "Pf", "Po", "Sm", "Sc", "Sk", "So", "Cn",
+];
 
-var category = new int[65536];
+var input = args.Length > 0 ? args[0] : "third_party/unicode/UnicodeData.txt";
+var output = args.Length > 1 ? args[1] : "rtl/src/CharTables.inc";
+
+var data = File.ReadAllBytes(input);
+var hash = Convert.ToHexStringLower(SHA256.HashData(data));
+if (hash != UnicodeDataSha256)
+{
+    Console.Error.WriteLine($"{input}: SHA-256 {hash} is not the pinned UnicodeData.txt {UnicodeVersion} ({UnicodeDataSha256})");
+    return 1;
+}
+
+// code points without a line are unassigned (Cn) and map to themselves
+var category = Enumerable.Repeat(Unassigned, 65536).ToArray();
 var upper = new int[65536];
 var lower = new int[65536];
-for (var c = 0; c < 65536; c++)
+var rangeFirst = -1;
+var lineNumber = 0;
+foreach (var line in Encoding.ASCII.GetString(data).Split('\n', StringSplitOptions.RemoveEmptyEntries))
 {
-    category[c] = (int)CharUnicodeInfo.GetUnicodeCategory((char)c);
-    upper[c] = char.ToUpperInvariant((char)c) - c;
-    lower[c] = char.ToLowerInvariant((char)c) - c;
+    lineNumber++;
+    var fields = line.TrimEnd('\r').Split(';');
+    if (fields.Length != 15)
+    {
+        throw new InvalidDataException($"{input}({lineNumber}): {fields.Length} fields");
+    }
+
+    var code = int.Parse(fields[0], NumberStyles.AllowHexSpecifier, CultureInfo.InvariantCulture);
+    if (code > 0xFFFF)
+    {
+        continue;
+    }
+
+    var kind = categoryCodes.IndexOf(fields[2]);
+    if (kind < 0 || kind == Unassigned)
+    {
+        throw new InvalidDataException($"{input}({lineNumber}): general category '{fields[2]}'");
+    }
+
+    // a range is two lines: "<Name, First>" and "<Name, Last>", every code point between them has the same category
+    if (fields[1].EndsWith(", First>", StringComparison.Ordinal))
+    {
+        rangeFirst = code;
+        continue;
+    }
+
+    var first = code;
+    if (fields[1].EndsWith(", Last>", StringComparison.Ordinal))
+    {
+        first = rangeFirst;
+    }
+
+    if (first < 0 || first > code)
+    {
+        throw new InvalidDataException($"{input}({lineNumber}): range without its first line");
+    }
+
+    rangeFirst = -1;
+    for (var c = first; c <= code; c++)
+    {
+        category[c] = kind;
+    }
+
+    upper[code] = Mapping(fields[12]) - code;
+    lower[code] = Mapping(fields[13]) - code;
+
+    int Mapping(string field)
+    {
+        if (field.Length == 0)
+        {
+            return code;
+        }
+
+        var target = int.Parse(field, NumberStyles.AllowHexSpecifier, CultureInfo.InvariantCulture);
+        return target <= 0xFFFF
+            ? target
+            : throw new InvalidDataException($"{input}({lineNumber}): case mapping leaves the BMP");
+    }
 }
 
 var text = new StringBuilder();
 text.Append("// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception\n");
+// the file and its layout are ours (line above); the numbers come from the data file, whose origin and licence are named here
+text.Append("// The table values are derived from the Unicode Character Database ").Append(UnicodeVersion)
+    .Append(" (UnicodeData.txt), Copyright (c) Unicode, Inc., used under the Unicode License V3 (Unicode-3.0); see THIRD-PARTY-NOTICES.txt.\n");
 text.Append("{ Generated by rtl/tools/GenCharTables.cs - do not edit. Unicode general categories (TUnicodeCategory order)\n");
-text.Append("  and simple case mappings of the BMP, two-level tables with blocks of ").Append(BlockSize).Append(" code units. }\n\n");
+text.Append("  and simple case mappings of the BMP, two-level tables with blocks of ").Append(BlockSize).Append(" code units.\n");
+text.Append("  Source: UnicodeData.txt of the Unicode Character Database ").Append(UnicodeVersion).Append(",\n");
+text.Append("  SHA-256 ").Append(UnicodeDataSha256).Append(". }\n\n");
 text.Append("const\n  CharBlockShift = ").Append(Shift).Append(";\n\n");
 Emit("Cat", category, null);
 Emit("Upper", upper, "UpperDelta");
@@ -38,6 +125,7 @@ Console.WriteLine($"wrote {output}");
 Console.WriteLine($"category checksum {Checksum(category)}");
 Console.WriteLine($"upper checksum {Checksum(upper.Select((d, c) => c + d).ToArray())}");
 Console.WriteLine($"lower checksum {Checksum(lower.Select((d, c) => c + d).ToArray())}");
+return 0;
 
 // sum over all code units of value * (c mod 251 + 1), modulo 2^32 (the test computes the same)
 static uint Checksum(int[] values)

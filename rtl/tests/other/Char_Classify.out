@@ -30,6 +30,30 @@ ok Cs
 ok Co
 ok Cn
 ok U+FFFF
+# Unicode 18.0 data
+ok U+A7CE Lu
+ok U+A7CF Ll
+ok U+0295 Lo
+ok U+A7F1 Lm
+ok U+088F Lo
+ok U+1ACF Mn
+ok U+20C1 Sc
+ok U+FBC3 So
+ok U+2E60 Po
+ok U+2E62 Ps
+ok U+2E63 Pe
+ok IsLetter U+AB6C
+ok IsUpper U+A7D2
+ok IsLetter U+0295
+ok IsLower U+0295
+ok IsSymbol U+20C4
+ok IsPunctuation U+2E61
+ok ToUpper U+A7CF
+ok ToLower U+A7CE
+ok ToUpper U+0277
+ok ToLower U+A7DD
+ok ToUpper U+A7D3
+ok ToLower U+AB6C
 # classes
 ok IsLetter e acute
 ok IsLetter CJK
@@ -87,6 +111,21 @@ ok ToUpper surrogate unchanged
 ok ToUpper string
 ok ToLower string
 ok ToUpper empty string
+ok ToUpper i
+ok ToLower I
+ok ToLower I with dot above
+ok ToUpper I with dot above
+ok ToUpper dotless i
+ok ToLower dotless i
+ok ToUpper long s
+ok ToLower long s
+ok ToLower U+1C89
+ok ToUpper U+1C8A
+ok ToUpper U+1C89
+ok ToLower capital sharp s
+ok ToLower Kelvin sign
+ok ToUpper string with dotless i
+ok ToLower string with I with dot above
 # UTF-32
 ok ConvertFromUtf32 ASCII
 ok ConvertFromUtf32 BMP
@@ -105,4 +144,4 @@ ok ConvertToUtf32 index 0
 ok GetUnicodeCategory checksum
 ok ToUpper checksum
 ok ToLower checksum
-# passed 101 failed 0
+# passed 139 failed 0

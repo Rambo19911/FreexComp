@@ -3,7 +3,10 @@ program Char_Classify;
 { other-units.md section 5 (task R-058): one code unit of each of the 30 general categories, the Is* classes
   (surrogate code units are never letters etc.), surrogate tests, simple case mapping (Char and string forms),
   UTF-32 conversion with its errors, and checksums over all 65536 code units of GetUnicodeCategory / ToUpper / ToLower
-  (the values printed by rtl/tools/GenCharTables.cs, so the table lookup is checked end to end). }
+  (the values printed by rtl/tools/GenCharTables.cs, so the table lookup is checked end to end).
+  Task R-194: the tables come from UnicodeData.txt of the Unicode Character Database 18.0.0, so the section
+  'Unicode 18.0 data' checks code points that the earlier tables classified or mapped differently, and
+  'case mapping' the simple mappings of the dotted / dotless i, the long s and U+1C89. }
 uses
   SysUtils, Character, TestKit;
 
@@ -49,6 +52,35 @@ begin
   Cat(#$E000, ucPrivateUse, 'Co');
   Cat(#$0378, ucUnassigned, 'Cn');
   Cat(#$FFFF, ucUnassigned, 'U+FFFF');
+end;
+
+{ code points assigned or reclassified after Unicode 16.0, and the classes that follow from the category }
+procedure TestUnicode18;
+begin
+  Section('Unicode 18.0 data');
+  Cat(#$A7CE, ucUppercaseLetter, 'U+A7CE Lu');
+  Cat(#$A7CF, ucLowercaseLetter, 'U+A7CF Ll');
+  Cat(#$0295, ucOtherLetter, 'U+0295 Lo');
+  Cat(#$A7F1, ucModifierLetter, 'U+A7F1 Lm');
+  Cat(#$088F, ucOtherLetter, 'U+088F Lo');
+  Cat(#$1ACF, ucNonSpacingMark, 'U+1ACF Mn');
+  Cat(#$20C1, ucCurrencySymbol, 'U+20C1 Sc');
+  Cat(#$FBC3, ucOtherSymbol, 'U+FBC3 So');
+  Cat(#$2E60, ucOtherPunctuation, 'U+2E60 Po');
+  Cat(#$2E62, ucOpenPunctuation, 'U+2E62 Ps');
+  Cat(#$2E63, ucClosePunctuation, 'U+2E63 Pe');
+  CheckEqB(True, IsLetter(#$AB6C), 'IsLetter U+AB6C');
+  CheckEqB(True, IsUpper(#$A7D2), 'IsUpper U+A7D2');
+  CheckEqB(True, IsLetter(#$0295), 'IsLetter U+0295');
+  CheckEqB(False, IsLower(#$0295), 'IsLower U+0295');
+  CheckEqB(True, IsSymbol(#$20C4), 'IsSymbol U+20C4');
+  CheckEqB(True, IsPunctuation(#$2E61), 'IsPunctuation U+2E61');
+  CheckEqS(#$A7CE, ToUpper(#$A7CF), 'ToUpper U+A7CF');
+  CheckEqS(#$A7CF, ToLower(#$A7CE), 'ToLower U+A7CE');
+  CheckEqS(#$A7DD, ToUpper(#$0277), 'ToUpper U+0277');
+  CheckEqS(#$0277, ToLower(#$A7DD), 'ToLower U+A7DD');
+  CheckEqS(#$A7D2, ToUpper(#$A7D3), 'ToUpper U+A7D3');
+  CheckEqS(#$AB4B, ToLower(#$AB6C), 'ToLower U+AB6C');
 end;
 
 procedure TestClasses;
@@ -118,6 +150,22 @@ begin
   CheckEqS('ABC' + #$00C9 + '1' + #$D83D + #$DE00, ToUpper('abC' + #$00E9 + '1' + #$D83D + #$DE00), 'ToUpper string');
   CheckEqS('abc' + #$00E9, ToLower('ABc' + #$00C9), 'ToLower string');
   CheckEqS('', ToUpper(''), 'ToUpper empty string');
+  { simple mappings of UnicodeData.txt, independent of any locale }
+  CheckEqS('I', ToUpper('i'), 'ToUpper i');
+  CheckEqS('i', ToLower('I'), 'ToLower I');
+  CheckEqS('i', ToLower(#$0130), 'ToLower I with dot above');
+  CheckEqS(#$0130, ToUpper(#$0130), 'ToUpper I with dot above');
+  CheckEqS('I', ToUpper(#$0131), 'ToUpper dotless i');
+  CheckEqS(#$0131, ToLower(#$0131), 'ToLower dotless i');
+  CheckEqS('S', ToUpper(#$017F), 'ToUpper long s');
+  CheckEqS(#$017F, ToLower(#$017F), 'ToLower long s');
+  CheckEqS(#$1C8A, ToLower(#$1C89), 'ToLower U+1C89');
+  CheckEqS(#$1C89, ToUpper(#$1C8A), 'ToUpper U+1C8A');
+  CheckEqS(#$1C89, ToUpper(#$1C89), 'ToUpper U+1C89');
+  CheckEqS(#$00DF, ToLower(#$1E9E), 'ToLower capital sharp s');
+  CheckEqS('k', ToLower(#$212A), 'ToLower Kelvin sign');
+  CheckEqS('DIZ', ToUpper('d' + #$0131 + 'z'), 'ToUpper string with dotless i');
+  CheckEqS('ix', ToLower(#$0130 + 'X'), 'ToLower string with I with dot above');
 end;
 
 procedure TestUtf32;
@@ -171,13 +219,14 @@ begin
     SumUp := SumUp + Cardinal(Ord(ToUpper(Char(C)))) * W;
     SumLo := SumLo + Cardinal(Ord(ToLower(Char(C)))) * W;
   end;
-  CheckEqI(63622151, SumCat, 'GetUnicodeCategory checksum');
-  CheckEqI(4113237806, SumUp, 'ToUpper checksum');
-  CheckEqI(273765242, SumLo, 'ToLower checksum');
+  CheckEqI(63462575, SumCat, 'GetUnicodeCategory checksum');
+  CheckEqI(4124417430, SumUp, 'ToUpper checksum');
+  CheckEqI(269040699, SumLo, 'ToLower checksum');
 end;
 
 begin
   TestCategories;
+  TestUnicode18;
   TestClasses;
   TestSurrogates;
   TestCase;
