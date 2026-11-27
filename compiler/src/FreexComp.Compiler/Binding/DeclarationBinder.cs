@@ -26,6 +26,10 @@ internal sealed partial class DeclarationBinder
     private readonly Symbol _container;
     private readonly DiagnosticBag _diagnostics;
     private readonly Scope? _sharedScope;
+
+    /// <summary>C-379: a field's or class var's type is being bound (<see cref="BindFieldType"/>).</summary>
+    private bool _fieldType;
+
     private readonly ConstantFolder _folder;
     private readonly Conversions _conversions = new();
     private readonly List<RoutineSymbol> _awaitingDefinition = [];
@@ -521,14 +525,55 @@ internal sealed partial class DeclarationBinder
 
             var symbol = new EnumMemberSymbol(NameOf(member.Identifier), type, ordinal, [DiagnosticBag.LocationOf(member.Identifier)]);
             members.Add(symbol);
-            if (!type.IsScoped)
+            if (type.IsScoped)
+            {
+                continue;
+            }
+
+            var home = _fieldType ? FieldElementScope() : _scope;
+            if (ReferenceEquals(home, _scope))
             {
                 Declare(member.Identifier, symbol, declared);
+            }
+            else if (!home.TryDeclare(symbol, out var previous))
+            {
+                _diagnostics.ReportRedeclared(member.Identifier, symbol.Name, previous!);
             }
         }
 
         type.SetMembers(members.ToImmutable());
         return type;
+    }
+
+    /// <summary>
+    /// C-379 (LANG-210): the elements of an anonymous enumeration in the type of a field or class var go to the enclosing declaration
+    /// scope of the type (the unit, program or routine), past the member scopes of the types being bound: they are no members of the
+    /// type and the field's visibility does not apply to them. (A generic instance's own scope is no member scope: unchanged.)
+    /// </summary>
+    private Scope FieldElementScope()
+    {
+        var scope = _scope;
+        while (scope.Kind == ScopeKind.TypeMember && scope.Parent is { } parent)
+        {
+            scope = parent;
+        }
+
+        return scope;
+    }
+
+    /// <summary>C-379: the type of a field or class var; anonymous enumerations in it declare their elements per <see cref="FieldElementScope"/>.</summary>
+    private TypeSymbol BindFieldType(TypeSyntax type, ImmutableArray<Symbol>.Builder? declared = null)
+    {
+        var saved = _fieldType;
+        _fieldType = true;
+        try
+        {
+            return BindType(type, declared: declared);
+        }
+        finally
+        {
+            _fieldType = saved;
+        }
     }
 
     /// <summary>
@@ -724,7 +769,7 @@ internal sealed partial class DeclarationBinder
                 continue;
             }
 
-            var type = BindType(field.Type, declared: declared);
+            var type = BindFieldType(field.Type, declared);
             if (type.TypeKind == TypeKind.Error)
             {
                 failed = true;
@@ -802,7 +847,7 @@ internal sealed partial class DeclarationBinder
         {
             foreach (var field in variant.Fields)
             {
-                var type = BindType(field.Type, declared: declared);
+                var type = BindFieldType(field.Type, declared);
                 if (type.TypeKind == TypeKind.Error)
                 {
                     ok = false;

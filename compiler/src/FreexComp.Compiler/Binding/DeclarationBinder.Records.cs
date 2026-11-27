@@ -164,7 +164,7 @@ internal sealed partial class DeclarationBinder
     private bool BindRecordField(RecordTypeSymbol record, FieldDeclarationSyntax field, Visibility visibility,
         List<(SyntaxToken Identifier, TypeSymbol Type, Visibility Visibility)> fields, Dictionary<string, Symbol> names)
     {
-        var type = BindType(field.Type);
+        var type = BindFieldType(field.Type);
         if (type.TypeKind == TypeKind.Error)
         {
             return false;

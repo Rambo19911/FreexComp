@@ -29,11 +29,12 @@ internal static class Lowerer
         var bodyGlobals = new List<(VariableSymbol, LinkName)>();
         var routines = result.Routines.Select(r => LowerRoutine(result, r, outlined)).ToImmutableArray();
         var bodies = result.Bodies.Select(b => (b.Syntax, Lowered: LowerBody(result, b,
-            b.Syntax is FinalizationSectionSyntax ? managed : [], BodyName(b.Syntax), outlined, bodyGlobals))).ToImmutableArray();
+            b.Syntax is FinalizationSectionSyntax ? managed : [], BodyName(b.Syntax), outlined, bodyGlobals,
+            b.Syntax is FinalizationSectionSyntax ? items : []))).ToImmutableArray();
         var finalization = bodies.FirstOrDefault(b => b.Syntax is FinalizationSectionSyntax).Lowered;
-        if (finalization is null && (!managed.IsEmpty || items.Any(i => i.Destructor is not null)))
+        if (finalization is null && (!managed.IsEmpty || items.Any(i => i.HasFinalPart)))
         {
-            finalization = LowerBody(result, block: null, managed, "$final", outlined, bodyGlobals);
+            finalization = LowerBody(result, block: null, managed, "$final", outlined, bodyGlobals, items);
         }
 
         return new(result.Unit, [.. routines, .. outlined], [.. bodies.Select(b => b.Lowered)])
@@ -60,7 +61,7 @@ internal static class Lowerer
     /// interface part then implementation part, an enclosing type before its nested ones, depth first) that have a class
     /// constructor or a class destructor (C-374); then (C-375) the generic instances the module defines — those in
     /// <see cref="UnitSymbol.UsedInstances"/> (C-228 rule) and their nested types, exactly the instances the emitter defines —
-    /// whose generic declares one, by link-name prefix (CMP-1390, ordinal). The run order is a stable topological order of S:
+    /// whose generic declares one or (C-378) that have managed class vars, by link-name prefix (CMP-1390, ordinal). The run order is a stable topological order of S:
     /// ancestors are hard prerequisites, the instances that enclose an item or occur in its type arguments soft ones.
     /// </summary>
     public static ImmutableArray<ClassConstructorItem> ClassConstructorItems(UnitSymbol unit)
@@ -79,15 +80,22 @@ internal static class Lowerer
         return RunOrder([.. own, .. instances], item => item.Type is ClassTypeSymbol c ? c.SelfAndAncestors().Skip(1) : [], item => InstancesIn(item.Type));
     }
 
-    /// <summary>The item of a class or record that has a class constructor or a class destructor; null for any other type.</summary>
-    private static ClassConstructorItem? ItemOf(TypeSymbol type, bool isInstance) => type switch
+    /// <summary>
+    /// The item of a class or record that has a class constructor or a class destructor or, an instance (C-378), managed class
+    /// vars; null for any other type.
+    /// </summary>
+    private static ClassConstructorItem? ItemOf(TypeSymbol type, bool isInstance)
     {
-        ClassTypeSymbol c when c.ClassConstructor is not null || c.ClassDestructor is not null =>
-            new ClassConstructorItem(c, c.ClassConstructor, c.ClassDestructor, isInstance),
-        RecordTypeSymbol r when r.ClassConstructor is not null || r.ClassDestructor is not null =>
-            new ClassConstructorItem(r, r.ClassConstructor, r.ClassDestructor, isInstance),
-        _ => null,
-    };
+        var (constructor, destructor, classVars) = type switch
+        {
+            ClassTypeSymbol c => (c.ClassConstructor, c.ClassDestructor, c.ClassVariables),
+            RecordTypeSymbol r => (r.ClassConstructor, r.ClassDestructor, r.ClassVariables),
+            _ => (null, null, ImmutableArray<VariableSymbol>.Empty),
+        };
+        ImmutableArray<VariableSymbol> released = isInstance ? [.. classVars.Where(IsManagedGlobal)] : [];
+        return constructor is null && destructor is null && released.IsEmpty ? null
+            : new ClassConstructorItem(type, constructor, destructor, isInstance) { ReleasedClassVars = released };
+    }
 
     /// <summary>
     /// LANG-790 c (C-375): the soft prerequisites of an item — the instances (LANG-790 a: also the nested types of instances) that
@@ -156,23 +164,17 @@ internal static class Lowerer
         [.. unit.InterfaceMembers.Concat(unit.ImplementationMembers).OfType<VariableSymbol>().Where(v => v.IsThreadVar).Distinct()];
 
     /// <summary>The unit's (or program's) global variables of managed types in declaration order (interface first; LANG-523).</summary>
+    /// <remarks>
+    /// The managed class vars of generic instances are not among them: C-378 (LANG-790 b) — the first module in initialization order
+    /// that defines an instance releases them (its class constructor item, <see cref="ClassConstructorItem.ReleasedClassVars"/>), so
+    /// the release covers every instance in the image, also when the generic's declaring unit comes from its <c>.pcu</c>.
+    /// </remarks>
     public static ImmutableArray<VariableSymbol> ManagedGlobals(UnitSymbol unit) =>
         [.. unit.InterfaceMembers.Concat(unit.ImplementationMembers).OfType<VariableSymbol>()
             .Concat(DeclarationBinder.ClassVariablesOf(unit))                                              // then class vars (LANG-615, 730)
-            .Concat(InstanceClassVariables(unit))
-            .Where(v => v is { IsGlobal: true, IsReadOnly: false, Type.IsManaged: true })];
+            .Where(IsManagedGlobal)];
 
-    /// <summary>
-    /// C-222: the class vars of every instance (made anywhere in the compilation) of the generic types the unit declares, by instance
-    /// link name. The declaring unit owns them: it is initialised before and finalised after every unit using an instance, so it
-    /// releases their managed ones once (the other modules only define the <c>linkonce_odr</c> storage).
-    /// </summary>
-    public static IEnumerable<VariableSymbol> InstanceClassVariables(UnitSymbol unit) =>
-        unit.InterfaceMembers.Concat(unit.ImplementationMembers).OfType<GenericTypeSymbol>().Distinct()
-            .SelectMany(g => g.Instances.Values)
-            .Where(i => i.TypeKind != TypeKind.Error).Distinct()
-            .OrderBy(i => i.QualifiedName, StringComparer.Ordinal)
-            .SelectMany(i => i switch { ClassTypeSymbol c => c.ClassVariables, RecordTypeSymbol r => r.ClassVariables, _ => [] });
+    private static bool IsManagedGlobal(VariableSymbol v) => v is { IsGlobal: true, IsReadOnly: false, Type.IsManaged: true };
 
     /// <param name="outlined">Receives the <c>$fin</c> routines outlined from the body (CMP-392).</param>
     public static LoweredBody LowerRoutine(BindingResult result, BoundRoutineBody body, List<LoweredBody> outlined)
@@ -203,8 +205,9 @@ internal static class Lowerer
     /// <paramref name="name"/> (<c>$main</c>, <c>$init</c>, <c>$final</c>) prefixes the names of its <c>$fin</c> routines.
     /// </summary>
     /// <param name="bodyGlobals">Receives the storage of the body's handler variables (<see cref="LoweredUnit.BodyGlobals"/>).</param>
+    /// <param name="items">C-378: the module's class constructor items, whose instance class vars a <c>$final</c> releases last.</param>
     public static LoweredBody LowerBody(BindingResult result, BoundBlock? block, ImmutableArray<VariableSymbol> finalised, string name, List<LoweredBody> outlined,
-        List<(VariableSymbol, LinkName)> bodyGlobals)
+        List<(VariableSymbol, LinkName)> bodyGlobals, ImmutableArray<ClassConstructorItem> items = default)
     {
         var context = new LoweringContext(result.Types, routine: null, locals: [])
         {
@@ -215,7 +218,7 @@ internal static class Lowerer
             Input = SystemVariable(result, "Input"),
             CheckedSystem = CheckedSystemOf(result),
         };
-        var lowered = context.Finish(block, finalised);
+        var lowered = context.Finish(block, finalised, items);
         outlined.AddRange(context.Outlined);
         return lowered;
     }
@@ -351,7 +354,7 @@ internal sealed partial class LoweringContext
     /// <summary><c>procedure _Halt(Code: Integer)</c>, noreturn (CMP-356).</summary>
     public RuntimeHelper Halt { get; }
 
-    public LoweredBody Finish(BoundBlock? body, ImmutableArray<VariableSymbol> finalisedGlobals = default)
+    public LoweredBody Finish(BoundBlock? body, ImmutableArray<VariableSymbol> finalisedGlobals = default, ImmutableArray<ClassConstructorItem> items = default)
     {
         // CMP-380 (C-120): a body with anonymous methods first creates its closure
         var closure = Routine is null ? body?.Closure : Routine.Closure;
@@ -369,7 +372,7 @@ internal sealed partial class LoweringContext
         }
         else
         {
-            block = body is null ? new LBlock([]) : (LBlock)Lower(body);
+            block = body is null ? new LBlock([]) : LowerSectionBody(body);
             if (!prologue.IsEmpty)
             {
                 block = new LBlock([.. prologue, .. block.Statements]);
@@ -423,14 +426,19 @@ internal sealed partial class LoweringContext
             lowered = lowered with { Cleanup = new LBlock([resultCopy, .. lowered.Cleanup?.Statements ?? []]) };
         }
 
-        if (finalisedGlobals.IsDefaultOrEmpty)
+        // C-378 (LANG-790 b): last, the managed class vars of the instances this module took the turn of, in reverse run order
+        var count = items.IsDefault ? 0 : items.Length;
+        LStatement[] instanceClears = items.IsDefault ? [] : [.. items.Select((item, k) => (Item: item, Index: k)).Reverse()
+            .Where(i => !i.Item.ReleasedClassVars.IsEmpty)
+            .Select(i => new LClassVarRelease(i.Index, count, new LBlock([.. i.Item.ReleasedClassVars.Reverse().Select(v => ManagedRewriter.Clear(this, new LGlobalRef(v)))])))];
+        if (finalisedGlobals.IsDefaultOrEmpty && instanceClears.Length == 0)
         {
             return lowered;
         }
 
         // CMP-325 rule 7: after the body's own temporaries, the globals in reverse declaration order (CMP-350)
-        var clears = finalisedGlobals.Reverse().Select(v => ManagedRewriter.Clear(this, new LGlobalRef(v)));
-        return lowered with { Cleanup = new LBlock([.. lowered.Cleanup?.Statements ?? [], .. clears]) };
+        var clears = finalisedGlobals.IsDefault ? [] : finalisedGlobals.Reverse().Select(v => ManagedRewriter.Clear(this, new LGlobalRef(v)));
+        return lowered with { Cleanup = new LBlock([.. lowered.Cleanup?.Statements ?? [], .. clears, .. instanceClears]) };
     }
 
     /// <summary>The largest value open array copied onto the stack (LANG-432); larger ones go to the heap.</summary>
@@ -481,6 +489,29 @@ internal sealed partial class LoweringContext
 
     /// <summary>The label <c>Exit</c> leaves in a constructor/destructor body, so that the epilogue still runs (CMP-368/369).</summary>
     private LLoopLabel? _bodyLabel;
+
+    /// <summary>C-381: an <c>Exit</c> left <see cref="_bodyLabel"/>.</summary>
+    private bool _bodyLabelUsed;
+
+    /// <summary>
+    /// C-381 (LANG-791): an <c>Exit</c> in a unit's <c>finalization</c> section ends only the section's statements — the class
+    /// destructors appended after them (CMP-1397) and the release of the managed globals still run. Such a section is lowered as a
+    /// one-pass loop that <c>Exit</c> leaves; a section without <c>Exit</c> (and every other body) is lowered unchanged.
+    /// </summary>
+    private LBlock LowerSectionBody(BoundBlock body)
+    {
+        if (Routine is not null || BodyName != "$final")
+        {
+            return (LBlock)Lower(body);
+        }
+
+        var label = new LLoopLabel("final", 0);
+        _bodyLabel = label;
+        _bodyLabelUsed = false;
+        var lowered = (LBlock)Lower(body);
+        _bodyLabel = null;
+        return _bodyLabelUsed ? new LBlock([new LLoop(label, new LBlock([.. lowered.Statements, new LBreak(label)]), step: null)]) : lowered;
+    }
 
     /// <summary>
     /// CMP-368: <c>if Alloc &lt;&gt; 0 then Self := NewInstance(Self)</c> (slot 3 of the class reference); <c>try</c> body; <c>if Alloc
@@ -654,7 +685,8 @@ internal sealed partial class LoweringContext
             case BoundContinueStatement:
                 return _continueTargets.TryGetValue(_loops.Peek(), out var iteration) ? new LBreak(iteration) : new LContinue(_loops.Peek());
             case BoundExitStatement { Value: null }:
-                return _bodyLabel is { } bodyLabel ? new LBreak(bodyLabel) : new LReturn();       // CMP-368/369: through the epilogue
+                _bodyLabelUsed |= _bodyLabel is not null;
+                return _bodyLabel is { } bodyLabel ? new LBreak(bodyLabel) : new LReturn();       // CMP-368/369: through the epilogue; C-381
             case BoundExitStatement { Value.Type.IsManaged: true } exit:
                 return new LBlock([ManagedRewriter.Assign(this, new LLocalRef(_variables[Routine!.ResultVariable!]), exit.Value!), new LReturn()]);
             case BoundExitStatement { Value.Type: StringTypeSymbol { Variant: StringVariant.Short } } exit:

@@ -316,7 +316,7 @@ internal sealed partial class DeclarationBinder
     {
         foreach (var field in section.Fields)
         {
-            var fieldType = BindType(field.Type);
+            var fieldType = BindFieldType(field.Type);
             if (fieldType.TypeKind == TypeKind.Error)
             {
                 continue;
@@ -347,7 +347,7 @@ internal sealed partial class DeclarationBinder
     private long BindField(ClassTypeSymbol type, FieldDeclarationSyntax field, Visibility visibility, long end,
         ImmutableArray<FieldSymbol>.Builder fields, Dictionary<string, Symbol> names)
     {
-        var fieldType = BindType(field.Type);
+        var fieldType = BindFieldType(field.Type);
         if (fieldType.TypeKind == TypeKind.Error)
         {
             return end;

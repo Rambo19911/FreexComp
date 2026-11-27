@@ -90,9 +90,17 @@ internal sealed record LoweredUnit(UnitSymbol Unit, ImmutableArray<LoweredBody> 
 
 /// <summary>
 /// One item of a module's class constructor list (CMP-1396, LANG-790 c): a type with a class constructor or a class destructor
-/// (either may be null), its own (declared by the module) or a generic instance the module defines (C-375).
+/// (either may be null), its own (declared by the module) or a generic instance the module defines (C-375); since C-378 also an
+/// instance with managed class vars, which the module that took its turn releases (<see cref="ReleasedClassVars"/>).
 /// </summary>
-internal sealed record ClassConstructorItem(TypeSymbol Type, MethodSymbol? Constructor, MethodSymbol? Destructor, bool IsInstance);
+internal sealed record ClassConstructorItem(TypeSymbol Type, MethodSymbol? Constructor, MethodSymbol? Destructor, bool IsInstance)
+{
+    /// <summary>C-378 (LANG-790 b): the instance's managed class vars in declaration order, released at the end of the module's <c>$final</c>.</summary>
+    public ImmutableArray<VariableSymbol> ReleasedClassVars { get; init; } = [];
+
+    /// <summary>The item has a part in <c>$final</c>: a class destructor or class vars to release.</summary>
+    public bool HasFinalPart => Destructor is not null || !ReleasedClassVars.IsEmpty;
+}
 
 /// <summary>
 /// CMP-1397: the constructor part of item <see cref="Index"/> of <see cref="Count"/> — the call of its class constructor (if any),
@@ -115,6 +123,19 @@ internal sealed class LClassDestructorRun(ClassConstructorItem item, int index, 
     public int Index { get; } = index;
 
     public int Count { get; } = count;
+}
+
+/// <summary>
+/// C-378 (LANG-790 b): the release of the managed class vars of instance item <see cref="Index"/> of <see cref="Count"/> in the
+/// cleanup of the module's <c>$final</c> — <see cref="Release"/>, run when the item's done flag is set (this module took its turn).
+/// </summary>
+internal sealed class LClassVarRelease(int index, int count, LStatement release) : LStatement
+{
+    public int Index { get; } = index;
+
+    public int Count { get; } = count;
+
+    public LStatement Release { get; } = release;
 }
 
 /// <summary>

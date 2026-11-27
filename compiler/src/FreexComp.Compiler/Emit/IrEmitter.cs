@@ -129,7 +129,6 @@ internal static class IrEmitter
             .Select(m => m is ConstantSymbol { Storage: { } storage } ? storage : m).OfType<VariableSymbol>().Concat(unit.Statics)
             .Concat(Binding.DeclarationBinder.ClassVariablesOf(unit.Unit))                             // CMP-370: class vars are globals
             .Concat(instances.SelectMany(i => i switch { ClassTypeSymbol c => c.ClassVariables, RecordTypeSymbol r => r.ClassVariables, _ => [] }))
-            .Concat(Lowerer.InstanceClassVariables(unit.Unit))                                        // C-222: the owner finalises them
             .Where(v => !v.IsThreadVar).Distinct().ToImmutableArray();                                            // threadvars: ABI-180/181
         foreach (var variable in variables)
         {
@@ -2621,6 +2620,9 @@ internal sealed class FunctionEmitter
             case LClassDestructorRun run:
                 ClassDestructorRun(run);
                 break;
+            case LClassVarRelease release:
+                ClassVarRelease(release);
+                break;
             default:
                 throw new InvalidOperationException($"Cannot emit {statement.GetType().Name}.");
         }
@@ -2681,6 +2683,20 @@ internal sealed class FunctionEmitter
         }
 
         _w.Store(new IrIntConstant(IrType.I8, 1), DoneFlag(run.Index, run.Count), 1);
+    }
+
+    /// <summary>C-378 (LANG-790 b): the release of an instance item's managed class vars, run when its done flag is set (this module took its turn).</summary>
+    private void ClassVarRelease(LClassVarRelease release)
+    {
+        var k = release.Index.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var done = _w.Load(Unique("cv" + k + ".done"), IrType.I8, DoneFlag(release.Index, release.Count), 1);
+        var ran = _w.ICmp(Unique("cv" + k + ".ran"), IrIntPredicate.Ne, done, new IrIntConstant(IrType.I8, 0));
+        IrBlock clear = new(Unique("cv" + k + ".release")), skip = new(Unique("cv" + k + ".skip"));
+        _w.CondBr(ran, clear, skip);
+        Start(clear);
+        Statement(release.Release);
+        _w.Br(skip);
+        Start(skip);
     }
 
     /// <summary>CMP-1397: the item's class destructor, called when its done flag is set (its turn came and its class constructor returned).</summary>

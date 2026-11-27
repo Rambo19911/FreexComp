@@ -122,7 +122,10 @@ public sealed partial class GenericBindingTests
         Assert.Single(box.Instances);
         var used = model.Unit.UsedInstances.Concat(compilation.GetSemanticModel(@"C:\p\P.pas").Unit.UsedInstances).OfType<TypeSymbol>();
         Assert.DoesNotContain(used, t => t.TypeArguments.Any(a => a.TypeKind == TypeKind.TypeParameter) || ReferenceEquals(t, stack.OpenInstance));
-        Assert.DoesNotContain(Compiler.Lowering.Lowerer.InstanceClassVariables(model.Unit), v => v.ContainingSymbol is TypeSymbol { TypeArguments: var a }
+        // C-378: the released instance class vars are those of the class constructor items of the modules
+        var released = new[] { model.Unit, compilation.GetSemanticModel(@"C:\p\P.pas").Unit }
+            .SelectMany(u => Compiler.Lowering.Lowerer.ClassConstructorItems(u)).SelectMany(i => i.ReleasedClassVars);
+        Assert.DoesNotContain(released, v => v.ContainingSymbol is TypeSymbol { TypeArguments: var a }
             && a.Any(t => t.TypeKind == TypeKind.TypeParameter));
         Assert.Equal(diagnostics, compilation.GetDiagnostics().Select(d => d.ToText()));
         Assert.DoesNotContain(model.GetDiagnostics(), d => d.Severity == DiagnosticSeverity.Error);   // V = V on a type parameter: dropped

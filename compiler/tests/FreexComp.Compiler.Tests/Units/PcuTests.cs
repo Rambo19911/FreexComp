@@ -1567,6 +1567,95 @@ public sealed partial class PcuTests
         ];
     }
 
+    /// <summary>
+    /// C-379 (LANG-210): an anonymous enumeration as the type of a field or class var (<c>FMode: (mOff, mOn);</c> in a class or a
+    /// record, also in a nested type or a class with nested type sections) declares its elements in the enclosing declaration scope
+    /// — the unit — not in the type: <c>mOn</c> and <c>U.mOn</c> bind, the field's section visibility does not apply to them (an
+    /// element of a strict private field is reachable), and <c>TC.mOn</c> is E2005; against the <c>.pcu</c> as against the source.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "LANG-210")]
+    public void AnonymousEnumFieldTypeThroughPcu()
+    {
+        const string Unit = """
+            unit U;
+            interface
+            type
+              TC = class
+              strict private
+                FHidden: (hA, hB);
+              public
+                FMode: (mOff, mOn, mAuto);
+                function IsOn: Boolean;
+              end;
+              TR = record
+                Kind: (kA, kB);
+              end;
+              TOuter = class
+              public
+                type TInner = class
+                  FIn: (iA, iB);
+                end;
+                class var Shared: (sA, sB, sC);
+                var FOut: (oA, oB);
+                function Last: Integer;
+              end;
+            implementation
+            function TC.IsOn: Boolean;
+            begin
+              FHidden := hB;
+              Result := (FMode = mOn) and (FHidden = hB);
+            end;
+            function TOuter.Last: Integer;
+            begin
+              FOut := oB;
+              Shared := sC;
+              Result := Ord(FOut) + Ord(Shared) + Ord(iB);
+            end;
+            end.
+            """;
+        const string Program = "program P;\nuses U;\ntype\n  TD = class(TC)\n    procedure SwitchOn;\n  end;\n"
+            + "procedure TD.SwitchOn;\nbegin\n  FMode := mOn;\nend;\n"
+            + "const\n  N = Ord(mAuto) + Ord(U.kB) + Ord(hB) + Ord(oB) + Ord(iB) + Ord(U.sC);\nvar\n  D: TD;\n  R: TR;\n  O: TOuter;\n"
+            + "  I: TOuter.TInner;\n  A: array[0..N] of Byte;\n"
+            + "begin\n  D := TD.Create;\n  D.SwitchOn;\n  R.Kind := kB;\n  O := TOuter.Create;\n  I := TOuter.TInner.Create;\n  I.FIn := iB;\n"
+            + "  O.FOut := U.oA;\n  TOuter.Shared := sB;\n"
+            + "  if D.IsOn and (D.FMode = mOn) and (D.FMode > U.mOff) and (R.Kind = kB) and (I.FIn = iB) and (O.FOut = oA) and (TOuter.Shared = sB) then\n"
+            + "    Writeln(SizeOf(A), O.Last);\n  D.Free;\n  O.Free;\n  I.Free;\nend.\n";
+        const string Members = "program P;\nuses U;\nbegin\n  Writeln(Ord(TC.mOn));\n  Writeln(Ord(TOuter.oB));\nend.\n";
+        string[] memberErrors =
+        [
+            "P.pas(4,18): E2005 'TC' does not contain a member named 'mOn'",
+            "P.pas(5,22): E2005 'TOuter' does not contain a member named 'oB'",
+        ];
+
+        var source = Compilation.Create(Options(), [], Files(u: Unit, program: Program))
+            .Emit(new EmitOptions { Stage = EmitStage.Check }, TestContext.Current.CancellationToken);
+        Assert.True(source.Success, string.Join("\n", source.Diagnostics.Select(d => d.ToText())));
+        Assert.Equal(memberErrors, Errors(Compilation.Create(Options(), [], Files(u: Unit, program: Members))
+            .Emit(new EmitOptions { Stage = EmitStage.Check }, TestContext.Current.CancellationToken)));
+
+        var pcu = Pcu("U", Files(u: Unit, program: "program P;\nuses U;\nbegin\nend.\n")).ToJsonString();
+        var fromPcu = AgainstPcu(pcu, Program);
+        Assert.True(fromPcu.Success, string.Join("\n", fromPcu.Diagnostics.Select(d => d.ToText())));
+        Assert.Equal(memberErrors, Errors(AgainstPcu(pcu, Members)));
+
+        EmitResult AgainstPcu(string text, string program)
+        {
+            var fs = new InMemoryFileSystem().Add(@"C:\p\P.pas", program).AddSystem()
+                .Add(Path.Combine(PcuImportTests.Lib, "U.pcu"), text + "\n").Add(Path.Combine(PcuImportTests.Lib, "U.obj"), "");
+            return Compilation.Create(Options() with { SearchPaths = [PcuImportTests.Lib] }, [], fs)
+                .Emit(new EmitOptions { Stage = EmitStage.Check }, TestContext.Current.CancellationToken);
+        }
+
+        static string[] Errors(EmitResult result) =>
+        [
+            .. result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error)
+                .Select(d => $"{Path.GetFileName(d.Location.Path)}({d.Location.LineSpan.Start.Line + 1},{d.Location.LineSpan.Start.Column + 1}): {d.Code} {d.Message}"),
+        ];
+    }
+
     // ------------------------------------------------------------------ Emit writes it (CMP-141, toolchain.md §6)
 
     [Fact]

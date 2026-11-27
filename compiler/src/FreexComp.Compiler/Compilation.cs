@@ -1355,7 +1355,7 @@ public sealed class Compilation
         var used = !unit.Bodies.IsEmpty || !Lowerer.ManagedGlobals(unit.Unit).IsEmpty;
         var items = Lowerer.ClassConstructorItems(unit.Unit);                   // CMP-1396 (C-374): class constructors run in $init, destructors in $final
         return new(unit.Unit, HasInit: used || !Lowerer.ThreadVars(unit.Unit).IsEmpty || !loaded.Forms.IsEmpty || !items.IsEmpty,    // $init registers threadvars (ABI-180) and forms (ABI-150)
-            HasFinal: used || items.Any(i => i.Destructor is not null));
+            HasFinal: used || items.Any(i => i.HasFinalPart));
     }
 
     /// <summary>
@@ -1378,7 +1378,7 @@ public sealed class Compilation
     /// release or, CMP-1396 (C-374), a type with a class destructor.
     /// </summary>
     private static bool HasProgramFinal(UnitSymbol program) =>
-        !Lowerer.ManagedGlobals(program).IsEmpty || Lowerer.ClassConstructorItems(program).Any(i => i.Destructor is not null);
+        !Lowerer.ManagedGlobals(program).IsEmpty || Lowerer.ClassConstructorItems(program).Any(i => i.HasFinalPart);
 
     /// <summary>
     /// CMP-420…424: with <c>-g</c> the metadata options — container, <c>isOptimized</c> (DBG-101) and the source bytes on disk for the
