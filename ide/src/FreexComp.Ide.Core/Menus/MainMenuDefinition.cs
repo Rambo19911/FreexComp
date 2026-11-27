@@ -273,6 +273,7 @@ public static class MainMenuDefinition
             Command("project.openOutputFolder"),
             Separator,
             Command("project.dependencies"),
+            Command("project.resources"), // UI-DLG-330
             Command("project.options"),
         ]),
         Submenu("Run",

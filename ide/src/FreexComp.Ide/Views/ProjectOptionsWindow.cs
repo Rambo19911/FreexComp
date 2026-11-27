@@ -15,7 +15,7 @@ namespace FreexComp.Ide.Views;
 /// left (rows <c>Page.&lt;PageId&gt;</c> with an error dot <c>Page.&lt;PageId&gt;.Error</c>), then the configuration bar,
 /// a separator, the page title and the page content, rebuilt when the page or the edited configuration changes.
 /// </summary>
-public sealed class ProjectOptionsWindow : DialogWindow
+public sealed partial class ProjectOptionsWindow : DialogWindow
 {
     public ProjectOptionsWindow(ProjectOptionsViewModel model)
         : base(model, Body(model))
@@ -31,7 +31,10 @@ public sealed class ProjectOptionsWindow : DialogWindow
         pages.ContainerPrepared += (_, e) =>
         {
             if (e.Container is ListBoxItem item && item.DataContext is ProjectOptionsPage page)
+            {
                 AutomationProperties.SetAutomationId(item, f.Id("Page." + page.Id));
+                AutomationProperties.SetName(item, page.Title); // read out by its title, not its type name
+            }
         };
         pages.SelectionChanged += (_, _) =>
         {
@@ -103,6 +106,8 @@ public sealed class ProjectOptionsWindow : DialogWindow
             content.Content = model.SelectedPage.Id switch
             {
                 "Application" => ApplicationPage(f, model),
+                "Resources" => ResourcesPage(f, model),
+                "VersionInfo" => VersionInfoPage(f, model),
                 "Compiler" => CompilerPage(f, model),
                 "SearchPaths" => SearchPathsPage(f, model),
                 "ConditionalDefines" => DefinesPage(f, model),
@@ -201,6 +206,7 @@ public sealed class ProjectOptionsWindow : DialogWindow
             },
             DialogFieldBuilder.Row(DialogFieldBuilder.Label(Strings.ProjectOptions_AppType, appType), appType),
             DialogFieldBuilder.Row(DialogFieldBuilder.Label(Strings.ProjectOptions_MainSource, main), main),
+            IconField(f, model),
             DialogFieldBuilder.Row(DialogFieldBuilder.Label(Strings.ProjectOptions_Language, null), f.ReadOnly("Language", model.LanguageText)),
             DialogFieldBuilder.Row(DialogFieldBuilder.Label(Strings.ProjectOptions_Platforms, null), f.ReadOnly("Platforms", model.PlatformText)),
             DialogFieldBuilder.Row(DialogFieldBuilder.Label(Strings.ProjectOptions_ProjectFile, null), projectFile));

@@ -795,6 +795,21 @@ The form change was undone.</value>
   <data name="Msg_ProjectOptions_SearchPathMissing" xml:space="preserve">
     <value>The folder does not exist yet.</value>
   </data>
+  <data name="Msg_ProjectOptions_IconInvalid" xml:space="preserve">
+    <value>The file does not exist or is not an icon file.</value>
+  </data>
+  <data name="Msg_ProjectOptions_ResourceNameInvalid" xml:space="preserve">
+    <value>A name is an identifier of up to 64 letters, digits and underscores, or a number from 1 to 65535.</value>
+  </data>
+  <data name="Msg_ProjectOptions_ResourceDuplicate" xml:space="preserve">
+    <value>The name {0} is already used by {1}.</value>
+  </data>
+  <data name="Msg_ProjectOptions_ResourceMissing" xml:space="preserve">
+    <value>The file does not exist.</value>
+  </data>
+  <data name="Msg_ProjectOptions_VersionInvalid" xml:space="preserve">
+    <value>A version is one to four numbers from 0 to 65535, separated by dots.</value>
+  </data>
   <data name="Msg_Status_CommandUnavailable" xml:space="preserve">
     <value>{0} is not available now</value>
   </data>
@@ -6110,6 +6125,13 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   <data name="Menu_project_dependencies" xml:space="preserve">
     <value>De&amp;pendencies…</value>
   </data>
+  <data name="Cmd_project_resources" xml:space="preserve">
+    <value>Project Resources…</value>
+  </data>
+  <data name="Menu_project_resources" xml:space="preserve">
+    <value>Binar&amp;y Resources…</value>
+    <comment>UI-DLG-330; every letter of "Resources" is a mnemonic of the Project menu already</comment>
+  </data>
   <data name="ProjectDependencies_Title" xml:space="preserve">
     <value>Dependencies of {0}</value>
     <comment>UI-DLG-310: title of the dialog ProjectDependencies; 0 = project name</comment>
@@ -6491,5 +6513,89 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   <data name="Template_fan" xml:space="preserve">
     <value>FreeAndNil call</value>
     <comment>code-templates.md IDE-ED-153: description of the built-in template fan</comment>
+  </data>
+  <data name="ProjectOptions_Page_Resources" xml:space="preserve">
+    <value>Resources</value>
+    <comment>UI-DLG-330</comment>
+  </data>
+  <data name="ProjectOptions_Page_VersionInfo" xml:space="preserve">
+    <value>Version Info</value>
+    <comment>UI-DLG-330</comment>
+  </data>
+  <data name="ProjectOptions_Icon" xml:space="preserve">
+    <value>_Icon:</value>
+    <comment>UI-DLG-331</comment>
+  </data>
+  <data name="ProjectOptions_IconClear" xml:space="preserve">
+    <value>Clear</value>
+    <comment>UI-DLG-331: clears the Icon field</comment>
+  </data>
+  <data name="ProjectOptions_IconPicker" xml:space="preserve">
+    <value>Choose the Application Icon</value>
+    <comment>UI-DLG-331: file picker title</comment>
+  </data>
+  <data name="ProjectOptions_IconFilter" xml:space="preserve">
+    <value>Icon files</value>
+    <comment>UI-DLG-331: file picker filter (*.ico)</comment>
+  </data>
+  <data name="ProjectOptions_ResourcePicker" xml:space="preserve">
+    <value>Add Resource Files</value>
+    <comment>UI-DLG-332: file picker title</comment>
+  </data>
+  <data name="ProjectOptions_ResourceName" xml:space="preserve">
+    <value>Name</value>
+    <comment>UI-DLG-332: column header</comment>
+  </data>
+  <data name="ProjectOptions_ResourceType" xml:space="preserve">
+    <value>Type</value>
+    <comment>UI-DLG-332: column header</comment>
+  </data>
+  <data name="ProjectOptions_ResourceFile" xml:space="preserve">
+    <value>File</value>
+    <comment>UI-DLG-332: column header</comment>
+  </data>
+  <data name="ProjectOptions_ResourceInfo" xml:space="preserve">
+    <value>{0:N0} bytes, {1}</value>
+    <comment>UI-DLG-333: line under the preview; 0 = file size, 1 = resource type</comment>
+  </data>
+  <data name="ProjectOptions_IncludeVersionInfo" xml:space="preserve">
+    <value>_Include version information</value>
+    <comment>UI-DLG-334</comment>
+  </data>
+  <data name="ProjectOptions_FileVersion" xml:space="preserve">
+    <value>File _version:</value>
+    <comment>UI-DLG-334</comment>
+  </data>
+  <data name="ProjectOptions_ProductVersion" xml:space="preserve">
+    <value>_Product version:</value>
+    <comment>UI-DLG-334</comment>
+  </data>
+  <data name="ProjectOptions_CompanyName" xml:space="preserve">
+    <value>_Company:</value>
+    <comment>UI-DLG-334</comment>
+  </data>
+  <data name="ProjectOptions_FileDescription" xml:space="preserve">
+    <value>File _description:</value>
+    <comment>UI-DLG-334</comment>
+  </data>
+  <data name="ProjectOptions_ProductName" xml:space="preserve">
+    <value>Product _name:</value>
+    <comment>UI-DLG-334</comment>
+  </data>
+  <data name="ProjectOptions_LegalCopyright" xml:space="preserve">
+    <value>C_opyright:</value>
+    <comment>UI-DLG-334 (C is the access key of Company)</comment>
+  </data>
+  <data name="ProjectOptions_Comments" xml:space="preserve">
+    <value>Co_mments:</value>
+    <comment>UI-DLG-334</comment>
+  </data>
+  <data name="ProjectOptions_InternalName" xml:space="preserve">
+    <value>Internal name:</value>
+    <comment>UI-DLG-334: read-only, the project name</comment>
+  </data>
+  <data name="ProjectOptions_OriginalFileName" xml:space="preserve">
+    <value>Original file name:</value>
+    <comment>UI-DLG-334: read-only, the output file</comment>
   </data>
 </root>

@@ -48,7 +48,7 @@ public sealed partial class ProjectOptionsDialogTests
         var dir = Path.GetDirectoryName(BuildScenario.ProjectPath(h))!;
         var (dlg, opening) = await OpenAsync(h);
         Assert.Equal(("Project Options — Hello", 760.0, 520.0, true), (dlg.Window.Title, dlg.Window.Width, dlg.Window.Height, dlg.Window.CanResize));
-        Assert.Equal(7, dlg.FindAll("Dialog.ProjectOptions.Page.").Count(c => c is ListBoxItem));
+        Assert.Equal(9, dlg.FindAll("Dialog.ProjectOptions.Page.").Count(c => c is ListBoxItem)); // with Resources and Version Info (UI-DLG-330)
 
         // Application: name, read-only facts, disabled app types stay visible.
         Assert.Equal("Hello", dlg.Find<TextBox>("Name").Text);

@@ -117,6 +117,7 @@ public static class IdeCommandAvailability
         ["project.clean"] = IdleOnly,
         ["project.checkSyntax"] = IdleOnly,
         ["project.options"] = IdleOnly,
+        ["project.resources"] = IdleOnly, // UI-DLG-330: as project.options
         ["project.setConfiguration"] = IdleOnly,
         ["project.setPlatform"] = IdleOnly, // IDE-PLAT-003
         ["project.addPlatform"] = IdleOnly, // IDE-PLAT-013

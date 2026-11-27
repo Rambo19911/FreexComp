@@ -50,7 +50,7 @@ public sealed record SearchPathRow(string Path, bool IsMissing, string? Origin =
 /// The Project Options dialog (dialogs.md §8, UI-DLG-080…086), 760 × 520, resizable. It edits a working copy of the
 /// open project's definition; <c>Apply</c>/<c>OK</c> call <see cref="IProjectService.ApplyOptionsAsync"/> (keys not shown
 /// are never touched: the copy is made with <c>with</c> from the definition). Pages: Application, Compiler, Search Paths,
-/// Conditional Defines, Output, Run, Build Events (read-only until P8+).
+/// Conditional Defines, Output, Run, Build Events; Resources and Version Info after Application (UI-DLG-330).
 /// </summary>
 public sealed partial class ProjectOptionsViewModel : DialogViewModel<bool>
 {
@@ -79,8 +79,10 @@ public sealed partial class ProjectOptionsViewModel : DialogViewModel<bool>
     private string _projectDefines;
     private bool _changed;
 
+    /// <param name="initialPage">The page shown first (<c>project.resources</c> opens <c>Resources</c>, UI-DLG-330); null = the
+    /// remembered one.</param>
     public ProjectOptionsViewModel(IProjectService projects, IDialogService dialogs, IFileDialogService pickers, IdeFileSystem fileSystem,
-        ILayoutService layout)
+        ILayoutService layout, string? initialPage = null)
     {
         ArgumentNullException.ThrowIfNull(projects);
         ArgumentNullException.ThrowIfNull(layout);
@@ -99,6 +101,7 @@ public sealed partial class ProjectOptionsViewModel : DialogViewModel<bool>
         _selectedConfiguration = _configs.Any(c => c.Name == _baseline.ActiveConfiguration) ? _baseline.ActiveConfiguration : _configs[0].Name;
         _projectSearchPaths = _baseline.SearchPaths;
         _projectEvents = new EventsState(_baseline.Events);
+        LoadResourceKeys();
         SearchPaths = new ObservableCollection<SearchPathRow>(_projectSearchPaths.Select(p => Row(p)));
         Run = new RunFields(_baseline.Directory, () => RunParametersViewModel.ExecutablePath(Build(), ActiveName), fileSystem, _baseline.Run,
             () => AppType == "library");
@@ -111,6 +114,8 @@ public sealed partial class ProjectOptionsViewModel : DialogViewModel<bool>
         Pages =
         [
             new("Application", Strings.ProjectOptions_Page_Application, false),
+            new("Resources", Strings.ProjectOptions_Page_Resources, false),
+            new("VersionInfo", Strings.ProjectOptions_Page_VersionInfo, false),
             new("Compiler", Strings.ProjectOptions_Page_Compiler, true),
             new("SearchPaths", Strings.ProjectOptions_Page_SearchPaths, true),
             new("ConditionalDefines", Strings.ProjectOptions_Page_ConditionalDefines, true),
@@ -118,7 +123,7 @@ public sealed partial class ProjectOptionsViewModel : DialogViewModel<bool>
             new("Run", Strings.ProjectOptions_Page_Run, false),
             new("BuildEvents", Strings.ProjectOptions_Page_BuildEvents, true),
         ];
-        _selectedPage = Pages.FirstOrDefault(p => p.Id == layout.GetDialogValue(DialogName, "page")) ?? Pages[0];
+        _selectedPage = Pages.FirstOrDefault(p => p.Id == (initialPage ?? layout.GetDialogValue(DialogName, "page"))) ?? Pages[0];
 
         Ok = new DialogButtonViewModel("Ok", Strings.Button_OK, () => CommitAsync(close: true)) { IsDefault = true, IsAccent = true };
         Apply = new DialogButtonViewModel("Apply", Strings.Button_Apply, () => CommitAsync(close: false)) { IsEnabled = false };
@@ -648,7 +653,7 @@ public sealed partial class ProjectOptionsViewModel : DialogViewModel<bool>
             };
         }
 
-        return _baseline with
+        return WithResourceKeys(_baseline) with
         {
             Name = ProjectName.Trim(),
             AppType = AppType,
@@ -771,19 +776,25 @@ public sealed partial class ProjectOptionsViewModel : DialogViewModel<bool>
         ProjectDefinesError = DefineError(ProjectDefines);
         ConfigDefinesError = DefineError(ConfigDefines, allowReset: true);
         OutputDirError = OutputDirMessage(OutputDir);
-        Pages[0].HasError = ProjectNameError is not null;
-        Pages[1].HasError = false;
-        Pages[2].HasError = !_projectSearchPaths.All(ValidSearchPath) || _configs.Any(c => !c.SearchPaths.All(ValidSearchPath));
-        Pages[3].HasError = ProjectDefinesError is not null || _configs.Any(c => DefineError(c.DefinesText, allowReset: true) is not null);
-        Pages[4].HasError = _configs.Any(c => OutputDirMessage(c.OutputDir) is not null);
-        Pages[5].HasError = !Run.IsValid;
-        Pages[6].HasError = EventsHaveError();
+        ValidateResources();
+        Page("Application").HasError = ProjectNameError is not null || IconError is not null;
+        Page("Resources").HasError = ResourcesHaveError();
+        Page("VersionInfo").HasError = VersionInfoHasError();
+        Page("Compiler").HasError = false;
+        Page("SearchPaths").HasError = !_projectSearchPaths.All(ValidSearchPath) || _configs.Any(c => !c.SearchPaths.All(ValidSearchPath));
+        Page("ConditionalDefines").HasError = ProjectDefinesError is not null || _configs.Any(c => DefineError(c.DefinesText, allowReset: true) is not null);
+        Page("Output").HasError = _configs.Any(c => OutputDirMessage(c.OutputDir) is not null);
+        Page("Run").HasError = !Run.IsValid;
+        Page("BuildEvents").HasError = EventsHaveError();
         foreach (var property in (string[])[nameof(ProjectNameError), nameof(SearchPathsError), nameof(ProjectDefinesError), nameof(ConfigDefinesError),
-                     nameof(OutputDirError), nameof(OutputDirWarning), nameof(PreBuildError), nameof(PostBuildError), nameof(IsValid)])
+                     nameof(OutputDirError), nameof(OutputDirWarning), nameof(PreBuildError), nameof(PostBuildError), nameof(FileVersionError),
+                     nameof(ProductVersionError), nameof(IsValid)])
             OnPropertyChanged(property);
         Ok.IsEnabled = IsValid;
         Apply.IsEnabled = _changed && IsValid;
     }
+
+    private ProjectOptionsPage Page(string id) => Pages.First(p => p.Id == id);
 
     /// <summary>Non-empty with valid path syntax; the reset marker is written by <c>Do not inherit</c> only, never typed.</summary>
     private bool ValidSearchPath(string path) =>

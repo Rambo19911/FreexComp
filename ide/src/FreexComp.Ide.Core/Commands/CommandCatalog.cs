@@ -193,6 +193,7 @@ public static class CommandCatalog
         new("project.moveProjectUp", [ProjectManager], 8, []),
         new("project.moveProjectDown", [ProjectManager], 8, []),
         new("project.dependencies", [Global], 8, []),
+        new("project.resources", [Global], 8, []),
         new("project.options", [Global], 3, ["Ctrl+Shift+F11"]),
         new("project.openOutputFolder", [Global], 3, []),
 

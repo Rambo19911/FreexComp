@@ -63,6 +63,7 @@ public static class Phase8Features
         "project.rebuildAll", // F09-009
         "project.removeFromGroup", // F09-009
         "project.removePlatform", // F03-003
+        "project.resources", // F11-091
         "project.setActive", // F09-009
         "project.setPlatform", // F03-003
         "run.toggleLibraryStepping", // F02-004

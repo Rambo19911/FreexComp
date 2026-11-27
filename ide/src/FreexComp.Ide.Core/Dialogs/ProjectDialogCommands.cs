@@ -6,7 +6,7 @@ using IdeFileSystem = FreexComp.Ide.Core.Platform.IFileSystem;
 namespace FreexComp.Ide.Core.Dialogs;
 
 /// <summary>
-/// <c>run.parameters</c> (dialogs.md §22), <c>project.options</c> (§8) and <c>project.configurationManager</c>
+/// <c>run.parameters</c> (dialogs.md §22), <c>project.options</c> and <c>project.resources</c> (§8) and <c>project.configurationManager</c>
 /// (phase8-configurations.md §4): the dialogs over the open project.
 /// </summary>
 public static class ProjectDialogCommands
@@ -25,6 +25,10 @@ public static class ProjectDialogCommands
         commands.RegisterHandler("project.options", new Handler(
             () => projects.Definition is not null,
             () => dialogs.ShowAsync(new ProjectOptionsViewModel(projects, dialogs, pickers, fileSystem, layout))));
+        // UI-DLG-330: Project Options opened on the page Resources.
+        commands.RegisterHandler("project.resources", new Handler(
+            () => projects.Definition is not null,
+            () => dialogs.ShowAsync(new ProjectOptionsViewModel(projects, dialogs, pickers, fileSystem, layout, "Resources"))));
         // IDE-CFG-010: with a project; the Idle state is the rule of IdeCommandAvailability.
         commands.RegisterHandler("project.configurationManager", new Handler(
             () => projects.Definition is not null,
