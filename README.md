@@ -248,9 +248,9 @@ Phase 8 implements the full feature set for Windows, area by area. Progress coun
 | AI features | 0 / 31 | `░░░░░░░░░░` | — |
 | Visual data binding | 0 / 16 | `░░░░░░░░░░` | — |
 | Build and deploy | 11 / 36 | `███░░░░░░░` | Build and run from the IDE, clickable errors · build configurations with inheritance · build events with a trust question · resource scripts and the resource compiler `prc` |
-| Language and runtime library | 11 / 118 | `█░░░░░░░░░` | Inline variables and `for var` loops with type inference · dynamic-array constructors, constants and `+` · class constructors and destructors · hardware faults caught by `try` … `except` · `deprecated` / `platform` / `experimental` warnings · runtime library source included |
-| IDE | 12 / 120 | `█░░░░░░░░░` | Main window, code editor, project open and save · recent files on the Welcome page · light and dark themes · code folding · bracket and directive pair matching · named bookmarks and the Bookmarks window · Tool Palette search · copy a library unit into a project · no-network guarantee checked by tests |
-| Source control | 0 / 18 | `░░░░░░░░░░` | — |
+| Language and runtime library | 12 / 118 | `█░░░░░░░░░` | Inline variables and `for var` loops with type inference · dynamic-array constructors, constants, `+`, `Insert`, `Delete` and `Concat` · class constructors and destructors · hardware faults caught by `try` … `except` · `deprecated` / `platform` / `experimental` warnings · runtime library source included |
+| IDE | 13 / 120 | `█░░░░░░░░░` | Main window, code editor, project open and save · parameter hints for every kind of call · recent files on the Welcome page · light and dark themes · code folding · bracket and directive pair matching · named bookmarks and the Bookmarks window · Tool Palette search · copy a library unit into a project · no-network guarantee checked by tests |
+| Source control | 1 / 18 | `█░░░░░░░░░` | Built-in diff viewer (side by side or inline) with Compare with Saved and Compare Files |
 | Refactoring and navigation | 0 / 27 | `░░░░░░░░░░` | — |
 | Debugging | 5 / 41 | `█░░░░░░░░░` | Breakpoints, stepping, locals, call stack · Step Into library code · value visualisers and a text viewer for strings |
 | Unit testing | 0 / 9 | `░░░░░░░░░░` | — |
@@ -260,7 +260,7 @@ Phase 8 implements the full feature set for Windows, area by area. Progress coun
 | Web front-end framework | 0 / 29 | `░░░░░░░░░░` | — |
 | Bundled components | 0 / 6 | `░░░░░░░░░░` | — |
 | Local web UI | 0 / 18 | `░░░░░░░░░░` | — |
-| **Total** | **64 / 881** | `█░░░░░░░░░` | **7 %** |
+| **Total** | **67 / 881** | `█░░░░░░░░░` | **7 %** |
 
 - [ ] First public release with installer
 
