@@ -16,7 +16,10 @@ program Ctl_TabGeometry;
   the TCM_GETITEMRECT length (rows of automatic lengths are not stretched with RaggedRight). The style bits of
   UIF-1492 are read back with GetWindowLongPtrW; after WM_THEMECHANGED (a new tab control has no theme handle before
   it, RTL-1147) GetWindowTheme is 0 for bottom/left/right (UIF-1494) and non-zero exactly when IsAppThemed for top
-  tabs. Constants at the form's DPI; the output names the checks only, so it is the same at every DPI. }
+  tabs. U-176: tsFlatButtons keeps 10 pixels between tabs at every position (bottom 4 x 60 in W 260 gives 2 rows,
+  left/right 12 tabs in H 193 give 6 columns) and automatic lengths process mnemonic prefixes ('&Mnemonic',
+  'Mne&monic' measure as 'Mnemonic', 'a&&bcdefghijk' as 'a&bcdefghijk'). Constants at the form's DPI; the output
+  names the checks only, so it is the same at every DPI. }
 uses
   Windows, Messages, Types, SysUtils, Classes, CommCtrl, Graphics, Controls, Forms, ImgList, ComCtrls, UxTheme,
   TestKit;
@@ -305,6 +308,29 @@ begin
     Probe('buttons right', Book(289, 193, 12, 60, tpRight, tsButtons, False, False, False, []));
     Probe('empty', Book(289, 193, 0, 0, tpTop, tsTabs, False, False, False, []));
 
+    Section('tsFlatButtons along spacing 10 at every position (U-176, UIF-1497)');
+    PC := Book(260, 193, 4, 60, tpBottom, tsFlatButtons, True, False, False, []);
+    try
+      CheckEqI(2, PC.RowCount, 'flat buttons bottom 4 x 60, W 260: 2 rows');
+      CheckAll('flat buttons bottom W 260', PC);
+    finally
+      PC.Free;
+    end;
+    PC := Book(289, 193, 12, 60, tpLeft, tsFlatButtons, False, False, False, []);
+    try
+      CheckEqI(6, PC.RowCount, 'flat buttons left 12 tabs, H 193: 6 columns');
+      CheckAll('flat buttons left 12 tabs', PC);
+    finally
+      PC.Free;
+    end;
+    PC := Book(289, 193, 12, 60, tpRight, tsFlatButtons, False, False, False, []);
+    try
+      CheckEqI(6, PC.RowCount, 'flat buttons right 12 tabs, H 193: 6 columns');
+      CheckAll('flat buttons right 12 tabs', PC);
+    finally
+      PC.Free;
+    end;
+
     Section('automatic lengths (UIF-1495, UIF-1498)');
     Probe('single line', Book(400, 193, 4, 0, tpTop, tsTabs, False, False, False, ['i', 'Alpha', 'Settings and more', 'Mnemonic']));
     Probe('two rows', Book(230, 193, 4, 0, tpTop, tsTabs, True, False, True, ['i', 'Alpha', 'Settings and more', 'Mnemonic']));
@@ -322,6 +348,15 @@ begin
     try
       PC.Font.Height := -20;
       CheckAll('20-pixel font, minimum length sent', PC);
+    finally
+      PC.Free;
+    end;
+    Section('automatic lengths with mnemonic prefixes (U-176, UIF-1498)');
+    PC := Book(400, 193, 4, 0, tpTop, tsTabs, False, False, False, ['Mnemonic', '&Mnemonic', 'Mne&monic', 'a&&bcdefghijk']);
+    try
+      CheckEqI(TTabAccess(PC).TabLength(0), TTabAccess(PC).TabLength(1), '&Mnemonic measures as Mnemonic');
+      CheckEqI(TTabAccess(PC).TabLength(0), TTabAccess(PC).TabLength(2), 'Mne&monic measures as Mnemonic');
+      CheckAll('mnemonic prefixes', PC);
     finally
       PC.Free;
     end;

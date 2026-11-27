@@ -1928,8 +1928,9 @@ begin
   Result := FScrollOpposite and (FStyle = tsTabs) and EffectiveMultiLine;
 end;
 
-{ UIF-1498: TabWidth when > 0, else Max(MinW, Tx + 2 Px + Iw); Tx is the GDI extent of the raw caption (with its '&'
-  characters) in the control's font, measured on a memory DC compatible with the screen }
+{ UIF-1498: TabWidth when > 0, else Max(MinW, Tx + 2 Px + Iw); Tx is the GDI extent of the caption with mnemonic
+  prefixes processed (a single '&' removed, '&&' measured as one '&'; U-176) in the control's font, measured on a
+  memory DC compatible with the screen }
 function TCustomTabControl.TabLength(Index: Integer): Integer;
 var
   DPI, MinW: Integer;
@@ -1944,7 +1945,7 @@ begin
     Exit;
   end;
   DPI := ControlDPI(Self);
-  S := TabCaption(Index);
+  S := StripHotkey(TabCaption(Index));
   Size.cx := 0;
   Size.cy := 0;
   if S <> '' then
@@ -1994,7 +1995,7 @@ begin
   end
   else
   begin
-    if (FStyle = tsFlatButtons) and (FTabPosition = tpTop) then
+    if FStyle = tsFlatButtons then
       Sa := 10
     else
       Sa := 3;

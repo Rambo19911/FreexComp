@@ -135,6 +135,34 @@ ok empty: visual styles as the program
 ok empty: RowCount = TCM_GETROWCOUNT
 ok empty: DisplayRect = TCM_ADJUSTRECT
 ok empty: tab lengths = TCM_GETITEMRECT
+# tsFlatButtons along spacing 10 at every position (U-176, UIF-1497)
+ok flat buttons bottom 4 x 60, W 260: 2 rows
+ok flat buttons bottom W 260: style bits
+ok flat buttons bottom W 260: visual styles off
+ok flat buttons bottom W 260: RowCount = TCM_GETROWCOUNT
+ok flat buttons bottom W 260: DisplayRect = the top result mirrored
+ok flat buttons bottom W 260: no tab rectangle overlaps DisplayRect
+ok flat buttons bottom W 260: distance to the nearest tab as at the top
+ok flat buttons bottom W 260: that distance is 4 scaled
+ok flat buttons bottom W 260: tab lengths = TCM_GETITEMRECT
+ok flat buttons left 12 tabs, H 193: 6 columns
+ok flat buttons left 12 tabs: style bits
+ok flat buttons left 12 tabs: visual styles off
+ok flat buttons left 12 tabs: RowCount = TCM_GETROWCOUNT
+ok flat buttons left 12 tabs: DisplayRect = the top result mirrored
+ok flat buttons left 12 tabs: no tab rectangle overlaps DisplayRect
+ok flat buttons left 12 tabs: distance to the nearest tab as at the top
+ok flat buttons left 12 tabs: that distance is 4 scaled
+ok flat buttons left 12 tabs: tab lengths = TCM_GETITEMRECT
+ok flat buttons right 12 tabs, H 193: 6 columns
+ok flat buttons right 12 tabs: style bits
+ok flat buttons right 12 tabs: visual styles off
+ok flat buttons right 12 tabs: RowCount = TCM_GETROWCOUNT
+ok flat buttons right 12 tabs: DisplayRect = the top result mirrored
+ok flat buttons right 12 tabs: no tab rectangle overlaps DisplayRect
+ok flat buttons right 12 tabs: distance to the nearest tab as at the top
+ok flat buttons right 12 tabs: that distance is 4 scaled
+ok flat buttons right 12 tabs: tab lengths = TCM_GETITEMRECT
 # automatic lengths (UIF-1495, UIF-1498)
 ok single line: style bits
 ok single line: visual styles as the program
@@ -157,4 +185,12 @@ ok 20-pixel font, minimum length sent: visual styles as the program
 ok 20-pixel font, minimum length sent: RowCount = TCM_GETROWCOUNT
 ok 20-pixel font, minimum length sent: DisplayRect = TCM_ADJUSTRECT
 ok 20-pixel font, minimum length sent: tab lengths = TCM_GETITEMRECT
-# passed 155 failed 0
+# automatic lengths with mnemonic prefixes (U-176, UIF-1498)
+ok &Mnemonic measures as Mnemonic
+ok Mne&monic measures as Mnemonic
+ok mnemonic prefixes: style bits
+ok mnemonic prefixes: visual styles as the program
+ok mnemonic prefixes: RowCount = TCM_GETROWCOUNT
+ok mnemonic prefixes: DisplayRect = TCM_ADJUSTRECT
+ok mnemonic prefixes: tab lengths = TCM_GETITEMRECT
+# passed 189 failed 0
