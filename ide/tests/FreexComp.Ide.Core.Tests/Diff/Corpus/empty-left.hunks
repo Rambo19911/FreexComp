@@ -1,0 +1,6 @@
+options: algorithm=Myers ignoreWhitespace=false ignoreCase=false context=3
+identical: false
+changes: 1
+@@ left 0,0 right 0,2 @@
++ . 0 |a
++ . 1 |b

@@ -1,0 +1,9 @@
+procedure A;
+begin
+  WriteLn('A');
+end;
+
+procedure B;
+begin
+  WriteLn('B');
+end;

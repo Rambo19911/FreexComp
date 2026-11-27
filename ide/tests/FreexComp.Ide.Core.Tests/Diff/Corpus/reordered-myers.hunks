@@ -1,0 +1,17 @@
+options: algorithm=Myers ignoreWhitespace=false ignoreCase=false context=3
+identical: false
+changes: 4
+@@ left 0,9 right 0,9 @@
+- 0 . 10+1 |procedure A;
++ . 0 10+1 |procedure B;
+= 1 1 |begin
+- 2 . 11+1 |  WriteLn('A');
++ . 2 11+1 |  WriteLn('B');
+= 3 3 |end;
+= 4 4 |
+- 5 . 10+1 |procedure B;
++ . 5 10+1 |procedure A;
+= 6 6 |begin
+- 7 . 11+1 |  WriteLn('B');
++ . 7 11+1 |  WriteLn('A');
+= 8 8 |end;

@@ -1,0 +1,3 @@
+options: algorithm=Myers ignoreWhitespace=false ignoreCase=true context=3
+identical: true
+changes: 0

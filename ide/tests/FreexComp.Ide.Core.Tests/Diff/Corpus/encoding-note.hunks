@@ -1,0 +1,4 @@
+options: algorithm=Myers ignoreWhitespace=false ignoreCase=false context=3
+identical: true
+changes: 0
+note: Encoding: UTF-8 → UTF-16 LE

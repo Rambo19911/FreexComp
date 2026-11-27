@@ -1,0 +1,10 @@
+options: algorithm=Myers ignoreWhitespace=false ignoreCase=false context=3
+identical: false
+changes: 1
+@@ left 0,3 right 0,3 @@
+- 0 . |Begin
+- 1 . 2+7 |  WriteLn('x');
+- 2 . |End.
++ . 0 |begin
++ . 1 2+7 |  writeln('x');
++ . 2 |end.

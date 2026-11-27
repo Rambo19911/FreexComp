@@ -1,0 +1,8 @@
+options: algorithm=Myers ignoreWhitespace=false ignoreCase=false context=3
+identical: false
+changes: 1
+@@ left 0,3 right 0,3 @@
+= 0 0 |begin
+- 1 . |  Result := Compute(A, B);
++ . 1 |  WriteLn(Format('%d', [X]));
+= 2 2 |end;

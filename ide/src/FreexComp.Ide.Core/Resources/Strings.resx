@@ -5988,4 +5988,20 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
     <value>The rest of the text could not be read: {0}</value>
     <comment>0 = fault message</comment>
   </data>
+  <data name="Msg_Diff_NoteLineEndings" xml:space="preserve">
+    <value>Line endings: {0} → {1}</value>
+    <comment>IDE-DIFF-006 diff note; 0, 1 = line-ending kind of the left / right text (CRLF, LF, CR, Mixed)</comment>
+  </data>
+  <data name="Msg_Diff_NoteEncoding" xml:space="preserve">
+    <value>Encoding: {0} → {1}</value>
+    <comment>IDE-DIFF-006 diff note; 0, 1 = encoding name of the left / right text</comment>
+  </data>
+  <data name="Msg_Diff_NoteFinalBreakAdded" xml:space="preserve">
+    <value>Line break at end of file added</value>
+    <comment>IDE-DIFF-006 diff note: the left text's last line has no line break, the right text's has one</comment>
+  </data>
+  <data name="Msg_Diff_NoteFinalBreakRemoved" xml:space="preserve">
+    <value>Line break at end of file removed</value>
+    <comment>IDE-DIFF-006 diff note: the left text's last line has a line break, the right text's has none</comment>
+  </data>
 </root>

@@ -12,5 +12,7 @@
   <ItemGroup>
     <!-- testing.md §4: shared test data, copied to the output as TestData/. -->
     <None Include="..\TestData\**\*" LinkBase="TestData" CopyToOutputDirectory="PreserveNewest" />
+    <!-- I-329: golden diff cases (DiffGoldenTests), copied to the output as Diff/Corpus/. -->
+    <None Update="Diff\Corpus\**\*" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

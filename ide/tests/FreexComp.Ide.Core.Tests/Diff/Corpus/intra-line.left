@@ -1,0 +1,3 @@
+begin
+  Total := Total + Price * Quantity;
+end;

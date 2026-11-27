@@ -1,0 +1,18 @@
+options: algorithm=Patience ignoreWhitespace=false ignoreCase=false context=3
+identical: false
+changes: 2
+@@ left 0,9 right 0,9 @@
+- 0 . |procedure A;
+- 1 . |begin
+- 2 . |  WriteLn('A');
+- 3 . |end;
+- 4 . |
+= 5 0 |procedure B;
+= 6 1 |begin
+= 7 2 |  WriteLn('B');
+= 8 3 |end;
++ . 4 |
++ . 5 |procedure A;
++ . 6 |begin
++ . 7 |  WriteLn('A');
++ . 8 |end;

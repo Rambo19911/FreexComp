@@ -1,0 +1,8 @@
+options: algorithm=Myers ignoreWhitespace=false ignoreCase=false context=3
+identical: false
+changes: 1
+@@ left 0,3 right 0,3 @@
+= 0 0 |begin
+- 1 . 27+8 |  Total := Total + Price * Quantity;
++ . 1 27+11 |  Total := Total + Price * Count + Tax;
+= 2 2 |end;

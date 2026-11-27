@@ -1,0 +1,9 @@
+options: algorithm=Myers ignoreWhitespace=false ignoreCase=false context=3
+identical: false
+changes: 1
+note: Line break at end of file added
+@@ left 0,3 right 0,4 @@
+= 0 0 |a
+= 1 1 |b
+= 2 2 |c
++ . 3 |d

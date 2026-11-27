@@ -1,0 +1,2 @@
+# I-329: golden diff inputs keep their exact bytes (line endings, encodings)
+* -text

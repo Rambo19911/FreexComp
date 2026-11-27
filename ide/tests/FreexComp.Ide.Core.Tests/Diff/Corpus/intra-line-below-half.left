@@ -1,0 +1,3 @@
+begin
+  Result := Compute(A, B);
+end;
