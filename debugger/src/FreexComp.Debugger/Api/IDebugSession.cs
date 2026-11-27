@@ -49,6 +49,12 @@ public interface IDebugSession : IAsyncDisposable
                                      CancellationToken ct = default);
     Task<byte[]> ReadMemoryAsync(ulong address, int count, CancellationToken ct = default);
 
+    /// <summary>Kind, length, reference count, code page, encoding and layout of the text behind <see cref="VariableInfo.Text"/>.</summary>
+    Task<TextDetails> GetTextDetailsAsync(VariableHandle text, CancellationToken ct = default);
+
+    /// <summary>One chunk of at most 65 536 elements from <paramref name="start"/>; continue at <see cref="TextChunk.Next"/> until <see cref="TextChunk.AtEnd"/>.</summary>
+    Task<TextChunk> ReadTextAsync(VariableHandle text, long start, int count, CancellationToken ct = default);
+
     // ---- events (raised serially on the session's dispatcher thread) ----
     event EventHandler<StateChangedEventArgs>? StateChanged;
     event EventHandler<StopInfo>? Stopped;

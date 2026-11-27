@@ -179,12 +179,16 @@ internal static class PdiLoader
                 Long(unicode, "lengthOffset", "abi.unicodeString"),
                 Size(Int(unicode, "lengthSize", "abi.unicodeString"), "abi.unicodeString.lengthSize"),
                 lengthUnit == "bytes",
-                Int(unicode, "charSize", "abi.unicodeString") is 2 ? 2 : throw new FormatException("unsupported abi.unicodeString.charSize")),
+                Int(unicode, "charSize", "abi.unicodeString") is 2 ? 2 : throw new FormatException("unsupported abi.unicodeString.charSize"),
+                RefCountOffset(unicode, "abi.unicodeString"),
+                RefCountSize(unicode, "abi.unicodeString")),
             new PdiAnsiStringAbi(
                 Long(ansi, "lengthOffset", "abi.ansiString"),
                 Size(Int(ansi, "lengthSize", "abi.ansiString"), "abi.ansiString.lengthSize"),
                 Long(ansi, "codePageOffset", "abi.ansiString"),
-                Size(Int(ansi, "codePageSize", "abi.ansiString"), "abi.ansiString.codePageSize")),
+                Size(Int(ansi, "codePageSize", "abi.ansiString"), "abi.ansiString.codePageSize"),
+                RefCountOffset(ansi, "abi.ansiString"),
+                RefCountSize(ansi, "abi.ansiString")),
             new PdiDynArrayAbi(
                 Long(dynArray, "lengthOffset", "abi.dynArray"),
                 Size(Int(dynArray, "lengthSize", "abi.dynArray"), "abi.dynArray.lengthSize")),
@@ -204,6 +208,20 @@ internal static class PdiLoader
                     "pointerToPointerToVmt" => PdiParentKind.PointerToPointerToVmt,
                     var other => throw new FormatException("unsupported abi.vmt.parentKind '" + other + "'"),
                 }));
+    }
+
+    /// <summary>DBG-524: the optional reference-count offset of a string header; the run-time library's when absent.</summary>
+    private static long RefCountOffset(JsonElement header, string owner) =>
+        header.TryGetProperty("refCountOffset", out _) ? Long(header, "refCountOffset", owner) : PdiAbi.DefaultRefCountOffset;
+
+    /// <summary>DBG-524: the optional reference-count size, 4 or 8 bytes; the run-time library's when absent.</summary>
+    private static int RefCountSize(JsonElement header, string owner)
+    {
+        if (!header.TryGetProperty("refCountSize", out _))
+            return PdiAbi.DefaultRefCountSize;
+        return Int(header, "refCountSize", owner) is var size and (4 or 8)
+            ? size
+            : throw new FormatException(owner + ".refCountSize must be 4 or 8");
     }
 
     /// <summary>Byte size of an integer field read from memory: 1, 2, 4 or 8.</summary>

@@ -25,8 +25,22 @@ internal interface IValueVisualizer
     ITextSource? TextSource(ValueNode value, VisualizerContext context);
 }
 
-/// <summary>A long text a visualiser offers for the text viewer (members come with the text calls, task G-092).</summary>
-internal interface ITextSource;
+/// <summary>
+/// A long text a visualiser offers for the text viewer (visualizers.md DBG-516 … DBG-523). Valid for the stop it was
+/// made in; its reads are limited to one chunk and have no read budget (DBG-509).
+/// </summary>
+internal interface ITextSource
+{
+    /// <summary>Kind, length, reference count, code page, encoding and layout (DBG-517, DBG-518).</summary>
+    Task<TextDetails> DetailsAsync(CancellationToken ct);
+
+    /// <summary>
+    /// The chunk of the elements <paramref name="start"/> … (at most <paramref name="count"/>, already clamped to
+    /// 1 … 65 536; <paramref name="start"/> ≥ 0). Unreadable at <paramref name="start"/>: a <see cref="DebuggerException"/>
+    /// with <c>MemoryUnreadable</c> (DBG-519, DBG-520).
+    /// </summary>
+    Task<TextChunk> ReadAsync(long start, int count, CancellationToken ct);
+}
 
 /// <summary>
 /// One row of the visualiser table (DBG-501, DBG-502). The table order is the priority within a selection group.

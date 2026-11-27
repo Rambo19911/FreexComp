@@ -205,7 +205,7 @@ public sealed class ApiShapeTests
         else
         {
             text = type == typeof(int) ? "int" : type == typeof(string) ? "string" : type == typeof(bool) ? "bool"
-                : type == typeof(ulong) ? "ulong" : type == typeof(uint) ? "uint" : type == typeof(byte) ? "byte"
+                : type == typeof(ulong) ? "ulong" : type == typeof(long) ? "long" : type == typeof(uint) ? "uint" : type == typeof(byte) ? "byte"
                 : type == typeof(void) ? "void" : type == typeof(object) ? "object" : type.Name;
         }
 

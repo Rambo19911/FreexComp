@@ -106,6 +106,13 @@ type ValueKind : enum = Integer, Float, Boolean, Char, Enum, Set, String, Static
 
 type VariableInfo : sealed record
 VariableInfo..ctor(string Name, string Value, string TypeName, ValueKind Kind, VariableHandle? Children, int ChildCount, bool CanModify, string? EvaluateName, ulong? Address)
+VariableInfo.Text : VariableHandle? { get; init; }
+
+type TextKind : enum = Unicode, Ansi, Short, PChar, PAnsiChar, CharArray, Computed
+type TextDetails : sealed record
+TextDetails..ctor(TextKind Kind, long Length, int? RefCount, int? CodePage, string Encoding, int ElementSize, ulong? PayloadAddress, int? MaxLength)
+type TextChunk : sealed record
+TextChunk..ctor(long Start, long Next, string Text, bool AtEnd, bool Truncated)
 
 type EvaluateContext : enum = Watch, Hover, Console
 type EvaluateResult : sealed record
@@ -158,6 +165,8 @@ IDebugSession.GetChildrenAsync(VariableHandle handle, int start = 0, int count =
 IDebugSession.EvaluateAsync(string expression, int? frameId, EvaluateContext context, CancellationToken ct = default) : Task<EvaluateResult>
 IDebugSession.SetValueAsync(string evaluateName, string valueExpression, int? frameId, CancellationToken ct = default) : Task<VariableInfo>
 IDebugSession.ReadMemoryAsync(ulong address, int count, CancellationToken ct = default) : Task<byte[]>
+IDebugSession.GetTextDetailsAsync(VariableHandle text, CancellationToken ct = default) : Task<TextDetails>
+IDebugSession.ReadTextAsync(VariableHandle text, long start, int count, CancellationToken ct = default) : Task<TextChunk>
 event IDebugSession.StateChanged : EventHandler<StateChangedEventArgs>?
 event IDebugSession.Stopped : EventHandler<StopInfo>?
 event IDebugSession.Continued : EventHandler?

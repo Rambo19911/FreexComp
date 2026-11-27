@@ -265,8 +265,8 @@ public sealed class VisualizerFrameworkTests
             new(new ListVisualizer("e"), null, null, new HashSet<PdiTypeKind> { PdiTypeKind.String }, true, true),
         ]);
         Assert.Equal(["a", "b", "c", "d", "e"], valid.Registrations.Select(r => r.Visualizer.Id));
-        // The built-in table holds nothing until the string visualiser (G-092).
-        Assert.Empty(VisualizerRegistry.BuiltIn.Registrations);
+        // The built-in table holds the string visualiser, first (DBG-515).
+        Assert.Equal(["string"], VisualizerRegistry.BuiltIn.Registrations.Select(r => r.Visualizer.Id));
     }
 
     [Fact]
@@ -508,7 +508,10 @@ public sealed class VisualizerFrameworkTests
         var defaults = new ValueFormatOptions();
         Assert.True(defaults.UseVisualizers);
         Assert.Equal(TimeSpan.FromSeconds(2), defaults.VisualizerTimeout);
-        Assert.Empty(new DebugSessionOptions { AdapterPath = @"C:\x\adapter.exe" }.Visualizers.Registrations);
+        // A session's table is the built-in one: only the transparent string visualiser, which keeps every plain summary (DBG-515).
+        var sessionTable = new DebugSessionOptions { AdapterPath = @"C:\x\adapter.exe" }.Visualizers;
+        Assert.Same(VisualizerRegistry.BuiltIn, sessionTable);
+        Assert.All(sessionTable.Registrations, r => Assert.True(r.Transparent));
 
         var visualizer = new ListVisualizer();
         var bed = new VisualizerBed([VisualizerBed.Pattern(visualizer, "TList<*>", summarizesNested: true)],

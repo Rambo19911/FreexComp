@@ -486,11 +486,14 @@ internal sealed class ValueDecoder
         var (bytes, complete) = await ReadPrefixAsync(payload, wanted, ct).ConfigureAwait(false);
         if (!complete && bytes.Length == 0)
             return StringText.Failed(Messages.UnreadableMemory(payload));
-        var units = codePage == 1200 ? Utf16(bytes)
-            : codePage == 1252 ? DecodeCodePage1252(bytes)
-            : AnsiEncoding(codePage).GetString(bytes);
-        return new StringText(units, length, !complete, wanted < length, null);
+        return new StringText(DecodeAnsi(codePage, bytes), length, !complete, wanted < length, null);
     }
+
+    /// <summary>DBG-161: the bytes of a byte string in its code page.</summary>
+    internal static string DecodeAnsi(int codePage, byte[] bytes) =>
+        codePage == 1200 ? Utf16(bytes)
+        : codePage == 1252 ? DecodeCodePage1252(bytes)
+        : AnsiEncoding(codePage).GetString(bytes);
 
     // Code page 1252, bytes 0x80 ... 0x9F; the five bytes the code page leaves undefined are the C1 controls.
     private const string CodePage1252High =
@@ -572,7 +575,7 @@ internal sealed class ValueDecoder
     }
 
     /// <summary>UTF-16LE code units as they are: unpaired surrogates are kept (a trailing odd byte is dropped).</summary>
-    private static string Utf16(byte[] bytes) =>
+    internal static string Utf16(byte[] bytes) =>
         string.Create(bytes.Length / 2, bytes, static (units, source) =>
         {
             for (var i = 0; i < units.Length; i++)
@@ -580,7 +583,7 @@ internal sealed class ValueDecoder
         });
 
     /// <summary>UTF-8 where it is valid; every other byte as the Latin-1 character of the same code.</summary>
-    private static string Utf8WithLatin1Fallback(ReadOnlySpan<byte> bytes)
+    internal static string Utf8WithLatin1Fallback(ReadOnlySpan<byte> bytes)
     {
         var result = new StringBuilder(bytes.Length);
         while (!bytes.IsEmpty)

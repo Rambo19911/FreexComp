@@ -18,7 +18,7 @@ internal sealed class VisualizerHost(VisualizerRegistry registry, TimeProvider t
 
     private readonly Dictionary<string, int> _failures = new(StringComparer.Ordinal);
 
-    /// <summary>No visualisers (a value service of a test that does not ask for any).</summary>
+    /// <summary>The built-in table outside a session (a value service of a test that passes no host); nothing is logged.</summary>
     public static VisualizerHost None { get; } = new(VisualizerRegistry.BuiltIn, TimeProvider.System, _ => { });
 
     public bool IsEmpty => registry.IsEmpty;
@@ -112,6 +112,23 @@ internal sealed class VisualizerHost(VisualizerRegistry registry, TimeProvider t
 
         Failed(registration, node, reason);
         return (false, default, reason);
+    }
+
+    /// <summary>
+    /// The text source of a selected visualiser for a node (DBG-516), or null: none, or the visualiser threw (a
+    /// failure, DBG-511, DBG-512). Reads no memory (DBG-504: the text is read only by the text calls).
+    /// </summary>
+    public ITextSource? TextSource(VisualizerRegistration registration, ValueNode node, VisualizerContext context)
+    {
+        try
+        {
+            return registration.Visualizer.TextSource(node, context);
+        }
+        catch (Exception e)
+        {
+            Failed(registration, node, e.Message);
+            return null;
+        }
     }
 
     /// <summary>DBG-512: the first failure is logged; the third turns the visualiser off and says so.</summary>

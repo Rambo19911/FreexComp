@@ -890,6 +890,155 @@ public sealed class ScriptedSessionTests(IntegrationFixture fixture)
         });
     }
 
+    /// <summary>
+    /// Every string kind of StringKinds.pas at one stop (visualizers.md §8): the plain summaries are unchanged, each
+    /// value with a text has a text handle whose details and text match, a <c>nil</c> PChar has none, and the 1 MiB
+    /// string is read in 16 chunks of at most 65 536 units to its end.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "DBG-515")]
+    [Trait("Req", "DBG-516")]
+    [Trait("Req", "DBG-517")]
+    [Trait("Req", "DBG-518")]
+    [Trait("Req", "DBG-519")]
+    [Trait("Req", "DBG-521")]
+    [Trait("Req", "DBG-522")]
+    [Trait("Req", "DBG-523")]
+    [Trait("Req", "DBG-428")]
+    [Trait("Req", "DBG-429")]
+    [Trait("Req", "DBG-430")]
+    public async Task Phase8_StringKinds_SummariesAndText()
+    {
+        var program = fixture.Build("StringKinds");
+        var p = program.SourcePath;
+        var stopLine = Array.FindIndex(File.ReadAllLines(p), line => line.EndsWith("// stop", StringComparison.Ordinal)) + 1;
+        Assert.True(stopLine > 0, "No line marked '// stop' in " + p);
+        var recorder = new SessionRecorder(nameof(Phase8_StringKinds_SummariesAndText));
+        await recorder.RunAsync(fixture, program, async session =>
+        {
+            await session.LaunchAsync(
+                new LaunchRequest { Program = program.ExePath, Breakpoints = [new SourceBreakpoints(p, [new BreakpointSpec { Id = 1, Line = stopLine }])] },
+                Ct);
+            Assert.True(session.HasTypeInfo);
+            var stop = await recorder.WaitForStopAsync();
+            AssertStop(session, stop, StopReason.Breakpoint, p, stopLine, [1]);
+            var frames = (await session.GetStackTraceAsync(stop.ThreadId, ct: Ct)).Frames;
+            var scopes = await session.GetScopesAsync(frames[0].Id, Ct);
+            var globals = await session.GetChildrenAsync(scopes[2].Handle, ct: Ct);
+            VariableInfo Global(string name) => globals.Single(g => g.Name == name);
+            Task<TextDetails> DetailsAsync(VariableInfo v) =>
+                session.GetTextDetailsAsync(v.Text ?? throw new InvalidOperationException(v.Name + " has no text handle"), Ct);
+
+            async Task<(string Text, List<TextChunk> Chunks)> ReadAllAsync(VariableInfo v)
+            {
+                var chunks = new List<TextChunk>();
+                for (long start = 0; ;)
+                {
+                    var chunk = await session.ReadTextAsync(v.Text!.Value, start, 65536, Ct);
+                    Assert.Equal(start, chunk.Start);
+                    Assert.False(chunk.Truncated);
+                    chunks.Add(chunk);
+                    if (chunk.AtEnd)
+                        return (string.Concat(chunks.Select(c => c.Text)), chunks);
+                    Assert.True(chunk.Next > start);
+                    start = chunk.Next;
+                }
+            }
+
+            const string UText = "Grüße ✓ 😀";
+            var u = Global("U");
+            Assert.Equal("'" + UText + "'", u.Value);
+            Assert.Equal(UText, (await ReadAllAsync(u)).Text);
+            var uDetails = await DetailsAsync(u);
+            Assert.Equal((TextKind.Unicode, 10L, (int?)1, (int?)1200, "UTF-16", 2),
+                (uDetails.Kind, uDetails.Length, uDetails.RefCount, uDetails.CodePage, uDetails.Encoding, uDetails.ElementSize));
+            Assert.NotNull(uDetails.PayloadAddress);
+
+            var z = Global("Z");
+            Assert.Equal("'a'#0'b'", z.Value);
+            Assert.Equal("a\0b", (await ReadAllAsync(z)).Text);
+            Assert.Equal(3, (await DetailsAsync(z)).Length);
+
+            var l = Global("L");
+            Assert.Equal("'x'#13#10'y'", l.Value);
+            Assert.Equal("x\r\ny", (await ReadAllAsync(l)).Text);
+
+            var e = Global("E");
+            Assert.Equal("''", e.Value);
+            var eDetails = await DetailsAsync(e);
+            Assert.Equal((0L, (int?)null, (ulong?)null), (eDetails.Length, eDetails.RefCount, eDetails.PayloadAddress));
+            Assert.Equal(new TextChunk(0, 0, "", true, false), await session.ReadTextAsync(e.Text!.Value, 0, 100, Ct));
+
+            var c = Global("C");
+            Assert.Equal("'const'", c.Value);
+            Assert.Equal(-1, (await DetailsAsync(c)).RefCount);
+
+            var a = Global("A");
+            Assert.Equal("'Grüße'", a.Value);
+            var aDetails = await DetailsAsync(a);
+            Assert.Equal((TextKind.Ansi, 7L, "UTF-8 (65001)", 1), (aDetails.Kind, aDetails.Length, aDetails.Encoding, aDetails.ElementSize));
+            Assert.Equal("Grüße", (await ReadAllAsync(a)).Text);
+
+            var s = Global("S");
+            Assert.Equal("'short'", s.Value);
+            var sDetails = await DetailsAsync(s);
+            Assert.Equal((TextKind.Short, 5L, (int?)255, "UTF-8"), (sDetails.Kind, sDetails.Length, sDetails.MaxLength, sDetails.Encoding));
+            Assert.Equal("short", (await ReadAllAsync(s)).Text);
+
+            var pChar = Global("P");
+            Assert.Equal(Address(uDetails.PayloadAddress!.Value) + " '" + UText + "'", pChar.Value);
+            var pDetails = await DetailsAsync(pChar);
+            Assert.Equal((TextKind.PChar, 10L), (pDetails.Kind, pDetails.Length));
+            Assert.Equal(UText, (await ReadAllAsync(pChar)).Text);
+
+            var pa = Global("PA");
+            Assert.Equal(Address(aDetails.PayloadAddress!.Value) + " 'GrÃ¼Ã'#159'e'", pa.Value);
+            var paDetails = await DetailsAsync(pa);
+            Assert.Equal((TextKind.PAnsiChar, 7L, "8-bit"), (paDetails.Kind, paDetails.Length, paDetails.Encoding));
+
+            var np = Global("NP");
+            Assert.Equal("nil", np.Value);
+            Assert.Null(np.Text);
+
+            var ca = Global("CA");
+            Assert.Equal("'abc'", ca.Value);
+            var caDetails = await DetailsAsync(ca);
+            Assert.Equal((TextKind.CharArray, 3L), (caDetails.Kind, caDetails.Length));
+            Assert.Equal("abc", (await ReadAllAsync(ca)).Text);
+
+            // The 1 MiB string: the plain summary, then 16 chunks to its end.
+            var big = Global("Big");
+            Assert.Equal("'" + new string('x', 1024) + "'… (Length: 1048576)", big.Value);
+            Assert.Equal(1048576, (await DetailsAsync(big)).Length);
+            var (bigText, bigChunks) = await ReadAllAsync(big);
+            Assert.Equal(16, bigChunks.Count);
+            Assert.All(bigChunks, chunk => Assert.True(chunk.Next - chunk.Start <= 65536));
+            Assert.Equal(new string('x', 1048576), bigText);
+
+            // Watch, hover, console and a computed value have text handles too.
+            foreach (var context in (EvaluateContext[])[EvaluateContext.Watch, EvaluateContext.Hover, EvaluateContext.Console])
+            {
+                var watched = (await session.EvaluateAsync("U", frames[0].Id, context, Ct)).Value;
+                Assert.Equal(u.Value, watched.Value);
+                Assert.Equal(UText, (await ReadAllAsync(watched)).Text);
+            }
+
+            var computed = (await session.EvaluateAsync("U + '!'", frames[0].Id, EvaluateContext.Watch, Ct)).Value;
+            Assert.Equal("'" + UText + "!'", computed.Value);
+            Assert.Equal(new TextDetails(TextKind.Computed, 11, null, null, "UTF-16", 2, null, null), await DetailsAsync(computed));
+            Assert.Equal(UText + "!", (await ReadAllAsync(computed)).Text);
+
+            await session.ContinueAsync(Ct);
+            var terminated = await recorder.WaitForTerminatedAsync();
+            Assert.Equal(TerminationCause.Exited, terminated.Cause);
+            Assert.Equal(0, terminated.ExitCode);
+            Assert.StartsWith("10 7 1048576 a\n", recorder.StdoutSoFar, StringComparison.Ordinal);
+        });
+    }
+
+    private static string Address(ulong address) => "$" + address.ToString("X16", CultureInfo.InvariantCulture);
+
     private static bool PathIsUnder(string path, string root) =>
         Path.GetFullPath(path).StartsWith(Path.TrimEndingDirectorySeparator(Path.GetFullPath(root)) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
 }

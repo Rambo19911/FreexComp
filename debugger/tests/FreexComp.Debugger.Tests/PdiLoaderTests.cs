@@ -178,6 +178,41 @@ public sealed class PdiLoaderTests
     }
 
     [Fact]
+    [Trait("Req", "DBG-524")]
+    public void RefCountOffset_DefaultsWhenAbsent_InvalidSizeRejected()
+    {
+        static PdiFile WithStrings(string unicodeExtra, string ansiExtra) => PdiFixture.WithTypes("", PdiFixture.Abi
+            .Replace("\"charSize\": 2 }", "\"charSize\": 2" + unicodeExtra + " }", StringComparison.Ordinal)
+            .Replace("\"codePageSize\": 2 }", "\"codePageSize\": 2" + ansiExtra + " }", StringComparison.Ordinal));
+
+        // Absent: the run-time library's layout (reference count Int32 at payload - 16).
+        var defaults = WithStrings("", "").Abi;
+        Assert.Equal((-16L, 4), (defaults.UnicodeString.RefCountOffset, defaults.UnicodeString.RefCountSize));
+        Assert.Equal((-16L, 4), (defaults.AnsiString.RefCountOffset, defaults.AnsiString.RefCountSize));
+        Assert.Equal(new PdiUnicodeStringAbi(-12, 4, false, 2), defaults.UnicodeString);
+        Assert.Equal(new PdiAnsiStringAbi(-12, 4, -8, 2), defaults.AnsiString);
+
+        // Present: taken as given (4 or 8 bytes).
+        var given = WithStrings(", \"refCountOffset\": -24, \"refCountSize\": 8", ", \"refCountOffset\": -20, \"refCountSize\": 4").Abi;
+        Assert.Equal((-24L, 8), (given.UnicodeString.RefCountOffset, given.UnicodeString.RefCountSize));
+        Assert.Equal((-20L, 4), (given.AnsiString.RefCountOffset, given.AnsiString.RefCountSize));
+
+        // Any other size, or a value that is not an integer, makes the file invalid.
+        foreach (var (unicodeExtra, ansiExtra, detail) in new[]
+        {
+            (", \"refCountSize\": 2", "", "abi.unicodeString.refCountSize must be 4 or 8"),
+            ("", ", \"refCountSize\": 1", "abi.ansiString.refCountSize must be 4 or 8"),
+            ("", ", \"refCountSize\": 16", "abi.ansiString.refCountSize must be 4 or 8"),
+            (", \"refCountOffset\": \"-16\"", "", "'refCountOffset' of abi.unicodeString is not an integer"),
+        })
+        {
+            var exception = Assert.Throws<DebuggerException>(() => WithStrings(unicodeExtra, ansiExtra));
+            Assert.Equal(DebugErrorCode.TypeInfoInvalid, exception.Code);
+            Assert.Equal("Type information file is invalid: test.pdi: " + detail, exception.Message);
+        }
+    }
+
+    [Fact]
     [Trait("Req", "DBG-134")]
     public void FindRoutine_Nested_PicksInnermost()
     {

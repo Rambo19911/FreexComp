@@ -6,10 +6,15 @@ internal enum PdiClassNameKind { PointerToShortString, PointerToUnicodeString, I
 
 internal enum PdiParentKind { PointerToVmt, PointerToPointerToVmt }
 
-/// <summary>Header of a string payload, relative to the payload pointer.</summary>
-internal sealed record PdiUnicodeStringAbi(long LengthOffset, int LengthSize, bool LengthInBytes, int CharSize);
+/// <summary>
+/// Header of a string payload, relative to the payload pointer. The reference count field defaults to the run-time
+/// library's layout when the type information does not name it (visualizers.md DBG-524).
+/// </summary>
+internal sealed record PdiUnicodeStringAbi(long LengthOffset, int LengthSize, bool LengthInBytes, int CharSize,
+    long RefCountOffset = PdiAbi.DefaultRefCountOffset, int RefCountSize = PdiAbi.DefaultRefCountSize);
 
-internal sealed record PdiAnsiStringAbi(long LengthOffset, int LengthSize, long CodePageOffset, int CodePageSize);
+internal sealed record PdiAnsiStringAbi(long LengthOffset, int LengthSize, long CodePageOffset, int CodePageSize,
+    long RefCountOffset = PdiAbi.DefaultRefCountOffset, int RefCountSize = PdiAbi.DefaultRefCountSize);
 
 internal sealed record PdiDynArrayAbi(long LengthOffset, int LengthSize);
 
@@ -24,7 +29,14 @@ internal sealed record PdiAbi(
     PdiUnicodeStringAbi UnicodeString,
     PdiAnsiStringAbi AnsiString,
     PdiDynArrayAbi DynArray,
-    PdiVmtAbi Vmt);
+    PdiVmtAbi Vmt)
+{
+    /// <summary>Offset of a string block's reference count from its payload when the type information omits it (rtl-abi.md §3.1).</summary>
+    public const long DefaultRefCountOffset = -16;
+
+    /// <summary>Size of that field when omitted.</summary>
+    public const int DefaultRefCountSize = 4;
+}
 
 /// <summary>The loaded type-information file of a program.</summary>
 internal sealed class PdiFile

@@ -42,10 +42,36 @@ public sealed record VariableInfo(
     int ChildCount,
     bool CanModify,
     string? EvaluateName,
-    ulong? Address);
+    ulong? Address)
+{
+    /// <summary>
+    /// The text of the value for a text viewer (<see cref="IDebugSession.GetTextDetailsAsync"/>,
+    /// <see cref="IDebugSession.ReadTextAsync"/>): non-null exactly for strings, character arrays and computed strings
+    /// (not for a <c>nil</c> pointer or an error). Valid for the stop epoch only, like every handle.
+    /// </summary>
+    public VariableHandle? Text { get; init; }
+}
 
 /// <summary>Where an expression is evaluated from.</summary>
 public enum EvaluateContext { Watch, Hover, Console }
 
 /// <summary>Result of an expression evaluation.</summary>
 public sealed record EvaluateResult(VariableInfo Value);
+
+/// <summary>The kind of a text behind <see cref="VariableInfo.Text"/>.</summary>
+public enum TextKind { Unicode, Ansi, Short, PChar, PAnsiChar, CharArray, Computed }
+
+/// <summary>
+/// What is known about a text: kind; length in elements (-1: a zero-terminated text without a terminator within the
+/// scan limit); reference count of a heap block (-1: a constant); code page; encoding as shown to the user; element size
+/// in bytes; address of the first element; declared maximum length of a short string.
+/// </summary>
+public sealed record TextDetails(TextKind Kind, long Length, int? RefCount, int? CodePage, string Encoding,
+    int ElementSize, ulong? PayloadAddress, int? MaxLength);
+
+/// <summary>
+/// One chunk of a text: the decoded elements <paramref name="Start"/> … <paramref name="Next"/> − 1. The next chunk
+/// starts at <paramref name="Next"/>; <paramref name="AtEnd"/> when the end of the text was reached;
+/// <paramref name="Truncated"/> when only a readable prefix of the chunk could be read.
+/// </summary>
+public sealed record TextChunk(long Start, long Next, string Text, bool AtEnd, bool Truncated);

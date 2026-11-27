@@ -39,6 +39,9 @@ internal sealed class ValueService
         /// <summary>The node is visualised: its children are the visualiser's (or the plain ones), then <c>[Raw]</c>.</summary>
         public Visualized? Visual { get; init; }
         public Func<CancellationToken, Task<IReadOnlyList<VariableInfo>>>? Load { get; init; }
+
+        /// <summary>A text handle (<see cref="VariableInfo.Text"/>, DBG-516): the text behind it.</summary>
+        public ITextSource? Text { get; init; }
         public IReadOnlyList<VariableInfo>? Items { get; set; }
 
         /// <summary>Children of <see cref="Node"/> already handed out: the same child keeps its handle.</summary>
@@ -103,7 +106,10 @@ internal sealed class ValueService
         var limit = count <= 0 ? Math.Max(_options.ChildPageSize, 1) : count;
         if (entry.Node is not { } node)
         {
-            entry.Items ??= await entry.Load!(ct).ConfigureAwait(false);
+            // A text handle has no children.
+            if (entry.Load is null)
+                return [];
+            entry.Items ??= await entry.Load(ct).ConfigureAwait(false);
             return [.. entry.Items.Skip(start).Take(limit)];
         }
 
@@ -123,6 +129,29 @@ internal sealed class ValueService
 
         return children;
     }
+
+    /// <summary>Elements one text chunk holds at most (DBG-430).</summary>
+    public const int MaxTextChunk = 65536;
+
+    /// <summary>DBG-429: the details of the text behind a text handle.</summary>
+    public Task<TextDetails> GetTextDetailsAsync(VariableHandle text, CancellationToken ct) => TextOf(text).DetailsAsync(ct);
+
+    /// <summary>
+    /// DBG-430: one chunk of the text behind a text handle, <paramref name="count"/> clamped to 1 … 65 536 elements;
+    /// a negative <paramref name="start"/> is an <see cref="ArgumentOutOfRangeException"/>.
+    /// </summary>
+    public Task<TextChunk> ReadTextAsync(VariableHandle text, long start, int count, CancellationToken ct)
+    {
+        var source = TextOf(text);
+        ArgumentOutOfRangeException.ThrowIfNegative(start);
+        return source.ReadAsync(start, Math.Clamp(count, 1, MaxTextChunk), ct);
+    }
+
+    /// <summary>The text of a handle of this stop; any other handle faults with <c>StaleReference</c> (DBG-408).</summary>
+    private ITextSource TextOf(VariableHandle handle) =>
+        handle.Epoch == _epoch && _handles.TryGetValue(handle.Id, out var entry) && entry.Text is { } text
+            ? text
+            : throw new DebuggerException(DebugErrorCode.StaleReference, Messages.StaleHandle);
 
     // ---- scopes ----
 
@@ -257,9 +286,10 @@ internal sealed class ValueService
         // DBG-176: memory can be written, or the adapter sets root variables by name.
         var isRoot = node.EvaluateName is { } name && name.IndexOfAny(['.', '[', '^', '(']) < 0;
         var canWrite = _canWriteMemory || (_canSetVariable && isRoot);
-        if (_pdi is not null && _visualizers.Select(node, raw, immediate) is { Transparent: false } registration)
+        var selected = _pdi is null ? null : _visualizers.Select(node, raw, immediate);
+        if (selected is { Transparent: false } registration)
         {
-            var context = new VisualizerContext(_pdi, _debuggee, formatter.Options, nested: false, node);
+            var context = new VisualizerContext(_pdi!, _debuggee, formatter.Options, nested: false, node);
             var summary = await _visualizers.CallAsync(registration, node, context, _options.VisualizerTimeout,
                 token => registration.Visualizer.SummaryAsync(node, context, token), ct).ConfigureAwait(false);
             if (summary.Ok)
@@ -274,6 +304,7 @@ internal sealed class ValueService
                         Value = summary.Result ?? "",
                         Children = expandable ? NewHandle(new Handle { Node = node, Visual = visual }) : null,
                         ChildCount = visual.Count(node),
+                        Text = expandable ? TextHandle(registration, node, formatter) : null,
                     };
                 }
             }
@@ -281,7 +312,16 @@ internal sealed class ValueService
 
         var nestedForms = raw ? null : await NestedFormsAsync(node, formatter, ct).ConfigureAwait(false);
         VariableHandle? handle = node.ChildCount > 0 && expandable ? NewHandle(new Handle { Node = node, Raw = raw }) : null;
-        return formatter.ToVariableInfo(node, handle, canWrite, nestedForms);
+        var info = formatter.ToVariableInfo(node, handle, canWrite, nestedForms);
+        // A transparent visualiser (the string visualiser, DBG-515) keeps the plain rendering and adds its text (a handle: not when only rendered).
+        return selected is { Transparent: true } transparent && expandable ? info with { Text = TextHandle(transparent, node, formatter) } : info;
+    }
+
+    /// <summary>DBG-516: a handle of this stop to the text the selected visualiser offers for a node; null for none.</summary>
+    private VariableHandle? TextHandle(VisualizerRegistration registration, ValueNode node, ValueFormatter formatter)
+    {
+        var context = new VisualizerContext(_pdi!, _debuggee, formatter.Options, nested: false, node);
+        return _visualizers.TextSource(registration, node, context) is { } text ? NewHandle(new Handle { Text = text }) : null;
     }
 
     /// <summary>DBG-507: the nested forms of the summary children whose visualiser summarises nested values.</summary>

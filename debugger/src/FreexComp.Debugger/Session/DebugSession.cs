@@ -174,6 +174,12 @@ internal sealed partial class DebugSession : IDebugSession, IDebugSessionDiagnos
     public Task<byte[]> ReadMemoryAsync(ulong address, int count, CancellationToken ct = default) =>
         PostAsync(SessionMethod.ReadMemoryAsync, () => ReadMemoryCoreAsync(address, count, ct), ct);
 
+    public Task<TextDetails> GetTextDetailsAsync(VariableHandle text, CancellationToken ct = default) =>
+        PostAsync(SessionMethod.GetTextDetailsAsync, () => Values.GetTextDetailsAsync(text, ct), ct);
+
+    public Task<TextChunk> ReadTextAsync(VariableHandle text, long start, int count, CancellationToken ct = default) =>
+        PostAsync(SessionMethod.ReadTextAsync, () => Values.ReadTextAsync(text, start, count, ct), ct);
+
     // ---- disposal ----
 
     /// <summary>

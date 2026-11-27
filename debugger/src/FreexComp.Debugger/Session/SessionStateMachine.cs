@@ -7,6 +7,7 @@ internal enum SessionMethod
     ContinueAsync, PauseAsync, StepOverAsync, StepIntoAsync, StepOutAsync, RunToLineAsync,
     SetBreakpointsAsync, SetExceptionSettingsAsync,
     GetThreadsAsync, GetStackTraceAsync, GetScopesAsync, GetChildrenAsync, EvaluateAsync, SetValueAsync, ReadMemoryAsync,
+    GetTextDetailsAsync, ReadTextAsync,
 }
 
 /// <summary>

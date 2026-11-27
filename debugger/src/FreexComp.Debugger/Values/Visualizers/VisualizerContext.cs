@@ -78,6 +78,12 @@ internal sealed class VisualizerContext
         return _memory.ReadMemoryAsync(address, count, _ct);
     }
 
+    /// <summary>
+    /// Debuggee memory for a text source (DBG-509: the text calls have their own limit, one chunk, and no budget):
+    /// exactly <paramref name="count"/> bytes, null when any is unreadable. Usable after the call that made the source.
+    /// </summary>
+    public Task<byte[]?> ReadTextMemoryAsync(ulong address, int count, CancellationToken ct) => _memory.ReadMemoryAsync(address, count, ct);
+
     /// <summary>Decodes a value of <paramref name="type"/> at <paramref name="address"/> (an address read from memory: one pointer level further).</summary>
     public async Task<ValueNode> DecodeAsync(string name, PdiType type, ulong address, string? evaluateName)
     {

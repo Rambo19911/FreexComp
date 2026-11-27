@@ -8,8 +8,8 @@ namespace FreexComp.Debugger.Values.Visualizers;
 /// </summary>
 internal sealed class VisualizerRegistry
 {
-    /// <summary>The table built into the library. Empty until the string visualiser (task G-092).</summary>
-    public static VisualizerRegistry BuiltIn { get; } = new([]);
+    /// <summary>The table built into the library: the string visualiser first (DBG-515).</summary>
+    public static VisualizerRegistry BuiltIn { get; } = new([StringVisualizer.Registration]);
 
     /// <summary>Selection groups within one candidate type, in this order (DBG-503).</summary>
     private enum Group { ExactName, GenericBase, KindsOnly }

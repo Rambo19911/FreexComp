@@ -27,6 +27,7 @@ public sealed class SessionStateTests
             "TerminateAsync", "ContinueAsync", "PauseAsync", "StepOverAsync", "StepIntoAsync", "StepOutAsync",
             "RunToLineAsync", "SetBreakpointsAsync", "SetExceptionSettingsAsync", "GetThreadsAsync",
             "GetStackTraceAsync", "GetScopesAsync", "GetChildrenAsync", "EvaluateAsync", "SetValueAsync", "ReadMemoryAsync",
+            "GetTextDetailsAsync", "ReadTextAsync",
         ],
         [DebugState.Terminating] = ["TerminateAsync"],
         [DebugState.Terminated] = ["TerminateAsync"],
@@ -52,6 +53,8 @@ public sealed class SessionStateTests
         ["EvaluateAsync"] = s => s.EvaluateAsync("1", null, EvaluateContext.Watch, Ct),
         ["SetValueAsync"] = s => s.SetValueAsync("X", "1", null, Ct),
         ["ReadMemoryAsync"] = s => s.ReadMemoryAsync(0x10000, 4, Ct),
+        ["GetTextDetailsAsync"] = s => s.GetTextDetailsAsync(new VariableHandle(1, 1), Ct),
+        ["ReadTextAsync"] = s => s.ReadTextAsync(new VariableHandle(1, 1), 0, 1, Ct),
     };
 
     public static TheoryData<DebugState, string, bool> StateTable()
@@ -75,7 +78,7 @@ public sealed class SessionStateTests
 
         Assert.Equal(interfaceMethods.Order(), Calls.Keys.Order());
         Assert.Equal(Calls.Keys.Order(), Enum.GetNames<SessionMethod>().Order());
-        Assert.Equal(6 * 17, StateTable().Count);
+        Assert.Equal(6 * 19, StateTable().Count);
     }
 
     [Theory]
