@@ -66,8 +66,8 @@ public sealed class LayoutCasesTheory
     {
         var ids = UiCorpus.DiscoverLayout().Select(c => c.Id[(c.Id.IndexOf('/') + 1)..][..3]).Distinct().ToList();
 
-        // E41 ... E46, E48, E49: tab positions, rows and styles (U-172); E47 (the plain tab strip) arrives with D-148
-        Assert.Equal(Enumerable.Range(1, 46).Concat([48, 49]).Select(n => $"E{n:00}"), ids.Order(StringComparer.Ordinal));
+        // E41 ... E49: tab positions, rows and styles (U-172), E47 the plain tab strip (U-173, D-148)
+        Assert.Equal(Enumerable.Range(1, 49).Select(n => $"E{n:00}"), ids.Order(StringComparer.Ordinal));
     }
 
     [Fact]

@@ -1,0 +1,35 @@
+{
+  "formatVersion": 1,
+  "dpi": 96,
+  "forms": [
+    {
+      "class": "TForm",
+      "name": "LayoutForm",
+      "clientWidth": 400,
+      "clientHeight": 300,
+      "controls": [
+        {
+          "class": "TTabControl",
+          "name": "Strip",
+          "left": 0,
+          "top": 0,
+          "width": 289,
+          "height": 193,
+          "visible": true,
+          "controls": [
+            {
+              "class": "TPanel",
+              "name": "C",
+              "left": 4,
+              "top": 25,
+              "width": 281,
+              "height": 164,
+              "visible": true,
+              "controls": []
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
