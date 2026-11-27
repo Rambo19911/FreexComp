@@ -117,8 +117,8 @@ public sealed class RefactoringService : IRefactoringService
 
     /// <summary>
     /// The preview of IDE-REFAC-007: shows the changes of a checked edit and returns the edit reduced to the chosen ones,
-    /// or null when the user cancelled. Null until the Preview dialog exists: <see cref="PreviewMode.Auto"/> and
-    /// <see cref="PreviewMode.Always"/> then apply without a dialog.
+    /// or null when the user cancelled. The service graph sets it to the dialog <c>RefactoringPreview</c> (UI-DLG-360…367).
+    /// Null: <see cref="PreviewMode.Auto"/> and <see cref="PreviewMode.Always"/> apply without a preview.
     /// </summary>
     internal Func<WorkspaceEdit, Task<WorkspaceEdit?>>? Preview { get; set; }
 

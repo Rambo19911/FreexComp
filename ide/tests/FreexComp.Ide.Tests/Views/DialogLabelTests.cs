@@ -78,6 +78,10 @@ public sealed class DialogLabelTests
         ["Options"] = (typeof(OptionsWindow), Scene.Project, Command("tools.options")),
         ["ProjectDependencies"] = (typeof(ProjectDependenciesWindow), Scene.Group, Command("project.dependencies")),
         ["ProjectOptions"] = (typeof(ProjectOptionsWindow), Scene.Project, Command("project.options")),
+        ["RefactoringPreview"] = (typeof(RefactoringPreviewWindow), Scene.Project, (h, _) => h.Services.Refactoring.ApplyAsync(
+            new FreexComp.Ide.Core.Refactoring.WorkspaceEdit("Rename Symbol",
+                [new FreexComp.Ide.Core.Refactoring.FileEdit(BuildScenario.UnitPath(h), h.Services.Documents.ActiveDocument!.VisibleText!.Buffer.Text, [new TextEdit(0, 0, "{x}")])]),
+            FreexComp.Ide.Core.Refactoring.PreviewMode.Always)),
         ["RenameFile"] = (typeof(RenameFileWindow), Scene.Project, Model((_, _) =>
             new RenameFileViewModel("Unit1.pas", _ => new OperationResult(null, []), (_, _) => Task.FromResult(true)))),
         ["ReopenEncoding"] = (typeof(ReopenEncodingWindow), Scene.Project, Model((_, _) =>

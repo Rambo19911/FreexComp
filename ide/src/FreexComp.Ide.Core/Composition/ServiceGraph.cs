@@ -223,6 +223,9 @@ public static class ServiceGraph
         projects.UnitRename = new CodeModel.UnitRenameAnalyzer(codeModel, toolchain, librarySource); // I-236
         var refactoring = new Refactoring.RefactoringService(documents, projects, librarySource, platform.FileSystem, platform.Dialogs, status,
             platform.Clock, platform.Log, codeModel); // I-347
+        // IDE-REFAC-007: the preview of an operation is the dialog RefactoringPreview (I-350).
+        refactoring.Preview = edit => platform.Dialogs.ShowAsync(new RefactoringPreviewViewModel(edit, documents.ActiveDocument?.FilePath,
+            platform.TextBuffers, languages, layout, platform.Clipboard));
         if (Phase8Features.IsAvailable(Refactoring.RefactoringService.UndoCommandId, 8, toolWindowPhase ?? ImplementedPhase))
             refactoring.RegisterCommands(commands); // I-349
         var liveDiagnostics = new CodeModel.LiveDiagnosticsService(documents, codeModel, settings, platform.Clock, platform.Dispatcher); // I-111

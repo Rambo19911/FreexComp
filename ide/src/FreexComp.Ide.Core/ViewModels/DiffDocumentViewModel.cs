@@ -258,6 +258,12 @@ public sealed class DiffDocumentViewModel : DocumentViewModel, ICommandTarget
     /// <summary>IDE-HIST-021: the right side is a live editor buffer (the Copy Block button is shown).</summary>
     public bool HasLiveRight => RightSource.LiveBuffer is not null;
 
+    /// <summary>
+    /// The header shows <c>Refresh</c>. False where the owner of the view re-reads the sources itself (the Preview dialog
+    /// of a refactoring, UI-DLG-364).
+    /// </summary>
+    public bool CanRefresh { get; init; } = true;
+
     /// <summary>IDE-HIST-021: a live, writable right side and the caret in a change block.</summary>
     public bool CanCopyBlock => RightSource.LiveBuffer is { IsReadOnly: false } && _rightInput is not null && CurrentBlock >= 0
         && CurrentBlock < Blocks.Length;
@@ -352,6 +358,32 @@ public sealed class DiffDocumentViewModel : DocumentViewModel, ICommandTarget
         CaretRow = blocks[index].FirstRow;
         CurrentBlock = index;
         Reveal(new DiffReveal(CaretRow, Third: true));
+    }
+
+    /// <summary>
+    /// UI-DLG-364: selects the first change block that shows left line <paramref name="leftLine"/> or right line
+    /// <paramref name="rightLine"/> (0-based; null: none), as <see cref="SelectBlock"/>. When no block shows them — the
+    /// lines are the same on both sides — the row of the left line is scrolled to one third instead and false is returned.
+    /// </summary>
+    public bool SelectBlockAt(int leftLine, int? rightLine)
+    {
+        var (first, second) = Mode == DiffViewMode.SideBySide ? (_diff.Left, _diff.Right) : (_diff.Inline, _diff.Inline);
+        var blocks = Blocks;
+        for (var i = 0; i < blocks.Length; i++)
+        {
+            for (var row = blocks[i].FirstRow; row < blocks[i].FirstRow + blocks[i].RowCount; row++)
+            {
+                if (first[row].LeftLine == leftLine || (rightLine is not null && second[row].RightLine == rightLine))
+                {
+                    SelectBlock(i);
+                    return true;
+                }
+            }
+        }
+
+        CaretRow = _diff.RowOf(Mode, leftLine, rightLine);
+        Reveal(new DiffReveal(CaretRow, Third: true));
+        return false;
     }
 
     /// <summary>

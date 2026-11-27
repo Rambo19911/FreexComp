@@ -22,7 +22,8 @@ namespace FreexComp.Ide.Views;
 /// editor buffer (IDE-HIST-021), Refresh), an optional banner, the two side-by-side views or the inline view with their
 /// context menu (<c>Diff.ContextMenu</c>), and the overview strip at the right edge. Both side-by-side views scroll together.
 /// <c>Editor</c> command scope with the keymap context <c>Diff</c> (shortcuts.md <c>E Diff</c>); the view is the target of
-/// <c>edit.copy</c> and <c>edit.selectAll</c> in the focused view. AutomationId <c>Document.Diff</c>.
+/// <c>edit.copy</c> and <c>edit.selectAll</c> in the focused view. AutomationId <c>Document.Diff</c>. The Preview dialog
+/// of a refactoring embeds the view (UI-DLG-364; the constructor with <c>embedded</c>).
 /// </summary>
 public sealed class DiffDocumentView : DockPanel, ICommandTarget
 {
@@ -34,12 +35,26 @@ public sealed class DiffDocumentView : DockPanel, ICommandTarget
     private readonly DiffPaneEditor _inline;
     private readonly Grid _body;
     private readonly DiffOverviewStrip _overview = new();
+    private readonly bool _embedded;
     private DiffDocumentViewModel? _diff;
     private bool _syncing;
     private bool _ready;
 
     public DiffDocumentView()
+        : this(embedded: false)
     {
+    }
+
+    /// <param name="embedded">
+    /// The view is a part of a dialog (the Preview dialog of a refactoring, UI-DLG-364), not a document tab: binding a
+    /// diff does not take the keyboard focus, and the header has two rows — the labels, below them the tools — so that
+    /// it fits a narrow pane.
+    /// </param>
+    public DiffDocumentView(bool embedded)
+    {
+        _embedded = embedded;
+        if (embedded)
+            AddHandler(KeyDownEvent, OnEmbeddedKeyDown, Avalonia.Interactivity.RoutingStrategies.Tunnel);
         CommandRouting.SetScope(this, CommandScope.Editor);
         CommandRouting.SetToolWindow(this, DiffDocumentViewModel.DocumentKind);
         AutomationProperties.SetAutomationId(this, "Document.Diff");
@@ -151,6 +166,19 @@ public sealed class DiffDocumentView : DockPanel, ICommandTarget
         return true;
     }
 
+    /// <summary>
+    /// No keymap reaches a dialog (UI-A11Y-014), so the one command of the view that changes what a key does is bound
+    /// here: Ctrl+C copies the selection without filler rows (IDE-DIFF-025).
+    /// </summary>
+    private void OnEmbeddedKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.C || e.KeyModifiers != Avalonia.Input.KeyModifiers.Control || !Focused.Editor.TextArea.IsKeyboardFocusWithin
+            || !CanExecute(CopyCommandId, null))
+            return;
+        e.Handled = true;
+        _ = ExecuteAsync(CopyCommandId, null);
+    }
+
     protected override void OnDataContextChanged(EventArgs e)
     {
         base.OnDataContextChanged(e);
@@ -197,7 +225,8 @@ public sealed class DiffDocumentView : DockPanel, ICommandTarget
             else
                 ScrollToRow(diff.TopRow, third: false);
             UpdateOverview();
-            Focused.Editor.TextArea.Focus();
+            if (!_embedded)
+                Focused.Editor.TextArea.Focus(); // a diff tab that opens; an embedded view leaves the focus where it is
         }, DispatcherPriority.Loaded);
     }
 
@@ -220,7 +249,8 @@ public sealed class DiffDocumentView : DockPanel, ICommandTarget
     {
         if (e.PropertyName is nameof(DiffDocumentViewModel.Marks) or nameof(DiffDocumentViewModel.Layout))
             _overview.InvalidateVisual();
-        if (e.PropertyName == nameof(DiffDocumentViewModel.Mode) && _diff is not null)
+        // The view of the new mode takes the focus — embedded only when a code view had it (a toggle of the header keeps it).
+        if (e.PropertyName == nameof(DiffDocumentViewModel.Mode) && _diff is not null && (!_embedded || _body.IsKeyboardFocusWithin))
             Dispatcher.UIThread.Post(() => Focused.Editor.TextArea.Focus(), DispatcherPriority.Loaded);
     }
 
@@ -318,6 +348,7 @@ public sealed class DiffDocumentView : DockPanel, ICommandTarget
         copyBlock.Bind(IsVisibleProperty, new Binding(nameof(DiffDocumentViewModel.HasLiveRight)));
         var refresh = MakeButton("Diff.Refresh", Strings.Diff_Refresh, nameof(DiffDocumentViewModel.RefreshCommand));
         refresh.Margin = new Thickness(8, 0, 0, 0);
+        refresh.Bind(IsVisibleProperty, new Binding(nameof(DiffDocumentViewModel.CanRefresh)));
 
         var labels = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Children = { leftLabel, arrow, rightLabel, notes, changes } };
         // The tools wrap onto a second line when the tab is too narrow for one (none is ever cut off).
@@ -327,9 +358,33 @@ public sealed class DiffDocumentView : DockPanel, ICommandTarget
             Margin = new Thickness(12, 0, 0, 0), Children = { sideBySide, inline, whitespace, previous, next, copyBlock, refresh },
         };
         var row = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*") };
-        row.Children.Add(labels);
-        Grid.SetColumn(tools, 1);
-        row.Children.Add(tools);
+        if (_embedded)
+        {
+            // Labels above the tools; the right label is cut (its tooltip has the path) before the change count is.
+            labels.Children.Clear();
+            var first = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,Auto,*,Auto,Auto") };
+            rightLabel.TextTrimming = Avalonia.Media.TextTrimming.CharacterEllipsis;
+            rightLabel.HorizontalAlignment = HorizontalAlignment.Left;
+            foreach (var (control, column) in new (Control, int)[] { (leftLabel, 0), (arrow, 1), (rightLabel, 2), (notes, 3), (changes, 4) })
+            {
+                Grid.SetColumn(control, column);
+                first.Children.Add(control);
+            }
+
+            tools.HorizontalAlignment = HorizontalAlignment.Left;
+            tools.Margin = new Thickness(0, 4, 0, 0);
+            row = new Grid { RowDefinitions = new RowDefinitions("Auto,Auto") };
+            row.Children.Add(first);
+            Grid.SetRow(tools, 1);
+            row.Children.Add(tools);
+        }
+        else
+        {
+            row.Children.Add(labels);
+            Grid.SetColumn(tools, 1);
+            row.Children.Add(tools);
+        }
+
         var bar = new Border { Child = row, Padding = new Thickness(8, 4), BorderThickness = new Thickness(0, 0, 0, 1) };
         AutomationProperties.SetAutomationId(bar, "Diff.Header");
         bar.Bind(Border.BackgroundProperty, bar.GetResourceObservable("FxcBgHeaderBrush"));
