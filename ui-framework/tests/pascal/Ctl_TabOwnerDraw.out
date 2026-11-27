@@ -1,0 +1,66 @@
+# defaults and the native style (UIF-1513)
+ok TTabControl.OwnerDraw default False
+ok TTabControl: OwnerDraw published
+ok TTabControl: OnDrawTab published
+ok TPageControl: OwnerDraw published
+ok TPageControl: OnDrawTab published
+ok OwnerDraw: default False (not written)
+ok Canvas exists
+ok Canvas has no handle
+ok no TCS_OWNERDRAWFIXED by default
+ok OwnerDraw = True: TCS_OWNERDRAWFIXED
+ok the window was recreated
+ok tabs kept through the recreation
+ok OwnerDraw = False: style removed
+# the drawing message (UIF-1513)
+ok WM_DRAWITEM (ODT_TAB) answered 1
+ok OnDrawTab called for itemID 2
+ok ODS_SELECTED -> Active
+ok Rect is rcItem unchanged
+ok Canvas.Handle is the DRAWITEMSTRUCT DC inside the call
+ok Canvas.Handle = 0 after the call
+ok no ODS_SELECTED -> not Active
+ok the DC's font restored
+ok the DC's brush restored
+ok the DC's text colour restored
+ok the DC's background mode restored
+# card acceptance: once per visible tab (UIF-1513)
+ok 3 tabs single-line: Active of tab 0
+ok 3 tabs single-line: Active of tab 1
+ok 3 tabs single-line: Active of tab 2
+ok 3 tabs single-line: every visible tab drawn exactly once
+ok 3 tabs single-line: no other tab index
+ok 3 tabs single-line: Rect within TabRect -2 .. +2
+ok 3 tabs single-line: Canvas.Handle is the item DC inside the call
+ok 3 tabs single-line: Canvas not allocated after the paint
+ok page control: 6 tabs in 2 rows
+ok page control 6 tabs, 2 rows: Active of tab 0
+ok page control 6 tabs, 2 rows: Active of tab 1
+ok page control 6 tabs, 2 rows: Active of tab 2
+ok page control 6 tabs, 2 rows: Active of tab 3
+ok page control 6 tabs, 2 rows: Active of tab 4
+ok page control 6 tabs, 2 rows: Active of tab 5
+ok page control 6 tabs, 2 rows: every visible tab drawn exactly once
+ok page control 6 tabs, 2 rows: no other tab index
+ok page control 6 tabs, 2 rows: Rect within TabRect -2 .. +2
+ok page control 6 tabs, 2 rows: Canvas.Handle is the item DC inside the call
+ok page control 6 tabs, 2 rows: Canvas not allocated after the paint
+# a handler's drawing in a capture (UIF-1513)
+ok tab control: the red fill of every tab in the WM_PRINTCLIENT capture
+ok tab control: Canvas.Handle is the capture's item DC
+ok tab control: Canvas not allocated after the capture
+ok page control: the red fill of every tab in the WM_PRINTCLIENT capture
+ok page control: Canvas.Handle is the capture's item DC
+ok page control: Canvas not allocated after the capture
+# default content without a handler (UIF-1514)
+ok the control's Color is clBtnFace
+ok one WM_DRAWITEM per tab in the capture
+ok the caption in Font.Color inside every tab
+ok Rect filled with the control's Color (2 pixels inside its corners)
+ok page control: one WM_DRAWITEM per tab
+ok the tab's image at Rect.Left + Px, vertically centred
+ok the caption right of the image
+# no GDI growth (UIF-1515)
+ok 100 captures: GDI objects within 2
+ok no Canvas handle after the captures
+# passed 59 failed 0

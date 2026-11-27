@@ -89,6 +89,7 @@ type
     FImages: TCustomImageList;
     FImageChangeLink: TChangeLink;
     FMultiLine: Boolean;
+    FOwnerDraw: Boolean;
     FRaggedRight: Boolean;
     FScrollOpposite: Boolean;
     FStyle: TTabStyle;
@@ -96,8 +97,10 @@ type
     FTabIndex: Integer;
     FTabPosition: TTabPosition;
     FTabWidth: SmallInt;
+    FCanvas: TCanvas;
     FOnChange: TNotifyEvent;
     FOnChanging: TTabChangingEvent;
+    FOnDrawTab: TDrawTabEvent;
     FOnGetImageIndex: TTabGetImageEvent;
     function GetDisplayRect: TRect;
     procedure ImageListChange(Sender: TObject);
@@ -106,15 +109,23 @@ type
     procedure SetHotTrack(Value: Boolean);
     procedure SetImages(Value: TCustomImageList);
     procedure SetMultiLine(Value: Boolean);
+    procedure SetOwnerDraw(Value: Boolean);
     procedure SetRaggedRight(Value: Boolean);
     procedure SetScrollOpposite(Value: Boolean);
     procedure SetStyle(Value: TTabStyle);
     procedure SetTabHeight(Value: SmallInt);
     procedure SetTabPosition(Value: TTabPosition);
     procedure SetTabWidth(Value: SmallInt);
+    { UIF-1513: the parent's WM_DRAWITEM (ODT_TAB) reflected }
+    procedure CNDrawItem(var Message: TWMDrawItem);
   protected
     procedure CreateParams(var Params: TCreateParams); override;
     procedure CreateWnd; override;
+    { a window DC Canvas obtained on demand goes before the window (graphics.md UIF-570) }
+    procedure DestroyWnd; override;
+    procedure WndProc(var Message: TMessage); override;
+    { UIF-1514: OnDrawTab, else the default content; Canvas is bound to the item DC }
+    procedure DrawTab(TabIndex: Integer; const Rect: TRect; Active: Boolean); virtual;
     procedure ChangeScale(M, D: Integer); override;
     procedure Notification(AComponent: TComponent; Operation: TOperation); override;
     { the tab thickness TabH of UIF-1497 }
@@ -147,6 +158,7 @@ type
     property HotTrack: Boolean read FHotTrack write SetHotTrack default False;
     property Images: TCustomImageList read FImages write SetImages;
     property MultiLine: Boolean read FMultiLine write SetMultiLine default False;
+    property OwnerDraw: Boolean read FOwnerDraw write SetOwnerDraw default False;
     property RaggedRight: Boolean read FRaggedRight write SetRaggedRight default False;
     property ScrollOpposite: Boolean read FScrollOpposite write SetScrollOpposite default False;
     property Style: TTabStyle read FStyle write SetStyle default tsTabs;
@@ -156,6 +168,7 @@ type
     property TabWidth: SmallInt read FTabWidth write SetTabWidth default 0;
     property OnChange: TNotifyEvent read FOnChange write FOnChange;
     property OnChanging: TTabChangingEvent read FOnChanging write FOnChanging;
+    property OnDrawTab: TDrawTabEvent read FOnDrawTab write FOnDrawTab;
     property OnGetImageIndex: TTabGetImageEvent read FOnGetImageIndex write FOnGetImageIndex;
   public
     constructor Create(AOwner: TComponent); override;
@@ -168,6 +181,8 @@ type
     function IndexOfTabAt(X, Y: Integer): Integer;
     { UIF-1501: the display rectangle in client coordinates }
     property DisplayRect: TRect read GetDisplayRect;
+    { UIF-1513, UIF-1515: bound to the item DC only inside DrawTab / OnDrawTab }
+    property Canvas: TCanvas read FCanvas;
   end;
 
   { controls-standard.md section 20 }
@@ -223,6 +238,7 @@ type
     property HotTrack;
     property Images;
     property MultiLine;
+    property OwnerDraw;
     property ParentFont;
     property RaggedRight;
     property ScrollOpposite;
@@ -237,6 +253,7 @@ type
     property OnClick;
     property OnContextPopup;
     property OnDblClick;
+    property OnDrawTab;
     property OnEnter;
     property OnExit;
     property OnGetImageIndex;
@@ -282,6 +299,7 @@ type
     property HotTrack;
     property Images;
     property MultiLine;
+    property OwnerDraw;
     property ParentFont;
     property RaggedRight;
     property ScrollOpposite;
@@ -298,6 +316,7 @@ type
     property OnClick;
     property OnContextPopup;
     property OnDblClick;
+    property OnDrawTab;
     property OnEnter;
     property OnExit;
     property OnGetImageIndex;
@@ -1652,6 +1671,8 @@ begin
   FTabIndex := -1;
   FImageChangeLink := TChangeLink.Create;
   FImageChangeLink.OnChange := ImageListChange;
+  FCanvas := TControlCanvas.Create;
+  TControlCanvas(FCanvas).Control := Self;
 end;
 
 destructor TCustomTabControl.Destroy;
@@ -1659,6 +1680,8 @@ begin
   inherited Destroy;
   FImageChangeLink.Free;
   FImageChangeLink := nil;
+  FCanvas.Free;
+  FCanvas := nil;
 end;
 
 { UIF-1492 }
@@ -1695,6 +1718,79 @@ begin
     Params.Style := Params.Style or TCS_HOTTRACK;
   if FTabWidth > 0 then
     Params.Style := Params.Style or TCS_FIXEDWIDTH;
+  if FOwnerDraw then
+    Params.Style := Params.Style or TCS_OWNERDRAWFIXED;
+end;
+
+procedure TCustomTabControl.DestroyWnd;
+begin
+  TControlCanvas(FCanvas).FreeHandle;
+  inherited DestroyWnd;
+end;
+
+procedure TCustomTabControl.WndProc(var Message: TMessage);
+begin
+  if Message.Msg = CN_DRAWITEM then
+    CNDrawItem(TWMDrawItem(Message))
+  else
+    inherited WndProc(Message);
+end;
+
+{ UIF-1513: the item DC's state saved, Canvas bound to it for DrawTab, both undone in a finally; answered 1 }
+procedure TCustomTabControl.CNDrawItem(var Message: TWMDrawItem);
+var
+  D: PDrawItemStruct;
+  Saved: Integer;
+begin
+  D := Message.DrawItemStruct;
+  if (D = nil) or (D^.CtlType <> ODT_TAB) then
+  begin
+    inherited WndProc(TMessage(Message));
+    Exit;
+  end;
+  Saved := SaveDC(D^.hDC);
+  TControlCanvas(FCanvas).FreeHandle;
+  FCanvas.Handle := D^.hDC;
+  try
+    FCanvas.Font := Font;
+    FCanvas.Brush.Color := Color;
+    DrawTab(Integer(D^.itemID), D^.rcItem, (D^.itemState and ODS_SELECTED) <> 0);
+  finally
+    FCanvas.Handle := 0;
+    RestoreDC(D^.hDC, Saved);
+  end;
+  Message.Result := 1;
+end;
+
+{ UIF-1514: OnDrawTab when assigned; otherwise Rect filled with the brush, the tab's image (UIF-1512) at
+  Rect.Left + Px vertically centred and the caption centred in the rest of Rect (accelerators shown) }
+procedure TCustomTabControl.DrawTab(TabIndex: Integer; const Rect: TRect; Active: Boolean);
+var
+  R: TRect;
+  Px, ImageIndex: Integer;
+  S: string;
+begin
+  if Assigned(FOnDrawTab) then
+  begin
+    FOnDrawTab(Self, TabIndex, Rect, Active);
+    Exit;
+  end;
+  FCanvas.FillRect(Rect);
+  R := Rect;
+  if FImages <> nil then
+  begin
+    ImageIndex := GetImageIndex(TabIndex);
+    if (ImageIndex >= 0) and (ImageIndex < FImages.Count) then
+    begin
+      Px := LayoutMulDiv(6, ControlDPI(Self), 96);
+      FImages.Draw(FCanvas, Rect.Left + Px, (Rect.Top + Rect.Bottom - TImageListAccess(FImages).Height) div 2,
+        ImageIndex);
+      R.Left := Rect.Left + Px + TImageListAccess(FImages).Width;
+    end;
+  end;
+  S := TabCaption(TabIndex);
+  FCanvas.Brush.Style := bsClear;
+  FCanvas.TextRect(R, S, [tfSingleLine, tfVerticalCenter, tfCenter]);
 end;
 
 { UIF-1494: bottom, left and right tabs use the unthemed renderer; UIF-1495: padding and minimum tab length sent
@@ -2061,6 +2157,15 @@ begin
   if FMultiLine <> Value then
   begin
     FMultiLine := Value;
+    StyleChanged;
+  end;
+end;
+
+procedure TCustomTabControl.SetOwnerDraw(Value: Boolean);
+begin
+  if FOwnerDraw <> Value then
+  begin
+    FOwnerDraw := Value;
     StyleChanged;
   end;
 end;

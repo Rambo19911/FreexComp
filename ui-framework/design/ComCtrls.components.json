@@ -121,6 +121,7 @@
         { "name": "HotTrack", "type": "Boolean", "default": false, "category": "Appearance" },
         { "name": "Images", "type": "TCustomImageList", "kind": "component", "category": "Appearance" },
         { "name": "MultiLine", "type": "Boolean", "default": false, "category": "Behavior", "affectsLayout": true },
+        { "name": "OwnerDraw", "type": "Boolean", "default": false, "category": "Appearance" },
         { "name": "ParentFont", "type": "Boolean", "default": true, "category": "Appearance" },
         { "name": "RaggedRight", "type": "Boolean", "default": false, "category": "Appearance" },
         { "name": "ScrollOpposite", "type": "Boolean", "default": false, "category": "Behavior", "affectsLayout": true },
@@ -137,6 +138,7 @@
         { "name": "OnClick", "signature": "TNotifyEvent" },
         { "name": "OnContextPopup", "signature": "TContextPopupEvent" },
         { "name": "OnDblClick", "signature": "TNotifyEvent" },
+        { "name": "OnDrawTab", "signature": "TDrawTabEvent" },
         { "name": "OnEnter", "signature": "TNotifyEvent" },
         { "name": "OnExit", "signature": "TNotifyEvent" },
         { "name": "OnGetImageIndex", "signature": "TTabGetImageEvent" },
@@ -166,6 +168,7 @@
         { "name": "HotTrack", "type": "Boolean", "default": false, "category": "Appearance" },
         { "name": "Images", "type": "TCustomImageList", "kind": "component", "category": "Appearance" },
         { "name": "MultiLine", "type": "Boolean", "default": false, "category": "Behavior", "affectsLayout": true },
+        { "name": "OwnerDraw", "type": "Boolean", "default": false, "category": "Appearance" },
         { "name": "ParentFont", "type": "Boolean", "default": true, "category": "Appearance" },
         { "name": "RaggedRight", "type": "Boolean", "default": false, "category": "Appearance" },
         { "name": "ScrollOpposite", "type": "Boolean", "default": false, "category": "Behavior", "affectsLayout": true },
@@ -184,6 +187,7 @@
         { "name": "OnClick", "signature": "TNotifyEvent" },
         { "name": "OnContextPopup", "signature": "TContextPopupEvent" },
         { "name": "OnDblClick", "signature": "TNotifyEvent" },
+        { "name": "OnDrawTab", "signature": "TDrawTabEvent" },
         { "name": "OnEnter", "signature": "TNotifyEvent" },
         { "name": "OnExit", "signature": "TNotifyEvent" },
         { "name": "OnGetImageIndex", "signature": "TTabGetImageEvent" },
@@ -561,6 +565,7 @@
     "TMouseEvent": "procedure(Sender: TObject; Button: TMouseButton; Shift: TShiftState; X, Y: Integer)",
     "TMouseMoveEvent": "procedure(Sender: TObject; Shift: TShiftState; X, Y: Integer)",
     "TTabChangingEvent": "procedure(Sender: TObject; var AllowChange: Boolean)",
+    "TDrawTabEvent": "procedure(Control: TCustomTabControl; TabIndex: Integer; const Rect: TRect; Active: Boolean)",
     "TTabGetImageEvent": "procedure(Sender: TObject; TabIndex: Integer; var ImageIndex: Integer)",
     "TLVChangeEvent": "procedure(Sender: TObject; Item: TListItem; Change: TItemChange)",
     "TLVColumnClickEvent": "procedure(Sender: TObject; Column: TListColumn)",
@@ -578,11 +583,13 @@
     "TRichEditProtectChangeEvent": "procedure(Sender: TObject; StartPos, EndPos: Integer; var AllowChange: Boolean)"
   },
   "eventSignatureUnits": {
+    "TCustomTabControl": "ComCtrls",
     "TItemChange": "ComCtrls",
     "TListColumn": "ComCtrls",
     "TListItem": "ComCtrls",
     "TMouseButton": "Controls",
     "TPoint": "Types",
+    "TRect": "Types",
     "TShiftState": "Classes",
     "TTreeNode": "ComCtrls"
   }
