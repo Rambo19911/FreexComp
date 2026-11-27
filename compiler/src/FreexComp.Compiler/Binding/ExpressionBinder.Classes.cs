@@ -322,7 +322,7 @@ internal sealed partial class ExpressionBinder
         switch (kind)
         {
             case ReceiverKind.ClassName:
-                return new BoundReceiver(new BoundClassReferenceExpression(call, className!, className!.Reference), IsVirtual: false, Flag: null);
+                return new BoundReceiver(new BoundClassReferenceExpression(QualifierOf(call), className!, className!.Reference), IsVirtual: false, Flag: null);
             case ReceiverKind.Instance when instance!.Type is ClassRefTypeSymbol:
                 return new BoundReceiver(instance, IsVirtual: method.IsDispatched, Flag: null);
             case ReceiverKind.Instance:
@@ -358,6 +358,18 @@ internal sealed partial class ExpressionBinder
         };
         return new BoundReceiver(self, IsVirtual: !inherited && method.IsDispatched && current.SelfParameter is not null, Flag: null);
     }
+
+    /// <summary>
+    /// C-407: the class name a call is made on (<c>TFoo</c> in <c>TFoo.Create</c>, <c>TFoo.Make(1)</c>) — the syntax of the receiver's
+    /// class reference, so that the call's own node keeps the call's type in the semantic model; the call itself where it has no
+    /// qualifier (an attribute).
+    /// </summary>
+    private static SyntaxNode QualifierOf(SyntaxNode call) => call switch
+    {
+        MemberAccessExpressionSyntax access => access.Expression,
+        InvocationExpressionSyntax { Expression: MemberAccessExpressionSyntax access } => access.Expression,
+        _ => call,
+    };
 
     private BoundReceiver? Receiver(SyntaxNode call, MethodSymbol method, ReceiverKind kind, BoundExpression? instance, ClassTypeSymbol? className)
     {
@@ -395,7 +407,7 @@ internal sealed partial class ExpressionBinder
                 }
 
                 // LANG-630/633: on a class name — allocates (Alloc = 1), bound statically to that class's constructor
-                return new BoundReceiver(new BoundClassReferenceExpression(call, className!, className!.Reference), IsVirtual: false, Flag: 1);
+                return new BoundReceiver(new BoundClassReferenceExpression(QualifierOf(call), className!, className!.Reference), IsVirtual: false, Flag: 1);
             case ReceiverKind.ClassName:
                 _diagnostics.Report(call, "E2607");
                 return null;

@@ -292,6 +292,54 @@ public sealed class SemanticModelTests
         Assert.Equal("K", Assert.IsType<ConstantSymbol>(model.GetDeclaredSymbol(Node<ConstDeclarationSyntax>(model, "K = 1"))).Name);
     }
 
+    /// <summary>
+    /// C-407: a call on a class name has its own type — the class for a constructor (<c>TFoo.Create</c>, <c>TFoo.Make(1)</c>), the
+    /// result for a class function — not the class reference of its receiver, which belongs to the qualifier <c>TFoo</c>.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-230")]
+    public void ConstructorCallTypeIsTheClass()
+    {
+        var model = Model("""
+            program P;
+            type
+              TFoo = class
+                constructor Make(N: Integer);
+                class function Count: Integer;
+              end;
+            constructor TFoo.Make(N: Integer); begin end;
+            class function TFoo.Count: Integer; begin Result := 0; end;
+            var Foo: TFoo; N: Integer;
+            begin
+              Foo := TFoo.Create;
+              Foo := TFoo.Make(1);
+              N := TFoo.Count;
+            end.
+            """);
+        Assert.DoesNotContain(model.GetDiagnostics(), d => d.Severity == DiagnosticSeverity.Error);
+
+        var create = Node<MemberAccessExpressionSyntax>(model, "TFoo.Create");
+        var info = model.GetTypeInfo(create);
+        Assert.Equal("TFoo", Assert.IsType<ClassTypeSymbol>(info.Type).Name);
+        Assert.Same(info.Type, info.ConvertedType);
+        Assert.Equal(MethodKind.Constructor, Assert.IsType<MethodSymbol>(model.GetSymbolInfo(create).Symbol).MethodKind);
+
+        var make = Node<InvocationExpressionSyntax>(model, "TFoo.Make(1)");
+        Assert.Same(info.Type, model.GetTypeInfo(make).Type);
+        Assert.Equal("Make", model.GetSymbolInfo(make).Symbol?.Name);
+
+        Assert.Equal("Integer", model.GetTypeInfo(Node<MemberAccessExpressionSyntax>(model, "TFoo.Count", occurrence: 1)).Type?.Name);   // 0: the heading
+
+        // the qualifier names the class; as an expression it is the class reference the call is made on
+        foreach (var (marker, occurrence) in new[] { ("TFoo.Create", 0), ("TFoo.Make(1)", 0), ("TFoo.Count", 1) })
+        {
+            var qualifier = Node<IdentifierNameSyntax>(model, marker, occurrence);
+            Assert.Same(info.Type, model.GetSymbolInfo(qualifier).Symbol);
+            Assert.Same(info.Type, Assert.IsType<ClassRefTypeSymbol>(model.GetTypeInfo(qualifier).Type).Class);
+        }
+    }
+
     [Fact]
     public void BrokenCode_NeverThrows()
     {

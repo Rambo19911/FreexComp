@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Numerics;
 using System.Runtime.CompilerServices;
 using FreexComp.Compiler.Binding;
 using FreexComp.Compiler.Symbols;
@@ -92,7 +93,7 @@ public static class CompletionService
         {
             ExceptionTypes(builder);
         }
-        else if (IsTypePosition(previous))
+        else if (IsTypePosition(previous) || IsInsideEmptyTypeArguments(model, text, previous, position))
         {
             builder.AddVisible(s => s is TypeSymbol or UnitSymbol);
             builder.AddUsedUnits();
@@ -419,6 +420,28 @@ public static class CompletionService
         _ => false,
     };
 
+    /// <summary>
+    /// C-406: the caret between the two characters of <c>&lt;&gt;</c> right after a type name is the empty type argument list of a
+    /// generic: the name stands in a type position, or it names a generic type (<c>TBox&lt;|&gt;.Create</c>). The lexer reads
+    /// <c>&lt;&gt;</c> as one token (an operator in an expression, skipped text after a type), so the text decides.
+    /// </summary>
+    private static bool IsInsideEmptyTypeArguments(SemanticModel model, string text, SyntaxToken previous, int position)
+    {
+        if (position < 1 || position >= text.Length || text[position - 1] != '<' || text[position] != '>'
+            || previous.Kind != SyntaxKind.IdentifierToken || !string.IsNullOrWhiteSpace(text[previous.Span.End..(position - 1)]))
+        {
+            return false;
+        }
+
+        var node = previous.Parent;
+        while (node is NameSyntax)
+        {
+            node = node.Parent;
+        }
+
+        return node is NamedTypeSyntax || model.LookupSymbols(position, previous.Text).Any(s => s is GenericTypeSymbol);
+    }
+
     private static bool IsDeclarationStart(SyntaxToken previous)
     {
         if (previous.Kind is SyntaxKind.InterfaceKeyword or SyntaxKind.ImplementationKeyword)
@@ -642,8 +665,8 @@ internal sealed class ExpectedType
     public bool IsBoolean => _types.Any(t => t.TypeKind == TypeKind.Boolean);
 
     /// <summary>
-    /// True for a value of exactly an expected type (for a class also of a descendant): enum member, constant, variable, parameter, field,
-    /// property, function result; for <c>in</c> a value of a set of the left side's type.
+    /// True for a value of exactly an expected type (for a class also of a descendant, for a subrange also of its host type): enum member,
+    /// constant, variable, parameter, field, property, function result; for <c>in</c> a value of a set of the left side's type.
     /// </summary>
     public bool Matches(Symbol symbol)
     {
@@ -668,7 +691,29 @@ internal sealed class ExpectedType
             return type is SetTypeSymbol { ElementType: { } element } && ReferenceEquals(element, _setElement);
         }
 
-        return _types.Any(t => ReferenceEquals(type, t) || t is ClassTypeSymbol && type is ClassTypeSymbol && type.InheritsFrom(t));
+        return _types.Any(t => ReferenceEquals(type, t) || t is ClassTypeSymbol && type is ClassTypeSymbol && type.InheritsFrom(t)
+                               || FitsSubrange(symbol, type, t));
+    }
+
+    /// <summary>
+    /// C-408: an expected subrange of an enumeration or character type also takes the values of its host type; an enum member or a
+    /// constant of the host type only when its ordinal lies inside the subrange (<c>Mon..Fri</c>: not <c>Sat</c>).
+    /// </summary>
+    private static bool FitsSubrange(Symbol symbol, TypeSymbol type, TypeSymbol expected)
+    {
+        var host = Ordinals.Host(expected);
+        if (ReferenceEquals(host, expected) || !ReferenceEquals(type, host) || Ordinals.Bounds(expected) is not var (low, high))
+        {
+            return false;
+        }
+
+        var ordinal = symbol switch
+        {
+            EnumMemberSymbol member => member.Ordinal,
+            ConstantSymbol { Value.Value: BigInteger value } => value,
+            _ => (BigInteger?)null,
+        };
+        return ordinal is not { } known || low <= known && known <= high;
     }
 
     /// <summary>The expected type for an item starting right after <paramref name="previous"/>; null when none is known.</summary>

@@ -503,4 +503,56 @@ public sealed class QuickInfoTests
         Assert.Equal("procedure U3.Kept(A: Integer)", info!.Signature);
         Assert.Null(info.Documentation);
     }
+
+    /// <summary>
+    /// C-407: in a call on a class name (<c>TFoo.Create</c>) the member is the constructor and the qualifier the class — also an alias
+    /// and a generic instance — and a variable inferred from the call has the class as its type.
+    /// </summary>
+    [Theory]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-731")]
+    [InlineData("Foo := TFoo.Cre$$ate;", "constructor TObject.Create")]
+    [InlineData("Foo := TF$$oo.Create;", "type TFoo = class(TObject)")]
+    [InlineData("Foo := TFoo.Ma$$ke(1);", "constructor TFoo.Make(N: Integer)")]
+    [InlineData("Foo := TF$$oo.Make(1);", "type TFoo = class(TObject)")]
+    [InlineData("N := TF$$oo.Count;", "type TFoo = class(TObject)")]
+    [InlineData("N := TFoo.Co$$unt;", "class function TFoo.Count: Integer")]
+    [InlineData("Foo := TAl$$ias.Create;", "type TAlias = TFoo")]
+    [InlineData("B := TB$$ox<Integer>.Create;", "type TBox<Integer> = class(TObject)")]
+    [InlineData("var Ma$$de := TFoo.Make(2);", "var Made: TFoo")]
+    [InlineData("var Par$$ameterless := TFoo.Create;", "var Parameterless: TFoo")]
+    public void ConstructorCallOnAClassName(string marker, string signature)
+    {
+        const string program = """
+            program P;
+            type
+              TFoo = class
+                constructor Make(N: Integer);
+                class function Count: Integer;
+              end;
+              TAlias = TFoo;
+              TBox<T> = class
+                Value: T;
+              end;
+            constructor TFoo.Make(N: Integer); begin end;
+            class function TFoo.Count: Integer; begin Result := 0; end;
+            var Foo: TFoo; N: Integer; B: TBox<Integer>;
+            begin
+              Foo := TFoo.Create;
+              Foo := TFoo.Make(1);
+              N := TFoo.Count;
+              Foo := TAlias.Create;
+              B := TBox<Integer>.Create;
+              var Made := TFoo.Make(2);
+              var Parameterless := TFoo.Create;
+            end.
+            """;
+        var text = program.ReplaceLineEndings("\n");
+        var plain = marker.Replace("$$", "", StringComparison.Ordinal);
+        Assert.Contains(plain, text, StringComparison.Ordinal);
+
+        var info = HoverAt(text.Replace(plain, marker, StringComparison.Ordinal));
+
+        Assert.Equal(signature, info?.Signature);
+    }
 }
