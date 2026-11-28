@@ -18,6 +18,22 @@ statement keeps its own code and every variable keeps its place in memory, so th
 program really does: each line can take a breakpoint, Step Over moves one line at a time, and Locals and
 Watches show the current values.
 
+## Console programs
+A console program runs in its own console window while you debug it, just as it does with Run Without
+Debugging. Its output appears in that window and you type its input there; the Output window only says that the
+program started and how it ended.
+
+- Breakpoints, stepping and Pause work as usual, also while the program waits for input. What you type while the
+  program is stopped stays in the console and is read when the program continues.
+- When the program ends, the window stays open with "Program exited with code N. Press any key to close this
+  window . . ." so that you can read the output. It also closes when you start a program again.
+- Stop (Shift+F5) ends the program and closes the window at once. Closing the console window yourself, or
+  pressing Ctrl+C in it, ends the program and the debug session.
+
+To see the output in the Output window instead, choose Tools › Options › Environment › General and set "Run
+console programs in" to "Output window". The program then has no console window and no keyboard input: when it
+reads input it is told at once that the input has ended.
+
 ## Optimised builds
 An optimised build is faster and smaller because the compiler rearranges the code: it keeps variables in
 registers or removes them, merges and reorders statements and copies small routines into their callers. You
