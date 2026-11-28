@@ -46,6 +46,12 @@ public sealed class HelperTypeSymbol : TypeSymbol
 
     public ImmutableArray<VariableSymbol> ClassVariables { get; internal set; } = [];
 
+    /// <summary>The class constructor (LANG-995, C-441), or null; never a member: no lookup finds it (LANG-787).</summary>
+    internal MethodSymbol? ClassConstructor { get; set; }
+
+    /// <summary>The class destructor (LANG-995, C-441), or null; never a member: no lookup finds it (LANG-787).</summary>
+    internal MethodSymbol? ClassDestructor { get; set; }
+
     /// <summary>The helper's constants and nested types (LANG-750, 770).</summary>
     public ImmutableArray<Symbol> NestedMembers { get; internal set; } = [];
 

@@ -25,7 +25,7 @@ internal sealed partial class DeclarationBinder
         ImmutableArray<Symbol>.Builder declared, List<(InterfaceTypeSymbol Type, SyntaxToken Identifier)> forwardInterfaces)
     {
         var name = NameOf(identifier);
-        if (!IsTypeLevel)
+        if (!IsClassTypeLevel)
         {
             _diagnostics.Report(keyword, "E2602");                              // LANG-603, 771 (C-344): nested in a type is fine
             _scope.TryDeclare(name, _types.Error, out _);

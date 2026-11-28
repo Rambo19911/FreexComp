@@ -879,6 +879,7 @@ internal sealed class PcuWriter(PcuContext context)
                     }
 
                     entry["methods"] = StaticMethods(helper.Methods);
+                    ClassConstructorKeys(entry, helper.ClassConstructor, helper.ClassDestructor);        // CMP-1490 (b) (C-441)
                     entry["properties"] = MemberProperties(helper.Properties);
                     if (!helper.ClassVariables.IsEmpty)
                     {

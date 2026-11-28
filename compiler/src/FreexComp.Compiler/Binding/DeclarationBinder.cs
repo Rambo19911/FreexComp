@@ -77,8 +77,11 @@ internal sealed partial class DeclarationBinder
     /// <summary>C-344: the scope that receives the nested names of a class's ancestors once its parent is bound (LANG-772).</summary>
     private Scope? _inheritedNested;
 
-    /// <summary>Unit level or a type section of a class or record (LANG-771: nested class and interface types; not of helpers, F10-027).</summary>
+    /// <summary>Unit level or a type section of a class or record (LANG-771: nested class and interface types, LANG-778: generic types).</summary>
     private bool IsTypeLevel => IsGlobalLevel || _scope is { Kind: ScopeKind.TypeMember, Owner: ClassTypeSymbol or RecordTypeSymbol };
+
+    /// <summary><see cref="IsTypeLevel"/> or a type section of a helper (LANG-990 (c), C-441: nested class and interface types).</summary>
+    private bool IsClassTypeLevel => IsTypeLevel || _scope is { Kind: ScopeKind.TypeMember, Owner: HelperTypeSymbol };
 
     /// <summary>
     /// The unit-level scopes of a program (one scope) or unit (interface scope, then implementation scope inside it;

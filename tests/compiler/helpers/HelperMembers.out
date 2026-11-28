@@ -1,0 +1,9 @@
+set balance 472
+balance 472
+entry rent
+allowed 400 TRUE, allowed 500 FALSE
+open count 4
+digits 2 7 4
+sign 0 1 2
+base 16 16
+count 2

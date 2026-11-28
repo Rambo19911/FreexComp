@@ -259,4 +259,62 @@ public sealed class ClassConstructorLoweringTests
             Assert.Equal(expected.Length != 0, ir.Contains("$ccdone", StringComparison.Ordinal));
         }
     }
+
+    /// <summary>
+    /// LANG-995, CMP-1491 (C-441): a helper with a class constructor or class destructor is an item of its unit in declaration order
+    /// among the unit's classes and records, without prerequisites — neither its helped type (the instance <c>TBox&lt;Integer&gt;</c>
+    /// runs after the helper for it, while the class <c>TD</c> derived from that instance waits for it) nor an ancestor helper; a
+    /// helper with neither is no item. Its class constructor runs in <c>$init</c>, its class destructor in reverse order in
+    /// <c>$final</c>, also when the helper is never used.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "LANG-995")]
+    [Trait("Req", "CMP-1491")]
+    public void Helper_IsAnItemOfItsUnit()
+    {
+        const string Source = """
+            unit M;
+            interface
+            type
+              TBox<T> = class class constructor Create; end;
+              TA = class class constructor Create; end;
+              TAH = class helper for TA class destructor Done; end;
+              TPlainH = class helper for TA end;
+              TIntH = record helper for Integer class var Calls: Integer; class constructor Init; class destructor Done; end;
+              TR = record X: Integer; class constructor Create; end;
+              TBoxH = class helper for TBox<Integer> class constructor Create; end;
+              TD = class(TBox<Integer>) class constructor Create; end;
+            implementation
+            type
+              TAH2 = class helper(TAH) for TA class constructor Create; end;
+            class constructor TBox<T>.Create; begin end;
+            class constructor TA.Create; begin end;
+            class destructor TAH.Done; begin end;
+            class constructor TIntH.Init; begin Calls := 10 end;
+            class destructor TIntH.Done; begin end;
+            class constructor TR.Create; begin end;
+            class constructor TBoxH.Create; begin end;
+            class constructor TD.Create; begin end;
+            class constructor TAH2.Create; begin end;
+            end.
+            """;
+        Assert.Equal(["TA", "TAH", "TIntH", "TR", "TBoxH", "TAH2", "TBox<Integer> (instance)", "TD"], RunOrderOf(Source));
+
+        var (result, _) = Bind(Source);
+        var writer = new LlvmTextWriter();
+        IrEmitter.EmitUnit(Lowerer.Lower(result), writer);
+        var text = writer.GetText();
+        static int At(string text, string what) => text.IndexOf(what, StringComparison.Ordinal) is var i and >= 0 ? i : throw new Xunit.Sdk.XunitException(what + " missing");
+        var init = At(text, "define void @\"M.$init\"");
+        var final = At(text, "define void @\"M.$final\"");
+        string[] constructors = ["@\"M.TA.$cctor\"()", "@\"M.TIntH.$cctor\"()", "@\"M.TR.$cctor\"()", "@\"M.TBoxH.$cctor\"()", "@\"M.TAH2.$cctor\"()"];
+        string[] destructors = ["@\"M.TIntH.$cdtor\"()", "@\"M.TAH.$cdtor\"()"];
+        var calls = constructors.Select(c => At(text[init..], "call void " + c)).ToArray();
+        Assert.Equal(calls.Order(), calls);
+        var dtorCalls = destructors.Select(d => At(text[final..], "call void " + d)).ToArray();
+        Assert.Equal(dtorCalls.Order(), dtorCalls);
+        Assert.Matches(@"define [a-z_ ]*void @""M\.TIntH\.\$cctor""\(\)", text);
+        Assert.Contains("@\"M.$ccdone\" = internal global [8 x i8] zeroinitializer, align 1\n", text);
+        Assert.DoesNotContain("TPlainH", text, StringComparison.Ordinal);
+    }
 }

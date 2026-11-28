@@ -20,7 +20,7 @@ internal sealed partial class DeclarationBinder
         List<(ClassTypeSymbol Type, SyntaxToken Identifier)> forwardClasses)
     {
         var name = NameOf(identifier);
-        if (!IsTypeLevel)
+        if (!IsClassTypeLevel)
         {
             _diagnostics.Report(syntax.ClassKeyword, "E2602");
             _scope.TryDeclare(name, _types.Error, out _);

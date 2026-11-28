@@ -350,8 +350,45 @@ internal sealed partial class DeclarationBinder
     }
 
     /// <summary>
+    /// The field or class var named <paramref name="text"/> of the nearest of <paramref name="owners"/> that declares the name, or null
+    /// with the methods of that name in <paramref name="methods"/> (the nearest declaring owner, overloads over the following ones).
+    /// </summary>
+    private static Symbol? AccessorMember(IEnumerable<TypeSymbol> owners, string text, List<MethodSymbol> methods)
+    {
+        foreach (var owner in owners)
+        {
+            Symbol? data = TypeMembers.Fields(owner).FirstOrDefault(f => IdentifierComparer.Instance.Equals(f.Name, text));
+            data ??= TypeMembers.ClassVariables(owner).FirstOrDefault(v => IdentifierComparer.Instance.Equals(v.Name, text));
+            if (data is not null)
+            {
+                return methods.Count > 0 ? null : data;
+            }
+
+            var own = TypeMembers.Methods(owner).Where(m => IdentifierComparer.Instance.Equals(m.Name, text)).ToList();
+            methods.AddRange(own);
+            if (own.Count > 0 && own.Any(m => !m.IsOverload))
+            {
+                break;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>The word of E2610 for <paramref name="visibility"/> (LANG-612).</summary>
+    private static string VisibilityWord(Visibility visibility) => visibility switch
+    {
+        Visibility.Private => "private",
+        Visibility.StrictPrivate => "strict private",
+        Visibility.Protected => "protected",
+        Visibility.StrictProtected => "strict protected",
+        _ => "public",
+    };
+
+    /// <summary>
     /// The member an accessor names: the methods of that name (nearest declaring class, overloads over the chain) or, with an
-    /// empty result, the field path added to <paramref name="path"/>. Null after a reported error.
+    /// empty result, the field path added to <paramref name="path"/>; for a helper, after its chain, the helped type's (LANG-990 (d)).
+    /// Null after a reported error.
     /// </summary>
     private List<MethodSymbol>? ResolveAccessor(TypeSymbol type, ExpressionSyntax value, ImmutableArray<Symbol>.Builder path, string propertyType)
     {
@@ -361,35 +398,29 @@ internal sealed partial class DeclarationBinder
             {
                 var text = NameOf(token);
                 var methods = new List<MethodSymbol>();
-                foreach (var owner in TypeMembers.SelfAndAncestors(type))
+                if (AccessorMember(TypeMembers.SelfAndAncestors(type), text, methods) is { } member)
                 {
-                    if (TypeMembers.Fields(owner).FirstOrDefault(f => IdentifierComparer.Instance.Equals(f.Name, text)) is { } field)
-                    {
-                        if (methods.Count > 0)
-                        {
-                            break;
-                        }
+                    path.Add(member);
+                    return methods;
+                }
 
-                        path.Add(field);
-                        return methods;
+                // LANG-990 (d) (C-441): a helper's accessor names, after its chain, a member of the helped type that its code may use
+                if (methods.Count == 0 && type is HelperTypeSymbol helper)
+                {
+                    var data = AccessorMember(TypeMembers.SelfAndAncestors(helper.ExtendedType), text, methods);
+                    bool Usable(Symbol m) => UsableByHelper(helper, m, (TypeSymbol)m.ContainingSymbol!);
+                    var denied = data is not null ? (Usable(data) ? null : data) : methods.Count > 0 && !methods.Any(Usable) ? methods[0] : null;
+                    if (denied is not null)
+                    {
+                        _diagnostics.Report(name, "E2610", VisibilityWord(denied.Visibility), denied.Name, TypeMembers.DisplayName((TypeSymbol)denied.ContainingSymbol!));
+                        return null;
                     }
 
-                    if (TypeMembers.ClassVariables(owner).FirstOrDefault(v => IdentifierComparer.Instance.Equals(v.Name, text)) is { } classVar)
+                    methods.RemoveAll(m => !Usable(m));
+                    if (data is not null)
                     {
-                        if (methods.Count > 0)
-                        {
-                            break;
-                        }
-
-                        path.Add(classVar);
+                        path.Add(data);
                         return methods;
-                    }
-
-                    var own = TypeMembers.Methods(owner).Where(m => IdentifierComparer.Instance.Equals(m.Name, text)).ToList();
-                    methods.AddRange(own);
-                    if (own.Count > 0 && own.Any(m => !m.IsOverload))
-                    {
-                        break;
                     }
                 }
 

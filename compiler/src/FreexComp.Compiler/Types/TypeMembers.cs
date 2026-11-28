@@ -33,11 +33,12 @@ internal static class TypeMembers
         _ => [],
     };
 
-    /// <summary>The class constructor and class destructor of a class or record, those it has (LANG-786; never members, LANG-787).</summary>
+    /// <summary>The class constructor and class destructor of a class, record or helper, those it has (LANG-786, 995; never members, LANG-787).</summary>
     public static IEnumerable<MethodSymbol> ClassConstructors(TypeSymbol type) => type switch
     {
         ClassTypeSymbol c => new[] { c.ClassConstructor, c.ClassDestructor }.OfType<MethodSymbol>(),
         RecordTypeSymbol r => new[] { r.ClassConstructor, r.ClassDestructor }.OfType<MethodSymbol>(),
+        HelperTypeSymbol h => new[] { h.ClassConstructor, h.ClassDestructor }.OfType<MethodSymbol>(),  // LANG-995 (C-441)
         _ => [],
     };
 
@@ -122,9 +123,21 @@ internal static class TypeMembers
         new[] { type }.Concat(NestedMembers(type).OfType<TypeSymbol>().Where(t => t is ClassTypeSymbol or RecordTypeSymbol && ReferenceEquals(t.ContainingSymbol, type))
             .SelectMany(SelfAndNestedTypes));
 
-    /// <summary>LANG-775 (C-344): the display name of a type — for a nested type its enclosing types' names first, <c>TOuter.TInner</c>.</summary>
+    /// <summary>
+    /// LANG-775 (C-344): the display name of a type — for a nested type its enclosing types' names first, <c>TOuter.TInner</c>; a
+    /// helper that declares it counts as an enclosing type (LANG-990 (c), C-441: <c>THelper.TInner</c>).
+    /// </summary>
     public static string DisplayName(TypeSymbol type) =>
-        string.Join(".", EnclosingTypes(type).Reverse().Select(t => t.Name).Append(type.Name));
+        string.Join(".", DeclaringTypes(type).Reverse().Select(t => t.Name).Append(type.Name));
+
+    /// <summary>The classes, records and helpers a nested type is declared in, innermost first (LANG-770, LANG-990 (c)).</summary>
+    private static IEnumerable<TypeSymbol> DeclaringTypes(Symbol symbol)
+    {
+        for (var outer = symbol.ContainingSymbol; outer is ClassTypeSymbol or RecordTypeSymbol or HelperTypeSymbol; outer = outer.ContainingSymbol)
+        {
+            yield return (TypeSymbol)outer;
+        }
+    }
 
     /// <summary>
     /// CMP-1391 (C-345): the generic instance a type is part of — itself or its innermost enclosing instance (<c>TList&lt;Integer&gt;</c>
@@ -132,6 +145,6 @@ internal static class TypeMembers
     /// </summary>
     public static TypeSymbol? EnclosingInstance(TypeSymbol type) => new[] { type }.Concat(EnclosingTypes(type)).FirstOrDefault(t => t.IsGenericInstance);
 
-    /// <summary>The unit-level type a (possibly nested) type belongs to.</summary>
-    public static TypeSymbol Outermost(TypeSymbol type) => EnclosingTypes(type).LastOrDefault() ?? type;
+    /// <summary>The unit-level type a (possibly nested) type belongs to — through a helper that declares it too (LANG-990 (c), C-441).</summary>
+    public static TypeSymbol Outermost(TypeSymbol type) => DeclaringTypes(type).LastOrDefault() ?? type;
 }

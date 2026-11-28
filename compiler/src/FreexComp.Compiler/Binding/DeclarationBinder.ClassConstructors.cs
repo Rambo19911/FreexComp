@@ -5,7 +5,7 @@ using FreexComp.Compiler.Types;
 namespace FreexComp.Compiler.Binding;
 
 /// <summary>
-/// Class constructors and class destructors of classes and records (generics.md §14, LANG-786…788, CMP-1395; C-374): one of each
+/// Class constructors and class destructors of classes, records and helpers (generics.md §14, LANG-786…788, 995, CMP-1395; C-374, C-441): one of each
 /// per type, kept on the type outside its member scope (no lookup finds them, LANG-787), implemented by type path and bound like a
 /// parameterless <c>class procedure …; static;</c> (LANG-788 b).
 /// </summary>
@@ -49,6 +49,8 @@ internal sealed partial class DeclarationBinder
             (ClassTypeSymbol c, false) => c.ClassDestructor,
             (RecordTypeSymbol r, true) => r.ClassConstructor,
             (RecordTypeSymbol r, false) => r.ClassDestructor,
+            (HelperTypeSymbol h, true) => h.ClassConstructor,                               // LANG-995 (C-441)
+            (HelperTypeSymbol h, false) => h.ClassDestructor,
             _ => null,
         };
         if (existing is not null)
@@ -73,6 +75,12 @@ internal sealed partial class DeclarationBinder
                 break;
             case (RecordTypeSymbol r, false):
                 r.ClassDestructor = method;
+                break;
+            case (HelperTypeSymbol h, true):
+                h.ClassConstructor = method;
+                break;
+            case (HelperTypeSymbol h, false):
+                h.ClassDestructor = method;
                 break;
         }
     }
@@ -107,6 +115,8 @@ internal sealed partial class DeclarationBinder
             (ClassTypeSymbol c, false) => c.ClassDestructor,
             (RecordTypeSymbol r, true) => r.ClassConstructor,
             (RecordTypeSymbol r, false) => r.ClassDestructor,
+            (HelperTypeSymbol h, true) => h.ClassConstructor,                               // LANG-995 (C-441)
+            (HelperTypeSymbol h, false) => h.ClassDestructor,
             _ => null,
         };
         if (method is null || !IdentifierComparer.Instance.Equals(method.Name, name))

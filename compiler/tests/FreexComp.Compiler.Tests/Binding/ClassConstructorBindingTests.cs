@@ -303,12 +303,103 @@ public sealed class ClassConstructorBindingTests
 
     [Fact]
     [Trait("Req", "LANG-786")]
-    public void InterfaceAndHelper_StayE2900()
+    public void Interface_StaysE2900()
     {
         Assert.Equal(["E2900(1,23): Feature not supported: interface constructor"],
             Errors("type IFoo = interface class constructor Create; end; begin end."));
-        Assert.Equal(["E2900(1,47): Feature not supported: helper destructor"],
-            Errors("type TA = class end; TH = class helper for TA class destructor Destroy; end; begin end."));
+    }
+
+    /// <summary>
+    /// LANG-995 (C-441): a class helper and a record helper declare one class constructor and one class destructor each, kept on the
+    /// helper outside its members (never found by lookup, no clash with a member of the same name, LANG-787); the body is a static
+    /// class method of the helper — its class vars and constants by simple name, no <c>Self</c>, instance members E2608; the rules
+    /// of LANG-786 (E2665, E2666, E2667) and LANG-788 c (bare <c>inherited</c> E2668) apply unchanged.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "LANG-995")]
+    public void Helper_Declaration()
+    {
+        var (result, _) = Bind("""
+            type
+              TFoo = class
+                F: Integer;
+              end;
+              TFooH = class helper for TFoo
+              private
+                class constructor Create;
+              public
+                const Start = 7;
+                class var Count: Integer;
+                class destructor Destroy;
+                function Create: Integer;
+              end;
+              TIntH = record helper for Integer
+                class var Calls: Integer;
+                class constructor Init;
+                class destructor Done;
+                function Twice: Integer;
+              end;
+            class constructor TFooH.Create; begin Count := Start end;
+            class destructor TFooH.Destroy; begin Count := 0 end;
+            function TFooH.Create: Integer; begin Result := Count end;
+            class constructor TIntH.Init; begin Calls := 10 end;
+            class destructor TIntH.Done; begin Calls := -1 end;
+            function TIntH.Twice: Integer; begin Result := Self * 2 end;
+            var O: TFoo; N: Integer;
+            begin
+              N := O.Create;
+              N := N + N.Twice + Integer.Calls;
+            end.
+            """);
+
+        Assert.Empty(Format(result.Diagnostics));
+        var foo = Lookup<HelperTypeSymbol>(result, "TFooH");
+        var integer = Lookup<HelperTypeSymbol>(result, "TIntH");
+        Assert.Equal(("Create", MethodKind.ClassConstructor, Visibility.Private),
+            (foo.ClassConstructor!.Name, foo.ClassConstructor.MethodKind, foo.ClassConstructor.Visibility));
+        Assert.Equal(("Destroy", MethodKind.ClassDestructor, Visibility.Public),
+            (foo.ClassDestructor!.Name, foo.ClassDestructor.MethodKind, foo.ClassDestructor.Visibility));
+        Assert.Equal(("Init", "Done"), (integer.ClassConstructor!.Name, integer.ClassDestructor!.Name));
+        MethodSymbol[] all = [foo.ClassConstructor, foo.ClassDestructor, integer.ClassConstructor, integer.ClassDestructor];
+        Assert.All(all, m => Assert.Null(m.SelfParameter));
+        Assert.All(all, m => Assert.Empty(m.Parameters));
+        Assert.All(all, m => Assert.DoesNotContain(m, ((HelperTypeSymbol)m.Owner).Members));
+        Assert.All(all, m => Assert.Contains(result.Routines, b => ReferenceEquals(b.Routine, m)));
+        Assert.Equal(["Create"], foo.Methods.Select(m => m.Name));                          // the ordinary function, no clash
+        Assert.Equal(TypeMembers.ClassConstructors(foo), [foo.ClassConstructor, foo.ClassDestructor]);
+        Assert.Equal("class constructor TFooH.Create", foo.ClassConstructor.ToDisplayString());
+        var call = Assert.IsType<BoundCallExpression>(Assert.IsType<BoundAssignmentStatement>(result.Bodies.Single().Statements[0]).Value);
+        Assert.Same(foo.Methods.Single(), call.Routine);
+
+        // never found by lookup
+        Assert.Equal(["E2005(6,15): 'Integer' does not contain a member named 'Init'", "E2009(6,21): Variable or constant expected but type 'TFooH' found"],
+            Errors("""
+            type
+              TFoo = class end;
+              TFooH = class helper for TFoo class destructor Destroy; end;
+              TIntH = record helper for Integer class constructor Init; end;
+            class destructor TFooH.Destroy; begin end; class constructor TIntH.Init; begin end;
+            begin Integer.Init; TFooH.Destroy; end.
+            """));
+
+        // LANG-786 a…c, LANG-788 b, c
+        const string Prefix = "type TFoo = class F: Integer; end; TH = class helper for TFoo ";
+        Assert.Equal(["E2666(1,107): Type 'TH' already has a class constructor"],
+            Errors(Prefix + "class constructor Create; class constructor Init; end; class constructor TH.Create; begin end; begin end."));
+        Assert.Equal(["E2666(1,77): Type 'TR' already has a class destructor"],
+            Errors("type TR = record helper for Integer class destructor Done; class destructor Done2; end; class destructor TR.Done; begin end; begin end."));
+        Assert.Equal(["E2665(1,87): A class constructor cannot have parameters or type parameters"],
+            Errors(Prefix + "class constructor Create(X: Integer); end; class constructor TH.Create; begin end; begin end."));
+        Assert.Equal(["E2667(1,89): Directive 'static' is not allowed on a class constructor"],
+            Errors(Prefix + "class constructor Create; static; end; class constructor TH.Create; begin end; begin end."));
+        Assert.Equal(["E2605(1,80): Method 'TH.Done' is not implemented"], Errors(Prefix + "class destructor Done; end; begin end."));
+        Assert.Equal(["E2608(1,171): Instance member 'Go' is not accessible from a class method",
+                      "E2608(1,175): Instance member 'F' is not accessible from a class method"],
+            Errors(Prefix + "procedure Go; class constructor Create; end; procedure TH.Go; begin end; class constructor TH.Create; begin Go; F := 1 end; begin end."));
+        Assert.Equal(["E2668(1,155): 'inherited' needs a method name in a class constructor",
+                      "E2668(1,205): 'inherited' needs a method name in a class destructor"],
+            Errors(Prefix + "class constructor Create; class destructor Destroy; end; class constructor TH.Create; begin inherited end; "
+                + "class destructor TH.Destroy; begin inherited; end; begin end."));
     }
 
     [Theory]

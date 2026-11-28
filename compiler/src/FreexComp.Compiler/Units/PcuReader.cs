@@ -759,6 +759,8 @@ internal static class PcuReader
                     helper.HasClassSelf = entry["classSelf"] is JsonValue classSelf && classSelf.TryGetValue<bool>(out var hasSelf) && hasSelf;
                     helper.Methods = [.. Array(entry, "methods").Select(m => StaticMethod(helper, m!))];
                     helper.Properties = [.. (entry["properties"] as JsonArray ?? []).Select(p => Property(helper, p!))];
+                    helper.ClassConstructor = ClassConstructor(helper, entry, "classConstructor", MethodKind.ClassConstructor);   // CMP-1490 (b) (C-441)
+                    helper.ClassDestructor = ClassConstructor(helper, entry, "classDestructor", MethodKind.ClassDestructor);
                     types.HasHelpers = true;
                     return helper;
                 }

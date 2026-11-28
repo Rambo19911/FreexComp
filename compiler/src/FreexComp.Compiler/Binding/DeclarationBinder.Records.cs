@@ -380,7 +380,7 @@ internal sealed partial class DeclarationBinder
     /// <summary>The methods with bodies of the unit's classes and records (C-081, C-122), class constructors and destructors too (LANG-788).</summary>
     internal static IEnumerable<MethodSymbol> MethodsOf(UnitSymbol unit) =>
         ClassesOf(unit).SelectMany(c => c.Methods.Concat(TypeMembers.ClassConstructors(c)))
-            .Concat(RecordsWithMethodsOf(unit).SelectMany(r => r.Methods.Concat(TypeMembers.ClassConstructors(r)))).Concat(HelpersOf(unit).SelectMany(h => h.Methods));
+            .Concat(RecordsWithMethodsOf(unit).SelectMany(r => r.Methods.Concat(TypeMembers.ClassConstructors(r)))).Concat(HelpersOf(unit).SelectMany(h => h.Methods.Concat(TypeMembers.ClassConstructors(h))));
 
     /// <summary>The class vars of the unit's classes and records (CMP-370, LANG-730).</summary>
     internal static IEnumerable<VariableSymbol> ClassVariablesOf(UnitSymbol unit) =>

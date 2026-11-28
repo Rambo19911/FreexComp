@@ -199,4 +199,107 @@ public sealed partial class PcuTests
 
         Assert.True(before != after, edit);
     }
+
+    /// <summary>A class helper with a class constructor and class destructor, a record helper with a class constructor only, and a helper with neither.</summary>
+    private const string HelperClassConstructorUnit = """
+        unit U;
+        interface
+        type
+          TThing = class
+            X: Integer;
+          end;
+          TThingH = class helper for TThing
+            class var Made: Integer;
+            class constructor Create;
+            class destructor Destroy;
+            function Twice: Integer;
+          end;
+          TIntH = record helper for Integer
+            class var Calls: Integer;
+            class constructor Init;
+            function Half: Integer;
+          end;
+          TPlainH = record helper for Boolean
+            function Text: string;
+          end;
+        implementation
+        class constructor TThingH.Create; begin Made := 1 end;
+        class destructor TThingH.Destroy; begin Made := 0 end;
+        function TThingH.Twice: Integer; begin Result := X * 2 end;
+        class constructor TIntH.Init; begin Calls := 10 end;
+        function TIntH.Half: Integer; begin Result := Self div 2 end;
+        function TPlainH.Text: string; begin if Self then Result := 'yes' else Result := 'no' end;
+        end.
+        """;
+
+    private const string HelperClassConstructorProgram = """
+        program P;
+        uses U;
+        var
+          T: TThing;
+          N: Integer;
+        begin
+          T := TThing.Create;
+          N := T.Twice + Integer.Calls + 9.Half + TThingH.Made;
+          Writeln(N, True.Text);
+        end.
+        """;
+
+    /// <summary>
+    /// CMP-1490 (b) (C-441): a helper entry carries <c>classConstructor</c> / <c>classDestructor</c> with the declared names, exactly as a
+    /// class or record entry (CMP-1399); the reader keeps them on the imported helper for display, never for lookup, and an importer
+    /// never calls them (the declaring unit's <c>$init</c> / <c>$final</c> do): the same IR against the <c>.pcu</c> as against the source.
+    /// The keys are part of the interface hash.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1490")]
+    [Trait("Req", "LANG-995")]
+    public void HelperClassConstructorFromPcu()
+    {
+        var pcu = Pcu("U", Files(u: HelperClassConstructorUnit, program: HelperClassConstructorProgram));
+        var types = (JsonArray)pcu["interface"]!["types"]!;
+        JsonObject Entry(string name) => (JsonObject)types.Single(t => (string?)t!["name"] == name)!;
+        (string?, string?) Keys(string name) => ((string?)Entry(name)["classConstructor"], (string?)Entry(name)["classDestructor"]);
+        Assert.Equal(("Create", "Destroy"), Keys("TThingH"));
+        Assert.Equal(("Init", null), Keys("TIntH"));
+        Assert.False(Entry("TIntH").ContainsKey("classDestructor"));
+        Assert.False(Entry("TPlainH").ContainsKey("classConstructor") || Entry("TPlainH").ContainsKey("classDestructor"));
+        Assert.True((bool)pcu["hasInit"]! && (bool)pcu["hasFinal"]!);
+
+        var pcus = Pcus(Files(u: HelperClassConstructorUnit, program: HelperClassConstructorProgram));
+        var fs = new InMemoryFileSystem().Add(@"C:\p\P.pas", HelperClassConstructorProgram).AddSystem()
+            .Add(Path.Combine(PcuImportTests.Lib, "U.pcu"), pcus["U"]).Add(Path.Combine(PcuImportTests.Lib, "U.obj"), "");
+        var compilation = Compilation.Create(Options() with { SearchPaths = [PcuImportTests.Lib] }, [], fs);
+        var unit = compilation.GetUnitSymbol("U");
+        Assert.NotNull(unit);
+        var thing = Assert.IsType<HelperTypeSymbol>(unit.InterfaceMembers.Single(m => m.Name == "TThingH"));
+        Assert.Equal(("Create", MethodKind.ClassConstructor), (thing.ClassConstructor?.Name, thing.ClassConstructor?.MethodKind));
+        Assert.Equal(("Destroy", MethodKind.ClassDestructor), (thing.ClassDestructor?.Name, thing.ClassDestructor?.MethodKind));
+        Assert.DoesNotContain(thing.Members, m => m is MethodSymbol { MethodKind: MethodKind.ClassConstructor or MethodKind.ClassDestructor });
+        var integer = Assert.IsType<HelperTypeSymbol>(unit.InterfaceMembers.Single(m => m.Name == "TIntH"));
+        Assert.Equal(("Init", null), (integer.ClassConstructor?.Name, integer.ClassDestructor?.Name));
+        var plain = Assert.IsType<HelperTypeSymbol>(unit.InterfaceMembers.Single(m => m.Name == "TPlainH"));
+        Assert.Equal((null, null), (plain.ClassConstructor, plain.ClassDestructor));
+
+        var result = compilation.Emit(new EmitOptions { Stage = EmitStage.Ll }, TestContext.Current.CancellationToken);
+        Assert.True(result.Success, string.Join("\n", result.Diagnostics.Select(d => d.ToText())));
+        var ir = fs.ReadAllText(@"C:\p\obj\P.ll");
+        Assert.DoesNotContain("$cctor", ir, StringComparison.Ordinal);
+        Assert.DoesNotContain("$cdtor", ir, StringComparison.Ordinal);
+        Assert.Contains("{ ptr @\"U.$init\", ptr @\"U.$final\" }", ir);
+        PcuImportTests.AssertSameIrAgainstPcu(HelperClassConstructorUnit, HelperClassConstructorProgram);
+
+        // the keys are part of the interface hash
+        const string Empty = "program P;\nuses U;\nbegin\nend.\n";
+        var hash = Hash("U", Files(u: HelperClassConstructorUnit, program: Empty));
+        var renamed = HelperClassConstructorUnit.Replace("class destructor Destroy;", "class destructor Finish;", StringComparison.Ordinal)
+            .Replace("class destructor TThingH.Destroy;", "class destructor TThingH.Finish;", StringComparison.Ordinal);
+        var added = HelperClassConstructorUnit.Replace("function Text: string;", "function Text: string;\n    class destructor Done;", StringComparison.Ordinal)
+            .Replace("end.", "class destructor TPlainH.Done; begin end;\nend.", StringComparison.Ordinal);
+        var body = HelperClassConstructorUnit.Replace("Calls := 10", "Calls := 11", StringComparison.Ordinal);
+        Assert.NotEqual(hash, Hash("U", Files(u: renamed, program: Empty)));
+        Assert.NotEqual(hash, Hash("U", Files(u: added, program: Empty)));
+        Assert.Equal(hash, Hash("U", Files(u: body, program: Empty)));
+    }
 }

@@ -1,0 +1,7 @@
+ctor TThing
+ctor TIntHelper
+init UReg
+main 10
+final UReg
+dtor TIntHelper
+dtor TThing

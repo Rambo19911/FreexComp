@@ -90,6 +90,7 @@ internal static class Lowerer
         {
             ClassTypeSymbol c => (c.ClassConstructor, c.ClassDestructor, c.ClassVariables),
             RecordTypeSymbol r => (r.ClassConstructor, r.ClassDestructor, r.ClassVariables),
+            HelperTypeSymbol h => (h.ClassConstructor, h.ClassDestructor, h.ClassVariables),    // LANG-995 (C-441): no prerequisites
             _ => (null, null, ImmutableArray<VariableSymbol>.Empty),
         };
         ImmutableArray<VariableSymbol> released = isInstance ? [.. classVars.Where(IsManagedGlobal)] : [];

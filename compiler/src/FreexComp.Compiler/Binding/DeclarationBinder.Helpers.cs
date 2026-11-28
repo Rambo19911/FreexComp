@@ -91,6 +91,9 @@ internal sealed partial class DeclarationBinder
                 case ClassVarSectionSyntax section:
                     inner.BindClassVariables(helper, section, visibility, classVariables, names);
                     break;
+                case MethodDeclarationSyntax classConstructor when IsClassConstructorHeading(classConstructor.Heading):
+                    inner.BindClassConstructorDeclaration(helper, classConstructor, visibility);  // LANG-995 (C-441)
+                    break;
                 case MethodDeclarationSyntax method when inner.BindHelperMethodDeclaration(helper, method, visibility) is { } symbol:
                     if (names.TryGetValue(symbol.Name, out var existing)
                         && !(existing is MethodSymbol other && other.IsOverload && symbol.IsOverload && !SameParameterTypes(other, symbol)))
