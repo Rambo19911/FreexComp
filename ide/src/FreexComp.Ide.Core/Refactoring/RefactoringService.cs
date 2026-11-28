@@ -181,7 +181,7 @@ public sealed partial class RefactoringService : IRefactoringService
             return stop;
 
         // IDE-REFAC-006: the checks run before a preview is shown — a blocked operation never shows one.
-        var plan = await CheckAsync(prepared);
+        var plan = await JudgeAsync(prepared);
         if (plan.Blocked.Count > 0)
             return await BlockedAsync(prepared.Title, plan.Blocked, working);
 
@@ -202,7 +202,7 @@ public sealed partial class RefactoringService : IRefactoringService
 
         // … and again immediately before the first write; that check records the version of every buffer it judged:
         // (1) of IDE-REFAC-008.
-        plan = await CheckAsync(prepared);
+        plan = await JudgeAsync(prepared);
         if (plan.Blocked.Count > 0)
             return await BlockedAsync(prepared.Title, plan.Blocked, working);
         var open = plan.Targets.Where(t => !t.IsFile).ToList();
@@ -288,7 +288,17 @@ public sealed partial class RefactoringService : IRefactoringService
             : fileCount == 1 ? Format(Strings.Msg_Refactoring_AppliedOneFile, prepared.Title, editCount)
             : Format(Strings.Msg_Refactoring_AppliedMany, prepared.Title, editCount, fileCount),
             StatusDuration);
-        return new RefactoringResult(RefactoringOutcome.Applied, editCount, fileCount, [], null);
+        var result = new RefactoringResult(RefactoringOutcome.Applied, editCount, fileCount, [], null);
+        try
+        {
+            prepared.OnApplied?.Invoke(result); // IDE-REFAC-047 b: after step (4), for this outcome only
+        }
+        catch (Exception e)
+        {
+            _log.Warning(LogCategory, $"{prepared.Title}: the callback of the applied edit failed: {e.Message}", e);
+        }
+
+        return result;
     }
 
     private static RefactoringResult Result(RefactoringOutcome outcome, IReadOnlyList<BlockedFile>? blocked = null, string? error = null) =>
@@ -312,11 +322,24 @@ public sealed partial class RefactoringService : IRefactoringService
 
         if (normalized.FindDefect() is not { } defect)
             return (normalized, null);
-        var error = $"{edit.Title}: invalid workspace edit, {defect.Path}: {defect.Problem}";
-        _log.Error(LogCategory, error);
+        var error = LogDefect(edit.Title, defect);
         working.Stop();
         await _dialogs.ShowMessageAsync(new MessageRequest("Msg.Refactoring.Failed", [edit.Title]));
         return (normalized, Result(RefactoringOutcome.Failed, error: error));
+    }
+
+    /// <summary>IDE-REFAC-002: an invalid edit is a defect of its producer — logged once, as an error; returns the text.</summary>
+    private string LogDefect(string title, (string Path, string Problem) defect)
+    {
+        var error = $"{title}: invalid workspace edit, {defect.Path}: {defect.Problem}";
+        _log.Error(LogCategory, error);
+        return error;
+    }
+
+    public async Task<IReadOnlyList<BlockedFile>> CheckAsync(WorkspaceEdit edit)
+    {
+        ArgumentNullException.ThrowIfNull(edit);
+        return (await JudgeAsync(edit.Normalize())).Blocked;
     }
 
     /// <summary>
@@ -375,7 +398,7 @@ public sealed partial class RefactoringService : IRefactoringService
     /// that applies. The closed files are read on the thread pool; the targets are decided, and everything is judged,
     /// on the UI thread after that read, in one block (a document opened or closed during the read repeats it).
     /// </summary>
-    private async Task<Plan> CheckAsync(WorkspaceEdit edit)
+    private async Task<Plan> JudgeAsync(WorkspaceEdit edit)
     {
         var ordered = edit.Files.OrderBy(f => f.Path, StringComparer.OrdinalIgnoreCase).ToList();
         while (true)

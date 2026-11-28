@@ -6790,6 +6790,10 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
     <value>Selected changes: {0} of {1}, files: {2}</value>
     <comment>UI-DLG-363 summary line of the Preview dialog: 0 = checked edits, 1 = all edits, 2 = files with a checked edit</comment>
   </data>
+  <data name="Msg_Refactoring_PreviewSummaryAll" xml:space="preserve">
+    <value>Changes: {0}, files: {1}</value>
+    <comment>UI-DLG-387 summary line of the Preview dialog in its confirm mode: 0 = edits, 1 = files</comment>
+  </data>
   <data name="Msg_QuickActions_None" xml:space="preserve">
     <value>No quick actions here</value>
     <comment>IDE-REFAC-034</comment>
@@ -6837,6 +6841,26 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   <data name="Dialog_RefactoringPreview_Removed" xml:space="preserve">
     <value>line {0}, {1} removed, {2}</value>
     <comment>UI-DLG-367 screen-reader name of a removal: 0 = line, 1 = old text, 2 = check state</comment>
+  </data>
+  <data name="Dialog_RefactoringPreview_ConfirmFileName" xml:space="preserve">
+    <value>{0}, {1} changes</value>
+    <comment>UI-DLG-387 screen-reader name of a file row without a check box: 0 = file name, 1 = number of edits (not 1)</comment>
+  </data>
+  <data name="Dialog_RefactoringPreview_ConfirmFileNameOne" xml:space="preserve">
+    <value>{0}, 1 change</value>
+    <comment>UI-DLG-387 screen-reader name of a file row with one edit, without a check box: 0 = file name</comment>
+  </data>
+  <data name="Dialog_RefactoringPreview_ConfirmReplaced" xml:space="preserve">
+    <value>line {0}, {1} replaced by {2}</value>
+    <comment>UI-DLG-387 screen-reader name of an edit row without a check box: 0 = line, 1 = old text, 2 = new text</comment>
+  </data>
+  <data name="Dialog_RefactoringPreview_ConfirmInserted" xml:space="preserve">
+    <value>line {0}, inserted {1}</value>
+    <comment>UI-DLG-387 screen-reader name of an insertion without a check box: 0 = line, 1 = new text</comment>
+  </data>
+  <data name="Dialog_RefactoringPreview_ConfirmRemoved" xml:space="preserve">
+    <value>line {0}, {1} removed</value>
+    <comment>UI-DLG-387 screen-reader name of a removal without a check box: 0 = line, 1 = old text</comment>
   </data>
   <data name="Dialog_RefactoringPreview_Checked" xml:space="preserve">
     <value>checked</value>

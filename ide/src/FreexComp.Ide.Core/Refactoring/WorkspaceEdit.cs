@@ -19,6 +19,15 @@ public sealed record FileEdit(string Path, string BaseText, ImmutableArray<TextE
 public sealed record WorkspaceEdit(string Title, ImmutableArray<FileEdit> Files)
 {
     /// <summary>
+    /// IDE-REFAC-047 b: called once, on the UI thread, when the engine has applied this edit — after the operation is on
+    /// the history and its status text is shown, with the result the caller of the engine gets; the engine is still busy.
+    /// Never called for another outcome, nor when the operation is undone. The edit keeps it through normalisation and
+    /// through the Preview dialog (the result then describes the checked changes). An exception it throws is logged and
+    /// goes no further.
+    /// </summary>
+    public Action<RefactoringResult>? OnApplied { get; init; }
+
+    /// <summary>
     /// IDE-REFAC-003: the edits of the language service as a workspace edit — one file edit per document edit, in the
     /// service's order, every change with its span and text. The base text is the text the service computed the changes
     /// against: for a source of <paramref name="compilation"/> its syntax tree's text (an open document's buffer text as
@@ -27,15 +36,21 @@ public sealed record WorkspaceEdit(string Title, ImmutableArray<FileEdit> Files)
     /// calling thread. A file that cannot be read (a form deleted or locked since the service read it) faults the task
     /// with a <see cref="WorkspaceEditReadException"/> — an <see cref="IOException"/> that names the file and carries the
     /// system's reason. A file rename of the service is not part of a workspace edit.
+    /// <para>IDE-REFAC-047 a: <paramref name="formTexts"/> holds the form texts the service was given instead of the
+    /// files (the current text of a form that is open in the designer), by full path, compared ordinal-ignore-case: the
+    /// base text of such a form is that text and its file is not read.</para>
     /// </summary>
     public static Task<WorkspaceEdit> FromLanguageService(string title, IEnumerable<DocumentEdit> edits, Compilation compilation,
-        IFileSystem fileSystem, CancellationToken ct = default)
+        IFileSystem fileSystem, CancellationToken ct = default, IReadOnlyDictionary<string, string>? formTexts = null)
     {
         ArgumentNullException.ThrowIfNull(title);
         ArgumentNullException.ThrowIfNull(edits);
         ArgumentNullException.ThrowIfNull(compilation);
         ArgumentNullException.ThrowIfNull(fileSystem);
         var list = edits.ToList();
+        var given = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (path, text) in formTexts ?? ImmutableDictionary<string, string>.Empty)
+            given[path] = text;
         return Task.Run(() =>
         {
             var files = ImmutableArray.CreateBuilder<FileEdit>(list.Count);
@@ -45,9 +60,9 @@ public sealed record WorkspaceEdit(string Title, ImmutableArray<FileEdit> Files)
                 string baseText;
                 try
                 {
-                    baseText = IsFormFile(edit.Path)
-                        ? EncodingDetector.Detect(fileSystem.ReadAllBytes(edit.Path)).Text
-                        : compilation.GetSyntaxTree(edit.Path).Text.Text;
+                    baseText = !IsFormFile(edit.Path) ? compilation.GetSyntaxTree(edit.Path).Text.Text
+                        : given.TryGetValue(edit.Path, out var formText) ? formText
+                        : EncodingDetector.Detect(fileSystem.ReadAllBytes(edit.Path)).Text;
                 }
                 catch (Exception e) when (e is IOException or UnauthorizedAccessException)
                 {

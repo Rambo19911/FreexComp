@@ -1,5 +1,6 @@
 using FreexComp.Compiler.Text;
 using FreexComp.Ide.Core.Composition;
+using FreexComp.Ide.Core.Dialogs;
 using FreexComp.Ide.Core.Refactoring;
 using FreexComp.Ide.Core.Resources;
 using FreexComp.Ide.Core.Text;
@@ -295,5 +296,230 @@ public sealed class RefactoringRegistryTests : RefactoringTestBase
         var requests = _services.CodeModel.Worker.RequestCount;
         Assert.Empty(await Engine.GetQuickActionsAsync(loose, TextSelection.At(Undeclared.IndexOf("Count", StringComparison.Ordinal) + 2), CancellationToken.None));
         Assert.Equal(requests, _services.CodeModel.Worker.RequestCount);
+    }
+
+    private static TaskCompletionSource<T> Source<T>() => new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    /// <summary>
+    /// IDE-REFAC-047 c: inside <c>WithoutWorkingTextAsync</c> — a dialog of the refactoring, or another service's
+    /// operation — the status bar shows no working text however long it takes, and the 400 ms start again when it ends;
+    /// the engine stays busy. Outside a computation the call is refused.
+    /// </summary>
+    [Fact(Timeout = 60000)]
+    [Trait("Req", "IDE-REFAC-047")]
+    public Task WorkingTextPausesAroundADialogOfTheRefactoring() => TestUiThread.RunAsync(() => WorkingTextPausesAroundADialogOfTheRefactoringOnUiThread());
+
+    private async Task WorkingTextPausesAroundADialogOfTheRefactoringOnUiThread()
+    {
+        await OpenProjectAsync();
+        await OpenAsync(A);
+        var refactoring = new FakeRefactoring("with-dialog", "With Dialog");
+        var working = Format(Strings.Msg_Refactoring_Working, "With Dialog");
+        var status = _services.Status;
+        status.ShowMessage("before", TimeSpan.FromHours(1));
+
+        // Only while an operation computes.
+        await Assert.ThrowsAsync<InvalidOperationException>(() => Engine.WithoutWorkingTextAsync(() => Task.FromResult(1)));
+
+        // The refactoring: it computes, shows its dialog, computes, calls an operation that fails, runs an operation that
+        // shows a dialog of its own (a pause inside a pause), and computes again.
+        var (computing, dialog, more, nested, inner, rest) = (Source<bool>(), Source<string>(), Source<bool>(), Source<bool>(), Source<bool>(), Source<bool>());
+        var (dialogOpen, dialogClosed, failed, nestedOpen, nestedClosed) = (Source<bool>(), Source<string>(), Source<bool>(), Source<bool>(), Source<bool>());
+        refactoring.Compute = async (_, _) =>
+        {
+            await computing.Task;
+            var answer = await Engine.WithoutWorkingTextAsync(() =>
+            {
+                dialogOpen.SetResult(true);
+                return dialog.Task;
+            });
+            dialogClosed.SetResult(answer);
+            await more.Task;
+            await Assert.ThrowsAsync<InvalidDataException>(() => Engine.WithoutWorkingTextAsync<int>(() => throw new InvalidDataException("refused")));
+            failed.SetResult(true);
+            await nested.Task;
+            await Engine.WithoutWorkingTextAsync(async () =>
+            {
+                await Engine.WithoutWorkingTextAsync(() => Task.FromResult(0));
+                nestedOpen.SetResult(true);
+                return await inner.Task;
+            });
+            nestedClosed.SetResult(true);
+            await rest.Task;
+            return null;
+        };
+        var running = Engine.RunAsync(refactoring);
+        Assert.True(Engine.IsBusy);
+
+        // Computing: the working text after 400 ms (IDE-REFAC-012).
+        _clock.Advance(TimeSpan.FromMilliseconds(399));
+        Assert.Equal("before", status.Message);
+        _clock.Advance(TimeSpan.FromMilliseconds(1));
+        Assert.Equal(working, status.Message);
+
+        // The dialog opens: the text is taken away at once and does not come back while the dialog is open.
+        computing.SetResult(true);
+        await dialogOpen.Task;
+        Assert.Null(status.Message);
+        _clock.Advance(TimeSpan.FromSeconds(30));
+        Assert.Null(status.Message);
+        Assert.True(Engine.IsBusy);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => Engine.RunAsync(refactoring));
+
+        // The dialog closes with its answer: the 400 ms start again.
+        dialog.SetResult("answer");
+        Assert.Equal("answer", await dialogClosed.Task);
+        Assert.Null(status.Message);
+        _clock.Advance(TimeSpan.FromMilliseconds(399));
+        Assert.Null(status.Message);
+        _clock.Advance(TimeSpan.FromMilliseconds(1));
+        Assert.Equal(working, status.Message);
+
+        // An action that throws: the exception is the refactoring's, and the 400 ms start again as well.
+        more.SetResult(true);
+        await failed.Task;
+        Assert.Null(status.Message);
+        _clock.Advance(TimeSpan.FromMilliseconds(400));
+        Assert.Equal(working, status.Message);
+
+        // A pause inside a pause: the text stays away until the outer one ends.
+        nested.SetResult(true);
+        await nestedOpen.Task;
+        Assert.Null(status.Message);
+        _clock.Advance(TimeSpan.FromSeconds(30));
+        Assert.Null(status.Message);
+        inner.SetResult(true);
+        await nestedClosed.Task;
+        _clock.Advance(TimeSpan.FromMilliseconds(399));
+        Assert.Null(status.Message);
+        _clock.Advance(TimeSpan.FromMilliseconds(1));
+        Assert.Equal(working, status.Message);
+
+        // The operation ends (cancelled: no changes): no text, no timer left, and the call is refused again.
+        var pending = _clock.PendingCount;
+        rest.SetResult(true);
+        Assert.Equal(RefactoringOutcome.Canceled, (await running).Outcome);
+        Assert.False(Engine.IsBusy);
+        Assert.Null(status.Message);
+        Assert.Equal(pending, _clock.PendingCount);
+        _clock.Advance(TimeSpan.FromSeconds(30));
+        Assert.Null(status.Message);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => Engine.WithoutWorkingTextAsync(() => Task.FromResult(1)));
+        Assert.Empty(Dialogs.Requests);
+    }
+
+    /// <summary>
+    /// IDE-REFAC-047 e: <c>ConfirmAsync</c> shows a checked edit in the Preview dialog's confirm mode (UI-DLG-387) and
+    /// answers whether the user chose Apply — nothing is applied, recorded or said. An invalid edit and a blocked one are
+    /// reported and answer false without a preview; an edit without changes answers true without one. No working text
+    /// while the preview is open. Outside a computation the call is refused.
+    /// </summary>
+    [Fact(Timeout = 60000)]
+    [Trait("Req", "IDE-REFAC-047")]
+    [Trait("Req", "UI-DLG-387")]
+    public Task ConfirmShowsThePreviewAndAppliesNothing() => TestUiThread.RunAsync(() => ConfirmShowsThePreviewAndAppliesNothingOnUiThread());
+
+    private async Task ConfirmShowsThePreviewAndAppliesNothingOnUiThread()
+    {
+        const string Note = "The file A.pas is renamed to Z.pas.";
+        const string Gone = Dir + @"\Gone.pas";
+        const string RenameTitle = "Rename 'A' to 'Z'";
+        await OpenProjectAsync();
+        var a = await OpenAsync(A);
+        Dialogs.Answer("Msg.Refactoring.Blocked", "OK");
+        Dialogs.Answer("Msg.Refactoring.Failed", "OK");
+        var status = _services.Status;
+        status.ShowMessage("before", TimeSpan.FromHours(1));
+        var applied = 0;
+        WorkspaceEdit Changes(params FileEdit[] files) => new(RenameTitle, [.. files]) { OnApplied = _ => applied++ };
+
+        // Only inside the computation of a refactoring.
+        await Assert.ThrowsAsync<InvalidOperationException>(() => Engine.ConfirmAsync(Changes(Insert(A)), Note));
+
+        // One confirmation as a refactoring asks for it; the refactoring then ends without changes of its own.
+        var refactoring = new FakeRefactoring("rename-unit", "Rename Symbol");
+        async Task<bool> ConfirmAsync(WorkspaceEdit edit, string? note)
+        {
+            var answer = false;
+            refactoring.Compute = async (_, _) =>
+            {
+                answer = await Engine.ConfirmAsync(edit, note);
+                Assert.True(Engine.IsBusy);
+                return null;
+            };
+            Assert.Equal(RefactoringOutcome.Canceled, (await Engine.RunAsync(refactoring)).Outcome);
+            Assert.False(Engine.IsBusy);
+            return answer;
+        }
+
+        // Apply: the dialog is in confirm mode, shows the normalised edit and the note; while it is open there is no
+        // working text. (The state: every file and buffer, without the session file the IDE saves while time passes.)
+        string State() => string.Join('\n', Snapshot().Split('\n').Where(line => !line.Contains(@"\.freexcomp\", StringComparison.Ordinal)));
+        var before = State();
+        var open = Source<bool>();
+        var close = Source<bool>();
+        Dialogs.Script(RefactoringPreviewViewModel.DialogName, async dialog =>
+        {
+            open.SetResult(true);
+            await close.Task;
+            await dialog.PressDefaultAsync();
+        });
+        var edit = Changes(Rename(C, Text(C)), Rename(A, a.Buffer.Text), new FileEdit(D, Text(D), []));
+        var confirming = ConfirmAsync(edit, Note);
+        await open.Task;
+        var preview = Assert.IsType<RefactoringPreviewViewModel>(Assert.Single(Dialogs.Dialogs));
+        Assert.True(preview.IsConfirm);
+        Assert.Equal(Note, preview.Note);
+        Assert.Equal("Preview — Rename 'A' to 'Z'", preview.Title);
+        Assert.Equal([A, C], preview.Files.Select(f => f.Path)); // normalised: D has no change
+        Assert.Equal("Changes: 4, files: 2", preview.Summary);
+        Assert.Equal(Format(Strings.Msg_Refactoring_PreviewSummaryAll, 4, 2), preview.Summary);
+        Assert.Equal(["Ok", "Cancel"], preview.Buttons.Select(b => b.Id));
+        Assert.Equal(["A.pas, 2 changes", "line 5, Old replaced by Renamed"], [preview.Files[0].AutomationName, preview.Files[0].Edits[0].AutomationName]);
+        // Nothing can be left out: toggling a row does nothing.
+        preview.Toggle(preview.Files[0]);
+        preview.Toggle(preview.Files[1].Edits[0], withSelection: true);
+        Assert.All(preview.Files.SelectMany(f => f.Edits), e => Assert.True(e.Checked));
+        Assert.Equal((Renamed(Unit("A")), "Changes: 4, files: 2"), (preview.Files[0].AfterText(), preview.Summary));
+        _clock.Advance(TimeSpan.FromSeconds(30));
+        Assert.Equal("before", status.Message);
+        Assert.True(Engine.IsBusy);
+        close.SetResult(true);
+        Assert.True(await confirming);
+
+        // Nothing was applied, recorded or said; the callback of the edit was not called.
+        Assert.Equal(before, State());
+        Assert.Equal((0, 0, "before"), (HistoryCount, applied, status.Message));
+        Assert.Empty(Dialogs.Requests);
+
+        // Cancel: false. Without a note the dialog has none.
+        Dialogs.Script(RefactoringPreviewViewModel.DialogName, dialog =>
+        {
+            Assert.Null(((RefactoringPreviewViewModel)dialog).Note);
+            return dialog.PressCancelAsync();
+        });
+        Assert.False(await ConfirmAsync(edit, null));
+        Assert.Equal(2, Dialogs.Dialogs.Count);
+
+        // An edit without changes: true, no dialog, no status text.
+        Assert.True(await ConfirmAsync(Changes(new FileEdit(A, a.Buffer.Text, [new TextEdit(5, 0, "")])), Note));
+        Assert.Equal((2, "before"), (Dialogs.Dialogs.Count, status.Message));
+        Assert.Empty(Dialogs.Requests);
+
+        // An invalid edit (two file edits for one path): logged once, reported, false, no preview.
+        var logged = Log.Lines.Count;
+        Assert.False(await ConfirmAsync(Changes(Insert(A), Insert(A)), Note));
+        Assert.Equal(("Msg.Refactoring.Failed", RenameTitle), (Dialogs.Requests[^1].MessageId, Assert.Single(Dialogs.Requests[^1].Args)));
+        Assert.Contains(A, Assert.Single(Log.Lines.Skip(logged), l => l.StartsWith("ERROR Refactoring: ", StringComparison.Ordinal)), StringComparison.Ordinal);
+
+        // A blocked edit: the files with their reasons, false, no preview.
+        Assert.False(await ConfirmAsync(Changes(Insert(A), Rename(Gone, Unit("Gone"))), Note));
+        Assert.Equal("Msg.Refactoring.Blocked", Dialogs.Requests[^1].MessageId);
+        Assert.Equal([RenameTitle, $"{Gone} — {Strings.Reason_Refactoring_NotFound}"], Dialogs.Requests[^1].Args);
+        Assert.Equal((2, 2), (Dialogs.Dialogs.Count, Dialogs.Requests.Count));
+
+        Assert.Equal(before, State());
+        Assert.Equal((0, 0, "before"), (HistoryCount, applied, status.Message));
+        Assert.False(Engine.CanUndo);
     }
 }

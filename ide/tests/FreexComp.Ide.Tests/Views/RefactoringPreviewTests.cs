@@ -731,4 +731,164 @@ public sealed class RefactoringPreviewTests
             Assert.Equal(RefactoringOutcome.Canceled, (await EndAsync(h, running)).Outcome);
         });
     }
+
+    /// <summary>
+    /// Starts a refactoring that asks the engine to confirm <paramref name="edit"/> (IDE-REFAC-047 e) and returns the open
+    /// dialog; <c>Answer</c> is what the refactoring was told once the dialog is closed.
+    /// </summary>
+    internal static async Task<(Task<RefactoringResult> Running, DialogDriver Dialog, RefactoringPreviewViewModel Model, Func<bool?> Answer)> ConfirmAsync(
+        HeadlessHarness h, WorkspaceEdit edit, string? note)
+    {
+        bool? answer = null;
+        var refactoring = new FreexComp.Ide.TestSupport.FakeRefactoring("confirm", Title)
+        {
+            Compute = async (_, _) =>
+            {
+                answer = await h.Services.Refactoring.ConfirmAsync(edit, note);
+                return null; // the refactoring carries its changes out by other means
+            },
+        };
+        var running = h.Services.Refactoring.RunAsync(refactoring);
+        var dlg = await h.WaitForDialogAsync(RefactoringPreviewViewModel.DialogName);
+        var model = Assert.IsType<RefactoringPreviewViewModel>(dlg.Window.Model);
+        Assert.IsType<RefactoringPreviewWindow>(dlg.Window);
+        await DiffAsync(h, model);
+        return (running, dlg, model, () => answer);
+    }
+
+    /// <summary>
+    /// UI-DLG-387 (IDE-REFAC-047 e): the Preview dialog in its confirm mode, shown by <c>ConfirmAsync</c> — the rows of the
+    /// ordinary preview without check boxes, no <c>Select All</c> / <c>Select None</c>, the summary of all changes, the
+    /// note as a wrapping line between the panes and the buttons, the diff with every edit applied; Space does nothing;
+    /// Apply (Enter) answers true, Cancel, Escape and the title-bar close answer false; nothing is applied either way.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-DLG-387")]
+    [Trait("Req", "IDE-REFAC-047")]
+    public async Task ConfirmModeHasNoCheckBoxesAndShowsTheNote()
+    {
+        const string Note = "The file A.pas is renamed to Customers.pas. Open documents among the changed files are saved.";
+        await using var h = await StartAsync();
+        await TrustDialogTests.Guarded(h, async () =>
+        {
+            var (edit, a, c) = await FiveEditsAsync(h);
+            string Snapshot() => string.Join('|', a.Buffer.Text, a.Buffer.Version, a.IsModified, c.Buffer.Text, c.Buffer.Version, c.IsModified,
+                File.ReadAllText(PathOf(h, "A.pas")), File.ReadAllText(PathOf(h, "B.pas")), File.ReadAllText(PathOf(h, "C.pas")),
+                string.Join(',', Directory.GetFiles(h.TempDir).Select(Path.GetFileName).Order(StringComparer.Ordinal)));
+            var before = Snapshot();
+
+            var (running, dlg, model, answer) = await ConfirmAsync(h, edit, Note);
+            Assert.True(model.IsConfirm);
+            Assert.Equal("Preview — Rename Symbol", dlg.Window.Title);
+            Assert.Equal((960, 600), (dlg.Window.Width, dlg.Window.Height));
+
+            // The rows of the ordinary preview — the active document's file first — without a check box anywhere.
+            var list = dlg.Find<ListBox>("Tree");
+            Assert.Equal(
+                [
+                    Prefix + "File.A.pas", Prefix + "File.A.pas.Edit.1", Prefix + "File.A.pas.Edit.2", Prefix + "File.A.pas.Edit.3",
+                    Prefix + "File.B.pas", Prefix + "File.B.pas.Edit.1", Prefix + "File.C.pas", Prefix + "File.C.pas.Edit.1",
+                ],
+                RowIds(dlg));
+            Assert.Empty(list.GetVisualDescendants().OfType<CheckBox>());
+            Assert.DoesNotContain(AutomationIdChecks.AllIds(dlg.Window), id => id.EndsWith(".Check", StringComparison.Ordinal));
+            Assert.Equal("5", dlg.Find<TextBlock>(Prefix + "File.A.pas.Edit.1.Line").Text);
+            Assert.Equal([("procedure ", ""), ("Old", "removed"), ("Renamed", "added"), (";", "")], Parts(dlg, "File.A.pas.Edit.1"));
+            Assert.All(list.GetVisualDescendants().OfType<ListBoxItem>().Where(i => i.IsVisible), i => Assert.Equal(22, i.Bounds.Height));
+            Assert.Equal(PathOf(h, "B.pas"), ToolTip.GetTip(dlg.Find<ListBoxItem>(Prefix + "File.B.pas")));
+
+            // A screen reader hears the rows without a check state.
+            string Name(string row) => AutomationProperties.GetName(dlg.Find<ListBoxItem>(Prefix + row))!;
+            Assert.Equal(("A.pas, 3 changes", "B.pas, 1 change", "line 5, Old replaced by Renamed"), (Name("File.A.pas"), Name("File.B.pas"), Name("File.A.pas.Edit.1")));
+
+            // No Select All / Select None; Apply is the default button, Cancel the other.
+            Assert.Null(dlg.TryFind<Button>("SelectAll"));
+            Assert.Null(dlg.TryFind<Button>("SelectNone"));
+            var ok = dlg.Find<Button>("Ok");
+            Assert.Equal(("Ok", true), (model.DefaultButton!.Id, ok.IsEnabled));
+            Assert.Equal(["Ok", "Cancel"], model.Buttons.Select(b => b.Id));
+            Assert.NotNull(dlg.TryFind<Button>("Cancel"));
+
+            // The summary counts every change: Msg.Refactoring.PreviewSummaryAll.
+            var summary = dlg.Find<TextBlock>("Summary");
+            Assert.Equal("Changes: 5, files: 3", summary.Text);
+            Assert.Equal((summary.Text, AutomationLiveSetting.Polite), (AutomationProperties.GetName(summary), AutomationProperties.GetLiveSetting(summary)));
+
+            // The note: a wrapping line in text.secondary between the panes and the button strip, as wide as both panes.
+            var note = dlg.Find<TextBlock>("Note");
+            Assert.Equal((Note, Avalonia.Media.TextWrapping.Wrap), (note.Text, note.TextWrapping));
+            Assert.Same(Brush(dlg, "FxcTextSecondaryBrush"), note.Foreground);
+            Rect Box(Control control) => new(control.TranslatePoint(default, dlg.Window)!.Value, control.Bounds.Size);
+            var (tree, diff, line, button) = (Box(list), Box(dlg.Find<Control>("Diff")), Box(note), Box(ok));
+            Assert.True(line.Top >= Math.Max(tree.Bottom, diff.Bottom) && line.Bottom <= button.Top, $"note {line} between panes {tree} / {diff} and button {button}");
+            // (the panes have a 1 px frame around the tree and the diff)
+            Assert.True(line.Left >= tree.Left - 1 && line.Right <= diff.Right + 1 && line.Height > 0, $"note {line} within {tree.Left}…{diff.Right}");
+
+            // The diff shows the file with every edit applied.
+            string Right() => string.Join('\n', model.Diff!.Layout.Right.Where(r => r.RightLine is not null).Select(r => r.Text));
+            Assert.Equal(UnitA.Replace("Old", "Renamed", StringComparison.Ordinal).TrimEnd('\n'), Right());
+
+            // First focus on the first file row. Space does nothing — on a file row and on an edit row.
+            Assert.Equal(Prefix + "File.A.pas", dlg.FocusedAutomationId);
+            dlg.Press("Space");
+            dlg.Press("Down");
+            Assert.Equal(Prefix + "File.A.pas.Edit.1", dlg.FocusedAutomationId);
+            dlg.Press("Space");
+            await DiffAsync(h, model);
+            Assert.All(model.Files.SelectMany(f => f.Edits), e => Assert.True(e.Checked));
+            Assert.Equal("Changes: 5, files: 3", summary.Text);
+            Assert.Equal(UnitA.Replace("Old", "Renamed", StringComparison.Ordinal).TrimEnd('\n'), Right());
+            Assert.True(ok.IsEnabled);
+            Assert.Equal(Prefix + "File.A.pas.Edit.1", dlg.FocusedAutomationId);
+
+            // Every interactive control has an id, no id is used twice.
+            Assert.Empty(AutomationIdChecks.ControlsWithoutId(dlg.Window));
+            Assert.Empty(AutomationIdChecks.DuplicateIds(dlg.Window));
+            Assert.DoesNotContain(AutomationIdChecks.AllIds(dlg.Window), id => !AutomationIds.IsWellFormed(id));
+
+            // Enter is Apply: the refactoring is told "confirmed"; the engine applied and recorded nothing.
+            h.Services.Status.ShowMessage("before", TimeSpan.FromMinutes(1));
+            dlg.Press("Enter");
+            var result = await EndAsync(h, running);
+            Assert.False(dlg.Window.IsVisible);
+            Assert.True(answer());
+            Assert.Equal((RefactoringOutcome.Canceled, 0, 0), (result.Outcome, result.EditCount, result.FileCount)); // the refactoring returned no changes
+            Assert.Equal(before, Snapshot());
+            Assert.False(h.Services.Refactoring.CanUndo);
+            Assert.True(h.Services.Status.Message is null or "before", h.Services.Status.Message);
+
+            // Cancel, Escape and the title-bar close: not confirmed.
+            foreach (var close in (Action<DialogDriver>[])[d => d.Click("Cancel"), d => d.Press("Escape"), d => d.Window.Close()])
+            {
+                var (again, dialog, _, told) = await ConfirmAsync(h, edit, Note);
+                close(dialog);
+                Assert.Equal(RefactoringOutcome.Canceled, (await EndAsync(h, again)).Outcome);
+                Assert.False(dialog.Window.IsVisible);
+                Assert.False(told());
+                Assert.Equal(before, Snapshot());
+                Assert.False(h.Services.Refactoring.IsBusy);
+            }
+
+            // Without a note there is no note line; the Apply button confirms as well.
+            var (last, plain, _, confirmed) = await ConfirmAsync(h, edit, null);
+            Assert.Null(plain.TryFind<TextBlock>("Note"));
+            Assert.Equal("Changes: 5, files: 3", plain.Find<TextBlock>("Summary").Text);
+            plain.Click("Ok");
+            Assert.Equal(RefactoringOutcome.Canceled, (await EndAsync(h, last)).Outcome);
+            Assert.True(confirmed());
+            Assert.Equal(before, Snapshot());
+
+            // The ordinary preview of the same edit is as it was: check boxes, the selection buttons, its own summary, no note.
+            var (running2, preview, model2) = await ShowAsync(h, edit);
+            Assert.False(model2.IsConfirm);
+            Assert.True(Check(preview, "File.A.pas").IsChecked);
+            Assert.NotNull(preview.TryFind<Button>("SelectAll"));
+            Assert.NotNull(preview.TryFind<Button>("SelectNone"));
+            Assert.Null(preview.TryFind<TextBlock>("Note"));
+            Assert.Equal("Selected changes: 5 of 5, files: 3", preview.Find<TextBlock>("Summary").Text);
+            Assert.Equal("A.pas, 3 changes, checked", AutomationProperties.GetName(preview.Find<ListBoxItem>(Prefix + "File.A.pas")));
+            preview.Click("Cancel");
+            Assert.Equal(RefactoringOutcome.Canceled, (await EndAsync(h, running2)).Outcome);
+        });
+    }
 }

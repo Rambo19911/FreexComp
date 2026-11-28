@@ -226,6 +226,9 @@ public static class ServiceGraph
         // IDE-REFAC-007: the preview of an operation is the dialog RefactoringPreview (I-350).
         refactoring.Preview = edit => platform.Dialogs.ShowAsync(new RefactoringPreviewViewModel(edit, documents.ActiveDocument?.FilePath,
             platform.TextBuffers, languages, layout, platform.Clipboard));
+        // IDE-REFAC-047 e: a confirmation is the same dialog in its confirm mode (UI-DLG-387): Apply returns the edit.
+        refactoring.Confirm = async (edit, note) => await platform.Dialogs.ShowAsync(new RefactoringPreviewViewModel(edit,
+            documents.ActiveDocument?.FilePath, platform.TextBuffers, languages, layout, platform.Clipboard, confirm: true, note)) is not null;
         refactoring.RegisterCommands(commands, toolWindowPhase ?? ImplementedPhase); // I-349 refactor.undo, I-351 edit.quickActions
         // IDE-REFAC-033: the code actions of the language service are quick actions. IDE-REFAC-030: the refactorings — a
         // card that delivers one registers it here; a composition may add its own.

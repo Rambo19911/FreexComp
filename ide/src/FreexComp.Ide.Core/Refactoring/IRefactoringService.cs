@@ -75,6 +75,34 @@ public interface IRefactoringService
     /// </summary>
     Task<IReadOnlyList<QuickAction>> GetQuickActionsAsync(TextDocumentViewModel document, TextSelection selection, CancellationToken ct);
 
+    /// <summary>
+    /// IDE-REFAC-047 c: runs <paramref name="action"/> — a dialog of the refactoring, or an operation of another service
+    /// that shows dialogs of its own — without the "working" text in the status bar: the text is taken away and does not
+    /// come back while the action runs; when it ends, also by an exception, the 400 ms after which the text is shown
+    /// start again. The engine stays busy. Only for the refactoring or quick action whose changes are being computed.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">No operation is computing its changes.</exception>
+    Task<T> WithoutWorkingTextAsync<T>(Func<Task<T>> action);
+
+    /// <summary>
+    /// IDE-REFAC-047 d: the files that keep <paramref name="edit"/> from being applied now, each with the first reason
+    /// that applies to it (IDE-REFAC-006), in path order; empty when it may be applied. Edits that change nothing are
+    /// not judged. Nothing is shown and nothing changes; the engine does not become busy, and the question may be asked
+    /// at any time, also while an operation runs.
+    /// </summary>
+    Task<IReadOnlyList<BlockedFile>> CheckAsync(WorkspaceEdit edit);
+
+    /// <summary>
+    /// IDE-REFAC-047 e: shows the changes of <paramref name="edit"/> in the Preview dialog's confirm mode (UI-DLG-387:
+    /// every change or none, with <paramref name="note"/> as a line of text when it is given) and returns whether the
+    /// user chose Apply. Nothing is applied or recorded — the caller carries the changes out by other means. An edit that
+    /// cannot be applied is reported like <see cref="ApplyAsync"/> reports it (an invalid edit, blocked files) and gives
+    /// false; an edit without changes gives true without a dialog. Only for the refactoring or quick action whose
+    /// changes are being computed.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">No operation is computing its changes.</exception>
+    Task<bool> ConfirmAsync(WorkspaceEdit edit, string? note);
+
     /// <summary>The busy state or the history changed (an operation started or ended, the history was cleared).</summary>
     event EventHandler? Changed;
 }

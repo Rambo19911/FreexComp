@@ -18,9 +18,12 @@ namespace FreexComp.Ide.Core.Dialogs;
 /// </summary>
 public abstract class RefactoringPreviewRow : ObservableObject
 {
-    private protected RefactoringPreviewRow(string key) => Key = key;
+    private protected RefactoringPreviewRow(string key, bool hasCheckBox) => (Key, HasCheckBox) = (key, hasCheckBox);
 
     public string Key { get; }
+
+    /// <summary>The row has a check box; false in the dialog's confirm mode (UI-DLG-387), where every edit is applied.</summary>
+    public bool HasCheckBox { get; }
 
     /// <summary>The file of the row (a file row: itself).</summary>
     public abstract RefactoringPreviewFile File { get; }
@@ -28,7 +31,7 @@ public abstract class RefactoringPreviewRow : ObservableObject
     /// <summary>The state of the row's check box; null = a file row whose edits differ (UI-DLG-363).</summary>
     public abstract bool? IsChecked { get; }
 
-    /// <summary>What a screen reader says for the row (UI-DLG-367).</summary>
+    /// <summary>What a screen reader says for the row (UI-DLG-367); without a check box the same without its state.</summary>
     public abstract string AutomationName { get; }
 
     internal void RaiseChecked()
@@ -53,8 +56,8 @@ public abstract class RefactoringPreviewRow : ObservableObject
 /// </summary>
 public sealed class RefactoringPreviewFile : RefactoringPreviewRow
 {
-    internal RefactoringPreviewFile(FileEdit edit, string key)
-        : base(key)
+    internal RefactoringPreviewFile(FileEdit edit, string key, bool hasCheckBox = true)
+        : base(key, hasCheckBox)
     {
         Path = edit.Path;
         BaseText = edit.BaseText;
@@ -101,9 +104,13 @@ public sealed class RefactoringPreviewFile : RefactoringPreviewRow
         }
     }
 
-    public override string AutomationName => Count == 1
-        ? Format(Strings.Dialog_RefactoringPreview_FileNameOne, FileName, StateText(IsChecked))
-        : Format(Strings.Dialog_RefactoringPreview_FileName, FileName, Count, StateText(IsChecked));
+    public override string AutomationName => (HasCheckBox, Count == 1) switch
+    {
+        (true, true) => Format(Strings.Dialog_RefactoringPreview_FileNameOne, FileName, StateText(IsChecked)),
+        (true, false) => Format(Strings.Dialog_RefactoringPreview_FileName, FileName, Count, StateText(IsChecked)),
+        (false, true) => Format(Strings.Dialog_RefactoringPreview_ConfirmFileNameOne, FileName),
+        (false, false) => Format(Strings.Dialog_RefactoringPreview_ConfirmFileName, FileName, Count),
+    };
 
     /// <summary>UI-DLG-364: the base text with the file's checked edits applied — the right side of the diff.</summary>
     public string AfterText()
@@ -174,7 +181,7 @@ public sealed class RefactoringPreviewEdit : RefactoringPreviewRow
     public const int MaxInsertedLength = 120;
 
     internal RefactoringPreviewEdit(RefactoringPreviewFile file, TextEdit edit, int index, List<int> lineStarts)
-        : base(file.Key + ".Edit." + index.ToString(CultureInfo.InvariantCulture))
+        : base(file.Key + ".Edit." + index.ToString(CultureInfo.InvariantCulture), file.HasCheckBox)
     {
         File = file;
         Edit = edit;
@@ -240,11 +247,15 @@ public sealed class RefactoringPreviewEdit : RefactoringPreviewRow
 
     public override bool? IsChecked => Checked;
 
-    public override string AutomationName => Edit.Length == 0
-        ? Format(Strings.Dialog_RefactoringPreview_Inserted, Line, Inserted, StateText(Checked))
-        : Edit.NewText.Length == 0
-            ? Format(Strings.Dialog_RefactoringPreview_Removed, Line, Removed, StateText(Checked))
-            : Format(Strings.Dialog_RefactoringPreview_Replaced, Line, Removed, Inserted, StateText(Checked));
+    public override string AutomationName => (HasCheckBox, Edit.Length == 0, Edit.NewText.Length == 0) switch
+    {
+        (true, true, _) => Format(Strings.Dialog_RefactoringPreview_Inserted, Line, Inserted, StateText(Checked)),
+        (true, false, true) => Format(Strings.Dialog_RefactoringPreview_Removed, Line, Removed, StateText(Checked)),
+        (true, false, false) => Format(Strings.Dialog_RefactoringPreview_Replaced, Line, Removed, Inserted, StateText(Checked)),
+        (false, true, _) => Format(Strings.Dialog_RefactoringPreview_ConfirmInserted, Line, Inserted),
+        (false, false, true) => Format(Strings.Dialog_RefactoringPreview_ConfirmRemoved, Line, Removed),
+        (false, false, false) => Format(Strings.Dialog_RefactoringPreview_ConfirmReplaced, Line, Removed, Inserted),
+    };
 }
 
 /// <summary>
@@ -253,6 +264,9 @@ public sealed class RefactoringPreviewEdit : RefactoringPreviewRow
 /// text against the base text with the file's checked edits. <c>Apply</c> closes with the edit reduced to the checked
 /// edits (files without one are left out); <c>Cancel</c> closes with null. 960 × 600, resizable down to 720 × 420; the
 /// size and the tree width are remembered (<c>dialogs.RefactoringPreview.size</c>, <c>.split</c>).
+/// <para>The <b>confirm mode</b> (UI-DLG-387) shows changes that are carried out all or not at all: no check boxes and
+/// no <c>Select All</c> / <c>Select None</c>, the summary counts every change, an optional note is shown below the
+/// panes, and <c>Apply</c> closes with the whole edit.</para>
 /// </summary>
 public sealed class RefactoringPreviewViewModel : DialogViewModel<WorkspaceEdit>
 {
@@ -285,8 +299,10 @@ public sealed class RefactoringPreviewViewModel : DialogViewModel<WorkspaceEdit>
 
     /// <param name="edit">The normalised, valid workspace edit to show.</param>
     /// <param name="activePath">The file of the active document (its row comes first, UI-DLG-361); null without one.</param>
+    /// <param name="confirm">The confirm mode (UI-DLG-387): every change or none.</param>
+    /// <param name="note">Confirm mode: a text shown between the panes and the buttons; null or empty for none.</param>
     public RefactoringPreviewViewModel(WorkspaceEdit edit, string? activePath, ITextBufferFactory buffers, ILanguageRegistry languages,
-        ILayoutService? layout = null, IClipboardService? clipboard = null)
+        ILayoutService? layout = null, IClipboardService? clipboard = null, bool confirm = false, string? note = null)
     {
         ArgumentNullException.ThrowIfNull(edit);
         ArgumentNullException.ThrowIfNull(buffers);
@@ -296,6 +312,8 @@ public sealed class RefactoringPreviewViewModel : DialogViewModel<WorkspaceEdit>
         _languages = languages;
         _layout = layout;
         _clipboard = clipboard;
+        IsConfirm = confirm;
+        Note = confirm && !string.IsNullOrEmpty(note) ? note : null;
         Title = Format(Strings.Dialog_RefactoringPreview_Title, edit.Title);
 
         // UI-DLG-366: equal file names in different folders are numbered @2, @3 in path order.
@@ -306,7 +324,7 @@ public sealed class RefactoringPreviewViewModel : DialogViewModel<WorkspaceEdit>
         {
             var name = Path.GetFileName(file.Path);
             var occurrence = seen[name] = seen.GetValueOrDefault(name) + 1;
-            files.Add(new RefactoringPreviewFile(file, "File." + name + (occurrence > 1 ? "@" + occurrence.ToString(CultureInfo.InvariantCulture) : ""))
+            files.Add(new RefactoringPreviewFile(file, "File." + name + (occurrence > 1 ? "@" + occurrence.ToString(CultureInfo.InvariantCulture) : ""), !confirm)
             {
                 IsExpanded = byPath.Count <= MaxExpandedFiles,
             });
@@ -321,13 +339,16 @@ public sealed class RefactoringPreviewViewModel : DialogViewModel<WorkspaceEdit>
             IsAccent = true,
             AccessLabel = "_" + Strings.Button_Apply,
         };
-        Buttons =
-        [
-            Auxiliary("SelectAll", Strings.Dialog_RefactoringPreview_SelectAll, () => SetAll(true)),
-            Auxiliary("SelectNone", Strings.Dialog_RefactoringPreview_SelectNone, () => SetAll(false)),
-            _apply,
-            new DialogButtonViewModel("Cancel", Strings.Button_Cancel, () => Close(null)) { IsCancel = true },
-        ];
+        var cancel = new DialogButtonViewModel("Cancel", Strings.Button_Cancel, () => Close(null)) { IsCancel = true };
+        Buttons = confirm
+            ? [_apply, cancel]
+            :
+            [
+                Auxiliary("SelectAll", Strings.Dialog_RefactoringPreview_SelectAll, () => SetAll(true)),
+                Auxiliary("SelectNone", Strings.Dialog_RefactoringPreview_SelectNone, () => SetAll(false)),
+                _apply,
+                cancel,
+            ];
         BuildRows();
         _current = Files.FirstOrDefault();
         _selected = _current is null ? [] : [_current];
@@ -354,6 +375,12 @@ public sealed class RefactoringPreviewViewModel : DialogViewModel<WorkspaceEdit>
     }
 
     public override IReadOnlyList<DialogButtonViewModel> Buttons { get; }
+
+    /// <summary>UI-DLG-387: the dialog confirms changes that are carried out all or not at all — no row has a check box.</summary>
+    public bool IsConfirm { get; }
+
+    /// <summary>UI-DLG-387: the text shown between the panes and the buttons in the confirm mode; null without one.</summary>
+    public string? Note { get; }
 
     /// <summary>The label of the tree, in the notation of dialogs.md (<c>&amp;</c> marks the mnemonic).</summary>
     public string ChangesLabel => Strings.Dialog_RefactoringPreview_Changes;
@@ -396,8 +423,13 @@ public sealed class RefactoringPreviewViewModel : DialogViewModel<WorkspaceEdit>
 
     private int CheckedCount => Files.Sum(f => f.CheckedCount);
 
-    /// <summary><c>Msg.Refactoring.PreviewSummary</c>: checked edits, all edits, files with a checked edit.</summary>
-    public string Summary => Format(Strings.Msg_Refactoring_PreviewSummary, CheckedCount, EditCount, Files.Count(f => f.CheckedCount > 0));
+    /// <summary>
+    /// <c>Msg.Refactoring.PreviewSummary</c>: checked edits, all edits, files with a checked edit; in the confirm mode
+    /// <c>Msg.Refactoring.PreviewSummaryAll</c>: edits, files.
+    /// </summary>
+    public string Summary => IsConfirm
+        ? Format(Strings.Msg_Refactoring_PreviewSummaryAll, EditCount, Files.Count)
+        : Format(Strings.Msg_Refactoring_PreviewSummary, CheckedCount, EditCount, Files.Count(f => f.CheckedCount > 0));
 
     /// <summary>The diff of the current row's file; null until the first one is computed.</summary>
     public DiffDocumentViewModel? Diff
@@ -415,11 +447,13 @@ public sealed class RefactoringPreviewViewModel : DialogViewModel<WorkspaceEdit>
     /// <summary>
     /// UI-DLG-363: toggles the check box of <paramref name="row"/> — a file row checks all its edits unless all are
     /// checked. With <paramref name="withSelection"/> (the Space key) every selected row gets the state the row gets,
-    /// when the row is one of several selected rows.
+    /// when the row is one of several selected rows. In the confirm mode nothing can be left out: it does nothing.
     /// </summary>
     public void Toggle(RefactoringPreviewRow row, bool withSelection = false)
     {
         ArgumentNullException.ThrowIfNull(row);
+        if (IsConfirm)
+            return;
         var state = row.IsChecked != true;
         IReadOnlyList<RefactoringPreviewRow> rows = withSelection && _selected.Count > 1 && _selected.Contains(row) ? _selected : [row];
         foreach (var edit in rows.SelectMany(r => r is RefactoringPreviewFile file ? file.Edits.AsEnumerable() : [(RefactoringPreviewEdit)r]))

@@ -24,6 +24,8 @@ namespace FreexComp.Ide.Views;
 /// inserted text on <c>diff.addedInline</c>), the summary line, a splitter, and the diff view of the current row's file
 /// (<see cref="DiffDocumentView"/>, with its own <c>Diff.*</c> ids). Space toggles the focused row and with it every
 /// selected row; Left and Right collapse and expand a file row. The first focus is on the tree's first row.
+/// In the confirm mode (UI-DLG-387) the rows have no check box, Space does nothing, and the note — when there is one —
+/// is a wrapping line <c>Note</c> below the tree and the diff.
 /// </summary>
 public sealed class RefactoringPreviewWindow : DialogWindow
 {
@@ -151,7 +153,7 @@ public sealed class RefactoringPreviewWindow : DialogWindow
 
         // One grid: the label and the summary above the tree and the diff; the summary starts above the diff.
         parts.TreeColumn.Width = new GridLength(model.TreeWidth);
-        var body = new Grid { RowDefinitions = new RowDefinitions("Auto,*") };
+        var body = new Grid { RowDefinitions = new RowDefinitions("Auto,*,Auto") };
         body.ColumnDefinitions.Add(parts.TreeColumn);
         body.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Auto));
         body.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Star) { MinWidth = RefactoringPreviewViewModel.MinimumDiffWidth });
@@ -162,6 +164,16 @@ public sealed class RefactoringPreviewWindow : DialogWindow
         Place(body, divider, 1, 1);
         Place(body, splitter, 1, 1);
         Place(body, diff, 1, 2);
+
+        // UI-DLG-387: the note of the confirm mode, between the panes and the button strip, as wide as both.
+        if (model.Note is { } text)
+        {
+            var note = new TextBlock { Text = text, Classes = { "body" }, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 0) }; // space.4
+            note.Bind(TextBlock.ForegroundProperty, note.GetResourceObservable("FxcTextSecondaryBrush"));
+            AutomationProperties.SetAutomationId(note, Id("Note"));
+            Grid.SetColumnSpan(note, 3);
+            Place(body, note, 2, 0);
+        }
 
         // UI-DLG-360: the tree gives way before the diff gets narrower than its minimum.
         body.SizeChanged += (_, e) => parts.TreeColumn.MaxWidth = Math.Max(RefactoringPreviewViewModel.MinimumTreeWidth,
@@ -210,7 +222,10 @@ public sealed class RefactoringPreviewWindow : DialogWindow
         }
     }
 
-    /// <summary>UI-DLG-363: Space toggles the focused row (and the selected rows with it); Left / Right collapse / expand a file row.</summary>
+    /// <summary>
+    /// UI-DLG-363: Space toggles the focused row (and the selected rows with it); Left / Right collapse / expand a file row.
+    /// UI-DLG-387: in the confirm mode Space does nothing (the model leaves every edit as it is).
+    /// </summary>
     private static void OnListKeyDown(RefactoringPreviewViewModel model, ListBox list, KeyEventArgs e)
     {
         if (e.KeyModifiers != KeyModifiers.None)
@@ -234,29 +249,38 @@ public sealed class RefactoringPreviewWindow : DialogWindow
     private static Control CreateRow(RefactoringPreviewViewModel model, RefactoringPreviewRow row)
     {
         var id = Id(row.Key);
-        var check = new CheckBox
+        var panel = new DockPanel { MinHeight = RowHeight, Background = Brushes.Transparent };
+        CheckBox? check = null;
+        if (row.HasCheckBox) // not in the confirm mode (UI-DLG-387)
         {
-            IsChecked = row.IsChecked, Focusable = false, IsTabStop = false, VerticalAlignment = VerticalAlignment.Center,
-            MinWidth = 0, MinHeight = 0, Padding = new Thickness(0), Margin = new Thickness(0, 0, 4, 0),
-        };
-        check.TemplateApplied += CompactCheckBox;
-        AutomationProperties.SetAutomationId(check, id + ".Check");
-        AutomationProperties.SetName(check, row.AutomationName);
-        check.Click += (_, _) =>
-        {
-            // The model decides the new state (a file row never becomes indeterminate by a click); the box shows it.
-            model.Toggle(row);
-            check.IsChecked = row.IsChecked;
-        };
-        DockPanel.SetDock(check, Avalonia.Controls.Dock.Left);
-        var panel = new DockPanel { MinHeight = RowHeight, Background = Brushes.Transparent, Children = { check } };
+            var box = check = new CheckBox
+            {
+                IsChecked = row.IsChecked, Focusable = false, IsTabStop = false, VerticalAlignment = VerticalAlignment.Center,
+                MinWidth = 0, MinHeight = 0, Padding = new Thickness(0), Margin = new Thickness(0, 0, 4, 0),
+            };
+            box.TemplateApplied += CompactCheckBox;
+            AutomationProperties.SetAutomationId(box, id + ".Check");
+            AutomationProperties.SetName(box, row.AutomationName);
+            box.Click += (_, _) =>
+            {
+                // The model decides the new state (a file row never becomes indeterminate by a click); the box shows it.
+                model.Toggle(row);
+                box.IsChecked = row.IsChecked;
+            };
+            DockPanel.SetDock(box, Avalonia.Controls.Dock.Left);
+            panel.Children.Add(box);
+        }
 
         // The row's container carries the row's id and name (and a file row's path as tooltip); both follow the check box.
         ListBoxItem? container = null;
         void ShowState()
         {
-            check.IsChecked = row.IsChecked;
-            AutomationProperties.SetName(check, row.AutomationName);
+            if (check is not null)
+            {
+                check.IsChecked = row.IsChecked;
+                AutomationProperties.SetName(check, row.AutomationName);
+            }
+
             if (container is not null)
                 AutomationProperties.SetName(container, row.AutomationName);
         }

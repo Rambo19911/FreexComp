@@ -26,6 +26,8 @@ public sealed partial class RefactoringService
     private readonly Dictionary<TextDocumentViewModel, CancellationTokenSource> _collecting = []; // one request per document
     private ICommandService? _commands;
     private int _implementedPhase;
+    private WorkingStatus? _computing; // IDE-REFAC-047 c: the "working" text of the operation whose changes are being computed
+    private int _pauses;               // … and the number of running actions that keep it away
 
     /// <summary>The command is catalogued and available in this composition (<c>Phase8Features</c>).</summary>
     private bool IsAvailable(string commandId) => _commands is { } commands
@@ -90,6 +92,7 @@ public sealed partial class RefactoringService
         {
             working.Start();
             WorkspaceEdit? edit;
+            (_computing, _pauses) = (working, 0);
             try
             {
                 edit = await compute(CancellationToken.None);
@@ -111,6 +114,10 @@ public sealed partial class RefactoringService
             {
                 return Result(RefactoringOutcome.Canceled);
             }
+            finally
+            {
+                _computing = null;
+            }
 
             return edit is null ? Result(RefactoringOutcome.Canceled) : await ApplyCoreAsync(edit, PreviewMode.Auto, working, CancellationToken.None);
         }
@@ -119,6 +126,57 @@ public sealed partial class RefactoringService
             working.Stop();
             SetBusy(false);
         }
+    }
+
+    public async Task<T> WithoutWorkingTextAsync<T>(Func<Task<T>> action)
+    {
+        ArgumentNullException.ThrowIfNull(action);
+        var working = _computing ?? throw new InvalidOperationException("No refactoring is computing its changes.");
+        _pauses++;
+        working.Stop();
+        try
+        {
+            return await action();
+        }
+        finally
+        {
+            // The 400 ms start again when the outermost action of this computation ends; an action that outlives its
+            // computation starts nothing.
+            if (ReferenceEquals(_computing, working) && --_pauses == 0)
+                working.Start();
+        }
+    }
+
+    /// <summary>
+    /// The confirmation of IDE-REFAC-047 e: shows the changes of a checked edit with a note and returns whether the user
+    /// chose Apply. The service graph sets it to the dialog <c>RefactoringPreview</c> in its confirm mode (UI-DLG-387).
+    /// Null: every edit that may be applied is confirmed.
+    /// </summary>
+    internal Func<WorkspaceEdit, string?, Task<bool>>? Confirm { get; set; }
+
+    public async Task<bool> ConfirmAsync(WorkspaceEdit edit, string? note)
+    {
+        ArgumentNullException.ThrowIfNull(edit);
+        if (_computing is null)
+            throw new InvalidOperationException("No refactoring is computing its changes.");
+        var normalized = edit.Normalize();
+        if (normalized.Files.IsEmpty)
+            return true; // nothing to look at
+        if (normalized.FindDefect() is { } defect)
+        {
+            LogDefect(edit.Title, defect);
+            await WithoutWorkingTextAsync(() => _dialogs.ShowMessageAsync(new MessageRequest("Msg.Refactoring.Failed", [edit.Title])));
+            return false;
+        }
+
+        var plan = await JudgeAsync(normalized);
+        if (plan.Blocked.Count > 0)
+        {
+            await WithoutWorkingTextAsync(() => _dialogs.ShowMessageAsync(new MessageRequest("Msg.Refactoring.Blocked", [edit.Title, BlockedLines(plan.Blocked)])));
+            return false;
+        }
+
+        return Confirm is not { } show || await WithoutWorkingTextAsync(() => show(normalized, note));
     }
 
     public async Task<IReadOnlyList<QuickAction>> GetQuickActionsAsync(TextDocumentViewModel document, TextSelection selection, CancellationToken ct)
