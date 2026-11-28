@@ -34,6 +34,9 @@ public sealed class QuickActionTests
     private const string DeclareId = "Context.quickAction.declare-variable";
     private const string DeclareTitle = "Declare variable 'Count: Integer'";
 
+    /// <summary>Rename Symbol, the refactoring of the service graph, is offered on every name (I-380).</summary>
+    private const string RenameId = "Context.quickAction.rename-symbol";
+
     /// <summary>The project of <see cref="BuildScenario"/> with the real system unit; Unit1 has one undeclared variable (E2003).</summary>
     private static async Task<(HeadlessHarness H, TextEditor Editor, TextDocumentViewModel Doc)> StartAsync(Action<HarnessOptions>? configure = null)
     {
@@ -90,8 +93,10 @@ public sealed class QuickActionTests
         h.Press("Ctrl+.");
         var menu = await QuickMenuAsync(h, editor);
 
-        // One item per action: the service's title as it is, no shortcut; the first item has the focus.
-        var item = Assert.IsType<MenuItem>(Assert.Single(menu.Items));
+        // One item per action: the service's title as it is, no shortcut; the first item has the focus. Rename Symbol
+        // follows the fix: the caret is on a name.
+        Assert.Equal([DeclareId, "—", RenameId], Rows(menu));
+        var item = Assert.IsType<MenuItem>(menu.Items[0]);
         Assert.Equal(DeclareId, AutomationIds.Get(item));
         Assert.Equal(DeclareTitle, item.Header);
         Assert.Null(item.InputGesture);
@@ -164,7 +169,7 @@ public sealed class QuickActionTests
         // The second gesture.
         h.Press("Alt+Enter");
         var menu = await QuickMenuAsync(h, editor);
-        Assert.Equal([DeclareId], Rows(menu));
+        Assert.Equal([DeclareId, "—", RenameId], Rows(menu));
         Assert.Equal(DeclareId, Focused(h));
         h.Press("Escape");
         Dispatcher.UIThread.RunJobs();
@@ -200,7 +205,7 @@ public sealed class QuickActionTests
         h.Press("Enter");
         menu = await QuickMenuAsync(h, editor);
         Assert.False(context.IsOpen);
-        Assert.Equal([DeclareId], Rows(menu));
+        Assert.Equal([DeclareId, "—", RenameId], Rows(menu));
         Assert.Equal(DeclareId, Focused(h));
         Assert.Equal(PlacementMode.BottomEdgeAlignedLeft, menu.Placement);
         h.Press("Escape");
@@ -260,14 +265,17 @@ public sealed class QuickActionTests
         var menu = await QuickMenuAsync(h, editor);
 
         // Fixes, a separator, refactorings; a repeated id is numbered.
-        Assert.Equal([DeclareId, DeclareId + "#2", "—", "Context.quickAction.wrap-in-region"], Rows(menu));
-        Assert.Equal([DeclareTitle, "Declare field F__Count & more", "Wrap in Region"], menu.Items.OfType<MenuItem>().Select(i => i.Header));
+        Assert.Equal([DeclareId, DeclareId + "#2", "—", RenameId, "Context.quickAction.wrap-in-region"], Rows(menu));
+        Assert.Equal([DeclareTitle, "Declare field F__Count & more", "Rename Symbol", "Wrap in Region"], menu.Items.OfType<MenuItem>().Select(i => i.Header));
         Assert.Equal(DeclareId, Focused(h));
 
         // Down moves through the menu as in every context menu; Enter runs the refactoring.
         h.Press("Down");
         Dispatcher.UIThread.RunJobs();
         Assert.Equal(DeclareId + "#2", Focused(h));
+        h.Press("Down");
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(RenameId, Focused(h));
         h.Press("Down");
         Dispatcher.UIThread.RunJobs();
         Assert.Equal("Context.quickAction.wrap-in-region", Focused(h));
@@ -310,9 +318,12 @@ public sealed class QuickActionTests
 
             h.Press("Ctrl+.");
             var menu = await QuickMenuAsync(h, editor);
-            Assert.Equal([DeclareId, "—", "Context.quickAction.mark-both"], Rows(menu));
+            Assert.Equal([DeclareId, "—", RenameId, "Context.quickAction.mark-both"], Rows(menu));
             h.Press("Down");
             Dispatcher.UIThread.RunJobs();
+            h.Press("Down");
+            Dispatcher.UIThread.RunJobs();
+            Assert.Equal("Context.quickAction.mark-both", Focused(h));
             h.Press("Enter");
 
             // The closed file is not in view: the changes are shown first, and nothing has changed yet.
@@ -355,7 +366,7 @@ public sealed class QuickActionTests
 
         h.Press("Ctrl+.");
         var menu = await QuickMenuAsync(h, editor);
-        Assert.Equal([DeclareId, "Context.quickAction.rename-handler"], Rows(menu));
+        Assert.Equal([DeclareId, "Context.quickAction.rename-handler", "—", RenameId], Rows(menu));
         h.Press("Down");
         Dispatcher.UIThread.RunJobs();
         h.Press("Enter");

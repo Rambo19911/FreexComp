@@ -70,6 +70,7 @@ public static class Phase8Features
         "project.resources", // F11-091
         "project.setActive", // F09-009
         "project.setPlatform", // F03-003
+        "refactor.rename", // F13-001
         "refactor.undo", // F13-003
         "run.toggleLibraryStepping", // F02-004
         "search.bookmark.addNamed", // F11-045

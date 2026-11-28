@@ -6888,6 +6888,114 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
     <value>A unit is renamed by renaming its file in the Project Manager.</value>
     <comment>IDE-REFAC-042</comment>
   </data>
+  <data name="Dialog_RenameSymbol_Title" xml:space="preserve">
+    <value>Rename Symbol</value>
+    <comment>UI-DLG-380: title of the Rename Symbol dialog</comment>
+  </data>
+  <data name="Dialog_RenameSymbol_TitleUnit" xml:space="preserve">
+    <value>Rename Unit</value>
+    <comment>UI-DLG-380: title of the dialog for a unit name</comment>
+  </data>
+  <data name="Dialog_RenameSymbol_NewName" xml:space="preserve">
+    <value>New &amp;name:</value>
+    <comment>UI-DLG-382: label of NewName (&amp; = mnemonic)</comment>
+  </data>
+  <data name="Dialog_RenameSymbol_Overloads" xml:space="preserve">
+    <value>Rename all &amp;overloads ({0})</value>
+    <comment>UI-DLG-383: 0 = the number of overloads</comment>
+  </data>
+  <data name="Dialog_RenameSymbol_Rename" xml:space="preserve">
+    <value>&amp;Rename</value>
+    <comment>UI-DLG-385: the default button</comment>
+  </data>
+  <data name="RenameKind_Variable" xml:space="preserve">
+    <value>Variable</value>
+    <comment>UI-DLG-381</comment>
+  </data>
+  <data name="RenameKind_Parameter" xml:space="preserve">
+    <value>Parameter</value>
+    <comment>UI-DLG-381</comment>
+  </data>
+  <data name="RenameKind_Constant" xml:space="preserve">
+    <value>Constant</value>
+    <comment>UI-DLG-381</comment>
+  </data>
+  <data name="RenameKind_Field" xml:space="preserve">
+    <value>Field</value>
+    <comment>UI-DLG-381</comment>
+  </data>
+  <data name="RenameKind_Property" xml:space="preserve">
+    <value>Property</value>
+    <comment>UI-DLG-381</comment>
+  </data>
+  <data name="RenameKind_Method" xml:space="preserve">
+    <value>Method</value>
+    <comment>UI-DLG-381</comment>
+  </data>
+  <data name="RenameKind_Routine" xml:space="preserve">
+    <value>Routine</value>
+    <comment>UI-DLG-381</comment>
+  </data>
+  <data name="RenameKind_Type" xml:space="preserve">
+    <value>Type</value>
+    <comment>UI-DLG-381</comment>
+  </data>
+  <data name="RenameKind_Class" xml:space="preserve">
+    <value>Class</value>
+    <comment>UI-DLG-381</comment>
+  </data>
+  <data name="RenameKind_Interface" xml:space="preserve">
+    <value>Interface</value>
+    <comment>UI-DLG-381</comment>
+  </data>
+  <data name="RenameKind_Enum" xml:space="preserve">
+    <value>Enumeration</value>
+    <comment>UI-DLG-381</comment>
+  </data>
+  <data name="RenameKind_EnumMember" xml:space="preserve">
+    <value>Enumeration value</value>
+    <comment>UI-DLG-381</comment>
+  </data>
+  <data name="RenameKind_Label" xml:space="preserve">
+    <value>Label</value>
+    <comment>UI-DLG-381</comment>
+  </data>
+  <data name="RenameKind_Unit" xml:space="preserve">
+    <value>Unit</value>
+    <comment>UI-DLG-381</comment>
+  </data>
+  <data name="Msg_Rename_NameInvalid" xml:space="preserve">
+    <value>A name starts with a letter or an underscore and continues with letters, digits and underscores.</value>
+    <comment>UI-DLG-382, IDE-REFAC-052</comment>
+  </data>
+  <data name="Msg_Rename_NameReserved" xml:space="preserve">
+    <value>{0} is a reserved word.</value>
+    <comment>UI-DLG-382, IDE-REFAC-052: 0 = typed name</comment>
+  </data>
+  <data name="Msg_Rename_Checking" xml:space="preserve">
+    <value>Checking…</value>
+    <comment>UI-DLG-384</comment>
+  </data>
+  <data name="Msg_Rename_SummaryOne" xml:space="preserve">
+    <value>1 change in 1 file</value>
+    <comment>UI-DLG-384</comment>
+  </data>
+  <data name="Msg_Rename_SummaryOneFile" xml:space="preserve">
+    <value>{0} changes in 1 file</value>
+    <comment>UI-DLG-384: 0 = count</comment>
+  </data>
+  <data name="Msg_Rename_SummaryMany" xml:space="preserve">
+    <value>{0} changes in {1} files</value>
+    <comment>UI-DLG-384: counts</comment>
+  </data>
+  <data name="Msg_Rename_Conflicts" xml:space="preserve">
+    <value>The new name would change what these names refer to:</value>
+    <comment>UI-DLG-384: label of the conflict list</comment>
+  </data>
+  <data name="Msg_Rename_ConflictsMore" xml:space="preserve">
+    <value>More conflicts are not listed.</value>
+    <comment>UI-DLG-384: last row of a capped conflict list</comment>
+  </data>
   <data name="Undo_Refactoring" xml:space="preserve">
     <value>Undo {0}</value>
     <comment>IDE-REFAC-021, 022: the menu label of refactor.undo and the title of the undo step an undone operation makes</comment>

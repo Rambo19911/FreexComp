@@ -252,8 +252,11 @@ public sealed class RefactoringRegistryTests : RefactoringTestBase
         var text = a.Buffer.Text;
         var count = text.IndexOf("Count", StringComparison.Ordinal);
 
-        // The caret in the undeclared identifier: the fix of the language service, with its id and title.
-        var action = Assert.Single(await Engine.GetQuickActionsAsync(a, TextSelection.At(count + 2), CancellationToken.None));
+        // The caret in the undeclared identifier: the fix of the language service, with its id and title; the name is also
+        // offered to Rename Symbol, the refactoring of the service graph (I-380).
+        var actions = await Engine.GetQuickActionsAsync(a, TextSelection.At(count + 2), CancellationToken.None);
+        Assert.Equal(["declare-variable", RenameRefactoring.RefactoringId], actions.Select(x => x.Id));
+        var action = actions[0];
         var source = _services.CodeModel.Workspace.GetDocument(A);
         var expected = Assert.Single(CodeActionService.GetCodeActions(source, new TextSpan(count + 2, 0), CancellationToken.None));
         Assert.Equal(("declare-variable", "Declare variable 'Count: Integer'", QuickActionKind.Fix), (action.Id, action.Title, action.Kind));
@@ -274,7 +277,7 @@ public sealed class RefactoringRegistryTests : RefactoringTestBase
         Assert.Equal(Undeclared, Text(A));
         Assert.Empty(Dialogs.Dialogs);
         Assert.Equal("Declare variable 'Count: Integer': 1 change", _services.Status.Message);
-        Assert.Empty(await Engine.GetQuickActionsAsync(a, TextSelection.At(a.Buffer.Text.IndexOf("Count :=", StringComparison.Ordinal)), CancellationToken.None)); // declared now
+        Assert.Equal([RenameRefactoring.RefactoringId], (await Engine.GetQuickActionsAsync(a, TextSelection.At(a.Buffer.Text.IndexOf("Count :=", StringComparison.Ordinal)), CancellationToken.None)).Select(x => x.Id)); // declared now: no fix
         a.Buffer.Undo();
         Assert.Equal(text, a.Buffer.Text);
 
@@ -287,14 +290,15 @@ public sealed class RefactoringRegistryTests : RefactoringTestBase
         Assert.Empty(await Engine.GetQuickActionsAsync(a, TextSelection.At(text.IndexOf("begin", StringComparison.Ordinal)), CancellationToken.None));
         Assert.Empty(await Engine.GetQuickActionsAsync(a, TextSelection.At(0), CancellationToken.None));
 
-        // A file without a project gives none: there is no source to ask about.
+        // A file without a project gives no code action: there is no source to ask about (Rename Symbol is offered on the
+        // name without a query; running it refuses, IDE-REFAC-041).
         a.Buffer.Undo();
         Assert.False(a.IsModified);
         Assert.True(await _services.Documents.CloseAllAsync());
         Assert.True(await _services.Projects.CloseAsync());
         var loose = await OpenAsync(A);
         var requests = _services.CodeModel.Worker.RequestCount;
-        Assert.Empty(await Engine.GetQuickActionsAsync(loose, TextSelection.At(Undeclared.IndexOf("Count", StringComparison.Ordinal) + 2), CancellationToken.None));
+        Assert.Equal([RenameRefactoring.RefactoringId], (await Engine.GetQuickActionsAsync(loose, TextSelection.At(Undeclared.IndexOf("Count", StringComparison.Ordinal) + 2), CancellationToken.None)).Select(x => x.Id));
         Assert.Equal(requests, _services.CodeModel.Worker.RequestCount);
     }
 

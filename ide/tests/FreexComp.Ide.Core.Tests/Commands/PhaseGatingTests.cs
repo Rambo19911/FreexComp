@@ -367,7 +367,7 @@ public sealed class PhaseGatingTests
 
     private static async Task LoweredPhaseHidesDeliveredItemsOnUiThread()
     {
-        Assert.False(Phase8Features.IsAvailable("refactor.rename", 8, 7)); // not delivered
+        Assert.False(Phase8Features.IsAvailable("file.saveProjectAs", 8, 7)); // not delivered (refactor.rename was the example until I-380)
         Assert.True(Phase8Features.IsAvailable("refactor.rename", 8, 8)); // the phase itself
         Assert.True(Phase8Features.IsAvailable("file.save", 1, 1));
         Assert.False(Phase8Features.IsAvailable("view.toggleFormCode", 5, 4));
