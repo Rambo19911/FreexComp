@@ -761,6 +761,72 @@ type
     function ToExtended: Extended; inline;
   end;
 
+  TSingleHelper = record helper for Single
+  public
+    const Epsilon = 1.4012984643248171E-45;
+    const MaxValue = 3.4028234663852886E+38;
+    const MinValue = -3.4028234663852886E+38;
+    class function NaN: Single; static;
+    class function PositiveInfinity: Single; static;
+    class function NegativeInfinity: Single; static;
+    class function Size: Integer; static; inline;
+    class function ToString(Value: Single): string; overload; static; inline;
+    class function ToString(Value: Single; const AFormatSettings: TFormatSettings): string; overload; static; inline;
+    class function ToString(Value: Single; Format: TFloatFormat; Precision, Digits: Integer): string; overload; static; inline;
+    class function ToString(Value: Single; Format: TFloatFormat; Precision, Digits: Integer;
+      const AFormatSettings: TFormatSettings): string; overload; static; inline;
+    class function Parse(const S: string): Single; overload; static;
+    class function Parse(const S: string; const AFormatSettings: TFormatSettings): Single; overload; static;
+    class function TryParse(const S: string; out Value: Single): Boolean; overload; static;
+    class function TryParse(const S: string; out Value: Single; const AFormatSettings: TFormatSettings): Boolean; overload; static;
+    class function IsNan(Value: Single): Boolean; overload; static;
+    class function IsInfinity(Value: Single): Boolean; overload; static;
+    class function IsPositiveInfinity(Value: Single): Boolean; overload; static;
+    class function IsNegativeInfinity(Value: Single): Boolean; overload; static;
+    function ToString: string; overload; inline;
+    function ToString(const AFormatSettings: TFormatSettings): string; overload; inline;
+    function ToString(Format: TFloatFormat; Precision, Digits: Integer): string; overload; inline;
+    function ToString(Format: TFloatFormat; Precision, Digits: Integer; const AFormatSettings: TFormatSettings): string;
+      overload; inline;
+    function IsNan: Boolean; overload;
+    function IsInfinity: Boolean; overload;
+    function IsPositiveInfinity: Boolean; overload;
+    function IsNegativeInfinity: Boolean; overload;
+  end;
+
+  TDoubleHelper = record helper for Double
+  public
+    const Epsilon = 4.9406564584124654E-324;
+    const MaxValue = 1.7976931348623157E+308;
+    const MinValue = -1.7976931348623157E+308;
+    class function NaN: Double; static;
+    class function PositiveInfinity: Double; static;
+    class function NegativeInfinity: Double; static;
+    class function Size: Integer; static; inline;
+    class function ToString(Value: Double): string; overload; static; inline;
+    class function ToString(Value: Double; const AFormatSettings: TFormatSettings): string; overload; static; inline;
+    class function ToString(Value: Double; Format: TFloatFormat; Precision, Digits: Integer): string; overload; static; inline;
+    class function ToString(Value: Double; Format: TFloatFormat; Precision, Digits: Integer;
+      const AFormatSettings: TFormatSettings): string; overload; static; inline;
+    class function Parse(const S: string): Double; overload; static;
+    class function Parse(const S: string; const AFormatSettings: TFormatSettings): Double; overload; static;
+    class function TryParse(const S: string; out Value: Double): Boolean; overload; static;
+    class function TryParse(const S: string; out Value: Double; const AFormatSettings: TFormatSettings): Boolean; overload; static;
+    class function IsNan(Value: Double): Boolean; overload; static;
+    class function IsInfinity(Value: Double): Boolean; overload; static;
+    class function IsPositiveInfinity(Value: Double): Boolean; overload; static;
+    class function IsNegativeInfinity(Value: Double): Boolean; overload; static;
+    function ToString: string; overload; inline;
+    function ToString(const AFormatSettings: TFormatSettings): string; overload; inline;
+    function ToString(Format: TFloatFormat; Precision, Digits: Integer): string; overload; inline;
+    function ToString(Format: TFloatFormat; Precision, Digits: Integer; const AFormatSettings: TFormatSettings): string;
+      overload; inline;
+    function IsNan: Boolean; overload;
+    function IsInfinity: Boolean; overload;
+    function IsPositiveInfinity: Boolean; overload;
+    function IsNegativeInfinity: Boolean; overload;
+  end;
+
   TBooleanHelper = record helper for Boolean
   public
     class function Size: Integer; static; inline;

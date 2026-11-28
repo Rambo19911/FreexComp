@@ -613,6 +613,328 @@ begin
   Result := Self;
 end;
 
+{ ------------------------------------------------------------------- float helpers (RTL-1273, RTL-1264) }
+
+type
+  { the kind of a floating-point bit pattern }
+  THelperFloatKind = (fkFinite, fkNaN, fkPositiveInfinity, fkNegativeInfinity);
+
+{ the kind of a Double from its bits (never raises, also not for a signalling NaN) }
+function HelperDoubleKind(const Value: Double): THelperFloatKind;
+var
+  Bits: UInt64;
+begin
+  Move(Value, Bits, SizeOf(Bits));
+  if (Bits and $7FF0000000000000) <> $7FF0000000000000 then
+    Result := fkFinite
+  else if (Bits and $000FFFFFFFFFFFFF) <> 0 then
+    Result := fkNaN
+  else if (Bits shr 63) = 0 then
+    Result := fkPositiveInfinity
+  else
+    Result := fkNegativeInfinity;
+end;
+
+{ the kind of a Single from its bits }
+function HelperSingleKind(const Value: Single): THelperFloatKind;
+var
+  Bits: Cardinal;
+begin
+  Move(Value, Bits, SizeOf(Bits));
+  if (Bits and $7F800000) <> $7F800000 then
+    Result := fkFinite
+  else if (Bits and $007FFFFF) <> 0 then
+    Result := fkNaN
+  else if (Bits shr 31) = 0 then
+    Result := fkPositiveInfinity
+  else
+    Result := fkNegativeInfinity;
+end;
+
+{ the Double with the given bits: a quiet NaN and the two infinities }
+function HelperDoubleOfBits(Bits: UInt64): Double;
+begin
+  Move(Bits, Result, SizeOf(Result));
+end;
+
+function HelperSingleOfBits(Bits: Cardinal): Single;
+begin
+  Move(Bits, Result, SizeOf(Result));
+end;
+
+{ S read by StrToFloat with FS and converted to Single (nearest, ties to even): True and the value; False and 0 for a
+  text that is no number and for a finite value whose Single is infinite (its magnitude is at least 2^128 - 2^103,
+  the first value that rounds up to infinity); NaN and the infinities pass }
+function HelperTrySingle(const S: string; out Value: Single; const FS: TFormatSettings): Boolean;
+const
+  SingleOverflow = 340282356779733661637539395458142568448.0;
+var
+  D: Double;
+begin
+  Result := TryStrToFloat(S, D, FS) and ((HelperDoubleKind(D) <> fkFinite) or (Abs(D) < SingleOverflow));
+  if Result then
+    Value := D
+  else
+    Value := 0;
+end;
+
+{ HelperTrySingle, or EConvertError with SInvalidFloat and the text as given }
+function HelperParseSingle(const S: string; const FS: TFormatSettings): Single;
+begin
+  if not HelperTrySingle(S, Result, FS) then
+    ConvertError(SInvalidFloat, S);
+end;
+
+{ TryStrToFloat with FS; False leaves 0 }
+function HelperTryDouble(const S: string; out Value: Double; const FS: TFormatSettings): Boolean;
+begin
+  Result := TryStrToFloat(S, Value, FS);
+  if not Result then
+    Value := 0;
+end;
+
+class function TSingleHelper.NaN: Single;
+begin
+  Result := HelperSingleOfBits($7FC00000);
+end;
+
+class function TSingleHelper.PositiveInfinity: Single;
+begin
+  Result := HelperSingleOfBits($7F800000);
+end;
+
+class function TSingleHelper.NegativeInfinity: Single;
+begin
+  Result := HelperSingleOfBits($FF800000);
+end;
+
+class function TSingleHelper.Size: Integer;
+begin
+  Result := SizeOf(Single);
+end;
+
+class function TSingleHelper.ToString(Value: Single): string;
+begin
+  Result := FloatToStr(Value);
+end;
+
+class function TSingleHelper.ToString(Value: Single; const AFormatSettings: TFormatSettings): string;
+begin
+  Result := FloatToStr(Value, AFormatSettings);
+end;
+
+class function TSingleHelper.ToString(Value: Single; Format: TFloatFormat; Precision, Digits: Integer): string;
+begin
+  Result := FloatToStrF(Value, Format, Precision, Digits);
+end;
+
+class function TSingleHelper.ToString(Value: Single; Format: TFloatFormat; Precision, Digits: Integer;
+  const AFormatSettings: TFormatSettings): string;
+begin
+  Result := FloatToStrF(Value, Format, Precision, Digits, AFormatSettings);
+end;
+
+class function TSingleHelper.Parse(const S: string): Single;
+begin
+  Result := HelperParseSingle(S, FormatSettings);
+end;
+
+class function TSingleHelper.Parse(const S: string; const AFormatSettings: TFormatSettings): Single;
+begin
+  Result := HelperParseSingle(S, AFormatSettings);
+end;
+
+class function TSingleHelper.TryParse(const S: string; out Value: Single): Boolean;
+begin
+  Result := HelperTrySingle(S, Value, FormatSettings);
+end;
+
+class function TSingleHelper.TryParse(const S: string; out Value: Single; const AFormatSettings: TFormatSettings): Boolean;
+begin
+  Result := HelperTrySingle(S, Value, AFormatSettings);
+end;
+
+class function TSingleHelper.IsNan(Value: Single): Boolean;
+begin
+  Result := HelperSingleKind(Value) = fkNaN;
+end;
+
+class function TSingleHelper.IsPositiveInfinity(Value: Single): Boolean;
+begin
+  Result := HelperSingleKind(Value) = fkPositiveInfinity;
+end;
+
+class function TSingleHelper.IsNegativeInfinity(Value: Single): Boolean;
+begin
+  Result := HelperSingleKind(Value) = fkNegativeInfinity;
+end;
+
+class function TSingleHelper.IsInfinity(Value: Single): Boolean;
+begin
+  Result := HelperSingleKind(Value) in [fkPositiveInfinity, fkNegativeInfinity];
+end;
+
+function TSingleHelper.ToString: string;
+begin
+  Result := FloatToStr(Self);
+end;
+
+function TSingleHelper.ToString(const AFormatSettings: TFormatSettings): string;
+begin
+  Result := FloatToStr(Self, AFormatSettings);
+end;
+
+function TSingleHelper.ToString(Format: TFloatFormat; Precision, Digits: Integer): string;
+begin
+  Result := FloatToStrF(Self, Format, Precision, Digits);
+end;
+
+function TSingleHelper.ToString(Format: TFloatFormat; Precision, Digits: Integer; const AFormatSettings: TFormatSettings): string;
+begin
+  Result := FloatToStrF(Self, Format, Precision, Digits, AFormatSettings);
+end;
+
+function TSingleHelper.IsNan: Boolean;
+begin
+  Result := HelperSingleKind(Self) = fkNaN;
+end;
+
+function TSingleHelper.IsPositiveInfinity: Boolean;
+begin
+  Result := HelperSingleKind(Self) = fkPositiveInfinity;
+end;
+
+function TSingleHelper.IsNegativeInfinity: Boolean;
+begin
+  Result := HelperSingleKind(Self) = fkNegativeInfinity;
+end;
+
+function TSingleHelper.IsInfinity: Boolean;
+begin
+  Result := HelperSingleKind(Self) in [fkPositiveInfinity, fkNegativeInfinity];
+end;
+
+class function TDoubleHelper.NaN: Double;
+begin
+  Result := HelperDoubleOfBits($7FF8000000000000);
+end;
+
+class function TDoubleHelper.PositiveInfinity: Double;
+begin
+  Result := HelperDoubleOfBits($7FF0000000000000);
+end;
+
+class function TDoubleHelper.NegativeInfinity: Double;
+begin
+  Result := HelperDoubleOfBits($FFF0000000000000);
+end;
+
+class function TDoubleHelper.Size: Integer;
+begin
+  Result := SizeOf(Double);
+end;
+
+class function TDoubleHelper.ToString(Value: Double): string;
+begin
+  Result := FloatToStr(Value);
+end;
+
+class function TDoubleHelper.ToString(Value: Double; const AFormatSettings: TFormatSettings): string;
+begin
+  Result := FloatToStr(Value, AFormatSettings);
+end;
+
+class function TDoubleHelper.ToString(Value: Double; Format: TFloatFormat; Precision, Digits: Integer): string;
+begin
+  Result := FloatToStrF(Value, Format, Precision, Digits);
+end;
+
+class function TDoubleHelper.ToString(Value: Double; Format: TFloatFormat; Precision, Digits: Integer;
+  const AFormatSettings: TFormatSettings): string;
+begin
+  Result := FloatToStrF(Value, Format, Precision, Digits, AFormatSettings);
+end;
+
+class function TDoubleHelper.Parse(const S: string): Double;
+begin
+  Result := StrToFloat(S);
+end;
+
+class function TDoubleHelper.Parse(const S: string; const AFormatSettings: TFormatSettings): Double;
+begin
+  Result := StrToFloat(S, AFormatSettings);
+end;
+
+class function TDoubleHelper.TryParse(const S: string; out Value: Double): Boolean;
+begin
+  Result := HelperTryDouble(S, Value, FormatSettings);
+end;
+
+class function TDoubleHelper.TryParse(const S: string; out Value: Double; const AFormatSettings: TFormatSettings): Boolean;
+begin
+  Result := HelperTryDouble(S, Value, AFormatSettings);
+end;
+
+class function TDoubleHelper.IsNan(Value: Double): Boolean;
+begin
+  Result := HelperDoubleKind(Value) = fkNaN;
+end;
+
+class function TDoubleHelper.IsPositiveInfinity(Value: Double): Boolean;
+begin
+  Result := HelperDoubleKind(Value) = fkPositiveInfinity;
+end;
+
+class function TDoubleHelper.IsNegativeInfinity(Value: Double): Boolean;
+begin
+  Result := HelperDoubleKind(Value) = fkNegativeInfinity;
+end;
+
+class function TDoubleHelper.IsInfinity(Value: Double): Boolean;
+begin
+  Result := HelperDoubleKind(Value) in [fkPositiveInfinity, fkNegativeInfinity];
+end;
+
+function TDoubleHelper.ToString: string;
+begin
+  Result := FloatToStr(Self);
+end;
+
+function TDoubleHelper.ToString(const AFormatSettings: TFormatSettings): string;
+begin
+  Result := FloatToStr(Self, AFormatSettings);
+end;
+
+function TDoubleHelper.ToString(Format: TFloatFormat; Precision, Digits: Integer): string;
+begin
+  Result := FloatToStrF(Self, Format, Precision, Digits);
+end;
+
+function TDoubleHelper.ToString(Format: TFloatFormat; Precision, Digits: Integer; const AFormatSettings: TFormatSettings): string;
+begin
+  Result := FloatToStrF(Self, Format, Precision, Digits, AFormatSettings);
+end;
+
+function TDoubleHelper.IsNan: Boolean;
+begin
+  Result := HelperDoubleKind(Self) = fkNaN;
+end;
+
+function TDoubleHelper.IsPositiveInfinity: Boolean;
+begin
+  Result := HelperDoubleKind(Self) = fkPositiveInfinity;
+end;
+
+function TDoubleHelper.IsNegativeInfinity: Boolean;
+begin
+  Result := HelperDoubleKind(Self) = fkNegativeInfinity;
+end;
+
+function TDoubleHelper.IsInfinity: Boolean;
+begin
+  Result := HelperDoubleKind(Self) in [fkPositiveInfinity, fkNegativeInfinity];
+end;
+
 { ------------------------------------------------------------------------------ Boolean helpers (RTL-1274) }
 
 class function TBooleanHelper.Size: Integer;

@@ -1,0 +1,99 @@
+# ToString
+ok D.ToString
+ok (0.1 + 0.2).ToString
+ok D.ToString(FS)
+ok D.ToString(ffFixed, 15, 2)
+ok D.ToString(ffFixed, 15, 2, FS)
+ok Double.ToString(D)
+ok Double.ToString(D, FS)
+ok Double.ToString(D, ffExponent, 4, 2)
+ok Double.ToString(D, ffFixed, 15, 2, FS)
+ok a parenthesised expression as receiver
+ok D.ToString uses the global settings
+ok Double.ToString uses the global settings
+ok Double.Parse uses the global settings
+ok D.ToString after the settings are restored
+# Parse and TryParse
+ok Double.Parse('1.5')
+ok Double.Parse trims
+ok Double.Parse('1e3')
+ok Double.Parse('1,5', FS)
+ok Double.Parse('1,5')
+ok Double.Parse('abc')
+ok Double.Parse('')
+ok Double.Parse('1e400')
+ok Double.Parse('1.5', FS)
+ok Double.TryParse('x')
+ok Double.TryParse leaves 0
+ok Double.TryParse('1,5', D, FS)
+ok Double.TryParse('1.5', D, FS)
+ok Double.TryParse with FS leaves 0
+ok Double.TryParse('-0.25')
+ok Double.Size
+# NaN and infinities
+ok Nn.IsNan
+ok Double.IsNan(Nn)
+ok Nn.ToString
+ok not Nn.IsInfinity
+ok P.IsInfinity
+ok P.IsPositiveInfinity
+ok not P.IsNegativeInfinity
+ok not P.IsNan
+ok P.ToString
+ok class forms on +Inf
+ok M.ToString
+ok M is the negative infinity
+ok Double.Parse('Nan').IsNan
+ok Double.Parse('-Inf').IsNegativeInfinity
+ok Double.Parse('inf').IsPositiveInfinity
+ok D is finite
+ok class forms on a finite value
+ok Double.MaxValue
+ok Double.MaxValue is finite
+ok Double.MinValue = -MaxValue
+ok Double.Epsilon
+ok Double.Epsilon is positive
+# round trip of 15 digits
+ok round trip 0.1
+ok round trip 1.5
+ok round trip -2.25
+ok round trip 1E100
+ok round trip 123456.789
+ok round trip 1E-7
+ok round trip 123456789012345
+# Single
+ok Single(0.5).ToString
+ok Single(0.1).ToString
+ok Single.ToString(S)
+ok S.ToString(FS)
+ok S.ToString(ffFixed, 15, 2)
+ok Single.ToString(S, ffFixed, 15, 2, FS)
+ok Single.Parse('0.5')
+ok Single.Parse('0,25', FS)
+ok Single.Parse('3.4028235e38') is finite
+ok the largest Single
+ok Single.Parse('1e39')
+ok Single.Parse('3.5e38')
+ok Single.Parse('-1e39')
+ok Single.Parse('1e400')
+ok Single.Parse('x')
+ok Single.TryParse('1e39')
+ok Single.TryParse leaves 0
+ok Single.TryParse('0.5', V, FS)
+ok Single.TryParse with FS leaves 0
+ok Single.TryParse('2.5')
+ok Single.Parse('Inf').IsInfinity
+ok Single.Parse('-Inf').IsNegativeInfinity
+ok Single.Parse('nan').IsNan
+ok Single.NaN in a variable: IsNan
+ok Single.NaN.ToString
+ok Single.PositiveInfinity
+ok Single.PositiveInfinity.ToString
+ok Single.NegativeInfinity
+ok Single(0.1) is finite
+ok Single.Size
+ok Single.MaxValue
+ok Single.Epsilon
+ok Single.Epsilon is positive
+ok Single.MinValue = -MaxValue
+# passed 93 failed 0
