@@ -1,5 +1,6 @@
 # import
 ok the loaded uxtheme exports SetWindowTheme
+ok the loaded uxtheme exports OpenThemeDataForDpi
 # GetWindowTheme
 ok InitCommonControlsEx
 ok a hidden top-level window
@@ -20,6 +21,13 @@ ok it keeps the pixels outside the clip rectangle
 ok CloseThemeData returns S_OK
 ok DeleteObject
 ok DeleteDC
+# OpenThemeDataForDpi
+ok OpenThemeDataForDpi(h, 'TAB', 96) returns a handle exactly when IsAppThemed
+ok CloseThemeData of it returns S_OK
+ok OpenThemeDataForDpi(h, 'TAB', 144) returns a handle exactly when IsAppThemed
+ok CloseThemeData of it returns S_OK
+ok OpenThemeDataForDpi(h, 'TAB', 192) returns a handle exactly when IsAppThemed
+ok CloseThemeData of it returns S_OK
 # parts and states
 ok TABP_TABITEM
 ok TABP_PANE
@@ -32,4 +40,4 @@ ok TIS_FOCUSED
 ok ODT_TAB
 # cleanup
 ok DestroyWindow
-# passed 26 failed 0
+# passed 33 failed 0

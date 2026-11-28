@@ -35,7 +35,10 @@ on the manifest of the program and on the version resource of a system library, 
 `Win_ResourceLanguage` calls FindResourceExW (kernel32) and LoadStringW (user32), with their unsuffixed aliases, on the
 resources the program links from `Win_ResourceLanguage.rc` (`{$R}`): one RCDATA number in two languages and a string table.
 `Win_UxTheme` (a gui program, comctl32 version 6) calls every function the `UxTheme` unit declares for uxtheme on a
-tab control under a hidden window and checks `ODT_TAB`; it prints only lines that hold with and without visual styles.
+tab control under a hidden window (`OpenThemeDataForDpi` for three DPI values too) and checks `ODT_TAB`; it prints only
+lines that hold with and without visual styles.
+`Win_ShellScaling` (a gui program, per-monitor DPI aware) calls `GetDpiForMonitor`, the one function the `ShellScaling`
+unit declares for shcore, on the primary monitor and compares it with `GetDpiForWindow`; it prints no DPI value.
 Exceptions:
 
 | Function | Covered by |

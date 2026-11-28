@@ -1,15 +1,16 @@
-// covers: RTL-1144, RTL-1145, RTL-1146, RTL-1147
+// covers: RTL-1144, RTL-1145, RTL-1146, RTL-1147, RTL-1301, RTL-1302
 // phase: 8
 // opc: --app-type gui
 program Win_UxTheme;
-{ UxTheme unit (tasks R-255, R-256) and ODT_TAB (CommCtrl) against the system. A gui program, so its manifest binds comctl32
+{ UxTheme unit (tasks R-255, R-256, R-276) and ODT_TAB (CommCtrl) against the system. A gui program, so its manifest binds comctl32
   version 6, whose controls use visual styles. Only facts that hold with and without visual styles are printed: after
   WM_THEMECHANGED a SysTabControl32 window has a theme handle exactly when IsAppThemed says so; SetWindowTheme with two
   empty strings (no theme section matches) returns S_OK and leaves the window without a theme handle; OpenThemeData of
   the class TAB returns a handle exactly when IsAppThemed says so. Only with a handle (themed): DrawThemeBackground of
   the selected tab item into a 32-bit memory bitmap returns S_OK and changes pixels, a clip rectangle keeps the pixels
-  outside it, and CloseThemeData returns S_OK; without one the same lines are printed without drawing. The part and
-  state numbers are compared with the reference values.
+  outside it, and CloseThemeData returns S_OK; without one the same lines are printed without drawing.
+  OpenThemeDataForDpi of the class TAB for 96, 144 and 192 DPI returns a handle exactly when IsAppThemed says so, and
+  CloseThemeData of each returns S_OK (task R-276). The part and state numbers are compared with the reference values.
   Measured on the system (2026-11-27): IsAppThemed is false until the thread has created its first window, so it is
   read after the windows exist; a tab control just created reports no theme handle (GetWindowTheme 0) even when the
   program is themed and gets one when it handles WM_THEMECHANGED, which the system sends when visual styles change
@@ -46,6 +47,21 @@ begin
         Result := Result + 1;
 end;
 
+{ OpenThemeDataForDpi(h, 'TAB', Dpi) returns a handle exactly when the program is themed; closing it returns S_OK }
+procedure CheckDpi(Wnd: HWND; Themed: Boolean; Dpi: UINT);
+var
+  T: HTHEME;
+  Hr: HRESULT;
+begin
+  T := OpenThemeDataForDpi(Wnd, 'TAB', Dpi);
+  CheckEqB(Themed, T <> 0, 'OpenThemeDataForDpi(h, ''TAB'', ' + IntStr(Dpi) + ') returns a handle exactly when IsAppThemed');
+  if T <> 0 then
+    Hr := CloseThemeData(T)
+  else
+    Hr := S_OK;
+  CheckEqI(S_OK, Hr, 'CloseThemeData of it returns S_OK');
+end;
+
 var
   ICC: TInitCommonControlsEx;
   Parent, Tab: HWND;
@@ -65,6 +81,8 @@ begin
   Section('import');
   Check(GetProcAddress(GetModuleHandleW('uxtheme.dll'), 'SetWindowTheme') <> nil,
     'the loaded uxtheme exports SetWindowTheme');
+  Check(GetProcAddress(GetModuleHandleW('uxtheme.dll'), 'OpenThemeDataForDpi') <> nil,
+    'the loaded uxtheme exports OpenThemeDataForDpi');
 
   Section('GetWindowTheme');
   ICC.dwSize := SizeOf(ICC);
@@ -138,6 +156,11 @@ begin
   SelectObject(DC, Old);
   Check(DeleteObject(Bmp), 'DeleteObject');
   Check(DeleteDC(DC), 'DeleteDC');
+
+  Section('OpenThemeDataForDpi');
+  CheckDpi(Parent, Themed, 96);
+  CheckDpi(Parent, Themed, 144);
+  CheckDpi(Parent, Themed, 192);
 
   Section('parts and states');
   CheckEqI(1, TABP_TABITEM, 'TABP_TABITEM');

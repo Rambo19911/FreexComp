@@ -1,0 +1,21 @@
+# import
+ok the loaded shcore exports GetDpiForMonitor
+# GetDpiForMonitor
+ok MonitorFromPoint((0, 0), MONITOR_DEFAULTTOPRIMARY)
+ok a hidden top-level window at the origin
+ok the window is on the primary monitor
+ok GetDpiForMonitor(primary, MDT_EFFECTIVE_DPI) returns S_OK
+ok its horizontal and vertical values are equal
+ok they equal GetDpiForWindow of the window
+ok GetDpiForMonitor(primary, MDT_DEFAULT) returns S_OK
+ok MDT_DEFAULT gives the effective value
+ok a DPI type outside MONITOR_DPI_TYPE gives a failure code
+ok the null monitor handle gives a failure code
+# MONITOR_DPI_TYPE
+ok MDT_EFFECTIVE_DPI
+ok MDT_ANGULAR_DPI
+ok MDT_RAW_DPI
+ok MDT_DEFAULT = MDT_EFFECTIVE_DPI
+# cleanup
+ok DestroyWindow
+# passed 16 failed 0

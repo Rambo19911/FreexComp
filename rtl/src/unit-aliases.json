@@ -44,6 +44,7 @@
     "Winapi.Messages": "Messages",
     "Winapi.RichEdit": "RichEdit",
     "Winapi.ShellAPI": "ShellAPI",
+    "Winapi.ShellScaling": "ShellScaling",
     "Winapi.UIAutomation": "UIAutomation",
     "Winapi.UxTheme": "UxTheme",
     "Winapi.Wincodec": "Wincodec",

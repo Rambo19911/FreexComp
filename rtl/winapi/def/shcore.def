@@ -1,0 +1,6 @@
+; SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+; shcore.def - exports used by the FreexComp RTL. Source: learn.microsoft.com (function reference pages).
+; Content: the ShellScaling unit (ui-framework phase8/per-monitor-dpi.md section 9, rule RTL-1300).
+LIBRARY shcore.dll
+EXPORTS
+GetDpiForMonitor
