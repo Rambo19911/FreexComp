@@ -490,16 +490,8 @@ public static class RenameService
             }
         }
 
-        // CMP-753: the companion .form of a form class's published field or method
-        foreach (var member in related.Where(r => r is FieldSymbol or MethodSymbol && r.Visibility == Visibility.Published && r.ContainingSymbol is ClassTypeSymbol))
-        {
-            if (FormChanges(compilation, member, newName, formTexts, edits) is { } error)
-            {
-                return Fail(error);
-            }
-        }
-
-        return new RenameResult(true, null, Edits(edits));
+        var forms = new Forms(doc, formTexts, newName, edits);
+        return forms.Rename(related, ct) is { } error ? Fail(error) : new RenameResult(true, null, Edits(edits));
     }
 
     private static SemanticModel ModelOf(Document doc, string path) =>
@@ -509,79 +501,240 @@ public static class RenameService
         [.. edits.Select(e => new DocumentEdit(e.Key, [.. e.Value.OrderBy(c => c.Span.Start)]))];
 
     /// <summary>
-    /// CMP-753: for a published field the object of that name, for a published method every event handler value of that name, in
-    /// each form the member's unit embeds (<c>{$FORM}</c>) whose root class is the member's class. Returns an error text when a
-    /// form cannot be scanned. CMP-1502: a form with a text in <paramref name="formTexts"/> is that text (the file is not looked at).
+    /// The form edits of a rename (CMP-753, 1507, 1508). A form is the text given for its path (CMP-1502) or the file, read once per
+    /// rename; a missing file is skipped (the build reports it, E3100), one that cannot be scanned fails the rename.
     /// </summary>
-    private static string? FormChanges(Compilation compilation, Symbol member, string newName, Dictionary<string, string>? formTexts,
-        SortedDictionary<string, List<TextChange>> edits)
+    private sealed class Forms(Document doc, Dictionary<string, string>? formTexts, string newName, SortedDictionary<string, List<TextChange>> edits)
     {
-        var owner = (ClassTypeSymbol)member.ContainingSymbol!;
-        var unitPath = PathUtil.Normalize(member.Locations[0].Path);
-        foreach (var directive in compilation.GetSyntaxTree(unitPath).Directives.Where(d => d.IsActive && d.Name == "FORM"))
+        private readonly Dictionary<string, (string Text, FormObject Root)?> _read = new(PathUtil.Comparer);
+        private readonly HashSet<string> _unreadable = new(PathUtil.Comparer);
+
+        private static string Unreadable(string path) => $"The form file '{Path.GetFileName(path)}' cannot be read, so its references cannot be updated.";
+
+        /// <summary>The edits for everything renamed together; an error text when a form cannot be scanned.</summary>
+        public string? Rename(List<Symbol> related, CancellationToken ct)
         {
-            var name = DirectiveProcessor.Unquote(directive.Argument).Replace('/', '\\');
-            if (name.Length == 0)
+            // CMP-753: a published field - the object of that name in the forms of its own class
+            foreach (var field in related.OfType<FieldSymbol>().Where(f => f.Visibility == Visibility.Published && f.ContainingSymbol is ClassTypeSymbol))
             {
-                continue;
-            }
-
-            var path = PathUtil.Normalize(Path.IsPathFullyQualified(name) ? name : Path.Combine(Path.GetDirectoryName(unitPath)!, name));
-            var unreadable = $"The form file '{Path.GetFileName(path)}' cannot be read, so its references cannot be updated.";
-            string? text = null;
-            if (formTexts is null || !formTexts.TryGetValue(path, out text))
-            {
-                if (!compilation.FileSystem.FileExists(path))
+                if (FieldChanges(field) is { } error)
                 {
-                    continue;                                               // the build reports the missing file (E3100)
-                }
-
-                try
-                {
-                    text = FormFileScanner.Decode(compilation.FileSystem.ReadAllBytes(path));
-                }
-                catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-                {
-                    return unreadable;
+                    return error;
                 }
             }
 
-            if (text is null || FormFileScanner.Scan(path, text).Root is not { } root)
+            // CMP-753, 1508: a published method - the handler values in the forms of its class and of every class derived from it
+            var methods = related.OfType<MethodSymbol>().Where(m => m.Visibility == Visibility.Published && m.ContainingSymbol is ClassTypeSymbol).ToList();
+            if (methods.Count > 0 && HandlerChanges(methods, related, ct) is { } handlerError)
             {
-                return unreadable;
+                return handlerError;
             }
 
-            if (!IdentifierComparer.Instance.Equals(root.ClassName, owner.Name))
+            // CMP-1507: a class - the class name of every object header that names it
+            var types = related.OfType<ClassTypeSymbol>().ToList();
+            return types.Count > 0 ? ClassChanges(types, ct) : null;
+        }
+
+        /// <summary>The paths of the forms a source unit embeds: its active <c>{$FORM}</c> directives, relative to the unit's folder.</summary>
+        private IEnumerable<string> FormPaths(string unitPath)
+        {
+            foreach (var directive in doc.Compilation.GetSyntaxTree(unitPath).Directives.Where(d => d.IsActive && d.Name == "FORM"))
             {
-                continue;
-            }
-
-            var objects = root.Descendants().Prepend(root).ToList();
-            var sites = member is FieldSymbol
-                ? objects.Skip(1).Where(o => !o.IsOverride && IdentifierComparer.Instance.Equals(o.Name, member.Name)).Select(o => (o.Line, o.Column, o.Name))
-                : objects.SelectMany(o => o.Events).Where(e => IdentifierComparer.Instance.Equals(e.Handler, member.Name)).Select(e => (e.Line, e.Column, Name: e.Handler));
-            var starts = LineStarts(text);
-            foreach (var (line, column, written) in sites)
-            {
-                var at = line >= 1 && line <= starts.Count ? starts[line - 1] + column - 1 : -1;
-                if (at < 0 || at + written.Length > text.Length || !string.Equals(text.Substring(at, written.Length), written, StringComparison.Ordinal))
+                var name = DirectiveProcessor.Unquote(directive.Argument).Replace('/', '\\');
+                if (name.Length > 0)
                 {
-                    return unreadable;
-                }
-
-                if (!edits.TryGetValue(path, out var changes))
-                {
-                    edits[path] = changes = [];
-                }
-
-                if (!changes.Any(c => c.Span.Start == at))
-                {
-                    changes.Add(new TextChange(new TextSpan(at, written.Length), newName));
+                    yield return PathUtil.Normalize(Path.IsPathFullyQualified(name) ? name : Path.Combine(Path.GetDirectoryName(unitPath)!, name));
                 }
             }
         }
 
-        return null;
+        /// <summary>The form's text and root; null for a missing file (<paramref name="error"/> null) or a form that cannot be read or scanned.</summary>
+        private (string Text, FormObject Root)? Read(string path, out string? error)
+        {
+            if (!_read.TryGetValue(path, out var form))
+            {
+                string? text = null;
+                if (formTexts is null || !formTexts.TryGetValue(path, out text))
+                {
+                    if (!doc.Compilation.FileSystem.FileExists(path))
+                    {
+                        _read[path] = null;
+                        error = null;
+                        return null;
+                    }
+
+                    try
+                    {
+                        text = FormFileScanner.Decode(doc.Compilation.FileSystem.ReadAllBytes(path));
+                    }
+                    catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+                    {
+                        text = null;
+                    }
+                }
+
+                form = text is not null && FormFileScanner.Scan(path, text).Root is { } root ? (text, root) : null;
+                _read[path] = form;
+                if (form is null)
+                {
+                    _unreadable.Add(path);
+                }
+            }
+
+            error = _unreadable.Contains(path) ? Unreadable(path) : null;
+            return form;
+        }
+
+        /// <summary>Adds the change of the name written at a 1-based position of a form; false when the text there is not that name.</summary>
+        private bool Add(string path, string text, int line, int column, string written)
+        {
+            var starts = LineStarts(text);
+            var at = line >= 1 && line <= starts.Count ? starts[line - 1] + column - 1 : -1;
+            if (at < 0 || at + written.Length > text.Length || !string.Equals(text.Substring(at, written.Length), written, StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            if (!edits.TryGetValue(path, out var changes))
+            {
+                edits[path] = changes = [];
+            }
+
+            if (!changes.Any(c => c.Span.Start == at))
+            {
+                changes.Add(new TextChange(new TextSpan(at, written.Length), newName));
+            }
+
+            return true;
+        }
+
+        /// <summary>CMP-753: the object headers named like the field in the forms of its unit whose root class is the field's class.</summary>
+        private string? FieldChanges(FieldSymbol field)
+        {
+            var owner = (ClassTypeSymbol)field.ContainingSymbol!;
+            foreach (var path in FormPaths(PathUtil.Normalize(field.Locations[0].Path)))
+            {
+                if (Read(path, out var error) is not var (text, root))
+                {
+                    if (error is not null)
+                    {
+                        return error;
+                    }
+
+                    continue;
+                }
+
+                if (!IdentifierComparer.Instance.Equals(root.ClassName, owner.Name))
+                {
+                    continue;
+                }
+
+                foreach (var item in root.Descendants().Where(o => !o.IsOverride && IdentifierComparer.Instance.Equals(o.Name, field.Name)))
+                {
+                    if (!Add(path, text, item.Line, item.Column, item.Name))
+                    {
+                        return Unreadable(path);
+                    }
+                }
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// CMP-1508: in every form embedded by a source unit whose root class (a class the unit declares, as the binder finds it) is a
+        /// method's class or derived from it, the handler values whose method - the first published method of that name along the root
+        /// class and its ancestors, as the binder resolves it (LANG-671) - is renamed. A unit that declares no such class is not read.
+        /// </summary>
+        private string? HandlerChanges(List<MethodSymbol> methods, List<Symbol> related, CancellationToken ct)
+        {
+            var owners = methods.Select(m => (ClassTypeSymbol)m.ContainingSymbol!).ToList();
+            bool Derived(ClassTypeSymbol c) => c.SelfAndAncestors().Any(a => owners.Any(o => SymbolKey.AreSame(a, o)));
+            foreach (var unitPath in Paths(doc))
+            {
+                ct.ThrowIfCancellationRequested();
+                var paths = FormPaths(unitPath).ToList();
+                if (paths.Count == 0)
+                {
+                    continue;
+                }
+
+                var classes = DeclarationBinder.ClassesOf(ModelOf(doc, unitPath).Unit).Where(Derived).ToList();
+                if (classes.Count == 0)
+                {
+                    continue;
+                }
+
+                foreach (var path in paths)
+                {
+                    if (Read(path, out var error) is not var (text, root))
+                    {
+                        if (error is not null)
+                        {
+                            return error;
+                        }
+
+                        continue;
+                    }
+
+                    if (classes.FirstOrDefault(c => IdentifierComparer.Instance.Equals(c.Name, root.ClassName)) is not { } rootClass)
+                    {
+                        continue;
+                    }
+
+                    foreach (var e in root.Descendants().Prepend(root).SelectMany(o => o.Events))
+                    {
+                        var handler = rootClass.SelfAndAncestors().SelectMany(c => c.Methods)
+                            .FirstOrDefault(m => m.Visibility == Visibility.Published && IdentifierComparer.Instance.Equals(m.Name, e.Handler));
+                        if (handler is not null && related.Any(r => SymbolKey.AreSame(r, handler)) && !Add(path, text, e.Line, e.Column, e.Handler))
+                        {
+                            return Unreadable(path);
+                        }
+                    }
+                }
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// CMP-1507: in every form a source unit embeds, the class name of each object header (root, <c>object</c>, <c>inherited</c>,
+        /// <c>inline</c>, override blocks) spelled like the class, when that name - looked up in the unit's scope, where the binder
+        /// resolves it - is the renamed class. A unit is bound only when one of its forms spells the name.
+        /// </summary>
+        private string? ClassChanges(List<ClassTypeSymbol> types, CancellationToken ct)
+        {
+            var name = types[0].Name;
+            foreach (var unitPath in Paths(doc))
+            {
+                ct.ThrowIfCancellationRequested();
+                SemanticModel? model = null;
+                foreach (var path in FormPaths(unitPath))
+                {
+                    if (Read(path, out var error) is not var (text, root))
+                    {
+                        if (error is not null)
+                        {
+                            return error;
+                        }
+
+                        continue;
+                    }
+
+                    foreach (var item in root.Descendants().Prepend(root).Where(o => o.ClassLine > 0 && IdentifierComparer.Instance.Equals(o.ClassName, name)))
+                    {
+                        model ??= ModelOf(doc, unitPath);
+                        if (model.LookupInUnitScope(item.ClassName) is ClassTypeSymbol found && types.Any(t => SymbolKey.AreSame(t, found))
+                            && !Add(path, text, item.ClassLine, item.ClassColumn, item.ClassName))
+                        {
+                            return Unreadable(path);
+                        }
+                    }
+                }
+            }
+
+            return null;
+        }
     }
 
     private static List<int> LineStarts(string text)

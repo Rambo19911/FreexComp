@@ -181,6 +181,39 @@ public sealed class FormFileScannerTests
             late.Diagnostics[0].Location.LineSpan.Start.Column + 1));
     }
 
+    /// <summary>
+    /// CMP-1507 (C-450): every kept header — the root, an <c>object</c>, an <c>inherited</c> object, an <c>inline</c> instance and its
+    /// override blocks — gives the 1-based position of its class name (spacing around the colon as written).
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1507")]
+    public void ClassNamePositions()
+    {
+        var root = Root("""
+            object F: TF
+              object Edit1 : TEdit
+              end
+              inline Frame1:TFrame1
+                inherited Panel: TPanel
+                end
+              end
+              object Box: TBox
+                inherited Old:  TButton
+                end
+              end
+            end
+            """);
+
+        Assert.Equal((1, 11), (root.ClassLine, root.ClassColumn));
+        Assert.Equal(["Edit1 2:18", "Frame1 4:17", "Panel 5:22", "Box 8:15", "Old 9:21"],
+            root.Descendants().Select(o => $"{o.Name} {o.ClassLine}:{o.ClassColumn}"));
+
+        var descendant = Root("inherited Form2: TForm2\n  inherited Button1: TButton\n  end\nend\n");
+        Assert.Equal((1, 18), (descendant.ClassLine, descendant.ClassColumn));
+        Assert.Equal((2, 22), (descendant.Children[0].ClassLine, descendant.Children[0].ClassColumn));
+    }
+
     [Theory]
     [Trait("Req", "LANG-670")]
     [InlineData("object F: TF\n  X = 1 2\nend\n", 2, 9)]

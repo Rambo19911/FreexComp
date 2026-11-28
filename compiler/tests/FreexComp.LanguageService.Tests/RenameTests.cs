@@ -936,6 +936,192 @@ public sealed class RenameTests
         AssertCompiles(Applied(files, field));
     }
 
+    // ------------------------------------------------------------------------------------------------ CMP-1507, 1508 (C-450)
+
+    private const string OtherFormUnit = """
+        unit UOther;
+        interface
+        uses UMain;
+        type
+          TForm2 = class
+          published
+            Ok: TButton;
+          end;
+        implementation
+        {$FORM UOther.form}
+        end.
+        """;
+
+    private const string OtherForm = "object Form2: TForm2\n  object Ok: TButton\n  end\nend\n";
+
+    private const string FrameForm = "object Form1: TForm1\n  object Button1: TButton\n    OnClick = Clicked\n  end\n  inline Button2: TButton\n"
+        + "    inherited Button1: TButton\n      OnClick = Clicked\n    end\n  end\nend\n";
+
+    /// <summary>CMP-1507: renaming a form class edits the class name of the root header of its form, the code as for every class.</summary>
+    [Fact]
+    [Trait("Req", "CMP-1507")]
+    public void FormClass_Rename_EditsTheRootClassNameInItsForm()
+    {
+        var files = FormFixture();
+
+        var result = Rename(files, "UMain.pas", "TForm1 = class", "TMainForm");
+
+        Assert.Equal(["UMain.form: 1", "UMain.pas: 2"], Counts(result));
+        var after = Applied(files, result);
+        Assert.Equal(Form.Replace("TForm1", "TMainForm", StringComparison.Ordinal), TextOf(after, "UMain.form"));
+        AssertCompiles(after);
+    }
+
+    /// <summary>
+    /// CMP-1507: renaming a component class edits every header of that class — <c>object</c>, <c>inline</c> and an override block —
+    /// in every form a source unit embeds, here the forms of two units.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "CMP-1507")]
+    public void ComponentClass_Rename_EditsEveryObjectHeaderOfThatClass()
+    {
+        (string Name, string Text)[] files =
+        [
+            ("P.pas", "program P;\nuses UMain, UOther;\nbegin\nend.\n"), FormFixture()[1], ("UMain.form", FrameForm),
+            ("UOther.pas", OtherFormUnit.ReplaceLineEndings("\n")), ("UOther.form", OtherForm),
+        ];
+
+        var result = Rename(files, "UMain.pas", "TButton = class", "TPushButton");
+
+        Assert.Equal(["UMain.form: 3", "UMain.pas: 3", "UOther.form: 1", "UOther.pas: 1"], Counts(result));
+        var after = Applied(files, result);
+        Assert.Equal(FrameForm.Replace(": TButton", ": TPushButton", StringComparison.Ordinal), TextOf(after, "UMain.form"));
+        Assert.Equal(OtherForm.Replace("TButton", "TPushButton", StringComparison.Ordinal), TextOf(after, "UOther.form"));
+        AssertCompiles(after);
+    }
+
+    /// <summary>
+    /// CMP-1507: a header is edited only when its class name, looked up in the scope of the unit that embeds the form, is the renamed
+    /// class — a unit that declares a class of the same name keeps its form.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "CMP-1507")]
+    public void FormClassName_OfAnotherTypeWithTheSameName_IsLeftAlone()
+    {
+        var own = OtherFormUnit.ReplaceLineEndings("\n").Replace("  TForm2 = class\n", "  TButton = class\n  end;\n  TForm2 = class\n", StringComparison.Ordinal);
+        (string Name, string Text)[] files =
+        [
+            ("P.pas", "program P;\nuses UMain, UOther;\nbegin\nend.\n"), FormFixture()[1], FormFixture()[2],
+            ("UOther.pas", own.ReplaceLineEndings("\n")), ("UOther.form", OtherForm),
+        ];
+
+        var result = Rename(files, "UMain.pas", "TButton = class", "TPushButton");
+
+        Assert.Equal(["UMain.form: 2", "UMain.pas: 3"], Counts(result));
+        var after = Applied(files, result);
+        Assert.Equal(OtherForm, TextOf(after, "UOther.form"));
+        AssertCompiles(after);
+    }
+
+    /// <summary>CMP-1503, 1507: with <c>Forms = false</c> a class rename edits the code only.</summary>
+    [Fact]
+    [Trait("Req", "CMP-1507")]
+    [Trait("Req", "CMP-1503")]
+    public void FormClass_Rename_WithFormsOff_NoFormEdit()
+    {
+        var files = FormFixture();
+
+        var result = Rename(files, "UMain.pas", "TForm1 = class", "TMainForm", new RenameOptions { Forms = false });
+
+        Assert.True(result.Success, result.Error);
+        Assert.Equal(["UMain.pas: 2"], Counts(result));
+    }
+
+    /// <summary>A descendant form unit: <c>TForm2</c> derives from <c>TForm1</c> and inherits its form and its handler.</summary>
+    private const string ChildFormUnit = """
+        unit UChild;
+        interface
+        uses UMain;
+        type
+          TForm2 = class(TForm1)
+          end;
+        implementation
+        {$FORM UChild.form}
+        end.
+        """;
+
+    private const string ChildForm = "inherited Form2: TForm2\n  OnShow = Clicked\n  inherited Button1: TButton\n    OnClick = Clicked\n  end\nend\n";
+
+    /// <summary>
+    /// CMP-1508: a method rename edits the handler values in the forms of classes derived from the method's class — a descendant that
+    /// inherits the method and one that overrides it (an override is renamed with it).
+    /// </summary>
+    [Fact]
+    [Trait("Req", "CMP-1508")]
+    public void FormMethod_Rename_EditsHandlerValuesInFormsOfDescendantClasses()
+    {
+        var main = FormUnit.ReplaceLineEndings("\n").Replace("    procedure Clicked(Sender: TObject);\n", "    procedure Clicked(Sender: TObject); virtual;\n", StringComparison.Ordinal);
+        const string grand = """
+            unit UGrand;
+            interface
+            uses UMain, UChild;
+            type
+              TForm3 = class(TForm2)
+              published
+                procedure Clicked(Sender: TObject); override;
+              end;
+            implementation
+            {$FORM UGrand.form}
+            procedure TForm3.Clicked(Sender: TObject); begin end;
+            end.
+            """;
+        (string Name, string Text)[] files =
+        [
+            ("P.pas", "program P;\nuses UMain, UChild, UGrand;\nbegin\nend.\n"), ("UMain.pas", main.ReplaceLineEndings("\n")), FormFixture()[2],
+            ("UChild.pas", ChildFormUnit.ReplaceLineEndings("\n")), ("UChild.form", ChildForm),
+            ("UGrand.pas", grand.ReplaceLineEndings("\n")), ("UGrand.form", ChildForm.Replace("Form2", "Form3", StringComparison.Ordinal)),
+        ];
+
+        var result = Rename(files, "UMain.pas", "Clicked(Sender: TObject); virtual", "ButtonClick");
+
+        Assert.Equal(["UChild.form: 2", "UGrand.form: 2", "UGrand.pas: 2", "UMain.form: 2", "UMain.pas: 3"], Counts(result));
+        var after = Applied(files, result);
+        Assert.Equal(ChildForm.Replace("Clicked", "ButtonClick", StringComparison.Ordinal), TextOf(after, "UChild.form"));
+        AssertCompiles(after);
+    }
+
+    /// <summary>
+    /// CMP-1508: in a descendant that declares a published method of the same name (hiding it), the handler names that method — a
+    /// rename of the ancestor's method leaves that form alone, a rename of the hiding method edits it and the forms of its descendants.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "CMP-1508")]
+    public void FormMethod_HiddenInTheDescendant_IsLeftAlone()
+    {
+        var child = ChildFormUnit.ReplaceLineEndings("\n").Replace("  TForm2 = class(TForm1)\n", "  TForm2 = class(TForm1)\n  published\n    procedure Clicked(Sender: TObject);\n", StringComparison.Ordinal)
+            .Replace("{$FORM UChild.form}\n", "{$FORM UChild.form}\nprocedure TForm2.Clicked(Sender: TObject); begin end;\n", StringComparison.Ordinal);
+        const string grand = """
+            unit UGrand;
+            interface
+            uses UChild;
+            type
+              TForm3 = class(TForm2)
+              end;
+            implementation
+            {$FORM UGrand.form}
+            end.
+            """;
+        (string Name, string Text)[] files =
+        [
+            ("P.pas", "program P;\nuses UMain, UChild, UGrand;\nbegin\nend.\n"), FormFixture()[1], FormFixture()[2],
+            ("UChild.pas", child.ReplaceLineEndings("\n")), ("UChild.form", ChildForm),
+            ("UGrand.pas", grand.ReplaceLineEndings("\n")), ("UGrand.form", ChildForm.Replace("Form2", "Form3", StringComparison.Ordinal)),
+        ];
+
+        var ancestor = Rename(files, "UMain.pas", "Clicked(Sender: TObject);", "ButtonClick");
+        var hiding = Rename(files, "UChild.pas", "Clicked(Sender: TObject);", "Pressed");
+
+        Assert.Equal(["UMain.form: 2", "UMain.pas: 3"], Counts(ancestor));
+        Assert.Equal(["UChild.form: 2", "UChild.pas: 2", "UGrand.form: 2"], Counts(hiding));
+        AssertCompiles(Applied(files, ancestor));
+        AssertCompiles(Applied(files, hiding));
+    }
+
     // ------------------------------------------------------------------------------------------------ LANG-572 (C-307)
 
     private const string InlineScopes = """

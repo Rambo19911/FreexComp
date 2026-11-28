@@ -306,6 +306,12 @@ public sealed class SemanticModel
     public ImmutableArray<Symbol> LookupSymbols(int position, string? name = null, TypeSymbol? container = null) =>
         LookupSymbols(position, name, container, receiver: container);
 
+    /// <summary>
+    /// CMP-1507 (C-450): the symbol a name gives in the unit's scope — the names visible at the end of its implementation section,
+    /// where the binder resolves the class names of an embedded form (LANG-670).
+    /// </summary>
+    internal Symbol? LookupInUnitScope(string name) => _result.Scope.Lookup(name);
+
     /// <summary>C-401: the members of <paramref name="container"/> accessible through <c>Self</c> (<c>inherited</c> in a descendant's method).</summary>
     internal ImmutableArray<Symbol> LookupInheritedSymbols(int position, TypeSymbol container) => LookupSymbols(position, null, container, receiver: null);
 

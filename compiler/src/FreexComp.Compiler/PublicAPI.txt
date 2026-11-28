@@ -248,6 +248,8 @@ sealed record FreexComp.Compiler.Forms.FormObject : System.IEquatable<FreexComp.
   public System.Collections.Generic.IEnumerable<FreexComp.Compiler.Forms.FormObject> Descendants()
   public System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Forms.FormEvent> Events { get; init; }
   public System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Forms.FormObject> Children { get; init; }
+  public System.Int32 ClassColumn { get; init; }
+  public System.Int32 ClassLine { get; init; }
   public System.Int32 Column { get; init; }
   public System.Int32 Line { get; init; }
   public System.String ClassName { get; init; }

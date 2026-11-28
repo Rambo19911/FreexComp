@@ -22,6 +22,12 @@ public sealed record FormObject(string Keyword, string Name, string ClassName, i
     /// <summary>An <c>inherited</c> override block inside a frame instance: its name is a component of the frame, not of the root (LANG-952).</summary>
     public bool IsOverride { get; init; }
 
+    /// <summary>CMP-1507: the 1-based line of the header's class name (0 when the header has none; the scanner always finds one).</summary>
+    public int ClassLine { get; init; }
+
+    /// <summary>CMP-1507: the 1-based column of the header's class name (0 when the header has none).</summary>
+    public int ClassColumn { get; init; }
+
     /// <summary>The object's descendants, depth first, in file order.</summary>
     public IEnumerable<FormObject> Descendants() => Children.SelectMany(c => c.Descendants().Prepend(c));
 }
@@ -235,7 +241,11 @@ public static class FormFileScanner
             Next();
             EndOfLine();
             var (line, column) = Position(name.Position);
-            return new FormObject(keyword, name.Text, type.Text, line, column, events.ToImmutable(), children.ToImmutable()) { IsOverride = isOverride };
+            var (classLine, classColumn) = Position(type.Position);
+            return new FormObject(keyword, name.Text, type.Text, line, column, events.ToImmutable(), children.ToImmutable())
+            {
+                IsOverride = isOverride, ClassLine = classLine, ClassColumn = classColumn,
+            };
         }
 
         private (int Line, int Column) Position(int offset)
