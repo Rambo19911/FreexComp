@@ -68,10 +68,14 @@ public sealed class SearchResultRow
 /// <summary>
 /// One result set of the Search Results window with the state that belongs to it (UI-TW-618): the query — a Find in
 /// Files request or the origin of a reference query —, the matches in display order, their anchors, the collapsed
-/// rows, the current row and the running search. The window shows one set; keeping several is I-354.
+/// rows, the current row and the running search — and, while another set is shown, the selection and the scroll
+/// position. The window keeps several sets (UI-TW-615) and shows one of them.
 /// </summary>
 internal sealed class SearchResultSet
 {
+    /// <summary>UI-TW-616: kept (<c>searchResults.pin</c>) — no other search replaces, cancels or changes it.</summary>
+    public bool IsPinned { get; set; }
+
     /// <summary>Kind Find in Files: the request.</summary>
     public FindInFilesRequest? Request { get; init; }
 
@@ -103,18 +107,45 @@ internal sealed class SearchResultSet
     public ITextAnchor? OriginAnchor { get; set; }
 
     public TextDocumentViewModel? OriginDocument { get; set; }
+
+    /// <summary>The sticky status text of the running Find in Files search of this set.</summary>
+    public IDisposable? Sticky { get; set; }
+
+    /// <summary>UI-TW-618: the keys of the rows that were selected when another set was shown instead.</summary>
+    public IReadOnlyList<string> SelectedKeys { get; set; } = [];
+
+    /// <summary>UI-TW-618: the vertical scroll position of the list (the view writes it before another set is shown).</summary>
+    public double ScrollOffset { get; set; }
 }
+
+/// <summary>
+/// A tab of the set strip of Search Results (UI-TW-615): <see cref="Number"/> is its 1-based position, <see cref="Title"/>
+/// the search text in double quotes or the identifier (cut to 24 characters), <see cref="IconName"/> the icon of its
+/// kind and <see cref="Tooltip"/> the set's header text.
+/// </summary>
+public sealed record SearchResultSetTab(int Number, string Title, string IconName, bool IsPinned, bool IsShown, string Tooltip);
 
 /// <summary>
 /// The Search Results tool window (tool-windows.md §8, editor-features.md §12): runs Find in Files
 /// (<c>search.findInFiles</c>, the dialog of dialogs.md §11) and shows one result set — of kind Find in Files (a
 /// two-level tree) or References (<see cref="ShowReferences"/>: file, container, reference; UI-TW-609…614); owns the
 /// <c>searchResults.*</c> commands. Positions of documents open at search time (or opened later unmodified) are anchored
-/// (UI-TW-604). UI thread only.
+/// (UI-TW-604). It holds the result sets (UI-TW-615…618): at most one current set, which a new search replaces, and up
+/// to <see cref="MaxPinnedSets"/> pinned ones (<c>searchResults.pin</c>), in the order of the set strip — the pinned
+/// sets in creation order, the current one last; exactly one of them is shown. UI thread only.
 /// </summary>
 public sealed class SearchResultsViewModel : ToolWindowViewModel, ICommandTarget
 {
     public const string ToolName = "SearchResults";
+
+    /// <summary>UI-TW-616: <c>Keep Results</c>.</summary>
+    public const string PinCommandId = "searchResults.pin";
+
+    /// <summary>UI-TW-615: the window keeps at most this many pinned sets.</summary>
+    public const int MaxPinnedSets = 10;
+
+    /// <summary>UI-TW-615: a longer tab title is cut to this many characters, the last one an ellipsis.</summary>
+    public const int MaxSetTitleLength = 24;
 
     /// <summary>UI-TW-601: longer lines are cut to a window of this many characters around the first match.</summary>
     public const int MaxLineLength = 240;
@@ -137,9 +168,12 @@ public sealed class SearchResultsViewModel : ToolWindowViewModel, ICommandTarget
     private readonly IUiDispatcher _dispatcher;
     private IToolWindowService? _toolWindows;
     private ICommandService? _commands;
-    private SearchResultSet? _set; // the shown result set; null = the empty state
-    private IDisposable? _sticky;
-    private bool _focusPending;
+    private readonly List<SearchResultSet> _sets = []; // strip order: the pinned sets in creation order, the current one last
+    private SearchResultSet? _shown; // the shown result set; null = the empty state (there is no set)
+    private SearchResultSet? _focusFor; // the Find in Files search that takes the keyboard focus with its first rows
+    private IReadOnlyList<string>? _restoreSelection; // the selection of the set that Rebuild shows next
+    private string _builtFilter = "";
+    private bool _pinAvailable;
     private IReadOnlyList<SearchResultRow> _rows = [];
 
     public SearchResultsViewModel(FindInFilesService service, IDocumentService documents, IProjectService projects, NavigationService navigation,
@@ -163,10 +197,12 @@ public sealed class SearchResultsViewModel : ToolWindowViewModel, ICommandTarget
 
     public ToolWindowDefinition Definition => new(ToolName, "Cmd_view_searchResults", ToolGroupId.Bottom, 3, () => this);
 
-    public override IReadOnlyList<ToolWindowToolBarItem> ToolBarCommands { get; } =
+    /// <summary>tool-windows.md §8; <c>searchResults.pin</c> where it is delivered (UI-TW-616).</summary>
+    public override IReadOnlyList<ToolWindowToolBarItem> ToolBarCommands =>
     [
         new("searchResults.repeat", "refresh"), new("searchResults.cancel", "stop"), new("searchResults.expandAll", "chevron-down"),
-        new("searchResults.collapseAll", "collapse-all"), new("searchResults.clear", "trash"),
+        new("searchResults.collapseAll", "collapse-all"), .. _pinAvailable ? [new ToolWindowToolBarItem(PinCommandId, "pin")] : Array.Empty<ToolWindowToolBarItem>(),
+        new("searchResults.clear", "trash"),
     ];
 
     public override bool HasFilter => true;
@@ -175,7 +211,7 @@ public sealed class SearchResultsViewModel : ToolWindowViewModel, ICommandTarget
     public static readonly IReadOnlyList<string?> ContextCommands =
     [
         "searchResults.goToSource", null, "edit.copy", null, "searchResults.expandAll", "searchResults.collapseAll", null,
-        "searchResults.repeat", "search.findInFiles", null, "searchResults.clear",
+        PinCommandId, "searchResults.repeat", "search.findInFiles", null, "searchResults.clear",
     ];
 
     /// <summary>The reference queries (<c>search.findReferences</c>); set by <see cref="FindReferencesService"/>.</summary>
@@ -196,21 +232,69 @@ public sealed class SearchResultsViewModel : ToolWindowViewModel, ICommandTarget
     public IReadOnlyList<SearchResultRow> SelectedRows { get; set; } = [];
 
     /// <summary>The shown set's search runs: Find in Files, or the repeat of a References set (IDE-FREF-008).</summary>
-    public bool IsSearching => _set is { } set && (set.Cancel is not null || ReferenceEquals(References?.RepeatTarget, set));
+    public bool IsSearching => _shown is { } set && Searching(set);
 
-    /// <summary>Never searched or cleared: <c>Msg.SearchResults.Empty</c>.</summary>
-    public bool IsEmpty => _set is null;
+    private bool Searching(SearchResultSet set) => set.Cancel is not null || References?.IsRepeating(set) == true;
+
+    /// <summary>Never searched, or every set was removed: <c>Msg.SearchResults.Empty</c>.</summary>
+    public bool IsEmpty => _shown is null;
 
     /// <summary>The shown set is of kind References (UI-TW-609).</summary>
-    public bool IsReferences => _set?.Origin is not null;
+    public bool IsReferences => _shown?.Origin is not null;
 
     /// <summary>The search finished without a match: <c>Msg.FindInFiles.None</c> under the header.</summary>
-    public bool IsNoMatch => _set is { Request: not null } set && !IsSearching && set.Matches.Count == 0;
+    public bool IsNoMatch => _shown is { Request: not null } set && !IsSearching && set.Matches.Count == 0;
 
-    public string NoMatchText => _set?.Request is { } request ? Format(Strings.Msg_FindInFiles_None, request.Query.Text) : "";
+    public string NoMatchText => _shown?.Request is { } request ? Format(Strings.Msg_FindInFiles_None, request.Query.Text) : "";
 
     /// <summary>UI-TW-606 / IDE-FREF-006: the info bar <c>Msg.FindInFiles.Capped</c> or <c>Msg.References.Capped</c>.</summary>
-    public bool IsCapped => _set?.IsCapped == true;
+    public bool IsCapped => _shown?.IsCapped == true;
+
+    /// <summary>UI-TW-615: the tabs of the set strip, in its order.</summary>
+    public IReadOnlyList<SearchResultSetTab> Sets =>
+    [
+        .. _sets.Select((set, index) => new SearchResultSetTab(index + 1,
+            set.Origin is null ? SetTitle(set.Request!.Query.Text, quoted: true) : SetTitle(set.Identifier, quoted: false),
+            set.Origin is null ? "find-in-files" : "find", set.IsPinned, ReferenceEquals(set, _shown), HeaderOf(set))),
+    ];
+
+    /// <summary>UI-TW-615: the set strip is shown while at least one set is pinned.</summary>
+    public bool HasSetStrip => _sets.Exists(s => s.IsPinned);
+
+    /// <summary>UI-TW-618: the scroll position of the shown set's list; the view keeps it here while another set is shown.</summary>
+    public double ScrollOffset
+    {
+        get => _shown?.ScrollOffset ?? 0;
+        set
+        {
+            if (_shown is { } set)
+                set.ScrollOffset = value;
+        }
+    }
+
+    /// <summary>Another set is about to be shown: the view stores the scroll position of the one that leaves (<see cref="ScrollOffset"/>).</summary>
+    public event EventHandler? ShownSetChanging;
+
+    /// <summary>Another set is shown, with its rows and its selection: the view restores its scroll position.</summary>
+    public event EventHandler? ShownSetChanged;
+
+    /// <summary>
+    /// UI-TW-616: the shown set is the current one, its search has ended, it has rows, and fewer than
+    /// <see cref="MaxPinnedSets"/> sets are pinned.
+    /// </summary>
+    public bool CanPin => _shown is { IsPinned: false, Matches.Count: > 0 } set && !Searching(set) && _sets.Count(s => s.IsPinned) < MaxPinnedSets;
+
+    /// <summary>
+    /// UI-TW-615: the title of a set's tab — the search text in double quotes, or the identifier; longer than
+    /// <see cref="MaxSetTitleLength"/> characters (the quotes included) it is cut, with an ellipsis before the closing quote.
+    /// </summary>
+    internal static string SetTitle(string text, bool quoted)
+    {
+        var room = MaxSetTitleLength - (quoted ? 2 : 0);
+        if (text.Length > room)
+            text = string.Concat(text.AsSpan(0, room - 1), "…");
+        return quoted ? "\"" + text + "\"" : text;
+    }
 
     public string CappedText => Format(IsReferences ? Strings.Msg_References_Capped : Strings.Msg_FindInFiles_Capped,
         FindInFilesService.MatchCap.ToString("N0", CultureInfo.CurrentCulture));
@@ -219,68 +303,80 @@ public sealed class SearchResultsViewModel : ToolWindowViewModel, ICommandTarget
     /// UI-TW-600: <c>Find "&lt;text&gt;" in &lt;scope&gt; — &lt;counts&gt; (&lt;options&gt;)</c>; UI-TW-611:
     /// <c>References to &lt;name&gt; — &lt;counts&gt;</c> with the library part.
     /// </summary>
-    public string Header
-    {
-        get
-        {
-            if (_set is not { } set)
-                return "";
-            var matches = set.Matches;
-            var files = matches.Select(m => m.Path).Distinct(StringComparer.OrdinalIgnoreCase).Count();
-            if (set.Origin is not null)
-            {
-                if (IsSearching)
-                    return Format(Strings.SearchResults_Header_References, set.Identifier, Strings.SearchResults_Searching);
-                var references = Format(Strings.SearchResults_Header_References, set.Identifier, FindReferencesService.CountText(matches.Count, files));
-                var library = matches.Count(m => m is ReferenceMatch { IsLibrary: true });
-                return library == 0 ? references : references + " " + Format(Strings.SearchResults_Header_Library, library);
-            }
+    public string Header => _shown is { } set ? HeaderOf(set) : "";
 
-            var request = set.Request!;
-            var scope = request.Scope switch
-            {
-                FindInFilesScope.Project => Strings.SearchResults_ScopeProject,
-                FindInFilesScope.OpenFiles => Strings.SearchResults_ScopeOpenFiles,
-                _ => request.Folder ?? "",
-            };
-            var counts = IsSearching ? Strings.SearchResults_Searching
-                : matches.Count == 1 ? Strings.Msg_FindInFiles_DoneOne
-                : Format(Strings.Msg_FindInFiles_DoneMany, matches.Count, files);
-            var text = Format(Strings.SearchResults_Header, request.Query.Text, scope, counts);
-            List<string> options = [];
-            if (request.Query.MatchCase)
-                options.Add(Strings.SearchResults_OptionMatchCase);
-            if (request.Query.WholeWord)
-                options.Add(Strings.SearchResults_OptionWholeWord);
-            if (request.Query.Regex)
-                options.Add(Strings.SearchResults_OptionRegex);
-            return options.Count == 0 ? text : text + " (" + string.Join(", ", options) + ")";
+    /// <summary>The header text of a set: what its header strip shows, and the tooltip of its tab (UI-TW-615).</summary>
+    private string HeaderOf(SearchResultSet set)
+    {
+        var searching = Searching(set);
+        var matches = set.Matches;
+        var files = matches.Select(m => m.Path).Distinct(StringComparer.OrdinalIgnoreCase).Count();
+        if (set.Origin is not null)
+        {
+            if (searching)
+                return Format(Strings.SearchResults_Header_References, set.Identifier, Strings.SearchResults_Searching);
+            var references = Format(Strings.SearchResults_Header_References, set.Identifier, FindReferencesService.CountText(matches.Count, files));
+            var library = matches.Count(m => m is ReferenceMatch { IsLibrary: true });
+            return library == 0 ? references : references + " " + Format(Strings.SearchResults_Header_Library, library);
         }
+
+        var request = set.Request!;
+        var scope = request.Scope switch
+        {
+            FindInFilesScope.Project => Strings.SearchResults_ScopeProject,
+            FindInFilesScope.OpenFiles => Strings.SearchResults_ScopeOpenFiles,
+            _ => request.Folder ?? "",
+        };
+        var counts = searching ? Strings.SearchResults_Searching
+            : matches.Count == 1 ? Strings.Msg_FindInFiles_DoneOne
+            : Format(Strings.Msg_FindInFiles_DoneMany, matches.Count, files);
+        var text = Format(Strings.SearchResults_Header, request.Query.Text, scope, counts);
+        List<string> options = [];
+        if (request.Query.MatchCase)
+            options.Add(Strings.SearchResults_OptionMatchCase);
+        if (request.Query.WholeWord)
+            options.Add(Strings.SearchResults_OptionWholeWord);
+        if (request.Query.Regex)
+            options.Add(Strings.SearchResults_OptionRegex);
+        return options.Count == 0 ? text : text + " (" + string.Join(", ", options) + ")";
     }
 
     /// <summary>The match row navigated to last (F8 continues from it).</summary>
-    public SearchResultRow? CurrentRow => _set?.Current is { } current ? Rows.FirstOrDefault(r => r.Match == current) : null;
+    public SearchResultRow? CurrentRow => _shown?.Current is { } current ? Rows.FirstOrDefault(r => r.Match == current) : null;
 
-    public bool HasMatches => _set is { Matches.Count: > 0 };
+    public bool HasMatches => _shown is { Matches.Count: > 0 };
 
-    public void RegisterCommands(ICommandService commands, IToolWindowService toolWindows)
+    /// <param name="implementedPhase">Decides whether <c>searchResults.pin</c> — a Phase 8 command — is offered (IDE-P8-003).</param>
+    public void RegisterCommands(ICommandService commands, IToolWindowService toolWindows, int implementedPhase)
     {
         ArgumentNullException.ThrowIfNull(commands);
         _commands = commands;
         _toolWindows = toolWindows;
         commands.RegisterHandler("search.findInFiles", new Handler(() => toolWindows.IsRegistered(ToolName), OpenDialogAsync));
-        commands.RegisterHandler("searchResults.repeat", new Handler(() => _set is not null, Repeat));
-        commands.RegisterHandler("searchResults.cancel", new Handler(() => IsSearching || References?.IsSearching == true, () =>
+        commands.RegisterHandler("searchResults.repeat", new Handler(() => _shown is not null, Repeat));
+
+        // UI-TW-617: the running search of the shown set; IDE-FREF-002: and a new reference query, which is no set yet.
+        commands.RegisterHandler("searchResults.cancel", new Handler(() => IsSearching || References?.IsFinding == true, () =>
         {
-            _set?.Cancel?.Cancel();
-            References?.Cancel(); // IDE-FREF-002
+            _shown?.Cancel?.Cancel();
+            References?.Cancel(_shown);
             return Task.CompletedTask;
         }));
-        commands.RegisterHandler("searchResults.clear", new Handler(() => _set is not null, () =>
+        commands.RegisterHandler("searchResults.clear", new Handler(() => _shown is not null, () =>
         {
             Clear();
             return Task.CompletedTask;
         }));
+        _pinAvailable = Composition.Phase8Features.IsAvailable(PinCommandId, 8, implementedPhase);
+        if (_pinAvailable)
+        {
+            commands.RegisterHandler(PinCommandId, new Handler(() => CanPin, () =>
+            {
+                Pin();
+                return Task.CompletedTask;
+            }));
+        }
+
         commands.RegisterHandler("searchResults.expandAll", new Handler(() => HasMatches, () => SetAllExpanded(true)));
         commands.RegisterHandler("searchResults.collapseAll", new Handler(() => HasMatches, () => SetAllExpanded(false)));
         commands.RegisterHandler("searchResults.goToSource", new Handler(() => SelectedRows.Count > 0, () => GoToAsync(SelectedRows[0])));
@@ -289,7 +385,7 @@ public sealed class SearchResultsViewModel : ToolWindowViewModel, ICommandTarget
     public IReadOnlyList<Menus.MenuItemModel> BuildContextMenu()
     {
         var commands = _commands ?? throw new InvalidOperationException("Commands are not registered.");
-        return [.. ContextCommands.Select(id => id is null
+        return [.. ContextCommands.Where(id => id != PinCommandId || _pinAvailable).Select(id => id is null
             ? Menus.MenuItemModel.Separator()
             : Menus.MenuItemModel.ForCommand(commands.Get(id).Title, commands.Get(id), null, Menus.MenuToggleKind.None))];
     }
@@ -352,19 +448,22 @@ public sealed class SearchResultsViewModel : ToolWindowViewModel, ICommandTarget
     }
 
     /// <summary>Starts the search without waiting for it: the command finishes, a new search may cancel this one.</summary>
-    private Task Start(FindInFilesRequest request)
+    private Task Start(FindInFilesRequest request, SearchResultSet? repeatOf = null)
     {
-        Running = RunAsync(request);
+        Running = RunAsync(request, repeatOf);
         return Task.CompletedTask;
     }
 
-    /// <summary><c>searchResults.repeat</c>: the shown set's query again (IDE-FREF-008 for a References set).</summary>
+    /// <summary>
+    /// <c>searchResults.repeat</c>: the shown set's query again, in place (UI-TW-617: a pinned set stays pinned and keeps
+    /// its position; IDE-FREF-008 for a References set).
+    /// </summary>
     private Task Repeat()
     {
-        if (_set is not { } set)
+        if (_shown is not { } set)
             return Task.CompletedTask;
         if (set.Request is { } request)
-            return Start(request);
+            return Start(request, set);
         if (References is not { } references)
             return Task.CompletedTask;
         int? offset = null;
@@ -375,19 +474,23 @@ public sealed class SearchResultsViewModel : ToolWindowViewModel, ICommandTarget
             offset = gone ? null : anchor.Offset;
         }
 
-        _ = references.RepeatAsync(set.Origin!, offset, gone, set);
+        _ = references.RepeatAsync(set.Origin!, offset, gone, set, set.IsPinned);
         return Task.CompletedTask;
     }
 
     /// <summary>The search started last (tests await it).</summary>
     public Task Running { get; private set; } = Task.CompletedTask;
 
-    /// <summary>Starts a search (a running one is canceled first), shows the window and streams the results (IDE-ED-123).</summary>
-    public async Task RunAsync(FindInFilesRequest request)
+    /// <summary>
+    /// Starts a search, shows the window and streams the results (IDE-ED-123). UI-TW-617: the search becomes the current
+    /// set — the previous current set is replaced and its running search canceled — and is shown; pinned sets are not touched.
+    /// </summary>
+    public Task RunAsync(FindInFilesRequest request) => RunAsync(request, repeatOf: null);
+
+    /// <param name="repeatOf">The set whose query is run again (<c>searchResults.repeat</c>): the new set takes its place in the strip.</param>
+    private async Task RunAsync(FindInFilesRequest request, SearchResultSet? repeatOf)
     {
         ArgumentNullException.ThrowIfNull(request);
-        _set?.Cancel?.Cancel();
-        References?.Abandon(); // a reference query would replace this search when its result arrives
         using var cancel = new CancellationTokenSource();
         var set = new SearchResultSet
         {
@@ -400,19 +503,40 @@ public sealed class SearchResultsViewModel : ToolWindowViewModel, ICommandTarget
                 _ => "",
             },
         };
-        _set = set;
-        _focusPending = true;
-        _toolWindows?.Show(ToolName, focus: false);
-        UpdateSticky();
-        Rebuild();
+        var place = repeatOf is null ? -1 : _sets.IndexOf(repeatOf);
+        if (place >= 0)
+        {
+            Release(repeatOf!);
+            set.IsPinned = repeatOf!.IsPinned;
+            _sets[place] = set;
+        }
+        else
+        {
+            ReplaceCurrent(set);
+        }
+
+        if (!set.IsPinned)
+            References?.AbandonCurrent(); // a reference query would replace this search when its result arrives
+        var shown = place < 0 || ReferenceEquals(_shown, repeatOf);
+        if (shown)
+        {
+            _focusFor = set;
+            _toolWindows?.Show(ToolName, focus: false);
+        }
+
+        UpdateSticky(set);
+        if (shown)
+            Show(set, sameTab: place >= 0);
         var progress = new BatchProgress(batch => _dispatcher.Post(() =>
         {
-            if (!ReferenceEquals(_set, set) || set.Cancel is null)
+            if (set.Cancel is null || !_sets.Contains(set))
                 return;
             Add(set, batch);
-            UpdateSticky();
+            UpdateSticky(set);
+            if (!ReferenceEquals(_shown, set))
+                return;
             Rebuild();
-            FocusOnce();
+            FocusOnce(set);
         }));
         FindInFilesResult result;
         try
@@ -424,14 +548,14 @@ public sealed class SearchResultsViewModel : ToolWindowViewModel, ICommandTarget
             set.Cancel = null;
         }
 
-        if (!ReferenceEquals(_set, set))
-            return; // replaced by a newer search
+        if (!_sets.Contains(set))
+            return; // replaced by a newer search, or closed
         set.IsCapped = result.IsCapped;
         set.Matches.Clear();
         set.Anchors.Clear();
         Add(set, result.Matches);
-        _sticky?.Dispose();
-        _sticky = null;
+        set.Sticky?.Dispose();
+        set.Sticky = null;
         var files = result.FileCount;
         _status.ShowMessage(result.IsCanceled ? Format(Strings.Msg_FindInFiles_Canceled, result.Matches.Count)
             : result.Matches.Count == 0 ? Format(Strings.Msg_FindInFiles_None, request.Query.Text)
@@ -443,35 +567,45 @@ public sealed class SearchResultsViewModel : ToolWindowViewModel, ICommandTarget
                 set.Collapsed.Add(path); // UI-TW-602
         }
 
-        Rebuild();
-        FocusOnce();
+        if (ReferenceEquals(_shown, set))
+        {
+            Rebuild();
+            FocusOnce(set);
+        }
+        else
+        {
+            if (ReferenceEquals(_focusFor, set))
+                _focusFor = null; // another set is looked at: this search does not take the focus any more
+            NotifySets(); // the tooltip of its tab
+        }
+
         _commands?.InvalidateCanExecute();
     }
 
     /// <summary>
-    /// IDE-FREF-003: <paramref name="result"/> becomes the shown result set (kind References) — the window is shown with
-    /// its tab selected and the keyboard focus stays where it is; the reference at <paramref name="originOffset"/> of the
-    /// origin's file is the current row (else the first reference). <paramref name="repeatOf"/>: the set whose query
-    /// was run again (IDE-FREF-008) — it is replaced only while it is still the shown one (false: nothing was shown).
+    /// IDE-FREF-003: <paramref name="result"/> becomes the current result set (kind References) and is shown — the window
+    /// is shown with its tab selected and the keyboard focus stays where it is; the reference at
+    /// <paramref name="originOffset"/> of the origin's file is the current row (else the first reference).
+    /// <paramref name="repeatOf"/>: the set whose query was run again (IDE-FREF-008, UI-TW-617) — the result takes its
+    /// place in the strip, pinned as it was, and is shown when that set was the shown one (false: the set was removed or
+    /// replaced meanwhile, nothing was changed).
     /// </summary>
     internal bool ShowReferences(ReferencesResult result, ReferenceOrigin origin, int originOffset, object? repeatOf)
     {
         ArgumentNullException.ThrowIfNull(result);
         ArgumentNullException.ThrowIfNull(origin);
-        if (repeatOf is not null && !ReferenceEquals(repeatOf, _set))
-            return false; // the repeated set was cleared or replaced meanwhile
-        _set?.Cancel?.Cancel();
-        _sticky?.Dispose();
-        _sticky = null;
-        _focusPending = false;
+        var repeated = repeatOf as SearchResultSet;
+        var place = repeated is null ? -1 : _sets.IndexOf(repeated);
+        if (repeatOf is not null && place < 0)
+            return false; // the repeated set was removed or replaced meanwhile
         var set = new SearchResultSet
         {
             Origin = origin,
             Identifier = result.Identifier,
             Root = _projects.Project?.Directory ?? "",
             IsCapped = result.IsCapped,
+            IsPinned = repeated?.IsPinned == true,
         };
-        _set = set;
         Add(set, result.Matches);
         if (OpenDocuments().TryGetValue(origin.Path, out var document) && originOffset <= document.Buffer.Length)
         {
@@ -491,9 +625,24 @@ public sealed class SearchResultsViewModel : ToolWindowViewModel, ICommandTarget
 
         set.Current = result.Matches.FirstOrDefault(m => m.Line == origin.Line && m.Column == origin.Column
             && string.Equals(m.Path, origin.Path, StringComparison.OrdinalIgnoreCase)) ?? result.Matches.FirstOrDefault();
+        if (place >= 0)
+        {
+            _sets[place] = set; // in place
+            if (!ReferenceEquals(_shown, repeated))
+            {
+                NotifySets(); // another set is shown and stays shown: the tooltip of this one's tab
+                return true;
+            }
+        }
+        else
+        {
+            ReplaceCurrent(set);
+            _focusFor = null;
+        }
+
         _toolWindows?.Show(ToolName, focus: false);
         ResultsShown?.Invoke(this, EventArgs.Empty);
-        Rebuild();
+        Show(set, sameTab: place >= 0);
         OnPropertyChanged(nameof(CurrentRow));
         return true;
     }
@@ -503,26 +652,118 @@ public sealed class SearchResultsViewModel : ToolWindowViewModel, ICommandTarget
     {
         OnPropertyChanged(nameof(Header));
         OnPropertyChanged(nameof(IsSearching));
-        _commands?.InvalidateCanExecute();
+        NotifySets();
     }
 
-    /// <summary>Clears the results (<c>searchResults.clear</c>): the empty state.</summary>
+    /// <summary>
+    /// <c>searchResults.clear</c> (UI-TW-618): removes the shown set; the next one in the strip is shown, else the
+    /// previous one, else the empty state.
+    /// </summary>
     public void Clear()
     {
-        _set?.Cancel?.Cancel();
-        if (_set is not null && ReferenceEquals(References?.RepeatTarget, _set))
-            References!.Abandon();
-        _sticky?.Dispose();
-        _sticky = null;
-        _set = null;
+        if (_shown is { } set)
+            Remove(set);
+    }
+
+    /// <summary>UI-TW-616 <c>searchResults.pin</c>: the shown set is kept. One way: a pinned set is removed, never unpinned.</summary>
+    public void Pin()
+    {
+        if (!CanPin)
+            return;
+        _shown!.IsPinned = true;
+        NotifySets();
+    }
+
+    /// <summary>UI-TW-615: shows the set of the tab <paramref name="number"/> (1-based position in the strip).</summary>
+    public void ShowSet(int number)
+    {
+        if (number >= 1 && number <= _sets.Count)
+            Show(_sets[number - 1]);
+    }
+
+    /// <summary>UI-TW-615 <c>Left</c> / <c>Right</c> on the strip: shows the set before or after the shown one (no wrapping).</summary>
+    public void ShowNeighbourSet(bool forward)
+    {
+        if (_shown is { } set)
+            ShowSet(_sets.IndexOf(set) + 1 + (forward ? 1 : -1));
+    }
+
+    /// <summary>UI-TW-618: a tab's close button — removes the set of the tab <paramref name="number"/> (as <see cref="Clear"/> when it is the shown one).</summary>
+    public void CloseSet(int number)
+    {
+        if (number >= 1 && number <= _sets.Count)
+            Remove(_sets[number - 1]);
+    }
+
+    /// <summary>The search of <paramref name="set"/> — a set that is replaced or removed — ends without a result and without a message.</summary>
+    private void Release(SearchResultSet set)
+    {
+        set.Cancel?.Cancel();
+        References?.Abandon(set);
+        set.Sticky?.Dispose();
+        set.Sticky = null;
+    }
+
+    /// <summary>UI-TW-617: <paramref name="set"/> becomes the current set; the previous current set is gone, its running search canceled.</summary>
+    private void ReplaceCurrent(SearchResultSet set)
+    {
+        if (_sets.Find(s => !s.IsPinned) is { } previous)
+        {
+            Release(previous);
+            _sets.Remove(previous);
+        }
+
+        _sets.Add(set);
+    }
+
+    private void Remove(SearchResultSet set)
+    {
+        var place = _sets.IndexOf(set);
+        if (place < 0)
+            return;
+        Release(set);
+        _sets.RemoveAt(place);
+        if (ReferenceEquals(_focusFor, set))
+            _focusFor = null;
+        if (ReferenceEquals(_shown, set))
+            Show(place < _sets.Count ? _sets[place] : place > 0 ? _sets[place - 1] : null);
+        else
+            NotifySets();
+    }
+
+    /// <summary>
+    /// Makes <paramref name="set"/> the shown one (null: the empty state) with the state that belongs to it (UI-TW-618):
+    /// its rows, expansion, selection, current row and — through the view — scroll position. The filter text is cleared,
+    /// unless the set takes the place of the shown one (<paramref name="sameTab"/>: a repeat).
+    /// </summary>
+    private void Show(SearchResultSet? set, bool sameTab = false)
+    {
+        if (ReferenceEquals(_shown, set))
+            return;
+        ShownSetChanging?.Invoke(this, EventArgs.Empty);
+        if (_shown is { } previous)
+            previous.SelectedKeys = [.. SelectedRows.Select(r => r.Key)];
+        _shown = set;
+        _restoreSelection = set?.SelectedKeys ?? [];
+        if (!sameTab && FilterText.Length > 0)
+            FilterText = "";
         Rebuild();
+        ShownSetChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>The strip changed (a set was pinned, replaced or removed, or the header of a set that is not shown changed).</summary>
+    private void NotifySets()
+    {
+        OnPropertyChanged(nameof(Sets));
+        OnPropertyChanged(nameof(HasSetStrip));
+        _commands?.InvalidateCanExecute();
     }
 
     /// <summary>Expands or collapses a file row or a container row.</summary>
     public void SetExpanded(SearchResultRow row, bool expanded)
     {
         ArgumentNullException.ThrowIfNull(row);
-        if (row.Match is not null || _set is not { } set)
+        if (row.Match is not null || _shown is not { } set)
             return;
         if (expanded)
             set.Collapsed.Remove(row.GroupId);
@@ -544,7 +785,7 @@ public sealed class SearchResultsViewModel : ToolWindowViewModel, ICommandTarget
             return;
         }
 
-        var set = _set;
+        var set = _shown;
         if (set is not null)
         {
             set.Current = match;
@@ -581,10 +822,10 @@ public sealed class SearchResultsViewModel : ToolWindowViewModel, ICommandTarget
         ReturnFocusToDocument();
     }
 
-    /// <summary>F8 / Shift+F8 over the match rows (UI-TW-603), wrapping.</summary>
+    /// <summary>F8 / Shift+F8 over the match rows of the shown set (UI-TW-603, UI-TW-618), wrapping.</summary>
     public Task NavigateNextAsync(bool forward)
     {
-        if (_set is not { Matches.Count: > 0 } set)
+        if (_shown is not { Matches.Count: > 0 } set)
             return Task.CompletedTask;
         var matches = set.Matches;
         var index = set.Current is null ? -1 : matches.IndexOf(set.Current);
@@ -594,11 +835,17 @@ public sealed class SearchResultsViewModel : ToolWindowViewModel, ICommandTarget
         return GoToAsync(row);
     }
 
-    protected override void OnFilterApplied(string filter) => Rebuild();
+    protected override void OnFilterApplied(string filter)
+    {
+        // Nothing to do when the rows were built with this text already (a batch arrived, or the text was cleared for
+        // another set): building them again would only reset the list.
+        if (filter.Trim() != _builtFilter)
+            Rebuild();
+    }
 
     private Task SetAllExpanded(bool expanded)
     {
-        if (_set is not { } set)
+        if (_shown is not { } set)
             return Task.CompletedTask;
         set.Collapsed.Clear();
         if (!expanded)
@@ -615,20 +862,21 @@ public sealed class SearchResultsViewModel : ToolWindowViewModel, ICommandTarget
         return Task.CompletedTask;
     }
 
-    private void FocusOnce()
+    /// <summary>The shown Find in Files search takes the keyboard focus once: with its first rows, or at its end.</summary>
+    private void FocusOnce(SearchResultSet set)
     {
-        if (!_focusPending || (!HasMatches && IsSearching))
+        if (!ReferenceEquals(_focusFor, set) || (set.Matches.Count == 0 && set.Cancel is not null))
             return;
-        _focusPending = false;
+        _focusFor = null;
         _toolWindows?.Show(ToolName, focus: true);
     }
 
-    private void UpdateSticky()
+    private void UpdateSticky(SearchResultSet set)
     {
-        _sticky?.Dispose();
-        var matches = _set?.Matches ?? [];
+        set.Sticky?.Dispose();
+        var matches = set.Matches;
         var files = matches.Select(m => m.Path).Distinct(StringComparer.OrdinalIgnoreCase).Count();
-        _sticky = _status.ShowStickyMessage(Format(Strings.Msg_FindInFiles_Searching, files, matches.Count));
+        set.Sticky = _status.ShowStickyMessage(Format(Strings.Msg_FindInFiles_Searching, files, matches.Count));
     }
 
     private Dictionary<string, TextDocumentViewModel> OpenDocuments() =>
@@ -646,10 +894,17 @@ public sealed class SearchResultsViewModel : ToolWindowViewModel, ICommandTarget
         }
     }
 
+    /// <summary>UI-TW-604 / UI-TW-618: the rows of every set — shown or not — are tracked in a document that is opened unmodified.</summary>
     private void OnDocumentOpened(DocumentViewModel opened)
     {
-        if (_set is not { } set || opened is not TextDocumentViewModel { FilePath: { } path, IsModified: false } document)
+        if (opened is not TextDocumentViewModel { FilePath: { } path, IsModified: false } document)
             return;
+        foreach (var set in _sets)
+            TrackIn(set, path, document);
+    }
+
+    private void TrackIn(SearchResultSet set, string path, TextDocumentViewModel document)
+    {
         foreach (var match in set.Matches.Where(m => !set.Anchors.ContainsKey(m) && string.Equals(m.Path, path, StringComparison.OrdinalIgnoreCase)))
             Anchor(set, match, document);
 
@@ -689,9 +944,9 @@ public sealed class SearchResultsViewModel : ToolWindowViewModel, ICommandTarget
 
     private void Rebuild()
     {
-        var filter = FilterText.Trim();
+        var filter = _builtFilter = FilterText.Trim();
         List<SearchResultRow> rows = [];
-        if (_set is { } set)
+        if (_shown is { } set)
         {
             foreach (var group in set.Matches.GroupBy(m => m.Path, StringComparer.OrdinalIgnoreCase))
             {
@@ -704,9 +959,14 @@ public sealed class SearchResultsViewModel : ToolWindowViewModel, ICommandTarget
             }
         }
 
-        var selected = SelectedRows.Select(r => r.Key).ToHashSet(StringComparer.Ordinal);
-        Rows = rows;
+        // The selection first: the view takes it over when the rows change (the rows of a set that is shown again get
+        // the selection that set had, UI-TW-618).
+        var selected = (_restoreSelection ?? SelectedRows.Select(r => r.Key)).ToHashSet(StringComparer.Ordinal);
+        _restoreSelection = null;
         SelectedRows = [.. rows.Where(r => selected.Contains(r.Key))];
+        Rows = rows;
+        OnPropertyChanged(nameof(Sets));
+        OnPropertyChanged(nameof(HasSetStrip));
         OnPropertyChanged(nameof(Header));
         OnPropertyChanged(nameof(IsEmpty));
         OnPropertyChanged(nameof(IsNoMatch));

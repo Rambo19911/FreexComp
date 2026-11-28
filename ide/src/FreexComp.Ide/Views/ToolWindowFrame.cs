@@ -66,12 +66,19 @@ public sealed class ToolWindowFrame : DockPanel
 
     public static void SetIsPrimary(Control control, bool value) => control.SetValue(IsPrimaryProperty, value);
 
-    /// <summary>The marked primary control of the content, else its first focusable control.</summary>
+    /// <summary>
+    /// The marked primary control of the content — when it cannot take the focus itself (a list), the first focusable
+    /// control inside it (I-354: a focusable control above the list, as the set strip of Search Results, is not the
+    /// primary one) —, else the first focusable control of the content.
+    /// </summary>
     public void FocusPrimary()
     {
         var candidates = _content.GetVisualDescendants().OfType<InputElement>()
             .Where(c => c.Focusable && c.IsEffectivelyEnabled && c.IsEffectivelyVisible).ToList();
-        var target = candidates.FirstOrDefault(c => c is Control control && GetIsPrimary(control)) ?? candidates.FirstOrDefault() ?? _content;
+        var primary = _content.GetVisualDescendants().OfType<Control>().FirstOrDefault(GetIsPrimary);
+        var target = candidates.FirstOrDefault(c => ReferenceEquals(c, primary))
+            ?? candidates.FirstOrDefault(c => primary is not null && primary.IsVisualAncestorOf(c))
+            ?? candidates.FirstOrDefault() ?? _content;
         target.Focus(NavigationMethod.Tab);
     }
 

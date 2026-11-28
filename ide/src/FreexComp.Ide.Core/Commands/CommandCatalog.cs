@@ -313,6 +313,7 @@ public static class CommandCatalog
         new("searchResults.clear", [ToolList], 3, []),
         new("searchResults.repeat", [ToolList], 3, []),
         new("searchResults.cancel", [ToolList], 3, ["Escape"]),
+        new("searchResults.pin", [ToolList], 8, []),
         new("projectManager.collapseAll", [ProjectManager], 1, []),
         new("projectManager.syncWithEditor", [ProjectManager], 1, []),
         new("projectManager.open", [ProjectManager], 1, ["Enter"]),

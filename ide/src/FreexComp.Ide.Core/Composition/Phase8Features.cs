@@ -74,6 +74,7 @@ public static class Phase8Features
         "run.toggleLibraryStepping", // F02-004
         "search.bookmark.addNamed", // F11-045
         "search.findReferences", // F13-016a
+        "searchResults.pin", // F13-016a
         "setting:history.enabled", // F11-059
         "templates.edit", // F11-052
         "templates.insert", // F11-052

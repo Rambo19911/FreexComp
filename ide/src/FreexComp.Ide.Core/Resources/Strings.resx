@@ -2146,6 +2146,9 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   <data name="Cmd_searchResults_cancel" xml:space="preserve">
     <value>Cancel Search</value>
   </data>
+  <data name="Cmd_searchResults_pin" xml:space="preserve">
+    <value>Keep Results</value>
+  </data>
   <data name="Cmd_projectManager_collapseAll" xml:space="preserve">
     <value>Collapse All</value>
   </data>
@@ -6906,5 +6909,17 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   <data name="SearchResults_Header_Library" xml:space="preserve">
     <value>({0} in library sources)</value>
     <comment>UI-TW-611: appended to the header after a space; 0 = references in library sources</comment>
+  </data>
+  <data name="SearchResults_Sets" xml:space="preserve">
+    <value>Result sets</value>
+    <comment>UI-TW-615: automation name of the set strip</comment>
+  </data>
+  <data name="SearchResults_SetKept" xml:space="preserve">
+    <value>{0} (kept)</value>
+    <comment>UI-TW-615: automation name of the tab of a pinned set; 0 = the tab's title</comment>
+  </data>
+  <data name="SearchResults_CloseSet" xml:space="preserve">
+    <value>Close</value>
+    <comment>UI-TW-615: tooltip and automation name of a tab's close button</comment>
   </data>
 </root>

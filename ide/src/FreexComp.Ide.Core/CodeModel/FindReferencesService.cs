@@ -37,8 +37,9 @@ public sealed record ReferencesResult(string Identifier, IReadOnlyList<Reference
 /// IDE-FREF-001…008 <c>search.findReferences</c> (Shift+F12; I-353, F13-016a): asks the language service for every
 /// reference to the symbol of the identifier at the caret (<c>NavigationService.FindReferences</c> over the project
 /// <c>Compilation</c>, unsaved buffers included), builds the rows on the code-model worker and hands a non-empty result
-/// to the Search Results window as a result set of kind References. One query at a time: a newer one and
-/// <c>searchResults.cancel</c> cancel it. UI thread only.
+/// to the Search Results window as a result set of kind References. One query for the current set at a time — a
+/// newer one and <c>searchResults.cancel</c> cancel it — and, beside it, the repeat of each pinned set (UI-TW-617: no
+/// other search cancels that). UI thread only.
 /// </summary>
 public sealed class FindReferencesService
 {
@@ -58,7 +59,8 @@ public sealed class FindReferencesService
     private readonly IStatusService _status;
     private readonly IClock _clock;
     private readonly SearchResultsViewModel _results;
-    private CancellationTokenSource? _cancel;
+    private readonly List<Query> _queries = []; // the running queries; a replaced one is taken out and ends silently
+    private long _pinnedRequests;
     private ICommandService? _commands;
 
     public FindReferencesService(IDocumentService documents, IProjectService projects, CodeModelService codeModel, ILibrarySourceService library,
@@ -77,11 +79,14 @@ public sealed class FindReferencesService
         projects.ProjectChanged += (_, _) => Cancel(); // IDE-ARCH-084: closing the project cancels its project-wide query
     }
 
-    /// <summary>A query runs.</summary>
-    public bool IsSearching => _cancel is not null;
+    /// <summary>A query runs: a new one, or the repeat of a result set.</summary>
+    public bool IsSearching => _queries.Count > 0;
 
-    /// <summary>The result set the running query repeats (<c>searchResults.repeat</c>); null for a new query and when none runs.</summary>
-    public object? RepeatTarget { get; private set; }
+    /// <summary>A new query (<c>search.findReferences</c>) runs: its result is not a result set yet.</summary>
+    internal bool IsFinding => _queries.Exists(q => q.Target is null);
+
+    /// <summary>The query of <paramref name="set"/> is run again (<c>searchResults.repeat</c>).</summary>
+    internal bool IsRepeating(object set) => _queries.Exists(q => ReferenceEquals(q.Target, set));
 
     /// <summary>The query started last (tests await it).</summary>
     public Task Running { get; private set; } = Task.CompletedTask;
@@ -93,16 +98,39 @@ public sealed class FindReferencesService
         commands.RegisterHandler(CommandId, new Handler(this));
     }
 
-    /// <summary>IDE-FREF-002: cancels the running query; it changes nothing and the status bar says so.</summary>
-    public void Cancel() => _cancel?.Cancel();
-
-    /// <summary>Another search takes the place of the running query: it ends without a result and without a message.</summary>
-    internal void Abandon()
+    /// <summary>IDE-FREF-002: cancels every running query (the project changes); each changes nothing and the status bar says so.</summary>
+    public void Cancel()
     {
-        var cancel = _cancel;
-        _cancel = null;
-        RepeatTarget = null;
-        cancel?.Cancel();
+        foreach (var query in _queries.ToArray())
+            query.Cancel.Cancel();
+    }
+
+    /// <summary>
+    /// <c>searchResults.cancel</c> (IDE-FREF-002, UI-TW-617): cancels the new query and the repeat of the shown set
+    /// <paramref name="shown"/> — not the repeat of a set that is not shown.
+    /// </summary>
+    internal void Cancel(object? shown)
+    {
+        foreach (var query in _queries.FindAll(q => q.Target is null || ReferenceEquals(q.Target, shown)))
+            query.Cancel.Cancel();
+    }
+
+    /// <summary>
+    /// Another search takes the place of the current set (UI-TW-617): the new query and the repeat of the current set
+    /// end without a result and without a message. The repeat of a pinned set goes on.
+    /// </summary>
+    internal void AbandonCurrent() => Drop(q => !q.Pinned);
+
+    /// <summary>The result set <paramref name="set"/> is removed or its query is started again: its repeat ends without a result and without a message.</summary>
+    internal void Abandon(object set) => Drop(q => ReferenceEquals(q.Target, set));
+
+    private void Drop(Predicate<Query> match)
+    {
+        foreach (var query in _queries.FindAll(match))
+        {
+            _queries.Remove(query);
+            query.Cancel.Cancel();
+        }
     }
 
     /// <summary>IDE-FREF-001: the condition of <c>search.goToDeclaration</c>.</summary>
@@ -120,7 +148,7 @@ public sealed class FindReferencesService
         }
 
         // Started, not awaited: the command finishes, a newer query or searchResults.cancel may cancel this one.
-        Running = RunAsync(source, identifier, repeatOf: null);
+        Running = RunAsync(source, identifier, repeatOf: null, pinned: false);
         return Task.CompletedTask;
     }
 
@@ -128,9 +156,10 @@ public sealed class FindReferencesService
     /// IDE-FREF-008: runs the query of a References result set again where it was started —
     /// <paramref name="offset"/> is the tracked offset of the identifier while its document is open, else the stored line
     /// and column of <paramref name="origin"/> are used. <paramref name="gone"/>: the tracked place was deleted. Without
-    /// an identifier there the status bar says so and the rows stay.
+    /// an identifier there the status bar says so and the rows stay. <paramref name="pinned"/>: <paramref name="target"/>
+    /// is a pinned set — no other search cancels its repeat (UI-TW-617).
     /// </summary>
-    internal Task RepeatAsync(ReferenceOrigin origin, int? offset, bool gone, object target)
+    internal Task RepeatAsync(ReferenceOrigin origin, int? offset, bool gone, object target, bool pinned)
     {
         ArgumentNullException.ThrowIfNull(origin);
         if (!gone && _codeModel.Synchronize() is not null)
@@ -138,7 +167,7 @@ public sealed class FindReferencesService
             var source = _codeModel.Workspace.GetDocument(origin.Path);
             var at = offset ?? OffsetOf(source.SyntaxTree.Text.Text, origin.Line, origin.Column);
             if (at >= 0 && IdentifierAt(source.SyntaxTree, at, orEndingThere: false) is { } identifier)
-                return Running = RunAsync(source, identifier, target);
+                return Running = RunAsync(source, identifier, target, pinned);
         }
 
         // No identifier there any more (or no project to ask): the rows stay.
@@ -146,12 +175,19 @@ public sealed class FindReferencesService
         return Task.CompletedTask;
     }
 
-    private async Task RunAsync(Document source, SyntaxToken identifier, object? repeatOf)
+    private async Task RunAsync(Document source, SyntaxToken identifier, object? repeatOf, bool pinned)
     {
-        _cancel?.Cancel(); // IDE-ARCH-084: the newer query replaces the older one
+        // IDE-ARCH-084: the newer query replaces the older one — of the current set, or the same pinned set's repeat.
+        if (pinned)
+            Abandon(repeatOf!);
+        else
+            AbandonCurrent();
         using var cancel = new CancellationTokenSource();
-        _cancel = cancel;
-        RepeatTarget = repeatOf;
+        var query = new Query(cancel, repeatOf, pinned);
+        _queries.Add(query);
+
+        // The worker drops a queued request when a newer one of its kind arrives: the repeat of a pinned set has a kind of its own.
+        var kind = pinned ? RequestKind + "#" + (++_pinnedRequests).ToString(CultureInfo.InvariantCulture) : RequestKind;
         var name = identifier.Text;
         IDisposable? sticky = null;
         var timer = _clock.Schedule(SearchingDelay, () => sticky = _status.ShowStickyMessage(Format(Strings.Msg_References_Searching, name)));
@@ -165,7 +201,7 @@ public sealed class FindReferencesService
         var canceled = false;
         try
         {
-            result = await _codeModel.Worker.RunAsync(RequestKind,
+            result = await _codeModel.Worker.RunAsync(kind,
                 ct => ReferenceRows.Build(name, LsNavigation.FindReferences(source, start, ct), source.Compilation, members, roots, ct),
                 cancel.Token).WaitAsync(cancel.Token);
         }
@@ -176,13 +212,8 @@ public sealed class FindReferencesService
         catch
         {
             // The query failed: it is over (the failure of a task nobody awaits is logged, IDE-ARCH-091).
-            if (ReferenceEquals(_cancel, cancel))
-            {
-                _cancel = null;
-                RepeatTarget = null;
+            if (_queries.Remove(query))
                 _results.OnReferenceSearchChanged();
-            }
-
             throw;
         }
         finally
@@ -191,10 +222,8 @@ public sealed class FindReferencesService
             sticky?.Dispose();
         }
 
-        if (!ReferenceEquals(_cancel, cancel))
+        if (!_queries.Remove(query))
             return; // replaced by a newer search, which reports
-        _cancel = null;
-        RepeatTarget = null;
         if (canceled)
         {
             _status.ShowMessage(Strings.Msg_References_Canceled, StatusDuration);
@@ -268,6 +297,9 @@ public sealed class FindReferencesService
     }
 
     private static string Format(string format, params object[] args) => string.Format(CultureInfo.CurrentCulture, format, args);
+
+    /// <summary>A running query: <see cref="Target"/> is the result set it repeats (null: a new query), <see cref="Pinned"/> whether that set is pinned.</summary>
+    private sealed record Query(CancellationTokenSource Cancel, object? Target, bool Pinned);
 
     private sealed class Handler(FindReferencesService owner) : ICommandHandler
     {

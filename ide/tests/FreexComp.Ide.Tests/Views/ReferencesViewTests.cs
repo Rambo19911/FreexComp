@@ -391,4 +391,99 @@ public sealed class ReferencesViewTests
         Assert.Equal(unit1 + ": TCounter.Step", await CopyAsync("Unit1.pas#TCounter.Step"));
         Assert.Equal(unit1, await CopyAsync("Unit1.pas"));
     }
+
+    /// <summary>The tabs of the set strip, left to right: title, a leading <c>*</c> for the shown one (none when the strip is not shown).</summary>
+    internal static List<string> Tabs(HeadlessHarness h)
+    {
+        List<string> tabs = [];
+        if (h.TryFind<Control>("Tool.SearchResults.Sets") is not { IsEffectivelyVisible: true })
+            return tabs;
+        for (var n = 1; h.TryFind<Control>("Tool.SearchResults.Set." + n) is { } tab; n++)
+            tabs.Add((h.Services.SearchResults.Sets[n - 1].IsShown ? "*" : "") + tab.GetVisualDescendants().OfType<TextBlock>().Single().Text);
+        return tabs;
+    }
+
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-TW-615")]
+    [Trait("Req", "UI-TW-616")]
+    [Trait("Req", "UI-TW-617")]
+    [Trait("Req", "IDE-FREF-007")]
+    public async Task NavigateAndPin()
+    {
+        await using var h = await StartAsync();
+        List<string> count =
+        [
+            "Hello.pas", "Hello.pas#(unit level)", "Hello.pas:10:13",
+            "Unit1.pas", "Unit1.pas#TCounter", "Unit1.pas:7:5", "Unit1.pas#TCounter.Step", "Unit1.pas:14:3", "Unit1.pas:14:12",
+            "Unit2.pas", "Unit2.pas#Twice", "Unit2.pas:10:8", "Unit2.pas:11:7",
+        ];
+
+        // A References set is kept: its tab has the pin glyph, the icon of its kind and the identifier as its title.
+        await FindAsync(h, "Unit2.pas", Unit2, "Count >", "References to Count — 6 references in 3 files");
+        Assert.Empty(Tabs(h));
+        var pin = h.Find<Button>("Tool.SearchResults.ToolBar.searchResults.pin");
+        Assert.True(pin.IsEffectivelyEnabled);
+        h.Click("Tool.SearchResults.ToolBar.searchResults.pin");
+        Assert.Equal(["*Count"], Tabs(h));
+        var tab = h.Find<Control>("Tool.SearchResults.Set.1");
+        Assert.Equal(["pin", "find", "close"], tab.GetVisualDescendants().OfType<IdeIcon>().Where(i => i.IsEffectivelyVisible).Select(i => i.IconName));
+        Assert.Equal("References to Count — 6 references in 3 files", ToolTip.GetTip(tab));
+        Assert.False(pin.IsEffectivelyEnabled);
+        Assert.Equal(count, RowKeys(h));
+
+        // A second Find References: both sets exist, the new one is the current set and is shown; the focus stays in the editor.
+        await FindAsync(h, "Hello.pas", Main, "C.Step", "References to Step — 6 references in 3 files");
+        Assert.Equal(["Count", "*Step"], Tabs(h));
+        Assert.Equal("Editor.Hello.pas", h.FocusedAutomationId);
+        Assert.Equal("Hello.pas:7:5", SelectedKey(h));
+        Assert.Equal(["find", "close"], h.Find<Control>("Tool.SearchResults.Set.2").GetVisualDescendants().OfType<IdeIcon>().Where(i => i.IsEffectivelyVisible).Select(i => i.IconName));
+        Assert.True(pin.IsEffectivelyEnabled);
+
+        // F8 steps in the shown set: the reference to Step after the one under the caret.
+        h.Press("F8");
+        await WaitSelectionAsync(h, "Unit1.pas", Unit1.IndexOf("Step;", StringComparison.Ordinal), 4);
+        Assert.Equal("Unit1.pas:8:15", SelectedKey(h));
+
+        // The pinned set is shown again: its rows and its current row are back, and F8 steps in it now.
+        h.Click("Tool.SearchResults.Set.1");
+        Assert.Equal(["*Count", "Step"], Tabs(h));
+        Assert.Equal("References to Count — 6 references in 3 files", h.Find<TextBlock>("Tool.SearchResults.Header").Text);
+        Assert.Equal(count, RowKeys(h));
+        Assert.Equal("Unit2.pas:10:8", SelectedKey(h));
+        h.Press("F8");
+        await WaitSelectionAsync(h, "Unit2.pas", Unit2.IndexOf("Count :=", StringComparison.Ordinal), 5);
+        Assert.Equal("Unit2.pas:11:7", SelectedKey(h));
+
+        // Navigating from the pinned set still works after an edit: Unit1 was opened by the other set's F8 — the rows of
+        // the pinned set, which was not shown then, follow the edit all the same (UI-TW-604).
+        const string inserted = "// a note above\r\n// and another\r\n";
+        var document = h.Services.Documents.Documents.OfType<TextDocumentViewModel>().Single(d => d.FilePath == PathOf(h, "Unit1.pas"));
+        document.Buffer.ApplyEdits([new TextEdit(0, 0, inserted)]);
+        Dispatcher.UIThread.RunJobs();
+        ClickRow(h, "Unit1.pas:14:3");
+        h.Press("Enter");
+        var unit1 = await WaitSelectionAsync(h, "Unit1.pas", inserted.Length + Unit1.IndexOf("Count :=", StringComparison.Ordinal), 5);
+        Assert.Equal("Count", unit1.SelectedText);
+
+        // The other set follows it too.
+        h.Click("Tool.SearchResults.Set.2");
+        Assert.Equal("Unit1.pas:8:15", SelectedKey(h));
+        ClickRow(h, "Unit1.pas:12:20");
+        h.Press("Enter");
+        await WaitSelectionAsync(h, "Unit1.pas", inserted.Length + Unit1.IndexOf("Step;\r\nbegin", StringComparison.Ordinal), 4);
+
+        // A third Find References replaces the current set only; the pinned one is unchanged.
+        await FindAsync(h, "Unit2.pas", Unit2, "TCounter", "References to TCounter — 7 references in 3 files");
+        Assert.Equal(["Count", "*TCounter"], Tabs(h));
+        h.Click("Tool.SearchResults.Set.1");
+        Assert.Equal(count, RowKeys(h));
+        Assert.Equal("Unit1.pas:14:3", SelectedKey(h));
+
+        // A kept set of the other kind beside it: Find in Files gets the icon of its kind.
+        await h.Services.SearchResults.RunAsync(new Core.Editing.FindInFilesRequest(
+            new FindQuery("Twice", MatchCase: true, WholeWord: false, Regex: false), Core.Editing.FindInFilesScope.Project));
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(["Count", "*\"Twice\""], Tabs(h));
+        Assert.Equal(["find-in-files", "close"], h.Find<Control>("Tool.SearchResults.Set.2").GetVisualDescendants().OfType<IdeIcon>().Where(i => i.IsEffectivelyVisible).Select(i => i.IconName));
+    }
 }

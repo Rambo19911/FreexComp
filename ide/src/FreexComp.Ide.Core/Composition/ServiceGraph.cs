@@ -252,7 +252,7 @@ public static class ServiceGraph
         var findInFiles = new FindInFilesService(documents, projects, platform.FileSystem, settings, platform.Clock); // I-122
         var searchResults = new ViewModels.SearchResultsViewModel(findInFiles, documents, projects, navigation, platform.Dialogs, platform.FileDialogs,
             platform.FileSystem, layout, status, platform.Clipboard, platform.Dispatcher); // I-123
-        searchResults.RegisterCommands(commands, toolWindowService);
+        searchResults.RegisterCommands(commands, toolWindowService, toolWindowPhase ?? ImplementedPhase); // I-354: searchResults.pin
         // I-353 (F13-016a): Find References lists its result in Search Results as a result set of kind References.
         var findReferences = new CodeModel.FindReferencesService(documents, projects, codeModel, librarySource, status, platform.Clock, searchResults);
         if (Phase8Features.IsAvailable(CodeModel.FindReferencesService.CommandId, 8, toolWindowPhase ?? ImplementedPhase))
