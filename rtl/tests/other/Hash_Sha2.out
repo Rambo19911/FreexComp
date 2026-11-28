@@ -1,0 +1,364 @@
+# SHA224 (RTL-1239)
+ok SHA224 M0: GetHashString(string)
+ok SHA224 M0: GetHashString(bytes)
+ok SHA224 M0: GetHashBytes(string)
+ok SHA224 M0: GetHashBytes(bytes)
+ok SHA224 M0: Create, Update, HashAsString
+ok SHA224 M0: the same result again
+ok SHA224 M1: GetHashString(string)
+ok SHA224 M1: GetHashString(bytes)
+ok SHA224 M1: GetHashBytes(string)
+ok SHA224 M1: GetHashBytes(bytes)
+ok SHA224 M1: Create, Update, HashAsString
+ok SHA224 M1: the same result again
+ok SHA224 M2: GetHashString(string)
+ok SHA224 M2: GetHashString(bytes)
+ok SHA224 M2: GetHashBytes(string)
+ok SHA224 M2: GetHashBytes(bytes)
+ok SHA224 M2: Create, Update, HashAsString
+ok SHA224 M2: the same result again
+ok SHA224 M3: GetHashString(string)
+ok SHA224 M3: GetHashString(bytes)
+ok SHA224 M3: GetHashBytes(string)
+ok SHA224 M3: GetHashBytes(bytes)
+ok SHA224 M3: Create, Update, HashAsString
+ok SHA224 M3: the same result again
+ok SHA224 M4: GetHashString(string)
+ok SHA224 M4: GetHashString(bytes)
+ok SHA224 M4: GetHashBytes(string)
+ok SHA224 M4: GetHashBytes(bytes)
+ok SHA224 M4: Create, Update, HashAsString
+ok SHA224 M4: the same result again
+ok SHA224 55 x a: GetHashString(string)
+ok SHA224 55 x a: GetHashString(bytes)
+ok SHA224 55 x a: GetHashBytes(string)
+ok SHA224 55 x a: GetHashBytes(bytes)
+ok SHA224 55 x a: Create, Update, HashAsString
+ok SHA224 55 x a: the same result again
+ok SHA224 56 x a: GetHashString(string)
+ok SHA224 56 x a: GetHashString(bytes)
+ok SHA224 56 x a: GetHashBytes(string)
+ok SHA224 56 x a: GetHashBytes(bytes)
+ok SHA224 56 x a: Create, Update, HashAsString
+ok SHA224 56 x a: the same result again
+ok SHA224 64 x a: GetHashString(string)
+ok SHA224 64 x a: GetHashString(bytes)
+ok SHA224 64 x a: GetHashBytes(string)
+ok SHA224 64 x a: GetHashBytes(bytes)
+ok SHA224 64 x a: Create, Update, HashAsString
+ok SHA224 64 x a: the same result again
+ok SHA224: block size
+ok SHA224: digest size
+ok SHA224: Create gives the initial state
+ok SHA224: HashAsBytes has the digest size
+ok SHA224: HashAsString has two digits per byte
+ok SHA224: Reset keeps the version
+ok SHA224: Reset gives the initial state
+ok SHA224: and the record is usable again
+# SHA256 (RTL-1239)
+ok SHA256 M0: GetHashString(string)
+ok SHA256 M0: GetHashString(bytes)
+ok SHA256 M0: GetHashBytes(string)
+ok SHA256 M0: GetHashBytes(bytes)
+ok SHA256 M0: Create, Update, HashAsString
+ok SHA256 M0: the same result again
+ok SHA256 M1: GetHashString(string)
+ok SHA256 M1: GetHashString(bytes)
+ok SHA256 M1: GetHashBytes(string)
+ok SHA256 M1: GetHashBytes(bytes)
+ok SHA256 M1: Create, Update, HashAsString
+ok SHA256 M1: the same result again
+ok SHA256 M2: GetHashString(string)
+ok SHA256 M2: GetHashString(bytes)
+ok SHA256 M2: GetHashBytes(string)
+ok SHA256 M2: GetHashBytes(bytes)
+ok SHA256 M2: Create, Update, HashAsString
+ok SHA256 M2: the same result again
+ok SHA256 M3: GetHashString(string)
+ok SHA256 M3: GetHashString(bytes)
+ok SHA256 M3: GetHashBytes(string)
+ok SHA256 M3: GetHashBytes(bytes)
+ok SHA256 M3: Create, Update, HashAsString
+ok SHA256 M3: the same result again
+ok SHA256 M4: GetHashString(string)
+ok SHA256 M4: GetHashString(bytes)
+ok SHA256 M4: GetHashBytes(string)
+ok SHA256 M4: GetHashBytes(bytes)
+ok SHA256 M4: Create, Update, HashAsString
+ok SHA256 M4: the same result again
+ok SHA256 55 x a: GetHashString(string)
+ok SHA256 55 x a: GetHashString(bytes)
+ok SHA256 55 x a: GetHashBytes(string)
+ok SHA256 55 x a: GetHashBytes(bytes)
+ok SHA256 55 x a: Create, Update, HashAsString
+ok SHA256 55 x a: the same result again
+ok SHA256 56 x a: GetHashString(string)
+ok SHA256 56 x a: GetHashString(bytes)
+ok SHA256 56 x a: GetHashBytes(string)
+ok SHA256 56 x a: GetHashBytes(bytes)
+ok SHA256 56 x a: Create, Update, HashAsString
+ok SHA256 56 x a: the same result again
+ok SHA256 64 x a: GetHashString(string)
+ok SHA256 64 x a: GetHashString(bytes)
+ok SHA256 64 x a: GetHashBytes(string)
+ok SHA256 64 x a: GetHashBytes(bytes)
+ok SHA256 64 x a: Create, Update, HashAsString
+ok SHA256 64 x a: the same result again
+ok SHA256: block size
+ok SHA256: digest size
+ok SHA256: Create gives the initial state
+ok SHA256: HashAsBytes has the digest size
+ok SHA256: HashAsString has two digits per byte
+ok SHA256: Reset keeps the version
+ok SHA256: Reset gives the initial state
+ok SHA256: and the record is usable again
+# SHA384 (RTL-1239)
+ok SHA384 M0: GetHashString(string)
+ok SHA384 M0: GetHashString(bytes)
+ok SHA384 M0: GetHashBytes(string)
+ok SHA384 M0: GetHashBytes(bytes)
+ok SHA384 M0: Create, Update, HashAsString
+ok SHA384 M0: the same result again
+ok SHA384 M1: GetHashString(string)
+ok SHA384 M1: GetHashString(bytes)
+ok SHA384 M1: GetHashBytes(string)
+ok SHA384 M1: GetHashBytes(bytes)
+ok SHA384 M1: Create, Update, HashAsString
+ok SHA384 M1: the same result again
+ok SHA384 M2: GetHashString(string)
+ok SHA384 M2: GetHashString(bytes)
+ok SHA384 M2: GetHashBytes(string)
+ok SHA384 M2: GetHashBytes(bytes)
+ok SHA384 M2: Create, Update, HashAsString
+ok SHA384 M2: the same result again
+ok SHA384 M3: GetHashString(string)
+ok SHA384 M3: GetHashString(bytes)
+ok SHA384 M3: GetHashBytes(string)
+ok SHA384 M3: GetHashBytes(bytes)
+ok SHA384 M3: Create, Update, HashAsString
+ok SHA384 M3: the same result again
+ok SHA384 M4: GetHashString(string)
+ok SHA384 M4: GetHashString(bytes)
+ok SHA384 M4: GetHashBytes(string)
+ok SHA384 M4: GetHashBytes(bytes)
+ok SHA384 M4: Create, Update, HashAsString
+ok SHA384 M4: the same result again
+ok SHA384 111 x a: GetHashString(string)
+ok SHA384 111 x a: GetHashString(bytes)
+ok SHA384 111 x a: GetHashBytes(string)
+ok SHA384 111 x a: GetHashBytes(bytes)
+ok SHA384 111 x a: Create, Update, HashAsString
+ok SHA384 111 x a: the same result again
+ok SHA384 112 x a: GetHashString(string)
+ok SHA384 112 x a: GetHashString(bytes)
+ok SHA384 112 x a: GetHashBytes(string)
+ok SHA384 112 x a: GetHashBytes(bytes)
+ok SHA384 112 x a: Create, Update, HashAsString
+ok SHA384 112 x a: the same result again
+ok SHA384 128 x a: GetHashString(string)
+ok SHA384 128 x a: GetHashString(bytes)
+ok SHA384 128 x a: GetHashBytes(string)
+ok SHA384 128 x a: GetHashBytes(bytes)
+ok SHA384 128 x a: Create, Update, HashAsString
+ok SHA384 128 x a: the same result again
+ok SHA384: block size
+ok SHA384: digest size
+ok SHA384: Create gives the initial state
+ok SHA384: HashAsBytes has the digest size
+ok SHA384: HashAsString has two digits per byte
+ok SHA384: Reset keeps the version
+ok SHA384: Reset gives the initial state
+ok SHA384: and the record is usable again
+# SHA512 (RTL-1239)
+ok SHA512 M0: GetHashString(string)
+ok SHA512 M0: GetHashString(bytes)
+ok SHA512 M0: GetHashBytes(string)
+ok SHA512 M0: GetHashBytes(bytes)
+ok SHA512 M0: Create, Update, HashAsString
+ok SHA512 M0: the same result again
+ok SHA512 M1: GetHashString(string)
+ok SHA512 M1: GetHashString(bytes)
+ok SHA512 M1: GetHashBytes(string)
+ok SHA512 M1: GetHashBytes(bytes)
+ok SHA512 M1: Create, Update, HashAsString
+ok SHA512 M1: the same result again
+ok SHA512 M2: GetHashString(string)
+ok SHA512 M2: GetHashString(bytes)
+ok SHA512 M2: GetHashBytes(string)
+ok SHA512 M2: GetHashBytes(bytes)
+ok SHA512 M2: Create, Update, HashAsString
+ok SHA512 M2: the same result again
+ok SHA512 M3: GetHashString(string)
+ok SHA512 M3: GetHashString(bytes)
+ok SHA512 M3: GetHashBytes(string)
+ok SHA512 M3: GetHashBytes(bytes)
+ok SHA512 M3: Create, Update, HashAsString
+ok SHA512 M3: the same result again
+ok SHA512 M4: GetHashString(string)
+ok SHA512 M4: GetHashString(bytes)
+ok SHA512 M4: GetHashBytes(string)
+ok SHA512 M4: GetHashBytes(bytes)
+ok SHA512 M4: Create, Update, HashAsString
+ok SHA512 M4: the same result again
+ok SHA512 111 x a: GetHashString(string)
+ok SHA512 111 x a: GetHashString(bytes)
+ok SHA512 111 x a: GetHashBytes(string)
+ok SHA512 111 x a: GetHashBytes(bytes)
+ok SHA512 111 x a: Create, Update, HashAsString
+ok SHA512 111 x a: the same result again
+ok SHA512 112 x a: GetHashString(string)
+ok SHA512 112 x a: GetHashString(bytes)
+ok SHA512 112 x a: GetHashBytes(string)
+ok SHA512 112 x a: GetHashBytes(bytes)
+ok SHA512 112 x a: Create, Update, HashAsString
+ok SHA512 112 x a: the same result again
+ok SHA512 128 x a: GetHashString(string)
+ok SHA512 128 x a: GetHashString(bytes)
+ok SHA512 128 x a: GetHashBytes(string)
+ok SHA512 128 x a: GetHashBytes(bytes)
+ok SHA512 128 x a: Create, Update, HashAsString
+ok SHA512 128 x a: the same result again
+ok SHA512: block size
+ok SHA512: digest size
+ok SHA512: Create gives the initial state
+ok SHA512: HashAsBytes has the digest size
+ok SHA512: HashAsString has two digits per byte
+ok SHA512: Reset keeps the version
+ok SHA512: Reset gives the initial state
+ok SHA512: and the record is usable again
+# SHA512_224 (RTL-1239)
+ok SHA512_224 M0: GetHashString(string)
+ok SHA512_224 M0: GetHashString(bytes)
+ok SHA512_224 M0: GetHashBytes(string)
+ok SHA512_224 M0: GetHashBytes(bytes)
+ok SHA512_224 M0: Create, Update, HashAsString
+ok SHA512_224 M0: the same result again
+ok SHA512_224 M1: GetHashString(string)
+ok SHA512_224 M1: GetHashString(bytes)
+ok SHA512_224 M1: GetHashBytes(string)
+ok SHA512_224 M1: GetHashBytes(bytes)
+ok SHA512_224 M1: Create, Update, HashAsString
+ok SHA512_224 M1: the same result again
+ok SHA512_224 M2: GetHashString(string)
+ok SHA512_224 M2: GetHashString(bytes)
+ok SHA512_224 M2: GetHashBytes(string)
+ok SHA512_224 M2: GetHashBytes(bytes)
+ok SHA512_224 M2: Create, Update, HashAsString
+ok SHA512_224 M2: the same result again
+ok SHA512_224 M3: GetHashString(string)
+ok SHA512_224 M3: GetHashString(bytes)
+ok SHA512_224 M3: GetHashBytes(string)
+ok SHA512_224 M3: GetHashBytes(bytes)
+ok SHA512_224 M3: Create, Update, HashAsString
+ok SHA512_224 M3: the same result again
+ok SHA512_224 M4: GetHashString(string)
+ok SHA512_224 M4: GetHashString(bytes)
+ok SHA512_224 M4: GetHashBytes(string)
+ok SHA512_224 M4: GetHashBytes(bytes)
+ok SHA512_224 M4: Create, Update, HashAsString
+ok SHA512_224 M4: the same result again
+ok SHA512_224 111 x a: GetHashString(string)
+ok SHA512_224 111 x a: GetHashString(bytes)
+ok SHA512_224 111 x a: GetHashBytes(string)
+ok SHA512_224 111 x a: GetHashBytes(bytes)
+ok SHA512_224 111 x a: Create, Update, HashAsString
+ok SHA512_224 111 x a: the same result again
+ok SHA512_224 112 x a: GetHashString(string)
+ok SHA512_224 112 x a: GetHashString(bytes)
+ok SHA512_224 112 x a: GetHashBytes(string)
+ok SHA512_224 112 x a: GetHashBytes(bytes)
+ok SHA512_224 112 x a: Create, Update, HashAsString
+ok SHA512_224 112 x a: the same result again
+ok SHA512_224 128 x a: GetHashString(string)
+ok SHA512_224 128 x a: GetHashString(bytes)
+ok SHA512_224 128 x a: GetHashBytes(string)
+ok SHA512_224 128 x a: GetHashBytes(bytes)
+ok SHA512_224 128 x a: Create, Update, HashAsString
+ok SHA512_224 128 x a: the same result again
+ok SHA512_224: block size
+ok SHA512_224: digest size
+ok SHA512_224: Create gives the initial state
+ok SHA512_224: HashAsBytes has the digest size
+ok SHA512_224: HashAsString has two digits per byte
+ok SHA512_224: Reset keeps the version
+ok SHA512_224: Reset gives the initial state
+ok SHA512_224: and the record is usable again
+# SHA512_256 (RTL-1239)
+ok SHA512_256 M0: GetHashString(string)
+ok SHA512_256 M0: GetHashString(bytes)
+ok SHA512_256 M0: GetHashBytes(string)
+ok SHA512_256 M0: GetHashBytes(bytes)
+ok SHA512_256 M0: Create, Update, HashAsString
+ok SHA512_256 M0: the same result again
+ok SHA512_256 M1: GetHashString(string)
+ok SHA512_256 M1: GetHashString(bytes)
+ok SHA512_256 M1: GetHashBytes(string)
+ok SHA512_256 M1: GetHashBytes(bytes)
+ok SHA512_256 M1: Create, Update, HashAsString
+ok SHA512_256 M1: the same result again
+ok SHA512_256 M2: GetHashString(string)
+ok SHA512_256 M2: GetHashString(bytes)
+ok SHA512_256 M2: GetHashBytes(string)
+ok SHA512_256 M2: GetHashBytes(bytes)
+ok SHA512_256 M2: Create, Update, HashAsString
+ok SHA512_256 M2: the same result again
+ok SHA512_256 M3: GetHashString(string)
+ok SHA512_256 M3: GetHashString(bytes)
+ok SHA512_256 M3: GetHashBytes(string)
+ok SHA512_256 M3: GetHashBytes(bytes)
+ok SHA512_256 M3: Create, Update, HashAsString
+ok SHA512_256 M3: the same result again
+ok SHA512_256 M4: GetHashString(string)
+ok SHA512_256 M4: GetHashString(bytes)
+ok SHA512_256 M4: GetHashBytes(string)
+ok SHA512_256 M4: GetHashBytes(bytes)
+ok SHA512_256 M4: Create, Update, HashAsString
+ok SHA512_256 M4: the same result again
+ok SHA512_256 111 x a: GetHashString(string)
+ok SHA512_256 111 x a: GetHashString(bytes)
+ok SHA512_256 111 x a: GetHashBytes(string)
+ok SHA512_256 111 x a: GetHashBytes(bytes)
+ok SHA512_256 111 x a: Create, Update, HashAsString
+ok SHA512_256 111 x a: the same result again
+ok SHA512_256 112 x a: GetHashString(string)
+ok SHA512_256 112 x a: GetHashString(bytes)
+ok SHA512_256 112 x a: GetHashBytes(string)
+ok SHA512_256 112 x a: GetHashBytes(bytes)
+ok SHA512_256 112 x a: Create, Update, HashAsString
+ok SHA512_256 112 x a: the same result again
+ok SHA512_256 128 x a: GetHashString(string)
+ok SHA512_256 128 x a: GetHashString(bytes)
+ok SHA512_256 128 x a: GetHashBytes(string)
+ok SHA512_256 128 x a: GetHashBytes(bytes)
+ok SHA512_256 128 x a: Create, Update, HashAsString
+ok SHA512_256 128 x a: the same result again
+ok SHA512_256: block size
+ok SHA512_256: digest size
+ok SHA512_256: Create gives the initial state
+ok SHA512_256: HashAsBytes has the digest size
+ok SHA512_256: HashAsString has two digits per byte
+ok SHA512_256: Reset keeps the version
+ok SHA512_256: Reset gives the initial state
+ok SHA512_256: and the record is usable again
+# the default version is SHA256 (RTL-1239, RTL-1240)
+ok Create without a version: 32 bytes
+ok and a block of 64 bytes
+ok Create, Update(abc)
+ok GetHashString(string)
+ok GetHashString(bytes)
+ok GetHashBytes(string)
+ok GetHashBytes(bytes)
+# the ordinals of the versions (RTL-1239)
+ok SHA224
+ok SHA256
+ok SHA384
+ok SHA512
+ok SHA512_224
+ok SHA512_256
+ok six versions
+# a string is hashed in its UTF-8 form (RTL-1240)
+ok SHA256 of U+00E9
+ok is the SHA256 of the bytes C3 A9
+ok a surrogate pair is one 4-byte sequence
+ok no block is left
+# passed 354 failed 0

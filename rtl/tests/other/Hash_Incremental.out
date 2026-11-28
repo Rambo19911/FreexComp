@@ -1,0 +1,290 @@
+# 4099 bytes in one call and in pieces (RTL-1235)
+ok MD5: one call
+ok MD5: pieces of 1, untyped data
+ok MD5: pieces of 1, byte array with a length
+ok MD5: pieces of 63, untyped data
+ok MD5: pieces of 63, byte array with a length
+ok MD5: pieces of 64, untyped data
+ok MD5: pieces of 64, byte array with a length
+ok MD5: pieces of 65, untyped data
+ok MD5: pieces of 65, byte array with a length
+ok MD5: pieces of 127, untyped data
+ok MD5: pieces of 127, byte array with a length
+ok MD5: pieces of 128, untyped data
+ok MD5: pieces of 128, byte array with a length
+ok MD5: pieces of 129, untyped data
+ok MD5: pieces of 129, byte array with a length
+ok SHA-1: one call
+ok SHA-1: pieces of 1, untyped data
+ok SHA-1: pieces of 1, byte array with a length
+ok SHA-1: pieces of 63, untyped data
+ok SHA-1: pieces of 63, byte array with a length
+ok SHA-1: pieces of 64, untyped data
+ok SHA-1: pieces of 64, byte array with a length
+ok SHA-1: pieces of 65, untyped data
+ok SHA-1: pieces of 65, byte array with a length
+ok SHA-1: pieces of 127, untyped data
+ok SHA-1: pieces of 127, byte array with a length
+ok SHA-1: pieces of 128, untyped data
+ok SHA-1: pieces of 128, byte array with a length
+ok SHA-1: pieces of 129, untyped data
+ok SHA-1: pieces of 129, byte array with a length
+ok SHA224: one call
+ok SHA224: pieces of 1, untyped data
+ok SHA224: pieces of 1, byte array with a length
+ok SHA224: pieces of 63, untyped data
+ok SHA224: pieces of 63, byte array with a length
+ok SHA224: pieces of 64, untyped data
+ok SHA224: pieces of 64, byte array with a length
+ok SHA224: pieces of 65, untyped data
+ok SHA224: pieces of 65, byte array with a length
+ok SHA224: pieces of 127, untyped data
+ok SHA224: pieces of 127, byte array with a length
+ok SHA224: pieces of 128, untyped data
+ok SHA224: pieces of 128, byte array with a length
+ok SHA224: pieces of 129, untyped data
+ok SHA224: pieces of 129, byte array with a length
+ok SHA256: one call
+ok SHA256: pieces of 1, untyped data
+ok SHA256: pieces of 1, byte array with a length
+ok SHA256: pieces of 63, untyped data
+ok SHA256: pieces of 63, byte array with a length
+ok SHA256: pieces of 64, untyped data
+ok SHA256: pieces of 64, byte array with a length
+ok SHA256: pieces of 65, untyped data
+ok SHA256: pieces of 65, byte array with a length
+ok SHA256: pieces of 127, untyped data
+ok SHA256: pieces of 127, byte array with a length
+ok SHA256: pieces of 128, untyped data
+ok SHA256: pieces of 128, byte array with a length
+ok SHA256: pieces of 129, untyped data
+ok SHA256: pieces of 129, byte array with a length
+ok SHA384: one call
+ok SHA384: pieces of 1, untyped data
+ok SHA384: pieces of 1, byte array with a length
+ok SHA384: pieces of 63, untyped data
+ok SHA384: pieces of 63, byte array with a length
+ok SHA384: pieces of 64, untyped data
+ok SHA384: pieces of 64, byte array with a length
+ok SHA384: pieces of 65, untyped data
+ok SHA384: pieces of 65, byte array with a length
+ok SHA384: pieces of 127, untyped data
+ok SHA384: pieces of 127, byte array with a length
+ok SHA384: pieces of 128, untyped data
+ok SHA384: pieces of 128, byte array with a length
+ok SHA384: pieces of 129, untyped data
+ok SHA384: pieces of 129, byte array with a length
+ok SHA512: one call
+ok SHA512: pieces of 1, untyped data
+ok SHA512: pieces of 1, byte array with a length
+ok SHA512: pieces of 63, untyped data
+ok SHA512: pieces of 63, byte array with a length
+ok SHA512: pieces of 64, untyped data
+ok SHA512: pieces of 64, byte array with a length
+ok SHA512: pieces of 65, untyped data
+ok SHA512: pieces of 65, byte array with a length
+ok SHA512: pieces of 127, untyped data
+ok SHA512: pieces of 127, byte array with a length
+ok SHA512: pieces of 128, untyped data
+ok SHA512: pieces of 128, byte array with a length
+ok SHA512: pieces of 129, untyped data
+ok SHA512: pieces of 129, byte array with a length
+ok SHA512_224: one call
+ok SHA512_224: pieces of 1, untyped data
+ok SHA512_224: pieces of 1, byte array with a length
+ok SHA512_224: pieces of 63, untyped data
+ok SHA512_224: pieces of 63, byte array with a length
+ok SHA512_224: pieces of 64, untyped data
+ok SHA512_224: pieces of 64, byte array with a length
+ok SHA512_224: pieces of 65, untyped data
+ok SHA512_224: pieces of 65, byte array with a length
+ok SHA512_224: pieces of 127, untyped data
+ok SHA512_224: pieces of 127, byte array with a length
+ok SHA512_224: pieces of 128, untyped data
+ok SHA512_224: pieces of 128, byte array with a length
+ok SHA512_224: pieces of 129, untyped data
+ok SHA512_224: pieces of 129, byte array with a length
+ok SHA512_256: one call
+ok SHA512_256: pieces of 1, untyped data
+ok SHA512_256: pieces of 1, byte array with a length
+ok SHA512_256: pieces of 63, untyped data
+ok SHA512_256: pieces of 63, byte array with a length
+ok SHA512_256: pieces of 64, untyped data
+ok SHA512_256: pieces of 64, byte array with a length
+ok SHA512_256: pieces of 65, untyped data
+ok SHA512_256: pieces of 65, byte array with a length
+ok SHA512_256: pieces of 127, untyped data
+ok SHA512_256: pieces of 127, byte array with a length
+ok SHA512_256: pieces of 128, untyped data
+ok SHA512_256: pieces of 128, byte array with a length
+ok SHA512_256: pieces of 129, untyped data
+ok SHA512_256: pieces of 129, byte array with a length
+# MD5: running digest, copy, Reset, empty input (RTL-1234, RTL-1235, RTL-1236)
+ok the digest of "ab" while data is still being added
+ok Update("c") continues: "abc"
+ok the same result again
+ok the copy made before still holds "ab"
+ok and continues on its own
+ok a length of 0 (also at nil), an empty array and an empty string add nothing
+ok Reset gives the digest of no data
+ok the record is usable after Reset
+ok Create, Update of untyped data and of a byte array, assignment and Reset allocate nothing
+# SHA-1: running digest, copy, Reset, empty input (RTL-1234, RTL-1235, RTL-1236)
+ok the digest of "ab" while data is still being added
+ok Update("c") continues: "abc"
+ok the same result again
+ok the copy made before still holds "ab"
+ok and continues on its own
+ok a length of 0 (also at nil), an empty array and an empty string add nothing
+ok Reset gives the digest of no data
+ok the record is usable after Reset
+ok Create, Update of untyped data and of a byte array, assignment and Reset allocate nothing
+# SHA224: running digest, copy, Reset, empty input (RTL-1234, RTL-1235, RTL-1236)
+ok the digest of "ab" while data is still being added
+ok Update("c") continues: "abc"
+ok the same result again
+ok the copy made before still holds "ab"
+ok and continues on its own
+ok a length of 0 (also at nil), an empty array and an empty string add nothing
+ok Reset gives the digest of no data
+ok the record is usable after Reset
+ok Create, Update of untyped data and of a byte array, assignment and Reset allocate nothing
+# SHA256: running digest, copy, Reset, empty input (RTL-1234, RTL-1235, RTL-1236)
+ok the digest of "ab" while data is still being added
+ok Update("c") continues: "abc"
+ok the same result again
+ok the copy made before still holds "ab"
+ok and continues on its own
+ok a length of 0 (also at nil), an empty array and an empty string add nothing
+ok Reset gives the digest of no data
+ok the record is usable after Reset
+ok Create, Update of untyped data and of a byte array, assignment and Reset allocate nothing
+# SHA384: running digest, copy, Reset, empty input (RTL-1234, RTL-1235, RTL-1236)
+ok the digest of "ab" while data is still being added
+ok Update("c") continues: "abc"
+ok the same result again
+ok the copy made before still holds "ab"
+ok and continues on its own
+ok a length of 0 (also at nil), an empty array and an empty string add nothing
+ok Reset gives the digest of no data
+ok the record is usable after Reset
+ok Create, Update of untyped data and of a byte array, assignment and Reset allocate nothing
+# SHA512: running digest, copy, Reset, empty input (RTL-1234, RTL-1235, RTL-1236)
+ok the digest of "ab" while data is still being added
+ok Update("c") continues: "abc"
+ok the same result again
+ok the copy made before still holds "ab"
+ok and continues on its own
+ok a length of 0 (also at nil), an empty array and an empty string add nothing
+ok Reset gives the digest of no data
+ok the record is usable after Reset
+ok Create, Update of untyped data and of a byte array, assignment and Reset allocate nothing
+# SHA512_224: running digest, copy, Reset, empty input (RTL-1234, RTL-1235, RTL-1236)
+ok the digest of "ab" while data is still being added
+ok Update("c") continues: "abc"
+ok the same result again
+ok the copy made before still holds "ab"
+ok and continues on its own
+ok a length of 0 (also at nil), an empty array and an empty string add nothing
+ok Reset gives the digest of no data
+ok the record is usable after Reset
+ok Create, Update of untyped data and of a byte array, assignment and Reset allocate nothing
+# SHA512_256: running digest, copy, Reset, empty input (RTL-1234, RTL-1235, RTL-1236)
+ok the digest of "ab" while data is still being added
+ok Update("c") continues: "abc"
+ok the same result again
+ok the copy made before still holds "ab"
+ok and continues on its own
+ok a length of 0 (also at nil), an empty array and an empty string add nothing
+ok Reset gives the digest of no data
+ok the record is usable after Reset
+ok Create, Update of untyped data and of a byte array, assignment and Reset allocate nothing
+# a digest after every Update (RTL-1236)
+ok MD5: Update("a")
+ok MD5: Update("bc") gives "abc"
+ok MD5: and again
+ok SHA256: Update("a")
+ok SHA256: Update("bc") gives "abc"
+ok SHA256: and again
+# the UTF-16 units of a string are hashed by passing its memory (RTL-1235)
+ok MD5 of the bytes E9 00
+ok SHA256 of the bytes E9 00
+# streams (RTL-1235, RTL-1240)
+ok MD5 of a stream holding 1 000 000 x a
+ok the stream is read to its end
+ok through a buffer of 65 536 bytes
+ok SHA-1 of the same stream
+ok SHA256 (the default version)
+ok SHA512
+ok no larger block was asked for
+ok a stream at its end adds nothing
+ok a stream that returns less than asked is read until Read returns 0
+ok SHA256 of a stream holding P(1 048 576)
+ok MD5 of the same stream
+ok SHA256 of the same bytes as an array
+ok MD5 of the same bytes as an array
+ok MD5: Update(stream) starts at the position of the stream
+ok MD5: and leaves it at the end
+ok MD5: Update("a"), then a stream holding "bc"
+ok SHA-1: Update(stream) starts at the position of the stream
+ok SHA-1: and leaves it at the end
+ok SHA-1: Update("a"), then a stream holding "bc"
+ok SHA224: Update(stream) starts at the position of the stream
+ok SHA224: and leaves it at the end
+ok SHA224: Update("a"), then a stream holding "bc"
+ok SHA256: Update(stream) starts at the position of the stream
+ok SHA256: and leaves it at the end
+ok SHA256: Update("a"), then a stream holding "bc"
+ok SHA384: Update(stream) starts at the position of the stream
+ok SHA384: and leaves it at the end
+ok SHA384: Update("a"), then a stream holding "bc"
+ok SHA512: Update(stream) starts at the position of the stream
+ok SHA512: and leaves it at the end
+ok SHA512: Update("a"), then a stream holding "bc"
+ok SHA512_224: Update(stream) starts at the position of the stream
+ok SHA512_224: and leaves it at the end
+ok SHA512_224: Update("a"), then a stream holding "bc"
+ok SHA512_256: Update(stream) starts at the position of the stream
+ok SHA512_256: and leaves it at the end
+ok SHA512_256: Update("a"), then a stream holding "bc"
+ok GetHashString(stream) starts at the position
+ok and leaves it at the end
+# arguments (RTL-1247)
+ok MD5: Update(bytes, Length + 1)
+ok MD5: Update(nil, 1)
+ok MD5: Update(nil stream)
+ok MD5: the record is unchanged
+ok SHA-1: Update(bytes, Length + 1)
+ok SHA-1: Update(nil, 1)
+ok SHA-1: Update(nil stream)
+ok SHA-1: the record is unchanged
+ok SHA224: Update(bytes, Length + 1)
+ok SHA224: Update(nil, 1)
+ok SHA224: Update(nil stream)
+ok SHA224: the record is unchanged
+ok SHA256: Update(bytes, Length + 1)
+ok SHA256: Update(nil, 1)
+ok SHA256: Update(nil stream)
+ok SHA256: the record is unchanged
+ok SHA384: Update(bytes, Length + 1)
+ok SHA384: Update(nil, 1)
+ok SHA384: Update(nil stream)
+ok SHA384: the record is unchanged
+ok SHA512: Update(bytes, Length + 1)
+ok SHA512: Update(nil, 1)
+ok SHA512: Update(nil stream)
+ok SHA512: the record is unchanged
+ok SHA512_224: Update(bytes, Length + 1)
+ok SHA512_224: Update(nil, 1)
+ok SHA512_224: Update(nil stream)
+ok SHA512_224: the record is unchanged
+ok SHA512_256: Update(bytes, Length + 1)
+ok SHA512_256: Update(nil, 1)
+ok SHA512_256: Update(nil stream)
+ok SHA512_256: the record is unchanged
+ok THashMD5.GetHashBytes(nil stream)
+ok THashSHA1.GetHashString(nil stream)
+ok THashSHA2.GetHashBytes(nil stream)
+ok THashSHA2.GetHashString(nil stream, SHA384)
+ok no block is left
+# passed 276 failed 0

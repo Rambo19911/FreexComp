@@ -1,0 +1,171 @@
+# MD5: RFC 1321 appendix A.5 and the messages of 6.3 A (RTL-1237)
+ok MD5 M0: GetHashString(string)
+ok MD5 M0: GetHashString(bytes)
+ok MD5 M0: GetHashBytes(string)
+ok MD5 M0: GetHashBytes(bytes)
+ok MD5 M0: Create, Update, HashAsString
+ok MD5 M0: HashAsBytes, 16 bytes
+ok MD5 "a": GetHashString(string)
+ok MD5 "a": GetHashString(bytes)
+ok MD5 "a": GetHashBytes(string)
+ok MD5 "a": GetHashBytes(bytes)
+ok MD5 "a": Create, Update, HashAsString
+ok MD5 "a": HashAsBytes, 16 bytes
+ok MD5 M1: GetHashString(string)
+ok MD5 M1: GetHashString(bytes)
+ok MD5 M1: GetHashBytes(string)
+ok MD5 M1: GetHashBytes(bytes)
+ok MD5 M1: Create, Update, HashAsString
+ok MD5 M1: HashAsBytes, 16 bytes
+ok MD5 "message digest": GetHashString(string)
+ok MD5 "message digest": GetHashString(bytes)
+ok MD5 "message digest": GetHashBytes(string)
+ok MD5 "message digest": GetHashBytes(bytes)
+ok MD5 "message digest": Create, Update, HashAsString
+ok MD5 "message digest": HashAsBytes, 16 bytes
+ok MD5 a to z: GetHashString(string)
+ok MD5 a to z: GetHashString(bytes)
+ok MD5 a to z: GetHashBytes(string)
+ok MD5 a to z: GetHashBytes(bytes)
+ok MD5 a to z: Create, Update, HashAsString
+ok MD5 a to z: HashAsBytes, 16 bytes
+ok MD5 letters and digits: GetHashString(string)
+ok MD5 letters and digits: GetHashString(bytes)
+ok MD5 letters and digits: GetHashBytes(string)
+ok MD5 letters and digits: GetHashBytes(bytes)
+ok MD5 letters and digits: Create, Update, HashAsString
+ok MD5 letters and digits: HashAsBytes, 16 bytes
+ok MD5 8 x "1234567890": GetHashString(string)
+ok MD5 8 x "1234567890": GetHashString(bytes)
+ok MD5 8 x "1234567890": GetHashBytes(string)
+ok MD5 8 x "1234567890": GetHashBytes(bytes)
+ok MD5 8 x "1234567890": Create, Update, HashAsString
+ok MD5 8 x "1234567890": HashAsBytes, 16 bytes
+ok MD5 M2: GetHashString(string)
+ok MD5 M2: GetHashString(bytes)
+ok MD5 M2: GetHashBytes(string)
+ok MD5 M2: GetHashBytes(bytes)
+ok MD5 M2: Create, Update, HashAsString
+ok MD5 M2: HashAsBytes, 16 bytes
+ok MD5 M3: GetHashString(string)
+ok MD5 M3: GetHashString(bytes)
+ok MD5 M3: GetHashBytes(string)
+ok MD5 M3: GetHashBytes(bytes)
+ok MD5 M3: Create, Update, HashAsString
+ok MD5 M3: HashAsBytes, 16 bytes
+ok MD5 M4: GetHashString(string)
+ok MD5 M4: GetHashString(bytes)
+ok MD5 M4: GetHashBytes(string)
+ok MD5 M4: GetHashBytes(bytes)
+ok MD5 M4: Create, Update, HashAsString
+ok MD5 M4: HashAsBytes, 16 bytes
+ok MD5 55 x a: GetHashString(string)
+ok MD5 55 x a: GetHashString(bytes)
+ok MD5 55 x a: GetHashBytes(string)
+ok MD5 55 x a: GetHashBytes(bytes)
+ok MD5 55 x a: Create, Update, HashAsString
+ok MD5 55 x a: HashAsBytes, 16 bytes
+ok MD5 56 x a: GetHashString(string)
+ok MD5 56 x a: GetHashString(bytes)
+ok MD5 56 x a: GetHashBytes(string)
+ok MD5 56 x a: GetHashBytes(bytes)
+ok MD5 56 x a: Create, Update, HashAsString
+ok MD5 56 x a: HashAsBytes, 16 bytes
+ok MD5 64 x a: GetHashString(string)
+ok MD5 64 x a: GetHashString(bytes)
+ok MD5 64 x a: GetHashBytes(string)
+ok MD5 64 x a: GetHashBytes(bytes)
+ok MD5 64 x a: Create, Update, HashAsString
+ok MD5 64 x a: HashAsBytes, 16 bytes
+# SHA-1: the example values and the messages of 6.3 A (RTL-1238)
+ok SHA-1 M0: GetHashString(string)
+ok SHA-1 M0: GetHashString(bytes)
+ok SHA-1 M0: GetHashBytes(string)
+ok SHA-1 M0: GetHashBytes(bytes)
+ok SHA-1 M0: Create, Update, HashAsString
+ok SHA-1 M0: HashAsBytes, 20 bytes
+ok SHA-1 M1: GetHashString(string)
+ok SHA-1 M1: GetHashString(bytes)
+ok SHA-1 M1: GetHashBytes(string)
+ok SHA-1 M1: GetHashBytes(bytes)
+ok SHA-1 M1: Create, Update, HashAsString
+ok SHA-1 M1: HashAsBytes, 20 bytes
+ok SHA-1 M2: GetHashString(string)
+ok SHA-1 M2: GetHashString(bytes)
+ok SHA-1 M2: GetHashBytes(string)
+ok SHA-1 M2: GetHashBytes(bytes)
+ok SHA-1 M2: Create, Update, HashAsString
+ok SHA-1 M2: HashAsBytes, 20 bytes
+ok SHA-1 M3: GetHashString(string)
+ok SHA-1 M3: GetHashString(bytes)
+ok SHA-1 M3: GetHashBytes(string)
+ok SHA-1 M3: GetHashBytes(bytes)
+ok SHA-1 M3: Create, Update, HashAsString
+ok SHA-1 M3: HashAsBytes, 20 bytes
+ok SHA-1 M4: GetHashString(string)
+ok SHA-1 M4: GetHashString(bytes)
+ok SHA-1 M4: GetHashBytes(string)
+ok SHA-1 M4: GetHashBytes(bytes)
+ok SHA-1 M4: Create, Update, HashAsString
+ok SHA-1 M4: HashAsBytes, 20 bytes
+ok SHA-1 80 x "01234567" (ten blocks): GetHashString(string)
+ok SHA-1 80 x "01234567" (ten blocks): GetHashString(bytes)
+ok SHA-1 80 x "01234567" (ten blocks): GetHashBytes(string)
+ok SHA-1 80 x "01234567" (ten blocks): GetHashBytes(bytes)
+ok SHA-1 80 x "01234567" (ten blocks): Create, Update, HashAsString
+ok SHA-1 80 x "01234567" (ten blocks): HashAsBytes, 20 bytes
+ok SHA-1 55 x a: GetHashString(string)
+ok SHA-1 55 x a: GetHashString(bytes)
+ok SHA-1 55 x a: GetHashBytes(string)
+ok SHA-1 55 x a: GetHashBytes(bytes)
+ok SHA-1 55 x a: Create, Update, HashAsString
+ok SHA-1 55 x a: HashAsBytes, 20 bytes
+ok SHA-1 56 x a: GetHashString(string)
+ok SHA-1 56 x a: GetHashString(bytes)
+ok SHA-1 56 x a: GetHashBytes(string)
+ok SHA-1 56 x a: GetHashBytes(bytes)
+ok SHA-1 56 x a: Create, Update, HashAsString
+ok SHA-1 56 x a: HashAsBytes, 20 bytes
+ok SHA-1 64 x a: GetHashString(string)
+ok SHA-1 64 x a: GetHashString(bytes)
+ok SHA-1 64 x a: GetHashBytes(string)
+ok SHA-1 64 x a: GetHashBytes(bytes)
+ok SHA-1 64 x a: Create, Update, HashAsString
+ok SHA-1 64 x a: HashAsBytes, 20 bytes
+# sizes, initial state, repeated results (RTL-1234, RTL-1236)
+ok MD5 block size
+ok MD5 digest size
+ok MD5: Create gives the initial state
+ok MD5: a result
+ok MD5: the same result again
+ok MD5: HashAsBytes has 16 bytes
+ok MD5: Reset gives the initial state
+ok SHA-1 block size
+ok SHA-1 digest size
+ok SHA-1: Create gives the initial state
+ok SHA-1: a result
+ok SHA-1: the same result again
+ok SHA-1: HashAsBytes has 20 bytes
+ok SHA-1: Reset gives the initial state
+# a string is hashed in its UTF-8 form (RTL-1235, RTL-1240)
+ok MD5 of U+00E9
+ok is the MD5 of the bytes C3 A9
+ok SHA-1 of U+00E9
+ok is the SHA-1 of the bytes C3 A9
+ok Update(string) adds the UTF-8 form
+ok a surrogate pair is one 4-byte sequence
+ok a lone surrogate is EF BF BD
+# THash.DigestAsString, THash.DigestAsInteger (RTL-1232)
+ok DigestAsString of an empty array
+ok two lower-case digits per byte, in array order
+ok lower-case a to f
+ok DigestAsInteger reads big-endian
+ok the bit pattern is kept ($CBF43926)
+ok four FF bytes are -1
+ok four zero bytes are 0
+ok DigestAsInteger of an empty array
+ok of 3 bytes
+ok of an MD5 digest
+ok EHashException is an Exception
+ok no block is left
+# passed 165 failed 0

@@ -130,6 +130,8 @@ resourcestring
   SBase64InvalidPadding = 'Invalid Base64 padding';
   { NetEncoding: a "%" that is not followed by two hex digits (RTL-1213) }
   SUrlInvalidEscape = 'Invalid URL escape sequence at position %d';
+  { Hash: THash.DigestAsInteger takes a digest of exactly this many bytes (RTL-1232) }
+  SHashDigestSize = 'Digest must be %d bytes long';
 
 implementation
 

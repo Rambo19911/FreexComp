@@ -419,4 +419,102 @@ public sealed partial class RtlUnitRulesTests
             .ToList();
         Assert.True(libs.Count == 0, string.Join(", ", libs));
     }
+
+    /// <summary>The security note of RTL-1231 with single spaces.</summary>
+    public const string HashSecurityNote =
+        "MD5 and SHA-1 are provided for compatibility with existing file formats and protocols only. "
+        + "They are not suitable for security purposes - signatures, certificates, password storage, or protecting data against "
+        + "deliberate modification - because collisions can be produced for both. Use THashSHA2 where security matters. "
+        + "CRC-32, the Bob Jenkins hash and FNV-1a are checksums and hash-table functions and give no protection against "
+        + "deliberate modification.";
+
+    /// <summary>The phrase a comment directly in front of each of the two declarations must contain (RTL-1231).</summary>
+    public const string HashSecurityPhrase = "not suitable for security purposes";
+
+    /// <summary>
+    /// What <paramref name="source"/> (the text of unit <c>Hash</c>) lacks of RTL-1231: the note in a comment of the
+    /// interface part before the first type declaration, and the phrase in the comment directly in front of
+    /// <c>THashMD5 = record</c> and of <c>THashSHA1 = record</c>. White space inside comments is free.
+    /// </summary>
+    public static List<string> HashSecurityNoteProblems(string source)
+    {
+        static string Normalise(string text) => Regex.Replace(text, @"\s+", " ");
+
+        var problems = new List<string>();
+        var comments = Comment().Matches(source).ToList();
+        var code = Comment().Replace(source, m => new string(' ', m.Length));   // same offsets, no comment text
+
+        var start = Regex.Match(code, @"\binterface\b", RegexOptions.IgnoreCase);
+        var firstType = start.Success ? new Regex(@"\btype\b", RegexOptions.IgnoreCase).Match(code, start.Index) : Match.Empty;
+        if (!firstType.Success
+            || !comments.Any(c => c.Index > start.Index && c.Index + c.Length <= firstType.Index && Normalise(c.Value).Contains(HashSecurityNote, StringComparison.Ordinal)))
+        {
+            problems.Add("no comment between 'interface' and the first 'type' holds the sentences of RTL-1231");
+        }
+
+        foreach (var name in new[] { "THashMD5", "THashSHA1" })
+        {
+            var declaration = Regex.Match(code, $@"\b{name}\s*=\s*record\b", RegexOptions.IgnoreCase);
+            if (!declaration.Success)
+            {
+                problems.Add($"no declaration '{name} = record'");
+                continue;
+            }
+
+            // the comments that end directly in front of the declaration (only white space in between)
+            var text = "";
+            var at = declaration.Index;
+            foreach (var c in comments.AsEnumerable().Reverse().Where(c => c.Index < declaration.Index))
+            {
+                if (c.Index + c.Length > at || !string.IsNullOrWhiteSpace(source[(c.Index + c.Length)..at]))
+                {
+                    break;
+                }
+
+                text = c.Value + " " + text;
+                at = c.Index;
+            }
+
+            if (!Normalise(text).Contains(HashSecurityPhrase, StringComparison.Ordinal))
+            {
+                problems.Add($"'{name} = record' is not directly preceded by a comment with '{HashSecurityPhrase}'");
+            }
+        }
+
+        return problems;
+    }
+
+    /// <summary>
+    /// RTL-1231: the interface part of <c>Hash.pas</c> - the text Go to Declaration shows - states in a comment before
+    /// its first type declaration that MD5 and SHA-1 are not for security purposes (the exact sentences), and the
+    /// declarations of <c>THashMD5</c> and <c>THashSHA1</c> are each directly preceded by a comment that says so.
+    /// The check itself is proved on texts that lack the note, have it in the wrong place, or lack one phrase.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "RTL-1231")]
+    [Trait("Phase", "8")]
+    public void Hash_StatesThatMd5AndSha1AreNotForSecurity()
+    {
+        var path = Path.Combine(SourceDirectory, "Hash.pas");
+        Assert.True(File.Exists(path), path + " does not exist");
+        var problems = HashSecurityNoteProblems(File.ReadAllText(path));
+        Assert.True(problems.Count == 0, string.Join("\n", problems));
+
+        // self-check
+        var note = HashSecurityNote.Replace(". ", ".\n  ", StringComparison.Ordinal);
+        string Unit(string beforeType, string beforeMd5, string beforeSha1, string afterType = "") =>
+            $"unit Hash;\ninterface\nuses SysUtils;\n{beforeType}\ntype\n{afterType}  EHashException = class(Exception);\n"
+            + $"{beforeMd5}\n  THashMD5 = record\n  end;\n{beforeSha1}\n  THashSHA1 = record\n  end;\nimplementation\nend.\n";
+        const string phrase = "  { " + HashSecurityPhrase + " }";
+
+        Assert.Empty(HashSecurityNoteProblems(Unit("{ " + note + " }", phrase, phrase)));
+        Assert.Empty(HashSecurityNoteProblems(Unit("{ " + note + " }", "  // MD5:\n  // " + HashSecurityPhrase, phrase)));
+        Assert.Single(HashSecurityNoteProblems(Unit("{ MD5 and SHA-1 are provided for compatibility. }", phrase, phrase)));
+        Assert.Single(HashSecurityNoteProblems(Unit("", phrase, phrase, afterType: "{ " + note + " }\n")));
+        Assert.Single(HashSecurityNoteProblems(Unit("{ " + note + " }", "  { RFC 1321 }", phrase)));
+        Assert.Single(HashSecurityNoteProblems(Unit("{ " + note + " }", phrase, "  { FIPS 180-4 }")));
+        Assert.Single(HashSecurityNoteProblems(Unit("{ " + note + " }", phrase + "\n  TOther = Integer;", phrase)));
+        Assert.Equal(3, HashSecurityNoteProblems(Unit("", "", "")).Count);
+        Assert.Equal(3, HashSecurityNoteProblems("unit Hash;\ninterface\nimplementation\nend.\n").Count);
+    }
 }

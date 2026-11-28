@@ -332,6 +332,60 @@ public sealed class ImportTableTests
         });
     }
 
+    /// <summary>A console program that computes one SHA-256 digest with unit <c>Hash</c>.</summary>
+    private const string HashProgram = """
+        program ImportCheckHash;
+        uses
+          SysUtils, Classes, Hash;
+        begin
+          Writeln(THashSHA2.GetHashString('abc'));
+        end.
+        """;
+
+    /// <summary>The same program with <c>SysUtils</c> and <c>Classes</c> only.</summary>
+    private const string HashBaselineProgram = """
+        program ImportCheckHashBase;
+        uses
+          SysUtils, Classes;
+        begin
+          Writeln('ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad');
+        end.
+        """;
+
+    /// <summary>
+    /// RTL-1230: unit <c>Hash</c> computes every digest in Object Pascal: a console program that uses it and calls
+    /// <c>THashSHA2.GetHashString</c> imports exactly the libraries the same program imports with <c>SysUtils</c> and
+    /// <c>Classes</c> only - in particular neither of the two system libraries that offer hashing services.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "RTL-1230")]
+    [Trait("Phase", "8")]
+    public async Task HashUnitAddsNoImport()
+    {
+        const string digest = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+        List<string> baseline = [];
+        await WithProgramAsync("ImportCheckHashBase", HashBaselineProgram, async (exe, work) =>
+        {
+            baseline = ImportedDlls(await File.ReadAllBytesAsync(exe, TestContext.Current.CancellationToken));
+            var (exit, output) = await RunAsync(exe, "", work);
+            Assert.Equal(0, exit);
+            Assert.Equal(digest, output.TrimEnd());
+        });
+        Assert.Contains("kernel32.dll", baseline);
+
+        await WithProgramAsync("ImportCheckHash", HashProgram, async (exe, work) =>
+        {
+            var dlls = ImportedDlls(await File.ReadAllBytesAsync(exe, TestContext.Current.CancellationToken));
+            Assert.Equal(baseline.Order(StringComparer.Ordinal), dlls.Order(StringComparer.Ordinal));
+            Assert.DoesNotContain("bcrypt.dll", dlls, StringComparer.OrdinalIgnoreCase);
+            Assert.DoesNotContain("advapi32.dll", dlls, StringComparer.OrdinalIgnoreCase);
+
+            var (exit, output) = await RunAsync(exe, "", work);
+            Assert.Equal(0, exit);
+            Assert.Equal(digest, output.TrimEnd());
+        });
+    }
+
     /// <summary>Compiles <paramref name="text"/> against <c>rtl/src</c> in a fresh directory and hands the exe to <paramref name="check"/>.</summary>
     private static async Task WithProgramAsync(string name, string text, Func<string, string, Task> check)
     {
