@@ -246,7 +246,7 @@ Phase 8 implements the full feature set for Windows, area by area. Progress coun
 | Licensing and notices | 5 / 5 | `██████████` | Licence texts and third-party notices shipped · licence checks for runtime sources, built programs and dependencies |
 | Target platforms (Windows) | 2 / 11 | `██░░░░░░░░` | — |
 | Styled UI framework | 0 / 130 | `░░░░░░░░░░` | — |
-| Native Windows UI framework and designer | 14 / 110 | `█░░░░░░░░░` | Core controls · visual form designer and Object Inspector · tab and page controls with tab positions, multi-line rows, flat buttons and owner-drawn tabs · rich text editor · PNG, JPEG and GIF images · frames · form inheritance · collection and strings editors (load and save text files) · accessibility for screen readers and UI test tools |
+| Native Windows UI framework and designer | 15 / 110 | `█░░░░░░░░░` | Core controls · visual form designer and Object Inspector · tab and page controls with tab positions, multi-line rows, flat buttons and owner-drawn tabs · rich text editor · PNG, JPEG and GIF images · frames · form inheritance · Menu Designer with drag-and-drop and access-key warnings · collection and strings editors (load and save text files) · accessibility for screen readers and UI test tools |
 | COM and ActiveX | 1 / 18 | `█░░░░░░░░░` | COM-compatible interfaces and calling conventions · ☐ COM servers and Automation |
 | AI features | 0 / 31 | `░░░░░░░░░░` | — |
 | Visual data binding | 0 / 16 | `░░░░░░░░░░` | — |
@@ -263,7 +263,7 @@ Phase 8 implements the full feature set for Windows, area by area. Progress coun
 | Web front-end framework | 0 / 29 | `░░░░░░░░░░` | — |
 | Bundled components | 0 / 6 | `░░░░░░░░░░` | — |
 | Local web UI | 0 / 18 | `░░░░░░░░░░` | — |
-| **Total** | **98 / 888** | `█░░░░░░░░░` | **11 %** |
+| **Total** | **99 / 888** | `█░░░░░░░░░` | **11 %** |
 
 - [ ] First public release with installer
 
