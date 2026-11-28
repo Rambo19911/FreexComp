@@ -806,6 +806,10 @@ public sealed class QuickInfoTests
     [InlineData("N := TUtil.Index$$Of([N, M], 7);", "class function TUtil.IndexOf(const Values: array of Integer; const Item: Integer): Integer")]
     [InlineData("TUtil.Fir$$st(Reals, 0.5);", "class function TUtil.First(const Values: TArray<Double>; const Fallback: Double): Double")]
     [InlineData("S := TUtil.Un$$box(Box, S);", "class function TUtil.Unbox(const Box: TBox<string>; const Fallback: string): string")]
+    // C-426: a literal adapts to the typed argument (before: nothing, the call was E2711)
+    [InlineData("N := TUtil.Index$$Of(Names, 'x');", "class function TUtil.IndexOf(const Values: array of string; const Item: string): Integer")]
+    [InlineData("TUtil.Fir$$st(Reals, 1);", "class function TUtil.First(const Values: TArray<Double>; const Fallback: Double): Double")]
+    [InlineData("N := TUtil.Index$$Of([1, 2], L);", "class function TUtil.IndexOf(const Values: array of Int64; const Item: Int64): Integer")]
     public void InferredGenericMethodCall_ShowsTheInstance(string statement, string signature)
     {
         var info = HoverAt(SignatureHelpTests.InferenceProgram.Replace("MAIN_BODY", statement, StringComparison.Ordinal));

@@ -1094,7 +1094,8 @@ internal sealed partial class ExpressionBinder
     /// type of a bound argument (at a <c>var</c> / <c>out</c> position the declared type of the variable); for the arguments bound
     /// later a probe on a scratch binder, once per position and form — the elements of a bracket constructor at an open-array
     /// parameter, each alone, and the type of an argument that <see cref="NeedsParameterType"/> (at a procedural, method-pointer or
-    /// method-reference parameter without the implicit call).
+    /// method-reference parameter without the implicit call). A value that is an untyped literal adapts (C-426,
+    /// <see cref="GenericInference.IsLiteral"/>).
     /// </summary>
     private sealed class InferenceArguments(ExpressionBinder binder, ArgumentListSyntax? argumentList, ImmutableArray<BoundExpression?> prebound)
     {
@@ -1112,8 +1113,8 @@ internal sealed partial class ExpressionBinder
             var parameter = open.Parameters[index];
             if (prebound[index] is { } bound)
             {
-                return GenericInference.Argument.Of(
-                    parameter.IsByReference ? bound.Type : GenericInference.Natural(binder._types, bound.Type, bound.ConstantValue));
+                return parameter.IsByReference ? GenericInference.Argument.Of(bound.Type)
+                    : GenericInference.Argument.Value(binder._types, bound.Type, bound.ConstantValue);
             }
 
             var expression = argumentList!.Arguments[index].Expression;
@@ -1128,38 +1129,37 @@ internal sealed partial class ExpressionBinder
             var form = constructor is not null ? Form.Constructor : GenericInference.IsProceduralLike(parameter.Type) ? Form.Operand : Form.Value;
             if (!_probed.TryGetValue((index, form), out var argument))
             {
-                argument = constructor is not null ? GenericInference.Argument.Constructor(Elements(constructor))
-                    : Probe(expression, form) is { } type ? GenericInference.Argument.Of(type) : default;
+                argument = constructor is not null ? GenericInference.Argument.Constructor(Elements(constructor)) : Probe(expression, form);
                 _probed[(index, form)] = argument;
             }
 
             return argument;
         }
 
-        /// <summary>The natural types of the elements, each bound alone; empty when one is a range, has none or does not bind.</summary>
-        private ImmutableArray<TypeSymbol> Elements(SetConstructorSyntax constructor)
+        /// <summary>The elements, each bound alone; without a type (<c>default</c>) the one that is a range, has none or does not bind.</summary>
+        private List<GenericInference.Argument> Elements(SetConstructorSyntax constructor)
         {
-            var types = ImmutableArray.CreateBuilder<TypeSymbol>(constructor.Elements.Count);
+            var elements = new List<GenericInference.Argument>(constructor.Elements.Count);
             foreach (var element in constructor.Elements)
             {
-                if (element.UpperBound is not null || HasNoArgumentType(element.Expression) || Probe(element.Expression, Form.Value) is not { } type)
+                elements.Add(element.UpperBound is not null || HasNoArgumentType(element.Expression) ? default : Probe(element.Expression, Form.Value));
+                if (elements[^1].Type is null)
                 {
-                    return [];
+                    break;                                                      // the constructor gives nothing: the rest is not probed
                 }
-
-                types.Add(type);
             }
 
-            return types.ToImmutable();
+            return elements;
         }
 
-        private TypeSymbol? Probe(ExpressionSyntax expression, Form form)
+        private GenericInference.Argument Probe(ExpressionSyntax expression, Form form)
         {
             var diagnostics = new DiagnosticBag();
             var probe = binder.ProbeBinder(diagnostics);
             var bound = form == Form.Operand ? probe.BindOperand(expression) : probe.BindExpression(expression);
-            return bound.HasErrors || diagnostics.Count != 0 ? null
-                : form == Form.Operand ? bound.Type : GenericInference.Natural(binder._types, bound.Type, bound.ConstantValue);
+            return bound.HasErrors || diagnostics.Count != 0 ? default
+                : form == Form.Operand ? GenericInference.Argument.Of(bound.Type)
+                : GenericInference.Argument.Value(binder._types, bound.Type, bound.ConstantValue);
         }
     }
 

@@ -29,6 +29,7 @@ type
     class function First<T>(const Values: TArray<T>): T; static;
     class function Count<T>(const Box: TBox<T>): Integer; static;
     class procedure Fill<K, V>(const Key: K; out Value: V); static;
+    class function Pick<T>(const A, B: T): T; static;
   end;
 
   TCounter = class
@@ -44,6 +45,23 @@ type
 function TIntComparer.Compare(const A, B: Integer): Integer;
 begin
   Result := A - B;
+end;
+
+{ Which instance ran: the kind and the size of its type argument. }
+function Describe(Kind: TTypeKind; Size: Integer): string;
+begin
+  case Kind of
+    tkInteger: Result := 'integer';
+    tkInt64: Result := 'int64';
+    tkFloat: Result := 'real';
+    tkUString: Result := 'string';
+    tkWChar: Result := 'character';
+    tkClass: Result := 'object';
+    tkPointer: Result := 'pointer';
+  else
+    Result := 'other';
+  end;
+  Result := Result + ' of ' + Chr(Ord('0') + Size);
 end;
 
 class procedure TUtil.Swap<T>(var A, B: T);
@@ -109,6 +127,12 @@ begin
   Writeln('Fill: key of ', SizeOf(K), ', value of ', SizeOf(V));
 end;
 
+class function TUtil.Pick<T>(const A, B: T): T;
+begin
+  Write('Pick<', Describe(GetTypeKind(T), SizeOf(T)), '>: ');
+  Result := B;
+end;
+
 procedure TCounter.Exchange<T>(var A, B: T);
 begin
   TUtil.Swap(A, B);
@@ -121,18 +145,25 @@ begin
   Inc(Steps);
 end;
 
+const
+  Limit = 250;
+  Mark = 'x';
+
 var
   I, J, N: Integer;
   B: Byte;
   L: Int64;
   D: Double;
+  Sg: Single;
+  Ch: Char;
+  P: ^Integer;
   S, U: string;
   Names: array[0..2] of string;
   Ints: array of Integer;
   Reals: TArray<Double>;
   Cmp: IComparer<Integer>;
   ByLength: TComparison<string>;
-  IntBox: TBox<Integer>;
+  IntBox, AnyBox: TBox<Integer>;
   ByteBox: TBox<Byte>;
   NameBox: TNameBox;
   Counter: TCounter;
@@ -223,6 +254,47 @@ begin
   S := 'ab';
   Scale.Advance(S, U);
   Writeln('Advance: ', N, ' ', D:0:1, ' ', S, ' in ', Scale.Steps, ' steps');
+
+  { an untyped literal adapts to the argument that has a type: a character, an integer for Byte, Int64, Double and Single, a
+    real, nil for a pointer and a class; a true constant; a bracket constructor of literals }
+  Names[1] := 'x';
+  Writeln('IndexOf: ', TUtil.IndexOf(Names, 'x'));
+  Writeln('IndexOf: ', TUtil.IndexOf(Names, Mark));
+  S := 'q';
+  Writeln('IndexOf: ', TUtil.IndexOf(['p', 'q'], S));
+  B := 200;
+  B := TUtil.Pick(B, 1);
+  Writeln(B);
+  B := TUtil.Pick(Limit, B);
+  Writeln(B);
+  B := TUtil.Pick(B, Limit + 5);
+  Writeln(B);
+  Writeln('IndexOf: ', TUtil.IndexOf([1, 255, 3], B));
+  L := TUtil.Pick(L, 1);
+  Writeln(L);
+  D := TUtil.Pick(D, 1);
+  Writeln(D:0:1);
+  D := TUtil.Pick(2, D);
+  Writeln(D:0:1);
+  Sg := 0;
+  Sg := TUtil.Pick(Sg, 0.25);
+  Writeln(Sg:0:2);
+  S := TUtil.Pick(S, 'b');
+  Writeln(S);
+  P := @I;
+  P := TUtil.Pick(P, nil);
+  Writeln(P = nil);
+  AnyBox := TUtil.Pick(IntBox, nil);
+  Writeln(AnyBox = nil);
+  Writeln('MaxBy: ', TUtil.MaxBy(D, 3, function(const A, B: Double): Integer begin if A > B then Result := 1 else Result := -1 end):0:1);
+
+  { literals alone keep their natural types }
+  I := TUtil.Pick(1, 2);
+  Writeln(I);
+  Ch := TUtil.Pick('a', 'b');
+  Writeln(Ch);
+  D := TUtil.Pick(1.5, 2.5);
+  Writeln(D:0:1);
 
   Counter.Free;
   NameBox.Free;

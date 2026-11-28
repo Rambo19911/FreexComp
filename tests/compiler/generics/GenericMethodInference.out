@@ -29,3 +29,21 @@ Fill: key of 4, value of 1
 Filled: 0 0.0 0
 Exchange: 20 10 two one in 4 calls
 Advance: 6 1.0 abone in 4 steps
+IndexOf: 1
+IndexOf: 1
+IndexOf: 1
+Pick<integer of 1>: 1
+Pick<integer of 1>: 1
+Pick<integer of 1>: 255
+IndexOf: 1
+Pick<int64 of 8>: 1
+Pick<real of 8>: 1.0
+Pick<real of 8>: 1.0
+Pick<real of 4>: 0.25
+Pick<string of 8>: b
+Pick<pointer of 8>: TRUE
+Pick<object of 8>: TRUE
+MaxBy: 3.0
+Pick<integer of 4>: 2
+Pick<character of 2>: b
+Pick<real of 8>: 2.5

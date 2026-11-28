@@ -347,6 +347,40 @@ public sealed class SignatureHelpTests
         Assert.Equal(["class procedure TUtil.Swap<T>(var A: T; var B: T)"], Labels(Help("TUtil.Swap(N, L$$);")));        // Integer and Int64
     }
 
+    /// <summary>
+    /// CMP-1477 (1), CMP-1478 (C-426): a literal argument adapts in the semantic model as in the compiler (LANG-979) — the signature
+    /// shown is the instance the typed argument gives, with the literal's parameter in that type; literals alone give their natural
+    /// type; two typed arguments that disagree leave the method generic.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1477")]
+    [Trait("Req", "CMP-1478")]
+    public void GenericMethodCall_LiteralArgumentAdapts()
+    {
+        static SignatureHelp? Help(string main) => HelpIn(InferenceProgram.Replace("MAIN_BODY", main, StringComparison.Ordinal));
+
+        var indexOf = Help("N := TUtil.IndexOf(Names, 'x'$$);");
+        Assert.Equal(["class function TUtil.IndexOf<string>(const Values: array of string; const Item: string): Integer"], Labels(indexOf));
+        Assert.Equal("const Item: string", Active(indexOf!));
+        Assert.Equal(
+            ["class function TUtil.First<Double>(const Values: TArray<Double>; const Fallback: Double): Double"],
+            Labels(Help("TUtil.First(Reals, 1$$);")));
+        Assert.Equal(
+            ["class function TUtil.Unbox<string>(const Box: TBox<string>; const Fallback: string): string"],
+            Labels(Help("S := TUtil.Unbox(Box, $$'x');")));
+        Assert.Equal(                                                           // a constructor of literals adapts to the typed item
+            ["class function TUtil.IndexOf<Int64>(const Values: array of Int64; const Item: Int64): Integer"],
+            Labels(Help("N := TUtil.IndexOf([1, 2], L$$);")));
+
+        Assert.Equal(                                                           // literals alone: their natural type
+            ["class function TUtil.IndexOf<Integer>(const Values: array of Integer; const Item: Integer): Integer"],
+            Labels(Help("N := TUtil.IndexOf([1, 2], 3$$);")));
+        Assert.Equal(                                                           // two typed arguments that disagree
+            ["class function TUtil.IndexOf<T>(const Values: array of T; const Item: T): Integer"],
+            Labels(Help("N := TUtil.IndexOf(Names, N$$);")));
+    }
+
     /// <summary>A class whose method name <c>Show</c> has a non-generic and two generic methods (LANG-980).</summary>
     internal const string MixedProgram = """
         program P;

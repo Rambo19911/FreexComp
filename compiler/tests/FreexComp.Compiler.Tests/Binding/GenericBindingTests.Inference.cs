@@ -9,6 +9,7 @@ namespace FreexComp.Compiler.Tests.Binding;
 /// <summary>
 /// C-418: type-argument inference for calls of generic methods by unification (LANG-979) — <c>var</c> / <c>out</c> positions, open
 /// arrays, dynamic arrays and instances of generic types; conflicts; an argument's own error is reported once (CMP-1477).
+/// Literal arguments next to typed ones (C-426): <c>GenericBindingTests.Literals.cs</c>.
 /// </summary>
 public sealed partial class GenericBindingTests
 {
@@ -79,12 +80,22 @@ public sealed partial class GenericBindingTests
         class procedure TUtil.Two<T>(var A, B: T); begin end;
         class procedure TUtil.Two<T>(var A, B: T; N: Integer); begin end;
         function ByValue(const A, B: Integer): Integer; begin Result := A - B end;
+        const
+          Five = 5;
+          Half = 0.5;
+          Letter = 'c';
+          TypedByte: Byte = 1;
         var
           I, J, N: Integer;
           L: Int64;
           B: Byte;
           D: Double;
+          Sg: Single;
           S: string;
+          Sh: ShortString;
+          Ch: Char;
+          Ptr: ^Integer;
+          Bytes: array of Byte;
           Names: TNames;
           Ints: array of Integer;
           Big: array[0..9] of Integer;
@@ -171,8 +182,8 @@ public sealed partial class GenericBindingTests
     [Trait("Req", "LANG-979")]
     [InlineData("TUtil.Swap(I, L)", 9)]                                          // Integer and Int64: no widening between arguments
     [InlineData("TUtil.Pick(1, 'a')", 9)]
-    [InlineData("N := TUtil.Max(3, 7, StrCmp)", 14)]                             // T: Integer from the values, string from the comparer
-    [InlineData("N := TUtil.IndexOf(Names, 3)", 14)]
+    [InlineData("N := TUtil.Max(I, J, StrCmp)", 14)]                             // T: Integer from the values, string from the comparer
+    [InlineData("N := TUtil.IndexOf(Names, I)", 14)]
     [InlineData("D := TUtil.First(List) + TUtil.Sum([1, 'a'])", 34)]             // constructor elements of two natural types fit nothing
     [InlineData("N := TUtil.Sum([])", 14)]
     [InlineData("N := TUtil.Sum([1, Undeclared])", 14)]                          // an element that does not bind has no natural type
@@ -183,6 +194,16 @@ public sealed partial class GenericBindingTests
     [InlineData("N := TUtil.Opt(nil)", 14)]
     [InlineData("N := TUtil.Opt([1, 2])", 14)]                                   // a bracket constructor at a parameter that is no open array
     [InlineData("N := TUtil.Opt(function: Integer begin Result := 1 end)", 14)]
+    // C-426: literals adapt to an argument that has a type; these do not — two typed arguments, a typed constant (a read-only
+    // variable, LANG-344), a Boolean constant (one type), a constructor with a variable (it fixes its element type), literals
+    // alone of two natural types
+    [InlineData("N := TUtil.Pick(I, B)", 14)]
+    [InlineData("N := TUtil.Pick(I, TypedByte)", 14)]
+    [InlineData("N := TUtil.Pick(I, True)", 14)]
+    [InlineData("N := TUtil.IndexOf([I, J], B)", 14)]
+    [InlineData("N := TUtil.Pick(1, 5000000000)", 14)]
+    [InlineData("N := TUtil.Pick(1, 2.5)", 14)]
+    [InlineData("S := TUtil.Pick('a', 'bc')", 14)]
     public void Inference_Conflicts_AreE2711(string call, int column)
     {
         var name = call[(call.LastIndexOf("TUtil.", StringComparison.Ordinal) + 6)..].Split('(', ';', ' ')[0];

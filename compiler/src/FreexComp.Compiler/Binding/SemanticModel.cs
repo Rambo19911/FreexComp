@@ -472,24 +472,24 @@ public sealed class SemanticModel
         return inferred is { } types ? Instance(generic, [.. types]) : null;
     }
 
-    /// <summary>LANG-979 rule 1 for an argument as the model knows it: its natural type; for a bracket constructor those of its elements.</summary>
+    /// <summary>
+    /// LANG-979 rule 1 for an argument as the model knows it: its natural type (a literal adapts, C-426); for a bracket constructor
+    /// those of its elements.
+    /// </summary>
     private GenericInference.Argument InferenceArgument(ExpressionSyntax expression)
     {
-        TypeSymbol? Natural(ExpressionSyntax syntax) =>
+        GenericInference.Argument Value(ExpressionSyntax syntax) =>
             !syntax.IsMissing && GetTypeInfo(syntax).Type is { TypeKind: not TypeKind.Error } type
-                ? GenericInference.Natural(_result.Types, type, GetConstantValue(syntax))
-                : null;
+                ? GenericInference.Argument.Value(_result.Types, type, GetConstantValue(syntax))
+                : default;
 
-        switch (ExpressionBinder.Unparenthesized(expression))
+        return ExpressionBinder.Unparenthesized(expression) switch
         {
-            case AnonymousMethodExpressionSyntax or LiteralExpressionSyntax { Token.Kind: SyntaxKind.NilKeyword }:
-                return default;
-            case SetConstructorSyntax constructor:
-                var elements = constructor.Elements.Select(e => e.UpperBound is null ? Natural(e.Expression) : null).ToList();
-                return elements.Any(e => e is null) ? default : GenericInference.Argument.Constructor([.. elements!]);
-            default:
-                return Natural(expression) is { } natural ? GenericInference.Argument.Of(natural) : default;
-        }
+            AnonymousMethodExpressionSyntax or LiteralExpressionSyntax { Token.Kind: SyntaxKind.NilKeyword } => default,
+            SetConstructorSyntax constructor =>
+                GenericInference.Argument.Constructor([.. constructor.Elements.Select(e => e.UpperBound is null ? Value(e.Expression) : default)]),
+            _ => Value(expression),
+        };
     }
 
     private MethodSymbol? Instance(GenericMethodSymbol generic, TypeSymbol?[] arguments) =>
