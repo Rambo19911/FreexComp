@@ -4,7 +4,7 @@ namespace FreexComp.LanguageService.Tests;
 
 /// <summary>language-service.md §6 (CMP-730, 731, C-136): one case per row of CMP-731.</summary>
 [Trait("Phase", "3")]
-public sealed class QuickInfoTests
+public sealed partial class QuickInfoTests
 {
     private const string Unit1 = """
         unit U1;

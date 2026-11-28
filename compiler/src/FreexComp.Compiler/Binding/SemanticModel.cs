@@ -325,16 +325,18 @@ public sealed class SemanticModel
             var members = new List<Symbol>();
             var seen = new HashSet<string>(IdentifierComparer.Instance);
             var types = new List<TypeSymbol>();
-            if (scope.ActiveHelper(container) is { } helper)
-            {
-                types.AddRange(TypeMembers.SelfAndAncestors(helper));
-            }
 
             // C-358: a type parameter of an open instance has the members of its constraints
             foreach (var start in container is TypeParameterTypeSymbol parameter ? parameter.MemberTypes(_result.Types) : [container])
             {
                 for (var type = start; type is not null; type = Inherited(type))
                 {
+                    // LANG-992 steps 1…2 (CMP-1492 (a), C-446): each level is preceded by the chain of its active helper
+                    if (type is not HelperTypeSymbol && scope.ActiveHelper(type) is { } helper)
+                    {
+                        types.AddRange(TypeMembers.SelfAndAncestors(helper));
+                    }
+
                     types.Add(type);
                 }
             }
@@ -409,10 +411,23 @@ public sealed class SemanticModel
         switch (call.Expression)
         {
             case SimpleNameSyntax simple:
-                return ScopeAt(call.Span.Start).LookupCandidates(NameOf(simple.Identifier));
+                return WithOverloads(call, NameOf(simple.Identifier)) is { IsEmpty: false } inWith
+                    ? inWith
+                    : ScopeAt(call.Span.Start).LookupCandidates(NameOf(simple.Identifier));
             case MemberAccessExpressionSyntax access:
                 var container = ContainerOf(access.Expression);
                 var name = NameOf(access.Name.Identifier);
+                if (container is ClassRefTypeSymbol reference)
+                {
+                    container = reference.Class;                                    // C.Make( on a class-reference value
+                }
+
+                // CMP-1494 (C-446): with helpers, the overload set of LANG-992 step 3 (helper methods first)
+                if (container is TypeSymbol helped && _result.Types.HasHelpers && HelperOverloads(call, access.Expression, helped, name) is { IsEmpty: false } overloads)
+                {
+                    return overloads;
+                }
+
                 return container switch
                 {
                     ClassTypeSymbol type => Accessible(call, ExpressionBinder.MemberCandidates(type, name)),
@@ -503,6 +518,68 @@ public sealed class SemanticModel
         arguments.Length == 0 || arguments.Any(a => a is null or { TypeKind: TypeKind.Error })
             ? null
             : DeclarationBinder.OpenInstanceOf(_result.Types, generic, [.. arguments!]);
+
+    /// <summary>
+    /// CMP-1494 (C-446): the methods <c>Q.Name(</c> can mean by LANG-992 step 3 — for a helper <c>Q</c> its chain's, else those of the
+    /// places of <paramref name="type"/> (each level's active helper chain before the level), accessible at the call, when a helper supplies
+    /// the name (empty otherwise); for a constant of type <c>Char</c> whose helper does not, those of <c>string</c> (LANG-998 (b)).
+    /// </summary>
+    private ImmutableArray<RoutineSymbol> HelperOverloads(InvocationExpressionSyntax call, ExpressionSyntax receiver, TypeSymbol type, string name)
+    {
+        var scope = ScopeAt(call.Span.Start);
+        if (type is HelperTypeSymbol helper)
+        {
+            return Accessible(call, ExpressionBinder.PlaceMethods(helper.SelfAndAncestors(), name));
+        }
+
+        if (type is CharTypeSymbol && ExpressionBinder.HelperFor(scope, type, name) is null && IsConstantReceiver(receiver))
+        {
+            type = _result.Types.String;
+        }
+
+        return ExpressionBinder.HelperFor(scope, type, name) is null ? [] : Accessible(call, ExpressionBinder.PlaceMethods(ExpressionBinder.LookupPlaces(scope, type), name));
+    }
+
+    /// <summary>
+    /// LANG-375, LANG-992 (d) (CMP-1494, C-446): a call of a bare name inside <c>with E1, E2 do</c> — the methods of that name of the
+    /// innermost target whose type has them (with the helpers of its levels); empty when no target has the name.
+    /// </summary>
+    private ImmutableArray<RoutineSymbol> WithOverloads(InvocationExpressionSyntax call, string name)
+    {
+        for (var node = call.Parent; node is not null; node = node.Parent)
+        {
+            if (node is not WithStatementSyntax with || !with.Statement.Span.Contains(call.Span.Start))
+            {
+                continue;
+            }
+
+            for (var i = with.Expressions.Count - 1; i >= 0; i--)
+            {
+                var methods = ContainerOf(with.Expressions[i]) switch
+                {
+                    TypeSymbol type when _result.Types.HasHelpers && HelperOverloads(call, with.Expressions[i], type, name) is { IsEmpty: false } helped => helped,
+                    ClassTypeSymbol type => Accessible(call, ExpressionBinder.MemberCandidates(type, name)),
+                    RecordTypeSymbol type => [.. type.GetMembers(name).OfType<RoutineSymbol>()],
+                    _ => [],
+                };
+                if (!methods.IsEmpty)
+                {
+                    return methods;
+                }
+            }
+        }
+
+        return [];
+    }
+
+    /// <summary>LANG-998 (a): a literal or a constant (also one whose call was not bound).</summary>
+    private bool IsConstantReceiver(ExpressionSyntax receiver) =>
+        receiver is LiteralExpressionSyntax || GetConstantValue(receiver) is not null
+        || (GetSymbolInfo(receiver).Symbol ?? (receiver is IdentifierNameSyntax { Identifier.IsMissing: false } name
+            ? LookupSymbols(receiver.Span.Start, NameOf(name.Identifier)).FirstOrDefault() : null)) is ConstantSymbol;
+
+    /// <summary>LANG-997 (b): the predeclared string type, the qualifier of <c>string.Name</c>.</summary>
+    internal TypeSymbol StringType => _result.Types.String;
 
     private ImmutableArray<RoutineSymbol> Accessible(SyntaxNode at, ImmutableArray<RoutineSymbol> routines) =>
         [.. routines.Where(r => IsAccessible(at.Span.Start, r))];
@@ -678,6 +755,11 @@ public sealed class SemanticModel
     /// </summary>
     private Symbol? ContainerOf(SyntaxNode left)
     {
+        if (left is PredefinedTypeExpressionSyntax)
+        {
+            return _result.Types.String;                                    // LANG-997 (b): string.Name
+        }
+
         if (left is NameSyntax name && _findUnit(UnitBinder.NameOf(name)) is { } unit && GetSymbolInfo(left).Symbol is null or UnitSymbol)
         {
             return unit;
@@ -687,9 +769,28 @@ public sealed class SemanticModel
         {
             TypeSymbol type => Representative(type) ?? type,
             UnitSymbol u => u,
-            _ => GetTypeInfo(left).Type,
+            ConstantSymbol constant => GetTypeInfo(left).Type ?? constant.Type,     // LANG-998 (a): a constant receiver
+            _ => GetTypeInfo(left).Type ?? UnboundReceiverType(left),
         };
     }
+
+    /// <summary>
+    /// LANG-998 (a) (C-446): the type of a receiver of a call that was not bound (<c>5.Plus(</c> or <c>K.Plus(1, </c> while the arguments
+    /// are typed: the failed call keeps only its arguments) — a literal as the binder folds it, a name of a constant, variable or
+    /// parameter by its declared type; null for anything else.
+    /// </summary>
+    private TypeSymbol? UnboundReceiverType(SyntaxNode node) => node switch
+    {
+        LiteralExpressionSyntax literal => new ConstantFolder(_result.Types, ScopeAt(node.Span.Start), new DiagnosticBag()).FoldLiteral(literal)?.Type,
+        IdentifierNameSyntax { Identifier.IsMissing: false } name => LookupSymbols(node.Span.Start, NameOf(name.Identifier)).FirstOrDefault() switch
+        {
+            ConstantSymbol constant => constant.Type,
+            VariableSymbol variable => variable.Type,
+            ParameterSymbol parameter => parameter.Type,
+            _ => null,
+        },
+        _ => null,
+    };
 
     /// <summary>
     /// C-421: a type parameter of a generic method named in that method's heading — in its list, a parameter type or the result
@@ -998,6 +1099,11 @@ public sealed class SemanticModel
                 // C-442: a helper's property is no member of the receiver's type — it is found in the helper of its accessor method
                 symbol = property;
             }
+            else if (symbol is FieldSymbol or MethodSymbol && !IdentifierComparer.Instance.Equals(symbol.Name, NameOf(token))
+                     && (receiver ?? symbol.ContainingSymbol as TypeSymbol) is { } helped && HelperPropertyOver(token, helped, symbol) is { } helperProperty)
+            {
+                symbol = helperProperty;                                        // C-446 (§17.1 (a)): its accessor is a member of the helped type
+            }
 
             _references.TryAdd(token.Span.Start, symbol);
         }
@@ -1051,6 +1157,17 @@ public sealed class SemanticModel
 
         return symbol;
     }
+
+    /// <summary>
+    /// CMP-1495 (C-446; finding (a) of C-442): the property named by <paramref name="token"/> of a helper active for a level of
+    /// <paramref name="type"/> whose accessor is <paramref name="accessor"/> — a field or method of the helped type or of another
+    /// helper (LANG-990 (d)); null when there is none.
+    /// </summary>
+    private PropertySymbol? HelperPropertyOver(SyntaxToken token, TypeSymbol type, Symbol accessor) =>
+        !_result.Types.HasHelpers ? null
+            : ExpressionBinder.LookupPlaces(ScopeAt(token.Span.Start), type is ClassRefTypeSymbol classRef ? classRef.Class : type).OfType<HelperTypeSymbol>()
+                .SelectMany(h => h.Properties).FirstOrDefault(p => IdentifierComparer.Instance.Equals(p.Name, NameOf(token))
+                    && (ReferenceEquals(p.ReadMethod, accessor) || ReferenceEquals(p.WriteMethod, accessor) || p.ReadPath.Contains(accessor) || p.WritePath.Contains(accessor)));
 
     private static PropertySymbol? PropertyNamed(TypeSymbol type, string name) =>
         type is PointerTypeSymbol { PointedType: { } pointed } ? PropertyNamed(pointed, name) : type.GetMembers(name).OfType<PropertySymbol>().FirstOrDefault();

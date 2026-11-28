@@ -5,7 +5,7 @@ namespace FreexComp.LanguageService.Tests;
 
 /// <summary>language-service.md §7 (CMP-740, 741, C-137): declaration ↔ implementation toggle, across units, from <c>.pcu</c>, uses entry.</summary>
 [Trait("Phase", "3")]
-public sealed class GoToDefinitionTests
+public sealed partial class GoToDefinitionTests
 {
     private const string Unit1 = """
         unit U1;

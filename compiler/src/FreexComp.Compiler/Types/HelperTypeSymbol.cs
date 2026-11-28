@@ -73,6 +73,7 @@ public sealed class HelperTypeSymbol : TypeSymbol
         }
     }
 
-    /// <summary><c>type TFooHelper = class helper for TFoo</c> (CMP-731).</summary>
-    public override string ToDisplayString() => $"type {Name} = {(IsClassHelper ? "class" : "record")} helper for {ExtendedType.Name}";
+    /// <summary><c>type TFooHelper = class helper for TFoo</c>, with an ancestor <c>class helper(TBaseHelper) for TFoo</c> (CMP-731, CMP-1494).</summary>
+    public override string ToDisplayString() =>
+        $"type {Name} = {(IsClassHelper ? "class" : "record")} helper{(Parent is { } parent ? "(" + parent.Name + ")" : "")} for {ExtendedType.Name}";
 }

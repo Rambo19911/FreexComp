@@ -5,7 +5,7 @@ namespace FreexComp.LanguageService.Tests;
 
 /// <summary>language-service.md §7 CMP-743: the structure view, purely syntactic (C-140).</summary>
 [Trait("Phase", "3")]
-public sealed class DocumentSymbolTests
+public sealed partial class DocumentSymbolTests
 {
     private const string Path = @"C:\p\Unit1.pas";
 

@@ -82,13 +82,14 @@ sealed record FreexComp.LanguageService.CompletionItem : System.IEquatable<Freex
   public System.Boolean Equals(FreexComp.LanguageService.CompletionItem other)
   public System.Boolean IsDeprecated { get; init; }
   public System.String Detail { get; init; }
+  public System.String Helper { get; init; }
   public System.String InsertText { get; init; }
   public System.String Label { get; init; }
   public System.String Origin { get; init; }
   public System.String SortText { get; init; }
   public System.String SymbolId { get; init; }
-  public System.Void Deconstruct(out System.String Label, out FreexComp.LanguageService.CompletionItemKind Kind, out System.String InsertText, out System.String SortText, out System.String Detail, out System.Boolean IsDeprecated, out System.String SymbolId, out System.String Origin)
-  public ctor(System.String Label, FreexComp.LanguageService.CompletionItemKind Kind, System.String InsertText, System.String SortText, System.String Detail, System.Boolean IsDeprecated, System.String SymbolId, System.String Origin = "")
+  public System.Void Deconstruct(out System.String Label, out FreexComp.LanguageService.CompletionItemKind Kind, out System.String InsertText, out System.String SortText, out System.String Detail, out System.Boolean IsDeprecated, out System.String SymbolId, out System.String Origin, out System.String Helper)
+  public ctor(System.String Label, FreexComp.LanguageService.CompletionItemKind Kind, System.String InsertText, System.String SortText, System.String Detail, System.Boolean IsDeprecated, System.String SymbolId, System.String Origin = "", System.String Helper = "")
   public override System.Boolean Equals(System.Object obj)
   public override System.Int32 GetHashCode()
   public override System.String ToString()

@@ -15,8 +15,12 @@ public readonly record struct CompletionTrigger(CompletionTriggerKind Kind, char
 
 public sealed record CompletionList(TextSpan ReplacementSpan, ImmutableArray<CompletionItem> Items, bool IsIncomplete);
 
+/// <summary>
+/// A completion item; <paramref name="Helper"/> is the declaring helper type for a member that a class or record helper supplies, empty
+/// otherwise (CMP-1493).
+/// </summary>
 public sealed record CompletionItem(string Label, CompletionItemKind Kind, string InsertText, string SortText, string? Detail, bool IsDeprecated,
-                                    string? SymbolId, string Origin = "");
+                                    string? SymbolId, string Origin = "", string Helper = "");
 
 public sealed record CompletionDescription(string Signature, string? Documentation, string Origin = "");
 
@@ -71,6 +75,13 @@ public static class CompletionService
 
         if (previous.Kind == SyntaxKind.DotToken && parent is not null)
         {
+            // CMP-1492 (c) (C-446): a '.' typed right after an integer literal may start a real literal — no list unless invoked
+            if (trigger.Kind == CompletionTriggerKind.Character && previous.GetPreviousToken() is { Kind: SyntaxKind.IntegerLiteralToken } literal
+                && literal.Span.End == previous.Span.Start)
+            {
+                return empty;
+            }
+
             Members(builder, parent);
         }
         else if (DigraphDotLeft(text, previous, replacement.Start) is { } left)
@@ -197,7 +208,7 @@ public static class CompletionService
     private static void MembersOf(ItemBuilder builder, SyntaxNode left)
     {
         var model = builder.Model;
-        var symbol = model.GetSymbolInfo(left).Symbol;
+        var symbol = left is PredefinedTypeExpressionSyntax ? model.StringType : model.GetSymbolInfo(left).Symbol;    // LANG-997 (b): string.
         switch (symbol)
         {
             case UnitSymbol unit:
@@ -207,18 +218,58 @@ public static class CompletionService
                 builder.AddSymbols(@enum.Members);
                 return;
             case TypeSymbol type:
-                // a class name: class methods, constructors, class vars and properties, nested types, constants
-                builder.AddSymbols(model.LookupSymbols(builder.Position, container: type).Where(m =>
-                    m is MethodSymbol { MethodKind: MethodKind.Constructor or MethodKind.ClassMethod or MethodKind.ClassStatic }
-                    or PropertySymbol { IsClassProperty: true } or VariableSymbol or TypeSymbol or ConstantSymbol));
+                StaticMembers(builder, type);
                 return;
         }
 
-        if (ValueType(model, left) is { } valueType)
+        var value = left is ExpressionSyntax expression ? ExpressionBinder.Unparenthesized(expression) : left;      // (1 + 2).
+        switch (ValueType(model, value))
         {
-            builder.AddSymbols(model.LookupSymbols(builder.Position, container: valueType));
+            case ClassRefTypeSymbol reference:
+                StaticMembers(builder, reference.Class);                                    // CMP-1492 (b): a class-reference value
+                break;
+            case CharTypeSymbol character when model.GetConstantValue(value) is not null:
+                // CMP-1492 (c), LANG-998 (b): a character constant — the members for Char, then those for string of other names
+                var members = model.LookupSymbols(builder.Position, container: character);
+                var names = members.Select(m => m.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                builder.AddSymbols(members.Concat(model.LookupSymbols(builder.Position, container: model.StringType).Where(m => !names.Contains(m.Name))));
+                break;
+            case { } valueType:
+                // C-446 (finding (c) of C-442): a value of a parameterless function type — the members for its own type (its helper)
+                // first, then those for its result (LANG-992 on the value, LANG-482 on the call)
+                var procedural = ProceduralTypeOf(model.GetSymbolInfo(value).Symbol) ?? valueType as ProceduralTypeSymbol;
+                if (procedural is not null && !ReferenceEquals(procedural, valueType))
+                {
+                    builder.AddSymbols(model.LookupSymbols(builder.Position, container: procedural));
+                }
+
+                builder.AddSymbols(model.LookupSymbols(builder.Position, container: valueType));
+                if (procedural is { Signature: { Parameters.IsEmpty: true, ReturnType: { } result } } && !ReferenceEquals(result, valueType))
+                {
+                    builder.AddSymbols(model.LookupSymbols(builder.Position, container: result));
+                }
+
+                break;
         }
     }
+
+    /// <summary>The procedural type a variable, parameter or field is declared with; null for anything else.</summary>
+    private static ProceduralTypeSymbol? ProceduralTypeOf(Symbol? symbol) => symbol switch
+    {
+        VariableSymbol { Type: ProceduralTypeSymbol type } => type,
+        ParameterSymbol { Type: ProceduralTypeSymbol type } => type,
+        FieldSymbol { Type: ProceduralTypeSymbol type } => type,
+        _ => null,
+    };
+
+    /// <summary>
+    /// After a type name (CMP-721; CMP-1492 (b): also a helper's name, <c>string.</c> and a class-reference value): class methods,
+    /// constructors, class vars and properties, nested types, constants — of the type's levels and the helpers active for them.
+    /// </summary>
+    private static void StaticMembers(ItemBuilder builder, TypeSymbol type) =>
+        builder.AddSymbols(builder.Model.LookupSymbols(builder.Position, container: type).Where(m =>
+            m is MethodSymbol { MethodKind: MethodKind.Constructor or MethodKind.ClassMethod or MethodKind.ClassStatic }
+            or PropertySymbol { IsClassProperty: true } or VariableSymbol or TypeSymbol or ConstantSymbol));
 
     private static void UnitNames(ItemBuilder builder, Document doc, UsesClauseSyntax uses)
     {
@@ -580,7 +631,7 @@ public static class CompletionService
             }
 
             return Add(new CompletionItem(symbol.Name, KindOf(symbol), symbol.Name, (prefix ?? "") + (group ?? Group(symbol)) + symbol.Name.ToLowerInvariant(),
-                                          symbol.ToDisplayString(), symbol.IsDeprecated, Id(symbol), OriginOf(symbol)));
+                                          symbol.ToDisplayString(), symbol.IsDeprecated, Id(symbol), OriginOf(symbol), HelperOf(symbol)));
         }
 
         public string Id(Symbol symbol)
@@ -624,7 +675,10 @@ public static class CompletionService
             }
 
             var enclosingType = _enclosing is MethodSymbol method ? method.Owner : _enclosing as TypeSymbol;      // a class, record or interface
-            if (enclosingType is not null && symbol.ContainingSymbol is TypeSymbol owner && (ReferenceEquals(owner, enclosingType) || enclosingType.InheritsFrom(owner)))
+            var owner = symbol.ContainingSymbol is HelperTypeSymbol helper && enclosingType is not HelperTypeSymbol
+                ? helper.ExtendedType                                           // CMP-1492 (d): a helper member counts as one of the helped type
+                : symbol.ContainingSymbol as TypeSymbol;
+            if (enclosingType is not null && owner is not null && (ReferenceEquals(owner, enclosingType) || enclosingType.InheritsFrom(owner)))
             {
                 return "1";
             }
@@ -639,6 +693,9 @@ public static class CompletionService
         }
 
         private static CompletionItemKind KindOf(Symbol symbol) => SymbolKinds.Of(symbol);
+
+        /// <summary>CMP-1493 (C-446): the helper type that declares <paramref name="symbol"/>; empty for anything else.</summary>
+        private static string HelperOf(Symbol symbol) => symbol.ContainingSymbol is HelperTypeSymbol helper ? helper.Name : "";
     }
 }
 

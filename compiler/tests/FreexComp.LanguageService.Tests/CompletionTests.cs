@@ -2,7 +2,7 @@ namespace FreexComp.LanguageService.Tests;
 
 /// <summary>language-service.md §4 (CMP-720…724): one case per row of CMP-721 (C-134).</summary>
 [Trait("Phase", "3")]
-public sealed class CompletionTests
+public sealed partial class CompletionTests
 {
     private const string Unit1 = """
         unit U1;

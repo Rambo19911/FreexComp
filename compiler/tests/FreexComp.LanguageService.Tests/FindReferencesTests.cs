@@ -8,7 +8,7 @@ namespace FreexComp.LanguageService.Tests;
 /// highlights; workspace symbols; references across a body-only edit snapshot (C-242).
 /// </summary>
 [Trait("Phase", "3")]
-public sealed class FindReferencesTests
+public sealed partial class FindReferencesTests
 {
     private const string Unit1 = """
         unit U1;

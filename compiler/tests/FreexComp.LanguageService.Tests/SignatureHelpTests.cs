@@ -2,7 +2,7 @@ namespace FreexComp.LanguageService.Tests;
 
 /// <summary>language-service.md §5 (CMP-728, C-135): overloads, active parameter with nested calls, intrinsics, array property.</summary>
 [Trait("Phase", "3")]
-public sealed class SignatureHelpTests
+public sealed partial class SignatureHelpTests
 {
     private const string Declarations = """
         program P;

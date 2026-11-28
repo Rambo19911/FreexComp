@@ -10,7 +10,7 @@ namespace FreexComp.LanguageService.Tests;
 /// edits of a form class's published field or method.
 /// </summary>
 [Trait("Phase", "8")]
-public sealed class RenameTests
+public sealed partial class RenameTests
 {
     private const string Unit1 = """
         unit Unit1;

@@ -174,7 +174,8 @@ public static partial class NavigationService
                 break;
             case HelperTypeSyntax helper:
                 kind = CompletionItemKind.Type;
-                detail = Collapse(helper.Keyword.Text + " helper for " + helper.ExtendedType);
+                // CMP-1495 (C-446): with an ancestor helper as for a class, class helper(TBaseHelper) for TFoo
+                detail = Collapse(helper.Keyword.Text + " helper" + (helper.Heritage is { } ancestor ? Collapse(ancestor.ToString()) : "") + " for " + helper.ExtendedType);
                 AddMembers(children, helper.Members);
                 break;
             case EnumTypeSyntax @enum:
