@@ -76,6 +76,22 @@ The active project does not change, and nothing is run.
 The build order follows the dependencies (see below). Projects that do not depend on each other are built
 in the order of the group, the active project last.
 
+## Running another project
+Run > Run and Run > Run Without Debugging, their tool-bar buttons and their shortcuts start the active project.
+To start another project of the group without making it active, choose `Run` or `Run Without Debugging` in the
+context menu of its row. The project is built first, together with the projects it depends on, with its own
+active configuration and platform. Then its program starts with its own run parameters: arguments, working
+folder and, for a library, the host application. The active project does not change.
+
+- `Run` starts the program under the debugger. Breakpoints in the units of that project stop it; its files open
+  as plain documents. When its active configuration builds without debug information, the IDE asks first:
+  `Run Anyway` starts the program, but breakpoints will not stop it.
+- When the build fails, nothing is started and the Messages window shows the errors.
+- Both items are available only while no program is running or being debugged. They are disabled also while a
+  program is paused: Continue belongs to the program that is paused.
+- Run > Restart starts the same program again, also when it belongs to another project than the active one.
+- To change the run parameters or the options of another project, make it the active project first.
+
 ## When a project fails
 Tools > Options > Environment > General has the check box `Continue with the other projects when a project
 fails`. It is off by default.
