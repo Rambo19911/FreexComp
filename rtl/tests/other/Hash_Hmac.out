@@ -1,0 +1,216 @@
+# HMAC-MD5: test cases 1 to 7 (RTL-1242)
+ok 1: GetHMACAsBytes(bytes, bytes)
+ok 1: GetHMACAsBytes(string, bytes)
+ok 2: GetHMACAsBytes(bytes, bytes)
+ok 2: GetHMACAsBytes(string, bytes)
+ok 2: GetHMACAsBytes(bytes, string)
+ok 2: GetHMACAsBytes(string, string)
+ok 2: GetHMAC, lower-case
+ok 3: GetHMACAsBytes(bytes, bytes)
+ok 4: GetHMACAsBytes(bytes, bytes)
+ok 5: GetHMACAsBytes(bytes, bytes)
+ok 5: GetHMACAsBytes(string, bytes)
+ok 6, key longer than a block: GetHMACAsBytes(bytes, bytes)
+ok 6, key longer than a block: GetHMACAsBytes(string, bytes)
+ok 7, key and data longer than a block: GetHMACAsBytes(bytes, bytes)
+ok 7, key and data longer than a block: GetHMACAsBytes(string, bytes)
+# HMAC-SHA-1: test cases 1 to 7 (RTL-1242)
+ok 1: GetHMACAsBytes(bytes, bytes)
+ok 1: GetHMACAsBytes(string, bytes)
+ok 2: GetHMACAsBytes(bytes, bytes)
+ok 2: GetHMACAsBytes(string, bytes)
+ok 2: GetHMACAsBytes(bytes, string)
+ok 2: GetHMACAsBytes(string, string)
+ok 2: GetHMAC, lower-case
+ok 3: GetHMACAsBytes(bytes, bytes)
+ok 4: GetHMACAsBytes(bytes, bytes)
+ok 5: GetHMACAsBytes(bytes, bytes)
+ok 5: GetHMACAsBytes(string, bytes)
+ok 6, key longer than a block: GetHMACAsBytes(bytes, bytes)
+ok 6, key longer than a block: GetHMACAsBytes(string, bytes)
+ok 7, key and data longer than a block: GetHMACAsBytes(bytes, bytes)
+ok 7, key and data longer than a block: GetHMACAsBytes(string, bytes)
+# HMAC-SHA224: test cases 1 to 7 (RTL-1242)
+ok 1: GetHMACAsBytes(bytes, bytes)
+ok 1: GetHMACAsBytes(string, bytes)
+ok 2: GetHMACAsBytes(bytes, bytes)
+ok 2: GetHMACAsBytes(string, bytes)
+ok 2: GetHMACAsBytes(bytes, string)
+ok 2: GetHMACAsBytes(string, string)
+ok 2: GetHMAC, lower-case
+ok 3: GetHMACAsBytes(bytes, bytes)
+ok 4: GetHMACAsBytes(bytes, bytes)
+ok 5: GetHMACAsBytes(bytes, bytes)
+ok 5: GetHMACAsBytes(string, bytes)
+ok 6, key longer than a block: GetHMACAsBytes(bytes, bytes)
+ok 6, key longer than a block: GetHMACAsBytes(string, bytes)
+ok 7, key and data longer than a block: GetHMACAsBytes(bytes, bytes)
+ok 7, key and data longer than a block: GetHMACAsBytes(string, bytes)
+# HMAC-SHA256: test cases 1 to 7 (RTL-1242)
+ok 1: GetHMACAsBytes(bytes, bytes)
+ok 1: GetHMACAsBytes(string, bytes)
+ok 2: GetHMACAsBytes(bytes, bytes)
+ok 2: GetHMACAsBytes(string, bytes)
+ok 2: GetHMACAsBytes(bytes, string)
+ok 2: GetHMACAsBytes(string, string)
+ok 2: GetHMAC, lower-case
+ok 3: GetHMACAsBytes(bytes, bytes)
+ok 4: GetHMACAsBytes(bytes, bytes)
+ok 5: GetHMACAsBytes(bytes, bytes)
+ok 5: GetHMACAsBytes(string, bytes)
+ok 6, key longer than a block: GetHMACAsBytes(bytes, bytes)
+ok 6, key longer than a block: GetHMACAsBytes(string, bytes)
+ok 7, key and data longer than a block: GetHMACAsBytes(bytes, bytes)
+ok 7, key and data longer than a block: GetHMACAsBytes(string, bytes)
+# HMAC-SHA384: test cases 1 to 7 (RTL-1242)
+ok 1: GetHMACAsBytes(bytes, bytes)
+ok 1: GetHMACAsBytes(string, bytes)
+ok 2: GetHMACAsBytes(bytes, bytes)
+ok 2: GetHMACAsBytes(string, bytes)
+ok 2: GetHMACAsBytes(bytes, string)
+ok 2: GetHMACAsBytes(string, string)
+ok 2: GetHMAC, lower-case
+ok 3: GetHMACAsBytes(bytes, bytes)
+ok 4: GetHMACAsBytes(bytes, bytes)
+ok 5: GetHMACAsBytes(bytes, bytes)
+ok 5: GetHMACAsBytes(string, bytes)
+ok 6, key longer than a block: GetHMACAsBytes(bytes, bytes)
+ok 6, key longer than a block: GetHMACAsBytes(string, bytes)
+ok 7, key and data longer than a block: GetHMACAsBytes(bytes, bytes)
+ok 7, key and data longer than a block: GetHMACAsBytes(string, bytes)
+# HMAC-SHA512: test cases 1 to 7 (RTL-1242)
+ok 1: GetHMACAsBytes(bytes, bytes)
+ok 1: GetHMACAsBytes(string, bytes)
+ok 2: GetHMACAsBytes(bytes, bytes)
+ok 2: GetHMACAsBytes(string, bytes)
+ok 2: GetHMACAsBytes(bytes, string)
+ok 2: GetHMACAsBytes(string, string)
+ok 2: GetHMAC, lower-case
+ok 3: GetHMACAsBytes(bytes, bytes)
+ok 4: GetHMACAsBytes(bytes, bytes)
+ok 5: GetHMACAsBytes(bytes, bytes)
+ok 5: GetHMACAsBytes(string, bytes)
+ok 6, key longer than a block: GetHMACAsBytes(bytes, bytes)
+ok 6, key longer than a block: GetHMACAsBytes(string, bytes)
+ok 7, key and data longer than a block: GetHMACAsBytes(bytes, bytes)
+ok 7, key and data longer than a block: GetHMACAsBytes(string, bytes)
+# the other versions, key lengths around one block, empty key and data (RTL-1242)
+ok SHA512_224, case 2: GetHMACAsBytes(bytes, bytes)
+ok SHA512_224, case 2: GetHMACAsBytes(string, bytes)
+ok SHA512_224, case 2: GetHMACAsBytes(bytes, string)
+ok SHA512_224, case 2: GetHMACAsBytes(string, string)
+ok SHA512_224, case 2: GetHMAC, lower-case
+ok SHA512_256, case 2: GetHMACAsBytes(bytes, bytes)
+ok SHA512_256, case 2: GetHMACAsBytes(string, bytes)
+ok SHA512_256, case 2: GetHMACAsBytes(bytes, string)
+ok SHA512_256, case 2: GetHMACAsBytes(string, string)
+ok SHA512_256, case 2: GetHMAC, lower-case
+ok MD5, key of one block: GetHMACAsBytes(bytes, bytes)
+ok MD5, key of one block: GetHMACAsBytes(string, bytes)
+ok MD5, key of one block: GetHMACAsBytes(bytes, string)
+ok MD5, key of one block: GetHMACAsBytes(string, string)
+ok MD5, key of one block: GetHMAC, lower-case
+ok MD5, key of one block and a byte: GetHMACAsBytes(bytes, bytes)
+ok MD5, key of one block and a byte: GetHMACAsBytes(string, bytes)
+ok MD5, key of one block and a byte: GetHMACAsBytes(bytes, string)
+ok MD5, key of one block and a byte: GetHMACAsBytes(string, string)
+ok MD5, key of one block and a byte: GetHMAC, lower-case
+ok SHA-1, key of one block: GetHMACAsBytes(bytes, bytes)
+ok SHA-1, key of one block: GetHMACAsBytes(string, bytes)
+ok SHA-1, key of one block: GetHMACAsBytes(bytes, string)
+ok SHA-1, key of one block: GetHMACAsBytes(string, string)
+ok SHA-1, key of one block: GetHMAC, lower-case
+ok SHA-1, key of one block and a byte: GetHMACAsBytes(bytes, bytes)
+ok SHA-1, key of one block and a byte: GetHMACAsBytes(string, bytes)
+ok SHA-1, key of one block and a byte: GetHMACAsBytes(bytes, string)
+ok SHA-1, key of one block and a byte: GetHMACAsBytes(string, string)
+ok SHA-1, key of one block and a byte: GetHMAC, lower-case
+ok SHA256, key of one block: GetHMACAsBytes(bytes, bytes)
+ok SHA256, key of one block: GetHMACAsBytes(string, bytes)
+ok SHA256, key of one block: GetHMACAsBytes(bytes, string)
+ok SHA256, key of one block: GetHMACAsBytes(string, string)
+ok SHA256, key of one block: GetHMAC, lower-case
+ok SHA256, key of one block and a byte: GetHMACAsBytes(bytes, bytes)
+ok SHA256, key of one block and a byte: GetHMACAsBytes(string, bytes)
+ok SHA256, key of one block and a byte: GetHMACAsBytes(bytes, string)
+ok SHA256, key of one block and a byte: GetHMACAsBytes(string, string)
+ok SHA256, key of one block and a byte: GetHMAC, lower-case
+ok SHA512, key of one block: GetHMACAsBytes(bytes, bytes)
+ok SHA512, key of one block: GetHMACAsBytes(string, bytes)
+ok SHA512, key of one block: GetHMACAsBytes(bytes, string)
+ok SHA512, key of one block: GetHMACAsBytes(string, string)
+ok SHA512, key of one block: GetHMAC, lower-case
+ok SHA512, key of one block and a byte: GetHMACAsBytes(bytes, bytes)
+ok SHA512, key of one block and a byte: GetHMACAsBytes(string, bytes)
+ok SHA512, key of one block and a byte: GetHMACAsBytes(bytes, string)
+ok SHA512, key of one block and a byte: GetHMACAsBytes(string, string)
+ok SHA512, key of one block and a byte: GetHMAC, lower-case
+ok MD5, empty key and data: GetHMACAsBytes(bytes, bytes)
+ok MD5, empty key and data: GetHMACAsBytes(string, bytes)
+ok MD5, empty key and data: GetHMACAsBytes(bytes, string)
+ok MD5, empty key and data: GetHMACAsBytes(string, string)
+ok MD5, empty key and data: GetHMAC, lower-case
+ok SHA-1, empty key and data: GetHMACAsBytes(bytes, bytes)
+ok SHA-1, empty key and data: GetHMACAsBytes(string, bytes)
+ok SHA-1, empty key and data: GetHMACAsBytes(bytes, string)
+ok SHA-1, empty key and data: GetHMACAsBytes(string, string)
+ok SHA-1, empty key and data: GetHMAC, lower-case
+ok SHA256, empty key and data: GetHMACAsBytes(bytes, bytes)
+ok SHA256, empty key and data: GetHMACAsBytes(string, bytes)
+ok SHA256, empty key and data: GetHMACAsBytes(bytes, string)
+ok SHA256, empty key and data: GetHMACAsBytes(string, string)
+ok SHA256, empty key and data: GetHMAC, lower-case
+ok SHA-1, empty key: GetHMACAsBytes(bytes, bytes)
+ok SHA-1, empty key: GetHMACAsBytes(string, bytes)
+ok SHA-1, empty key: GetHMACAsBytes(bytes, string)
+ok SHA-1, empty key: GetHMACAsBytes(string, string)
+ok SHA-1, empty key: GetHMAC, lower-case
+ok SHA256, empty data: GetHMACAsBytes(bytes, bytes)
+ok SHA256, empty data: GetHMACAsBytes(string, bytes)
+ok SHA256, empty data: GetHMACAsBytes(bytes, string)
+ok SHA256, empty data: GetHMACAsBytes(string, string)
+ok SHA256, empty data: GetHMAC, lower-case
+# full digest, default version, UTF-8 form of a string, arguments unchanged (RTL-1242)
+ok MD5: the whole digest, no truncation
+ok SHA-1: the whole digest, no truncation
+ok SHA224: the whole digest, no truncation
+ok SHA256: the whole digest, no truncation
+ok SHA384: the whole digest, no truncation
+ok SHA512: the whole digest, no truncation
+ok SHA512_224: the whole digest, no truncation
+ok SHA512_256: the whole digest, no truncation
+ok THashSHA2.GetHMAC without a version is SHA256
+ok GetHMACAsBytes(string, string) too
+ok (string, bytes) too
+ok (bytes, string) too
+ok (bytes, bytes) too
+ok MD5: data and key U+00E9
+ok are the bytes C3 A9
+ok as data
+ok and as key
+ok SHA256: data and key U+00E9
+ok a long key once more
+ok the key array of the caller is not changed
+# THash.DigestsEqual (RTL-1233)
+ok two arrays with the same 32 bytes
+ok an array and itself
+ok a difference in the first byte
+ok in either order
+ok a difference in the last byte
+ok a difference in the middle
+ok every single bit of the 32 bytes counts
+ok different lengths: a prefix is not equal
+ok in either order
+ok two empty arrays are equal
+ok also an emptied array and nil
+ok an empty array and a digest are not
+ok in either order
+ok one byte: 00 and 00
+ok one byte: 00 and FF
+ok the same bytes in another order
+ok verifies a received HMAC value
+ok and rejects it under another key
+ok or for other data
+ok compares a digest
+ok no block is left
+# passed 206 failed 0

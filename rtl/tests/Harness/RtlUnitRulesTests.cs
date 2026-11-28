@@ -517,4 +517,118 @@ public sealed partial class RtlUnitRulesTests
         Assert.Equal(3, HashSecurityNoteProblems(Unit("", "", "")).Count);
         Assert.Equal(3, HashSecurityNoteProblems("unit Hash;\ninterface\nimplementation\nend.\n").Count);
     }
+
+    /// <summary>
+    /// What the body of <c>THash.DigestsEqual</c> in <paramref name="source"/> (the text of unit <c>Hash</c>) lacks of
+    /// RTL-1233: exactly one loop, a counting <c>for</c> loop, and nothing in it whose execution depends on the bytes -
+    /// no <c>if</c>, <c>case</c>, <c>while</c>, <c>repeat</c>, nested <c>for</c>, <c>try</c>, <c>raise</c>,
+    /// <c>goto</c>, <c>Exit</c>, <c>Break</c> or <c>Continue</c>. Checked on the syntax tree, so comments and
+    /// identifiers that merely contain these words do not count.
+    /// </summary>
+    public static List<string> DigestsEqualProblems(string source)
+    {
+        static bool IsLoop(SyntaxNode node) =>
+            node is ForStatementSyntax or ForInStatementSyntax or WhileStatementSyntax or RepeatStatementSyntax;
+
+        var problems = new List<string>();
+        var tree = SyntaxTree.Parse(SourceText.From(Path.Combine(SourceDirectory, "Hash.pas"), source), null, PhysicalFileSystem.Instance);
+        var body = tree.Root.DescendantNodes().OfType<RoutineDeclarationSyntax>()
+            .FirstOrDefault(r => r.Block is not null
+                && Regex.Replace(r.Heading.Name.ToString(), @"\s+", "").Equals("THash.DigestsEqual", StringComparison.OrdinalIgnoreCase))
+            ?.Block;
+        if (body is null)
+        {
+            problems.Add("no implementation of THash.DigestsEqual");
+            return problems;
+        }
+
+        var loops = body.DescendantNodes().Where(IsLoop).ToList();
+        if (loops.Count != 1)
+        {
+            problems.Add($"the body has {loops.Count} loops, expected exactly one");
+        }
+
+        if (loops.Count > 0 && loops[0] is not ForStatementSyntax)
+        {
+            problems.Add("the loop is not a counting 'for' loop");
+        }
+
+        foreach (var node in loops.Take(1).SelectMany(l => l.DescendantNodes()))
+        {
+            var found = node switch
+            {
+                IfStatementSyntax => "if",
+                CaseStatementSyntax => "case",
+                WhileStatementSyntax => "while",
+                RepeatStatementSyntax => "repeat",
+                ForStatementSyntax or ForInStatementSyntax => "for",
+                TryFinallyStatementSyntax or TryExceptStatementSyntax => "try",
+                RaiseStatementSyntax => "raise",
+                GotoStatementSyntax => "goto",
+                IdentifierNameSyntax { Identifier.Text: var name }
+                    when name.Equals("Exit", StringComparison.OrdinalIgnoreCase)
+                        || name.Equals("Break", StringComparison.OrdinalIgnoreCase)
+                        || name.Equals("Continue", StringComparison.OrdinalIgnoreCase) => name,
+                _ => null,
+            };
+            if (found is not null)
+            {
+                problems.Add($"the loop contains '{found}'");
+            }
+        }
+
+        return problems;
+    }
+
+    /// <summary>
+    /// RTL-1233: <c>THash.DigestsEqual</c> compares in constant time - its body in <c>Hash.pas</c> has exactly one loop,
+    /// which runs over the whole length and contains no statement that leaves it or branches on the bytes. The check
+    /// itself is proved on bodies that exit early, branch, loop twice or use another kind of loop.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "RTL-1233")]
+    [Trait("Phase", "8")]
+    public void Hash_DigestsEqualHasNoEarlyExit()
+    {
+        var path = Path.Combine(SourceDirectory, "Hash.pas");
+        Assert.True(File.Exists(path), path + " does not exist");
+        var problems = DigestsEqualProblems(File.ReadAllText(path));
+        Assert.True(problems.Count == 0, string.Join("\n", problems));
+
+        // self-check
+        static string Unit(string body, string name = "THash.DigestsEqual") =>
+            "unit Hash;\ninterface\nuses SysUtils;\ntype\n  THash = record\n"
+            + "    class function DigestsEqual(const ADigest1, ADigest2: TBytes): Boolean; static;\n  end;\nimplementation\n"
+            + $"class function {name}(const ADigest1, ADigest2: TBytes): Boolean;\nvar\n  I: Integer;\n  Diff: Cardinal;\n"
+            + $"begin\n{body}\nend;\nend.\n";
+        const string lengths = "  Result := False;\n  if Length(ADigest1) <> Length(ADigest2) then\n    Exit;\n  Diff := 0;\n";
+        const string loop = "  for I := 0 to Length(ADigest1) - 1 do\n";
+        const string step = "Diff := Diff or (Cardinal(ADigest1[I]) xor Cardinal(ADigest2[I]));\n";
+        const string result = "  Result := Diff = 0;";
+
+        // the length test before the loop is allowed; the words in a comment or inside another identifier do not count
+        Assert.Empty(DigestsEqualProblems(Unit(lengths + loop + "    " + step + result)));
+        Assert.Empty(DigestsEqualProblems(Unit(lengths + loop + "  begin\n    { no if, no Exit, no Break }\n    " + step + "  end;\n" + result)));
+        Assert.Empty(DigestsEqualProblems(Unit(lengths + loop + "    " + step.Replace("Diff", "ExitCode") + result.Replace("Diff", "ExitCode"))));
+
+        string Only(string body) => Assert.Single(DigestsEqualProblems(Unit(body)));
+        // the early exit this rule is about: reported for its 'if' and for its 'Exit'
+        var early = DigestsEqualProblems(Unit(lengths + loop + "    if ADigest1[I] <> ADigest2[I] then\n      Exit;\n  Result := True;"));
+        Assert.Equal(2, early.Count);
+        Assert.Contains("the loop contains 'if'", early);
+        Assert.Contains("the loop contains 'Exit'", early);
+        Assert.Contains("'Break'", Only(lengths + loop + "  begin\n    " + step + "    Break;\n  end;\n" + result));
+        Assert.Contains("'continue'", Only(lengths + loop + "  begin\n    continue;\n    " + step + "  end;\n" + result));
+        Assert.Contains("'if'", Only(lengths + loop + "    if ADigest1[I] <> ADigest2[I] then\n      Diff := 1;\n" + result));
+        Assert.Contains("'case'", Only(lengths + loop + "    case ADigest1[I] xor ADigest2[I] of\n      0: ;\n    else\n      Diff := 1;\n    end;\n" + result));
+        Assert.Contains("'raise'", Only(lengths + loop + "  begin\n    " + step + "    raise Exception.Create('x');\n  end;\n" + result));
+        Assert.Contains("'goto'", Only(lengths + loop + "  begin\n    " + step + "    goto Away;\n  end;\n" + result));
+        Assert.Contains("2 loops", Only(lengths + loop + "    " + step + loop + "    " + step + result));
+        Assert.Contains("0 loops", Only(lengths + result));
+        Assert.Contains("not a counting", Only(lengths + "  I := 0;\n  while I < Length(ADigest1) do\n  begin\n    " + step + "    I := I + 1;\n  end;\n" + result));
+        Assert.Contains("not a counting", Only(lengths + "  I := 0;\n  repeat\n    " + step + "    I := I + 1;\n  until I >= Length(ADigest1);\n" + result));
+        // a nested loop: two loops, and the outer one contains a 'for'
+        Assert.Equal(2, DigestsEqualProblems(Unit(lengths + loop + loop + "    " + step + result)).Count);
+        Assert.Contains("no implementation", Assert.Single(DigestsEqualProblems(Unit(lengths + loop + "    " + step + result, "THash.DigestAsString"))));
+    }
 }

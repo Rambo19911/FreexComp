@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 { Hash - message digests (docs: rtl/other-units.md section 13, RTL-1230): MD5 as RFC 1321 defines it, SHA-1 and the
-  six SHA-2 functions as FIPS 180-4 defines them. Every function is computed here, in Object Pascal, from its
-  standard: nothing in this unit calls the operating system.
+  six SHA-2 functions as FIPS 180-4 defines them, and the keyed hash HMAC of RFC 2104 over each of them. Every
+  function is computed here, in Object Pascal, from its standard: nothing in this unit calls the operating system.
   A state record takes data in any number of Update calls; HashAsBytes and HashAsString give the digest of what was
   added so far and leave the record as it was, so more data may follow. A record holds its whole state in itself:
   assigning it to another variable gives a second, independent state, and no record needs to be released. One
@@ -30,6 +30,10 @@ type
     class function DigestAsInteger(const ADigest: TBytes): Integer; static;
     { Two lower-case hexadecimal digits per byte, in the order of the array. }
     class function DigestAsString(const ADigest: TBytes): string; static;
+    { True when both arrays hold the same bytes. The time taken depends on the length only, not on where the
+      arrays differ: use it to compare a digest or an HMAC value received from outside with the expected one.
+      Arrays of different length are not equal; two empty arrays are. }
+    class function DigestsEqual(const ADigest1, ADigest2: TBytes): Boolean; static;
   end;
 
   { MD5 (RFC 1321): 16-byte digest, 64-byte blocks. For existing formats and protocols only: MD5 is not suitable for
@@ -66,6 +70,14 @@ type
     class function GetHashString(const AString: string): string; overload; static;
     class function GetHashString(const AData: TBytes): string; overload; static;
     class function GetHashString(const AStream: TStream): string; overload; static;
+    { The keyed hash HMAC (RFC 2104) of AData under AKey: the whole digest, as bytes or - GetHMAC - in lower-case
+      hexadecimal digits. A string, data or key, stands for its UTF-8 form. Compare a received value with
+      THash.DigestsEqual. }
+    class function GetHMAC(const AData, AKey: string): string; static;
+    class function GetHMACAsBytes(const AData, AKey: string): TBytes; overload; static;
+    class function GetHMACAsBytes(const AData: string; const AKey: TBytes): TBytes; overload; static;
+    class function GetHMACAsBytes(const AData: TBytes; const AKey: string): TBytes; overload; static;
+    class function GetHMACAsBytes(const AData, AKey: TBytes): TBytes; overload; static;
   end;
 
   { SHA-1 (FIPS 180-4): 20-byte digest, 64-byte blocks; the members are those of THashMD5. For existing formats and
@@ -92,11 +104,16 @@ type
     class function GetHashString(const AString: string): string; overload; static;
     class function GetHashString(const AData: TBytes): string; overload; static;
     class function GetHashString(const AStream: TStream): string; overload; static;
+    class function GetHMAC(const AData, AKey: string): string; static;
+    class function GetHMACAsBytes(const AData, AKey: string): TBytes; overload; static;
+    class function GetHMACAsBytes(const AData: string; const AKey: TBytes): TBytes; overload; static;
+    class function GetHMACAsBytes(const AData: TBytes; const AKey: string): TBytes; overload; static;
+    class function GetHMACAsBytes(const AData, AKey: TBytes): TBytes; overload; static;
   end;
 
   { The SHA-2 functions of FIPS 180-4; the version is chosen at Create and kept by Reset. SHA224 and SHA256 work on
     64-byte blocks, the other four on 128-byte blocks; the digest has 28, 32, 48, 64, 28 and 32 bytes. The members
-    are those of THashMD5; each one-call function takes the version as its last parameter. }
+    are those of THashMD5; each one-call function and each HMAC function takes the version as its last parameter. }
   THashSHA2 = record
   public
     type
@@ -129,6 +146,16 @@ type
       AHashVersion: TSHA2Version = TSHA2Version.SHA256): string; overload; static;
     class function GetHashString(const AStream: TStream;
       AHashVersion: TSHA2Version = TSHA2Version.SHA256): string; overload; static;
+    class function GetHMAC(const AData, AKey: string;
+      AHashVersion: TSHA2Version = TSHA2Version.SHA256): string; static;
+    class function GetHMACAsBytes(const AData, AKey: string;
+      AHashVersion: TSHA2Version = TSHA2Version.SHA256): TBytes; overload; static;
+    class function GetHMACAsBytes(const AData: string; const AKey: TBytes;
+      AHashVersion: TSHA2Version = TSHA2Version.SHA256): TBytes; overload; static;
+    class function GetHMACAsBytes(const AData: TBytes; const AKey: string;
+      AHashVersion: TSHA2Version = TSHA2Version.SHA256): TBytes; overload; static;
+    class function GetHMACAsBytes(const AData, AKey: TBytes;
+      AHashVersion: TSHA2Version = TSHA2Version.SHA256): TBytes; overload; static;
   end;
 
 implementation
@@ -528,6 +555,24 @@ begin
   SetLength(Result, StreamBufferSize);
 end;
 
+{ RFC 2104 section 2: the two blocks an HMAC computation starts its inner and its outer hash with - the key,
+  extended with zero bytes to BlockSize bytes, xor $36 and xor $5C. Key has at most BlockSize bytes (a longer key
+  was replaced by its digest before). }
+procedure HmacBlocks(const Key: TBytes; BlockSize: Integer; out Inner, Outer: TBlock);
+var
+  I: Integer;
+  B: Cardinal;
+begin
+  for I := 0 to BlockSize - 1 do
+  begin
+    B := 0;
+    if I < Length(Key) then
+      B := Key[I];
+    Inner[I] := Byte(B xor $36);
+    Outer[I] := Byte(B xor $5C);
+  end;
+end;
+
 { ------------------------------------------------------------------ THash }
 
 class function THash.DigestAsInteger(const ADigest: TBytes): Integer;
@@ -550,6 +595,21 @@ begin
     Result[2 * I + 1] := Digits[(ADigest[I] shr 4) + 1];
     Result[2 * I + 2] := Digits[(ADigest[I] and 15) + 1];
   end;
+end;
+
+{ RTL-1233. Every byte pair is looked at, whatever the bytes are: the loop has no branch and nothing leaves it. }
+class function THash.DigestsEqual(const ADigest1, ADigest2: TBytes): Boolean;
+var
+  I: Integer;
+  Diff: Cardinal;
+begin
+  Result := False;
+  if Length(ADigest1) <> Length(ADigest2) then
+    Exit;
+  Diff := 0;
+  for I := 0 to Length(ADigest1) - 1 do
+    Diff := Diff or (Cardinal(ADigest1[I]) xor Cardinal(ADigest2[I]));
+  Result := Diff = 0;
 end;
 
 { ------------------------------------------------------------------ THashMD5 }
@@ -672,6 +732,47 @@ begin
   Result := THash.DigestAsString(GetHashBytes(AStream));
 end;
 
+class function THashMD5.GetHMAC(const AData, AKey: string): string;
+begin
+  Result := THash.DigestAsString(GetHMACAsBytes(AData, AKey));
+end;
+
+class function THashMD5.GetHMACAsBytes(const AData, AKey: string): TBytes;
+begin
+  Result := GetHMACAsBytes(TEncoding.UTF8.GetBytes(AData), TEncoding.UTF8.GetBytes(AKey));
+end;
+
+class function THashMD5.GetHMACAsBytes(const AData: string; const AKey: TBytes): TBytes;
+begin
+  Result := GetHMACAsBytes(TEncoding.UTF8.GetBytes(AData), AKey);
+end;
+
+class function THashMD5.GetHMACAsBytes(const AData: TBytes; const AKey: string): TBytes;
+begin
+  Result := GetHMACAsBytes(AData, TEncoding.UTF8.GetBytes(AKey));
+end;
+
+{ RFC 2104 section 2: H((key xor opad) + H((key xor ipad) + data)); a key longer than a block is hashed first }
+class function THashMD5.GetHMACAsBytes(const AData, AKey: TBytes): TBytes;
+var
+  H: THashMD5;
+  Key: TBytes;
+  Inner, Outer: TBlock;
+begin
+  Key := AKey;
+  if Length(Key) > 64 then
+    Key := GetHashBytes(Key);
+  HmacBlocks(Key, 64, Inner, Outer);
+  H := THashMD5.Create;
+  H.Update(Inner, 64);
+  H.Update(AData);
+  Key := H.HashAsBytes;
+  H.Reset;
+  H.Update(Outer, 64);
+  H.Update(Key);
+  Result := H.HashAsBytes;
+end;
+
 { ------------------------------------------------------------------ THashSHA1 }
 
 class function THashSHA1.Create: THashSHA1;
@@ -791,6 +892,47 @@ end;
 class function THashSHA1.GetHashString(const AStream: TStream): string;
 begin
   Result := THash.DigestAsString(GetHashBytes(AStream));
+end;
+
+class function THashSHA1.GetHMAC(const AData, AKey: string): string;
+begin
+  Result := THash.DigestAsString(GetHMACAsBytes(AData, AKey));
+end;
+
+class function THashSHA1.GetHMACAsBytes(const AData, AKey: string): TBytes;
+begin
+  Result := GetHMACAsBytes(TEncoding.UTF8.GetBytes(AData), TEncoding.UTF8.GetBytes(AKey));
+end;
+
+class function THashSHA1.GetHMACAsBytes(const AData: string; const AKey: TBytes): TBytes;
+begin
+  Result := GetHMACAsBytes(TEncoding.UTF8.GetBytes(AData), AKey);
+end;
+
+class function THashSHA1.GetHMACAsBytes(const AData: TBytes; const AKey: string): TBytes;
+begin
+  Result := GetHMACAsBytes(AData, TEncoding.UTF8.GetBytes(AKey));
+end;
+
+{ RFC 2104 section 2: H((key xor opad) + H((key xor ipad) + data)); a key longer than a block is hashed first }
+class function THashSHA1.GetHMACAsBytes(const AData, AKey: TBytes): TBytes;
+var
+  H: THashSHA1;
+  Key: TBytes;
+  Inner, Outer: TBlock;
+begin
+  Key := AKey;
+  if Length(Key) > 64 then
+    Key := GetHashBytes(Key);
+  HmacBlocks(Key, 64, Inner, Outer);
+  H := THashSHA1.Create;
+  H.Update(Inner, 64);
+  H.Update(AData);
+  Key := H.HashAsBytes;
+  H.Reset;
+  H.Update(Outer, 64);
+  H.Update(Key);
+  Result := H.HashAsBytes;
 end;
 
 { ------------------------------------------------------------------ THashSHA2 }
@@ -936,6 +1078,49 @@ end;
 class function THashSHA2.GetHashString(const AStream: TStream; AHashVersion: TSHA2Version): string;
 begin
   Result := THash.DigestAsString(GetHashBytes(AStream, AHashVersion));
+end;
+
+class function THashSHA2.GetHMAC(const AData, AKey: string; AHashVersion: TSHA2Version): string;
+begin
+  Result := THash.DigestAsString(GetHMACAsBytes(AData, AKey, AHashVersion));
+end;
+
+class function THashSHA2.GetHMACAsBytes(const AData, AKey: string; AHashVersion: TSHA2Version): TBytes;
+begin
+  Result := GetHMACAsBytes(TEncoding.UTF8.GetBytes(AData), TEncoding.UTF8.GetBytes(AKey), AHashVersion);
+end;
+
+class function THashSHA2.GetHMACAsBytes(const AData: string; const AKey: TBytes; AHashVersion: TSHA2Version): TBytes;
+begin
+  Result := GetHMACAsBytes(TEncoding.UTF8.GetBytes(AData), AKey, AHashVersion);
+end;
+
+class function THashSHA2.GetHMACAsBytes(const AData: TBytes; const AKey: string; AHashVersion: TSHA2Version): TBytes;
+begin
+  Result := GetHMACAsBytes(AData, TEncoding.UTF8.GetBytes(AKey), AHashVersion);
+end;
+
+{ RFC 2104 section 2: H((key xor opad) + H((key xor ipad) + data)); a key longer than a block is hashed first }
+class function THashSHA2.GetHMACAsBytes(const AData, AKey: TBytes; AHashVersion: TSHA2Version): TBytes;
+var
+  H: THashSHA2;
+  Key: TBytes;
+  Inner, Outer: TBlock;
+  Size: Integer;
+begin
+  H := THashSHA2.Create(AHashVersion);
+  Size := H.GetBlockSize;
+  Key := AKey;
+  if Length(Key) > Size then
+    Key := GetHashBytes(Key, AHashVersion);
+  HmacBlocks(Key, Size, Inner, Outer);
+  H.Update(Inner, Cardinal(Size));
+  H.Update(AData);
+  Key := H.HashAsBytes;
+  H.Reset;
+  H.Update(Outer, Cardinal(Size));
+  H.Update(Key);
+  Result := H.HashAsBytes;
 end;
 
 end.
