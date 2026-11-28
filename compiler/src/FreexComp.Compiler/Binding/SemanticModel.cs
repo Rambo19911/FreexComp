@@ -33,6 +33,9 @@ public sealed class SemanticModel
     private readonly List<(int Start, int End, Scope Scope)> _inlineScopes = [];
     private readonly List<TypeSymbol> _openInstances = [];
 
+    /// <summary>C-422: the types declared in this file that are no generics; their generic methods' bodies are bound open (<see cref="BindOpenBodies"/>).</summary>
+    private readonly List<TypeSymbol> _plainTypes = [];
+
     /// <summary>
     /// CMP-1476 (C-417): the method definitions in this file with an instance body that did not bind a statement (LANG-977 rule 3: a
     /// type-query condition pruned it). Their open bodies are bound too, for the code insight of those statements.
@@ -104,7 +107,9 @@ public sealed class SemanticModel
     /// <summary>
     /// C-355: the method implementations in this file of its generics' open instances (nested types too) that no bound instance body
     /// covers here, bound on the open instance (<see cref="DeclarationBinder.BindOpen"/>; their diagnostics are dropped) and indexed like
-    /// the other bodies, so that code insight works in a generic's methods before (and without) any use of it.
+    /// the other bodies, so that code insight works in a generic's methods before (and without) any use of it. C-422: the same for
+    /// the generic methods implemented in this file — of its types that are no generics and of its generics' open instances — on
+    /// the generic method's open instance (each type parameter stands for itself, with its constraints).
     /// </summary>
     private void BindOpenBodies(Func<SyntaxNode, bool>? filter)
     {
@@ -128,6 +133,16 @@ public sealed class SemanticModel
         var pending = new Queue<RoutineSymbol>(_openInstances.SelectMany(TypeMembers.SelfAndNestedTypes).SelectMany(t => TypeMembers.Methods(t))
             .Where(m => m.Definition is { } definition && ReferenceEquals(definition.SyntaxTree, SyntaxTree) && (filter is null || filter(definition))
                         && covered.Add(definition.Span)));
+        foreach (var generic in _plainTypes.Concat(_openInstances).SelectMany(TypeMembers.SelfAndNestedTypes).SelectMany(t => DeclarationBinder.GenericMethodsOf(t)))
+        {
+            if (generic.Implementation?.Declaration is { } implemented && ReferenceEquals(implemented.SyntaxTree, SyntaxTree) && (filter is null || filter(implemented))
+                && !covered.Contains(implemented.Span)
+                && DeclarationBinder.OpenInstanceOf(_result.Types, generic) is { Definition: { } definition } open && covered.Add(definition.Span))
+            {
+                pending.Enqueue(open);
+            }
+        }
+
         using (DeclarationBinder.BindOpen())
         {
             while (pending.TryDequeue(out var routine))
@@ -825,6 +840,11 @@ public sealed class SemanticModel
                     }
 
                     // CMP-1394 (C-347): the members of a generic's declaration (nested types, their methods) are those of an instance
+                    if (type is not GenericTypeSymbol)
+                    {
+                        _plainTypes.Add(type);
+                    }
+
                     if (Representative(type) is { } instance)
                     {
                         if (type is GenericTypeSymbol { OpenInstance: { } open } && ReferenceEquals(open, instance))

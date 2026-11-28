@@ -225,8 +225,9 @@ internal sealed partial class DeclarationBinder
     /// <summary>
     /// LANG-702 (C-118), LANG-982 (C-421): the constraints of each type parameter, bound in this scope. <c>record</c> with
     /// <c>class</c>, with <c>constructor</c>, with a class type or with an interface type, and two class types, are E2701 — one per
-    /// conflicting pair, at the later item. A constraint type that is no class or interface type, or that names a type parameter
-    /// (of this list or of an enclosing generic), is E2603. A keyword or type written twice has no further effect.
+    /// item that cannot be combined with an earlier one, at that item (C-422: not one per conflicting pair). A constraint type that
+    /// is no class or interface type, or that names a type parameter (of this list or of an enclosing generic), is E2603. A keyword
+    /// or type written twice has no further effect.
     /// </summary>
     private ImmutableArray<TypeParameterConstraints> BindConstraints(TypeParameterListSyntax typeParameters)
     {
@@ -240,19 +241,19 @@ internal sealed partial class DeclarationBinder
             var name = parameter.Identifiers.Count > 0 ? NameOf(parameter.Identifiers[0].Identifier) : "";
             foreach (var constraint in parameter.Constraints)
             {
-                var conflicts = 0;                                              // the earlier items this one cannot be combined with
+                var conflicts = false;                                          // an earlier item this one cannot be combined with
                 switch (constraint)
                 {
                     case KeywordConstraintSyntax { Keyword.Kind: SyntaxKind.ClassKeyword }:
-                        conflicts = isRecord && !isClass ? 1 : 0;
+                        conflicts = isRecord && !isClass;
                         isClass = true;
                         break;
                     case KeywordConstraintSyntax { Keyword.Kind: SyntaxKind.RecordKeyword }:
-                        conflicts = isRecord ? 0 : (isClass ? 1 : 0) + (isConstructor ? 1 : 0) + types.Count;
+                        conflicts = !isRecord && (isClass || isConstructor || types.Count > 0);
                         isRecord = true;
                         break;
                     case KeywordConstraintSyntax:
-                        conflicts = isRecord && !isConstructor ? 1 : 0;
+                        conflicts = isRecord && !isConstructor;
                         isConstructor = true;
                         break;
                     case TypeSyntax typeSyntax:
@@ -280,15 +281,15 @@ internal sealed partial class DeclarationBinder
                             continue;                                           // written twice
                         }
 
-                        conflicts = (isRecord ? 1 : 0) + (type is ClassTypeSymbol ? types.Count(t => t is ClassTypeSymbol) : 0);
+                        conflicts = isRecord || (type is ClassTypeSymbol && types.Any(t => t is ClassTypeSymbol));
                         types.Add(type);
                         texts.Add(type.Name);
                         break;
                 }
 
-                for (; conflicts > 0; conflicts--)
+                if (conflicts)
                 {
-                    _diagnostics.Report(constraint, "E2701", name);
+                    _diagnostics.Report(constraint, "E2701", name);             // once per conflicting item, however many pairs it makes
                 }
             }
 

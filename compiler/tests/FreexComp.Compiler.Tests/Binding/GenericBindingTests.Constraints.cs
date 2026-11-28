@@ -56,7 +56,8 @@ public sealed partial class GenericBindingTests
     /// <summary>
     /// LANG-982 table, for the type parameter list of a generic type and of a generic method: <c>class</c> with <c>record</c>,
     /// <c>record</c> with <c>constructor</c>, with a class type or with an interface type, and two class types are E2701 — one per
-    /// conflicting pair, at the later item, naming the type parameter (the first name of a shared list); every other combination
+    /// item that cannot be combined with an earlier one (however many earlier ones; C-422: once per conflicting item, not once per
+    /// pair), at that item, naming the type parameter (the first name of a shared list); every other combination
     /// is allowed in any order; a constraint type that is no class or interface type, or a type parameter, is E2603; a keyword or
     /// type written twice has no further effect. Expected: <c>CODE@column in the list</c>, with <c>:name</c> for E2701.
     /// </summary>
@@ -116,13 +117,16 @@ public sealed partial class GenericBindingTests
     [InlineData("K: record; V: class, record", "E2701@22:V")]
     [InlineData("K: class, record; V: record, constructor", "E2701@11:K E2701@30:V")]
     [InlineData("K, L: TBase; V, W: record, IGreeter", "E2701@28:V")]
-    // several pairs: one diagnostic per pair, each at the later item
-    [InlineData("T: class, constructor, record", "E2701@24:T E2701@24:T")]
-    [InlineData("T: class, TBase, record", "E2701@18:T E2701@18:T")]
+    // several pairs: one diagnostic per conflicting item (not per pair), at that item
+    [InlineData("T: class, constructor, record", "E2701@24:T")]
+    [InlineData("T: class, TBase, record", "E2701@18:T")]
     [InlineData("T: record, class, TBase", "E2701@12:T E2701@19:T")]
     [InlineData("T: record, constructor, IGreeter", "E2701@12:T E2701@25:T")]
-    [InlineData("T: TBase, IGreeter, IOther, record", "E2701@29:T E2701@29:T E2701@29:T")]
-    [InlineData("T: record, TBase, TOther", "E2701@12:T E2701@19:T E2701@19:T")]
+    [InlineData("T: TBase, IGreeter, IOther, record", "E2701@29:T")]
+    [InlineData("T: record, TBase, TOther", "E2701@12:T E2701@19:T")]
+    [InlineData("T: TBase, TOther, TChild", "E2701@11:T E2701@19:T")]
+    [InlineData("T: class, constructor, TBase, IGreeter, record, TOther", "E2701@41:T E2701@49:T")]
+    [InlineData("A, B: class, constructor, record", "E2701@27:A")]
     public void Constraints_Combinations(string list, string expected)
     {
         var names = string.Join(", ", list.Split(';').Select(g => g.Split(':')[0].Trim()));

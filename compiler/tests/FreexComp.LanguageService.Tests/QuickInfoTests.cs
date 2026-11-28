@@ -333,6 +333,133 @@ public sealed class QuickInfoTests
     }
 
     /// <summary>
+    /// C-422 (LANG-982): hover on a type parameter of a generic method inside that method's body shows its constraints — in a local
+    /// declaration, in a statement, for every name of the list — for a method of a type that is no generic and for a method of a
+    /// generic type (whose own type parameter shows its constraints there too): the body of a generic method nothing calls is
+    /// bound on its open instance. Where a call in the file instantiates the method, its body says what that instance says, as
+    /// the body of a generic type's method does (CMP-1476): the type argument, <c>type N = Integer</c>; a method of the same type
+    /// that nothing calls keeps showing the constraints.
+    /// </summary>
+    [Theory]
+    [Trait("Phase", "8")]
+    [Trait("Req", "LANG-982")]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void GenericMethodBody_TypeParameterShowsConstraints(bool instantiated)
+    {
+        var text = """
+            unit UO;
+            interface
+            type
+              TThing = class
+              public
+                Name: string;
+              end;
+              IShape = interface
+                function Area: Integer;
+              end;
+              TUtil = class
+              public
+                class function Larger<N: record; M>(const A, B: N; const C: M): N; static;
+                function Keep<Q: TThing, IShape, constructor>(const Item: Q): Boolean;
+              end;
+              TMulti<T: class> = class
+              public
+                class function Pick<X: IShape; Y>(const P: X; const S: Y): T; static;
+              end;
+            procedure Run;
+            implementation
+            class function TUtil.Larger<N, M>(const A, B: N; const C: M): N;
+            var
+              Best: N;
+              Other: M;
+            begin
+              Best := Default(N);
+              Other := M(C);
+              Result := A;
+            end;
+            function TUtil.Keep<Q>(const Item: Q): Boolean;
+            var
+              Kept: Q;
+            begin
+              Kept := Q.Create;
+              Result := Kept <> nil;
+            end;
+            class function TMulti<T>.Pick<X, Y>(const P: X; const S: Y): T;
+            var
+              Shape: X;
+              Spare: Y;
+              Made: T;
+            begin
+              Shape := X(P);
+              Spare := Default(Y);
+              Made := Default(T);
+              Result := Made;
+            end;
+            procedure Run;
+            begin
+              {CALLS}
+            end;
+            end.
+            """.ReplaceLineEndings("\n").Replace("{CALLS}", instantiated ? "TUtil.Larger<Integer, string>(1, 2, 'x');\n  TMulti<TThing>.Pick<IShape, Byte>(nil, 0);" : "", StringComparison.Ordinal);
+        var doc = GenericNamesFixture.OpenUninstantiated(text);
+        string? At(string piece, string segment) =>
+            QuickInfoService.GetQuickInfo(doc, GenericNamesFixture.Offset(text, piece) + piece.LastIndexOf(segment, StringComparison.Ordinal) + 1,
+                                          TestContext.Current.CancellationToken)?.Signature;
+        string[] expected = instantiated
+            ?
+            [
+                "Best: N -> type N = Integer",
+                "Other: M -> type M = string",
+                "Default(N) -> type N = Integer",
+                "M(C) -> type M = string",
+                "Kept: Q -> type Q: constructor, TThing, IShape",                // Keep<Q> is not called
+                "Q.Create -> type Q: constructor, TThing, IShape",
+                "Shape: X -> type X = IShape",
+                "Spare: Y -> type Y = Byte",
+                "Made: T -> type T = TThing",
+                "X(P) -> type X = IShape",
+                "Default(Y) -> type Y = Byte",
+                "Default(T) -> type T = TThing",
+            ]
+            :
+            [
+                "Best: N -> type N: record",
+                "Other: M -> type M",
+                "Default(N) -> type N: record",
+                "M(C) -> type M",
+                "Kept: Q -> type Q: constructor, TThing, IShape",
+                "Q.Create -> type Q: constructor, TThing, IShape",
+                "Shape: X -> type X: IShape",
+                "Spare: Y -> type Y",
+                "Made: T -> type T: class",
+                "X(P) -> type X: IShape",
+                "Default(Y) -> type Y",
+                "Default(T) -> type T: class",
+            ];
+
+        string[] shown =
+        [
+            // a generic method of a type that is no generic: local declarations and statements of its body
+            $"Best: N -> {At("Best: N", "N")}",
+            $"Other: M -> {At("Other: M", "M")}",
+            $"Default(N) -> {At("Default(N)", "N")}",
+            $"M(C) -> {At("M(C)", "M")}",
+            $"Kept: Q -> {At("Kept: Q", "Q")}",
+            $"Q.Create -> {At("Q.Create", "Q")}",
+            // a generic method of a generic type: its own parameters and the type's
+            $"Shape: X -> {At("Shape: X", "X")}",
+            $"Spare: Y -> {At("Spare: Y", "Y")}",
+            $"Made: T -> {At("Made: T", "T")}",
+            $"X(P) -> {At("X(P)", "X")}",
+            $"Default(Y) -> {At("Default(Y)", "Y")}",
+            $"Default(T) -> {At("Default(T)", "T")}",
+        ];
+
+        Assert.True(expected.SequenceEqual(shown), string.Join("\n", shown));
+    }
+
+    /// <summary>
     /// CMP-1400 (C-377): hover on a class constructor's (destructor's) declaration or implementation heading shows
     /// <c>class constructor TA.Create</c>; hover on a call <c>TA.Create(1)</c> shows the ordinary constructor (LANG-787).
     /// </summary>

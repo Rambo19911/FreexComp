@@ -104,6 +104,10 @@ type
   TBad5<T: TBase, TOther> = class
   end;
 
+  // an item that cannot be combined with several earlier ones is reported once, at that item
+  TBadMany<T: class, constructor, record> = class
+  end;
+
   // a constraint type is a class or an interface type (row 16)
   TBad6<T: Integer> = class
   end;

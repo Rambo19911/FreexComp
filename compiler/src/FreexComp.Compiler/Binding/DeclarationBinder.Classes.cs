@@ -236,7 +236,7 @@ internal sealed partial class DeclarationBinder
     }
 
     /// <summary>LANG-772 (C-344, C-354): declares the nested types, constants and nested aliases of <paramref name="parent"/> and its ancestors, nearest first.</summary>
-    private static void DeclareInheritedNested(Scope scope, ClassTypeSymbol? parent)
+    internal static void DeclareInheritedNested(Scope scope, ClassTypeSymbol? parent)
     {
         foreach (var ancestor in parent?.SelfAndAncestors() ?? [])
         {

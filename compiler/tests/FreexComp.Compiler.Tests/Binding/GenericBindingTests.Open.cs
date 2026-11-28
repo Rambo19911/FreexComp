@@ -113,7 +113,11 @@ public sealed partial class GenericBindingTests
         var call = model.SyntaxTree.FindToken(model.SyntaxTree.Text.Text.IndexOf("Max<T>(A, B)", StringComparison.Ordinal));
         Assert.Same(max, Assert.IsType<MethodSymbol>(model.GetSymbolInfo(call.Parent!).Symbol).GenericMethodDefinition);
         Assert.Empty(max.Instances);
-        Assert.Single(max.OpenInstances);
+        // C-422: and its own open instance (over its own type parameter), on which the model binds its body; none reaches code generation
+        Assert.NotNull(max.OpenInstance);
+        Assert.Equal(2, max.OpenInstances.Count);
+        Assert.Single(max.OpenInstances.Values, i => ReferenceEquals(i, max.OpenInstance));
+        Assert.Single(max.OpenInstances.Values, i => ReferenceEquals(i, model.GetSymbolInfo(call.Parent!).Symbol));
         Assert.NotNull(generics["TKeep"].OpenInstance);
         var top = model.SyntaxTree.FindToken(model.SyntaxTree.Text.Text.IndexOf("Top := nil", StringComparison.Ordinal));
         Assert.Same(stack.OpenInstance, Assert.IsType<FieldSymbol>(model.GetSymbolInfo(top.Parent!).Symbol).ContainingSymbol);

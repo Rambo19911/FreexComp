@@ -111,12 +111,30 @@ internal static class PcuReader
         /// </summary>
         private readonly Dictionary<TypeSymbol, Scope> _memberScopes = new(ReferenceEqualityComparer.Instance);
 
-        /// <summary>The member scope of <paramref name="type"/> (below those of its enclosing types) a nested generic binds in.</summary>
+        /// <summary>
+        /// C-422 (LANG-772): below each member scope, the scope holding the nested names its type inherits from its ancestors —
+        /// filled when the nested members are attached (<see cref="AttachNested"/>), as the binder of the source fills it.
+        /// </summary>
+        private readonly List<(TypeSymbol Type, Scope Inherited)> _inheritedScopes = [];
+
+        /// <summary>
+        /// C-422 (CMP-1479): the constraint lists of the generics and generic methods read so far, bound once every symbol read is
+        /// declared and the nested members are attached (<see cref="AttachNested"/>) — a constraint may name the declaring class
+        /// itself, a class declared later in the type section, or a nested type of the declaring or of an enclosing type.
+        /// </summary>
+        private readonly List<Action> _constraints = [];
+
+        /// <summary>
+        /// The member scope of <paramref name="type"/> (below the nested names it inherits, below those of its enclosing types): the
+        /// scope a generic nested in the type, and (C-422) the generic methods of the type, bind in.
+        /// </summary>
         private Scope MemberScope(TypeSymbol type)
         {
             if (!_memberScopes.TryGetValue(type, out var scope))
             {
-                scope = new Scope(ScopeKind.TypeMember, type.ContainingSymbol is TypeSymbol outer ? MemberScope(outer) : _declarations, type);
+                var inherited = new Scope(ScopeKind.TypeMember, type.ContainingSymbol is TypeSymbol outer ? MemberScope(outer) : _declarations, type);
+                _inheritedScopes.Add((type, inherited));
+                scope = new Scope(ScopeKind.TypeMember, inherited, type);
                 _memberScopes[type] = scope;
                 foreach (var member in TypeMembers.NestedMembers(type))
                 {
@@ -255,7 +273,7 @@ internal static class PcuReader
             var declaring = container is TypeSymbol outer ? MemberScope(outer) : _declarations;
             var generic = new GenericTypeSymbol(name, parameters, declaration, declaring, int.MaxValue, container, Declaration(entry));
             _byId[id] = generic;
-            generic.Constraints = DeclarationBinder.ImportConstraints(types, declaring, _unit, typeParameters);
+            _constraints.Add(() => generic.Constraints = DeclarationBinder.ImportConstraints(types, declaring, _unit, typeParameters));
             _generics.Add(implementations);
             return generic;
         }
@@ -303,6 +321,9 @@ internal static class PcuReader
             var members = declaration?.DescendantNodes().OfType<MethodDeclarationSyntax>().ToList()
                 ?? throw new PcuFormatException($"generic body {body} does not parse");
             var generics = ImmutableArray.CreateBuilder<GenericMethodSymbol>();
+            // C-422: the heading of each instance and the constraints bind where the members of the type were bound in the source —
+            // in its member scope, which sees its nested types and constants, those it inherits and those of its enclosing types
+            var declaring = MemberScope(type);
             foreach (var method in methods)
             {
                 var member = (int)method!["member"]!;
@@ -312,10 +333,9 @@ internal static class PcuReader
                 }
 
                 var names = typeParameters.Parameters.SelectMany(p => p.Identifiers).Select(i => i.Identifier.Value as string ?? i.Identifier.Text).ToImmutableArray();
-                generics.Add(new GenericMethodSymbol(Text(method, "name"), type, members[member], VisibilityOf(Text(method, "visibility")), names, _declarations, _unit, [])
-                {
-                    Constraints = DeclarationBinder.ImportConstraints(types, _declarations, _unit, typeParameters),
-                });
+                var generic = new GenericMethodSymbol(Text(method, "name"), type, members[member], VisibilityOf(Text(method, "visibility")), names, declaring, _unit, []);
+                _constraints.Add(() => generic.Constraints = DeclarationBinder.ImportConstraints(types, declaring, _unit, typeParameters));
+                generics.Add(generic);
             }
 
             _generics.Add(implementations);
@@ -548,6 +568,19 @@ internal static class PcuReader
                     default:
                         throw new PcuFormatException($"'{pending.Owner.Name}' cannot have nested types");
                 }
+            }
+
+            foreach (var (type, inherited) in _inheritedScopes)
+            {
+                DeclarationBinder.DeclareInheritedNested(inherited, (type as ClassTypeSymbol)?.Parent);     // LANG-772 (C-422)
+            }
+
+            _inheritedScopes.Clear();
+            var constraints = _constraints.ToArray();
+            _constraints.Clear();
+            foreach (var bind in constraints)
+            {
+                bind();                                                             // CMP-1479 (C-422): every name a constraint can use is declared now
             }
         }
 

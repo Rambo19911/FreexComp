@@ -447,12 +447,12 @@ public sealed class PcuImportTests
     }
 
     /// <summary>The program compiled against <c>.pcu</c>-only U and V gives the IR it gets against their sources.</summary>
-    internal static void AssertSameIrAgainstPcu(string unit, string program)
+    internal static void AssertSameIrAgainstPcu(string unit, string program, string v = PcuTests.UnitV)
     {
-        var sources = PcuTests.Files(u: unit, program: program);
+        var sources = PcuTests.Files(u: unit, v: v, program: program);
         var reference = Emit(sources, PcuTests.Options(), EmitStage.Ll);
         Assert.True(reference.Success, string.Join("\n", reference.Diagnostics.Select(d => d.ToText())));
-        var pcus = PcuTests.Pcus(PcuTests.Files(u: unit, program: program));
+        var pcus = PcuTests.Pcus(PcuTests.Files(u: unit, v: v, program: program));
         var fs = new InMemoryFileSystem()
             .Add(@"C:\p\P.pas", program)
             .AddSystem();

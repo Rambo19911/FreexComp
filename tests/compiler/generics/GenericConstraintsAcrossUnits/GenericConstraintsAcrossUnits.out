@@ -1,0 +1,10 @@
+base
+circle
+square 4
+labelled []
+circle circle
+hello hello
+hello hello
+square 4, labelled [], circle
+LOUD/tag LOUD/LOUD
+TRUE FALSE
