@@ -5,6 +5,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Styling;
 using Avalonia.Threading;
 using FreexComp.Designer.Inspector;
 using FreexComp.Designer.Model;
@@ -24,6 +25,9 @@ namespace FreexComp.Ide.Views;
 /// double-click (the OnClick handler). Close (Enter / Escape / ×) only closes: every operation is already applied.
 /// Items that share an access key with another item of their level carry the warning mark, and the warning line on the
 /// button strip (<c>Dialog.MenuDesigner.Warning</c>) names the current warning (DSG-SUR-252, UI-DLG-340; D-155).
+/// Items move by a drag in the tree — before, after or into the row under the pointer, shown by the insertion line
+/// (<c>Dialog.MenuDesigner.InsertionLine</c>) or the row highlight, Escape cancels the drag only — and by
+/// Ctrl+Shift+Left (move out) / Ctrl+Shift+Right (move in) (DSG-SUR-253…257, UI-DLG-341; D-156).
 /// </summary>
 public sealed class MenuDesignerWindow : DialogWindow
 {
@@ -36,11 +40,27 @@ public sealed class MenuDesignerWindow : DialogWindow
         : base(model, Body(model, parts))
     {
         SetStripInfo(parts.Warning);
+
+        // DSG-SUR-255: Escape during a drag cancels the drag only — consumed before the dialog takes it as Close.
+        AddHandler(KeyDownEvent, (_, e) =>
+        {
+            if (parts.Dragging && e.Key == Key.Escape)
+            {
+                e.Handled = true;
+                CancelDrag(parts);
+            }
+        }, RoutingStrategies.Tunnel);
         // The dialog opens with the focus in the tree, on the selected item (after the base focus pass).
         Opened += (_, _) => Dispatcher.UIThread.Post(() => FocusSelected(parts), DispatcherPriority.Loaded);
     }
 
     private static string Id(string field) => AutomationIds.DialogField(MenuDesignerViewModel.DialogName, field);
+
+    /// <summary>DSG-SUR-253: the pointer distance (DIP) that turns a press on a node into a drag.</summary>
+    private const double DragThreshold = 4;
+
+    /// <summary>Style class of the node that is the "into" target of a drag (UI-DLG-341).</summary>
+    private const string DropTargetClass = "dropTarget";
 
     /// <summary>The controls the handlers share.</summary>
     private sealed class Parts
@@ -69,7 +89,33 @@ public sealed class MenuDesignerWindow : DialogWindow
         public Dictionary<FormObject, TreeViewItem> Nodes { get; } = new(ReferenceEqualityComparer.Instance);
 
         public bool Syncing { get; set; }
+
+        /// <summary>UI-DLG-341: the layer over the tree that shows the drop position; it takes no input.</summary>
+        public Canvas DropLayer { get; } = new() { IsHitTestVisible = false, ClipToBounds = true };
+
+        /// <summary>The insertion line (before / after): 2 px, accent.</summary>
+        public Border DropLine { get; } = new() { Height = 2, IsVisible = false };
+
+        /// <summary>The 1 px accent outline of the "into" row (its fill is the row's own background).</summary>
+        public Border DropOutline { get; } = new() { BorderThickness = new Thickness(1), IsVisible = false };
+
+        /// <summary>The pressed node that may become a drag, and where it was pressed (tree coordinates).</summary>
+        public (Point At, FormObject Item)? Press { get; set; }
+
+        public bool Dragging { get; set; }
+
+        /// <summary>The last pointer position of the drag (tree coordinates): the wheel scrolls under it.</summary>
+        public Point DragAt { get; set; }
+
+        public IPointer? Pointer { get; set; }
+
+        public TreeViewItem? Highlighted { get; set; }
+
+        public Cursor? NoCursor { get; set; }
     }
+
+    /// <summary>A drop position of the running drag: the target item, where, and whether the item may go there (DSG-SUR-255).</summary>
+    private readonly record struct DropTarget(FormObject Item, MenuDropPosition Position, bool IsValid);
 
     private static Grid Body(MenuDesignerViewModel model, Parts p)
     {
@@ -79,7 +125,16 @@ public sealed class MenuDesignerWindow : DialogWindow
         var placeholder = new TextBlock { Text = model.EmptyText, Margin = new Thickness(8), TextWrapping = TextWrapping.Wrap, IsHitTestVisible = false };
         placeholder.Bind(TextBlock.ForegroundProperty, placeholder.GetResourceObservable("FxcTextTertiaryBrush"));
         AutomationProperties.SetAutomationId(placeholder, Id("Tree.Empty"));
-        var treeFrame = new Border { BorderThickness = new Thickness(1), Child = new Panel { Children = { p.Tree, placeholder } } };
+        // UI-DLG-341: the drop feedback over the tree, in accent; the "into" row itself is filled with bg.selected.inactive.
+        p.DropLine.Bind(Border.BackgroundProperty, p.DropLine.GetResourceObservable("FxcAccentDefaultBrush"));
+        p.DropOutline.Bind(Border.BorderBrushProperty, p.DropOutline.GetResourceObservable("FxcAccentDefaultBrush"));
+        AutomationProperties.SetAutomationId(p.DropLine, Id("InsertionLine"));
+        p.DropLayer.Children.Add(p.DropLine);
+        p.DropLayer.Children.Add(p.DropOutline);
+        var dropTarget = new Style(x => x.OfType<TreeViewItem>().Class(DropTargetClass).Template().OfType<Border>().Name("PART_LayoutRoot"));
+        dropTarget.Setters.Add(new Setter(Border.BackgroundProperty, new Avalonia.Markup.Xaml.MarkupExtensions.DynamicResourceExtension("FxcBgSelectedInactiveBrush")));
+        p.Tree.Styles.Add(dropTarget);
+        var treeFrame = new Border { BorderThickness = new Thickness(1), Child = new Panel { Children = { p.Tree, p.DropLayer, placeholder } } };
         treeFrame.Bind(Border.BorderBrushProperty, treeFrame.GetResourceObservable("FxcBorderDefaultBrush"));
 
         var newItem = Button("NewItem", Strings.MenuDesigner_NewItem, model.NewItem);
@@ -160,6 +215,11 @@ public sealed class MenuDesignerWindow : DialogWindow
         {
             p.Syncing = true;
             var hadFocus = p.Tree.IsKeyboardFocusWithin;
+            if (p.Dragging)
+            {
+                CancelDrag(p); // the nodes are rebuilt: a drag over the old ones ends (a change behind the dialog)
+            }
+
             p.Tree.Items.Clear();
             p.Nodes.Clear();
             foreach (var node in model.Nodes)
@@ -220,6 +280,85 @@ public sealed class MenuDesignerWindow : DialogWindow
             }
         };
         p.Tree.AddHandler(KeyDownEvent, (_, e) => TreeKey(model, p, e), RoutingStrategies.Tunnel);
+
+        // DSG-SUR-253…256: a press on a node selects it (the tree's own handling) and may become a drag of that item.
+        p.Tree.AddHandler(PointerPressedEvent, (_, e) =>
+        {
+            p.Press = null;
+            if (e.GetCurrentPoint(p.Tree).Properties.IsLeftButtonPressed && e.KeyModifiers == KeyModifiers.None && e.Source is Visual source
+                && source.FindAncestorOfType<Avalonia.Controls.Primitives.ToggleButton>(includeSelf: true) is null // not the expander of a node
+                && source.FindAncestorOfType<TreeViewItem>(includeSelf: true) is { Tag: FormObject item }) // not the scroll bar, not the empty area
+            {
+                p.Press = (e.GetPosition(p.Tree), item);
+            }
+        }, RoutingStrategies.Tunnel);
+        p.Tree.AddHandler(PointerMovedEvent, (_, e) =>
+        {
+            if (p.Press is not { } press)
+            {
+                return;
+            }
+
+            var at = e.GetPosition(p.Tree);
+            if (!p.Dragging)
+            {
+                if (Math.Abs(at.X - press.At.X) < DragThreshold && Math.Abs(at.Y - press.At.Y) < DragThreshold)
+                {
+                    return;
+                }
+
+                if (!model.CanMove(press.Item))
+                {
+                    p.Press = null; // a fixed item, a form that cannot be changed: the press stays a selection
+                    return;
+                }
+
+                e.Pointer.Capture(p.Tree);
+                p.Pointer = e.Pointer;
+                p.Dragging = true;
+            }
+
+            e.Handled = true;
+            p.DragAt = at;
+            ShowDropTarget(p, TargetAt(model, p, press.Item, at));
+        }, RoutingStrategies.Tunnel, handledEventsToo: true);
+        p.Tree.AddHandler(PointerReleasedEvent, (_, e) =>
+        {
+            if (p.Press is not { } press)
+            {
+                return;
+            }
+
+            if (!p.Dragging)
+            {
+                p.Press = null;
+                return;
+            }
+
+            e.Handled = true;
+            var target = TargetAt(model, p, press.Item, e.GetPosition(p.Tree));
+            CancelDrag(p);
+            if (target is { IsValid: true } drop)
+            {
+                model.MoveTo(press.Item, drop.Item, drop.Position); // one "Order" unit; false: the present place, or the form refused
+            }
+        }, RoutingStrategies.Tunnel, handledEventsToo: true);
+        p.Tree.PointerCaptureLost += (_, _) => CancelDrag(p); // DSG-SUR-255: losing the capture cancels
+
+        // DSG-SUR-254: the tree does not scroll by itself during a drag, the wheel does (the captured pointer sends it here).
+        p.Tree.AddHandler(PointerWheelChangedEvent, (_, e) =>
+        {
+            if (!p.Dragging || p.Press is not { } press || p.Tree.GetVisualDescendants().OfType<ScrollViewer>().FirstOrDefault() is not { } scroll)
+            {
+                return;
+            }
+
+            e.Handled = true;
+            var y = Math.Clamp(scroll.Offset.Y - (e.Delta.Y * 50), 0, Math.Max(0, scroll.Extent.Height - scroll.Viewport.Height));
+            scroll.Offset = scroll.Offset.WithY(y);
+            p.Tree.UpdateLayout(); // the rows are at their new places before the position under the pointer is taken
+            ShowDropTarget(p, TargetAt(model, p, press.Item, p.DragAt));
+        }, RoutingStrategies.Tunnel, handledEventsToo: true);
         p.Tree.AddHandler(DoubleTappedEvent, (_, e) =>
         {
             if ((e.Source as Visual)?.FindAncestorOfType<TreeViewItem>(includeSelf: true) is { Tag: FormObject item })
@@ -355,6 +494,12 @@ public sealed class MenuDesignerWindow : DialogWindow
             case (Key.Down, KeyModifiers.Control):
                 model.MoveDown();
                 break;
+            case (Key.Left, KeyModifiers.Control | KeyModifiers.Shift):
+                model.MoveOut(); // DSG-SUR-257
+                break;
+            case (Key.Right, KeyModifiers.Control | KeyModifiers.Shift):
+                model.MoveIn();
+                break;
             case (Key.F2, KeyModifiers.None):
                 if (!model.IsCaptionEnabled)
                 {
@@ -428,6 +573,102 @@ public sealed class MenuDesignerWindow : DialogWindow
         }
 
         return item;
+    }
+
+    /// <summary>The row of a node — its own line of the tree, without its sub-items — when it is shown.</summary>
+    private static Border? RowOf(TreeViewItem node) =>
+        node.IsEffectivelyVisible ? node.GetVisualDescendants().OfType<Border>().FirstOrDefault(b => b.Name == "PART_LayoutRoot") : null;
+
+    /// <summary>The item whose row is at <paramref name="at"/> (tree coordinates) and where in the row (0 = upper edge, 1 = lower edge).</summary>
+    private static (FormObject Item, double Fraction)? RowAt(MenuDesignerViewModel model, Parts p, Point at)
+    {
+        foreach (var item in model.Items)
+        {
+            if (p.Nodes.TryGetValue(item, out var node) && RowOf(node) is { Bounds.Height: > 0 } row && row.TranslatePoint(default, p.Tree) is { } origin
+                && at.Y >= origin.Y && at.Y < origin.Y + row.Bounds.Height)
+            {
+                return (item, (at.Y - origin.Y) / row.Bounds.Height);
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// DSG-SUR-254: the drop position at <paramref name="at"/> (tree coordinates) — by the zone of the row under the pointer;
+    /// below the last row: after the last top-level item. Null outside the tree and above the first row: no position.
+    /// </summary>
+    private static DropTarget? TargetAt(MenuDesignerViewModel model, Parts p, FormObject dragged, Point at)
+    {
+        if (!new Rect(p.Tree.Bounds.Size).Contains(at))
+        {
+            return null;
+        }
+
+        if (RowAt(model, p, at) is { } row)
+        {
+            var position = MenuDesignerViewModel.DropPositionAt(row.Item, row.Fraction);
+            return new DropTarget(row.Item, position, model.CanMoveTo(dragged, row.Item, position));
+        }
+
+        return model.Menu.Children.LastOrDefault() is { } last && p.Nodes.TryGetValue(last, out var node)
+            && node.TranslatePoint(new Point(0, node.Bounds.Height), p.Tree) is { } end && at.Y >= end.Y
+            ? new DropTarget(last, MenuDropPosition.After, model.CanMoveTo(dragged, last, MenuDropPosition.After))
+            : null;
+    }
+
+    /// <summary>
+    /// UI-DLG-341: the feedback of a drag — before / after: the insertion line at the upper edge of the target's row or
+    /// under the target with its sub-items, from the indent of the target's level to the right edge of the tree; into: the
+    /// row filled and outlined; not valid (or no position): the "no" cursor only. Null with no drag running: nothing.
+    /// </summary>
+    private static void ShowDropTarget(Parts p, DropTarget? target)
+    {
+        p.Highlighted?.Classes.Remove(DropTargetClass);
+        p.Highlighted = null;
+        p.DropLine.IsVisible = false;
+        p.DropOutline.IsVisible = false;
+        p.Tree.Cursor = p.Dragging && target is not { IsValid: true } ? p.NoCursor ??= new Cursor(StandardCursorType.No) : null;
+        if (!p.Dragging || target is not { IsValid: true } drop || !p.Nodes.TryGetValue(drop.Item, out var node) || RowOf(node) is not { } row
+            || row.TranslatePoint(default, p.DropLayer) is not { } origin)
+        {
+            return;
+        }
+
+        if (drop.Position == MenuDropPosition.Into)
+        {
+            node.Classes.Add(DropTargetClass);
+            p.Highlighted = node;
+            Canvas.SetLeft(p.DropOutline, origin.X);
+            Canvas.SetTop(p.DropOutline, origin.Y);
+            p.DropOutline.Width = row.Bounds.Width;
+            p.DropOutline.Height = row.Bounds.Height;
+            p.DropOutline.IsVisible = true;
+            return;
+        }
+
+        var before = drop.Position == MenuDropPosition.Before;
+        var left = (node.Header as Control)?.TranslatePoint(default, p.DropLayer)?.X ?? origin.X;
+        var edge = before ? origin.Y : node.TranslatePoint(new Point(0, node.Bounds.Height), p.DropLayer)?.Y ?? origin.Y + row.Bounds.Height;
+        Canvas.SetLeft(p.DropLine, left);
+        Canvas.SetTop(p.DropLine, Math.Clamp(edge - 1, 0, Math.Max(0, p.DropLayer.Bounds.Height - p.DropLine.Height)));
+        p.DropLine.Width = Math.Max(0, p.DropLayer.Bounds.Width - left);
+        var name = drop.Item.FindProperty("Caption")?.Value is StringValue { Value: { Length: > 0 } and not "-" and var caption }
+            ? MenuDesignerViewModel.PlainCaption(caption) : drop.Item.Name; // a separator and an empty caption: the component name
+        AutomationProperties.SetName(p.DropLine, string.Format(System.Globalization.CultureInfo.CurrentCulture,
+            before ? Strings.MenuDesigner_DropBefore : Strings.MenuDesigner_DropAfter, name));
+        p.DropLine.IsVisible = true;
+    }
+
+    /// <summary>DSG-SUR-255: ends a drag without a change (Escape, a lost capture, the release itself): no line, no highlight, no capture.</summary>
+    private static void CancelDrag(Parts p)
+    {
+        var pointer = p.Pointer;
+        p.Dragging = false;
+        p.Press = null;
+        p.Pointer = null;
+        ShowDropTarget(p, null);
+        pointer?.Capture(null);
     }
 
     private static void FocusSelected(Parts p)

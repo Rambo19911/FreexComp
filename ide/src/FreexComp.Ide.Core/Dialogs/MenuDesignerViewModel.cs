@@ -33,12 +33,27 @@ public sealed record MenuDesignerNode(FormObject Item, string Name, string Capti
 /// </summary>
 public sealed record MenuDesignerWarning(FormObject Parent, char Key, IReadOnlyList<FormObject> Items, string Text);
 
+/// <summary>Where a moved item of the Menu Designer goes, relative to the target item (DSG-SUR-254).</summary>
+public enum MenuDropPosition
+{
+    /// <summary>Before the target, in the target's level.</summary>
+    Before,
+
+    /// <summary>After the target, in the target's level.</summary>
+    After,
+
+    /// <summary>Into the target, as its last sub-item (the menu component as target: the end of the top level).</summary>
+    Into,
+}
+
 /// <summary>
 /// The Menu Designer (design-surface.md DSG-SUR-197, DSG-SUR-199; dialogs.md §26; D-098) of a <c>TMainMenu</c> or
 /// <c>TPopupMenu</c>: the item tree, New Item / Insert Before / New Sub-Item / New Separator / Delete / Move Up / Move Down,
 /// the Caption and ShortCut fields and the embedded property grid (<see cref="Grid"/>, Properties with the Name row and
 /// Events). Every operation is applied to the form at once as its own ordinary undo unit including its code-sync edits;
-/// there is no Cancel, Close only closes (UI-DLG-252). The surface selection is kept while the dialog works.
+/// there is no Cancel, Close only closes (UI-DLG-252). The surface selection is kept while the dialog works. Items move
+/// to another place or level by <see cref="MoveTo"/> (a drag in the view), <see cref="MoveOut"/> and <see cref="MoveIn"/>,
+/// each one "Order" unit (DSG-SUR-253…257; D-156); fixed (inherited, preserved) items do not move.
 /// </summary>
 public sealed class MenuDesignerViewModel : DialogViewModel<bool>
 {
@@ -189,9 +204,17 @@ public sealed class MenuDesignerViewModel : DialogViewModel<bool>
 
     public bool CanDelete => CanChange && _selected is not null;
 
-    public bool CanMoveUp => CanChange && _selected is { Parent: { } parent } item && IndexIn(parent, item) > 0;
+    /// <summary>Not for a fixed item, nor above the inherited items of its level (they come first, DSG-SUR-241).</summary>
+    public bool CanMoveUp => CanChange && _selected is { Parent: { } parent } item && !IsFixed(item) && IndexIn(parent, item) > InheritedCount(parent);
 
-    public bool CanMoveDown => CanChange && _selected is { Parent: { } parent } item && IndexIn(parent, item) < parent.Children.Count - 1;
+    public bool CanMoveDown => CanChange && _selected is { Parent: { } parent } item && !IsFixed(item) && IndexIn(parent, item) < parent.Children.Count - 1;
+
+    /// <summary>DSG-SUR-257: move out — the selected item becomes the sibling directly after its parent; not at the top level.</summary>
+    public bool CanMoveOut => _selected is { Parent: { } parent } item && !ReferenceEquals(parent, Menu) && Place(item, parent, MenuDropPosition.After) is not null;
+
+    /// <summary>DSG-SUR-257: move in — the selected item becomes the last sub-item of the sibling before it; not without one, nor into a separator.</summary>
+    public bool CanMoveIn => _selected is { Parent: { } parent } item && IndexIn(parent, item) is > 0 and var index
+        && Place(item, parent.Children[index - 1], MenuDropPosition.Into) is not null;
 
     /// <summary>Caption is disabled without a selection.</summary>
     public bool IsCaptionEnabled => CanChange && _selected is not null;
@@ -354,6 +377,130 @@ public sealed class MenuDesignerViewModel : DialogViewModel<bool>
     }
 
     /// <summary>
+    /// DSG-SUR-253: the item can be moved (dragged) — the dialog can change the form and the item is not a fixed one
+    /// (inherited from an ancestor form or a frame definition, or preserved).
+    /// </summary>
+    public bool CanMove(FormObject item)
+    {
+        ArgumentNullException.ThrowIfNull(item);
+        return CanChange && !ReferenceEquals(item, Menu) && Subtree(Menu).Contains(item) && !IsFixed(item);
+    }
+
+    /// <summary>
+    /// DSG-SUR-254: the drop position in the row of <paramref name="target"/> at <paramref name="fraction"/> of its height
+    /// (0 = upper edge, 1 = lower edge): upper quarter before, lower quarter after, the middle half into; a separator row has
+    /// no "into" — upper half before, lower half after.
+    /// </summary>
+    public static MenuDropPosition DropPositionAt(FormObject target, double fraction)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        return IsSeparator(target) ? fraction < 0.5 ? MenuDropPosition.Before : MenuDropPosition.After
+            : fraction < 0.25 ? MenuDropPosition.Before
+            : fraction >= 0.75 ? MenuDropPosition.After
+            : MenuDropPosition.Into;
+    }
+
+    /// <summary>
+    /// DSG-SUR-255: <paramref name="item"/> may be dropped at <paramref name="position"/> of <paramref name="target"/> —
+    /// unless the new parent is the item or one of its sub-items, or the position is into a separator. The menu component as
+    /// target takes only <see cref="MenuDropPosition.Into"/> (the end of the top level). The item's present place is valid.
+    /// </summary>
+    public bool CanMoveTo(FormObject item, FormObject target, MenuDropPosition position)
+    {
+        ArgumentNullException.ThrowIfNull(item);
+        ArgumentNullException.ThrowIfNull(target);
+        if (!CanMove(item) || !Subtree(Menu).Contains(target))
+        {
+            return false;
+        }
+
+        var parent = position == MenuDropPosition.Into ? target : ReferenceEquals(target, Menu) ? null : target.Parent;
+        if (parent is null || (position == MenuDropPosition.Into && IsSeparator(target)))
+        {
+            return false;
+        }
+
+        return !Subtree(item).Contains(parent);
+    }
+
+    /// <summary>
+    /// DSG-SUR-256: moves <paramref name="item"/> with its sub-items to <paramref name="position"/> of
+    /// <paramref name="target"/> as one "Order" unit with one <see cref="MoveObject"/>; the moved item is selected. False —
+    /// nothing recorded — when the position is not valid, is the item's present place, or the form refuses the move (a place
+    /// before the inherited items of the new level, a level that takes no new items; DSG-SUR-255).
+    /// </summary>
+    public bool MoveTo(FormObject item, FormObject target, MenuDropPosition position)
+    {
+        if (Place(item, target, position) is not { } place
+            || !_designer.Surface!.Commit(UndoTitles.Order, [new MoveObject(item.QualifiedName, place.Parent.QualifiedName, place.Index)]))
+        {
+            return false;
+        }
+
+        if (ReferenceEquals(_selected, item))
+        {
+            Changed();
+        }
+        else
+        {
+            Select(item);
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// The new parent and the index in it (counted after the removal, DSG-FD-085) of a move that changes something; null for
+    /// a position that is not valid, for the item's present place and for a place the form refuses — before the inherited
+    /// items of the new level (DSG-SUR-241) or in a level that takes no new items.
+    /// </summary>
+    private (FormObject Parent, int Index)? Place(FormObject item, FormObject target, MenuDropPosition position)
+    {
+        if (!CanMoveTo(item, target, position))
+        {
+            return null;
+        }
+
+        var parent = position == MenuDropPosition.Into ? target : target.Parent!;
+        var index = position switch
+        {
+            MenuDropPosition.Before => IndexIn(parent, target),
+            MenuDropPosition.After => IndexIn(parent, target) + 1,
+            _ => parent.Children.Count,
+        };
+        if (ReferenceEquals(item.Parent, parent))
+        {
+            var current = IndexIn(parent, item);
+            index -= current < index ? 1 : 0;
+            if (index == current)
+            {
+                return null; // the present place
+            }
+        }
+
+        return parent.IsPreserved || !parent.AcceptsNewChildren || index < InheritedCount(parent) ? null : (parent, index);
+    }
+
+    /// <summary>Move out (<c>Ctrl+Shift+Left</c>): one "Order" unit.</summary>
+    public void MoveOut()
+    {
+        if (CanMoveOut)
+        {
+            MoveTo(_selected!, _selected!.Parent!, MenuDropPosition.After);
+        }
+    }
+
+    /// <summary>Move in (<c>Ctrl+Shift+Right</c>): one "Order" unit.</summary>
+    public void MoveIn()
+    {
+        if (CanMoveIn)
+        {
+            var parent = _selected!.Parent!;
+            MoveTo(_selected, parent.Children[IndexIn(parent, _selected) - 1], MenuDropPosition.Into);
+        }
+    }
+
+    /// <summary>
     /// Caption (Enter, focus loss): the selected item's <c>Caption</c> as one "Property" unit; while the item still has its
     /// generated name (<c>MenuItem&lt;n&gt;</c>, <c>N&lt;k&gt;</c>) it is renamed in the same unit per UIF-727 — the caption
     /// without non-identifier characters, a numeric suffix when taken; <c>N&lt;k&gt;</c> for a separator. False when refused.
@@ -432,6 +579,12 @@ public sealed class MenuDesignerViewModel : DialogViewModel<bool>
     // ---- internals --------------------------------------------------------------------------------------------------
 
     private static bool IsSeparator(FormObject item) => item.FindProperty("Caption")?.Value is StringValue { Value: "-" };
+
+    /// <summary>A fixed item (DSG-SUR-237, 257): its place cannot change — inherited, or (part of) a preserved object.</summary>
+    private static bool IsFixed(FormObject item) => item.IsInherited || item.IsPreserved || item.Parent is { IsPreserved: true };
+
+    /// <summary>The inherited items of a level: they come first, and no other item is placed before them (DSG-SUR-241).</summary>
+    private static int InheritedCount(FormObject parent) => parent.Children.TakeWhile(c => c.IsInherited).Count();
 
     /// <summary>The item's name is still one the dialog would generate: <c>&lt;namePrefix&gt;&lt;n&gt;</c> or <c>N&lt;k&gt;</c>.</summary>
     private static bool IsGeneratedName(FormObject item)
@@ -572,6 +725,8 @@ public sealed class MenuDesignerViewModel : DialogViewModel<bool>
         OnPropertyChanged(nameof(CanDelete));
         OnPropertyChanged(nameof(CanMoveUp));
         OnPropertyChanged(nameof(CanMoveDown));
+        OnPropertyChanged(nameof(CanMoveOut));
+        OnPropertyChanged(nameof(CanMoveIn));
         OnPropertyChanged(nameof(IsCaptionEnabled));
         OnPropertyChanged(nameof(IsShortCutEnabled));
         Grid.Refresh();

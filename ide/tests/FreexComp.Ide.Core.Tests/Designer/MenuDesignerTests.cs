@@ -608,4 +608,358 @@ public sealed class MenuDesignerTests
     [InlineData("&&", "")]
     public void AccessKeyOfCaption(string caption, string expected) =>
         Assert.Equal(expected, MenuDesignerViewModel.AccessKey(caption)?.ToString() ?? "");
+
+    /// <summary>The names of the objects of the saved form text, in the order in which they are written.</summary>
+    private static List<string> WrittenOrder(string formText, params string[] names) =>
+        [.. names.OrderBy(n => formText.IndexOf($"object {n}: TMenuItem", StringComparison.Ordinal))];
+
+    /// <summary>
+    /// D-156 (DSG-SUR-255, 256): <c>MoveTo</c> before / after / into — the order in the model and in the saved form, one
+    /// "Order" unit each (the kind of Move Up), the sub-items move with their item, refused and present places record nothing.
+    /// </summary>
+    [Fact(Timeout = 30000)]
+    [Trait("Phase", "8")]
+    [Trait("Req", "DSG-SUR-255")]
+    [Trait("Req", "DSG-SUR-256")]
+    public Task MoveToReordersAndReparentsAsOneOrderUnit() => TestUiThread.RunAsync(MoveToReordersAndReparentsAsOneOrderUnitOnUiThread);
+
+    private static async Task MoveToReordersAndReparentsAsOneOrderUnitOnUiThread()
+    {
+        var s = await OpenAsync();
+        await s.DesignAsync(md =>
+        {
+            var file = Add(md, "&File");
+            var open = Add(md, "&Open…", sub: true);
+            md.ShortCutText = "Ctrl+O";
+            Assert.True(md.CommitShortCut());
+            md.NewSeparator();
+            var rule = md.Selected!;
+            var exit = Add(md, "E&xit");
+            md.Select(file);
+            var help = Add(md, "&Help");
+            var about = Add(md, "&About", sub: true);
+            Assert.Equal(["Open", "N1", "Exit"], s.Children(file.Name));
+            var code = s.Code;
+            var units = s.Designer.Undo.UndoCount;
+
+            void Moved(FormObject item, FormObject target, MenuDropPosition position)
+            {
+                Assert.True(md.CanMoveTo(item, target, position));
+                Assert.True(md.MoveTo(item, target, position));
+                Assert.Equal((++units, UndoTitles.Order), (s.Designer.Undo.UndoCount, s.Designer.Undo.UndoTitleKey)); // one unit, titled as Move Up
+                Assert.Same(item, md.Selected); // the moved item is selected
+            }
+
+            void Unmoved(FormObject item, FormObject target, MenuDropPosition position, bool valid)
+            {
+                var form = s.FormText;
+                Assert.Equal(valid, md.CanMoveTo(item, target, position));
+                Assert.False(md.MoveTo(item, target, position));
+                Assert.Equal(units, s.Designer.Undo.UndoCount);
+                Assert.Equal(form, s.FormText);
+            }
+
+            // Before: Exit in front of Open; Undo restores the place, the selection stays; the document is modified.
+            md.Select(open);
+            Moved(exit, open, MenuDropPosition.Before);
+            Assert.Equal(["Exit", "Open", "N1"], s.Children(file.Name));
+            Assert.True(s.Document.IsModified);
+            s.Undo();
+            units--;
+            Assert.Equal(["Open", "N1", "Exit"], s.Children(file.Name));
+            Assert.Same(exit, md.Selected);
+            Assert.Equal(["MainMenu1"], s.Designer.Surface!.Selection.Items.Select(o => o.Name)); // the surface selection is kept
+
+            // After, upwards and downwards within the level (the index counts after the removal).
+            Moved(open, exit, MenuDropPosition.After);
+            Assert.Equal(["N1", "Exit", "Open"], s.Children(file.Name));
+            Moved(rule, exit, MenuDropPosition.After);
+            Assert.Equal(["Exit", "N1", "Open"], s.Children(file.Name));
+            Moved(open, exit, MenuDropPosition.After);
+            Assert.Equal(["Exit", "Open", "N1"], s.Children(file.Name));
+
+            // Into: the last sub-item of another item; before / after an item of another level.
+            Moved(open, help, MenuDropPosition.Into);
+            Assert.Equal(["Exit", "N1"], s.Children(file.Name));
+            Assert.Equal(["About", "Open"], s.Children(help.Name));
+            Moved(exit, about, MenuDropPosition.Before);
+            Assert.Equal(["N1"], s.Children(file.Name));
+            Assert.Equal(["Exit", "About", "Open"], s.Children(help.Name));
+
+            // The menu component as target: the end of the top level; then before the first top-level item.
+            Moved(about, md.Menu, MenuDropPosition.Into);
+            Assert.Equal([file.Name, "Help", "About"], s.Children("MainMenu1"));
+            Moved(about, file, MenuDropPosition.Before);
+            Assert.Equal(["About", file.Name, "Help"], s.Children("MainMenu1"));
+
+            // The sub-items move with their item.
+            Moved(help, file, MenuDropPosition.Into);
+            Assert.Equal(["About", file.Name], s.Children("MainMenu1"));
+            Assert.Equal(["N1", "Help"], s.Children(file.Name));
+            Assert.Equal(["Exit", "Open"], s.Children(help.Name));
+
+            // An item that gets its first sub-item this way keeps its stored ShortCut (as with New Sub-Item).
+            Moved(about, open, MenuDropPosition.Into);
+            Assert.Equal(16463, ((IntegerValue)open.FindProperty("ShortCut")!.Value).Value);
+            Assert.Equal(["About"], s.Children(open.Name));
+
+            // Refused: into itself, into or beside one of its own sub-items, into a separator, beside the menu component.
+            Unmoved(file, file, MenuDropPosition.Into, valid: false);
+            Unmoved(file, help, MenuDropPosition.Into, valid: false);
+            Unmoved(file, about, MenuDropPosition.Before, valid: false);
+            Unmoved(file, about, MenuDropPosition.After, valid: false);
+            Unmoved(about, rule, MenuDropPosition.Into, valid: false);
+            Unmoved(about, md.Menu, MenuDropPosition.Before, valid: false);
+            Unmoved(about, md.Menu, MenuDropPosition.After, valid: false);
+            Unmoved(md.Menu, file, MenuDropPosition.Into, valid: false);
+
+            // The present place is valid and records nothing.
+            Unmoved(rule, rule, MenuDropPosition.Before, valid: true);
+            Unmoved(rule, rule, MenuDropPosition.After, valid: true);
+            Unmoved(rule, help, MenuDropPosition.Before, valid: true);
+            Unmoved(help, rule, MenuDropPosition.After, valid: true);
+            Unmoved(help, file, MenuDropPosition.Into, valid: true);
+            Unmoved(file, md.Menu, MenuDropPosition.Into, valid: true);
+
+            // Captions, names, fields and the unit's code are unchanged by all of it.
+            Assert.Equal(code, s.Code);
+            Assert.Equal(["File1", "N1", "Help", "Exit", "Open", "About"], md.Items.Select(i => i.Name));
+            return Task.CompletedTask;
+        });
+
+        // In the saved form every object's text stands at its new place (creation order = display order, DSG-SUR-197).
+        Assert.True(await s.Fixture.Services.Documents.SaveAsync(s.Document));
+        var saved = s.Fixture.Disk(DesignerFixture.FormPath);
+        Assert.Equal(["File1", "N1", "Help", "Exit", "Open", "About"], WrittenOrder(saved, "About", "Exit", "File1", "Help", "N1", "Open"));
+        var parsed = FormParser.Parse(saved, "MainForm.form", CodeSyncTests.Catalog);
+        Assert.Empty(parsed.Diagnostics);
+        Assert.Equal(["About"], parsed.Document!.FindByName("Open")!.Children.Select(c => c.Name));
+    }
+
+    /// <summary>An ancestor form with a main menu: File (Open) and Edit.</summary>
+    private const string BaseMenuForm = """
+        object BaseMenuForm: TBaseMenuForm
+          Left = 200
+          Top = 120
+          Caption = 'Base'
+          ClientWidth = 400
+          ClientHeight = 300
+          Menu = MainMenu1
+          PixelsPerInch = 96
+          object MainMenu1: TMainMenu
+            DesignLeft = 320
+            DesignTop = 120
+            object FileMenu: TMenuItem
+              Caption = '&File'
+              object FileOpen: TMenuItem
+                Caption = '&Open'
+              end
+            end
+            object EditMenu: TMenuItem
+              Caption = '&Edit'
+            end
+          end
+        end
+
+        """;
+
+    /// <summary>The descendant: Exit under the inherited File, Help and Tools after the inherited top-level items.</summary>
+    private const string DescendantMenuForm = """
+        inherited MainForm: TMainForm
+          inherited MainMenu1: TMainMenu
+            inherited FileMenu: TMenuItem
+              object FileExit: TMenuItem
+                Caption = 'E&xit'
+              end
+            end
+            object HelpMenu: TMenuItem
+              Caption = '&Help'
+            end
+            object ToolsMenu: TMenuItem
+              Caption = '&Tools'
+            end
+          end
+        end
+
+        """;
+
+    private static async Task<Session> OpenDescendantAsync()
+    {
+        const string BasePath = @"C:\p\BaseMenuUnit.form";
+        var parsed = FormParser.Parse(BaseMenuForm.ReplaceLineEndings("\n"), BasePath, CodeSyncTests.Catalog, "TForm");
+        Assert.Empty(parsed.Diagnostics);
+        var ancestors = new AncestorCatalog();
+        ancestors.Set(new AncestorDefinition("TBaseMenuForm", "BaseMenuUnit", BasePath, parsed.Document!));
+        var dialogs = new FakeDialogService();
+        var f = new DesignerFixture(o => o.Dialogs = dialogs);
+        ((FreexComp.Ide.Core.Documents.DocumentService)f.Services.Documents).DesignAncestors = ancestors;
+        var unit = Unit.Replace("Classes, Controls, Forms, Menus;", "Classes, Controls, Forms, Menus, BaseMenuUnit;", StringComparison.Ordinal)
+            .Replace("TMainForm = class(TForm)", "TMainForm = class(TBaseMenuForm)", StringComparison.Ordinal)
+            .Replace("    MainMenu1: TMainMenu;", "    FileExit: TMenuItem;\r\n    HelpMenu: TMenuItem;\r\n    ToolsMenu: TMenuItem;", StringComparison.Ordinal);
+        var document = await f.OpenAsync(unit, DescendantMenuForm.ReplaceLineEndings("\n"));
+        Assert.True(document.Designer.Model!.Root.IsInheritedRoot);
+        return new Session(f, dialogs, document);
+    }
+
+    /// <summary>
+    /// D-156 (DSG-SUR-257): move out (the sibling directly after the parent) and move in (the last sub-item of the sibling
+    /// before), their enabled rules, one "Order" unit each; fixed (inherited) items do not move, and nothing goes before them.
+    /// </summary>
+    [Fact(Timeout = 30000)]
+    [Trait("Phase", "8")]
+    [Trait("Req", "DSG-SUR-257")]
+    [Trait("Req", "DSG-SUR-253")]
+    public Task MoveOutAndMoveIn() => TestUiThread.RunAsync(MoveOutAndMoveInOnUiThread);
+
+    private static async Task MoveOutAndMoveInOnUiThread()
+    {
+        var s = await OpenAsync();
+        await s.DesignAsync(md =>
+        {
+            Assert.False(md.CanMoveOut || md.CanMoveIn); // nothing selected
+            var file = Add(md, "&File");
+            var open = Add(md, "&Open…", sub: true);
+            md.NewSeparator();
+            var exit = Add(md, "E&xit");
+            md.Select(file);
+            var help = Add(md, "&Help");
+            var units = s.Designer.Undo.UndoCount;
+
+            void OneOrderUnit(Action move)
+            {
+                var selected = md.Selected;
+                move();
+                Assert.Equal((++units, UndoTitles.Order), (s.Designer.Undo.UndoCount, s.Designer.Undo.UndoTitleKey));
+                Assert.Same(selected, md.Selected);
+            }
+
+            void Nothing(Action move)
+            {
+                move();
+                Assert.Equal(units, s.Designer.Undo.UndoCount);
+            }
+
+            // Move out: the sibling directly after the parent. Not at the top level.
+            md.Select(exit);
+            Assert.True(md.CanMoveOut);
+            Assert.False(md.CanMoveIn); // the sibling before it is a separator
+            Nothing(md.MoveIn);
+            OneOrderUnit(md.MoveOut);
+            Assert.Equal([file.Name, "Exit", "Help"], s.Children("MainMenu1"));
+            Assert.Equal(["Open", "N1"], s.Children(file.Name));
+            Assert.False(md.CanMoveOut);
+            Nothing(md.MoveOut);
+
+            // Move in: the last sub-item of the sibling before it. Not for the first of a level.
+            Assert.True(md.CanMoveIn);
+            OneOrderUnit(md.MoveIn);
+            Assert.Equal([file.Name, "Help"], s.Children("MainMenu1"));
+            Assert.Equal(["Open", "N1", "Exit"], s.Children(file.Name));
+            md.Select(open);
+            Assert.False(md.CanMoveIn);
+            Nothing(md.MoveIn);
+            md.Select(file);
+            Assert.False(md.CanMoveIn || md.CanMoveOut);
+
+            // An item with sub-items moves with them; two levels in, two levels out.
+            md.Select(help);
+            Add(md, "&About", sub: true);
+            units = s.Designer.Undo.UndoCount;
+            md.Select(help);
+            OneOrderUnit(md.MoveIn);
+            OneOrderUnit(md.MoveIn);
+            Assert.Equal([file.Name], s.Children("MainMenu1"));
+            Assert.Equal(["Open", "N1", "Exit"], s.Children(file.Name));
+            Assert.Equal(["Help"], s.Children("Exit"));
+            Assert.Equal(["About"], s.Children("Help"));
+            OneOrderUnit(md.MoveOut);
+            Assert.Equal(["Open", "N1", "Exit", "Help"], s.Children(file.Name));
+            OneOrderUnit(md.MoveOut);
+            Assert.Equal([file.Name, "Help"], s.Children("MainMenu1"));
+
+            // Undo steps back one move at a time.
+            s.Undo();
+            Assert.Equal(["Open", "N1", "Exit", "Help"], s.Children(file.Name));
+            Assert.Same(help, md.Selected);
+            Assert.True(md.CanMoveOut);
+            return Task.CompletedTask;
+        });
+
+        // Fixed items (inherited from the ancestor form) do not move: the four moves and Move Up / Move Down are disabled.
+        var d = await OpenDescendantAsync();
+        await d.DesignAsync(md =>
+        {
+            Assert.Equal(["FileMenu", "FileOpen", "FileExit", "EditMenu", "HelpMenu", "ToolsMenu"], md.Items.Select(i => i.Name));
+            var units = d.Designer.Undo.UndoCount;
+            foreach (var name in (string[])["FileMenu", "FileOpen", "EditMenu"])
+            {
+                md.Select(name);
+                Assert.True(md.Selected!.IsInherited);
+                Assert.False(md.CanMoveUp || md.CanMoveDown || md.CanMoveOut || md.CanMoveIn, name);
+                Assert.False(md.CanMove(md.Selected)); // no drag: the press stays a selection
+                Assert.False(md.CanMoveTo(md.Selected, d.Item("ToolsMenu"), MenuDropPosition.After));
+                Assert.False(md.MoveTo(md.Selected, d.Item("ToolsMenu"), MenuDropPosition.After));
+                md.MoveUp();
+                md.MoveDown();
+                md.MoveOut();
+                md.MoveIn();
+            }
+
+            Assert.Equal(units, d.Designer.Undo.UndoCount);
+
+            // The descendant's own items move, but not before the inherited ones of a level: the form refuses that place.
+            md.Select("HelpMenu");
+            Assert.True(md.CanMove(md.Selected!));
+            Assert.False(md.CanMoveUp); // EditMenu before it is inherited
+            Assert.True(md.CanMoveDown);
+            md.MoveUp();
+            Assert.True(md.CanMoveTo(md.Selected!, d.Item("FileMenu"), MenuDropPosition.Before)); // a valid position …
+            Assert.False(md.MoveTo(md.Selected!, d.Item("FileMenu"), MenuDropPosition.Before)); // … that changes nothing
+            md.Select("FileExit");
+            Assert.False(md.CanMoveUp);
+            Assert.False(md.CanMoveOut); // directly after File is before the inherited Edit
+            md.MoveOut();
+            Assert.Equal(units, d.Designer.Undo.UndoCount);
+            Assert.Equal(["FileMenu", "EditMenu", "HelpMenu", "ToolsMenu"], d.Children("MainMenu1"));
+
+            // Among themselves and into an inherited item they move as usual.
+            md.Select("ToolsMenu");
+            Assert.True(md.CanMoveUp);
+            md.MoveUp();
+            Assert.Equal(["FileMenu", "EditMenu", "ToolsMenu", "HelpMenu"], d.Children("MainMenu1"));
+            Assert.True(md.CanMoveIn);
+            md.MoveIn();
+            Assert.Equal(["FileMenu", "EditMenu", "HelpMenu"], d.Children("MainMenu1"));
+            Assert.Equal(["ToolsMenu"], d.Children("EditMenu"));
+            Assert.Equal((units + 2, UndoTitles.Order), (d.Designer.Undo.UndoCount, d.Designer.Undo.UndoTitleKey));
+            Assert.True(md.CanMoveOut); // after Edit: behind the inherited items
+            md.MoveOut();
+            Assert.Equal(["FileMenu", "EditMenu", "ToolsMenu", "HelpMenu"], d.Children("MainMenu1"));
+            return Task.CompletedTask;
+        });
+    }
+
+    /// <summary>D-156 (DSG-SUR-254): the zones of a row — quarters around the middle half; a separator row has no "into".</summary>
+    [Theory]
+    [Trait("Phase", "8")]
+    [Trait("Req", "DSG-SUR-254")]
+    [InlineData("&Open", 0.0, MenuDropPosition.Before)]
+    [InlineData("&Open", 0.24, MenuDropPosition.Before)]
+    [InlineData("&Open", 0.25, MenuDropPosition.Into)]
+    [InlineData("&Open", 0.5, MenuDropPosition.Into)]
+    [InlineData("&Open", 0.74, MenuDropPosition.Into)]
+    [InlineData("&Open", 0.75, MenuDropPosition.After)]
+    [InlineData("&Open", 1.0, MenuDropPosition.After)]
+    [InlineData("", 0.5, MenuDropPosition.Into)]
+    [InlineData("-", 0.0, MenuDropPosition.Before)]
+    [InlineData("-", 0.49, MenuDropPosition.Before)]
+    [InlineData("-", 0.5, MenuDropPosition.After)]
+    [InlineData("-", 0.99, MenuDropPosition.After)]
+    public void DropPositionOfRowZones(string caption, double fraction, MenuDropPosition expected)
+    {
+        var form = Form.ReplaceLineEndings("\n").Replace("    DesignTop = 120\n", $"    DesignTop = 120\n    object Item1: TMenuItem\n      Caption = '{caption}'\n    end\n", StringComparison.Ordinal);
+        var parsed = FormParser.Parse(form, "MainForm.form", CodeSyncTests.Catalog);
+        Assert.Empty(parsed.Diagnostics);
+        Assert.Equal(expected, MenuDesignerViewModel.DropPositionAt(parsed.Document!.FindByName("Item1")!, fraction));
+    }
 }

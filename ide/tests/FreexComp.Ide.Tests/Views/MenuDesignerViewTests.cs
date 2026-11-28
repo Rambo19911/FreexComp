@@ -392,4 +392,402 @@ public sealed class MenuDesignerViewTests
         Assert.Equal(stripHeight, strip.Bounds.Height);
         return Task.CompletedTask;
     });
+
+    /// <summary>A designed menu: File (Open…, a separator, Exit) and Help (About FreexComp).</summary>
+    private const string MenuForm = """
+        object MainForm: TMainForm
+          Left = 200
+          Top = 120
+          Caption = 'Hello Form'
+          ClientWidth = 400
+          ClientHeight = 300
+          Menu = MainMenu1
+          PixelsPerInch = 96
+          object MainMenu1: TMainMenu
+            DesignLeft = 320
+            DesignTop = 120
+            object FileMenu: TMenuItem
+              Caption = '&File'
+              object FileOpen: TMenuItem
+                Caption = '&Open…'
+                ShortCut = 16463
+              end
+              object N1: TMenuItem
+                Caption = '-'
+              end
+              object FileExit: TMenuItem
+                Caption = 'E&xit'
+              end
+            end
+            object HelpMenu: TMenuItem
+              Caption = '&Help'
+              object HelpAbout: TMenuItem
+                Caption = '&About FreexComp'
+              end
+            end
+          end
+        end
+
+        """;
+
+    private static readonly string MenuUnit = Unit.Replace("    MainMenu1: TMainMenu;",
+        "    MainMenu1: TMainMenu;\n    FileMenu: TMenuItem;\n    FileOpen: TMenuItem;\n    N1: TMenuItem;\n    FileExit: TMenuItem;\n"
+        + "    HelpMenu: TMenuItem;\n    HelpAbout: TMenuItem;", StringComparison.Ordinal);
+
+    /// <summary>The row of a node: its own line of the tree, without its sub-items.</summary>
+    private static Border RowOf(DialogDriver dlg, string name) =>
+        dlg.Find<TreeViewItem>("Node." + name).GetVisualDescendants().OfType<Border>().First(b => b.Name == "PART_LayoutRoot");
+
+    /// <summary>A point of a node's row at <paramref name="fraction"/> of its height, near the start of its caption (window coordinates).</summary>
+    private static Point RowPoint(DialogDriver dlg, string name, double fraction)
+    {
+        var row = RowOf(dlg, name);
+        var header = (Control)dlg.Find<TreeViewItem>("Node." + name).Header!;
+        return new Point(header.TranslatePoint(new Point(12, 0), dlg.Window)!.Value.X,
+            row.TranslatePoint(new Point(0, row.Bounds.Height * fraction), dlg.Window)!.Value.Y);
+    }
+
+    private static void PointerDown(DialogDriver dlg, Point at)
+    {
+        dlg.Window.MouseDown(at, MouseButton.Left);
+        Dispatcher.UIThread.RunJobs();
+    }
+
+    private static void PointerTo(DialogDriver dlg, Point at)
+    {
+        dlg.Window.MouseMove(at, RawInputModifiers.LeftMouseButton);
+        Dispatcher.UIThread.RunJobs();
+    }
+
+    private static void PointerUp(DialogDriver dlg, Point at)
+    {
+        dlg.Window.MouseUp(at, MouseButton.Left);
+        Dispatcher.UIThread.RunJobs();
+    }
+
+    /// <summary>Presses on the row of <paramref name="node"/> and moves 6 DIP: the drag of that item has begun.</summary>
+    private static void BeginDrag(DialogDriver dlg, string node)
+    {
+        var start = RowPoint(dlg, node, 0.5);
+        PointerDown(dlg, start);
+        PointerTo(dlg, start + new Point(6, 0));
+    }
+
+    private static Border Line(DialogDriver dlg) => dlg.Find<Border>("InsertionLine");
+
+    /// <summary>The outline of the "into" target (UI-DLG-341): the other element of the layer that holds the insertion line.</summary>
+    private static Border Outline(DialogDriver dlg) => ((Canvas)Line(dlg).Parent!).Children.OfType<Border>().Single(b => b != Line(dlg));
+
+    /// <summary>The node highlighted as the "into" target (UI-DLG-341), or null.</summary>
+    private static string? Highlighted(DialogDriver dlg) =>
+        dlg.Find<TreeView>("Tree").GetVisualDescendants().OfType<TreeViewItem>().Where(i => i.Classes.Contains("dropTarget"))
+            .Select(i => AutomationIds.Get(i)!["Dialog.MenuDesigner.Node.".Length..]).SingleOrDefault();
+
+    private static IBrush? Brush(DialogDriver dlg, string key) =>
+        dlg.Window.TryFindResource(key, dlg.Window.ActualThemeVariant, out var value) ? value as IBrush : null;
+
+    /// <summary>
+    /// D-156, card F05-086 acceptance 2 (DSG-SUR-253, 254, 256; UI-DLG-341): an item dragged into the upper quarter of a
+    /// sibling's row shows the insertion line and lands before it — in the tree, the model and the saved form.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Phase", "8")]
+    [Trait("Req", "DSG-SUR-253")]
+    [Trait("Req", "DSG-SUR-254")]
+    [Trait("Req", "DSG-SUR-256")]
+    [Trait("Req", "UI-DLG-341")]
+    public Task DragReordersSiblings() => DesignAsync(async (h, d, dlg) =>
+    {
+        var tree = dlg.Find<TreeView>("Tree");
+        var line = Line(dlg);
+        var file = dlg.Find<TreeViewItem>("Node.FileMenu");
+        var undo = d.Designer.Undo.UndoCount;
+        Assert.False(line.IsVisible);
+        Assert.Equal(["FileOpen", "N1", "FileExit"], Nodes(dlg, file));
+
+        // A press selects (as before); a move of less than 4 DIP with the button held is no drag.
+        var start = RowPoint(dlg, "FileExit", 0.5);
+        PointerDown(dlg, start);
+        Assert.Same(dlg.Find<TreeViewItem>("Node.FileExit"), tree.SelectedItem);
+        PointerTo(dlg, start + new Point(3, 3));
+        PointerTo(dlg, RowPoint(dlg, "FileExit", 0.5) + new Point(-3, 3));
+        Assert.False(line.IsVisible);
+        Assert.Null(tree.Cursor);
+        PointerUp(dlg, start + new Point(3, 3));
+        Assert.Equal(undo, d.Designer.Undo.UndoCount);
+        Assert.Equal(["FileOpen", "N1", "FileExit"], Nodes(dlg, file));
+        Assert.Equal("Dialog.MenuDesigner.Node.FileExit", dlg.FocusedAutomationId);
+
+        // Press on Exit, move into the upper quarter of Open…: the insertion line at the upper edge of that row, named.
+        BeginDrag(dlg, "FileExit");
+        PointerTo(dlg, RowPoint(dlg, "FileOpen", 0.1));
+        Assert.True(line.IsEffectivelyVisible);
+        Assert.Equal("before Open…", AutomationProperties.GetName(line));
+        Assert.Null(Highlighted(dlg));
+        Assert.Null(tree.Cursor);
+        var row = RowOf(dlg, "FileOpen");
+        var rowTop = row.TranslatePoint(default, dlg.Window)!.Value.Y;
+        var lineAt = line.TranslatePoint(default, dlg.Window)!.Value;
+        Assert.Equal(2, line.Bounds.Height);
+        Assert.Equal(rowTop - 1, lineAt.Y); // centred on the upper edge of the row
+        var caption = CaptionOf(dlg, "FileOpen");
+        Assert.Equal(caption.TranslatePoint(default, dlg.Window)!.Value.X, lineAt.X); // from the indent of the target level …
+        var frame = tree.TranslatePoint(new Point(tree.Bounds.Width, 0), dlg.Window)!.Value.X;
+        Assert.Equal(frame, lineAt.X + line.Bounds.Width); // … to the right edge of the tree
+        Assert.Same(Brush(dlg, "FxcAccentDefaultBrush"), line.Background);
+
+        // The lower quarter of the same row: after it; a separator row: upper half before, lower half after.
+        PointerTo(dlg, RowPoint(dlg, "FileOpen", 0.9));
+        Assert.Equal("after Open…", AutomationProperties.GetName(line));
+        Assert.Equal(rowTop + row.Bounds.Height - 1, line.TranslatePoint(default, dlg.Window)!.Value.Y);
+        PointerTo(dlg, RowPoint(dlg, "N1", 0.4));
+        Assert.Equal("before N1", AutomationProperties.GetName(line));
+        PointerTo(dlg, RowPoint(dlg, "N1", 0.6));
+        Assert.Equal("after N1", AutomationProperties.GetName(line));
+        Assert.Equal(undo, d.Designer.Undo.UndoCount); // nothing changes before the release
+
+        // Released in the upper quarter of Open…: Exit is first, selected and focused; one "Order" unit.
+        PointerTo(dlg, RowPoint(dlg, "FileOpen", 0.1));
+        PointerUp(dlg, RowPoint(dlg, "FileOpen", 0.1));
+        Assert.False(line.IsVisible);
+        file = dlg.Find<TreeViewItem>("Node.FileMenu");
+        Assert.Equal(["FileExit", "FileOpen", "N1"], Nodes(dlg, file));
+        Assert.Equal(["FileExit", "FileOpen", "N1"], Item(d, "FileMenu").Children.Select(c => c.Name));
+        Assert.Same(dlg.Find<TreeViewItem>("Node.FileExit"), tree.SelectedItem);
+        Assert.Equal("Dialog.MenuDesigner.Node.FileExit", dlg.FocusedAutomationId);
+        Assert.Equal((undo + 1, FreexComp.Designer.Surface.UndoTitles.Order), (d.Designer.Undo.UndoCount, d.Designer.Undo.UndoTitleKey));
+        Assert.True(d.IsModified);
+
+        // Saved: the object FileExit stands before FileOpen in the form text.
+        Assert.True(await h.Services.Documents.SaveAsync(d));
+        var saved = File.ReadAllText(Path.Combine(h.TempDir, "MainForm.form"));
+        Assert.True(saved.IndexOf("object FileExit: TMenuItem", StringComparison.Ordinal) < saved.IndexOf("object FileOpen: TMenuItem", StringComparison.Ordinal), saved);
+
+        // Below the last row: after the last top-level item — the line under its last sub-item, at the top-level indent.
+        BeginDrag(dlg, "FileExit");
+        var below = tree.TranslatePoint(new Point(40, tree.Bounds.Height - 6), dlg.Window)!.Value;
+        PointerTo(dlg, below);
+        Assert.True(line.IsEffectivelyVisible);
+        Assert.Equal("after Help", AutomationProperties.GetName(line));
+        var last = RowOf(dlg, "HelpAbout");
+        Assert.Equal(last.TranslatePoint(new Point(0, last.Bounds.Height), dlg.Window)!.Value.Y - 1, line.TranslatePoint(default, dlg.Window)!.Value.Y);
+        Assert.Equal(CaptionOf(dlg, "HelpMenu").TranslatePoint(default, dlg.Window)!.Value.X, line.TranslatePoint(default, dlg.Window)!.Value.X);
+        PointerUp(dlg, below);
+        Assert.Equal(["FileMenu", "HelpMenu", "FileExit"], Nodes(dlg));
+        Assert.Equal(undo + 2, d.Designer.Undo.UndoCount);
+
+        // A release at the item's present place records nothing.
+        BeginDrag(dlg, "FileExit");
+        PointerTo(dlg, below);
+        Assert.Equal("after Exit", AutomationProperties.GetName(line));
+        Assert.Null(tree.Cursor);
+        PointerUp(dlg, below);
+        Assert.Equal(undo + 2, d.Designer.Undo.UndoCount);
+    }, MenuForm, MenuUnit);
+
+    /// <summary>
+    /// D-156 (DSG-SUR-254, 255; UI-DLG-341): the middle half of a row drops into the item (highlight, no line); an item's
+    /// own sub-tree and the outside of the tree are invalid ("no" cursor, nothing changes); a separator row has no "into".
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Phase", "8")]
+    [Trait("Req", "DSG-SUR-254")]
+    [Trait("Req", "DSG-SUR-255")]
+    [Trait("Req", "UI-DLG-341")]
+    public Task DragIntoItemAndIntoOwnSubtree() => DesignAsync((_, d, dlg) =>
+    {
+        var tree = dlg.Find<TreeView>("Tree");
+        var line = Line(dlg);
+        var undo = d.Designer.Undo.UndoCount;
+        dlg.Find<TreeViewItem>("Node.HelpMenu").IsExpanded = false;
+        Dispatcher.UIThread.RunJobs();
+        var captionAt = CaptionOf(dlg, "HelpMenu").TranslatePoint(default, dlg.Window)!.Value;
+
+        // The middle half of Help: the row is highlighted (bg.selected.inactive, 1 px accent border), no line.
+        BeginDrag(dlg, "FileExit");
+        PointerTo(dlg, RowPoint(dlg, "HelpMenu", 0.5));
+        Assert.Equal("HelpMenu", Highlighted(dlg));
+        Assert.False(line.IsVisible);
+        Assert.Null(tree.Cursor);
+        var row = RowOf(dlg, "HelpMenu");
+        var outline = Outline(dlg);
+        Assert.Same(Brush(dlg, "FxcBgSelectedInactiveBrush"), row.Background);
+        Assert.True(outline.IsEffectivelyVisible);
+        Assert.Same(Brush(dlg, "FxcAccentDefaultBrush"), outline.BorderBrush);
+        Assert.Equal(new Thickness(1), outline.BorderThickness);
+        Assert.Equal(new Rect(row.TranslatePoint(default, dlg.Window)!.Value, row.Bounds.Size),
+            new Rect(outline.TranslatePoint(default, dlg.Window)!.Value, outline.Bounds.Size)); // around the row
+        Assert.Equal(captionAt, CaptionOf(dlg, "HelpMenu").TranslatePoint(default, dlg.Window)!.Value); // the text does not shift
+
+        // Released: Exit is the last sub-item of Help, Help is expanded, Exit selected and focused.
+        PointerUp(dlg, RowPoint(dlg, "HelpMenu", 0.5));
+        Assert.Null(Highlighted(dlg));
+        Assert.False(outline.IsVisible);
+        var help = dlg.Find<TreeViewItem>("Node.HelpMenu");
+        Assert.True(help.IsExpanded);
+        Assert.Equal(["HelpAbout", "FileExit"], Nodes(dlg, help));
+        Assert.Equal(["FileOpen", "N1"], Nodes(dlg, dlg.Find<TreeViewItem>("Node.FileMenu")));
+        Assert.Equal("Dialog.MenuDesigner.Node.FileExit", dlg.FocusedAutomationId);
+        Assert.Equal((undo + 1, FreexComp.Designer.Surface.UndoTitles.Order), (d.Designer.Undo.UndoCount, d.Designer.Undo.UndoTitleKey));
+
+        // File over its own sub-item, in every zone: no line, no highlight, the "no" cursor; a release changes nothing.
+        BeginDrag(dlg, "FileMenu");
+        foreach (var fraction in (double[])[0.1, 0.5, 0.9])
+        {
+            PointerTo(dlg, RowPoint(dlg, "FileOpen", fraction));
+            Assert.False(line.IsVisible);
+            Assert.Null(Highlighted(dlg));
+            Assert.NotNull(tree.Cursor);
+        }
+
+        // Its own row: before / after are its present place (valid), into itself is not.
+        PointerTo(dlg, RowPoint(dlg, "FileMenu", 0.5));
+        Assert.NotNull(tree.Cursor);
+        PointerTo(dlg, RowPoint(dlg, "FileMenu", 0.1));
+        Assert.Null(tree.Cursor);
+        Assert.Equal("before File", AutomationProperties.GetName(line));
+        PointerTo(dlg, RowPoint(dlg, "FileOpen", 0.5));
+        PointerUp(dlg, RowPoint(dlg, "FileOpen", 0.5));
+        Assert.Null(tree.Cursor);
+        Assert.Equal(undo + 1, d.Designer.Undo.UndoCount);
+        Assert.Equal(["FileMenu", "HelpMenu"], Nodes(dlg));
+
+        // A separator row has no "into": upper half before, lower half after.
+        BeginDrag(dlg, "HelpAbout");
+        PointerTo(dlg, RowPoint(dlg, "N1", 0.45));
+        Assert.Null(Highlighted(dlg));
+        Assert.Equal("before N1", AutomationProperties.GetName(line));
+        PointerTo(dlg, RowPoint(dlg, "N1", 0.55));
+        Assert.Null(Highlighted(dlg));
+        Assert.True(line.IsVisible);
+        Assert.Equal("after N1", AutomationProperties.GetName(line));
+
+        // Outside the tree there is no position: the "no" cursor, a release there changes nothing.
+        var outside = dlg.Find<TextBox>("Caption").TranslatePoint(new Point(20, 10), dlg.Window)!.Value;
+        PointerTo(dlg, outside);
+        Assert.False(line.IsVisible);
+        Assert.NotNull(tree.Cursor);
+        PointerUp(dlg, outside);
+        Assert.Null(tree.Cursor);
+        Assert.Equal(undo + 1, d.Designer.Undo.UndoCount);
+        Assert.Equal(["HelpAbout", "FileExit"], Nodes(dlg, dlg.Find<TreeViewItem>("Node.HelpMenu")));
+        return Task.CompletedTask;
+    }, MenuForm, MenuUnit);
+
+    /// <summary>
+    /// D-156 (DSG-SUR-255): Escape during a drag cancels the drag only — the key is consumed and the dialog stays open; the
+    /// mouse wheel scrolls the tree during a drag (DSG-SUR-254).
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Phase", "8")]
+    [Trait("Req", "DSG-SUR-255")]
+    [Trait("Req", "DSG-SUR-254")]
+    public Task EscapeCancelsDragAndKeepsDialogOpen()
+    {
+        // A menu longer than the tree: thirty items under File.
+        var items = string.Concat(Enumerable.Range(1, 30).Select(i => $"      object Item{i}: TMenuItem\n        Caption = 'Item {i}'\n      end\n"));
+        var form = MenuForm.ReplaceLineEndings("\n").Replace("      object FileOpen: TMenuItem\n", items + "      object FileOpen: TMenuItem\n", StringComparison.Ordinal);
+        var unit = MenuUnit.Replace("    FileMenu: TMenuItem;", "    FileMenu: TMenuItem;\n" + string.Concat(Enumerable.Range(1, 30).Select(i => $"    Item{i}: TMenuItem;\n")).TrimEnd('\n'),
+            StringComparison.Ordinal);
+        return DesignAsync((_, d, dlg) =>
+        {
+            var tree = dlg.Find<TreeView>("Tree");
+            var line = Line(dlg);
+            var scroll = tree.GetVisualDescendants().OfType<ScrollViewer>().First();
+            var undo = d.Designer.Undo.UndoCount;
+            Assert.True(scroll.Extent.Height > scroll.Viewport.Height);
+
+            BeginDrag(dlg, "Item2");
+            var at = RowPoint(dlg, "Item4", 0.1);
+            PointerTo(dlg, at);
+            Assert.True(line.IsVisible);
+            Assert.Equal("before Item 4", AutomationProperties.GetName(line));
+
+            // The wheel scrolls the tree during the drag; the position follows the row that is now under the pointer.
+            Assert.Equal(0, scroll.Offset.Y);
+            dlg.Window.MouseWheel(at, new Vector(0, -1));
+            Dispatcher.UIThread.RunJobs();
+            Assert.Equal(50, scroll.Offset.Y);
+            var target = line.IsVisible ? AutomationProperties.GetName(line)! : "into " + Highlighted(dlg);
+            Assert.Matches("^((before|after) Item |into Item)[5-8]$", target); // two rows further down
+
+            // Escape cancels the drag only: no line, the dialog stays open, the release changes nothing.
+            dlg.Press("Escape");
+            Assert.False(dlg.Window.IsClosed());
+            Assert.False(line.IsVisible);
+            Assert.Null(tree.Cursor);
+            PointerTo(dlg, RowPoint(dlg, "Item6", 0.1));
+            Assert.False(line.IsVisible);
+            PointerUp(dlg, RowPoint(dlg, "Item6", 0.1));
+            Assert.Equal(undo, d.Designer.Undo.UndoCount);
+            Assert.Equal("Item1", Item(d, "FileMenu").Children[0].Name);
+            Assert.Equal("Item2", Item(d, "FileMenu").Children[1].Name);
+
+            // A new drag works as before; without a drag Escape is Close (pressed by the caller).
+            BeginDrag(dlg, "Item7");
+            PointerTo(dlg, RowPoint(dlg, "Item6", 0.1));
+            Assert.Equal("before Item 6", AutomationProperties.GetName(line));
+            PointerUp(dlg, RowPoint(dlg, "Item6", 0.1));
+            Assert.Equal(undo + 1, d.Designer.Undo.UndoCount);
+            Assert.Equal(["Item5", "Item7", "Item6"], Item(d, "FileMenu").Children.Skip(4).Take(3).Select(c => c.Name));
+            return Task.CompletedTask;
+        }, form, unit);
+    }
+
+    /// <summary>
+    /// D-156 (DSG-SUR-257): <c>Ctrl+Shift+Left</c> moves the node out, <c>Ctrl+Shift+Right</c> moves it in; the focus stays on
+    /// the moved node. The keys act in the tree only: a text field keeps their own meaning (word selection).
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Phase", "8")]
+    [Trait("Req", "DSG-SUR-257")]
+    public Task KeyboardMoveOutAndIn() => DesignAsync((_, d, dlg) =>
+    {
+        var undo = d.Designer.Undo.UndoCount;
+        IReadOnlyList<string> FileItems() => Nodes(dlg, dlg.Find<TreeViewItem>("Node.FileMenu"));
+
+        // Move out: Exit becomes the sibling directly after File.
+        ClickNode(dlg, "FileExit");
+        dlg.Press("Ctrl+Shift+Left");
+        Assert.Equal(["FileMenu", "FileExit", "HelpMenu"], Nodes(dlg));
+        Assert.Equal(["FileOpen", "N1"], FileItems());
+        Assert.Equal("Dialog.MenuDesigner.Node.FileExit", dlg.FocusedAutomationId);
+        Assert.Equal((undo + 1, FreexComp.Designer.Surface.UndoTitles.Order), (d.Designer.Undo.UndoCount, d.Designer.Undo.UndoTitleKey));
+        dlg.Press("Ctrl+Shift+Left"); // at the top level: nothing
+        Assert.Equal(undo + 1, d.Designer.Undo.UndoCount);
+
+        // Move in: the last sub-item of the sibling before it; not into a separator.
+        dlg.Press("Ctrl+Shift+Right");
+        Assert.Equal(["FileMenu", "HelpMenu"], Nodes(dlg));
+        Assert.Equal(["FileOpen", "N1", "FileExit"], FileItems());
+        Assert.Equal("Dialog.MenuDesigner.Node.FileExit", dlg.FocusedAutomationId);
+        Assert.Equal(undo + 2, d.Designer.Undo.UndoCount);
+        dlg.Press("Ctrl+Shift+Right"); // the sibling before it is a separator: nothing
+        Assert.Equal(undo + 2, d.Designer.Undo.UndoCount);
+        Assert.Equal(["FileOpen", "N1", "FileExit"], FileItems());
+
+        // With Ctrl+Up they reach every place: Exit above the separator, then into Open….
+        dlg.Press("Ctrl+Up");
+        dlg.Press("Ctrl+Shift+Right");
+        Assert.Equal(["FileOpen", "N1"], FileItems());
+        Assert.Equal(["FileExit"], Nodes(dlg, dlg.Find<TreeViewItem>("Node.FileOpen")));
+        Assert.True(dlg.Find<TreeViewItem>("Node.FileOpen").IsExpanded);
+        Assert.Equal("Dialog.MenuDesigner.Node.FileExit", dlg.FocusedAutomationId);
+        Assert.Equal(undo + 4, d.Designer.Undo.UndoCount);
+
+        // In the Caption field the two keys keep their own meaning: they select by word and move nothing.
+        ClickNode(dlg, "HelpAbout");
+        dlg.Press("F2");
+        var caption = dlg.Find<TextBox>("Caption");
+        Assert.Equal("Dialog.MenuDesigner.Caption", dlg.FocusedAutomationId);
+        caption.SelectionStart = caption.SelectionEnd = caption.CaretIndex = caption.Text!.Length;
+        dlg.Press("Ctrl+Shift+Left");
+        Assert.Equal("FreexComp", caption.SelectedText);
+        dlg.Press("Ctrl+Shift+Right");
+        Assert.Equal("", caption.SelectedText);
+        Assert.Equal("Dialog.MenuDesigner.Caption", dlg.FocusedAutomationId);
+        Assert.Equal(undo + 4, d.Designer.Undo.UndoCount);
+        Assert.Equal(["HelpAbout"], Nodes(dlg, dlg.Find<TreeViewItem>("Node.HelpMenu")));
+        return Task.CompletedTask;
+    }, MenuForm, MenuUnit);
 }

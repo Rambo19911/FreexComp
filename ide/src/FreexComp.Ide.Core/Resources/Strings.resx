@@ -5559,6 +5559,14 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
     <value>, duplicate access key</value>
     <comment>UI-DLG-340: end of the automation name of a node that carries the warning mark</comment>
   </data>
+  <data name="MenuDesigner_DropBefore" xml:space="preserve">
+    <value>before {0}</value>
+    <comment>UI-DLG-341: automation name of the insertion line; 0 = plain caption of the target item</comment>
+  </data>
+  <data name="MenuDesigner_DropAfter" xml:space="preserve">
+    <value>after {0}</value>
+    <comment>UI-DLG-341: automation name of the insertion line; 0 = plain caption of the target item</comment>
+  </data>
   <data name="ChildListEditor_Title" xml:space="preserve">
     <value>Edit {0}</value>
     <comment>dialogs.md §27 title; 0 = component name</comment>
