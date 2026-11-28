@@ -12,7 +12,8 @@ namespace FreexComp.Ide.Core.Editing;
 /// The find state of one text document (phase1-shell.md §10): whether its panel is open, the search origin, the
 /// In-selection range (anchors, so it follows edits), the current matches and the counter. While the panel is open
 /// every query or text change searches again <see cref="Delay"/> later (IDE-P1-101); a query change also selects
-/// the first match at or after the origin. Buffers above <see cref="WholeTextClassifier.BackgroundThreshold"/> are
+/// the first match at or after the origin and, when that is more than 10 lines from the origin, records the origin in
+/// the navigation history (IDE-P1-134: Navigate Back returns to where the search started). Buffers above <see cref="WholeTextClassifier.BackgroundThreshold"/> are
 /// searched on the thread pool; results come back on the starting synchronization context and outdated ones are
 /// dropped. UI thread only.
 /// </summary>
@@ -398,8 +399,10 @@ public sealed class FindSession
             {
                 var origin = _origin is { IsDeleted: false } anchor ? anchor.Offset : _document.Selection.Caret;
                 var match = result.Matches.FirstOrDefault(m => m.Offset >= origin, result.Matches[0]);
+                var departure = buffer.GetPosition(origin);
                 _document.Selection = new TextSelection(match.Offset, match.End);
                 _document.RevealCaret();
+                _document.OnJumped(departure); // IDE-P1-134: more than 10 lines from the search origin → navigation history
             }
 
             SetResult(result.Matches, result.IsCapped, result.Error, query.Text);

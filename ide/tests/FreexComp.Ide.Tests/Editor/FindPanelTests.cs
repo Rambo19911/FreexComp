@@ -8,6 +8,7 @@ using Avalonia.VisualTree;
 using AvaloniaEdit;
 using FreexComp.Ide.Core.Editing;
 using FreexComp.Ide.Core.Resources;
+using FreexComp.Ide.Core.Text;
 using FreexComp.Ide.Editor;
 using FreexComp.Ide.Tests.Infrastructure;
 
@@ -156,6 +157,67 @@ public sealed class FindPanelTests
         editor.Select(At(Code, "end"), 3);
         h.Press("Ctrl+F");
         Assert.Equal(("end", 0, 3), (box.Text, box.SelectionStart, box.SelectionEnd));
+    }
+
+    /// <summary>
+    /// F13-022 (IDE-P1-108, IDE-P1-134): Escape ends the search at the found text — the match stays selected, the editor
+    /// has the focus — and Navigate Back (Alt+Left) then puts the caret back where the search started.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "IDE-P1-108")]
+    [Trait("Req", "IDE-P1-134")]
+    public async Task EscapeKeepsMatchAndNavigateBackReturnsToOrigin()
+    {
+        var text = string.Join("\r\n", Enumerable.Range(1, 40).Select(i => i switch
+        {
+            5 => "  need",
+            30 => "  needle here",
+            _ => "line",
+        })) + "\r\n";
+        var (h, editor) = await OpenAsync(text);
+        await using var _ = h;
+        IEditorTestProbe probe = editor.FindAncestorOfType<CodeEditorView>()!;
+        var origin = editor.Document.GetOffset(2, 3);
+        editor.TextArea.Caret.Offset = origin; // the search starts at line 2, column 3
+        Dispatcher.UIThread.RunJobs();
+        Assert.Empty(h.Services.Navigation.History);
+
+        // Ctrl+F and typing "need": the first match after the origin, 3 lines below, is selected; nothing is recorded.
+        h.Press("Ctrl+F");
+        h.Type("need");
+        Search(h);
+        Assert.Equal(("1 of 2", At(text, "need"), 4), (Count(h), editor.SelectionStart, editor.SelectionLength));
+        Assert.Equal(5, editor.TextArea.Caret.Line);
+        Assert.Empty(h.Services.Navigation.History);
+
+        // Typing on ("le"): the selection moves to the first "needle" after the original caret, 28 lines below it.
+        h.Type("le");
+        Search(h);
+        var match = At(text, "needle");
+        Assert.Equal(("1 of 1", match, 6), (Count(h), editor.SelectionStart, editor.SelectionLength));
+        Assert.Equal(30, editor.TextArea.Caret.Line);
+        Assert.Equal(Panel + ".SearchText", h.FocusedAutomationId);
+        var recorded = Assert.Single(h.Services.Navigation.History);
+        Assert.Equal(("A.pas", new TextPosition(2, 3)), (recorded.Name, recorded.Position));
+
+        // Escape: the panel and the highlights go, the match stays selected, the text area has the focus.
+        h.Press("Escape");
+        Assert.False(Shown(h, Panel));
+        Assert.Empty(probe.FindHighlights);
+        Assert.Equal((match, 6), (editor.SelectionStart, editor.SelectionLength));
+        Assert.Equal("Editor.A.pas", h.FocusedAutomationId);
+
+        // Alt+Left: back at the line and column the search started from, nothing selected.
+        h.Press("Alt+Left");
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal((origin, 0), (editor.TextArea.Caret.Offset, editor.SelectionLength));
+        Assert.Equal((2, 3), (editor.TextArea.Caret.Line, editor.TextArea.Caret.Column));
+        Assert.Equal("Editor.A.pas", h.FocusedAutomationId);
+
+        // Alt+Right returns to the found text.
+        h.Press("Alt+Right");
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(30, editor.TextArea.Caret.Line);
     }
 
     [AvaloniaFact(Timeout = 30000)]

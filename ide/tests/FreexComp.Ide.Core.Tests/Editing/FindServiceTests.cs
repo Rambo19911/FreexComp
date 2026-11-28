@@ -466,4 +466,170 @@ public sealed class FindServiceTests
         Assert.Equal("word", find.SearchText);
         Assert.Equal(TextSelection.At(20), doc.Selection);
     }
+
+    /// <summary>
+    /// IDE-P1-106 (F13-022): matches never overlap — the scan for the next match continues at the end of the previous
+    /// one — so the counter equals the number of replacements Replace All makes.
+    /// </summary>
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "IDE-P1-106")]
+    public Task CountWithOverlappingCandidates() => TestUiThread.RunAsync(() => CountWithOverlappingCandidatesOnUiThread());
+
+    private async Task CountWithOverlappingCandidatesOnUiThread()
+    {
+        // "aa" in "aaaa": two matches, not three; the counter steps through exactly those.
+        var (services, doc, clock) = await OpenAsync("aaaa\r\n");
+        var find = services.Find;
+        var session = find.For(doc);
+        session.Open(replace: true);
+        find.SearchText = "aa";
+        clock.Advance(FindSession.Delay);
+        Assert.Equal(M((0, 2), (2, 2)), session.Matches);
+        Assert.Equal((new TextSelection(0, 2), "1 of 2"), (doc.Selection, session.CounterText));
+        await services.Commands.ExecuteAsync("search.findNext");
+        Assert.Equal((new TextSelection(2, 4), "2 of 2"), (doc.Selection, session.CounterText));
+        await services.Commands.ExecuteAsync("search.findNext");
+        Assert.Equal((new TextSelection(0, 2), "1 of 2"), (doc.Selection, session.CounterText));
+        find.ReplaceText = "#";
+        Assert.Equal(2, await session.ReplaceAllAsync());
+        Assert.Equal("##\r\n", doc.Buffer.Text);
+
+        // The counted matches are the ones Replace All replaces, whatever the options.
+        await AssertCountAsync("aaaa", "aa", M((0, 2), (2, 2)), "1 of 2", "##");
+        await AssertCountAsync("ababa", "aba", M((0, 3)), "1 of 1", "#ba");
+        await AssertCountAsync("abababa", "aba", M((0, 3), (4, 3)), "1 of 2", "#b#");
+
+        // A regular expression too: the next match starts after the previous one.
+        await AssertCountAsync("ababa", "a.a", M((0, 3)), "1 of 1", "#ba", f => f.Regex = true);
+        await AssertCountAsync("aaaa", "aa", M((0, 2), (2, 2)), "1 of 2", "##", f => f.Regex = true);
+
+        // Match case and Whole word do not change the count where they exclude nothing …
+        await AssertCountAsync("aaaa", "aa", M((0, 2), (2, 2)), "1 of 2", "##", f => f.MatchCase = true);
+        await AssertCountAsync("a-a-a", "a-a", M((0, 3)), "1 of 1", "#-a");
+        await AssertCountAsync("a-a-a", "a-a", M((0, 3)), "1 of 1", "#-a", f => f.WholeWord = f.MatchCase = true);
+
+        // … and where they refuse a candidate, the scan goes on one character later (not behind the refused text).
+        await AssertCountAsync("AaAa", "aA", M((0, 2), (2, 2)), "1 of 2", "##");
+        await AssertCountAsync("AaAa", "aA", M((1, 2)), "1 of 1", "A#a", f => f.MatchCase = true);
+        await AssertCountAsync("aaaa aa", "aa", M((5, 2)), "1 of 1", "aaaa #", f => f.WholeWord = true);
+        await AssertCountAsync("aaaa", "aa", M(), Strings.Msg_Find_NoMatches, "aaaa", f => f.WholeWord = true);
+    }
+
+    /// <summary>
+    /// Searches <paramref name="search"/> in a one-line document: the listed matches and the counter; then Replace All
+    /// by <c>#</c> replaces exactly those (their number is returned and shown in the text).
+    /// </summary>
+    private static async Task AssertCountAsync(
+        string text, string search, TextMatch[] matches, string counter, string replaced, Action<IFindService>? options = null)
+    {
+        var (services, doc, clock) = await OpenAsync(text);
+        var find = services.Find;
+        options?.Invoke(find);
+        var session = find.For(doc);
+        session.Open(replace: true);
+        find.SearchText = search;
+        find.ReplaceText = "#";
+        clock.Advance(FindSession.Delay);
+        Assert.Equal(matches, session.Matches);
+        Assert.Equal(counter, session.CounterText);
+        Assert.Equal(matches.Length, await session.ReplaceAllAsync());
+        Assert.Equal(replaced, doc.Buffer.Text);
+    }
+
+    /// <summary>
+    /// IDE-P1-134 (F13-022): an incremental selection that ends more than 10 lines from the search origin records the
+    /// origin in the navigation history, so Navigate Back returns to where the search started.
+    /// </summary>
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "IDE-P1-134")]
+    public Task IncrementalFarJumpIsRecorded() => TestUiThread.RunAsync(() => IncrementalFarJumpIsRecordedOnUiThread());
+
+    private async Task IncrementalFarJumpIsRecordedOnUiThread()
+    {
+        // 40 lines: "near" 5 lines below the origin, "tenth" exactly 10, "distant" 28.
+        var text = string.Join("\r\n", Enumerable.Range(1, 40).Select(i => i switch
+        {
+            7 => "  near",
+            12 => "  tenth",
+            30 => "  distant",
+            _ => "x",
+        })) + "\r\n";
+        static string[] History(IdeServices s) => [.. s.Navigation.History.Select(e => $"{e.Name} {e.Position.Line}:{e.Position.Column}")];
+
+        var (services, doc, clock) = await OpenAsync(text);
+        var find = services.Find;
+        doc.ViewState.Caret = new TextPosition(2, 2); // the search origin
+        var session = find.For(doc);
+        session.Open(replace: false);
+        void Search(string searchText)
+        {
+            find.SearchText = searchText;
+            clock.Advance(FindSession.Delay);
+        }
+
+        // No match, a match 5 lines away and one exactly 10 lines away record nothing.
+        Search("zzz");
+        Assert.Equal((0, new TextPosition(2, 2)), (session.Matches.Count, doc.ViewState.Caret));
+        Assert.Empty(History(services));
+        Search("near");
+        Assert.Equal(7, doc.ViewState.Caret.Line);
+        Assert.Empty(History(services));
+        Search("tenth");
+        Assert.Equal(12, doc.ViewState.Caret.Line);
+        Assert.Empty(History(services));
+
+        // The first match after the origin is on line 30: the origin is recorded as the departure.
+        Search("dist");
+        Assert.Equal(30, doc.ViewState.Caret.Line);
+        Assert.Equal(["A.pas 2:2"], History(services));
+        Assert.Equal(1, services.Navigation.HistoryIndex);
+
+        // A further character and an option change search from the same origin: the records merge.
+        Search("dista");
+        Assert.Equal(["A.pas 2:2"], History(services));
+        find.MatchCase = true;
+        clock.Advance(FindSession.Delay);
+        Assert.Equal((30, "1 of 1"), (doc.ViewState.Caret.Line, session.CounterText));
+        Assert.Equal(["A.pas 2:2"], History(services));
+
+        // A nearer match afterwards adds nothing; the far one once more merges again.
+        Search("near");
+        Assert.Equal(7, doc.ViewState.Caret.Line);
+        Assert.Equal(["A.pas 2:2"], History(services));
+        Search("distant");
+        Assert.Equal(["A.pas 2:2"], History(services));
+
+        // Closed panel: the match stays selected (IDE-P1-108); a new search text selects and records nothing.
+        var selected = doc.Selection;
+        session.Close();
+        Search("near");
+        Assert.Equal(selected, doc.Selection);
+        Assert.Equal(["A.pas 2:2"], History(services));
+
+        // Navigate Back returns to where the search started; Forward to the match.
+        Assert.True(services.Commands.CanExecute("search.navigateBack"));
+        await services.Commands.ExecuteAsync("search.navigateBack");
+        Assert.Equal((new TextPosition(2, 2), true), (doc.ViewState.Caret, doc.Selection.IsEmpty));
+        await services.Commands.ExecuteAsync("search.navigateForward");
+        Assert.Equal(30, doc.ViewState.Caret.Line);
+
+        // The first match lies before the origin (the incremental selection wraps to it): a far jump upwards counts too.
+        var (other, otherDoc, otherClock) = await OpenAsync(text, "B.pas");
+        otherDoc.ViewState.Caret = new TextPosition(35, 1);
+        other.Find.For(otherDoc).Open(replace: false);
+        other.Find.SearchText = "near";
+        otherClock.Advance(FindSession.Delay);
+        Assert.Equal(7, otherDoc.ViewState.Caret.Line);
+        Assert.Equal(["B.pas 35:1"], History(other));
+
+        // Opening the panel with the previous search text selects incrementally too: the caret it opened at is recorded.
+        var (third, thirdDoc, thirdClock) = await OpenAsync(text, "C.pas");
+        third.Find.SearchText = "distant";
+        thirdDoc.ViewState.Caret = new TextPosition(3, 1);
+        third.Find.For(thirdDoc).Open(replace: false);
+        Assert.Empty(History(third));
+        thirdClock.Advance(FindSession.Delay);
+        Assert.Equal(30, thirdDoc.ViewState.Caret.Line);
+        Assert.Equal(["C.pas 3:1"], History(third));
+    }
 }
