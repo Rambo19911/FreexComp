@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 { Hash - message digests (docs: rtl/other-units.md section 13, RTL-1230): MD5 as RFC 1321 defines it, SHA-1 and the
-  six SHA-2 functions as FIPS 180-4 defines them, and the keyed hash HMAC of RFC 2104 over each of them. Every
-  function is computed here, in Object Pascal, from its standard: nothing in this unit calls the operating system.
+  six SHA-2 functions as FIPS 180-4 defines them, and the keyed hash HMAC of RFC 2104 over each of them; the
+  checksum CRC-32 and the hash-table functions FNV-1a (32 and 64 bits) and Bob Jenkins' lookup3. Every function is
+  computed here, in Object Pascal, from its standard: nothing in this unit calls the operating system.
   A state record takes data in any number of Update calls; HashAsBytes and HashAsString give the digest of what was
   added so far and leave the record as it was, so more data may follow. A record holds its whole state in itself:
   assigning it to another variable gives a second, independent state, and no record needs to be released. One
@@ -156,6 +157,111 @@ type
       AHashVersion: TSHA2Version = TSHA2Version.SHA256): TBytes; overload; static;
     class function GetHMACAsBytes(const AData, AKey: TBytes;
       AHashVersion: TSHA2Version = TSHA2Version.SHA256): TBytes; overload; static;
+  end;
+
+  { CRC-32 as used by Ethernet, zip and gzip (ISO/IEC 3309, ITU-T V.42; RFC 1952 section 8): polynomial $04C11DB7 in
+    reflected form, register preset to $FFFFFFFF, result complemented. The checksum of no data is 0, that of the
+    nine bytes "123456789" is $CBF43926. A checksum finds accidental damage; it gives no protection against
+    deliberate modification.
+    Update(string), GetHashBytes / GetHashString / GetHashValue(string) take the UTF-16 units of the string as they
+    are stored (two bytes per unit, low byte first), not its UTF-8 form; for the UTF-8 form pass
+    TEncoding.UTF8.GetBytes(S). The same holds for THashBobJenkins, THashFNV1a32 and THashFNV1a64. }
+  THashCRC32 = record
+  private
+    FValue: Cardinal;   { the register: the complement of the checksum so far }
+  public
+    class function Create: THashCRC32; static;
+    procedure Reset;
+    procedure Update(const AData; ALength: Cardinal); overload;
+    procedure Update(const AData: TBytes; ALength: Cardinal = 0); overload;
+    procedure Update(const Input: string); overload;
+    procedure Update(const AStream: TStream); overload;
+    { The checksum of everything added so far, most significant byte first; the record is not changed. }
+    function HashAsBytes: TBytes;
+    { The same value as a number; the bit pattern is kept, so it may be negative. }
+    function HashAsInteger: Integer;
+    { The same value in 8 lower-case hexadecimal digits. }
+    function HashAsString: string;
+    class function GetHashBytes(const AData: string): TBytes; overload; static;
+    class function GetHashBytes(const AData: TBytes): TBytes; overload; static;
+    class function GetHashString(const AString: string): string; overload; static;
+    class function GetHashString(const AData: TBytes): string; overload; static;
+    class function GetHashValue(const AData: string): Integer; overload; static;
+    class function GetHashValue(const AData: TBytes): Integer; overload; static;
+    class function GetHashValue(const AData; ALength: Cardinal): Integer; overload; static;
+  end;
+
+  { The 32-bit hash function "hashlittle" of Bob Jenkins' lookup3 (2006, public domain), for hash tables. One call
+    of GetHashValue(Data, Length, InitialValue) is one application of the function. The function takes the length
+    of its input into its start state, so it cannot be fed in parts: a record keeps one running value - 0 after
+    Create, the given value after Reset - and every Update call applies the function to its data with the running
+    value as initial value. The result therefore depends on how the data is split into Update calls; one call per
+    message gives the values other implementations give. Strings: see THashCRC32. }
+  THashBobJenkins = record
+  private
+    FValue: Cardinal;
+  public
+    class function Create: THashBobJenkins; static;
+    procedure Reset(AInitialValue: Integer = 0);
+    procedure Update(const AData; ALength: Cardinal); overload;
+    procedure Update(const AData: TBytes; ALength: Cardinal = 0); overload;
+    procedure Update(const Input: string); overload;
+    function HashAsBytes: TBytes;
+    function HashAsInteger: Integer;
+    function HashAsString: string;
+    class function GetHashBytes(const AData: string): TBytes; static;
+    class function GetHashString(const AString: string): string; static;
+    class function GetHashValue(const AData: string): Integer; overload; static;
+    { A negative ALength raises EArgumentOutOfRangeException. }
+    class function GetHashValue(const AData; ALength: Integer; AInitialValue: Integer = 0): Integer; overload; static;
+  end;
+
+  { FNV-1a with 32 bits (RFC 9923), for hash tables: starting from FNV_SEED, each byte is combined into the value
+    with xor and the value is multiplied by FNV_PRIME. GetHashValue with an initial value continues a value computed
+    before. Strings: see THashCRC32. }
+  THashFNV1a32 = record
+  public
+    const
+      FNV_PRIME = $01000193;
+      FNV_SEED = $811C9DC5;
+  private
+    FValue: Cardinal;
+  public
+    class function Create: THashFNV1a32; static;
+    procedure Reset;
+    procedure Update(const AData; ALength: Cardinal); overload;
+    procedure Update(const AData: TBytes; ALength: Cardinal = 0); overload;
+    procedure Update(const Input: string); overload;
+    function HashAsBytes: TBytes;
+    function HashAsInteger: Integer;
+    function HashAsString: string;
+    class function GetHashBytes(const AData: string): TBytes; static;
+    class function GetHashString(const AString: string): string; static;
+    class function GetHashValue(const AData: string): Integer; overload; static;
+    class function GetHashValue(const AData; ALength: Cardinal; AInitialValue: Cardinal = FNV_SEED): Integer; overload; static;
+  end;
+
+  { FNV-1a with 64 bits (RFC 9923): as THashFNV1a32, with 64-bit values (8 bytes, 16 hexadecimal digits). }
+  THashFNV1a64 = record
+  public
+    const
+      FNV_PRIME = $00000100000001B3;
+      FNV_SEED = $CBF29CE484222325;
+  private
+    FValue: UInt64;
+  public
+    class function Create: THashFNV1a64; static;
+    procedure Reset;
+    procedure Update(const AData; ALength: Cardinal); overload;
+    procedure Update(const AData: TBytes; ALength: Cardinal = 0); overload;
+    procedure Update(const Input: string); overload;
+    function HashAsBytes: TBytes;
+    function HashAsInteger: Int64;
+    function HashAsString: string;
+    class function GetHashBytes(const AData: string): TBytes; static;
+    class function GetHashString(const AString: string): string; static;
+    class function GetHashValue(const AData: string): Int64; overload; static;
+    class function GetHashValue(const AData; ALength: Cardinal; AInitialValue: UInt64 = FNV_SEED): Int64; overload; static;
   end;
 
 implementation
@@ -571,6 +677,150 @@ begin
     Inner[I] := Byte(B xor $36);
     Outer[I] := Byte(B xor $5C);
   end;
+end;
+
+{ ------------------------------------------------------------------ checksums and fast hashes }
+
+var
+  { RFC 1952 section 8: entry N is the register after the byte N went through eight steps; filled when the unit
+    starts (RTL-1243) }
+  CRCTable: array[0..255] of Cardinal;
+
+procedure FillCRCTable;
+var
+  N, K: Integer;
+  C: Cardinal;
+begin
+  for N := 0 to 255 do
+  begin
+    C := Cardinal(N);
+    for K := 1 to 8 do
+      if (C and 1) <> 0 then
+        C := (C shr 1) xor $EDB88320
+      else
+        C := C shr 1;
+    CRCTable[N] := C;
+  end;
+end;
+
+function CRCStep(Value: Cardinal; Data: PByte; Size: Cardinal): Cardinal;
+begin
+  while Size > 0 do
+  begin
+    Value := CRCTable[(Value xor Cardinal(Data^)) and $FF] xor (Value shr 8);
+    Inc(Data);
+    Size := Size - 1;
+  end;
+  Result := Value;
+end;
+
+{ RFC 9923 section 2: for each byte, xor it into the low 8 bits, then multiply by the prime (modulo 2^32, 2^64) }
+function FNVStep32(Value: Cardinal; Data: PByte; Size: Cardinal): Cardinal;
+begin
+  while Size > 0 do
+  begin
+    Value := (Value xor Cardinal(Data^)) * Cardinal(THashFNV1a32.FNV_PRIME);
+    Inc(Data);
+    Size := Size - 1;
+  end;
+  Result := Value;
+end;
+
+function FNVStep64(Value: UInt64; Data: PByte; Size: Cardinal): UInt64;
+begin
+  while Size > 0 do
+  begin
+    Value := (Value xor UInt64(Data^)) * UInt64(THashFNV1a64.FNV_PRIME);
+    Inc(Data);
+    Size := Size - 1;
+  end;
+  Result := Value;
+end;
+
+function RotateLeft(Value: Cardinal; Count: Integer): Cardinal;
+begin
+  Result := (Value shl Count) or (Value shr (32 - Count));
+end;
+
+{ the 32-bit number in the 4 bytes at Block^[Index], low byte first }
+function LittleWord(Block: PBlock; Index: Integer): Cardinal;
+begin
+  Result := Cardinal(Block^[Index]) or (Cardinal(Block^[Index + 1]) shl 8)
+    or (Cardinal(Block^[Index + 2]) shl 16) or (Cardinal(Block^[Index + 3]) shl 24);
+end;
+
+{ One application of lookup3's hashlittle (RTL-1244). Three 32-bit values start from $DEADBEEF + Size + Initial.
+  While more than 12 bytes remain, 12 bytes are added as three little-endian words and the values are mixed. The
+  last 1 to 12 bytes are added the same way - copied to a zero-filled block first, so that no byte outside the data
+  is read - and the values go through the final mixing; the third value is the result. No data at all: no final
+  mixing. }
+function Lookup3(Data: PByte; Size, Initial: Cardinal): Cardinal;
+var
+  A, B, C: Cardinal;
+  Last: array[0..11] of Byte;
+begin
+  A := Cardinal($DEADBEEF) + Size + Initial;
+  B := A;
+  C := A;
+  while Size > 12 do
+  begin
+    A := A + LittleWord(PBlock(Data), 0);
+    B := B + LittleWord(PBlock(Data), 4);
+    C := C + LittleWord(PBlock(Data), 8);
+    A := A - C;
+    A := A xor RotateLeft(C, 4);
+    C := C + B;
+    B := B - A;
+    B := B xor RotateLeft(A, 6);
+    A := A + C;
+    C := C - B;
+    C := C xor RotateLeft(B, 8);
+    B := B + A;
+    A := A - C;
+    A := A xor RotateLeft(C, 16);
+    C := C + B;
+    B := B - A;
+    B := B xor RotateLeft(A, 19);
+    A := A + C;
+    C := C - B;
+    C := C xor RotateLeft(B, 4);
+    B := B + A;
+    Inc(Data, 12);
+    Size := Size - 12;
+  end;
+  if Size > 0 then
+  begin
+    FillChar(Last, SizeOf(Last), 0);
+    Move(Data^, Last, Size);
+    A := A + LittleWord(PBlock(@Last), 0);
+    B := B + LittleWord(PBlock(@Last), 4);
+    C := C + LittleWord(PBlock(@Last), 8);
+    C := C xor B;
+    C := C - RotateLeft(B, 14);
+    A := A xor C;
+    A := A - RotateLeft(C, 11);
+    B := B xor A;
+    B := B - RotateLeft(A, 25);
+    C := C xor B;
+    C := C - RotateLeft(B, 16);
+    A := A xor C;
+    A := A - RotateLeft(C, 4);
+    B := B xor A;
+    B := B - RotateLeft(A, 14);
+    C := C xor B;
+    C := C - RotateLeft(B, 24);
+  end;
+  Result := C;
+end;
+
+{ Value in Size bytes (4 or 8), most significant byte first (RTL-1246) }
+function BigEndian(Value: UInt64; Size: Integer): TBytes;
+var
+  I: Integer;
+begin
+  SetLength(Result, Size);
+  for I := 0 to Size - 1 do
+    Result[I] := Byte(Value shr (8 * (Size - 1 - I)));
 end;
 
 { ------------------------------------------------------------------ THash }
@@ -1123,4 +1373,341 @@ begin
   Result := H.HashAsBytes;
 end;
 
+{ ------------------------------------------------------------------ THashCRC32 }
+
+class function THashCRC32.Create: THashCRC32;
+begin
+  Result.Reset;
+end;
+
+procedure THashCRC32.Reset;
+begin
+  FValue := $FFFFFFFF;
+end;
+
+procedure THashCRC32.Update(const AData; ALength: Cardinal);
+begin
+  FValue := CRCStep(FValue, @AData, ALength);
+end;
+
+procedure THashCRC32.Update(const AStream: TStream);
+var
+  Buffer: TBytes;
+  Got: Integer;
+begin
+  Buffer := StreamBuffer(AStream);
+  repeat
+    Got := AStream.Read(Buffer[0], StreamBufferSize);
+    if Got > 0 then
+      Update(Buffer[0], Cardinal(Got));
+  until Got <= 0;
+end;
+
+procedure THashCRC32.Update(const AData: TBytes; ALength: Cardinal);
+var
+  Count: Cardinal;
+begin
+  Count := CountOf(AData, ALength);
+  Update(PByte(AData)^, Count);
+end;
+
+{ the UTF-16 units as stored (RTL-1235): the memory of the string, two bytes per unit }
+procedure THashCRC32.Update(const Input: string);
+begin
+  Update(PByte(Pointer(Input))^, Cardinal(Length(Input)) * SizeOf(Char));
+end;
+
+function THashCRC32.HashAsBytes: TBytes;
+begin
+  Result := BigEndian(not FValue, 4);
+end;
+
+function THashCRC32.HashAsInteger: Integer;
+begin
+  Result := Integer(not FValue);
+end;
+
+function THashCRC32.HashAsString: string;
+begin
+  Result := THash.DigestAsString(HashAsBytes);
+end;
+
+class function THashCRC32.GetHashBytes(const AData: string): TBytes;
+var
+  H: THashCRC32;
+begin
+  H := THashCRC32.Create;
+  H.Update(AData);
+  Result := H.HashAsBytes;
+end;
+
+class function THashCRC32.GetHashString(const AString: string): string;
+begin
+  Result := THash.DigestAsString(GetHashBytes(AString));
+end;
+
+class function THashCRC32.GetHashValue(const AData: string): Integer;
+var
+  H: THashCRC32;
+begin
+  H := THashCRC32.Create;
+  H.Update(AData);
+  Result := H.HashAsInteger;
+end;
+
+class function THashCRC32.GetHashBytes(const AData: TBytes): TBytes;
+var
+  H: THashCRC32;
+begin
+  H := THashCRC32.Create;
+  H.Update(AData);
+  Result := H.HashAsBytes;
+end;
+
+class function THashCRC32.GetHashString(const AData: TBytes): string;
+begin
+  Result := THash.DigestAsString(GetHashBytes(AData));
+end;
+
+class function THashCRC32.GetHashValue(const AData: TBytes): Integer;
+var
+  H: THashCRC32;
+begin
+  H := THashCRC32.Create;
+  H.Update(AData);
+  Result := H.HashAsInteger;
+end;
+
+class function THashCRC32.GetHashValue(const AData; ALength: Cardinal): Integer;
+begin
+  Result := Integer(not CRCStep($FFFFFFFF, @AData, ALength));
+end;
+
+{ ------------------------------------------------------------------ THashBobJenkins }
+
+class function THashBobJenkins.Create: THashBobJenkins;
+begin
+  Result.FValue := 0;
+end;
+
+procedure THashBobJenkins.Reset(AInitialValue: Integer);
+begin
+  FValue := Cardinal(AInitialValue);
+end;
+
+{ every call, also one of length 0, is one application of the function (RTL-1244) }
+procedure THashBobJenkins.Update(const AData; ALength: Cardinal);
+begin
+  FValue := Lookup3(@AData, ALength, FValue);
+end;
+
+procedure THashBobJenkins.Update(const AData: TBytes; ALength: Cardinal);
+var
+  Count: Cardinal;
+begin
+  Count := CountOf(AData, ALength);
+  Update(PByte(AData)^, Count);
+end;
+
+{ the UTF-16 units as stored (RTL-1235): the memory of the string, two bytes per unit }
+procedure THashBobJenkins.Update(const Input: string);
+begin
+  Update(PByte(Pointer(Input))^, Cardinal(Length(Input)) * SizeOf(Char));
+end;
+
+function THashBobJenkins.HashAsBytes: TBytes;
+begin
+  Result := BigEndian(FValue, 4);
+end;
+
+function THashBobJenkins.HashAsInteger: Integer;
+begin
+  Result := Integer(FValue);
+end;
+
+function THashBobJenkins.HashAsString: string;
+begin
+  Result := THash.DigestAsString(HashAsBytes);
+end;
+
+class function THashBobJenkins.GetHashBytes(const AData: string): TBytes;
+var
+  H: THashBobJenkins;
+begin
+  H := THashBobJenkins.Create;
+  H.Update(AData);
+  Result := H.HashAsBytes;
+end;
+
+class function THashBobJenkins.GetHashString(const AString: string): string;
+begin
+  Result := THash.DigestAsString(GetHashBytes(AString));
+end;
+
+class function THashBobJenkins.GetHashValue(const AData: string): Integer;
+var
+  H: THashBobJenkins;
+begin
+  H := THashBobJenkins.Create;
+  H.Update(AData);
+  Result := H.HashAsInteger;
+end;
+
+class function THashBobJenkins.GetHashValue(const AData; ALength: Integer; AInitialValue: Integer): Integer;
+begin
+  if ALength < 0 then
+    raise EArgumentOutOfRangeException.Create(SArgumentOutOfRange);
+  Result := Integer(Lookup3(@AData, Cardinal(ALength), Cardinal(AInitialValue)));
+end;
+
+{ ------------------------------------------------------------------ THashFNV1a32 }
+
+class function THashFNV1a32.Create: THashFNV1a32;
+begin
+  Result.Reset;
+end;
+
+procedure THashFNV1a32.Reset;
+begin
+  FValue := FNV_SEED;
+end;
+
+procedure THashFNV1a32.Update(const AData; ALength: Cardinal);
+begin
+  FValue := FNVStep32(FValue, @AData, ALength);
+end;
+
+procedure THashFNV1a32.Update(const AData: TBytes; ALength: Cardinal);
+var
+  Count: Cardinal;
+begin
+  Count := CountOf(AData, ALength);
+  Update(PByte(AData)^, Count);
+end;
+
+{ the UTF-16 units as stored (RTL-1235): the memory of the string, two bytes per unit }
+procedure THashFNV1a32.Update(const Input: string);
+begin
+  Update(PByte(Pointer(Input))^, Cardinal(Length(Input)) * SizeOf(Char));
+end;
+
+function THashFNV1a32.HashAsBytes: TBytes;
+begin
+  Result := BigEndian(FValue, 4);
+end;
+
+function THashFNV1a32.HashAsInteger: Integer;
+begin
+  Result := Integer(FValue);
+end;
+
+function THashFNV1a32.HashAsString: string;
+begin
+  Result := THash.DigestAsString(HashAsBytes);
+end;
+
+class function THashFNV1a32.GetHashBytes(const AData: string): TBytes;
+var
+  H: THashFNV1a32;
+begin
+  H := THashFNV1a32.Create;
+  H.Update(AData);
+  Result := H.HashAsBytes;
+end;
+
+class function THashFNV1a32.GetHashString(const AString: string): string;
+begin
+  Result := THash.DigestAsString(GetHashBytes(AString));
+end;
+
+class function THashFNV1a32.GetHashValue(const AData: string): Integer;
+var
+  H: THashFNV1a32;
+begin
+  H := THashFNV1a32.Create;
+  H.Update(AData);
+  Result := H.HashAsInteger;
+end;
+
+class function THashFNV1a32.GetHashValue(const AData; ALength: Cardinal; AInitialValue: Cardinal): Integer;
+begin
+  Result := Integer(FNVStep32(AInitialValue, @AData, ALength));
+end;
+
+{ ------------------------------------------------------------------ THashFNV1a64 }
+
+class function THashFNV1a64.Create: THashFNV1a64;
+begin
+  Result.Reset;
+end;
+
+procedure THashFNV1a64.Reset;
+begin
+  FValue := FNV_SEED;
+end;
+
+procedure THashFNV1a64.Update(const AData; ALength: Cardinal);
+begin
+  FValue := FNVStep64(FValue, @AData, ALength);
+end;
+
+procedure THashFNV1a64.Update(const AData: TBytes; ALength: Cardinal);
+var
+  Count: Cardinal;
+begin
+  Count := CountOf(AData, ALength);
+  Update(PByte(AData)^, Count);
+end;
+
+{ the UTF-16 units as stored (RTL-1235): the memory of the string, two bytes per unit }
+procedure THashFNV1a64.Update(const Input: string);
+begin
+  Update(PByte(Pointer(Input))^, Cardinal(Length(Input)) * SizeOf(Char));
+end;
+
+function THashFNV1a64.HashAsBytes: TBytes;
+begin
+  Result := BigEndian(FValue, 8);
+end;
+
+function THashFNV1a64.HashAsInteger: Int64;
+begin
+  Result := Int64(FValue);
+end;
+
+function THashFNV1a64.HashAsString: string;
+begin
+  Result := THash.DigestAsString(HashAsBytes);
+end;
+
+class function THashFNV1a64.GetHashBytes(const AData: string): TBytes;
+var
+  H: THashFNV1a64;
+begin
+  H := THashFNV1a64.Create;
+  H.Update(AData);
+  Result := H.HashAsBytes;
+end;
+
+class function THashFNV1a64.GetHashString(const AString: string): string;
+begin
+  Result := THash.DigestAsString(GetHashBytes(AString));
+end;
+
+class function THashFNV1a64.GetHashValue(const AData: string): Int64;
+var
+  H: THashFNV1a64;
+begin
+  H := THashFNV1a64.Create;
+  H.Update(AData);
+  Result := H.HashAsInteger;
+end;
+
+class function THashFNV1a64.GetHashValue(const AData; ALength: Cardinal; AInitialValue: UInt64): Int64;
+begin
+  Result := Int64(FNVStep64(AInitialValue, @AData, ALength));
+end;
+
+initialization
+  FillCRCTable;
 end.

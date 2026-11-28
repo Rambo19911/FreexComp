@@ -1,0 +1,454 @@
+# byte input (RTL-1243, RTL-1244, RTL-1245, RTL-1246)
+ok CRC-32 of "": untyped data
+ok CRC-32 of "": HashAsBytes, high byte first
+ok CRC-32 of "": HashAsInteger; the record is unchanged
+ok CRC-32 of "": DigestAsInteger(HashAsBytes) = HashAsInteger
+ok CRC-32 of "": byte array
+ok CRC-32 of "": GetHashValue
+ok FNV-1a 32 of "": untyped data
+ok FNV-1a 32 of "": HashAsBytes, high byte first
+ok FNV-1a 32 of "": HashAsInteger; the record is unchanged
+ok FNV-1a 32 of "": DigestAsInteger(HashAsBytes) = HashAsInteger
+ok FNV-1a 32 of "": byte array
+ok FNV-1a 32 of "": GetHashValue
+ok FNV-1a 64 of "": untyped data
+ok FNV-1a 64 of "": HashAsBytes, high byte first
+ok FNV-1a 64 of "": HashAsInteger; the record is unchanged
+ok FNV-1a 64 of "": byte array
+ok FNV-1a 64 of "": GetHashValue
+ok lookup3 of "": untyped data
+ok lookup3 of "": HashAsBytes, high byte first
+ok lookup3 of "": HashAsInteger; the record is unchanged
+ok lookup3 of "": DigestAsInteger(HashAsBytes) = HashAsInteger
+ok lookup3 of "": byte array
+ok lookup3 of "": GetHashValue
+ok CRC-32 of "a": untyped data
+ok CRC-32 of "a": HashAsBytes, high byte first
+ok CRC-32 of "a": HashAsInteger; the record is unchanged
+ok CRC-32 of "a": DigestAsInteger(HashAsBytes) = HashAsInteger
+ok CRC-32 of "a": byte array
+ok CRC-32 of "a": GetHashValue
+ok FNV-1a 32 of "a": untyped data
+ok FNV-1a 32 of "a": HashAsBytes, high byte first
+ok FNV-1a 32 of "a": HashAsInteger; the record is unchanged
+ok FNV-1a 32 of "a": DigestAsInteger(HashAsBytes) = HashAsInteger
+ok FNV-1a 32 of "a": byte array
+ok FNV-1a 32 of "a": GetHashValue
+ok FNV-1a 64 of "a": untyped data
+ok FNV-1a 64 of "a": HashAsBytes, high byte first
+ok FNV-1a 64 of "a": HashAsInteger; the record is unchanged
+ok FNV-1a 64 of "a": byte array
+ok FNV-1a 64 of "a": GetHashValue
+ok lookup3 of "a": untyped data
+ok lookup3 of "a": HashAsBytes, high byte first
+ok lookup3 of "a": HashAsInteger; the record is unchanged
+ok lookup3 of "a": DigestAsInteger(HashAsBytes) = HashAsInteger
+ok lookup3 of "a": byte array
+ok lookup3 of "a": GetHashValue
+ok CRC-32 of "abc": untyped data
+ok CRC-32 of "abc": HashAsBytes, high byte first
+ok CRC-32 of "abc": HashAsInteger; the record is unchanged
+ok CRC-32 of "abc": DigestAsInteger(HashAsBytes) = HashAsInteger
+ok CRC-32 of "abc": byte array
+ok CRC-32 of "abc": GetHashValue
+ok FNV-1a 32 of "abc": untyped data
+ok FNV-1a 32 of "abc": HashAsBytes, high byte first
+ok FNV-1a 32 of "abc": HashAsInteger; the record is unchanged
+ok FNV-1a 32 of "abc": DigestAsInteger(HashAsBytes) = HashAsInteger
+ok FNV-1a 32 of "abc": byte array
+ok FNV-1a 32 of "abc": GetHashValue
+ok FNV-1a 64 of "abc": untyped data
+ok FNV-1a 64 of "abc": HashAsBytes, high byte first
+ok FNV-1a 64 of "abc": HashAsInteger; the record is unchanged
+ok FNV-1a 64 of "abc": byte array
+ok FNV-1a 64 of "abc": GetHashValue
+ok lookup3 of "abc": untyped data
+ok lookup3 of "abc": HashAsBytes, high byte first
+ok lookup3 of "abc": HashAsInteger; the record is unchanged
+ok lookup3 of "abc": DigestAsInteger(HashAsBytes) = HashAsInteger
+ok lookup3 of "abc": byte array
+ok lookup3 of "abc": GetHashValue
+ok CRC-32 of "123456789": untyped data
+ok CRC-32 of "123456789": HashAsBytes, high byte first
+ok CRC-32 of "123456789": HashAsInteger; the record is unchanged
+ok CRC-32 of "123456789": DigestAsInteger(HashAsBytes) = HashAsInteger
+ok CRC-32 of "123456789": byte array
+ok CRC-32 of "123456789": GetHashValue
+ok FNV-1a 32 of "123456789": untyped data
+ok FNV-1a 32 of "123456789": HashAsBytes, high byte first
+ok FNV-1a 32 of "123456789": HashAsInteger; the record is unchanged
+ok FNV-1a 32 of "123456789": DigestAsInteger(HashAsBytes) = HashAsInteger
+ok FNV-1a 32 of "123456789": byte array
+ok FNV-1a 32 of "123456789": GetHashValue
+ok FNV-1a 64 of "123456789": untyped data
+ok FNV-1a 64 of "123456789": HashAsBytes, high byte first
+ok FNV-1a 64 of "123456789": HashAsInteger; the record is unchanged
+ok FNV-1a 64 of "123456789": byte array
+ok FNV-1a 64 of "123456789": GetHashValue
+ok lookup3 of "123456789": untyped data
+ok lookup3 of "123456789": HashAsBytes, high byte first
+ok lookup3 of "123456789": HashAsInteger; the record is unchanged
+ok lookup3 of "123456789": DigestAsInteger(HashAsBytes) = HashAsInteger
+ok lookup3 of "123456789": byte array
+ok lookup3 of "123456789": GetHashValue
+ok CRC-32 of 61 00 62 00 63 00: untyped data
+ok CRC-32 of 61 00 62 00 63 00: HashAsBytes, high byte first
+ok CRC-32 of 61 00 62 00 63 00: HashAsInteger; the record is unchanged
+ok CRC-32 of 61 00 62 00 63 00: DigestAsInteger(HashAsBytes) = HashAsInteger
+ok CRC-32 of 61 00 62 00 63 00: byte array
+ok CRC-32 of 61 00 62 00 63 00: GetHashValue
+ok FNV-1a 32 of 61 00 62 00 63 00: untyped data
+ok FNV-1a 32 of 61 00 62 00 63 00: HashAsBytes, high byte first
+ok FNV-1a 32 of 61 00 62 00 63 00: HashAsInteger; the record is unchanged
+ok FNV-1a 32 of 61 00 62 00 63 00: DigestAsInteger(HashAsBytes) = HashAsInteger
+ok FNV-1a 32 of 61 00 62 00 63 00: byte array
+ok FNV-1a 32 of 61 00 62 00 63 00: GetHashValue
+ok FNV-1a 64 of 61 00 62 00 63 00: untyped data
+ok FNV-1a 64 of 61 00 62 00 63 00: HashAsBytes, high byte first
+ok FNV-1a 64 of 61 00 62 00 63 00: HashAsInteger; the record is unchanged
+ok FNV-1a 64 of 61 00 62 00 63 00: byte array
+ok FNV-1a 64 of 61 00 62 00 63 00: GetHashValue
+ok lookup3 of 61 00 62 00 63 00: untyped data
+ok lookup3 of 61 00 62 00 63 00: HashAsBytes, high byte first
+ok lookup3 of 61 00 62 00 63 00: HashAsInteger; the record is unchanged
+ok lookup3 of 61 00 62 00 63 00: DigestAsInteger(HashAsBytes) = HashAsInteger
+ok lookup3 of 61 00 62 00 63 00: byte array
+ok lookup3 of 61 00 62 00 63 00: GetHashValue
+ok CRC-32 of P(4099): untyped data
+ok CRC-32 of P(4099): HashAsBytes, high byte first
+ok CRC-32 of P(4099): HashAsInteger; the record is unchanged
+ok CRC-32 of P(4099): DigestAsInteger(HashAsBytes) = HashAsInteger
+ok CRC-32 of P(4099): byte array
+ok CRC-32 of P(4099): GetHashValue
+ok FNV-1a 32 of P(4099): untyped data
+ok FNV-1a 32 of P(4099): HashAsBytes, high byte first
+ok FNV-1a 32 of P(4099): HashAsInteger; the record is unchanged
+ok FNV-1a 32 of P(4099): DigestAsInteger(HashAsBytes) = HashAsInteger
+ok FNV-1a 32 of P(4099): byte array
+ok FNV-1a 32 of P(4099): GetHashValue
+ok FNV-1a 64 of P(4099): untyped data
+ok FNV-1a 64 of P(4099): HashAsBytes, high byte first
+ok FNV-1a 64 of P(4099): HashAsInteger; the record is unchanged
+ok FNV-1a 64 of P(4099): byte array
+ok FNV-1a 64 of P(4099): GetHashValue
+ok lookup3 of P(4099): untyped data
+ok lookup3 of P(4099): HashAsBytes, high byte first
+ok lookup3 of P(4099): HashAsInteger; the record is unchanged
+ok lookup3 of P(4099): DigestAsInteger(HashAsBytes) = HashAsInteger
+ok lookup3 of P(4099): byte array
+ok lookup3 of P(4099): GetHashValue
+ok CRC-32 of the quick brown fox: untyped data
+ok CRC-32 of the quick brown fox: HashAsBytes, high byte first
+ok CRC-32 of the quick brown fox: HashAsInteger; the record is unchanged
+ok CRC-32 of the quick brown fox: DigestAsInteger(HashAsBytes) = HashAsInteger
+ok CRC-32 of the quick brown fox: byte array
+ok CRC-32 of the quick brown fox: GetHashValue
+ok CRC-32 of 32 x 00: untyped data
+ok CRC-32 of 32 x 00: HashAsBytes, high byte first
+ok CRC-32 of 32 x 00: HashAsInteger; the record is unchanged
+ok CRC-32 of 32 x 00: DigestAsInteger(HashAsBytes) = HashAsInteger
+ok CRC-32 of 32 x 00: byte array
+ok CRC-32 of 32 x 00: GetHashValue
+ok CRC-32 of 32 x FF: untyped data
+ok CRC-32 of 32 x FF: HashAsBytes, high byte first
+ok CRC-32 of 32 x FF: HashAsInteger; the record is unchanged
+ok CRC-32 of 32 x FF: DigestAsInteger(HashAsBytes) = HashAsInteger
+ok CRC-32 of 32 x FF: byte array
+ok CRC-32 of 32 x FF: GetHashValue
+ok CRC-32 of the bytes 00 to 1F: untyped data
+ok CRC-32 of the bytes 00 to 1F: HashAsBytes, high byte first
+ok CRC-32 of the bytes 00 to 1F: HashAsInteger; the record is unchanged
+ok CRC-32 of the bytes 00 to 1F: DigestAsInteger(HashAsBytes) = HashAsInteger
+ok CRC-32 of the bytes 00 to 1F: byte array
+ok CRC-32 of the bytes 00 to 1F: GetHashValue
+ok CRC-32 of M4: untyped data
+ok CRC-32 of M4: HashAsBytes, high byte first
+ok CRC-32 of M4: HashAsInteger; the record is unchanged
+ok CRC-32 of M4: DigestAsInteger(HashAsBytes) = HashAsInteger
+ok CRC-32 of M4: byte array
+ok CRC-32 of M4: GetHashValue
+ok FNV-1a 32 of "foobar": untyped data
+ok FNV-1a 32 of "foobar": HashAsBytes, high byte first
+ok FNV-1a 32 of "foobar": HashAsInteger; the record is unchanged
+ok FNV-1a 32 of "foobar": DigestAsInteger(HashAsBytes) = HashAsInteger
+ok FNV-1a 32 of "foobar": byte array
+ok FNV-1a 32 of "foobar": GetHashValue
+ok FNV-1a 64 of "foobar": untyped data
+ok FNV-1a 64 of "foobar": HashAsBytes, high byte first
+ok FNV-1a 64 of "foobar": HashAsInteger; the record is unchanged
+ok FNV-1a 64 of "foobar": byte array
+ok FNV-1a 64 of "foobar": GetHashValue
+ok FNV-1a 32 of "Hello!" 01 FF ED: untyped data
+ok FNV-1a 32 of "Hello!" 01 FF ED: HashAsBytes, high byte first
+ok FNV-1a 32 of "Hello!" 01 FF ED: HashAsInteger; the record is unchanged
+ok FNV-1a 32 of "Hello!" 01 FF ED: DigestAsInteger(HashAsBytes) = HashAsInteger
+ok FNV-1a 32 of "Hello!" 01 FF ED: byte array
+ok FNV-1a 32 of "Hello!" 01 FF ED: GetHashValue
+ok FNV-1a 64 of "Hello!" 01 FF ED: untyped data
+ok FNV-1a 64 of "Hello!" 01 FF ED: HashAsBytes, high byte first
+ok FNV-1a 64 of "Hello!" 01 FF ED: HashAsInteger; the record is unchanged
+ok FNV-1a 64 of "Hello!" 01 FF ED: byte array
+ok FNV-1a 64 of "Hello!" 01 FF ED: GetHashValue
+ok FNV-1a 32 of M4: untyped data
+ok FNV-1a 32 of M4: HashAsBytes, high byte first
+ok FNV-1a 32 of M4: HashAsInteger; the record is unchanged
+ok FNV-1a 32 of M4: DigestAsInteger(HashAsBytes) = HashAsInteger
+ok FNV-1a 32 of M4: byte array
+ok FNV-1a 32 of M4: GetHashValue
+ok FNV-1a 64 of M4: untyped data
+ok FNV-1a 64 of M4: HashAsBytes, high byte first
+ok FNV-1a 64 of M4: HashAsInteger; the record is unchanged
+ok FNV-1a 64 of M4: byte array
+ok FNV-1a 64 of M4: GetHashValue
+ok lookup3 of "abcd": untyped data
+ok lookup3 of "abcd": HashAsBytes, high byte first
+ok lookup3 of "abcd": HashAsInteger; the record is unchanged
+ok lookup3 of "abcd": DigestAsInteger(HashAsBytes) = HashAsInteger
+ok lookup3 of "abcd": byte array
+ok lookup3 of "abcd": GetHashValue
+ok lookup3 of "abcdefgh": untyped data
+ok lookup3 of "abcdefgh": HashAsBytes, high byte first
+ok lookup3 of "abcdefgh": HashAsInteger; the record is unchanged
+ok lookup3 of "abcdefgh": DigestAsInteger(HashAsBytes) = HashAsInteger
+ok lookup3 of "abcdefgh": byte array
+ok lookup3 of "abcdefgh": GetHashValue
+ok lookup3 of 11 bytes: untyped data
+ok lookup3 of 11 bytes: HashAsBytes, high byte first
+ok lookup3 of 11 bytes: HashAsInteger; the record is unchanged
+ok lookup3 of 11 bytes: DigestAsInteger(HashAsBytes) = HashAsInteger
+ok lookup3 of 11 bytes: byte array
+ok lookup3 of 11 bytes: GetHashValue
+ok lookup3 of 12 bytes, one last block: untyped data
+ok lookup3 of 12 bytes, one last block: HashAsBytes, high byte first
+ok lookup3 of 12 bytes, one last block: HashAsInteger; the record is unchanged
+ok lookup3 of 12 bytes, one last block: DigestAsInteger(HashAsBytes) = HashAsInteger
+ok lookup3 of 12 bytes, one last block: byte array
+ok lookup3 of 12 bytes, one last block: GetHashValue
+ok lookup3 of 13 bytes: untyped data
+ok lookup3 of 13 bytes: HashAsBytes, high byte first
+ok lookup3 of 13 bytes: HashAsInteger; the record is unchanged
+ok lookup3 of 13 bytes: DigestAsInteger(HashAsBytes) = HashAsInteger
+ok lookup3 of 13 bytes: byte array
+ok lookup3 of 13 bytes: GetHashValue
+ok lookup3 of 24 bytes: untyped data
+ok lookup3 of 24 bytes: HashAsBytes, high byte first
+ok lookup3 of 24 bytes: HashAsInteger; the record is unchanged
+ok lookup3 of 24 bytes: DigestAsInteger(HashAsBytes) = HashAsInteger
+ok lookup3 of 24 bytes: byte array
+ok lookup3 of 24 bytes: GetHashValue
+ok lookup3 of 25 bytes: untyped data
+ok lookup3 of 25 bytes: HashAsBytes, high byte first
+ok lookup3 of 25 bytes: HashAsInteger; the record is unchanged
+ok lookup3 of 25 bytes: DigestAsInteger(HashAsBytes) = HashAsInteger
+ok lookup3 of 25 bytes: byte array
+ok lookup3 of 25 bytes: GetHashValue
+ok lookup3 of Four score: untyped data
+ok lookup3 of Four score: HashAsBytes, high byte first
+ok lookup3 of Four score: HashAsInteger; the record is unchanged
+ok lookup3 of Four score: DigestAsInteger(HashAsBytes) = HashAsInteger
+ok lookup3 of Four score: byte array
+ok lookup3 of Four score: GetHashValue
+# pieces, a stream, the one-call forms of CRC-32 for bytes (RTL-1235, RTL-1240, RTL-1243)
+ok CRC-32 of P(4099) in pieces of 1: as in one call
+ok CRC-32 of P(4099) in pieces of 7: as in one call
+ok CRC-32 of P(4099) in pieces of 4096: as in one call
+ok FNV-1a 32 of P(4099) in pieces of 1: as in one call
+ok FNV-1a 32 of P(4099) in pieces of 7: as in one call
+ok FNV-1a 32 of P(4099) in pieces of 4096: as in one call
+ok FNV-1a 64 of P(4099) in pieces of 1: as in one call
+ok FNV-1a 64 of P(4099) in pieces of 7: as in one call
+ok FNV-1a 64 of P(4099) in pieces of 4096: as in one call
+ok CRC-32 of a stream holding P(4099) that returns 1000 bytes per Read
+ok read through a buffer of 65 536 bytes
+ok after Reset: a stream from its position to its end
+ok Update(bytes), then Update(stream)
+ok THashCRC32.GetHashString(bytes): the check value
+ok GetHashBytes(bytes)
+ok GetHashValue(bytes) = Integer($CBF43926): negative
+ok FNV-1a 64 of "a" = Int64($AF63DC4C8601EC8C)
+# a string is hashed as its UTF-16 units as stored, not as its UTF-8 bytes (RTL-1235, RTL-1240)
+ok CRC-32, string 0: Update(string)
+ok CRC-32, string 0: GetHashString(string)
+ok CRC-32, string 0: GetHashBytes(string)
+ok CRC-32, string 0: GetHashValue(string)
+ok CRC-32, string 0: its units as untyped data
+ok FNV-1a 32, string 0: Update(string)
+ok FNV-1a 32, string 0: GetHashString(string)
+ok FNV-1a 32, string 0: GetHashBytes(string)
+ok FNV-1a 32, string 0: GetHashValue(string)
+ok FNV-1a 32, string 0: its units as untyped data
+ok FNV-1a 64, string 0: Update(string)
+ok FNV-1a 64, string 0: GetHashString(string)
+ok FNV-1a 64, string 0: GetHashBytes(string)
+ok FNV-1a 64, string 0: GetHashValue(string)
+ok FNV-1a 64, string 0: its units as untyped data
+ok lookup3, string 0: Update(string)
+ok lookup3, string 0: GetHashString(string)
+ok lookup3, string 0: GetHashBytes(string)
+ok lookup3, string 0: GetHashValue(string)
+ok lookup3, string 0: its units as untyped data
+ok CRC-32, string 1: Update(string)
+ok CRC-32, string 1: GetHashString(string)
+ok CRC-32, string 1: GetHashBytes(string)
+ok CRC-32, string 1: GetHashValue(string)
+ok CRC-32, string 1: its units as untyped data
+ok FNV-1a 32, string 1: Update(string)
+ok FNV-1a 32, string 1: GetHashString(string)
+ok FNV-1a 32, string 1: GetHashBytes(string)
+ok FNV-1a 32, string 1: GetHashValue(string)
+ok FNV-1a 32, string 1: its units as untyped data
+ok FNV-1a 64, string 1: Update(string)
+ok FNV-1a 64, string 1: GetHashString(string)
+ok FNV-1a 64, string 1: GetHashBytes(string)
+ok FNV-1a 64, string 1: GetHashValue(string)
+ok FNV-1a 64, string 1: its units as untyped data
+ok lookup3, string 1: Update(string)
+ok lookup3, string 1: GetHashString(string)
+ok lookup3, string 1: GetHashBytes(string)
+ok lookup3, string 1: GetHashValue(string)
+ok lookup3, string 1: its units as untyped data
+ok CRC-32, string 2: Update(string)
+ok CRC-32, string 2: GetHashString(string)
+ok CRC-32, string 2: GetHashBytes(string)
+ok CRC-32, string 2: GetHashValue(string)
+ok CRC-32, string 2: its units as untyped data
+ok FNV-1a 32, string 2: Update(string)
+ok FNV-1a 32, string 2: GetHashString(string)
+ok FNV-1a 32, string 2: GetHashBytes(string)
+ok FNV-1a 32, string 2: GetHashValue(string)
+ok FNV-1a 32, string 2: its units as untyped data
+ok FNV-1a 64, string 2: Update(string)
+ok FNV-1a 64, string 2: GetHashString(string)
+ok FNV-1a 64, string 2: GetHashBytes(string)
+ok FNV-1a 64, string 2: GetHashValue(string)
+ok FNV-1a 64, string 2: its units as untyped data
+ok lookup3, string 2: Update(string)
+ok lookup3, string 2: GetHashString(string)
+ok lookup3, string 2: GetHashBytes(string)
+ok lookup3, string 2: GetHashValue(string)
+ok lookup3, string 2: its units as untyped data
+ok CRC-32, string 3: Update(string)
+ok CRC-32, string 3: GetHashString(string)
+ok CRC-32, string 3: GetHashBytes(string)
+ok CRC-32, string 3: GetHashValue(string)
+ok CRC-32, string 3: its units as untyped data
+ok FNV-1a 32, string 3: Update(string)
+ok FNV-1a 32, string 3: GetHashString(string)
+ok FNV-1a 32, string 3: GetHashBytes(string)
+ok FNV-1a 32, string 3: GetHashValue(string)
+ok FNV-1a 32, string 3: its units as untyped data
+ok FNV-1a 64, string 3: Update(string)
+ok FNV-1a 64, string 3: GetHashString(string)
+ok FNV-1a 64, string 3: GetHashBytes(string)
+ok FNV-1a 64, string 3: GetHashValue(string)
+ok FNV-1a 64, string 3: its units as untyped data
+ok lookup3, string 3: Update(string)
+ok lookup3, string 3: GetHashString(string)
+ok lookup3, string 3: GetHashBytes(string)
+ok lookup3, string 3: GetHashValue(string)
+ok lookup3, string 3: its units as untyped data
+ok CRC-32, string 4: Update(string)
+ok CRC-32, string 4: GetHashString(string)
+ok CRC-32, string 4: GetHashBytes(string)
+ok CRC-32, string 4: GetHashValue(string)
+ok CRC-32, string 4: its units as untyped data
+ok FNV-1a 32, string 4: Update(string)
+ok FNV-1a 32, string 4: GetHashString(string)
+ok FNV-1a 32, string 4: GetHashBytes(string)
+ok FNV-1a 32, string 4: GetHashValue(string)
+ok FNV-1a 32, string 4: its units as untyped data
+ok FNV-1a 64, string 4: Update(string)
+ok FNV-1a 64, string 4: GetHashString(string)
+ok FNV-1a 64, string 4: GetHashBytes(string)
+ok FNV-1a 64, string 4: GetHashValue(string)
+ok FNV-1a 64, string 4: its units as untyped data
+ok lookup3, string 4: Update(string)
+ok lookup3, string 4: GetHashString(string)
+ok lookup3, string 4: GetHashBytes(string)
+ok lookup3, string 4: GetHashValue(string)
+ok lookup3, string 4: its units as untyped data
+ok CRC-32, string 5: Update(string)
+ok CRC-32, string 5: GetHashString(string)
+ok CRC-32, string 5: GetHashBytes(string)
+ok CRC-32, string 5: GetHashValue(string)
+ok CRC-32, string 5: its units as untyped data
+ok FNV-1a 32, string 5: Update(string)
+ok FNV-1a 32, string 5: GetHashString(string)
+ok FNV-1a 32, string 5: GetHashBytes(string)
+ok FNV-1a 32, string 5: GetHashValue(string)
+ok FNV-1a 32, string 5: its units as untyped data
+ok FNV-1a 64, string 5: Update(string)
+ok FNV-1a 64, string 5: GetHashString(string)
+ok FNV-1a 64, string 5: GetHashBytes(string)
+ok FNV-1a 64, string 5: GetHashValue(string)
+ok FNV-1a 64, string 5: its units as untyped data
+ok lookup3, string 5: Update(string)
+ok lookup3, string 5: GetHashString(string)
+ok lookup3, string 5: GetHashBytes(string)
+ok lookup3, string 5: GetHashValue(string)
+ok lookup3, string 5: its units as untyped data
+ok CRC-32, string 1: its UTF-8 bytes as a byte array
+ok FNV-1a 32, string 1: its UTF-8 bytes as a byte array
+ok FNV-1a 64, string 1: its UTF-8 bytes as a byte array
+ok lookup3, string 1: its UTF-8 bytes as a byte array
+ok CRC-32, string 3: its UTF-8 bytes as a byte array
+ok FNV-1a 32, string 3: its UTF-8 bytes as a byte array
+ok FNV-1a 64, string 3: its UTF-8 bytes as a byte array
+ok lookup3, string 3: its UTF-8 bytes as a byte array
+ok CRC-32, string 4: its UTF-8 bytes as a byte array
+ok FNV-1a 32, string 4: its UTF-8 bytes as a byte array
+ok FNV-1a 64, string 4: its UTF-8 bytes as a byte array
+ok lookup3, string 4: its UTF-8 bytes as a byte array
+# lookup3: initial value, running value, chained Update calls (RTL-1244)
+ok L("", 0, 0)
+ok L("", 0, $DEADBEEF)
+ok L(Four score, 30): the initial value is 0
+ok L(Four score, 30, 1)
+ok L(12 bytes, 12, 1)
+ok L("abc", 3, -1)
+ok Create without Update: 0
+ok Update of an empty string applies the function to no data
+ok and so does a further call of length 0
+ok and one with an empty array
+ok Reset(1), Update(30 bytes)
+ok Reset without a value: 0
+ok two calls of 15 bytes are chained: not the value of one call
+ok a copy made after the first call continues alike
+ok one byte, then the other 29
+ok the string of 30 characters (60 bytes) in one call
+ok the string in two calls
+ok the same bytes at an odd address
+# state records (RTL-1234), continuing a value and the constants (RTL-1245)
+ok CRC-32: Create
+ok CRC-32: a copy continues on its own; the split of the data does not matter
+ok CRC-32: Reset
+ok CRC-32: Create, Update (also of a string), HashAsInteger and GetHashValue allocate nothing
+ok FNV-1a 32: Create
+ok FNV-1a 32: a copy continues on its own; the split of the data does not matter
+ok FNV-1a 32: Reset
+ok FNV-1a 32: Create, Update (also of a string), HashAsInteger and GetHashValue allocate nothing
+ok FNV-1a 64: Create
+ok FNV-1a 64: a copy continues on its own; the split of the data does not matter
+ok FNV-1a 64: Reset
+ok FNV-1a 64: Create, Update (also of a string), HashAsInteger and GetHashValue allocate nothing
+ok lookup3: Create
+ok lookup3: Reset
+ok lookup3: Create, Update (also of a string), HashAsInteger and GetHashValue allocate nothing
+ok the values were computed
+ok FNV-1a 32: GetHashValue("bar", 3, value of "foo") is the value of "foobar"
+ok FNV-1a 64: the same
+ok THashFNV1a32.FNV_PRIME, FNV_SEED
+ok THashFNV1a64.FNV_PRIME, FNV_SEED
+# arguments (RTL-1247)
+ok CRC-32: Update(bytes, one more than the array holds)
+ok CRC-32: and nothing was added
+ok FNV-1a 32: Update(bytes, one more than the array holds)
+ok FNV-1a 32: and nothing was added
+ok FNV-1a 64: Update(bytes, one more than the array holds)
+ok FNV-1a 64: and nothing was added
+ok lookup3: Update(bytes, one more than the array holds)
+ok lookup3: and nothing was added
+ok THashBobJenkins.GetHashValue with a negative length
+ok THashCRC32.Update(nil stream)
+ok no block is left
+# passed 447 failed 0
