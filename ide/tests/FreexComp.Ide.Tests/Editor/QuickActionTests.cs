@@ -1,13 +1,18 @@
+using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
+using Avalonia.Input;
 using Avalonia.LogicalTree;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using AvaloniaEdit;
 using FreexComp.Compiler.Syntax;
 using FreexComp.Compiler.Text;
 using FreexComp.Ide.Core.Refactoring;
 using FreexComp.Ide.Core.Text;
 using FreexComp.Ide.Core.ViewModels;
+using FreexComp.Ide.Editor;
 using FreexComp.Ide.TestSupport;
 using FreexComp.Ide.Tests.Infrastructure;
 using FreexComp.LanguageService;
@@ -17,13 +22,14 @@ namespace FreexComp.Ide.Tests.Editor;
 /// <summary>
 /// Quick actions in the running shell (I-351, F13-003): <c>edit.quickActions</c> (<c>Ctrl+.</c>, <c>Alt+Enter</c>, the
 /// editor context menu) lists the fixes of the diagnostic at the caret and the applicable refactorings in a menu at the
-/// caret; choosing one applies its changes through the refactoring engine.
+/// caret; choosing one applies its changes through the refactoring engine. I-352: the quick-action glyph of the glyph
+/// margin (the bulb) on the caret line when a fix is offered there.
 /// </summary>
 [Trait("Phase", "8")]
 [Trait("Kind", "Ui")]
 public sealed class QuickActionTests
 {
-    private const string Unit = "unit Unit1;\r\ninterface\r\nprocedure Run;\r\nimplementation\r\nprocedure Run;\r\nbegin\r\n  Count := 1;\r\nend;\r\nend.\r\n";
+    internal const string Unit = "unit Unit1;\r\ninterface\r\nprocedure Run;\r\nimplementation\r\nprocedure Run;\r\nbegin\r\n  Count := 1;\r\nend;\r\nend.\r\n";
     private const string Declared = "unit Unit1;\r\ninterface\r\nprocedure Run;\r\nimplementation\r\nprocedure Run;\r\nvar\r\n  Count: Integer;\r\nbegin\r\n  Count := 1;\r\nend;\r\nend.\r\n";
     private const string DeclareId = "Context.quickAction.declare-variable";
     private const string DeclareTitle = "Declare variable 'Count: Integer'";
@@ -44,7 +50,7 @@ public sealed class QuickActionTests
         return (h, editor, doc);
     }
 
-    private static void PlaceCaret(TextEditor editor, TextDocumentViewModel doc, int offset)
+    internal static void PlaceCaret(TextEditor editor, TextDocumentViewModel doc, int offset)
     {
         doc.Selection = TextSelection.At(offset);
         Dispatcher.UIThread.RunJobs();
@@ -364,5 +370,285 @@ public sealed class QuickActionTests
         Assert.Equal(Unit, doc.Buffer.Text);
         Assert.False(engine.CanUndo);
         Assert.True(h.Services.Commands.CanExecute("edit.quickActions"));
+    }
+
+    private const int ErrorLine = 7; // "  Count := 1;"
+    private const string BulbTip = "Quick actions available (Ctrl+.)";
+
+    private static readonly TimeSpan Rest = TimeSpan.FromMilliseconds(500); // IDE-REFAC-035
+
+    private static IEditorTestProbe Probe(TextEditor editor) => editor.FindAncestorOfType<CodeEditorView>()!;
+
+    private static GlyphMargin Gutter(TextEditor editor) => editor.TextArea.LeftMargins.OfType<GlyphMargin>().Single();
+
+    /// <summary>The window point of the middle of the glyph slot of <paramref name="line"/>.</summary>
+    private static Point Slot(HeadlessHarness h, TextEditor editor, int line)
+    {
+        var gutter = Gutter(editor);
+        return gutter.TranslatePoint(new Point(gutter.Bounds.Width / 2, (line - 0.5) * editor.TextArea.TextView.DefaultLineHeight), h.Window)!.Value;
+    }
+
+    /// <summary>The tooltip the glyph margin shows over <paramref name="line"/>.</summary>
+    private static string? TipAt(HeadlessHarness h, TextEditor editor, int line)
+    {
+        h.Window.MouseMove(Slot(h, editor, line == 1 ? 2 : 1)); // the pointer comes from another line
+        h.Window.MouseMove(Slot(h, editor, line));
+        Dispatcher.UIThread.RunJobs();
+        return ToolTip.GetTip(Gutter(editor)) as string;
+    }
+
+    /// <summary>The offset of the first character of <paramref name="line"/>.</summary>
+    private static int LineStart(TextEditor editor, int line) => editor.Document.GetLineByNumber(line).Offset;
+
+    /// <summary>
+    /// The scenario with the error marker of the undeclared variable shown and the caret resting on a clean line; a
+    /// provider without actions counts how often the quick actions are asked for.
+    /// </summary>
+    internal static async Task<(HeadlessHarness H, TextEditor Editor, TextDocumentViewModel Doc, IEditorTestProbe Probe, FakeQuickActionProvider Asked)> StartWithMarkerAsync(
+        Action<HarnessOptions>? configure = null)
+    {
+        var (h, editor, doc) = await StartAsync(configure);
+        var asked = new FakeQuickActionProvider();
+        h.Services.Refactoring.Register(asked);
+        PlaceCaret(editor, doc, LineStart(editor, 2));
+        var probe = Probe(editor);
+        await h.WaitForAsync(() => probe.Markers.Count > 0, "the error marker of the undeclared variable");
+        return (h, editor, doc, probe, asked);
+    }
+
+    /// <summary>The caret has rested: the quick actions of its position are asked for and the answer has arrived.</summary>
+    internal static async Task RestAsync(HeadlessHarness h, FakeQuickActionProvider asked)
+    {
+        var before = asked.Asked.Count;
+        h.Clock.Advance(Rest);
+        await h.WaitForAsync(() => asked.Asked.Count > before, "the quick actions of the caret position were asked for");
+        Dispatcher.UIThread.RunJobs();
+    }
+
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "IDE-REFAC-035")]
+    [Trait("Req", "UI-ED-150")]
+    public async Task BulbAppearsOnTheFixLineAndFollowsTheCaret()
+    {
+        var (h, editor, doc, probe, asked) = await StartWithMarkerAsync();
+        await using var _ = h;
+        var engine = h.Services.Refactoring;
+        var count = Unit.IndexOf("Count", StringComparison.Ordinal);
+        Assert.Equal("Error", probe.GlyphAt(ErrorLine));
+        Assert.Null(probe.GlyphAt(2)); // the caret has rested on a line without a fix
+
+        // The caret comes to the undeclared identifier: nothing is asked before it has rested for 500 ms …
+        PlaceCaret(editor, doc, count + 2);
+        var before = asked.Asked.Count;
+        h.Clock.Advance(Rest - TimeSpan.FromMilliseconds(1));
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(before, asked.Asked.Count);
+        Assert.Equal("Error", probe.GlyphAt(ErrorLine));
+
+        // … and a caret that moves on the way starts the 500 ms again: one question, for the position it rests at.
+        PlaceCaret(editor, doc, count + 3);
+        h.Clock.Advance(Rest - TimeSpan.FromMilliseconds(1));
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(before, asked.Asked.Count);
+        h.Clock.Advance(TimeSpan.FromMilliseconds(1));
+        await h.WaitForAsync(() => probe.GlyphAt(ErrorLine) == "QuickAction", "the bulb on the line with the fix");
+        Assert.Equal(before + 1, asked.Asked.Count);
+        Assert.Equal(TextSelection.At(count + 3), asked.Asked[^1].Selection);
+        // The bulb replaces the error marker of its line only; asking never makes the engine busy.
+        Assert.Equal(["QuickAction"], Enumerable.Range(1, editor.Document.LineCount).Select(probe.GlyphAt).OfType<string>());
+        Assert.Equal("QuickAction", Assert.Single(probe.VisualRows(ErrorLine)).Glyph);
+        Assert.False(engine.IsBusy);
+        Assert.True(h.Services.Commands.CanExecute("edit.quickActions"));
+        Assert.Equal(Unit, doc.Buffer.Text);
+
+        // A caret that stays on the line keeps the bulb until the answer for its new position says there is no fix there.
+        PlaceCaret(editor, doc, Unit.IndexOf(":= 1;", StringComparison.Ordinal) + 5);
+        Assert.Equal("QuickAction", probe.GlyphAt(ErrorLine));
+        await RestAsync(h, asked);
+        Assert.Equal("Error", probe.GlyphAt(ErrorLine));
+        PlaceCaret(editor, doc, count);
+        await RestAsync(h, asked);
+        Assert.Equal("QuickAction", probe.GlyphAt(ErrorLine));
+
+        // Moving the caret to another line gives the error marker back at once; the bulb follows the caret only to a fix.
+        PlaceCaret(editor, doc, LineStart(editor, 6));
+        Assert.Equal("Error", probe.GlyphAt(ErrorLine));
+        await RestAsync(h, asked);
+        Assert.Equal("Error", probe.GlyphAt(ErrorLine));
+        Assert.Null(probe.GlyphAt(6));
+        PlaceCaret(editor, doc, count + 1);
+        await RestAsync(h, asked);
+        Assert.Equal("QuickAction", probe.GlyphAt(ErrorLine));
+
+        // Typing removes it at once; it is back when the caret has rested in the changed text (the name is still undeclared).
+        h.Type("x");
+        Dispatcher.UIThread.RunJobs();
+        Assert.Contains("Cxount := 1;", doc.Buffer.Text, StringComparison.Ordinal);
+        Assert.NotEqual("QuickAction", probe.GlyphAt(ErrorLine));
+        await RestAsync(h, asked);
+        Assert.Equal("QuickAction", probe.GlyphAt(ErrorLine));
+
+        // A read-only document has no bulb and is not asked.
+        doc.SetReadOnly(true);
+        Dispatcher.UIThread.RunJobs();
+        Assert.NotEqual("QuickAction", probe.GlyphAt(ErrorLine));
+        before = asked.Asked.Count;
+        PlaceCaret(editor, doc, count + 2);
+        h.Clock.Advance(Rest + Rest);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(before, asked.Asked.Count);
+        doc.SetReadOnly(false);
+        Dispatcher.UIThread.RunJobs();
+        await RestAsync(h, asked);
+        Assert.Equal("QuickAction", probe.GlyphAt(ErrorLine));
+
+        // A stale result is dropped: the answer for a position the caret has left since shows nothing, there or here.
+        PlaceCaret(editor, doc, LineStart(editor, 2));
+        await RestAsync(h, asked);
+        var answer = new TaskCompletionSource<IReadOnlyList<QuickAction>>();
+        var slow = new FakeQuickActionProvider((_, _) => answer.Task);
+        engine.Register(slow);
+        var fix = new QuickAction("late-fix", "Late Fix", QuickActionKind.Fix, _ => Task.FromResult<WorkspaceEdit?>(null));
+        PlaceCaret(editor, doc, LineStart(editor, 3));
+        h.Clock.Advance(Rest);
+        await h.WaitForAsync(() => slow.Asked.Count == 1, "the slow provider is asked");
+        Assert.False(engine.IsBusy);
+        PlaceCaret(editor, doc, LineStart(editor, 4));
+        answer.SetResult([fix]);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Null(probe.GlyphAt(3));
+        Assert.Null(probe.GlyphAt(4));
+        // The answer for the position the caret rests at is shown.
+        answer = new TaskCompletionSource<IReadOnlyList<QuickAction>>();
+        h.Clock.Advance(Rest);
+        await h.WaitForAsync(() => slow.Asked.Count == 2, "the slow provider is asked again");
+        Assert.Null(probe.GlyphAt(4));
+        answer.SetResult([fix]);
+        await h.WaitForAsync(() => probe.GlyphAt(4) == "QuickAction", "the bulb of the late fix");
+        Assert.Null(probe.GlyphAt(3));
+
+        // Closing the document while an answer is awaited ends the request.
+        doc.Buffer.Undo(); // the typed character: the document closes without a question
+        Dispatcher.UIThread.RunJobs();
+        Assert.False(doc.IsModified);
+        Assert.Null(probe.GlyphAt(4));
+        answer = new TaskCompletionSource<IReadOnlyList<QuickAction>>();
+        PlaceCaret(editor, doc, LineStart(editor, 3));
+        h.Clock.Advance(Rest);
+        await h.WaitForAsync(() => slow.Asked.Count == 3, "the slow provider is asked a third time");
+        Assert.True(await h.Services.Documents.CloseAsync(doc));
+        answer.SetResult([fix]);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Empty(doc.Decorations.GlyphsAt(3));
+        Assert.False(engine.IsBusy);
+    }
+
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "IDE-REFAC-035")]
+    [Trait("Req", "UI-ED-150")]
+    [Trait("Req", "UI-ED-021")]
+    public async Task BulbOnlyForFixesAndBelowBookmark()
+    {
+        var (h, editor, doc, probe, asked) = await StartWithMarkerAsync();
+        await using var _ = h;
+        var nl = Environment.NewLine;
+        var wrap = new FakeRefactoring("wrap-in-region", "Wrap in Region");
+        h.Services.Refactoring.Register(wrap);
+        var error = TipAt(h, editor, ErrorLine);
+        Assert.Contains("Count", error, StringComparison.Ordinal); // the message of E2003
+
+        // A line where only a refactoring applies gets no glyph (it is offered by Ctrl+. all the same).
+        PlaceCaret(editor, doc, LineStart(editor, 3));
+        await RestAsync(h, asked);
+        Assert.NotNull(wrap.AskedWith);
+        Assert.Equal(["Error"], Enumerable.Range(1, editor.Document.LineCount).Select(probe.GlyphAt).OfType<string>());
+        Assert.Null(TipAt(h, editor, 3));
+
+        // A bookmark on the line with the fix keeps its glyph; the tooltip lists the bulb below it, then the error marker.
+        PlaceCaret(editor, doc, Unit.IndexOf("Count", StringComparison.Ordinal) + 2);
+        await h.ExecuteAsync("search.bookmark.toggle");
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal("Bookmark", probe.GlyphAt(ErrorLine));
+        Assert.Equal("Bookmark" + nl + error, TipAt(h, editor, ErrorLine));
+        await RestAsync(h, asked);
+        Assert.Equal("Bookmark", probe.GlyphAt(ErrorLine));
+        Assert.Equal("Bookmark" + nl + BulbTip + nl + error, TipAt(h, editor, ErrorLine));
+
+        // Without the bookmark the bulb is drawn, in front of the error marker it hides.
+        await h.ExecuteAsync("search.bookmark.toggle");
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal("QuickAction", probe.GlyphAt(ErrorLine));
+        Assert.Equal(BulbTip + nl + error, TipAt(h, editor, ErrorLine));
+
+        // The tooltip names the gesture the command has now; without a gesture it names the command.
+        h.Services.Keymap.SetGestures("edit.quickActions", [Core.Commands.KeyGesture.Parse("Alt+Enter")]);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal("Quick actions available (Alt+Enter)" + nl + error, TipAt(h, editor, ErrorLine));
+        h.Services.Keymap.SetGestures("edit.quickActions", []);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal("Quick actions available (Quick Actions…)" + nl + error, TipAt(h, editor, ErrorLine));
+    }
+
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-ED-150")]
+    [Trait("Req", "UI-ED-012")]
+    [Trait("Req", "UI-ED-021")]
+    public async Task ClickInGlyphMarginStillTogglesBreakpoint()
+    {
+        var (h, editor, doc, probe, asked) = await StartWithMarkerAsync();
+        await using var _ = h;
+        var breakpoints = h.Services.Breakpoints!;
+        var caret = Unit.IndexOf("Count", StringComparison.Ordinal) + 2;
+        PlaceCaret(editor, doc, caret);
+        await RestAsync(h, asked);
+        Assert.Equal("QuickAction", probe.GlyphAt(ErrorLine));
+
+        void Click()
+        {
+            h.Window.MouseDown(Slot(h, editor, ErrorLine), MouseButton.Left);
+            h.Window.MouseUp(Slot(h, editor, ErrorLine), MouseButton.Left);
+            Dispatcher.UIThread.RunJobs();
+        }
+
+        // A click on the slot that shows the bulb sets a breakpoint, as on every line: the bulb is an indicator, no button.
+        var nl = Environment.NewLine;
+        var tip = Assert.IsType<string>(TipAt(h, editor, ErrorLine)); // the pointer rests on the slot from here on
+        Assert.StartsWith(BulbTip + nl, tip, StringComparison.Ordinal);
+        var requests = h.Services.CodeModel.Worker.RequestCount;
+        Click();
+        var breakpoint = Assert.Single(breakpoints.All);
+        Assert.Equal((BuildScenario.UnitPath(h), ErrorLine), (breakpoint.Path, breakpoint.Line));
+        Assert.Equal("Breakpoint", probe.GlyphAt(ErrorLine));
+        Assert.Equal("editor.breakpoint.line.bg", probe.LineBackgroundAt(ErrorLine));
+        // No menu opened, nothing was asked or changed, the caret is where it was.
+        Assert.False(editor.TextArea.ContextMenu?.IsOpen == true);
+        Assert.False(Gutter(editor).ContextMenu?.IsOpen == true);
+        Assert.Equal(requests, h.Services.CodeModel.Worker.RequestCount);
+        Assert.False(h.Services.Refactoring.IsBusy);
+        Assert.Equal(caret, editor.TextArea.Caret.Offset);
+        Assert.Equal(Unit, doc.Buffer.Text);
+        // The tooltip under the resting pointer follows the glyphs of its line (UI-ED-021).
+        Assert.Equal("Breakpoint at line 7" + nl + tip, ToolTip.GetTip(Gutter(editor)));
+
+        // A second click removes the breakpoint; the bulb of the caret line is drawn again.
+        Click();
+        Assert.Empty(breakpoints.All);
+        Assert.Equal("QuickAction", probe.GlyphAt(ErrorLine));
+        Assert.Equal(tip, ToolTip.GetTip(Gutter(editor)));
+
+        // The caret leaves the line: the tooltip of the resting pointer is the error marker's alone.
+        PlaceCaret(editor, doc, LineStart(editor, 2));
+        Assert.Equal("Error", probe.GlyphAt(ErrorLine));
+        var error = tip[(BulbTip + nl).Length..];
+        Assert.Equal(error, ToolTip.GetTip(Gutter(editor)));
+        Assert.False(editor.TextArea.ContextMenu?.IsOpen == true);
+
+        // A pointer that comes back with a click (no move in between) gets the tooltip of the clicked line as it is then.
+        var text = editor.TextArea.TextView;
+        h.Window.MouseMove(text.TranslatePoint(new Point(text.Bounds.Width / 2, text.Bounds.Height / 2), h.Window)!.Value);
+        Dispatcher.UIThread.RunJobs();
+        Click();
+        Assert.Equal("Breakpoint", probe.GlyphAt(ErrorLine));
+        Assert.Equal("Breakpoint at line 7" + nl + error, ToolTip.GetTip(Gutter(editor)));
     }
 }

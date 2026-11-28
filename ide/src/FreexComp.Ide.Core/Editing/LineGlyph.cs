@@ -11,20 +11,23 @@ public enum LineGlyphKind
     BreakpointConditionalDisabled,
     BreakpointUnverified,
     Bookmark,
+
+    /// <summary>The quick-action glyph (UI-ED-150): a fix is offered at the caret of this line.</summary>
+    QuickAction,
     Error,
 }
 
 /// <summary>
 /// One glyph on a line. <paramref name="Number"/> is the digit of a numbered bookmark (1–9, 0 = none);
 /// <paramref name="ToolTip"/> is the provider's text for kinds without a standard one (an error marker's first error
-/// message, a call frame); <paramref name="Condition"/> / <paramref name="PassCount"/> describe a breakpoint (UI-ED-021).
+/// message, a call frame, the quick-action glyph); <paramref name="Condition"/> / <paramref name="PassCount"/> describe a breakpoint (UI-ED-021).
 /// </summary>
 public sealed record LineGlyph(LineGlyphKind Kind, int Number = 0, string? ToolTip = null, string? Condition = null, int PassCount = 0)
 {
     /// <summary>
     /// UI-ED-021: the glyph's tooltip line on 1-based <paramref name="line"/>, from the <c>Msg.Editor.Tip.*</c> texts
     /// (breakpoint with condition / pass count / disabled, unverified breakpoint, bookmark, execution point); an error
-    /// marker or call frame shows the provider's <see cref="ToolTip"/>. Null = no line.
+    /// marker, a call frame or the quick-action glyph shows the provider's <see cref="ToolTip"/>. Null = no line.
     /// </summary>
     public string? FormatToolTip(int line)
     {
@@ -37,7 +40,7 @@ public sealed record LineGlyph(LineGlyphKind Kind, int Number = 0, string? ToolT
                 return Number > 0 ? string.Format(culture, Resources.Strings.Msg_Editor_Tip_BookmarkNumbered, Number) : Resources.Strings.Msg_Editor_Tip_Bookmark;
             case LineGlyphKind.Execution:
                 return Resources.Strings.Msg_Editor_Tip_ExecutionPoint;
-            case LineGlyphKind.Error or LineGlyphKind.Frame:
+            case LineGlyphKind.Error or LineGlyphKind.Frame or LineGlyphKind.QuickAction:
                 return ToolTip;
         }
 
@@ -51,13 +54,17 @@ public sealed record LineGlyph(LineGlyphKind Kind, int Number = 0, string? ToolT
         return text.ToString();
     }
 
-    /// <summary>editor.md §3: 1 (highest) = execution arrow … 5 = error marker.</summary>
+    /// <summary>
+    /// The order of editor.md §3, 1 (highest) = execution arrow … 6 = error marker; 5 is the quick-action glyph (row 4a
+    /// of the table: below the bookmark, above the error marker).
+    /// </summary>
     public int Priority => Kind switch
     {
         LineGlyphKind.Execution => 1,
         LineGlyphKind.Frame => 2,
         LineGlyphKind.Bookmark => 4,
-        LineGlyphKind.Error => 5,
+        LineGlyphKind.QuickAction => 5,
+        LineGlyphKind.Error => 6,
         _ => 3, // breakpoints in any state
     };
 

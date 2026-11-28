@@ -6779,6 +6779,10 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
     <value>No quick actions here</value>
     <comment>IDE-REFAC-034</comment>
   </data>
+  <data name="Msg_QuickActions_Available" xml:space="preserve">
+    <value>Quick actions available ({0})</value>
+    <comment>UI-ED-150 tooltip of the quick-action glyph: 0 = gesture of edit.quickActions</comment>
+  </data>
   <data name="Dialog_RefactoringPreview_Title" xml:space="preserve">
     <value>Preview — {0}</value>
     <comment>UI-DLG-360: 0 = title of the workspace edit</comment>

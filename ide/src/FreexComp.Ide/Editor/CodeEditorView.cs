@@ -500,13 +500,13 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
         return true;
     }
 
-    /// <summary>UI-MENU-043: below the caret line, at the caret (the toolkit centres the menu on it).</summary>
+    /// <summary>UI-MENU-043: below the caret line, the menu's left edge at the caret.</summary>
     private void PlaceAtCaret(ContextMenu menu)
     {
         var textView = _editor.TextArea.TextView;
         var caret = _editor.TextArea.Caret.CalculateCaretRectangle();
         menu.PlacementTarget = textView;
-        menu.Placement = PlacementMode.Bottom;
+        menu.Placement = PlacementMode.BottomEdgeAlignedLeft;
         menu.PlacementRect = new Rect(caret.X - textView.ScrollOffset.X, caret.Y - textView.ScrollOffset.Y, 1, caret.Height);
     }
 
@@ -527,7 +527,6 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
             UpdateLayout(); // a caret that was scrolled out of view: the menu is placed where it is now
             var menu = Views.MenuBarBuilder.CreateContextMenu(items);
             PlaceAtCaret(menu);
-            menu.Placement = PlacementMode.BottomEdgeAlignedLeft; // a list about the caret position: its left edge at the caret
             area.ContextMenu = menu;
             menu.Open(area);
             if (menu.Items.OfType<MenuItem>().FirstOrDefault() is { } first)

@@ -6,13 +6,15 @@ using Avalonia.Media;
 using AvaloniaEdit.Editing;
 using AvaloniaEdit.Rendering;
 using FreexComp.Ide.Core.Editing;
+using FreexComp.Ide.Icons;
 
 namespace FreexComp.Ide.Editor;
 
 /// <summary>
 /// Glyph margin (editor.md §3): 2 px left padding + one 16 × 16 slot per line with the highest-priority glyph of the
 /// document's <see cref="EditorDecorations"/>; an execution arrow on a breakpoint line is drawn over the disc. Vector
-/// geometry per §3.1. The tooltip has one line per glyph on the line (UI-ED-021, <see cref="EditorDecorations.ToolTipAt"/>); a
+/// geometry per §3.1; the quick-action glyph is the icon <c>hint</c> (UI-ED-150) — an indicator, a click on it is a click
+/// on the margin. The tooltip has one line per glyph on the line (UI-ED-021, <see cref="EditorDecorations.ToolTipAt"/>); a
 /// right click asks for the gutter menu (UI-ED-022, <see cref="GutterMargin.ContextMenuRequested"/>); a left click is
 /// reported through <see cref="LineClicked"/> (UI-ED-012).
 /// </summary>
@@ -20,6 +22,7 @@ public sealed class GlyphMargin(TextArea area) : GutterMargin(area)
 {
     private const double SlotLeft = 2;
     private EditorDecorations? _decorations;
+    private int? _pointerLine; // the 1-based line under the pointer; null while it is elsewhere
 
     public override double MarginWidth => 18;
 
@@ -64,17 +67,40 @@ public sealed class GlyphMargin(TextArea area) : GutterMargin(area)
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
         base.OnPointerPressed(e);
+        TrackPointer(e); // a pointer that arrives with the click (no move before it)
         if (e.Handled || LineClicked is not { } clicked || TextView is not { VisualLinesValid: true } || !e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
             return;
         e.Handled = true; // the text area must not move the caret or start a selection
         clicked(LineAt(e.GetPosition(this).Y));
     }
 
+    protected override void OnPointerEntered(PointerEventArgs e)
+    {
+        base.OnPointerEntered(e);
+        TrackPointer(e);
+    }
+
     protected override void OnPointerMoved(PointerEventArgs e)
     {
         base.OnPointerMoved(e);
-        ToolTip.SetTip(this, TextView is null ? null : _decorations?.ToolTipAt(LineAt(e.GetPosition(this).Y))); // UI-ED-021
+        TrackPointer(e);
     }
+
+    /// <summary>The pointer is over a line of the margin: its tooltip is that line's (UI-ED-021).</summary>
+    private void TrackPointer(PointerEventArgs e)
+    {
+        _pointerLine = TextView is null ? null : LineAt(e.GetPosition(this).Y);
+        UpdateToolTip();
+    }
+
+    protected override void OnPointerExited(PointerEventArgs e)
+    {
+        base.OnPointerExited(e);
+        _pointerLine = null;
+    }
+
+    /// <summary>UI-ED-021: the tooltip of the line under the pointer — also when its glyphs change while the pointer rests there.</summary>
+    private void UpdateToolTip() => ToolTip.SetTip(this, _pointerLine is { } line ? _decorations?.ToolTipAt(line) : null);
 
     /// <summary>
     /// Draws <paramref name="glyph"/> in a 16 × 16 slot at the origin (§3.1); <paramref name="Brush"/> gives the brush of a
@@ -112,9 +138,25 @@ public sealed class GlyphMargin(TextArea area) : GutterMargin(area)
             case LineGlyphKind.Bookmark:
                 DrawBookmark(context, glyph.Number, Brush);
                 break;
+            case LineGlyphKind.QuickAction:
+                DrawIcon(context, "hint", Brush);
+                break;
             case LineGlyphKind.Error:
                 DrawErrorMarker(context, Brush);
                 break;
+        }
+    }
+
+    /// <summary>An icon of toolbars.md §4 on its 16 × 16 grid, every layer in the colour of its design token.</summary>
+    private static void DrawIcon(DrawingContext context, string name, Func<string, IBrush?> Brush)
+    {
+        foreach (var layer in IconCatalog.Get(name).Layers)
+        {
+            var brush = Brush(layer.ColorToken);
+            if (layer.IsFilled)
+                context.DrawGeometry(brush, null, layer.Geometry);
+            else
+                context.DrawGeometry(null, new Pen(brush, IconCatalog.StrokeThickness, lineCap: PenLineCap.Round, lineJoin: PenLineJoin.Round), layer.Geometry);
         }
     }
 
@@ -174,5 +216,10 @@ public sealed class GlyphMargin(TextArea area) : GutterMargin(area)
         return geometry;
     }
 
-    private void OnDecorationsChanged(object? sender, EventArgs e) => InvalidateVisual();
+    private void OnDecorationsChanged(object? sender, EventArgs e)
+    {
+        InvalidateVisual();
+        if (_pointerLine is not null)
+            UpdateToolTip();
+    }
 }

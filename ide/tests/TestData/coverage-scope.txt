@@ -34,3 +34,4 @@ spec/ide/phase8-build-events.md
 spec/ide/platform-selector.md
 spec/ide/diff.md
 spec/ide/local-history.md
+spec/ide/refactoring.md

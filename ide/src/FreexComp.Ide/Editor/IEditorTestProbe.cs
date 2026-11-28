@@ -7,7 +7,7 @@ namespace FreexComp.Ide.Editor;
 /// </summary>
 public interface IEditorTestProbe
 {
-    /// <summary>"Breakpoint", "BreakpointDisabled", "BreakpointConditional", "BreakpointUnverified", "Execution", "Frame", "Bookmark", "Bookmark3", "Error", or null.</summary>
+    /// <summary>"Breakpoint", "BreakpointDisabled", "BreakpointConditional", "BreakpointUnverified", "Execution", "Frame", "Bookmark", "Bookmark3", "QuickAction", "Error", or null.</summary>
     string? GlyphAt(int line);
 
     /// <summary>Colour token of the line's background, e.g. <c>editor.execution.line.bg</c> or <c>editor.currentLine.bg</c>; null for none.</summary>

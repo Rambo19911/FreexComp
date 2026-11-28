@@ -56,17 +56,24 @@ public sealed partial class RefactoringService : IRefactoringService
         _historyProject = projects.Project?.FilePath;
         projects.ProjectChanged += (_, _) => OnProjectChanged();
         // IDE-REFAC-024: edit.undo of a text document (a form document's unit included) asks here first.
+        // IDE-REFAC-035: its caret line shows the quick-action glyph.
         documents.DocumentOpened += (_, e) =>
         {
-            if (e.Document is TextDocumentViewModel text)
-                text.OperationUndo = UndoFromEditor;
+            if (e.Document is not TextDocumentViewModel text)
+                return;
+            text.OperationUndo = UndoFromEditor;
+            AttachGlyph(text);
         };
         // IDE-REFAC-032: closing a document cancels the collection of its quick actions.
         documents.DocumentClosed += (_, e) =>
         {
-            if (e.Document is TextDocumentViewModel text && _collecting.Remove(text, out var request))
+            if (e.Document is not TextDocumentViewModel text)
+                return;
+            DetachGlyph(text);
+            if (_collecting.Remove(text, out var request))
                 request.Cancel();
         };
+        documents.ActiveDocumentChanged += (_, _) => OnActiveDocumentChanged();
     }
 
     public bool IsBusy { get; private set; }

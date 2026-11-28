@@ -109,7 +109,10 @@ public sealed class EditorContextMenuTests
         }
     }
 
-    /// <summary>UI-MENU-043: Shift+F10 opens the menu at the caret (a right-click at the pointer).</summary>
+    /// <summary>
+    /// UI-MENU-043: Shift+F10 opens the menu at the caret (a right-click at the pointer) — below the caret line with its
+    /// left edge at the caret, as the quick-action menu (lead decision 2026-11-28, I-352).
+    /// </summary>
     [AvaloniaFact(Timeout = 30000)]
     [Trait("Req", "UI-MENU-043")]
     public async Task KeyboardOpensAtTheCaret()
@@ -128,7 +131,8 @@ public sealed class EditorContextMenuTests
 
             var menu = Assert.IsType<ContextMenu>(editor.TextArea.ContextMenu);
             Assert.True(menu.IsOpen, gesture);
-            Assert.Equal(Avalonia.Controls.PlacementMode.Bottom, menu.Placement);
+            Assert.Equal(Avalonia.Controls.PlacementMode.BottomEdgeAlignedLeft, menu.Placement);
+            Assert.Same(editor.TextArea.TextView, menu.PlacementTarget);
             var caret = editor.TextArea.Caret.CalculateCaretRectangle();
             Assert.Equal(caret.X - editor.TextArea.TextView.ScrollOffset.X, menu.PlacementRect!.Value.X, 0.5);
             Assert.Equal(caret.Y - editor.TextArea.TextView.ScrollOffset.Y, menu.PlacementRect!.Value.Y, 0.5);
