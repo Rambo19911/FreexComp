@@ -163,16 +163,23 @@ public sealed partial class WorkspaceEditTests
         var a = await OpenAsync(A);
         var results = new List<RefactoringResult>();
         var edit = Edit(Rename(C, Text(C)), Rename(A, a.Buffer.Text)) with { OnApplied = results.Add };
+        RefactoringPreviewViewModel? shown = null;
 
         // The real dialog model: the file row of C.pas is unchecked, then Apply.
         Dialogs.Script(RefactoringPreviewViewModel.DialogName, async dialog =>
         {
-            var preview = Assert.IsType<RefactoringPreviewViewModel>(dialog);
+            var preview = shown = Assert.IsType<RefactoringPreviewViewModel>(dialog);
             Assert.Equal([A, C], preview.Files.Select(f => f.Path));
             preview.Toggle(preview.Files[1]);
             await preview.PressDefaultAsync();
         });
         var result = await Engine.ApplyAsync(edit, PreviewMode.Always);
+
+        // The dialog's diff work (UI-DLG-364) must not outlive the test (I-210).
+        Assert.NotNull(shown);
+        await shown.DiffUpdate;
+        if (shown.Diff is { } diff)
+            await diff.Recomputing;
 
         Assert.Single(Dialogs.Dialogs);
         Assert.Equal((RefactoringOutcome.Applied, 2, 1), (result.Outcome, result.EditCount, result.FileCount));
