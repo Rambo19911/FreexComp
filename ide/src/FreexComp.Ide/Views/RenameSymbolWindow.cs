@@ -12,7 +12,8 @@ namespace FreexComp.Ide.Views;
 /// <summary>
 /// The Rename Symbol dialog (UI-DLG-380…386), 520 × auto, not resizable: the symbol line; <c>New name</c> with its error
 /// text, or the conflict list (at most five rows high) under it; the overload check box of an overloaded routine; the
-/// summary of the live check and the notes. First focus on the name, all of it selected.
+/// summary of the live check and the notes; for a unit the line with the new file name (IDE-REFAC-057). First focus on the
+/// name, all of it selected.
 /// </summary>
 public sealed class RenameSymbolWindow : DialogWindow
 {
@@ -105,6 +106,11 @@ public sealed class RenameSymbolWindow : DialogWindow
             panel.Children.Add(overloads);
         }
 
+        // IDE-REFAC-057: the unit mode's file line, while the name is valid.
+        var file = Line("File", "FxcTextPrimaryBrush");
+        if (model.IsUnitMode)
+            panel.Children.Add(file);
+
         var summary = Line("Summary", "FxcTextPrimaryBrush");
         AutomationProperties.SetLiveSetting(summary, AutomationLiveSetting.Polite);
         var notes = Line("Notes", "FxcTextSecondaryBrush", wrap: true);
@@ -122,6 +128,8 @@ public sealed class RenameSymbolWindow : DialogWindow
             summary.IsVisible = !model.HasConflicts; // the list replaces the summary (UI-DLG-384)
             notes.Text = model.Notes;
             notes.IsVisible = model.Notes is not null;
+            file.Text = model.FileNote;
+            file.IsVisible = model.FileNote is not null;
         }
 
         IReadOnlyList<RenameConflictRow>? shown = null;

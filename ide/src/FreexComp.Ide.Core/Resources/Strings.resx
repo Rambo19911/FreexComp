@@ -6884,9 +6884,25 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
     <value>{0} is declared in the library source {1}. Library sources cannot be changed.</value>
     <comment>IDE-REFAC-041</comment>
   </data>
-  <data name="Reason_Rename_UnitInProjectManager" xml:space="preserve">
-    <value>A unit is renamed by renaming its file in the Project Manager.</value>
-    <comment>IDE-REFAC-042</comment>
+  <data name="Reason_Rename_UnitNotMember" xml:space="preserve">
+    <value>Only units of the open project can be renamed.</value>
+    <comment>IDE-REFAC-056</comment>
+  </data>
+  <data name="Reason_Rename_UnitFileMismatch" xml:space="preserve">
+    <value>The unit {0} is not named after its file {1}. Rename the file in the Project Manager.</value>
+    <comment>IDE-REFAC-056: 0 = unit name, 1 = file name</comment>
+  </data>
+  <data name="Reason_Rename_PendingRename" xml:space="preserve">
+    <value>Another file rename of this project has not finished.</value>
+    <comment>IDE-REFAC-056</comment>
+  </data>
+  <data name="Msg_Rename_UnitFileNote" xml:space="preserve">
+    <value>The file is renamed to {0}.</value>
+    <comment>IDE-REFAC-057: 0 = new file name</comment>
+  </data>
+  <data name="Msg_Rename_UnitPreviewNote" xml:space="preserve">
+    <value>The file {0} is renamed to {1}. Open documents among the changed files are saved.</value>
+    <comment>IDE-REFAC-058: file names</comment>
   </data>
   <data name="Dialog_RenameSymbol_Title" xml:space="preserve">
     <value>Rename Symbol</value>

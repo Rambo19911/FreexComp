@@ -26,7 +26,8 @@ public enum RenameRoute
 /// <summary>
 /// Rename Symbol (IDE-REFAC-040…046; F13-001, I-379): the target at the caret is found by the language service, refused
 /// where it cannot be renamed, routed, named by <c>enterName</c> (the dialog of I-380; tests pass a function) and renamed
-/// by the engine as one operation with the plan's workspace edit.
+/// by the engine as one operation with the plan's workspace edit; a unit name is renamed by the Project Manager after a
+/// preview in confirm mode (I-382).
 /// </summary>
 public sealed class RenameRefactoring : IRefactoring
 {
@@ -173,7 +174,7 @@ public sealed class RenameRefactoring : IRefactoring
 
         var route = Route(info, buffer.Text, context.Document.HasBlockSelection);
         if (route == RenameRoute.Unit)
-            throw new RefactoringException(Strings.Reason_Rename_UnitInProjectManager); // until I-382
+            return await RenameUnitAsync(info, source, position);
         if (route == RenameRoute.Inline && _inline is { } inline)
         {
             // IDE-REFAC-050: the inline session; the engine is not busy during it.
@@ -185,5 +186,34 @@ public sealed class RenameRefactoring : IRefactoring
         if (answer is null)
             return null;
         return answer.Plan.Edit ?? throw new RefactoringException(answer.Plan.Result.Error ?? "");
+    }
+
+    /// <summary>
+    /// IDE-REFAC-056…058 (I-382): the preconditions as refusals; the dialog in unit mode; the preview of every text change
+    /// in confirm mode, all or nothing; then the Project Manager's rename of the file (file, companion form, project entry,
+    /// heading, <c>{$FORM}</c>, references; its own messages). Null: the engine records nothing — a unit rename is taken
+    /// back by renaming again.
+    /// </summary>
+    private async Task<WorkspaceEdit?> RenameUnitAsync(RenameInfo info, Document source, int position)
+    {
+        var file = info.DeclarationPaths.IsEmpty ? source.Path : info.DeclarationPaths[0];
+        if (!_projects.IsMember(file))
+            throw new RefactoringException(Strings.Reason_Rename_UnitNotMember);
+        if (!string.Equals(Path.GetFileNameWithoutExtension(file), info.CurrentName, StringComparison.OrdinalIgnoreCase))
+            throw new RefactoringException(string.Format(CultureInfo.CurrentCulture, Strings.Reason_Rename_UnitFileMismatch, info.CurrentName, Path.GetFileName(file)));
+        if (_projects.PendingRename is not null)
+            throw new RefactoringException(Strings.Reason_Rename_PendingRename);
+
+        var answer = await _engine.WithoutWorkingTextAsync(() => _enterName(info, source, position));
+        if (answer is null)
+            return null;
+        if (answer.Plan.Edit is not { } edit)
+            throw new RefactoringException(answer.Plan.Result.Error ?? "");
+        var newFile = answer.NewName + Path.GetExtension(file);
+        var note = string.Format(CultureInfo.CurrentCulture, Strings.Msg_Rename_UnitPreviewNote, Path.GetFileName(file), newFile);
+        if (!await _engine.ConfirmAsync(edit, note))
+            return null;
+        await _engine.WithoutWorkingTextAsync(() => _projects.RenameFileAsync(file, newFile, updateHeading: true));
+        return null;
     }
 }

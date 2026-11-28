@@ -241,7 +241,11 @@ public static class ServiceGraph
         refactoring.Register(new Refactoring.RenameRefactoring(refactoring, renamePlanner, codeModel, projects, librarySource, toolchain,
             (info, source, position) => platform.Dialogs.ShowAsync(new RenameSymbolViewModel(info,
                 (name, overloads, ct) => renamePlanner.PlanAsync(new Refactoring.RenameRequest(source, position, info.CurrentName, name, overloads, Forms: true), ct),
-                platform.Clock, layout)), inlineRename));
+                platform.Clock, layout,
+                // IDE-REFAC-057 (I-382): a unit name is validated as the Project Manager validates the new file name.
+                info.Kind == FreexComp.LanguageService.CompletionItemKind.Unit && info.DeclarationPaths is [var unitFile, ..]
+                    ? file => projects.ValidateRename(unitFile, file) is { Success: false } refused ? Projects.NewProjectValidation.MessageText(refused) : null
+                    : null)), inlineRename));
         foreach (var extra in refactorings ?? [])
             refactoring.Register(extra);
         var liveDiagnostics = new CodeModel.LiveDiagnosticsService(documents, codeModel, settings, platform.Clock, platform.Dispatcher); // I-111

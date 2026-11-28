@@ -31,12 +31,15 @@ public sealed class RenameSymbolViewModel : DialogViewModel<RenameDialogResult>
     private readonly Func<string, bool, CancellationToken, Task<RenamePlan>> _plan;
     private readonly IClock _clock;
     private readonly ILayoutService? _layout;
+    private readonly Func<string, string?>? _validateUnit;
+    private readonly string _extension;
     private string _newName;
     private bool _overloads;
     private string? _error;
     private IReadOnlyList<RenameConflictRow> _conflicts = [];
     private string _summary = "";
     private string? _notes;
+    private string? _fileNote;
     private bool _isInputEnabled = true;
     private int _version;              // one per input (name, option): a check result for an older one is dropped
     private IDisposable? _timer;
@@ -50,7 +53,12 @@ public sealed class RenameSymbolViewModel : DialogViewModel<RenameDialogResult>
     /// <param name="info">The facts of the target (its <c>CanRename</c> is true).</param>
     /// <param name="plan">The plan of a trimmed new name with the overload choice (<see cref="RenamePlanner.PlanAsync"/> on the target's snapshot).</param>
     /// <param name="layout">UI state <c>dialogs.RenameSymbol.overloads</c>; null = not remembered.</param>
-    public RenameSymbolViewModel(RenameInfo info, Func<string, bool, CancellationToken, Task<RenamePlan>> plan, IClock clock, ILayoutService? layout)
+    /// <param name="validateUnit">
+    /// Unit mode (IDE-REFAC-057): the message of <c>IProjectService.ValidateRename</c> for a new file name (name + the
+    /// file's extension), null when it may be used; null = the syntactic check of a symbol name.
+    /// </param>
+    public RenameSymbolViewModel(RenameInfo info, Func<string, bool, CancellationToken, Task<RenamePlan>> plan, IClock clock, ILayoutService? layout,
+        Func<string, string?>? validateUnit = null)
     {
         ArgumentNullException.ThrowIfNull(info);
         ArgumentNullException.ThrowIfNull(plan);
@@ -59,6 +67,8 @@ public sealed class RenameSymbolViewModel : DialogViewModel<RenameDialogResult>
         _plan = plan;
         _clock = clock;
         _layout = layout;
+        _validateUnit = validateUnit;
+        _extension = info.DeclarationPaths.IsEmpty ? ".pas" : Path.GetExtension(info.DeclarationPaths[0]);
         _newName = info.CurrentName;
         ShowOverloads = info.OverloadCount > 1 && info.Kind is CompletionItemKind.Method or CompletionItemKind.Routine;
         _overloads = ShowOverloads && layout?.GetDialogValue(DialogName, "overloads") != "false"; // checked by default
@@ -75,7 +85,22 @@ public sealed class RenameSymbolViewModel : DialogViewModel<RenameDialogResult>
 
     public override string Name => DialogName;
 
-    public override string Title => _info.Kind == CompletionItemKind.Unit ? Strings.Dialog_RenameSymbol_TitleUnit : Strings.Dialog_RenameSymbol_Title;
+    public override string Title => IsUnitMode ? Strings.Dialog_RenameSymbol_TitleUnit : Strings.Dialog_RenameSymbol_Title;
+
+    /// <summary>IDE-REFAC-057: the name of a unit, program or library (title <c>Rename Unit</c>, the <c>File</c> line).</summary>
+    public bool IsUnitMode => _info.Kind == CompletionItemKind.Unit;
+
+    /// <summary>
+    /// Unit mode (IDE-REFAC-057): <c>Msg.Rename.UnitFileNote</c> with the new file name while the name is valid; null = hidden.
+    /// </summary>
+    public string? FileNote
+    {
+        get => _fileNote;
+        private set => SetProperty(ref _fileNote, value);
+    }
+
+    /// <summary>Unit mode: the new file name of a name (the name with the unit file's extension).</summary>
+    public string FileNameOf(string name) => name + _extension;
 
     public override double Width => 520;
 
@@ -207,6 +232,8 @@ public sealed class RenameSymbolViewModel : DialogViewModel<RenameDialogResult>
         var name = Trimmed;
         if (name.Length == 0 || string.Equals(name, _info.CurrentName, StringComparison.Ordinal))
             return (false, null);
+        if (IsUnitMode)
+            return _validateUnit?.Invoke(FileNameOf(name)) is { } refused ? (false, refused) : (true, null); // UI-DLG-382, unit mode
         if (SyntaxFacts.IsReservedWord(name))
             return (false, string.Format(CultureInfo.CurrentCulture, Strings.Msg_Rename_NameReserved, name));
         if (_info.Kind != CompletionItemKind.Label && !SyntaxFacts.IsValidIdentifier(name))
@@ -226,6 +253,7 @@ public sealed class RenameSymbolViewModel : DialogViewModel<RenameDialogResult>
         Conflicts = [];
         Summary = "";
         Notes = null;
+        FileNote = null;
         Rename.IsEnabled = !_committing && Validate().Valid;
         _timer = _clock.Schedule(CheckDelay, () => StartCheck());
     }
@@ -239,6 +267,7 @@ public sealed class RenameSymbolViewModel : DialogViewModel<RenameDialogResult>
             return Task.CompletedTask;
         var (valid, message) = Validate();
         Error = message;
+        FileNote = valid && IsUnitMode ? string.Format(CultureInfo.CurrentCulture, Strings.Msg_Rename_UnitFileNote, FileNameOf(Trimmed)) : null;
         if (!valid)
         {
             Rename.IsEnabled = false;
