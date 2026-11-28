@@ -15,6 +15,7 @@ resourcestring
   SInvalidTime = '''%s'' is not a valid time';
   SInvalidDateTime = '''%s'' is not a valid date and time';
   SInvalidGUID = '''%s'' is not a valid GUID value';
+  SInvalidGuidArray = 'Byte array for GUID must be exactly %d bytes long';   { TGuidHelper.Create (RTL-1280) }
   SDateEncodeError = 'Invalid argument to date encode';
   STimeEncodeError = 'Invalid argument to time encode';
   SInvalidFormat = 'Format ''%s'' invalid or incompatible with argument';

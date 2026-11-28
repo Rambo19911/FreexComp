@@ -386,6 +386,58 @@ public sealed class ImportTableTests
         });
     }
 
+    /// <summary>A console program that asks for a new GUID through <c>TGUID.NewGuid</c> and prints the length of its text.</summary>
+    private const string GuidProgram = """
+        program ImportCheckGuid;
+        uses
+          SysUtils;
+        begin
+          Writeln(Length(TGUID.NewGuid.ToString));
+        end.
+        """;
+
+    /// <summary>The same program without the GUID.</summary>
+    private const string GuidBaselineProgram = """
+        program ImportCheckGuidBase;
+        uses
+          SysUtils;
+        begin
+          Writeln(38);
+        end.
+        """;
+
+    /// <summary>
+    /// RTL-1275: <c>CreateGUID</c> (and with it <c>TGUID.NewGuid</c>) finds <c>CoCreateGuid</c> at run time, so a console
+    /// program that creates a GUID imports exactly the libraries of the same program without it — no
+    /// <c>ole32.dll</c> — and still prints the 38 characters of a GUID's text.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "RTL-1275")]
+    [Trait("Phase", "8")]
+    public async Task GuidHelperAddsNoImport()
+    {
+        List<string> baseline = [];
+        await WithProgramAsync("ImportCheckGuidBase", GuidBaselineProgram, async (exe, work) =>
+        {
+            baseline = ImportedDlls(await File.ReadAllBytesAsync(exe, TestContext.Current.CancellationToken));
+            var (exit, output) = await RunAsync(exe, "", work);
+            Assert.Equal(0, exit);
+            Assert.Equal("38", output.TrimEnd());
+        });
+        Assert.Contains("kernel32.dll", baseline);
+
+        await WithProgramAsync("ImportCheckGuid", GuidProgram, async (exe, work) =>
+        {
+            var dlls = ImportedDlls(await File.ReadAllBytesAsync(exe, TestContext.Current.CancellationToken));
+            Assert.Equal(baseline.Order(StringComparer.Ordinal), dlls.Order(StringComparer.Ordinal));
+            Assert.DoesNotContain("ole32.dll", dlls, StringComparer.OrdinalIgnoreCase);
+
+            var (exit, output) = await RunAsync(exe, "", work);
+            Assert.Equal(0, exit);
+            Assert.Equal("38", output.TrimEnd());
+        });
+    }
+
     /// <summary>Compiles <paramref name="text"/> against <c>rtl/src</c> in a fresh directory and hands the exe to <paramref name="check"/>.</summary>
     private static async Task WithProgramAsync(string name, string text, Func<string, string, Task> check)
     {

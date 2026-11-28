@@ -126,10 +126,13 @@ function WrapText(const Line: string; MaxCol: Integer = 45): string; overload;
 function AdjustLineBreaks(const S: string; Style: TTextLineBreakStyle = tlbsCRLF): string;
 function IsValidIdent(const Ident: string; AllowDots: Boolean = False): Boolean;
 function CharInSet(C: Char; const CharSet: TSysCharSet): Boolean;
-// GUID text {XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}, upper-case hex (section 7.2); CreateGUID waits for ole32 (Phase 8+)
+// GUID text {XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}, upper-case hex (section 7.2)
 function StringToGUID(const S: string): TGUID;
 function GUIDToString(const Guid: TGUID): string;
 function IsEqualGUID(const Guid1, Guid2: TGUID): Boolean;
+{ a new GUID from the operating system (CoCreateGuid of ole32.dll, found at run time in the system directory, RTL-1275):
+  S_OK, or HResult($80070000 or the last error) and an all-zero Guid when the library or the function is not found }
+function CreateGUID(out Guid: TGUID): HResult;
 { section 2.4: a nil instance supports nothing; no reference is left behind by the forms without Intf. The out forms
   store a counted reference in Intf (an interface variable or a Pointer), nil when the result is False. }
 function Supports(const Instance: IInterface; const IID: TGUID; out Intf): Boolean; overload;
@@ -869,6 +872,18 @@ type
     class function TryParse(const S: string; out Value: LongBool): Boolean; static;
     function ToInteger: Integer; inline;
     function ToString(UseBoolStrs: TUseBoolStrs = TUseBoolStrs.False): string; overload;
+  end;
+
+  TGuidHelper = record helper for TGUID
+  public
+    class function Create(const S: string): TGUID; overload; static; inline;
+    class function Create(const B: TBytes): TGUID; overload; static;
+    class function Create(A: Cardinal; B, C: Word; D, E, F, G, H, I, J, K: Byte): TGUID; overload; static;
+    class function NewGuid: TGUID; static;
+    class function Empty: TGUID; static;
+    function IsEmpty: Boolean;
+    function ToByteArray: TBytes;
+    function ToString: string; inline;
   end;
 
 implementation
@@ -1889,6 +1904,36 @@ begin
   for I := 0 to 7 do
     if Guid1.D4[I] <> Guid2.D4[I] then
       Result := False;
+end;
+
+type
+  TCoCreateGuid = function(out Guid: TGUID): HResult; stdcall;
+
+var
+  { CreateGUID (RTL-1275): ole32.dll and its CoCreateGuid, looked up on the first call and kept for the life of the
+    process (never released; two threads that race store the same values). No static import: a program that never
+    asks for a GUID does not load ole32.dll. }
+  Ole32Module: HMODULE;
+  CoCreateGuidProc: TCoCreateGuid;
+
+function CreateGUID(out Guid: TGUID): HResult;
+begin
+  if not Assigned(CoCreateGuidProc) then
+  begin
+    { the system directory only - never the program's folder or the search path }
+    if Ole32Module = 0 then
+      Ole32Module := LoadLibraryExW('ole32.dll', 0, LOAD_LIBRARY_SEARCH_SYSTEM32);
+    if Ole32Module <> 0 then
+      CoCreateGuidProc := TCoCreateGuid(GetProcAddress(Ole32Module, 'CoCreateGuid'));
+  end;
+  if Assigned(CoCreateGuidProc) then
+    Result := CoCreateGuidProc(Guid)
+  else
+  begin
+    { reviewed, not run: no test can make the system library disappear (standard-helpers.md section 8 risk 6) }
+    Result := HResult($80070000 or (GetLastError and $FFFF));
+    FillChar(Guid, SizeOf(Guid), 0);
+  end;
 end;
 
 function Supports(const Instance: IInterface; const IID: TGUID; out Intf): Boolean;

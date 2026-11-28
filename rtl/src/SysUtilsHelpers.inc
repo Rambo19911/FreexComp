@@ -1088,3 +1088,68 @@ function TLongBoolHelper.ToString(UseBoolStrs: TUseBoolStrs): string;
 begin
   Result := BoolToStr(Ord(Self) <> 0, UseBoolStrs = TUseBoolStrs.True);
 end;
+
+{ --------------------------------------------------------------------------------- GUID helper (RTL-1275) }
+
+class function TGuidHelper.Create(const S: string): TGUID;
+begin
+  Result := StringToGUID(S);
+end;
+
+{ the 16 bytes of the record as it lies in memory: D1, D2 and D3 least significant byte first, then D4[0] .. D4[7] }
+class function TGuidHelper.Create(const B: TBytes): TGUID;
+begin
+  if Length(B) <> SizeOf(TGUID) then
+    raise EArgumentException.CreateFmt(SInvalidGuidArray, [SizeOf(TGUID)]);
+  Move(B[0], Result, SizeOf(TGUID));
+end;
+
+class function TGuidHelper.Create(A: Cardinal; B, C: Word; D, E, F, G, H, I, J, K: Byte): TGUID;
+begin
+  Result.D1 := A;
+  Result.D2 := B;
+  Result.D3 := C;
+  Result.D4[0] := D;
+  Result.D4[1] := E;
+  Result.D4[2] := F;
+  Result.D4[3] := G;
+  Result.D4[4] := H;
+  Result.D4[5] := I;
+  Result.D4[6] := J;
+  Result.D4[7] := K;
+end;
+
+class function TGuidHelper.NewGuid: TGUID;
+var
+  R: HResult;
+  E: EOSError;
+begin
+  R := CreateGUID(Result);
+  if R < 0 then
+  begin
+    E := EOSError.Create(SUnkOSError);
+    E.ErrorCode := Cardinal(R);
+    raise E;
+  end;
+end;
+
+class function TGuidHelper.Empty: TGUID;
+begin
+  FillChar(Result, SizeOf(TGUID), 0);
+end;
+
+function TGuidHelper.IsEmpty: Boolean;
+begin
+  Result := Self = TGUID.Empty;
+end;
+
+function TGuidHelper.ToByteArray: TBytes;
+begin
+  SetLength(Result, SizeOf(TGUID));
+  Move(Self, Result[0], SizeOf(TGUID));
+end;
+
+function TGuidHelper.ToString: string;
+begin
+  Result := GUIDToString(Self);
+end;

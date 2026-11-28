@@ -1,0 +1,35 @@
+# Create, ToString, ToByteArray
+ok G.ToString
+ok G.D1
+ok G.D2, G.D3
+ok G.D4
+ok ToByteArray length
+ok ToByteArray in memory order
+ok TGUID.Create(G.ToByteArray) = G
+ok TGUID.Create from eleven parts = G
+ok eleven parts: ToString
+ok Create accepts lower-case digits
+ok ToString writes upper-case digits
+ok Create(B) of 0 .. 15
+ok G.ToString = GUIDToString(G)
+# Empty and IsEmpty
+ok Z.ToString
+ok Z.IsEmpty
+ok not G.IsEmpty
+ok the bytes of Empty give Empty
+ok one bit set is not empty
+ok one bit set: IsEmpty is False
+# errors
+ok TGUID.Create('nonsense')
+ok 15 bytes
+ok 17 bytes
+ok nil
+# NewGuid and CreateGUID
+ok N1 is not empty
+ok N2 is not empty
+ok two new GUIDs differ
+ok text length 38
+ok the text of a new GUID reads back
+ok CreateGUID(C) = 0
+ok CreateGUID gives a third value
+# passed 30 failed 0
