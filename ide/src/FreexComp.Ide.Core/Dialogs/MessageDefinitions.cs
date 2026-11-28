@@ -87,6 +87,7 @@ public static class MessageDefinitions
         new("Msg.Run.NoExecutable", E, ["OK"]),
         new("Msg.Run.StartFailed", E, ["OK"]),
         new("Msg.Run.WorkingDirMissing", E, ["RunParameters", "Cancel"]),
+        new("Msg.Run.MemberWorkingDirMissing", E, ["OK"]), // IDE-PM-198
         new("Msg.Run.AlreadyRunning", Q, ["Restart", "Cancel"]),
         new("Msg.Run.StopOnExit", Q, ["StopAndExit", "Cancel"]),
         new("Msg.Run.StopOnClose", Q, ["StopAndClose", "Cancel"]),

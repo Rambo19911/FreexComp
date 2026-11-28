@@ -118,9 +118,15 @@ public static class MenuBarBuilder
             // UI-MENU-005: the shortcut column shows IdeCommand.GestureText in UI-KEY-001 spelling. The toolkit's own
             // formatting of InputGesture differs for punctuation ("Ctrl++" for Ctrl+=), so InputGesture stays unset and
             // the template's text block is bound instead; no HotKey either — key routing owns the gestures.
-            item.TemplateApplied += (_, e) =>
-                e.NameScope.Find<TextBlock>(InputGestureTextPart)?.Bind(
-                    TextBlock.TextProperty, new Binding(nameof(IdeCommand.GestureText)) { Source = command, Mode = BindingMode.OneWay });
+            // IDE-PM-191: an item that acts on the row it was opened on shows no shortcut text — the key belongs to the
+            // command without that target (Build on a listed root would promise a key that builds another project).
+            if (!model.ArgumentIsTarget)
+            {
+                item.TemplateApplied += (_, e) =>
+                    e.NameScope.Find<TextBlock>(InputGestureTextPart)?.Bind(
+                        TextBlock.TextProperty, new Binding(nameof(IdeCommand.GestureText)) { Source = command, Mode = BindingMode.OneWay });
+            }
+
             return item;
         }
 

@@ -21,10 +21,26 @@ public interface IRunService
     /// </summary>
     Task<bool> StartAsync(bool withDebugger = false);
 
+    /// <summary>
+    /// IDE-PM-192: <paramref name="projectPath"/> is an available listed member of the project group that is runnable,
+    /// and the IDE is Idle. Synchronous (the state of a context-menu item).
+    /// </summary>
+    bool CanStartMember(string? projectPath);
+
+    /// <summary>
+    /// IDE-PM-193…198: <c>run.startWithoutDebugging</c> for a listed member of the project group — the sequence of
+    /// <see cref="StartAsync"/> with the member's own values; the active project does not change. The path of the
+    /// loaded project is <see cref="StartAsync"/>. False when nothing was started.
+    /// </summary>
+    Task<bool> StartMemberAsync(string projectPath);
+
     /// <summary>IDE-P3-090/091: terminates the process tree; Idle afterwards in every case.</summary>
     Task StopAsync();
 
-    /// <summary>IDE-P3-092: stop, then the start sequence the session was started with.</summary>
+    /// <summary>
+    /// IDE-P3-092, IDE-PM-197: stop, then the start sequence the session was started with, for the run target the
+    /// program was started for (the loaded project or a listed member).
+    /// </summary>
     Task<bool> RestartAsync();
 
     /// <summary>IDE-P3-093: while a program runs, asks <c>Msg.Run.StopOnExit</c> / <c>StopOnClose</c> and stops it; false = canceled.</summary>
@@ -58,6 +74,7 @@ public sealed class RunService : IRunService
     private Session? _session;
     private IRunningProcess? _waitingHost; // IDE-P3-089: a console host whose program ended, still at its key prompt
     private bool _lastWithDebugger;
+    private string? _lastMember; // IDE-PM-197: the listed member the last start was for; null = the loaded project
 
     public RunService(BuildService build, IProjectService projects, ISettingsService settings, IdeStateMachine state, IToolchainLocator toolchain,
         IOutputService output, IProcessLauncher launcher, IFileSystem fileSystem, IClock clock, IUiDispatcher dispatcher, IDialogService dialogs,
@@ -80,6 +97,9 @@ public sealed class RunService : IRunService
 
     public int? LastExitCode { get; private set; }
 
+    /// <summary>The project group (IDE-PM-190…198; set by the service graph). Null: only the loaded project is run.</summary>
+    public IProjectGroupService? Group { get; set; }
+
     /// <summary>The running program's process (tests, the debugger later); null when nothing runs.</summary>
     public IRunningProcess? Process => _session?.Process;
 
@@ -99,12 +119,58 @@ public sealed class RunService : IRunService
     public void RegisterCommands(ICommandService commands, bool debugger = false)
     {
         ArgumentNullException.ThrowIfNull(commands);
-        commands.RegisterHandler("run.startWithoutDebugging", new Handler(() => _projects.Project is not null, () => StartCommandAsync(false)));
+        // IDE-PM-190, 192: without an argument the loaded project (menu, tool bar, shortcut); the context menu of a
+        // listed root gives the member's path — that start needs the Idle state and asks no restart question.
+        commands.RegisterHandler("run.startWithoutDebugging", new Handler(
+            member => IsListedTarget(member) ? CanStartMember(member) : _projects.Project is not null,
+            member => IsListedTarget(member) ? StartMemberAsync(member!) : StartCommandAsync(false)));
         if (debugger)
             return;
-        commands.RegisterHandler("run.start", new Handler(() => _projects.Project is not null, StartWithoutDebuggerNoticeAsync));
-        commands.RegisterHandler("run.stop", new Handler(() => _session is not null, StopAsync));
-        commands.RegisterHandler("run.restart", new Handler(() => _session is not null, RestartAsync));
+        commands.RegisterHandler("run.start", new Handler(_ => _projects.Project is not null, _ => StartWithoutDebuggerNoticeAsync()));
+        commands.RegisterHandler("run.stop", new Handler(_ => _session is not null, _ => StopAsync()));
+        commands.RegisterHandler("run.restart", new Handler(_ => _session is not null, _ => RestartAsync()));
+    }
+
+    private static bool Same(string? a, string? b) => string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// IDE-PM-192: the command argument names a project other than the loaded one (a target that is the active project's
+    /// own path behaves as no argument).
+    /// </summary>
+    private bool IsListedTarget(string? projectPath) =>
+        !string.IsNullOrEmpty(projectPath) && !Same(Path.GetFullPath(projectPath), _projects.Project?.FilePath);
+
+    /// <summary>The loaded project as a run target; null without one.</summary>
+    public RunTarget? ActiveTarget() => _projects.Project is { } project ? TargetOf(project) : null;
+
+    private RunTarget TargetOf(ProjectModel project) => new(project.FilePath, project.Name, project.Directory, project.AppType,
+        project.ActiveConfiguration, project.ActivePlatform, _projects.Definition, IsListedMember: false);
+
+    /// <summary>
+    /// The available member <paramref name="projectPath"/> of the group as a run target, with what the group knows of it
+    /// now (IDE-PM-194); null when it is no available member.
+    /// </summary>
+    public RunTarget? MemberTarget(string? projectPath)
+    {
+        if (string.IsNullOrEmpty(projectPath))
+            return null;
+        var path = Path.GetFullPath(projectPath);
+        return Group?.Members.FirstOrDefault(m => m.IsAvailable && Same(m.FilePath, path)) is { Definition: { } definition } member
+            ? new RunTarget(member.FilePath, member.Name, Path.GetDirectoryName(member.FilePath)!, definition.AppType,
+                member.Configuration!, member.Platform!, definition, IsListedMember: true)
+            : null;
+    }
+
+    /// <summary>IDE-PM-194: <paramref name="target"/> as it is now; null when it is a listed member that is no longer available.</summary>
+    private RunTarget? Now(RunTarget target) => target.IsListedMember
+        ? MemberTarget(target.ProjectPath)
+        : _projects.Project is { } project && Same(project.FilePath, target.ProjectPath) ? TargetOf(project) : target;
+
+    /// <summary><c>Msg.Run.MemberUnavailable</c> for the member <paramref name="projectPath"/> (the file name when it cannot be read).</summary>
+    private void ShowMemberUnavailable(string projectPath)
+    {
+        var name = Group?.Members.FirstOrDefault(m => Same(m.FilePath, projectPath))?.Name ?? Path.GetFileNameWithoutExtension(projectPath);
+        _status.ShowMessage(string.Format(CultureInfo.CurrentCulture, Strings.Msg_Run_MemberUnavailable, name), StatusDuration);
     }
 
     /// <summary>A program started without the debugger is running.</summary>
@@ -114,36 +180,57 @@ public sealed class RunService : IRunService
     /// IDE-TGT-013: the host application of the open library project — <c>run.hostApplication</c> resolved against the
     /// project directory; null when the project is no library or names none.
     /// </summary>
-    public string? HostApplication =>
-        _projects.Project is { AppType: "library" } && _projects.Definition is { } definition ? ProjectOptions.GetHostApplicationPath(definition) : null;
+    public string? HostApplication => ActiveTarget()?.HostApplication;
 
     /// <summary>IDE-TGT-014: <see cref="HostApplication"/> when that file exists (what a library is debugged through), else null.</summary>
     public string? ExistingHostApplication => HostApplication is { } host && _fileSystem.FileExists(host) ? host : null;
 
-    public async Task<bool> StartAsync(bool withDebugger = false)
+    public async Task<bool> StartAsync(bool withDebugger = false) =>
+        ActiveTarget() is { } target && await StartAsync(target, withDebugger);
+
+    public bool CanStartMember(string? projectPath) =>
+        _state.Current.State == IdeState.Idle && IsListedTarget(projectPath) && MemberTarget(projectPath) is { IsRunnable: true };
+
+    public async Task<bool> StartMemberAsync(string projectPath)
     {
-        if (_projects.Project is not { } project || _state.Current.State != IdeState.Idle)
+        ArgumentNullException.ThrowIfNull(projectPath);
+        if (!IsListedTarget(projectPath))
+            return await StartAsync();
+        // IDE-PM-192: a path that is not an available member does nothing.
+        return MemberTarget(projectPath) is { } target && await StartAsync(target, withDebugger: false);
+    }
+
+    /// <summary>IDE-P3-080/081, IDE-PM-193: the start sequence for <paramref name="target"/>, with the target's own values.</summary>
+    private async Task<bool> StartAsync(RunTarget target, bool withDebugger)
+    {
+        if (_state.Current.State != IdeState.Idle)
             return false;
         // IDE-TGT-013: a library is runnable iff it names a host application; that program is what is started.
-        var host = HostApplication;
-        if (project.AppType is not ("console" or "gui") && host is null)
+        if (!target.IsRunnable)
         {
             _status.ShowMessage(Strings.Msg_Run_NotRunnable, StatusDuration);
             return false;
         }
 
         _lastWithDebugger = withDebugger;
-        if (host is null)
-            return await BuildThenAsync(project, exe => LaunchAsync(project, exe));
-        return await BuildThenAsync(project, async _ =>
+        _lastMember = target.IsListedMember ? target.ProjectPath : null;
+        return await BuildThenAsync(target, async (built, output) =>
         {
+            if (built.AppType is "console" or "gui")
+                return await LaunchAsync(built, output);
+            if (built.HostApplication is not { } host)
+            {
+                _status.ShowMessage(Strings.Msg_Run_NotRunnable, StatusDuration); // the project file saved by the build names no host any more
+                return false;
+            }
+
             if (!_fileSystem.FileExists(host))
             {
                 await _dialogs.ShowMessageAsync(new MessageRequest("Msg.Run.NoExecutable", [host]));
                 return false;
             }
 
-            return await LaunchAsync(project, host);
+            return await LaunchAsync(built, host);
         });
     }
 
@@ -152,28 +239,50 @@ public sealed class RunService : IRunService
     /// after a failed build, then calls <paramref name="launch"/> with the executable while the state is still Building
     /// (IDE-P3-002); the state is Idle afterwards unless the launch moved on.
     /// </summary>
-    public async Task<bool> BuildThenAsync(ProjectModel project, Func<string, Task<bool>> launch)
+    public Task<bool> BuildThenAsync(ProjectModel project, Func<string, Task<bool>> launch)
     {
         ArgumentNullException.ThrowIfNull(project);
         ArgumentNullException.ThrowIfNull(launch);
-        var result = await _build.BuildAsync(BuildKind.Build, continueToRun: true);
+        return BuildThenAsync(TargetOf(project), (_, exe) => launch(exe));
+    }
+
+    /// <summary>
+    /// As <see cref="BuildThenAsync(ProjectModel, Func{string, Task{bool}})"/> for any run target (IDE-PM-193): one build
+    /// request for the target's project. <paramref name="launch"/> gets the target as it is after the build returned
+    /// (IDE-PM-194: the run parameters the build saved) and the executable. A listed member that is no longer available
+    /// at that point: nothing starts, status <c>Msg.Run.MemberUnavailable</c>.
+    /// </summary>
+    public async Task<bool> BuildThenAsync(RunTarget target, Func<RunTarget, string, Task<bool>> launch)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        ArgumentNullException.ThrowIfNull(launch);
+        var result = target.IsListedMember
+            ? await _build.BuildMemberAsync(target.ProjectPath, BuildKind.Build, continueToRun: true)
+            : await _build.BuildAsync(BuildKind.Build, continueToRun: true);
         try
         {
             if (result is null || result.Canceled)
                 return false;
+            if (Now(target) is not { } built)
+            {
+                ShowMemberUnavailable(target.ProjectPath);
+                return false;
+            }
+
             string? exe;
             if (result.Success)
             {
                 exe = result.OutputPath;
                 if (exe is null || !_fileSystem.FileExists(exe))
                 {
-                    await _dialogs.ShowMessageAsync(new MessageRequest("Msg.Run.NoExecutable", [exe ?? PreviousExecutable(project) ?? ""]));
+                    await _dialogs.ShowMessageAsync(new MessageRequest("Msg.Run.NoExecutable", [exe ?? PreviousExecutable(built) ?? ""]));
                     return false;
                 }
             }
             else
             {
-                exe = PreviousExecutable(project);
+                // IDE-P3-080, IDE-PM-195: the program of an earlier build of the target's active configuration.
+                exe = PreviousExecutable(built);
                 if (exe is null || !_fileSystem.FileExists(exe)
                     || await _dialogs.ShowMessageAsync(new MessageRequest("Msg.Run.BuildFailedRunPrevious", [])) != "RunLastBuild")
                 {
@@ -181,7 +290,7 @@ public sealed class RunService : IRunService
                 }
             }
 
-            return await launch(exe);
+            return await launch(built, exe);
         }
         finally
         {
@@ -231,7 +340,13 @@ public sealed class RunService : IRunService
     public async Task<bool> RestartAsync()
     {
         await StopAsync();
-        return await StartAsync(_lastWithDebugger);
+        // IDE-PM-197: the run target the program was started for, not the active project.
+        if (_lastMember is not { } member || !IsListedTarget(member))
+            return await StartAsync(_lastWithDebugger);
+        if (MemberTarget(member) is { } target)
+            return await StartAsync(target, _lastWithDebugger);
+        ShowMemberUnavailable(member);
+        return false;
     }
 
     public async Task<bool> ConfirmStopAsync(bool exiting)
@@ -263,10 +378,19 @@ public sealed class RunService : IRunService
     public string? PreviousExecutable(ProjectModel project)
     {
         ArgumentNullException.ThrowIfNull(project);
-        var definition = _projects.Definition;
-        if (definition is null || ConfigurationEdits.Effective(definition, project.ActiveConfiguration) is null)
+        return PreviousExecutable(TargetOf(project));
+    }
+
+    /// <summary>
+    /// The output file of the target's active configuration on its platform (IDE-PM-195; a listed member: its own
+    /// definition, configuration and platform).
+    /// </summary>
+    public static string? PreviousExecutable(RunTarget target)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        if (target.Definition is not { } definition || ConfigurationEdits.Effective(definition, target.Configuration) is null)
             return null;
-        return Path.GetFullPath(FreexComp.Build.ProjectOptions.GetOutputPath(definition, project.ActiveConfiguration, project.ActivePlatform));
+        return Path.GetFullPath(FreexComp.Build.ProjectOptions.GetOutputPath(definition, target.Configuration, target.Platform));
     }
 
     /// <summary>"0", or "-1073741819 (0xC0000005)" when the code is above 255 or negative (states-and-messages.md).</summary>
@@ -308,30 +432,43 @@ public sealed class RunService : IRunService
     /// The working directory of a start: <c>run.workingDir</c> against the project directory, else the executable's folder.
     /// A missing one shows <c>Msg.Run.WorkingDirMissing</c> and gives null.
     /// </summary>
-    public async Task<string?> ResolveWorkingDirAsync(ProjectModel project, string exe)
+    public Task<string?> ResolveWorkingDirAsync(ProjectModel project, string exe)
     {
         ArgumentNullException.ThrowIfNull(project);
-        var run = _projects.Definition?.Run ?? new RunSettings("", "");
+        return ResolveWorkingDirAsync(TargetOf(project), exe);
+    }
+
+    /// <summary>
+    /// As <see cref="ResolveWorkingDirAsync(ProjectModel, string)"/> for any run target: its <c>run.workingDir</c> against
+    /// its own directory. IDE-PM-198: a missing one of a listed member shows <c>Msg.Run.MemberWorkingDirMissing</c> (the
+    /// Run Parameters dialog is the active project's).
+    /// </summary>
+    public async Task<string?> ResolveWorkingDirAsync(RunTarget target, string exe)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        var run = target.Run;
         var workingDir = string.IsNullOrWhiteSpace(run.WorkingDir)
             ? Path.GetDirectoryName(exe)!
-            : Path.GetFullPath(Path.Combine(project.Directory, run.WorkingDir.Replace('/', '\\')));
+            : Path.GetFullPath(Path.Combine(target.Directory, run.WorkingDir.Replace('/', '\\')));
         if (_fileSystem.DirectoryExists(workingDir))
             return workingDir;
-        if (await _dialogs.ShowMessageAsync(new MessageRequest("Msg.Run.WorkingDirMissing", [workingDir])) == "RunParameters")
+        if (target.IsListedMember)
+            await _dialogs.ShowMessageAsync(new MessageRequest("Msg.Run.MemberWorkingDirMissing", [target.Name, workingDir]));
+        else if (await _dialogs.ShowMessageAsync(new MessageRequest("Msg.Run.WorkingDirMissing", [workingDir])) == "RunParameters")
             _ = OpenRunParameters?.Invoke();
         return null;
     }
 
-    private async Task<bool> LaunchAsync(ProjectModel project, string exe)
+    private async Task<bool> LaunchAsync(RunTarget target, string exe)
     {
-        var run = _projects.Definition?.Run ?? new RunSettings("", "");
-        if (await ResolveWorkingDirAsync(project, exe) is not { } workingDir)
+        var run = target.Run;
+        if (await ResolveWorkingDirAsync(target, exe) is not { } workingDir)
             return false;
 
         // IDE-P3-082: console programs follow run.consoleMode; GUI programs are always captured without a console.
         // IDE-TGT-013: the host of a library is started like a program of its own — no console host, nothing captured.
-        var external = project.AppType == "console" && _settings.Get(SettingsCatalog.RunConsoleMode) == "external";
-        var request = new ProcessStartRequest(exe, run.Arguments, workingDir) { Capture = !external && project.AppType != "library", ConsoleHost = external };
+        var external = target.AppType == "console" && _settings.Get(SettingsCatalog.RunConsoleMode) == "external";
+        var request = new ProcessStartRequest(exe, run.Arguments, workingDir) { Capture = !external && target.AppType != "library", ConsoleHost = external };
         if (_settings.Get(SettingsCatalog.OutputClearOnRun))
             _output.Clear(OutputChannels.Program);
 
@@ -443,10 +580,10 @@ public sealed class RunService : IRunService
         public bool ConsoleHost { get; init; }
     }
 
-    private sealed class Handler(Func<bool> canExecute, Func<Task> execute) : ICommandHandler
+    private sealed class Handler(Func<string?, bool> canExecute, Func<string?, Task> execute) : ICommandHandler
     {
-        public bool CanExecute(string? argument) => canExecute();
+        public bool CanExecute(string? argument) => canExecute(argument);
 
-        public Task ExecuteAsync(string? argument) => execute();
+        public Task ExecuteAsync(string? argument) => execute(argument);
     }
 }

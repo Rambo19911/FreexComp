@@ -466,6 +466,14 @@ Set the toolchain folder in Tools &gt; Options &gt; Toolchain Paths.</value>
     <value>The working folder set in Run Parameters does not exist.
 {0}</value>
   </data>
+  <data name="Msg_Run_MemberWorkingDirMissing" xml:space="preserve">
+    <value>The working folder set in the run parameters of {0} does not exist.
+{1}
+Activate the project to change its run parameters.</value>
+  </data>
+  <data name="Msg_Run_MemberUnavailable" xml:space="preserve">
+    <value>{0} is no longer available in the project group</value>
+  </data>
   <data name="Msg_Run_Started" xml:space="preserve">
     <value>Program started: {0} {1} (process {2})</value>
   </data>

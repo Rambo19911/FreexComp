@@ -285,6 +285,7 @@ public static class ServiceGraph
             platform.Dispatcher, platform.Dialogs, status, platform.Log)
         {
             OpenRunParameters = () => commands.ExecuteAsync("run.parameters"),
+            Group = groups, // IDE-PM-190…198
         };
         run.ShowProgramOutput = () =>
         {

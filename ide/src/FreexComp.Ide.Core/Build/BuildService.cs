@@ -128,10 +128,19 @@ public sealed class BuildService : IBuildService
 
     public Task<BuildResult?> BuildAsync(BuildKind kind, bool continueToRun = false) => BuildAsync(Scope.Active, null, kind, continueToRun);
 
-    public Task<BuildResult?> BuildMemberAsync(string projectPath, BuildKind kind)
+    public Task<BuildResult?> BuildMemberAsync(string projectPath, BuildKind kind) => BuildMemberAsync(projectPath, kind, continueToRun: false);
+
+    /// <summary>
+    /// <see cref="IBuildService.BuildMemberAsync"/> for a run of that member (IDE-PM-193): with
+    /// <paramref name="continueToRun"/> the state stays Building after the engine returned, as in <see cref="BuildAsync"/>
+    /// (IDE-P3-002), also on the repeat after <c>Msg.Build.OutputLocked</c> (IDE-P3-035).
+    /// </summary>
+    public Task<BuildResult?> BuildMemberAsync(string projectPath, BuildKind kind, bool continueToRun)
     {
         ArgumentNullException.ThrowIfNull(projectPath);
-        return Same(projectPath, _projects.Project?.FilePath) ? BuildAsync(kind) : BuildAsync(Scope.Member, projectPath, kind, false);
+        return Same(projectPath, _projects.Project?.FilePath)
+            ? BuildAsync(kind, continueToRun)
+            : BuildAsync(Scope.Member, projectPath, kind, continueToRun);
     }
 
     public Task<BuildResult?> BuildGroupAsync(BuildKind kind) => BuildAsync(Scope.Group, null, kind, false);
