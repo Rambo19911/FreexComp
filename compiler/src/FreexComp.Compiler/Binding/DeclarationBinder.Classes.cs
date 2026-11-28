@@ -488,7 +488,7 @@ internal sealed partial class DeclarationBinder
 
         foreach (var directive in directives)
         {
-            if (IsRestrictedDirective(directive))
+            if (IsRestrictedDirective(directive, method.Owner))
             {
                 continue;                                                                                  // LANG-978 (C-420)
             }
@@ -744,12 +744,22 @@ internal sealed partial class DeclarationBinder
     internal static IEnumerable<ClassTypeSymbol> ClassesOf(UnitSymbol unit) =>
         OwnTypesOf(unit).OfType<ClassTypeSymbol>().Concat(ClosureInfo.Of(unit));
 
-    /// <summary>E2605 at the declaration of every non-abstract method of the unit's classes without implementation.</summary>
+    /// <summary>
+    /// E2605 at the declaration of every non-abstract method of the unit's classes without implementation. C-430: a generic
+    /// method (LANG-701) is a method like any other — the same diagnostic at its name, once per declaration however many
+    /// instances its calls make (each overload is its own declaration).
+    /// </summary>
     private static void ReportUnimplementedMethods(UnitSymbol unit, DiagnosticBag diagnostics)
     {
         foreach (var method in MethodsOf(unit).Where(m => m is { IsAbstract: false, Definition: null }))
         {
             diagnostics.Report(method.MethodDeclaration.Heading.Name, "E2605", method.Owner.Name + "." + method.Name);
+        }
+
+        foreach (var generic in OwnTypesOf(unit).SelectMany(t => (IEnumerable<GenericMethodSymbol>)GenericMethodsOf(t))
+            .Where(g => g is { Implementation: null, NeedsImplementation: true }))
+        {
+            diagnostics.Report(generic.Declaration.Heading.Name, "E2605", generic.Owner.Name + "." + generic.Name);
         }
     }
 }

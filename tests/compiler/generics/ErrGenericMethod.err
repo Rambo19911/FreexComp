@@ -7,9 +7,11 @@ ErrGenericMethod.pas(19,17): error E2713: Generic method 'Create' cannot be a co
 ErrGenericMethod.pas(21,15): error E2713: Generic method 'P' cannot be published
 ErrGenericMethod.pas(25,15): error E2714: Generic method 'I' is not allowed in an interface
 ErrGenericMethod.pas(44,21): error E2120: Previous declaration of 'Show' was not marked with the 'overload' directive
-ErrGenericMethod.pas(118,14): error E2711: Cannot infer type arguments for 'Make'; specify them explicitly
-ErrGenericMethod.pas(119,9): error E2711: Cannot infer type arguments for 'Pick'; specify them explicitly
-ErrGenericMethod.pas(120,3): error E2123: There is no overloaded version of 'Show' that can be called with these arguments
-ErrGenericMethod.pas(121,14): error E2711: Cannot infer type arguments for 'Twice'; specify them explicitly
-ErrGenericMethod.pas(122,9): error E2704: Type argument 'Integer' does not satisfy constraint 'class' of 'T'
-ErrGenericMethod.pas(123,17): error E2003: Undeclared identifier 'Undeclared'
+ErrGenericMethod.pas(49,20): error E2605: Method 'TMissing.Lost' is not implemented
+ErrGenericMethod.pas(50,15): error E2605: Method 'TMissing.Gone' is not implemented
+ErrGenericMethod.pas(124,14): error E2711: Cannot infer type arguments for 'Make'; specify them explicitly
+ErrGenericMethod.pas(125,9): error E2711: Cannot infer type arguments for 'Pick'; specify them explicitly
+ErrGenericMethod.pas(126,3): error E2123: There is no overloaded version of 'Show' that can be called with these arguments
+ErrGenericMethod.pas(127,14): error E2711: Cannot infer type arguments for 'Twice'; specify them explicitly
+ErrGenericMethod.pas(128,9): error E2704: Type argument 'Integer' does not satisfy constraint 'class' of 'T'
+ErrGenericMethod.pas(129,17): error E2003: Undeclared identifier 'Undeclared'

@@ -44,6 +44,12 @@ type
     class procedure Show<T>(const V: T); overload; static;
   end;
 
+  // declared, never implemented: reported where it is declared like a non-generic method, once, whatever calls it
+  TMissing = class
+    class function Lost<T>(X: T): T; static;
+    procedure Gone<T>(const X: T);
+  end;
+
 procedure TBase.O(const X: Integer);
 begin
 end;
@@ -121,4 +127,5 @@ begin
   F := TUtil.Twice;
   TUtil.Keep(5);
   TUtil.Swap(I, Undeclared);
+  I := TMissing.Lost(1) + TMissing.Lost<Integer>(2);
 end.

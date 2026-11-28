@@ -264,6 +264,55 @@ public sealed class CodeActionTests
         Assert.Empty(Errors(workspace, "U1.pas"));
     }
 
+    /// <summary>
+    /// C-430: a generic method without implementation has its E2605 like any method, so <c>complete-class</c> covers it — the heading
+    /// is repeated with its type parameter list, and the completed unit has no error.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-254")]
+    public void CompleteClass_GenericMethod()
+    {
+        var (workspace, _, actions) = Actions("U1.pas", """
+            unit U1;
+
+            interface
+
+            type
+              TFoo = class
+              public
+                procedure Run;
+                class function [|Twice|]<T>(const A: T): T; static;
+                procedure Keep<K: class; V>(const Key: K; var Value: V);
+              end;
+
+            implementation
+
+            end.
+            """, ("P.pas", "program P;\nuses U1;\nbegin\nend."));
+
+        var action = Assert.Single(actions, a => a.Id == "complete-class");
+        var text = Apply(workspace, action, "U1.pas");
+        Assert.EndsWith("""
+            implementation
+
+            procedure TFoo.Run;
+            begin
+            end;
+
+            class function TFoo.Twice<T>(const A: T): T;
+            begin
+            end;
+
+            procedure TFoo.Keep<K: class; V>(const Key: K; var Value: V);
+            begin
+            end;
+
+            end.
+            """.ReplaceLineEndings("\n"), text, StringComparison.Ordinal);
+        Assert.Empty(Errors(workspace, "U1.pas"));
+    }
+
     [Fact]
     [Trait("Req", "CMP-254")]
     public void CompleteClassInProgram()

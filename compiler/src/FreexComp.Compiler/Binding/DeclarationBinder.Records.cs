@@ -284,7 +284,7 @@ internal sealed partial class DeclarationBinder
             return null;
         }
 
-        if (syntax.Directives.FirstOrDefault(d => !IsRestrictedDirective(d)                                  // LANG-978 (C-420): E2713 at the declaration
+        if (syntax.Directives.FirstOrDefault(d => !IsRestrictedDirective(d, record)                          // LANG-978 (C-420), C-431: reported at the declaration
                 && d.Keyword.ContextualKind is SyntaxKind.VirtualKeyword or SyntaxKind.DynamicKeyword
                     or SyntaxKind.OverrideKeyword or SyntaxKind.AbstractKeyword or SyntaxKind.MessageKeyword or SyntaxKind.FinalKeyword
                     or SyntaxKind.ReintroduceKeyword) is { } directive)

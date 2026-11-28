@@ -235,6 +235,11 @@ internal sealed partial class ExpressionBinder
                     : BindExpression(syntax, probeType);                        // LANG-725: a nested routine (E2130 reported)
             }
 
+            if (probe.ToImmutable() is [{ Code: "E2610" }])
+            {
+                return BindExpression(syntax, probeType);                       // LANG-610 (C-431): the method named, not accessible here (E2610 reported)
+            }
+
             if (bound.HasErrors || probe.Count != 0 || !ReferenceEquals(bound.Type, probeType))
             {
                 continue;

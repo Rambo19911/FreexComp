@@ -40,6 +40,16 @@ public sealed class GenericMethodSymbol : Symbol
     /// </summary>
     internal bool HasRestrictedKind { get; init; }
 
+    /// <summary>
+    /// C-430: the declaration needs an implementation (E2605 without one), as a non-generic method declared like it would: not when
+    /// it is declared <c>abstract</c> (LANG-622; E2713 says a generic method cannot be), nor when it is of a kind its type does not
+    /// declare at all — an operator of a class, a destructor of a record (the non-generic ones are not kept either).
+    /// </summary>
+    internal bool NeedsImplementation =>
+        !Declaration.Directives.Any(d => d.Keyword.ContextualKind == SyntaxKind.AbstractKeyword)
+        && !(Owner is ClassTypeSymbol && Declaration.Heading.Keyword.ContextualKind == SyntaxKind.OperatorKeyword)
+        && !(Owner is RecordTypeSymbol && Declaration.Heading.Keyword.Kind == SyntaxKind.DestructorKeyword);
+
     /// <summary>The scope the owner's members were bound in; instances bind their heading below it.</summary>
     internal Scope DeclaringScope { get; }
 

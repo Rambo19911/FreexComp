@@ -856,6 +856,11 @@ internal sealed partial class DeclarationBinder
         {
             _diagnostics.Report(identifier, "E2713", NameOf(identifier), phrase);
         }
+        else if (phrase is null && owner is RecordTypeSymbol && syntax.Directives.FirstOrDefault(d => IsRecordOnlyRestriction(d.Keyword.ContextualKind)) is { } directive)
+        {
+            // LANG-730 (C-431): as on a non-generic record method — at the directive; the instances ignore it (IsRestrictedDirective)
+            _diagnostics.Report(directive.Keyword, "E2730", directive.Keyword.Text.ToLowerInvariant());
+        }
 
         return new GenericMethodSymbol(NameOf(identifier), owner, syntax, visibility == Visibility.Published ? Visibility.Public : visibility, names, _scope,
             _container, [DiagnosticBag.LocationOf(identifier)])
@@ -876,12 +881,17 @@ internal sealed partial class DeclarationBinder
         _ => null,
     };
 
+    /// <summary>LANG-730: a directive a record method cannot have that the LANG-978 table does not list (E2730 at the declaration, C-431).</summary>
+    private static bool IsRecordOnlyRestriction(SyntaxKind directive) => directive is SyntaxKind.FinalKeyword or SyntaxKind.ReintroduceKeyword;
+
     /// <summary>
-    /// LANG-978 (C-420): the heading being bound is that of a generic method instance and <paramref name="directive"/> is one a
-    /// generic method cannot have — reported at the declaration (E2713) and without effect on the instance.
+    /// LANG-978 (C-420): the heading being bound is that of a generic method instance of <paramref name="owner"/> and
+    /// <paramref name="directive"/> is one a generic method cannot have — reported at the declaration (E2713) and without effect on
+    /// the instance; so are <c>final</c> and <c>reintroduce</c> in a record (E2730 at the declaration, C-431).
     /// </summary>
-    private bool IsRestrictedDirective(DirectiveSyntax directive) =>
-        _genericMethodInstance && RestrictedDirective(directive.Keyword.ContextualKind) is not null;
+    private bool IsRestrictedDirective(DirectiveSyntax directive, TypeSymbol owner) =>
+        _genericMethodInstance && (RestrictedDirective(directive.Keyword.ContextualKind) is not null
+            || owner is RecordTypeSymbol && IsRecordOnlyRestriction(directive.Keyword.ContextualKind));
 
     /// <summary><c>function TUtil.Max&lt;T&gt;(…)</c> (LANG-704): the implementation of the generic method of that name and arity.</summary>
     private void DefineGenericMethod(TypeSymbol type, RoutineDeclarationSyntax declaration, SyntaxToken identifier, TypeParameterListSyntax typeParameters)

@@ -348,7 +348,7 @@ internal sealed partial class ExpressionBinder
                 && !Signatures.Compatible(routine, type.Signature) && _conversions.Classify(result, type).Exists;
             if (!called)
             {
-                return RoutineValue(syntax, name, candidates, type);
+                return RoutineValue(syntax, name, candidates, type, NamedOn(token.Value as string ?? token.Text, routine));
             }
         }
 
@@ -363,10 +363,7 @@ internal sealed partial class ExpressionBinder
             if (!(addressOf is null && instances.Routines is [{ ReturnType: { } made, Parameters.IsEmpty: true } single]
                 && !Signatures.Compatible(single, type.Signature) && _conversions.Classify(made, type).Exists))
             {
-                var value = RoutineValue(syntax, genericName, instances.Routines, type, instances.Chosen);
-                return value is BoundAddressOfExpression { Routine: MethodSymbol used } && !CheckAccess(genericName, used, used.Owner, through)
-                    ? Error(syntax)                                             // LANG-610: as for a call of the instance
-                    : value;
+                return RoutineValue(syntax, genericName, instances.Routines, type, through, instances.Chosen);
             }
         }
 
@@ -382,7 +379,7 @@ internal sealed partial class ExpressionBinder
                 && !Signatures.Compatible(only, type.Signature) && _conversions.Classify(methodResult, type).Exists))
         {
             // other methods are reported by RoutineValue (E2010: no plain procedural value)
-            return RoutineValue(syntax, memberName, methods, type);
+            return RoutineValue(syntax, memberName, methods, type, @class);
         }
 
         // Obj.Method of an instance: a method pointer, not a plain procedural value (E2010, C-103); Obj.Method<X> too (LANG-981, C-420:
@@ -410,10 +407,11 @@ internal sealed partial class ExpressionBinder
     /// <summary>
     /// The address of a global routine or a <c>class static</c> method as a value of <paramref name="type"/> (LANG-480, 483; E2130
     /// for a nested routine, LANG-451); of an overload set the one compatible with the type (E2131 when none, C-102). Other
-    /// methods are no plain procedural values (E2010).
+    /// methods are no plain procedural values (E2010). LANG-610 (C-431): a method named as a value obeys its visibility like a
+    /// call of it through <paramref name="through"/>, the type it is named on (E2610 at <paramref name="name"/>).
     /// </summary>
     private BoundExpression RoutineValue(ExpressionSyntax syntax, SimpleNameSyntax name, ImmutableArray<RoutineSymbol> candidates, ProceduralTypeSymbol type,
-        Func<RoutineSymbol, RoutineSymbol>? chosen = null)
+        TypeSymbol? through, Func<RoutineSymbol, RoutineSymbol>? chosen = null)
     {
         var routine = candidates[0];
         if (candidates.Length > 1)
@@ -445,9 +443,21 @@ internal sealed partial class ExpressionBinder
             return Error(syntax);
         }
 
+        if (routine is MethodSymbol { ContainingInterface: null } method && !CheckAccess(name, method, method.Owner, through))
+        {
+            return Error(syntax);
+        }
+
         CheckHintDirectives(routine, name);                                     // LANG-472 (C-232): a procedural reference
         return new BoundAddressOfExpression(syntax, operand: null, chosen?.Invoke(routine) ?? routine, type);      // LANG-981: the instance counts as used
     }
+
+    /// <summary>
+    /// The type an unqualified method name is named on, for its visibility (LANG-610): the type of the <c>with</c> statement that
+    /// declares it, else the type of the method the code is in (<c>Self</c>).
+    /// </summary>
+    private TypeSymbol? NamedOn(string name, RoutineSymbol routine) =>
+        _withs.Count > 0 && WithOf(name, routine) is { } with ? with.Type : CurrentMethod?.Owner;
 
     /// <summary>
     /// LANG-981 (C-420): <c>TClass.Name&lt;X1, …, Xk&gt;</c> through a class name, or <c>Name&lt;X1, …, Xk&gt;</c> inside a method of a class,
@@ -853,6 +863,13 @@ internal sealed partial class ExpressionBinder
             if (routine.IsNested)
             {
                 _diagnostics.Report(name, "E2130", routine.Name);
+                return Error(syntax);
+            }
+
+            // LANG-610 (C-431): @Method inside a method of the type — its visibility as for a call (inherited methods)
+            if (routine is MethodSymbol { ContainingInterface: null } method
+                && !CheckAccess(name, method, method.Owner, NamedOn(token.Value as string ?? token.Text, routine)))
+            {
                 return Error(syntax);
             }
 

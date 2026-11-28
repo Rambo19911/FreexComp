@@ -115,6 +115,50 @@ public sealed partial class GenericBindingTests
     }
 
     /// <summary>
+    /// LANG-730 / LANG-978 (C-431): <c>final</c> and <c>reintroduce</c> on a generic method of a record are reported where the method is
+    /// declared, like on a non-generic record method — E2730 at the directive, the first of them, with the same text — whether or not
+    /// the method is called; the declaration is kept without the directive, so its implementation and its calls give no second
+    /// diagnostic. One diagnostic per declaration: next to a directive of the LANG-978 table the E2713 stands alone.
+    /// </summary>
+    [Theory]
+    [Trait("Phase", "8")]
+    [Trait("Req", "LANG-730")]
+    [Trait("Req", "LANG-978")]
+    [InlineData("procedure F<T>(const X: T); final;", "procedure TRec.F<T>(const X: T); begin end;", "Rec.F(1)", "final", null)]
+    [InlineData("procedure N<T>(const X: T); reintroduce;", "procedure TRec.N<T>(const X: T); begin end;", "Rec.N<string>('x')", "reintroduce", null)]
+    [InlineData("class function S<T>(X: T): T; reintroduce; static;", "class function TRec.S<T>(X: T): T; begin Result := X end;", "I := TRec.S(1)", "reintroduce", null)]
+    [InlineData("procedure B<T>(const X: T); reintroduce; final;", "procedure TRec.B<T>(const X: T); begin end;", "Rec.B(1)", "reintroduce", null)]
+    [InlineData("procedure B<T>(const X: T); final; reintroduce;", "procedure TRec.B<T>(const X: T); begin end;", "Rec.B(1)", "final", null)]
+    [InlineData("procedure O<T>(const X: T); overload; final;", "procedure TRec.O<T>(const X: T); begin end;", "Rec.O(1)", "final", null)]
+    [InlineData("procedure V<T>(const X: T); final; virtual;", "procedure TRec.V<T>(const X: T); begin end;", "Rec.V(1)", null, "virtual")]
+    [InlineData("procedure V<T>(const X: T); override; final;", "procedure TRec.V<T>(const X: T); begin end;", "Rec.V(1)", null, "an override")]
+    public void GenericMethod_RecordDirectives(string declaration, string implementation, string call, string? directive, string? phrase)
+    {
+        var name = declaration[(declaration.IndexOf('<') - 1)..declaration.IndexOf('<')];
+        foreach (var statement in new[] { "I := 0", call })                    // never called; called
+        {
+            var text = RestrictionProgram.Replace("{RECORD}", declaration).Replace("{CLASS}", "").Replace("{INTERFACE}", "")
+                .Replace("{IMPL}", implementation).Replace("{CALL}", statement);
+            var (line, column) = PositionOf(text, directive is null ? " " + name + "<" : " " + directive + ";");
+
+            Assert.Equal(
+                [directive is null
+                    ? $"E2713({line},{column + 1}): Generic method '{name}' cannot be {phrase}"
+                    : $"E2730({line},{column + 1}): '{directive}' is not allowed in a record"],
+                Format(BindRestricted(text).Diagnostics).Where(d => !d.StartsWith('H')));
+        }
+
+        if (directive is not null)
+        {
+            // the control: the non-generic record method with these directives — the same code and text, at its directive
+            var plain = RestrictionProgram.Replace("{RECORD}", "procedure Plain(const X: Integer);" + declaration[(declaration.IndexOf(';') + 1)..].Replace(" static;", ""))
+                .Replace("{CLASS}", "").Replace("{INTERFACE}", "").Replace("{IMPL}", "").Replace("{CALL}", "I := 0");
+            var (line, column) = PositionOf(plain, " " + directive + ";");
+            Assert.Equal([$"E2730({line},{column + 1}): '{directive}' is not allowed in a record"], Format(BindRestricted(plain).Diagnostics).Where(d => !d.StartsWith('H')));
+        }
+    }
+
+    /// <summary>
     /// LANG-978: in a class compiled with type information the members before the first visibility keyword are published (LANG-611);
     /// a generic method there is <c>public</c>, without a diagnostic — only a section the source marks <c>published</c> is E2713.
     /// </summary>
