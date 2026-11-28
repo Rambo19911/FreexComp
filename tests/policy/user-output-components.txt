@@ -30,6 +30,7 @@ system | ntdll.dll | — | part of Windows; imported by the runtime library
 system | ole32.dll | — | part of Windows; imported by the runtime library
 system | oleaut32.dll | — | part of Windows; imported by the runtime library
 system | uiautomationcore.dll | — | part of Windows; imported by the runtime library
+system | shcore.dll | — | part of Windows; imported by the runtime library
 system | shell32.dll | — | part of Windows; imported by the runtime library
 system | shlwapi.dll | — | part of Windows; imported by the runtime library
 system | user32.dll | — | part of Windows; imported by the runtime library
