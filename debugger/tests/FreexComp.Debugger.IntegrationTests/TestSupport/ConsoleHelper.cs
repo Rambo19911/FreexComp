@@ -47,6 +47,10 @@ internal static class ConsoleHelper
     public static void CtrlC(int processId) =>
         RunHelper("--console-ctrl-c", processId.ToString(System.Globalization.CultureInfo.InvariantCulture));
 
+    /// <summary>Sends Ctrl+Break to every process of the console of <paramref name="processId"/>.</summary>
+    public static void CtrlBreak(int processId) =>
+        RunHelper("--console-ctrl-break", processId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
     private static string TempFile() => Path.Combine(Path.GetTempPath(), "FreexComp.console-" + Guid.NewGuid().ToString("N") + ".txt");
 
     private static void RunHelper(params string[] arguments)

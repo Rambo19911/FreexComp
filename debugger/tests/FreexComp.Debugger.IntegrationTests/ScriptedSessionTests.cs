@@ -1840,6 +1840,264 @@ public sealed class ScriptedSessionTests(IntegrationFixture fixture)
         }
     }
 
+    /// <summary>
+    /// The threads at a stop. Asked at every stop of the terminal-mode tests so that the dumped protocol trace shows the
+    /// adapter's thread lists (risk 2 of the debuggee-console spec).
+    /// </summary>
+    private static Task<IReadOnlyList<ThreadInfo>> ThreadsAtAsync(IDebugSession session) => session.GetThreadsAsync(Ct);
+
+    /// <summary>
+    /// G-108 (DBG-555): Pause while the program waits for console input in terminal mode. The adapter breaks in on a
+    /// thread of its own; the stop is published on the program's thread, at the read of line 13, with the runtime
+    /// library's read routines above it. Continue and a second pause work; afterwards the typed line is read.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "DBG-555")]
+    [Trait("Req", "DBG-091")]
+    public async Task Phase8_Console_PauseWhileWaitingForInput_ShowsUserFrames()
+    {
+        var program = fixture.Build("ConsoleEcho");
+        var recorder = new SessionRecorder(nameof(Phase8_Console_PauseWhileWaitingForInput_ShowsUserFrames));
+        await using var terminal = new TestTerminal();
+        await recorder.RunAsync(fixture, program, async session =>
+        {
+            // Line 12 writes the last line before the read: from there the program goes straight into it.
+            await session.LaunchAsync(ConsoleEchoLaunch(program, terminal, EchoFirstRead - 1, EchoSecondRead), Ct);
+            var run = terminal.TheRun;
+            var stop = await recorder.WaitForStopAsync();
+            AssertStop(session, stop, StopReason.Breakpoint, program.SourcePath, EchoFirstRead - 1, [1]);
+            await session.ContinueAsync(Ct);
+
+            // The pause that finds the program inside the read (one that comes between the write and the read is repeated).
+            IReadOnlyList<StackFrameInfo> frames;
+            var pauses = 0;
+            while (true)
+            {
+                Assert.True(++pauses <= 20, "The program never got to its console read.");
+                await session.PauseAsync(Ct);
+                stop = await recorder.WaitForStopAsync();
+                Assert.Equal(StopReason.Pause, stop.Reason);
+                Assert.Equal("Paused", stop.Description);
+                await ThreadsAtAsync(session);
+                frames = (await session.GetStackTraceAsync(stop.ThreadId, ct: Ct)).Frames;
+                if (!frames[0].IsUserCode && frames.Count(f => f.IsUserCode) == 1 && frames.First(f => f.IsUserCode).Location!.Line == EchoFirstRead)
+                    break;
+                await session.ContinueAsync(Ct);
+            }
+
+            for (var round = 1; ; round++)
+            {
+                AssertStop(session, stop, StopReason.Pause, program.SourcePath, EchoFirstRead);
+                var threads = await ThreadsAtAsync(session);
+                Assert.Equal(stop.ThreadId, Assert.Single(threads, t => t.IsCurrent).Id);
+                var user = Assert.Single(frames, f => f.IsUserCode);
+                Assert.Equal("ConsoleEcho", user.Name);
+                Assert.Equal(EchoFirstRead, user.Location!.Line);
+                var library = frames.TakeWhile(f => f != user).Where(f => f.Location is not null).ToList();
+                Assert.NotEmpty(library);
+                Assert.All(library, f => Assert.EndsWith("System.pas", f.Location!.Path, StringComparison.OrdinalIgnoreCase));
+                await session.GetScopesAsync(user.Id, Ct);
+
+                await session.ContinueAsync(Ct);
+                Assert.Equal(DebugState.Running, session.State);
+                if (round == 2)
+                    break;
+                await session.PauseAsync(Ct);
+                stop = await recorder.WaitForStopAsync();
+                Assert.Equal("Paused", stop.Description);
+                frames = (await session.GetStackTraceAsync(stop.ThreadId, ct: Ct)).Frames;
+            }
+
+            // The program still waits; the line typed now is read.
+            ConsoleHelper.Type(run.ProcessId, "after pause\n");
+            stop = await recorder.WaitForStopAsync();
+            AssertStop(session, stop, StopReason.Breakpoint, program.SourcePath, EchoSecondRead, [2]);
+            await ThreadsAtAsync(session);
+            Assert.Equal("got: after pause", ConsoleHelper.Screen(run.ProcessId)[^2]);
+            ConsoleHelper.Type(run.ProcessId, "x\n");
+            await session.ContinueAsync(Ct);
+            var terminated = await recorder.WaitForTerminatedAsync();
+            Assert.Equal(TerminationCause.Exited, terminated.Cause);
+            Assert.Equal(0, terminated.ExitCode);
+        });
+        recorder.Dump();
+    }
+
+    /// <summary>
+    /// G-108 (DBG-554, DBG-225): the first step of a program that is not running stops at the main block's first line
+    /// on the program's thread; a step over works, and so does a pause after a continue (the session's own thread
+    /// bookkeeping: the adapter answers <c>threads</c> with <c>notStopped</c> while the program runs).
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "DBG-554")]
+    [Trait("Req", "DBG-225")]
+    public async Task Phase8_Console_FirstStep_StopsAtTheMainBlock()
+    {
+        var program = fixture.Build("ConsoleEcho");
+        var recorder = new SessionRecorder(nameof(Phase8_Console_FirstStep_StopsAtTheMainBlock));
+        await using var terminal = new TestTerminal();
+        await recorder.RunAsync(fixture, program, async session =>
+        {
+            await session.LaunchAsync(ConsoleEchoLaunch(program, terminal) with { StopAtMainBody = true }, Ct);
+            var stop = await recorder.WaitForStopAsync();
+            AssertStop(session, stop, StopReason.Step, program.SourcePath, 7);
+            await ThreadsAtAsync(session);
+            var frames = (await session.GetStackTraceAsync(stop.ThreadId, ct: Ct)).Frames;
+            Assert.Equal("ConsoleEcho", frames[0].Name);
+            var programThread = stop.ThreadId;
+
+            await session.StepOverAsync(stop.ThreadId, Ct);
+            stop = await recorder.WaitForStopAsync();
+            AssertStop(session, stop, StopReason.Step, program.SourcePath, 8);
+            Assert.Equal(programThread, stop.ThreadId);
+            await ThreadsAtAsync(session);
+
+            await session.ContinueAsync(Ct);
+            await session.PauseAsync(Ct);
+            stop = await recorder.WaitForStopAsync();
+            Assert.Equal(StopReason.Pause, stop.Reason);
+            Assert.Equal("Paused", stop.Description);
+            Assert.Equal(programThread, stop.ThreadId);
+            await ThreadsAtAsync(session);
+
+            await session.TerminateAsync(Ct);
+            var terminated = await recorder.WaitForTerminatedAsync();
+            Assert.Equal(TerminationCause.TerminatedByUser, terminated.Cause);
+            Assert.Equal([false], terminal.TheRun.CloseCalls);
+        });
+        recorder.Dump();
+    }
+
+    /// <summary>
+    /// G-108 (DBG-554): stop on entry in terminal mode. The adapter reports the entry stop on the thread it broke in
+    /// with; the session publishes it on the program's thread - the thread that later stops at the breakpoint.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "DBG-554")]
+    public async Task Phase8_Console_StopOnEntry_IsOnTheProgramThread()
+    {
+        var program = fixture.Build("ConsoleEcho");
+        var recorder = new SessionRecorder(nameof(Phase8_Console_StopOnEntry_IsOnTheProgramThread));
+        await using var terminal = new TestTerminal();
+        await recorder.RunAsync(fixture, program, async session =>
+        {
+            await session.LaunchAsync(ConsoleEchoLaunch(program, terminal, EchoAfterFirstRead) with { StopOnEntry = true }, Ct);
+            var entry = await recorder.WaitForStopAsync();
+            Assert.Equal(StopReason.Entry, entry.Reason);
+            await ThreadsAtAsync(session);
+            var frames = (await session.GetStackTraceAsync(entry.ThreadId, ct: Ct)).Frames;
+            Assert.NotEqual("DbgBreakPoint", frames[0].Name);
+            Assert.DoesNotContain(frames, f => f.Name == "DbgUiRemoteBreakin");
+
+            await session.ContinueAsync(Ct);
+            ConsoleHelper.Type(terminal.TheRun.ProcessId, "a\n");
+            var stop = await recorder.WaitForStopAsync();
+            AssertStop(session, stop, StopReason.Breakpoint, program.SourcePath, EchoAfterFirstRead, [1]);
+            await ThreadsAtAsync(session);
+            Assert.Equal(entry.ThreadId, stop.ThreadId);
+
+            ConsoleHelper.Type(terminal.TheRun.ProcessId, "b\n");
+            await session.ContinueAsync(Ct);
+            var terminated = await recorder.WaitForTerminatedAsync();
+            Assert.Equal(TerminationCause.Exited, terminated.Cause);
+            Assert.Equal(0, terminated.ExitCode);
+        });
+        recorder.Dump();
+    }
+
+    /// <summary>
+    /// G-108 (DBG-556): Ctrl+C in the program's console acts as without a debugger - no stop, the program ends with the
+    /// system's exit code 0xC000013A, and the session ends with that code.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "DBG-556")]
+    public Task Phase8_Console_CtrlC_EndsTheSessionWithTheSystemExitCode() =>
+        CtrlKeyEndsTheSessionAsync(nameof(Phase8_Console_CtrlC_EndsTheSessionWithTheSystemExitCode), ConsoleHelper.CtrlC);
+
+    /// <summary>
+    /// G-108 (DBG-556; not probed by the spec): Ctrl+Break in the program's console, as observed with the pinned
+    /// adapter - exactly what Ctrl+C does: no stop (no break-in), the program ends with 0xC000013A, the session with it.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "DBG-556")]
+    public Task Phase8_Console_CtrlBreak_EndsTheSessionLikeCtrlC() =>
+        CtrlKeyEndsTheSessionAsync(nameof(Phase8_Console_CtrlBreak_EndsTheSessionLikeCtrlC), ConsoleHelper.CtrlBreak);
+
+    private async Task CtrlKeyEndsTheSessionAsync(string name, Action<int> press)
+    {
+        var program = fixture.Build("ConsoleEcho");
+        var recorder = new SessionRecorder(name);
+        await using var terminal = new TestTerminal();
+        await recorder.RunAsync(fixture, program, async session =>
+        {
+            // The program has written everything and goes on into its read.
+            await session.LaunchAsync(ConsoleEchoLaunch(program, terminal, EchoFirstRead), Ct);
+            var stop = await recorder.WaitForStopAsync();
+            AssertStop(session, stop, StopReason.Breakpoint, program.SourcePath, EchoFirstRead, [1]);
+            await session.ContinueAsync(Ct);
+            recorder.ClearEvents();
+
+            press(terminal.TheRun.ProcessId);
+            var terminated = await recorder.WaitForTerminatedAsync();
+            Assert.Equal(TerminationCause.Exited, terminated.Cause);
+            Assert.Equal(-1073741510, terminated.ExitCode);
+            Assert.DoesNotContain(recorder.Events, e => e.StartsWith("Stopped(", StringComparison.Ordinal));
+            // The console's owner survives the key; it ends with its command, whose exit code is the program's.
+            Assert.Equal(-1073741510, await terminal.TheRun.Ended.WaitAsync(IntegrationFixture.Safety, Ct));
+        });
+        recorder.Dump();
+    }
+
+    /// <summary>
+    /// G-108 (DBG-550): the console's owner is ended from outside (the user closes the window) while the program runs,
+    /// and while it is stopped at a breakpoint: the session ends within the deadline and nothing is left.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Trait("Phase", "8")]
+    [Trait("Req", "DBG-550")]
+    [Trait("Req", "DBG-433")]
+    public async Task Phase8_Console_ConsoleOwnerKilled_EndsTheSession(bool whileStopped)
+    {
+        var program = fixture.Build("ConsoleEcho");
+        var recorder = new SessionRecorder(nameof(Phase8_Console_ConsoleOwnerKilled_EndsTheSession) + (whileStopped ? "_Stopped" : "_Running"));
+        await using var terminal = new TestTerminal();
+        List<(string What, Process Process)> watched = [];
+        try
+        {
+            await recorder.RunAsync(fixture, program, async session =>
+            {
+                await session.LaunchAsync(ConsoleEchoLaunch(program, terminal, EchoFirstRead), Ct);
+                var run = terminal.TheRun;
+                var stop = await recorder.WaitForStopAsync();
+                AssertStop(session, stop, StopReason.Breakpoint, program.SourcePath, EchoFirstRead, [1]);
+                watched = Watch(("program", session.ProcessId!.Value), ("launcher", Launcher(run.Descendants())), ("console owner", run.ProcessId),
+                    ("adapter", ((FreexComp.Debugger.Session.IDebugSessionDiagnostics)session).AdapterProcessId!.Value));
+                if (!whileStopped)
+                    await session.ContinueAsync(Ct);
+                recorder.ClearEvents();
+
+                run.KillConsoleOwner();
+                var terminated = await recorder.WaitForTerminatedAsync();
+                Assert.Contains(terminated.Cause, (TerminationCause[])[TerminationCause.TerminatedByUser, TerminationCause.Exited]);
+                Assert.Null(await run.Ended.WaitAsync(IntegrationFixture.Safety, Ct));
+                await AssertAllEndAsync(watched);
+            });
+            recorder.Dump();
+        }
+        finally
+        {
+            foreach (var (_, process) in watched)
+                process.Dispose();
+        }
+    }
+
     private static string Address(ulong address) => "$" + address.ToString("X16", CultureInfo.InvariantCulture);
 
     private static bool PathIsUnder(string path, string root) =>

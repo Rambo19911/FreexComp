@@ -11,6 +11,7 @@
 //   --console-screen <pid> <file>      writes the console's screen rows, from the first to the cursor's, right-trimmed,
 //                                      to <file> as UTF-8 lines.
 //   --console-ctrl-c <pid>             attaches, swallows the event itself and sends Ctrl+C to every process of the console.
+//   --console-ctrl-break <pid>         the same with Ctrl+Break.
 
 using System.ComponentModel;
 using System.Globalization;
@@ -34,7 +35,8 @@ internal static class ConsoleModes
                 ["--console-run", "--", ..] => Run(),
                 ["--console-type", var pid, var file] => Type(Pid(pid), file),
                 ["--console-screen", var pid, var file] => Screen(Pid(pid), file),
-                ["--console-ctrl-c", var pid] => CtrlC(Pid(pid)),
+                ["--console-ctrl-c", var pid] => SendCtrl(Pid(pid), Native.CtrlCEvent),
+                ["--console-ctrl-break", var pid] => SendCtrl(Pid(pid), Native.CtrlBreakEvent),
                 _ => null,
             };
         }
@@ -137,15 +139,15 @@ internal static class ConsoleModes
         return 0;
     }
 
-    // ---- --console-ctrl-c ----
+    // ---- --console-ctrl-c, --console-ctrl-break ----
 
-    private static int CtrlC(int processId)
+    private static int SendCtrl(int processId, uint ctrlEvent)
     {
         Attach(processId);
         // This process is in the console now and gets the event too.
         if (!Native.SetConsoleCtrlHandler(SwallowCtrl, true))
             throw Failed("SetConsoleCtrlHandler");
-        if (!Native.GenerateConsoleCtrlEvent(Native.CtrlCEvent, 0))
+        if (!Native.GenerateConsoleCtrlEvent(ctrlEvent, 0))
             throw Failed("GenerateConsoleCtrlEvent");
         return 0;
     }
