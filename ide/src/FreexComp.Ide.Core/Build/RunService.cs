@@ -395,6 +395,16 @@ public sealed class RunService : IRunService
             previous.Dispose();
     }
 
+    /// <summary>The console host waiting at its key prompt (IDE-P3-089), or null; any thread.</summary>
+    internal IRunningProcess? WaitingHost
+    {
+        get
+        {
+            lock (_hostGate)
+                return _waitingHost;
+        }
+    }
+
     /// <summary>The launcher of the program runs, for the debug console (IDE-P3-097).</summary>
     internal IProcessLauncher Launcher => _launcher;
 

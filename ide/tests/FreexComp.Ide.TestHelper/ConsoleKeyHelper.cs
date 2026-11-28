@@ -75,7 +75,7 @@ public static class ConsoleKeyHelper
         public const uint FILE_SHARE_WRITE = 2;
         public const uint OPEN_EXISTING = 3;
 
-        [StructLayout(LayoutKind.Explicit, Size = 20)]
+        [StructLayout(LayoutKind.Explicit, Size = 20, CharSet = CharSet.Unicode)] // Char as one UTF-16 unit, not an ANSI byte (I-395)
         public struct INPUT_RECORD
         {
             [FieldOffset(0)]

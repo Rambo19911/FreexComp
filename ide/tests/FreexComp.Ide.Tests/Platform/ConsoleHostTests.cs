@@ -267,7 +267,7 @@ public sealed class ConsoleHostTests
     }
 
     /// <summary>Types <paramref name="text"/> into the console of <paramref name="processId"/> (helper <c>--console-type</c>).</summary>
-    private static async Task TypeAsync(int processId, string text, TestDeadline deadline)
+    internal static async Task TypeAsync(int processId, string text, TestDeadline deadline)
     {
         var file = Path.Combine(Path.GetTempPath(), "freexcomp-type-" + Guid.NewGuid().ToString("N") + ".txt");
         try
@@ -282,7 +282,7 @@ public sealed class ConsoleHostTests
     }
 
     /// <summary>The title and screen of the host's console (helper <c>--console-key</c>), then a key: the host exits.</summary>
-    private static async Task<string[]> ScreenAndKeyAsync(int processId, Process host, TestDeadline deadline)
+    internal static async Task<string[]> ScreenAndKeyAsync(int processId, Process host, TestDeadline deadline)
     {
         var screen = Path.Combine(Path.GetTempPath(), "freexcomp-console-" + Guid.NewGuid().ToString("N") + ".txt");
         try

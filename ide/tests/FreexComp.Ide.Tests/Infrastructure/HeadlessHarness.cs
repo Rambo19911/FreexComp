@@ -184,7 +184,8 @@ public sealed class HeadlessHarness : IAsyncDisposable
             o.WorkingDirectory = TempDir;
             o.ToolWindows.AddRange(options.ToolWindows);
             o.ImplementedPhase = options.ImplementedPhase;
-            o.Processes = options.RealBuild ? new FreexComp.Ide.Platform.Windows.WindowsProcessLauncher(Clock) : Processes;
+            // I-395: the console host is the IDE executable beside the test assembly, not this process (the test host).
+            o.Processes = options.RealBuild ? new FreexComp.Ide.Platform.Windows.WindowsProcessLauncher(Clock, ConsoleHostExecutable) : Processes;
             if (options.RealBuild)
                 o.ToolchainEnvironment = new Core.Build.ToolchainEnvironment(null, AppContext.BaseDirectory, []);
             FreexComp.Build.IBuildEngine real = new FreexComp.Build.BuildEngine(new Core.Projects.CompilerFileSystemAdapter(FileSystem));
@@ -242,6 +243,9 @@ public sealed class HeadlessHarness : IAsyncDisposable
     /// (<see cref="FakeAdapterSessions.UseScenario"/>) they run over the debugger area's scripted adapter.
     /// </summary>
     public FakeAdapterSessions DebugSessions { get; } = new();
+
+    /// <summary>The IDE executable next to the test assembly (the project reference copies its apphost): the console host of <see cref="HarnessOptions.RealBuild"/>.</summary>
+    public static string ConsoleHostExecutable => Path.ChangeExtension(typeof(FreexComp.Ide.Platform.Windows.ConsoleHost).Assembly.Location, ".exe");
 
     /// <summary>The scripted OS pickers (IDE-TEST-015); an unscripted picker request fails the test.</summary>
     public FakeFileDialogService FileDialogs { get; }
