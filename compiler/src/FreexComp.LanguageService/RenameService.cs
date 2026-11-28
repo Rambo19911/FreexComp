@@ -136,6 +136,19 @@ public static class RenameService
         ArgumentNullException.ThrowIfNull(doc);
         var target = Find(doc, position, overloads: false, ct);
         var info = new RenameInfo(target.Reason is null, target.Reason, target.Span, target.Name);
+        if (target.TypeParameter is { } typeParameter)
+        {
+            // CMP-1500, 1512: a type parameter of a generic routine is local, one of a generic type is not
+            return info with
+            {
+                Kind = CompletionItemKind.Type,
+                ContainerName = typeParameter.Container,
+                Scope = typeParameter.OfMethod ? RenameScope.Local : RenameScope.Project,
+                LocalSpans = typeParameter.OfMethod ? typeParameter.Spans : [],
+                DeclarationPaths = [PathUtil.Normalize(doc.Path)],
+            };
+        }
+
         if (target.Reason is not null || target.Symbol is not { } symbol)
         {
             return info;
@@ -189,6 +202,11 @@ public static class RenameService
             return new RenameResult(true, null, []);
         }
 
+        if (target.TypeParameter is { } typeParameter)
+        {
+            return RenameTypeParameter(doc, typeParameter, target.Name, newName);
+        }
+
         return unit is null ? RenameSymbol(doc, target, newName, options, ct) : RenameUnit(doc, target, unit, newName, ct);
     }
 
@@ -197,9 +215,217 @@ public static class RenameService
     /// <summary>CMP-1505: refused for its conflicts; the error is the first conflict's sentence.</summary>
     private static RenameResult Fail(ImmutableArray<RenameConflict> conflicts) => new(false, conflicts[0].Message, []) { Conflicts = conflicts };
 
+    // ---------------------------------------------------------------------------------------------------------- type parameters (CMP-1512)
+
+    /// <summary>
+    /// CMP-1512 (C-451): a type parameter of a generic type or of a generic method. It has no declaration symbol of its own (an
+    /// instance's body binds it to the instance's argument), so it is found by scope: in the generic's declaration and in every
+    /// implementation that repeats the parameter list, a name spelled like the parameter is that parameter — a type parameter hides
+    /// every other meaning of its name there. <see cref="Spans"/>: every occurrence in the document, in text order; <see cref="Scopes"/>:
+    /// the declaration and implementation nodes, each with the parameter's name there and the inner nodes that declare the name again.
+    /// </summary>
+    private sealed record TypeParameterTarget(string Container, bool OfMethod, ImmutableArray<TextSpan> Spans,
+        ImmutableArray<(SyntaxNode Node, string Name)> Scopes);
+
+    /// <summary>The index of <paramref name="name"/> among the names of a type parameter list; -1 when it is not one of them.</summary>
+    private static int IndexOf(TypeParameterListSyntax? list, string name)
+    {
+        var names = list?.Parameters.SelectMany(p => p.Identifiers).Select(i => SyntaxFacts.NameOf(i.Identifier)).ToList() ?? [];
+        return names.FindIndex(n => IdentifierComparer.Instance.Equals(n, name));
+    }
+
+    private static string? NameAt(TypeParameterListSyntax? list, int index) =>
+        list?.Parameters.SelectMany(p => p.Identifiers).Select(i => SyntaxFacts.NameOf(i.Identifier)).ElementAtOrDefault(index);
+
+    private static int Arity(TypeParameterListSyntax? list) => list?.Parameters.Sum(p => p.Identifiers.Count) ?? 0;
+
+    /// <summary>A name that can stand for a type parameter: an identifier name, not the member part of <c>X.N</c>.</summary>
+    private static bool IsPlainName(SyntaxToken token) =>
+        token.Kind == SyntaxKind.IdentifierToken && !token.IsMissing && token.Parent is IdentifierNameSyntax name
+        && !(name.Parent is MemberAccessExpressionSyntax access && ReferenceEquals(access.Name, name))
+        && !(name.Parent is QualifiedNameSyntax qualified && ReferenceEquals(qualified.Right, name));
+
+    /// <summary>The heading of a method declaration or a routine (implementation).</summary>
+    private static RoutineHeadingSyntax? HeadingOf(SyntaxNode node) => node switch
+    {
+        MethodDeclarationSyntax method => method.Heading,
+        RoutineDeclarationSyntax routine => routine.Heading,
+        _ => null,
+    };
+
+    /// <summary>The generic type segments of a method implementation heading's qualifier: <c>TBox&lt;T&gt;.Get</c> gives <c>TBox&lt;T&gt;</c>.</summary>
+    private static IEnumerable<GenericNameSyntax> GenericQualifiers(RoutineHeadingSyntax heading) =>
+        heading.Name is QualifiedNameSyntax qualified ? qualified.Left.DescendantNodes().Prepend(qualified.Left).OfType<GenericNameSyntax>() : [];
+
+    /// <summary>The type parameters a generic name segment of an implementation heading repeats, as written.</summary>
+    private static List<string> ArgumentNames(GenericNameSyntax generic) =>
+        [.. generic.TypeArgumentList.Arguments.Select(a => a is NamedTypeSyntax { Name: IdentifierNameSyntax n } ? SyntaxFacts.NameOf(n.Identifier) : "")];
+
+    /// <summary>CMP-1512: the type parameter the token names, or null.</summary>
+    private static TypeParameterTarget? TypeParameterAt(Document doc, SyntaxToken token)
+    {
+        if (!IsPlainName(token))
+        {
+            return null;
+        }
+
+        var name = SyntaxFacts.NameOf(token);
+        var root = doc.SemanticModel.SyntaxTree.Root;
+        for (var node = token.Parent; node is not null; node = node.Parent)
+        {
+            // a generic method: its declaration in the type and its implementation
+            if (HeadingOf(node) is { } heading && IndexOf(heading.TypeParameterList, name) is >= 0 and var methodIndex)
+            {
+                var headings = MethodHeadings(doc, heading);
+                var scopes = headings.Select(h => (h.Parent!, NameAt(h.TypeParameterList, methodIndex) ?? name)).ToList();
+                return Collect(doc, MethodContainer(headings), ofMethod: true, scopes);
+            }
+
+            // a method implementation of a generic type: TBox<T>.Get
+            if (node is RoutineDeclarationSyntax routine)
+            {
+                foreach (var generic in GenericQualifiers(routine.Heading))
+                {
+                    if (ArgumentNames(generic).FindIndex(n => IdentifierComparer.Instance.Equals(n, name)) is >= 0 and var argument)
+                    {
+                        return TypeTarget(doc, root, SyntaxFacts.NameOf(generic.Identifier), generic.TypeArgumentList.Arguments.Count, argument);
+                    }
+                }
+            }
+
+            // the generic type's declaration
+            if (node is TypeDeclarationSyntax { TypeParameterList: { } list } type && IndexOf(list, name) is >= 0 and var typeIndex)
+            {
+                return TypeTarget(doc, root, SyntaxFacts.NameOf(type.Identifier), Arity(list), typeIndex);
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// The headings of a generic method: the one given and its partner — the declaration in the type or the implementation — found as
+    /// the heading whose name binds to the same generic method (the semantic model names both by its open instance, CMP-1478).
+    /// </summary>
+    private static List<RoutineHeadingSyntax> MethodHeadings(Document doc, RoutineHeadingSyntax heading)
+    {
+        var model = doc.SemanticModel;
+        Symbol? MethodOf(RoutineHeadingSyntax h) => h.Name.DescendantTokens().LastOrDefault(t => t.Kind == SyntaxKind.IdentifierToken) is { Kind: SyntaxKind.IdentifierToken } last
+            ? QuickInfoService.SymbolOf(model, last)
+            : null;
+
+        var headings = new List<RoutineHeadingSyntax> { heading };
+        if (MethodOf(heading) is not { } method)
+        {
+            return headings;
+        }
+
+        headings.AddRange(model.SyntaxTree.Root.DescendantNodes().OfType<RoutineHeadingSyntax>()
+            .Where(h => !ReferenceEquals(h, heading) && h.TypeParameterList is not null && h.Parent is MethodDeclarationSyntax or RoutineDeclarationSyntax
+                        && Arity(h.TypeParameterList) == Arity(heading.TypeParameterList) && SymbolKey.AreSame(MethodOf(h), method)));
+        return [.. headings.OrderBy(h => h.Span.Start)];
+    }
+
+    /// <summary>A generic method's container fact: its type's name and its own (<c>TUtil.Pick</c>), from the declaration when there is one.</summary>
+    private static string MethodContainer(List<RoutineHeadingSyntax> headings)
+    {
+        var heading = headings.FirstOrDefault(h => h.Parent is MethodDeclarationSyntax) ?? headings[0];
+        var method = SyntaxFacts.NameOf(heading.Name.DescendantTokens().Last(t => t.Kind == SyntaxKind.IdentifierToken));
+        if (heading.Parent is MethodDeclarationSyntax)
+        {
+            var types = heading.AncestorsAndSelf().OfType<TypeDeclarationSyntax>().Reverse().Select(t => SyntaxFacts.NameOf(t.Identifier));
+            return string.Join(".", types.Append(method));
+        }
+
+        return string.Join(".", heading.Name.DescendantTokens().Where(t => t.Kind == SyntaxKind.IdentifierToken
+            && t.Parent is not { Parent: TypeArgumentListSyntax }).Select(SyntaxFacts.NameOf));
+    }
+
+    /// <summary>A type parameter of the generic type <paramref name="name"/> with <paramref name="arity"/> parameters: its declaration and method implementations.</summary>
+    private static TypeParameterTarget? TypeTarget(Document doc, SyntaxNode root, string name, int arity, int index)
+    {
+        var scopes = new List<(SyntaxNode, string)>();
+        string? container = null;
+        foreach (var type in root.DescendantNodes().OfType<TypeDeclarationSyntax>())
+        {
+            if (IdentifierComparer.Instance.Equals(SyntaxFacts.NameOf(type.Identifier), name) && Arity(type.TypeParameterList) == arity
+                && NameAt(type.TypeParameterList, index) is { } parameter)
+            {
+                scopes.Add((type, parameter));
+                var outer = type.Parent!.AncestorsAndSelf().OfType<TypeDeclarationSyntax>().Reverse().Select(t => SyntaxFacts.NameOf(t.Identifier));
+                container ??= string.Join(".", outer.Append($"{name}<{string.Join(", ", type.TypeParameterList!.Parameters.SelectMany(p => p.Identifiers).Select(i => SyntaxFacts.NameOf(i.Identifier)))}>"));
+            }
+        }
+
+        foreach (var routine in root.DescendantNodes().OfType<RoutineDeclarationSyntax>())
+        {
+            var generic = GenericQualifiers(routine.Heading).LastOrDefault(g => IdentifierComparer.Instance.Equals(SyntaxFacts.NameOf(g.Identifier), name)
+                                                                                && g.TypeArgumentList.Arguments.Count == arity);
+            if (generic is not null && ArgumentNames(generic).ElementAtOrDefault(index) is { Length: > 0 } parameter)
+            {
+                scopes.Add((routine, parameter));
+            }
+        }
+
+        return container is null ? null : Collect(doc, container, ofMethod: false, scopes);
+    }
+
+    /// <summary>The occurrences in the scopes, without the inner declarations and implementations that declare the name again.</summary>
+    private static TypeParameterTarget Collect(Document doc, string container, bool ofMethod, List<(SyntaxNode Node, string Name)> scopes)
+    {
+        var spans = new List<TextSpan>();
+        foreach (var (node, name) in scopes)
+        {
+            spans.AddRange(ScopeTokens(doc, node, name).Where(t => IdentifierComparer.Instance.Equals(SyntaxFacts.NameOf(t), name)).Select(t => t.Span));
+        }
+
+        return new TypeParameterTarget(container, ofMethod, [.. spans.Distinct().OrderBy(s => s.Start)], [.. scopes]);
+    }
+
+    /// <summary>
+    /// The plain names of a scope's own text, without those inside a nested generic (method or type) that declares
+    /// <paramref name="name"/> again.
+    /// </summary>
+    private static IEnumerable<SyntaxToken> ScopeTokens(Document doc, SyntaxNode scope, string name)
+    {
+        var file = doc.SemanticModel.SyntaxTree.Text;
+        var hidden = scope.DescendantNodes().Where(n => !ReferenceEquals(n, scope)
+                && (n is TypeDeclarationSyntax { TypeParameterList: { } list } && IndexOf(list, name) >= 0
+                    || HeadingOf(n) is { } heading && !ReferenceEquals(heading, HeadingOf(scope)) && IndexOf(heading.TypeParameterList, name) >= 0))
+            .Select(n => n.Span).ToList();
+        return scope.DescendantTokens().Where(t => (t.File is null || ReferenceEquals(t.File, file)) && IsPlainName(t) && !hidden.Any(h => h.Contains(t.Span.Start)));
+    }
+
+    /// <summary>
+    /// CMP-1512, 751: renames a type parameter in its scopes. A name of the scopes spelled like the new name would be captured by the
+    /// parameter (or is another parameter of that name): each is a conflict.
+    /// </summary>
+    private static RenameResult RenameTypeParameter(Document doc, TypeParameterTarget target, string oldName, string newName)
+    {
+        var tree = doc.SemanticModel.SyntaxTree;
+        var conflicts = target.Scopes.SelectMany(s => ScopeTokens(doc, s.Node, s.Name))
+            .Where(t => IdentifierComparer.Instance.Equals(SyntaxFacts.NameOf(t), newName) && !target.Spans.Contains(t.Span))
+            .Select(t => t.Span).Distinct().OrderBy(s => s.Start).Take(MaxConflicts)
+            .Select(span =>
+            {
+                var at = tree.Text.Lines.GetLinePosition(span.Start);
+                var text = tree.Text.Text.Substring(span.Start, span.Length);
+                return new RenameConflict(NavigationService.LocationOf(tree, span), text,
+                    $"Renaming '{oldName}' to '{newName}' changes the meaning of '{text}' at {Path.GetFileName(tree.Text.Path)}({at.Line + 1},{at.Column + 1}).");
+            })
+            .ToImmutableArray();
+        return conflicts.IsEmpty
+            ? new RenameResult(true, null, [new DocumentEdit(PathUtil.Normalize(doc.Path), [.. target.Spans.Select(s => new TextChange(s, newName))])])
+            : Fail(conflicts);
+    }
+
     // ---------------------------------------------------------------------------------------------------------- the target
 
-    private sealed record Target(TextSpan Span, string Name, Symbol? Symbol, ImmutableArray<Symbol> Related, string? Reason);
+    private sealed record Target(TextSpan Span, string Name, Symbol? Symbol, ImmutableArray<Symbol> Related, string? Reason)
+    {
+        /// <summary>CMP-1512: a type parameter (<see cref="Symbol"/> is null).</summary>
+        public TypeParameterTarget? TypeParameter { get; init; }
+    }
 
     /// <param name="overloads">CMP-1504: a routine is found with the routines of its name (<see cref="Closure"/>).</param>
     private static Target Find(Document doc, int position, bool overloads, CancellationToken ct)
@@ -242,6 +468,11 @@ public static class RenameService
         }
 
         var text = SyntaxFacts.NameOf(token);
+        if (TypeParameterAt(doc, token) is { } typeParameter)
+        {
+            return new Target(token.Span, text, null, [], null) { TypeParameter = typeParameter };
+        }
+
         if (QuickInfoService.SymbolOf(model, token) is not { } symbol)
         {
             return new Target(token.Span, text, null, [], $"'{text}' does not name a declaration.");
@@ -343,6 +574,12 @@ public static class RenameService
                 var methods = implemented.Interface.AllMethods;
                 for (var i = 0; i < methods.Length && i < implemented.Implementations.Length; i++)
                 {
+                    // CMP-1512 (C-451): a method mapped by a method-resolution clause (LANG-661) keeps its own name
+                    if (!IdentifierComparer.Instance.Equals(methods[i].Name, implemented.Implementations[i].Name))
+                    {
+                        continue;
+                    }
+
                     if (SymbolKey.AreSame(methods[i], method))
                     {
                         Add(implemented.Implementations[i]);

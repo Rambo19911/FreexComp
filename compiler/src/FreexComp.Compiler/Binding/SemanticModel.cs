@@ -607,6 +607,16 @@ public sealed class SemanticModel
             return dottedUnit;
         }
 
+        // C-451: the target of a method resolution clause (LANG-661) is the method the interface method is mapped to
+        if (nameNode?.Parent is MethodResolutionSyntax resolution && ReferenceEquals(resolution.Target, nameNode)
+            && resolution.FirstAncestorOrSelf<TypeDeclarationSyntax>() is { } resolvingType
+            && GetDeclaredSymbol(resolvingType.Identifier) is ClassTypeSymbol resolvingClass)
+        {
+            var mapped = GetSymbolInfo(resolution.InterfaceMethod).Symbol as MethodSymbol;
+            return (mapped is null ? null : DeclarationBinder.FindImplementation(resolvingClass, name, mapped))
+                ?? resolvingClass.SelfAndAncestors().SelectMany(c => c.Methods).FirstOrDefault(m => IdentifierComparer.Instance.Equals(m.Name, name));
+        }
+
         // C-139: the accessor of a property (read / write / stored) is a member of the property's type
         if (nameNode?.FirstAncestorOrSelf<PropertySpecifierSyntax>() is { Keyword.ContextualKind: SyntaxKind.ReadKeyword or SyntaxKind.WriteKeyword or SyntaxKind.StoredKeyword } specifier
             && specifier.FirstAncestorOrSelf<PropertyDeclarationSyntax>() is { } property
