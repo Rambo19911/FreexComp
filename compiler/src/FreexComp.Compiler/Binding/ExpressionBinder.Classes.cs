@@ -764,6 +764,13 @@ internal sealed partial class ExpressionBinder
             return null;
         }
 
+        if (qualifierType is not (null or HelperTypeSymbol or EnumTypeSymbol) && _types.HasHelpers && _scope.ActiveHelper(qualifierType) is not null)
+        {
+            // LANG-992 (b), step 4 (C-445): Integer.Missing, string.Missing — the type has an active helper that lacks the name
+            _diagnostics.Report(syntax.Name, "E2005", qualifierType.Name, name);
+            return Error(syntax);
+        }
+
         var operand = BindOperand(syntax.Expression);
         var receiver = Called(operand);
         if (!ReferenceEquals(receiver, operand) && HelperFor(operand.Type, name) is not null)
@@ -913,6 +920,15 @@ internal sealed partial class ExpressionBinder
             or RecordTypeSymbol { GenericMethods.IsEmpty: false })
         {
             return RecordInstanceMember(syntax, call, argumentList, record, name, out methodCall);   // C-122 (LANG-730)
+        }
+
+        if (!ReferenceEquals(receiver, operand) && record.Type is not RecordTypeSymbol && _types.HasHelpers
+            && _scope.ActiveHelper(record.Type) is null && _scope.ActiveHelper(operand.Type) is not null)
+        {
+            // LANG-992 step 4 with LANG-990 (b) (C-445): the called result has neither members nor a helper; the function type,
+            // whose active helper was searched first, is named
+            _diagnostics.Report(syntax.Name, "E2005", operand.Type.Name, name);
+            return Error(syntax, receiver);
         }
 
         return RecordMember(syntax, receiver);

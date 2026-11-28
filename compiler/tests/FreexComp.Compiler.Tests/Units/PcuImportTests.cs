@@ -629,6 +629,38 @@ public sealed class PcuImportTests
                 .Order(UnitBindingTests.HintOrder));
     }
 
+    /// <summary>
+    /// CMP-1490, CMP-1491 (C-445; phase8/helpers-completion.md §10): the program of the golden <c>helpers/HelperLibraryShape</c>
+    /// against the <c>.pcu</c> of its unit gives the IR it gets against the unit's source — constants through the type name and
+    /// in a constant, overloads of instance and static methods, <c>inline</c>, a default parameter, an array property, static
+    /// members, a method returning <c>TArray&lt;string&gt;</c>. The unit is the golden's, named <c>U</c> (its include file beside it).
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1490")]
+    [Trait("Req", "CMP-1491")]
+    public void HelperLibraryShapeFromPcu()
+    {
+        var folder = Path.Combine(RepoPaths.Root, "tests", "compiler", "helpers", "HelperLibraryShape");
+        string Read(string name) =>
+            File.ReadAllText(Path.Combine(folder, name)).ReplaceLineEndings("\n").Replace("UValueHelpers", "U", StringComparison.Ordinal);
+        var (unit, include, program) = (Read("UValueHelpers.pas"), Read("UValueHelpers.inc"), Read("HelperLibraryShape.pas").Replace("program HelperLibraryShape;", "program P;", StringComparison.Ordinal));
+        Assert.Contains("{$I U.inc}", unit, StringComparison.Ordinal);
+        Assert.Contains("\nprogram P;\n", program, StringComparison.Ordinal);
+        var sources = PcuTests.Files(u: unit, program: program).Add(@"C:\p\U.inc", include);
+        var reference = Emit(sources, PcuTests.Options(), EmitStage.Ll);
+        Assert.True(reference.Success, string.Join("\n", reference.Diagnostics.Select(d => d.ToText())));
+        var pcus = PcuTests.Pcus(PcuTests.Files(u: unit, program: program).Add(@"C:\p\U.inc", include));
+        var fs = new InMemoryFileSystem().Add(@"C:\p\P.pas", program).AddSystem()
+            .Add(Path.Combine(Lib, "U.pcu"), pcus["U"]).Add(Path.Combine(Lib, "U.obj"), "");
+
+        var result = Emit(fs, PcuTests.Options() with { SearchPaths = [Lib] }, EmitStage.Ll);
+
+        Assert.True(result.Success, string.Join("\n", result.Diagnostics.Select(d => d.ToText())));
+        Assert.Equal(["P", "System"], result.CompiledUnits);
+        Assert.Equal(sources.ReadAllText(@"C:\p\obj\P.ll"), fs.ReadAllText(@"C:\p\obj\P.ll"));
+    }
+
     /// <summary>The program compiled against <c>.pcu</c>-only U and V gives the IR it gets against their sources.</summary>
     internal static void AssertSameIrAgainstPcu(string unit, string program, string v = PcuTests.UnitV)
     {

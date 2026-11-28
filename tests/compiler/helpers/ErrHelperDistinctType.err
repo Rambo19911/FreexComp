@@ -1,0 +1,4 @@
+ErrHelperDistinctType.pas(26,11): error E2006: 'V' is not a unit, record, class or interface; cannot qualify with '.'
+ErrHelperDistinctType.pas(27,11): error E2006: 'D' is not a unit, record, class or interface; cannot qualify with '.'
+ErrHelperDistinctType.pas(28,11): error E2006: 'B' is not a unit, record, class or interface; cannot qualify with '.'
+ErrHelperDistinctType.pas(29,13): error E2005: 'Integer' does not contain a member named 'Missing'
