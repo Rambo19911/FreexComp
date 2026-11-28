@@ -1332,9 +1332,10 @@ internal sealed partial class ExpressionBinder
                     // LANG-774 (C-357): E2610 for a nested type this code may not access
                     return BindTypecastInvocation(invocation, namedTarget, variableContext);
                 case MemberAccessExpressionSyntax member when !(_scope.Unqualified(member.Expression) is IdentifierNameSyntax { Identifier: { IsMissing: false } q } qualifier
-                                                                && _scope.For(qualifier).Lookup(q.Value as string ?? q.Text) is EnumTypeSymbol):
+                                                                && _scope.For(qualifier).Lookup(q.Value as string ?? q.Text) is EnumTypeSymbol enumeration
+                                                                && !_folder.EnumHelperDeclares(enumeration, member.Name.Identifier.Value as string ?? member.Name.Identifier.Text)):
                 {
-                    // o.M(x), TFoo.Create(x) (CMP-367); r.F(x) through a procedural field (LANG-484)
+                    // o.M(x), TFoo.Create(x) (CMP-367); r.F(x) through a procedural field (LANG-484); TColor.Parse(s) of a helper (C-442)
                     var value = BindMemberCall(member, invocation, invocation.ArgumentList, out var call);
                     return call is { } method ? MethodCallExpression(invocation, method)
                         : value is BoundArrayConstructor ? value                            // LANG-271 (C-388): D.Create(…) is a value

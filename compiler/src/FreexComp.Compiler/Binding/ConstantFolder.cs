@@ -257,9 +257,23 @@ internal sealed class ConstantFolder
             return member;
         }
 
+        if (EnumHelperDeclares(type, text))
+        {
+            isEnumAccess = false;                                               // TColor.Parse: bound as a member access
+            return null;
+        }
+
         _diagnostics.Report(access.Name, "E2005", type.Name, text);
         return null;
     }
+
+    /// <summary>
+    /// LANG-990 (b) (C-442): <c>TEnum.Name</c> names a member of the active helper of the enumeration (<c>TColor.Parse</c>) — no
+    /// element has the name (an element comes first) and the helper declares it.
+    /// </summary>
+    internal bool EnumHelperDeclares(EnumTypeSymbol type, string name) =>
+        _types.HasHelpers && type.GetMembers(name).FirstOrDefault() is not EnumMemberSymbol
+        && _scope.ActiveHelper(type) is { } helper && helper.GetMembers(name).Any();
 
     /// <summary>A typecast <c>T(v)</c> between ordinal types, or a foldable intrinsic (LANG-340).</summary>
     private ConstantValue? FoldInvocation(InvocationExpressionSyntax invocation)

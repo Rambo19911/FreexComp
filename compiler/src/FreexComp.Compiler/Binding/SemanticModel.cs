@@ -972,8 +972,10 @@ public sealed class SemanticModel
             }
             else if (symbol is FieldSymbol or MethodSymbol && !IdentifierComparer.Instance.Equals(symbol.Name, NameOf(token))
                      && (receiver ?? symbol.ContainingSymbol as TypeSymbol) is { } type
-                     && PropertyNamed(type is ClassRefTypeSymbol classRef ? classRef.Class : type, NameOf(token)) is { } property)
+                     && ((symbol.ContainingSymbol is HelperTypeSymbol helper ? PropertyNamed(helper, NameOf(token)) : null)
+                         ?? PropertyNamed(type is ClassRefTypeSymbol classRef ? classRef.Class : type, NameOf(token))) is { } property)
             {
+                // C-442: a helper's property is no member of the receiver's type — it is found in the helper of its accessor method
                 symbol = property;
             }
 

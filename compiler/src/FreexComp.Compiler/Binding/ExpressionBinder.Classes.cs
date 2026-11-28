@@ -402,7 +402,8 @@ internal sealed partial class ExpressionBinder
             return ClassMethodReceiver(call, method, kind, instance, className);
         }
 
-        if (kind == ReceiverKind.Instance && instance!.Type is ClassRefTypeSymbol)
+        // a record helper for the class-reference type itself (LANG-990 (b), C-442): the class reference is the helped value
+        if (kind == ReceiverKind.Instance && instance!.Type is ClassRefTypeSymbol && method.ContainingSymbol is not HelperTypeSymbol { IsClassHelper: false })
         {
             if (method.MethodKind != MethodKind.Constructor)
             {
@@ -724,7 +725,15 @@ internal sealed partial class ExpressionBinder
             return null;
         }
 
-        var receiver = BindExpression(syntax.Expression);
+        var operand = BindOperand(syntax.Expression);
+        var receiver = Called(operand);
+        if (!ReferenceEquals(receiver, operand) && HelperFor(operand.Type, name) is not null)
+        {
+            // LANG-990 (b) (C-442): a value of a function type without parameters is the receiver itself when the active helper
+            // of its type declares the name; otherwise it is called (LANG-482) and the member is looked up in the result
+            receiver = operand;
+        }
+
         if (receiver.HasErrors)
         {
             return Error(syntax, receiver);

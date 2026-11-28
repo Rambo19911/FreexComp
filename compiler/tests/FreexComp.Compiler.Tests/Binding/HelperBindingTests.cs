@@ -10,7 +10,7 @@ namespace FreexComp.Compiler.Tests.Binding;
 
 /// <summary>
 /// Class and record helpers, completion (phase8/helpers-completion.md §15; cards F10-027…029): helper inheritance (LANG-990 (e))
-/// and the active helper of a type at a source position (LANG-993), C-438.
+/// and the active helper of a type at a source position (LANG-993), C-438; the kinds of helped types (LANG-990 (b)), C-442.
 /// </summary>
 [Trait("Phase", "8")]
 public sealed partial class HelperBindingTests
@@ -461,9 +461,15 @@ public sealed partial class HelperBindingTests
     [Theory]
     [MemberData(nameof(ActiveHelperRows))]
     [Trait("Req", "LANG-993")]
-    public void ActiveHelper_NearestWins(string row)
+    public void ActiveHelper_NearestWins(string row) => AssertMarkers(ActiveHelperCases[row]);
+
+    /// <summary>
+    /// Compiles the files of one program (<c>P.pas</c> is the main file; a <c>System.pas</c> replaces the stub) and checks the
+    /// markers of their sources: <c>X.Name{=THelper}</c> — the member access binds to the member <c>Name</c> of that helper;
+    /// <c>X.Name{!CODE}</c> — the diagnostic <c>CODE</c> at <c>Name</c>. The compilation has no other diagnostic.
+    /// </summary>
+    private static void AssertMarkers((string File, string Text)[] files)
     {
-        var files = ActiveHelperCases[row];
         var fs = new InMemoryFileSystem();
         if (!files.Any(f => f.File == "System.pas"))
         {
