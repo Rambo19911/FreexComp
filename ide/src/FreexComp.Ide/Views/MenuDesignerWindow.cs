@@ -12,6 +12,7 @@ using Avalonia.VisualTree;
 using FreexComp.Ide.Core.Designer;
 using FreexComp.Ide.Core.Dialogs;
 using FreexComp.Ide.Core.Resources;
+using FreexComp.Ide.Icons;
 
 namespace FreexComp.Ide.Views;
 
@@ -21,6 +22,8 @@ namespace FreexComp.Ide.Views;
 /// fields and the embedded property grid (the Object Inspector's grid control, D-110) with its Properties / Events page
 /// tabs. Keys in the tree: Insert, Ctrl+Insert, Ctrl+Right, Delete, Ctrl+Up / Ctrl+Down, F2 (Caption), Enter or a
 /// double-click (the OnClick handler). Close (Enter / Escape / ×) only closes: every operation is already applied.
+/// Items that share an access key with another item of their level carry the warning mark, and the warning line on the
+/// button strip (<c>Dialog.MenuDesigner.Warning</c>) names the current warning (DSG-SUR-252, UI-DLG-340; D-155).
 /// </summary>
 public sealed class MenuDesignerWindow : DialogWindow
 {
@@ -32,6 +35,7 @@ public sealed class MenuDesignerWindow : DialogWindow
     private MenuDesignerWindow(MenuDesignerViewModel model, Parts parts)
         : base(model, Body(model, parts))
     {
+        SetStripInfo(parts.Warning);
         // The dialog opens with the focus in the tree, on the selected item (after the base focus pass).
         Opened += (_, _) => Dispatcher.UIThread.Post(() => FocusSelected(parts), DispatcherPriority.Loaded);
     }
@@ -48,6 +52,19 @@ public sealed class MenuDesignerWindow : DialogWindow
         public ComboBox ShortCut { get; } = new() { IsEditable = true, HorizontalAlignment = HorizontalAlignment.Stretch };
 
         public PropertyGridView Grid { get; } = new(Id("Grid"), Id("Grid.Row.")) { IsInDialog = true, BorderThickness = new Thickness(1) };
+
+        /// <summary>UI-DLG-340: the warning line of the button strip — the icon and one trimmed line; hidden without a warning.</summary>
+        public DockPanel Warning { get; } = new()
+        {
+            IsVisible = false, VerticalAlignment = VerticalAlignment.Center, Background = Brushes.Transparent /* the tooltip on the whole line */,
+            Margin = new Thickness(0, 0, 8, 0), // space.4 before Close
+        };
+
+        public TextBlock WarningText { get; } = new()
+        {
+            TextTrimming = TextTrimming.CharacterEllipsis, TextWrapping = TextWrapping.NoWrap, VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(6, 0, 0, 0), // space.3 between icon and text
+        };
 
         public Dictionary<FormObject, TreeViewItem> Nodes { get; } = new(ReferenceEqualityComparer.Instance);
 
@@ -121,6 +138,15 @@ public sealed class MenuDesignerWindow : DialogWindow
         Place(body, right, 0, 2);
         Grid.SetRowSpan(right, 2);
 
+        // UI-DLG-340: the warning line (placed on the button strip by the window); announced politely, not a tab stop.
+        var warningIcon = new IdeIcon { IconName = "warning", Width = 16, Height = 16, VerticalAlignment = VerticalAlignment.Center };
+        DockPanel.SetDock(warningIcon, Dock.Left);
+        p.Warning.Children.Add(warningIcon);
+        p.Warning.Children.Add(p.WarningText);
+        p.WarningText.Bind(TextBlock.ForegroundProperty, p.WarningText.GetResourceObservable("FxcTextPrimaryBrush"));
+        AutomationProperties.SetAutomationId(p.Warning, Id("Warning"));
+        AutomationProperties.SetLiveSetting(p.Warning, AutomationLiveSetting.Polite);
+
         void SyncPage()
         {
             var isEvents = model.Grid.Page == InspectorPage.Events;
@@ -155,6 +181,11 @@ public sealed class MenuDesignerWindow : DialogWindow
                 p.Tree.SelectedItem = null;
             }
 
+            var warning = model.WarningText;
+            p.Warning.IsVisible = warning.Length > 0; // hidden: it takes no room
+            p.WarningText.Text = warning;
+            AutomationProperties.SetName(p.Warning, warning);
+            ToolTip.SetTip(p.Warning, warning.Length > 0 ? warning : null); // the full text when the line is trimmed
             placeholder.IsVisible = model.IsEmpty;
             insertBefore.IsEnabled = model.CanInsertBefore;
             newItem.IsEnabled = model.CanNewItem;
@@ -270,7 +301,11 @@ public sealed class MenuDesignerWindow : DialogWindow
                 return;
             }
 
-            Sync();
+            // The view-model raises its properties together after every change, Nodes among them: one rebuild per change.
+            if (e.PropertyName == nameof(MenuDesignerViewModel.Nodes))
+            {
+                Sync();
+            }
         };
         model.Grid.PropertyChanged += (_, e) =>
         {
@@ -339,7 +374,11 @@ public sealed class MenuDesignerWindow : DialogWindow
         e.Handled = true;
     }
 
-    /// <summary>A tree node: the caption as stored, the shortcut right-aligned (text.secondary); a separator is a rule.</summary>
+    /// <summary>
+    /// A tree node: the caption as stored, the shortcut right-aligned (text.secondary); a separator is a rule. An item of a
+    /// duplicate-access-key warning has the mark after its caption, the warning as tooltip and ", duplicate access key" at
+    /// the end of its automation name (UI-DLG-340).
+    /// </summary>
     private static TreeViewItem Node(MenuDesignerNode node, Parts p)
     {
         Control header;
@@ -363,12 +402,25 @@ public sealed class MenuDesignerWindow : DialogWindow
             DockPanel.SetDock(shortcut, Dock.Right);
             cells.Children.Add(shortcut);
             cells.Children.Add(caption);
+            if (node.Warning is not null)
+            {
+                DockPanel.SetDock(caption, Dock.Left);
+                cells.Children.Add(new IdeIcon
+                {
+                    IconName = "warning-corner", Width = 10, Height = 10, Margin = new Thickness(4, 0, 0, 0) /* space.2 */,
+                    HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center,
+                });
+                cells.Background = Brushes.Transparent; // the tooltip on the whole row
+                ToolTip.SetTip(cells, node.Warning);
+            }
+
             header = cells;
         }
 
         var item = new TreeViewItem { Header = header, Tag = node.Item, IsExpanded = true };
         AutomationProperties.SetAutomationId(item, Id("Node." + node.Name));
-        AutomationProperties.SetName(item, node.IsSeparator ? node.Name : Plain(node.Text));
+        AutomationProperties.SetName(item, (node.IsSeparator ? node.Name : MenuDesignerViewModel.PlainCaption(node.Text))
+            + (node.Warning is null ? "" : Strings.MenuDesigner_DuplicateAccessKeySuffix));
         p.Nodes[node.Item] = item;
         foreach (var child in node.Children)
         {
@@ -414,8 +466,6 @@ public sealed class MenuDesignerWindow : DialogWindow
         };
         return button;
     }
-
-    private static string Plain(string text) => text.Replace("&", "", StringComparison.Ordinal);
 
     private static void Place(Grid grid, Control control, int row, int column)
     {

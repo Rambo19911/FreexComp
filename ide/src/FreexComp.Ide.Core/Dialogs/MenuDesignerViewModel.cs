@@ -16,14 +16,22 @@ namespace FreexComp.Ide.Core.Dialogs;
 /// <summary>
 /// One node of the Menu Designer's tree (dialogs.md §26): the item, its <c>Caption</c> exactly as stored (the <c>&amp;</c>
 /// shown), its shortcut text (empty for none), whether it is a separator (<c>Caption = '-'</c>, drawn as a rule) and whether
-/// its caption is empty (the component name is shown in <c>text.tertiary</c>), and its sub-items.
+/// its caption is empty (the component name is shown in <c>text.tertiary</c>), and its sub-items. <paramref name="Warning"/>
+/// is the text of the duplicate-access-key warning the item takes part in (DSG-SUR-252 a: the mark and the tooltip), else null.
 /// </summary>
 public sealed record MenuDesignerNode(FormObject Item, string Name, string Caption, string ShortCut, bool IsSeparator, bool IsCaptionEmpty,
-    IReadOnlyList<MenuDesignerNode> Children)
+    IReadOnlyList<MenuDesignerNode> Children, string? Warning = null)
 {
     /// <summary>The text shown: the stored caption, or the component name when the caption is empty.</summary>
     public string Text => IsCaptionEmpty ? Name : Caption;
 }
+
+/// <summary>
+/// One duplicate-access-key warning of the Menu Designer (DSG-SUR-251): the items of one level (the children of
+/// <paramref name="Parent"/> — the menu component for the top level) that have the access key <paramref name="Key"/>, in
+/// level order, and the text <c>Msg.MenuDesigner.DuplicateAccessKey</c>.
+/// </summary>
+public sealed record MenuDesignerWarning(FormObject Parent, char Key, IReadOnlyList<FormObject> Items, string Text);
 
 /// <summary>
 /// The Menu Designer (design-surface.md DSG-SUR-197, DSG-SUR-199; dialogs.md §26; D-098) of a <c>TMainMenu</c> or
@@ -50,6 +58,8 @@ public sealed class MenuDesignerViewModel : DialogViewModel<bool>
     private FormObject? _selected;
     private string _captionText = "";
     private string _shortCutText = "";
+    private IReadOnlyList<MenuDesignerWarning> _warnings = [];
+    private Dictionary<FormObject, MenuDesignerWarning> _warningOf = new(ReferenceEqualityComparer.Instance);
 
     public MenuDesignerViewModel(FormDesignerViewModel designer, FormObject menu, IDialogService? dialogs = null, Layout.ILayoutService? layout = null)
     {
@@ -111,6 +121,58 @@ public sealed class MenuDesignerViewModel : DialogViewModel<bool>
 
     /// <summary>The selected item; null for none.</summary>
     public FormObject? Selected => _selected;
+
+    /// <summary>
+    /// DSG-SUR-251: the duplicate-access-key warnings — one per group of two or more items of a level with the same access
+    /// key — the levels in tree pre-order (top level first), within a level by the first item of each group. Computed when
+    /// the dialog opens and after every change of the model (also undo / redo). Advisory: nothing is blocked or stored.
+    /// </summary>
+    public IReadOnlyList<MenuDesignerWarning> Warnings => _warnings;
+
+    /// <summary>DSG-SUR-252 (b): the warning the selected item takes part in, else the first of the list; null without a warning.</summary>
+    public MenuDesignerWarning? CurrentWarning =>
+        _selected is { } item && _warningOf.TryGetValue(item, out var own) ? own : _warnings.Count > 0 ? _warnings[0] : null;
+
+    /// <summary>
+    /// The warning line (DSG-SUR-252 b): the text of <see cref="CurrentWarning"/>, with <i>k</i> &gt; 1 warnings followed by
+    /// <c>Msg.MenuDesigner.MoreWarnings</c> with <i>k</i> − 1; empty without a warning (the line is hidden).
+    /// </summary>
+    public string WarningText => CurrentWarning is not { } current ? ""
+        : _warnings.Count > 1 ? current.Text + string.Format(CultureInfo.CurrentCulture, Strings.Msg_MenuDesigner_MoreWarnings, _warnings.Count - 1)
+        : current.Text;
+
+    /// <summary>
+    /// DSG-SUR-250: the access key of a caption — scanning from the left, <c>&amp;&amp;</c> is a literal ampersand, the first
+    /// <c>&amp;</c> followed by another character marks that character (upper case, invariant); null for none (also for a
+    /// separator, an empty caption and a <c>&amp;</c> at the end).
+    /// </summary>
+    public static char? AccessKey(string caption)
+    {
+        ArgumentNullException.ThrowIfNull(caption);
+        for (var i = 0; i + 1 < caption.Length; i++)
+        {
+            if (caption[i] != '&')
+            {
+                continue;
+            }
+
+            if (caption[i + 1] != '&')
+            {
+                return char.ToUpperInvariant(caption[i + 1]);
+            }
+
+            i++; // "&&": both characters are skipped
+        }
+
+        return null;
+    }
+
+    /// <summary>The plain caption: every single <c>&amp;</c> removed and <c>&amp;&amp;</c> turned into <c>&amp;</c>.</summary>
+    public static string PlainCaption(string caption)
+    {
+        ArgumentNullException.ThrowIfNull(caption);
+        return caption.Replace("&&", "\0", StringComparison.Ordinal).Replace("&", "", StringComparison.Ordinal).Replace('\0', '&');
+    }
 
     private bool CanChange => _designer.Surface is { IsReadOnly: false } && !Menu.IsPreserved && ItemInfo is not null;
 
@@ -422,9 +484,41 @@ public sealed class MenuDesignerViewModel : DialogViewModel<bool>
 
     private MenuDesignerNode Node(FormObject item)
     {
-        var caption = item.FindProperty("Caption")?.Value is StringValue { Value: var c } ? c : "";
+        var caption = Caption(item);
         var shortCut = item.FindProperty("ShortCut")?.Value is IntegerValue { Value: not 0 and var s } ? FreexComp.Designer.Inspector.ShortCutText.Format(s) : "";
-        return new MenuDesignerNode(item, item.Name, caption, shortCut, caption == "-", caption.Length == 0, [.. item.Children.Select(Node)]);
+        return new MenuDesignerNode(item, item.Name, caption, shortCut, caption == "-", caption.Length == 0, [.. item.Children.Select(Node)],
+            _warningOf.TryGetValue(item, out var warning) ? warning.Text : null);
+    }
+
+    private static string Caption(FormObject item) => item.FindProperty("Caption")?.Value is StringValue { Value: var caption } ? caption : "";
+
+    /// <summary>The plain caption of an item; for an empty caption — and for the menu component — the component name.</summary>
+    private static string PlainCaption(FormObject item) => Caption(item) is { Length: > 0 } caption ? PlainCaption(caption) : item.Name;
+
+    /// <summary>DSG-SUR-251: every level's groups of two or more items with the same access key, the levels in tree pre-order.</summary>
+    private void ComputeWarnings()
+    {
+        var warnings = new List<MenuDesignerWarning>();
+        var byItem = new Dictionary<FormObject, MenuDesignerWarning>(ReferenceEqualityComparer.Instance);
+        foreach (var parent in Subtree(Menu))
+        {
+            // GroupBy keeps the order of the first item of each group, and the level order within a group.
+            foreach (var group in parent.Children.Select(item => (Item: item, Key: AccessKey(Caption(item)))).Where(e => e.Key is not null)
+                         .GroupBy(e => e.Key!.Value).Where(g => g.Count() > 1))
+            {
+                List<FormObject> items = [.. group.Select(e => e.Item)];
+                var warning = new MenuDesignerWarning(parent, group.Key, items, string.Format(CultureInfo.CurrentCulture,
+                    Strings.Msg_MenuDesigner_DuplicateAccessKey, group.Key, PlainCaption(parent), string.Join(", ", items.Select(PlainCaption))));
+                warnings.Add(warning);
+                foreach (var item in items)
+                {
+                    byItem[item] = warning;
+                }
+            }
+        }
+
+        _warnings = warnings;
+        _warningOf = byItem;
     }
 
     private static int IndexIn(FormObject parent, FormObject child)
@@ -463,6 +557,10 @@ public sealed class MenuDesignerViewModel : DialogViewModel<bool>
 
     private void Changed()
     {
+        ComputeWarnings();
+        OnPropertyChanged(nameof(Warnings));
+        OnPropertyChanged(nameof(CurrentWarning));
+        OnPropertyChanged(nameof(WarningText));
         OnPropertyChanged(nameof(Nodes));
         OnPropertyChanged(nameof(Items));
         OnPropertyChanged(nameof(IsEmpty));

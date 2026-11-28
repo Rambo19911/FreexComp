@@ -192,8 +192,11 @@ public sealed partial class MessageCatalogTests
     /// <summary>UI-MSG-001: <c>.</c> → <c>_</c>.</summary>
     private static string Key(string id) => id.Trim().Replace('.', '_');
 
-    /// <summary>UI-DLG-021: <c>⏎</c> starts a new paragraph; stored as a line feed.</summary>
-    private static string Paragraphs(string text) => text.Replace("⏎", "\n", StringComparison.Ordinal);
+    /// <summary>
+    /// UI-DLG-021: <c>⏎</c> starts a new paragraph; stored as a line feed. <c>␠</c> is a space that a table cell cannot
+    /// show at its start or end (the suffix <c>Msg.MenuDesigner.MoreWarnings</c>).
+    /// </summary>
+    private static string Paragraphs(string text) => text.Replace("⏎", "\n", StringComparison.Ordinal).Replace('␠', ' ');
 
     [GeneratedRegex(@"Msg(\.[A-Za-z]+)+")]
     private static partial Regex IdPattern();

@@ -1,3 +1,4 @@
+using FreexComp.Designer.Editing;
 using FreexComp.Designer.Model;
 using FreexComp.Designer.Surface;
 using FreexComp.Designer.Text;
@@ -458,4 +459,153 @@ public sealed class MenuDesignerTests
         Assert.Contains("    FileExit: TMenuItem;", s.Code, StringComparison.Ordinal);
         Assert.Contains("procedure TMainForm.FileExitClick(Sender: TObject);", s.Code, StringComparison.Ordinal);
     }
+
+    // ---- Phase 8, F05-086 (docs/spec/designer/phase8/menu-designer-collection-editors.md) ---------------------------
+
+    /// <summary>New Item — or New Sub-Item of the selected item — with that caption; the item (its name follows the caption).</summary>
+    private static FormObject Add(MenuDesignerViewModel md, string caption, bool sub = false)
+    {
+        if (sub)
+        {
+            md.NewSubItem();
+        }
+        else
+        {
+            md.NewItem();
+        }
+
+        md.CaptionText = caption;
+        Assert.True(md.CommitCaption());
+        return md.Selected!;
+    }
+
+    /// <summary>
+    /// D-155, card F05-086 acceptance 3 (DSG-SUR-251, 252): two items with the same access key in one level give exactly one
+    /// warning; a third joins it; another level is unrelated; the current warning follows the selection.
+    /// </summary>
+    [Fact(Timeout = 30000)]
+    [Trait("Phase", "8")]
+    [Trait("Req", "DSG-SUR-251")]
+    [Trait("Req", "DSG-SUR-252")]
+    public Task DuplicateAcceleratorWarnsOnce() => TestUiThread.RunAsync(DuplicateAcceleratorWarnsOnceOnUiThread);
+
+    private static async Task DuplicateAcceleratorWarnsOnceOnUiThread()
+    {
+        var s = await OpenAsync();
+        await s.DesignAsync(md =>
+        {
+            Assert.Empty(md.Warnings);
+            Assert.Null(md.CurrentWarning);
+            Assert.Equal("", md.WarningText);
+
+            // &Open… and C&opy under File: exactly one warning (parent File, key O, both items in level order).
+            var file = Add(md, "&File");
+            var open = Add(md, "&Open…", sub: true);
+            Assert.Empty(md.Warnings);
+            var copy = Add(md, "C&opy && Paste"); // lower case: one key with the upper case O; "&&" is a literal ampersand
+            var warning = Assert.Single(md.Warnings);
+            Assert.Same(file, warning.Parent);
+            Assert.Equal('O', warning.Key);
+            Assert.Equal([open, copy], warning.Items);
+            Assert.Equal("O is the access key of more than one item in File: Open…, Copy & Paste.", warning.Text);
+            Assert.Same(warning, md.CurrentWarning);
+            Assert.Equal(warning.Text, md.WarningText); // one warning: no suffix
+            Assert.Null(md.Nodes[0].Warning); // the mark is on the items of the warning only
+            Assert.All(md.Nodes[0].Children, n => Assert.Equal(warning.Text, n.Warning));
+
+            // A third item with that key joins the warning: still one.
+            var options = Add(md, "&Options");
+            warning = Assert.Single(md.Warnings);
+            Assert.Equal([open, copy, options], warning.Items);
+            Assert.Equal("O is the access key of more than one item in File: Open…, Copy & Paste, Options.", md.WarningText);
+
+            // Items with stored Visible = False or Enabled = False count like any other (both may change at run time).
+            Assert.True(s.Designer.Surface!.Commit(UndoTitles.Property,
+                [new SetProperty(open.Name, "Visible", new IdentValue("False")), new SetProperty(copy.Name, "Enabled", new IdentValue("False"))]));
+            Assert.Equal([open, copy, options], Assert.Single(md.Warnings).Items);
+
+            // The same key in another level is unrelated — until that level has a second item with it.
+            md.Select(file);
+            var edit = Add(md, "&Edit");
+            var obj = Add(md, "&Object", sub: true);
+            Assert.Single(md.Warnings);
+            Assert.Null(md.Nodes[1].Children[0].Warning);
+            var show = Add(md, "Sh&ow");
+            Assert.Equal(2, md.Warnings.Count);
+            Assert.Equal([file, edit], md.Warnings.Select(w => w.Parent)); // the levels in tree pre-order
+            Assert.Equal([obj, show], md.Warnings[1].Items);
+
+            // The current warning is the one the selected item takes part in, else the first; "(+1 more)" for the other.
+            Assert.Same(show, md.Selected);
+            Assert.Same(md.Warnings[1], md.CurrentWarning);
+            Assert.Equal("O is the access key of more than one item in Edit: Object, Show. (+1 more)", md.WarningText);
+            md.Select(open);
+            Assert.Same(md.Warnings[0], md.CurrentWarning);
+            Assert.Equal("O is the access key of more than one item in File: Open…, Copy & Paste, Options. (+1 more)", md.WarningText);
+            md.Select(edit); // takes part in none: the first of the list
+            Assert.Same(md.Warnings[0], md.CurrentWarning);
+
+            // The top level names the menu component; it comes first in the list. Separators have no key.
+            var format = Add(md, "&Format");
+            md.NewSeparator();
+            md.NewSeparator();
+            Assert.Equal(3, md.Warnings.Count);
+            Assert.Same(md.Menu, md.Warnings[0].Parent);
+            Assert.Equal([file, format], md.Warnings[0].Items);
+            md.Select(format);
+            Assert.Equal("F is the access key of more than one item in MainMenu1: File, Format. (+2 more)", md.WarningText);
+
+            // A parent without a caption is named by its component name.
+            md.NewItem();
+            var plain = md.Selected!;
+            Add(md, "&Zoom In", sub: true);
+            Add(md, "&Zoom Out");
+            Assert.Equal($"Z is the access key of more than one item in {plain.Name}: Zoom In, Zoom Out. (+3 more)", md.WarningText);
+
+            // Changing a caption clears the warning; Undo brings it back.
+            md.Select(format);
+            md.CaptionText = "Fo&rmat";
+            Assert.True(md.CommitCaption());
+            Assert.Equal(3, md.Warnings.Count);
+            Assert.DoesNotContain(md.Warnings, w => ReferenceEquals(w.Parent, md.Menu));
+            Assert.Null(md.Nodes.Single(n => ReferenceEquals(n.Item, format)).Warning);
+            s.Undo();
+            Assert.Equal(4, md.Warnings.Count);
+            Assert.Same(md.Menu, md.Warnings[0].Parent);
+            Assert.NotNull(md.Nodes.Single(n => n.Name == format.Name).Warning);
+            return Task.CompletedTask;
+        });
+
+        // The list is computed when the dialog opens: the first top-level item is selected and takes part in the first warning.
+        await s.DesignAsync(md =>
+        {
+            Assert.Equal(4, md.Warnings.Count);
+            Assert.Equal("F is the access key of more than one item in MainMenu1: File, Format. (+3 more)", md.WarningText);
+            return Task.CompletedTask;
+        });
+
+        // Advisory only: nothing of it is stored in the form.
+        Assert.DoesNotContain("access key", s.FormText, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>D-155 (DSG-SUR-250): the access key of a caption — the first marked character, upper case; a doubled ampersand is a literal one.</summary>
+    [Theory]
+    [Trait("Phase", "8")]
+    [Trait("Req", "DSG-SUR-250")]
+    [InlineData("&File", "F")]
+    [InlineData("Fi&le", "L")]
+    [InlineData("&&File", "")]
+    [InlineData("A&&B &C", "C")]
+    [InlineData("&A &B", "A")]
+    [InlineData("End&", "")]
+    [InlineData("&1 Recent", "1")]
+    [InlineData("", "")]
+    [InlineData("-", "")]
+    [InlineData("&é", "É")]
+    [InlineData("&&&Save", "S")]
+    [InlineData("Plain", "")]
+    [InlineData("&", "")]
+    [InlineData("&&", "")]
+    public void AccessKeyOfCaption(string caption, string expected) =>
+        Assert.Equal(expected, MenuDesignerViewModel.AccessKey(caption)?.ToString() ?? "");
 }

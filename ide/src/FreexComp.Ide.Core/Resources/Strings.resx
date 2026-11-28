@@ -1088,6 +1088,14 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   <data name="Msg_MenuDesigner_DeleteWithSubItems" xml:space="preserve">
     <value>Delete "{0}" and its {1} sub-items?</value>
   </data>
+  <data name="Msg_MenuDesigner_DuplicateAccessKey" xml:space="preserve">
+    <value>{0} is the access key of more than one item in {1}: {2}.</value>
+    <comment>DSG-SUR-252; 0 = key, 1 = plain caption of the parent or the menu's name, 2 = plain captions joined with ", "</comment>
+  </data>
+  <data name="Msg_MenuDesigner_MoreWarnings" xml:space="preserve">
+    <value> (+{0} more)</value>
+    <comment>DSG-SUR-252; suffix of the warning line (one leading space); 0 = number of further warnings</comment>
+  </data>
   <data name="Msg_Designer_AlignedCannotMove" xml:space="preserve">
     <value>{0} is docked by its Align property and cannot be moved</value>
   </data>
@@ -5546,6 +5554,10 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   <data name="MenuDesigner_Grid" xml:space="preserve">
     <value>Properties of the selected item:</value>
     <comment>dialogs.md §26 Dialog.MenuDesigner.Grid label</comment>
+  </data>
+  <data name="MenuDesigner_DuplicateAccessKeySuffix" xml:space="preserve">
+    <value>, duplicate access key</value>
+    <comment>UI-DLG-340: end of the automation name of a node that carries the warning mark</comment>
   </data>
   <data name="ChildListEditor_Title" xml:space="preserve">
     <value>Edit {0}</value>

@@ -24,6 +24,8 @@ public class DialogWindow : Window
         AvaloniaProperty.RegisterAttached<DialogWindow, ListBox, bool>("KeepsEnter");
 
     private readonly Control _body;
+    private readonly Grid _strip = new();
+    private readonly StackPanel _stripRight = new() { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
 
     public static bool GetKeepsEnter(ListBox list) => list.GetValue(KeepsEnterProperty);
 
@@ -108,6 +110,19 @@ public class DialogWindow : Window
             Height = Math.Min(Height, maxHeight);
     }
 
+    /// <summary>
+    /// A line of information on the button strip (UI-DLG-003), left of the right-aligned buttons: it gets the width they
+    /// leave and is cut there, so the strip keeps its height. For a dialog without auxiliary buttons on the left.
+    /// </summary>
+    protected void SetStripInfo(Control info)
+    {
+        ArgumentNullException.ThrowIfNull(info);
+        _strip.ColumnDefinitions = new ColumnDefinitions("*,Auto");
+        Grid.SetColumn(_stripRight, 1);
+        info.HorizontalAlignment = HorizontalAlignment.Left;
+        _strip.Children.Add(info);
+    }
+
     /// <summary>AutomationId of a strip button: <c>Dialog.&lt;Name&gt;.&lt;Id&gt;</c>.</summary>
     protected virtual string ButtonAutomationId(DialogButtonViewModel button) => AutomationIds.DialogField(Model.Name, button.Id);
 
@@ -124,7 +139,7 @@ public class DialogWindow : Window
     private Control CreateButtonStrip()
     {
         var left = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Left };
-        var right = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+        var right = _stripRight;
         left.Bind(StackPanel.SpacingProperty, left.GetResourceObservable("FxcSpace4"));
         right.Bind(StackPanel.SpacingProperty, right.GetResourceObservable("FxcSpace4"));
         foreach (var button in Model.Buttons)
@@ -132,7 +147,7 @@ public class DialogWindow : Window
             (button.IsAuxiliary ? left : right).Children.Add(CreateButton(button));
         }
 
-        var grid = new Grid();
+        var grid = _strip;
         grid.Children.Add(left);
         grid.Children.Add(right);
         var strip = new Border { BorderThickness = new Thickness(0, 1, 0, 0), Child = grid };
