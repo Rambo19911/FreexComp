@@ -11,27 +11,77 @@ namespace FreexComp.Ide.Platform.Windows;
 
 /// <summary>
 /// IDE-P3-087: the IDE executable in console-host mode,
-/// <c>FreexComp.exe --console-host --pipe &lt;name&gt; --cwd &lt;dir&gt; -- &lt;exe&gt; &lt;arguments&gt;</c> (handled in
+/// <c>FreexComp.exe --console-host --pipe &lt;name&gt; [--title &lt;text&gt;] --cwd &lt;dir&gt; -- &lt;exe&gt; &lt;arguments&gt;</c> (handled in
 /// <c>Program.Main</c> before any UI or service exists). It owns a console window, runs the program in it, reports
 /// <c>started &lt;pid&gt;</c> and <c>exited &lt;code&gt;</c> over the IDE's named pipe, then waits for one key press and exits with
 /// the program's code. The program's command line is the raw tail after <c>--</c>, so its arguments stay verbatim.
+/// <para>
+/// IDE-P3-098 (F14-047): <c>--title</c> sets the console's title (default: the file name of the program); before it starts
+/// the program the host turns Ctrl+C handling back on for itself (<c>SetConsoleCtrlHandler(NULL, FALSE)</c>), so the program
+/// does not inherit a turned-off Ctrl+C from the way the IDE was started. The host itself still survives Ctrl+C and Ctrl+Break.
+/// </para>
 /// </summary>
 public static class ConsoleHost
 {
     public const string Option = "--console-host";
     public const string PipeOption = "--pipe";
     public const string CwdOption = "--cwd";
+    public const string TitleOption = "--title";
     private const string Separator = "--";
     private const int UsageError = 2;
 
     /// <summary>
-    /// The host's command line (built by <see cref="WindowsProcessLauncher"/>; parsed back by <see cref="Run"/>).
+    /// The host's command line (built by <see cref="WindowsProcessLauncher"/>; parsed back by <see cref="Parse"/>).
     /// <paramref name="prefix"/> = what goes before <see cref="Option"/> (the quoted IDE assembly when the IDE runs under the
-    /// <c>dotnet</c> host, otherwise empty).
+    /// <c>dotnet</c> host, otherwise empty); <paramref name="title"/> null = no <see cref="TitleOption"/> (IDE-P3-098).
     /// </summary>
-    public static string CommandLine(string hostPath, string prefix, string pipe, string workingDirectory, string fileName, string arguments) =>
-        Quote(hostPath) + (prefix.Length > 0 ? " " + prefix : "") + $" {Option} {PipeOption} {pipe} {CwdOption} {Quote(workingDirectory)} {Separator} "
+    public static string CommandLine(string hostPath, string prefix, string pipe, string workingDirectory, string fileName, string arguments,
+        string? title = null) =>
+        Quote(hostPath) + (prefix.Length > 0 ? " " + prefix : "") + $" {Option} {PipeOption} {pipe}"
+        + (title is null ? "" : $" {TitleOption} {Quote(title)}") + $" {CwdOption} {Quote(workingDirectory)} {Separator} "
         + Quote(fileName) + (arguments.Length > 0 ? " " + arguments : "");
+
+    /// <summary>What <see cref="Run"/> reads from its command line (<see cref="Parse"/>).</summary>
+    /// <param name="Pipe">The IDE's pipe.</param>
+    /// <param name="Title">The console's title; null = the file name of <paramref name="FileName"/>.</param>
+    /// <param name="WorkingDirectory">The program's directory.</param>
+    /// <param name="FileName">The program.</param>
+    /// <param name="CommandText">The program's command line: the raw text after <c> -- </c> (its quoted file name and arguments, verbatim).</param>
+    public sealed record Options(string Pipe, string? Title, string WorkingDirectory, string FileName, string CommandText);
+
+    /// <summary>
+    /// The options of host mode: <paramref name="args"/> = the process arguments (first one <see cref="Option"/>),
+    /// <paramref name="commandLine"/> = the raw command line the tail is cut from. Null when one is missing.
+    /// </summary>
+    public static Options? Parse(IReadOnlyList<string> args, string commandLine)
+    {
+        ArgumentNullException.ThrowIfNull(args);
+        ArgumentNullException.ThrowIfNull(commandLine);
+        string? pipe = null, cwd = null, title = null;
+        var separator = -1;
+        for (var i = 0; i < args.Count; i++)
+        {
+            if (args[i] == Separator)
+            {
+                separator = i;
+                break;
+            }
+
+            if (i + 1 >= args.Count)
+                break;
+            if (args[i] == PipeOption)
+                pipe = args[++i];
+            else if (args[i] == CwdOption)
+                cwd = args[++i];
+            else if (args[i] == TitleOption)
+                title = args[++i];
+        }
+
+        var tail = Tail(commandLine);
+        if (pipe is null || cwd is null || tail is null || separator < 0 || separator + 1 >= args.Count)
+            return null;
+        return new Options(pipe, title, cwd, args[separator + 1], tail);
+    }
 
     /// <summary>A path quoted for the Windows command-line rules (a trailing backslash is doubled before the quote).</summary>
     public static string Quote(string path)
@@ -61,23 +111,12 @@ public static class ConsoleHost
     public static int Run(string[] args)
     {
         ArgumentNullException.ThrowIfNull(args);
-        string? pipe = null, cwd = null;
-        for (var i = 0; i + 1 < args.Length && args[i] != Separator; i++)
-        {
-            if (args[i] == PipeOption)
-                pipe = args[++i];
-            else if (args[i] == CwdOption)
-                cwd = args[++i];
-        }
-
-        var tail = Tail(Marshal.PtrToStringUni(Native.GetCommandLineW()) ?? "");
-        var separator = Array.IndexOf(args, Separator);
-        if (pipe is null || cwd is null || tail is null || separator < 0 || separator + 1 >= args.Length)
+        if (Parse(args, Marshal.PtrToStringUni(Native.GetCommandLineW()) ?? "") is not { } options)
             return UsageError;
-        var exe = args[separator + 1];
+        var (pipe, title, cwd, exe, tail) = options;
 
         Native.AllocConsole(); // fails only when a console exists already: it is used then
-        Native.SetConsoleTitleW(Path.GetFileName(exe));
+        Native.SetConsoleTitleW(title ?? Path.GetFileName(exe));
         using var interrupt = PosixSignalRegistration.Create(PosixSignal.SIGINT, c => c.Cancel = true); // Ctrl+C ends the program, not the host
         using var breakKey = PosixSignalRegistration.Create(PosixSignal.SIGQUIT, c => c.Cancel = true);
 
@@ -94,6 +133,7 @@ public static class ConsoleHost
             }
 
             var report = new StreamWriter(client, new UTF8Encoding(false)) { AutoFlush = true, NewLine = "\n" };
+            Native.SetConsoleCtrlHandler(IntPtr.Zero, false); // IDE-P3-098 (c): the program inherits Ctrl+C turned on
             if (!TryStart(exe, tail, cwd, out var process, out var processId, out var error))
             {
                 // Nothing ran: the pipe closes without "exited" (IDE-P3-088 Terminated); the window shows why.
@@ -221,6 +261,10 @@ public static class ConsoleHost
 
         [DllImport("kernel32.dll", SetLastError = true, ExactSpelling = true)]
         public static extern IntPtr GetStdHandle(int which);
+
+        [DllImport("kernel32.dll", SetLastError = true, ExactSpelling = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool SetConsoleCtrlHandler(IntPtr handler, [MarshalAs(UnmanagedType.Bool)] bool add);
 
         [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode, ExactSpelling = true)]
         [return: MarshalAs(UnmanagedType.Bool)]

@@ -15,6 +15,8 @@ namespace FreexComp.Ide.TestHelper;
 /// partial line), reads stdin to its end, exits with code 3.</item>
 /// <item><c>--exit-with &lt;code&gt;</c>: prints <see cref="ChildGreeting"/> to its console and exits with that code.</item>
 /// <item><c>--console-key &lt;pid&gt; &lt;file&gt;</c>: see <see cref="ConsoleKeyHelper"/> (I-138).</item>
+/// <item><c>--console-type &lt;pid&gt; &lt;file&gt;</c>, <c>--console-ctrl-c &lt;pid&gt;</c>, <c>--read-line …</c>: see
+/// <see cref="ConsoleInputHelper"/> (I-393).</item>
 /// <item><c>--peek-handle &lt;value&gt;</c>: prints <see cref="Inherited"/> when handle <c>value</c> is a pipe holding
 /// <see cref="PipeMarker"/>, otherwise <see cref="NotInherited"/> (I-188).</item>
 /// <item><c>--flood &lt;chars&gt;</c>: writes that many <c>o</c> to stdout and, at the same time, that many <c>e</c> to
@@ -29,6 +31,9 @@ public static class HelperProgram
     public const string WriteBoth = "--write-both";
     public const string ExitWith = "--exit-with";
     public const string ConsoleKey = "--console-key";
+    public const string ConsoleType = "--console-type";
+    public const string ConsoleCtrlC = "--console-ctrl-c";
+    public const string ReadLine = "--read-line";
     public const string PeekHandle = "--peek-handle";
     public const string Flood = "--flood";
     public const string ChildGreeting = "child says hello";
@@ -71,6 +76,12 @@ public static class HelperProgram
                 return int.Parse(rest[0], CultureInfo.InvariantCulture);
             case ConsoleKey:
                 return ConsoleKeyHelper.Run(int.Parse(rest[0], CultureInfo.InvariantCulture), rest[1]);
+            case ConsoleType:
+                return ConsoleInputHelper.Type(int.Parse(rest[0], CultureInfo.InvariantCulture), rest[1]);
+            case ConsoleCtrlC:
+                return ConsoleInputHelper.CtrlC(int.Parse(rest[0], CultureInfo.InvariantCulture));
+            case ReadLine:
+                return ConsoleInputHelper.ReadLine(rest);
             case PeekHandle:
                 Console.Out.WriteLine(PeekMarker(long.Parse(rest[0], CultureInfo.InvariantCulture)) ? Inherited : NotInherited);
                 Console.Out.Flush();

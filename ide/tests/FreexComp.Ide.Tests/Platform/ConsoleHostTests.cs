@@ -1,5 +1,8 @@
 using System.Diagnostics;
 using System.Globalization;
+using System.Runtime.InteropServices;
+using FreexComp.Ide.Core.Build;
+using FreexComp.Ide.Core.Debugging;
 using FreexComp.Ide.Core.Platform;
 using FreexComp.Ide.Core.Resources;
 using FreexComp.Ide.Platform.Windows;
@@ -136,4 +139,195 @@ public sealed class ConsoleHostTests
             File.Delete(screen);
         }
     }
+
+    /// <summary>IDE-P3-098 (a): the window's title comes from <c>--title</c>; the joined arguments arrive one by one, verbatim.</summary>
+    [Fact(Timeout = TestDeadline.ProcessTestTimeout)]
+    [Trait("Phase", "8")]
+    [Trait("Req", "IDE-P3-098")]
+    public async Task TitleOption_SetsTheWindowTitle_ArgumentsArriveVerbatim()
+    {
+        var deadline = CurrentTest.Deadline;
+        using var ready = ReadyEvent(out var name);
+        using var process = StartHost(CommandLine.Join([HelperProgram.ReadLine, ConsoleInputHelper.SignalOption, name, "a b", "c\"d", ""]), "Demo.exe");
+        using var host = Process.GetProcessById(process.ProcessId);
+        _ = host.SafeHandle;
+        await Step(Signaled(ready), "program ready", deadline); // the host has its console
+
+        await TypeAsync(process.ProcessId, "\n", deadline); // the program reads one (empty) line and ends
+        Assert.Equal(0, await ExitedAsync(process, host, deadline));
+        var lines = await ScreenAndKeyAsync(process.ProcessId, host, deadline);
+
+        Assert.Equal(ConsoleKeyHelper.TitlePrefix + "Demo.exe", lines[0]);
+        Assert.Equal(["ready", "[a b]", "[c\"d]", "[]"], lines[1..5]);
+        Assert.Equal(0, host.ExitCode);
+    }
+
+    /// <summary>F14-047: a line typed into the host's console (helper <c>--console-type</c>) is what the program reads.</summary>
+    [Fact(Timeout = TestDeadline.ProcessTestTimeout)]
+    [Trait("Phase", "8")]
+    [Trait("Req", "IDE-P3-098")]
+    public async Task TypedLineReachesTheProgram()
+    {
+        var deadline = CurrentTest.Deadline;
+        using var ready = ReadyEvent(out var name);
+        using var process = StartHost(CommandLine.Join([HelperProgram.ReadLine, ConsoleInputHelper.SignalOption, name]), title: null);
+        using var host = Process.GetProcessById(process.ProcessId);
+        _ = host.SafeHandle;
+        await Step(Signaled(ready), "program ready", deadline);
+
+        await TypeAsync(process.ProcessId, "Grüße ✓\n", deadline);
+        Assert.Equal(0, await ExitedAsync(process, host, deadline));
+        var lines = await ScreenAndKeyAsync(process.ProcessId, host, deadline);
+
+        Assert.Equal(ConsoleKeyHelper.TitlePrefix + Path.GetFileName(HelperProgram.ExecutablePath), lines[0]); // no --title: the file name
+        Assert.Contains("got: Grüße ✓", lines);
+    }
+
+    /// <summary>
+    /// IDE-P3-098 (c): the IDE was started with Ctrl+C turned off (the test process turns it off while it starts the host, as
+    /// a parent with <c>CREATE_NEW_PROCESS_GROUP</c> would); the host turns it back on for the program, so Ctrl+C in the
+    /// console ends the program with the system's code while the host survives and waits at its prompt.
+    /// </summary>
+    [Fact(Timeout = TestDeadline.ProcessTestTimeout)]
+    [Trait("Phase", "8")]
+    [Trait("Req", "IDE-P3-098")]
+    public async Task CtrlC_EndsTheProgram_HostStaysAtThePrompt()
+    {
+        const int controlCExit = -1073741510; // 0xC000013A
+        var deadline = CurrentTest.Deadline;
+        using var ready = ReadyEvent(out var name);
+        IRunningProcess process;
+        lock (WindowsProcessLauncher.CreateGate) // no other process start of this test run inherits the turned-off Ctrl+C
+        {
+            Assert.True(SetConsoleCtrlHandler(IntPtr.Zero, true));
+            try
+            {
+                process = StartHost(CommandLine.Join([HelperProgram.ReadLine, ConsoleInputHelper.SignalOption, name]), title: null);
+            }
+            finally
+            {
+                SetConsoleCtrlHandler(IntPtr.Zero, false);
+            }
+        }
+
+        using (process)
+        {
+            using var host = Process.GetProcessById(process.ProcessId);
+            _ = host.SafeHandle;
+            await Step(Signaled(ready), "program ready", deadline);
+
+            await RunHelperAsync(string.Create(CultureInfo.InvariantCulture, $"{HelperProgram.ConsoleCtrlC} {process.ProcessId}"), "Ctrl+C helper", deadline);
+            Assert.Equal(controlCExit, await ExitedAsync(process, host, deadline));
+            Assert.False(host.HasExited);
+
+            var lines = await ScreenAndKeyAsync(process.ProcessId, host, deadline);
+            Assert.Equal(string.Format(CultureInfo.CurrentCulture, Strings.Msg_Run_PressAnyKey, RunService.FormatExitCode(controlCExit)), lines[^1]);
+            Assert.Equal(controlCExit, host.ExitCode);
+        }
+    }
+
+    /// <summary>IDE-P3-098 (a): the command line with <c>--title</c> parses back into the same options; without it the title is null.</summary>
+    [Fact(Timeout = TestDeadline.ProcessTestTimeout)]
+    [Trait("Phase", "8")]
+    [Trait("Req", "IDE-P3-098")]
+    public async Task CommandLine_WithTitle_ParsesBack()
+    {
+        await Task.Yield();
+        const string tail = "\"C:\\work\\Demo.exe\" \"a b\" c\\\"d \"\"";
+        foreach (var title in new string?[] { "Demo (1).exe", @"odd\", null })
+        {
+            var line = ConsoleHost.CommandLine(@"C:\Program Files\FreexComp\FreexComp.exe", "", "FreexComp.Run.12.3", @"C:\work dir\", @"C:\work\Demo.exe",
+                "\"a b\" c\\\"d \"\"", title);
+            var args = DebugService.SplitArguments(line).Skip(1).ToArray(); // what the runtime gives Main: without the executable
+
+            var options = ConsoleHost.Parse(args, line);
+
+            Assert.Equal(new ConsoleHost.Options("FreexComp.Run.12.3", title, @"C:\work dir\", @"C:\work\Demo.exe", tail), options);
+            Assert.Equal(title is not null, line.Contains(ConsoleHost.TitleOption, StringComparison.Ordinal));
+        }
+
+        Assert.Equal(ConsoleHost.CommandLine("h", "", "p", "c", "f", "x"), ConsoleHost.CommandLine("h", "", "p", "c", "f", "x", null)); // Run Without Debugging: unchanged
+    }
+
+    private static IRunningProcess StartHost(string helperArguments, string? title) =>
+        new WindowsProcessLauncher(new ManualClock(), IdeExecutable).Start(
+            new ProcessStartRequest(HelperProgram.ExecutablePath, helperArguments, Path.GetTempPath()) { Capture = false, ConsoleHost = true, ConsoleTitle = title },
+            _ => throw new InvalidOperationException("Nothing is captured in host mode."));
+
+    private static async Task<int> ExitedAsync(IRunningProcess process, Process host, TestDeadline deadline)
+    {
+        try
+        {
+            return await Step(process.Exited, "exited report", deadline);
+        }
+        catch (TimeoutException e)
+        {
+            throw new TimeoutException(e.Message + "; " + await SnapshotAsync(host, deadline), e);
+        }
+    }
+
+    /// <summary>Types <paramref name="text"/> into the console of <paramref name="processId"/> (helper <c>--console-type</c>).</summary>
+    private static async Task TypeAsync(int processId, string text, TestDeadline deadline)
+    {
+        var file = Path.Combine(Path.GetTempPath(), "freexcomp-type-" + Guid.NewGuid().ToString("N") + ".txt");
+        try
+        {
+            await File.WriteAllTextAsync(file, text, new System.Text.UTF8Encoding(false), deadline.Token);
+            await RunHelperAsync(string.Create(CultureInfo.InvariantCulture, $"{HelperProgram.ConsoleType} {processId} \"{file}\""), "type helper", deadline);
+        }
+        finally
+        {
+            File.Delete(file);
+        }
+    }
+
+    /// <summary>The title and screen of the host's console (helper <c>--console-key</c>), then a key: the host exits.</summary>
+    private static async Task<string[]> ScreenAndKeyAsync(int processId, Process host, TestDeadline deadline)
+    {
+        var screen = Path.Combine(Path.GetTempPath(), "freexcomp-console-" + Guid.NewGuid().ToString("N") + ".txt");
+        try
+        {
+            await RunHelperAsync(string.Create(CultureInfo.InvariantCulture, $"{HelperProgram.ConsoleKey} {processId} \"{screen}\""), "key helper", deadline);
+            await Step(host.WaitForExitAsync(deadline.Token), "host exit after key", deadline);
+            return await File.ReadAllLinesAsync(screen, deadline.Token);
+        }
+        finally
+        {
+            File.Delete(screen);
+        }
+    }
+
+    private static async Task RunHelperAsync(string mode, string step, TestDeadline deadline)
+    {
+        var (helper, arguments) = ProcessHelper.Command(mode);
+        using var child = Process.Start(new ProcessStartInfo(helper, arguments) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardError = true })!;
+        var errors = ChildProcessOutput.Read(child).StandardError; // I-262: a dedicated thread, not the pool
+        await Step(child.WaitForExitAsync(deadline.Token), step, deadline);
+        Assert.True(child.ExitCode == 0, $"{step} exit code {child.ExitCode}: {await errors}");
+    }
+
+    /// <summary>The event a <c>--read-line --signal</c> program sets once it runs (and with it the host's console exists).</summary>
+    private static EventWaitHandle ReadyEvent(out string name)
+    {
+        name = @"Local\FreexComp.Test.Ready." + Guid.NewGuid().ToString("N");
+        return new EventWaitHandle(false, EventResetMode.ManualReset, name);
+    }
+
+    private static async Task Signaled(WaitHandle handle)
+    {
+        var done = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var registration = ThreadPool.RegisterWaitForSingleObject(handle, (_, _) => done.TrySetResult(), null, Timeout.Infinite, executeOnlyOnce: true);
+        try
+        {
+            await done.Task;
+        }
+        finally
+        {
+            registration.Unregister(null);
+        }
+    }
+
+    [DllImport("kernel32.dll", SetLastError = true, ExactSpelling = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetConsoleCtrlHandler(IntPtr handler, [MarshalAs(UnmanagedType.Bool)] bool add);
 }

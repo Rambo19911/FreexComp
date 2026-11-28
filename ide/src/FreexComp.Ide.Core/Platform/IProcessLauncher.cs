@@ -21,6 +21,12 @@ public sealed record ProcessStartRequest(string FileName, string Arguments, stri
     /// breaks before that.
     /// </summary>
     public bool ConsoleHost { get; init; }
+
+    /// <summary>
+    /// IDE-P3-098: the console window's title (the host's <c>--title</c> option), used only with <see cref="ConsoleHost"/>;
+    /// null = the file name of <see cref="FileName"/>.
+    /// </summary>
+    public string? ConsoleTitle { get; init; }
 }
 
 /// <summary>One captured output line of a program (IDE-P3-073): stderr lines have <see cref="IsError"/>.</summary>

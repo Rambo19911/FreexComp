@@ -107,7 +107,8 @@ public sealed class WindowsProcessLauncher(IClock clock, string? consoleHostPath
             hostPipe = new NamedPipeServerStream(name, PipeDirection.In, 1, PipeTransmissionMode.Byte,
                 PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
             applicationName = host;
-            commandText = ConsoleHost.CommandLine(host, prefix, name, request.WorkingDirectory, request.FileName, request.Arguments);
+            commandText = ConsoleHost.CommandLine(host, prefix, name, request.WorkingDirectory, request.FileName, request.Arguments,
+                request.ConsoleTitle);
         }
 
         var job = Native.CreateJobObjectW(IntPtr.Zero, null);
