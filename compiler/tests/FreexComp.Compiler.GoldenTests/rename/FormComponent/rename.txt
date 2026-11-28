@@ -1,0 +1,3 @@
+file: UMain.pas
+at: Button1: TButton
+name: OkButton

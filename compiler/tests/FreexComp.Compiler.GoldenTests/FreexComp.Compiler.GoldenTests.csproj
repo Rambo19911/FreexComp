@@ -6,5 +6,6 @@
     <Compile Include="..\Shared\NativeRun.cs" Link="Shared\NativeRun.cs" />
     <Compile Include="..\Shared\DllScenario.cs" Link="Shared\DllScenario.cs" />
     <ProjectReference Include="..\..\src\opc\opc.csproj" />
+    <ProjectReference Include="..\..\src\FreexComp.LanguageService\FreexComp.LanguageService.csproj" />
   </ItemGroup>
 </Project>

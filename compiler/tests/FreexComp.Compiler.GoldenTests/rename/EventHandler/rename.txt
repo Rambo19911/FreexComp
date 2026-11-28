@@ -1,0 +1,3 @@
+file: UMain.pas
+at: Button1Click(Sender: TObject);
+name: OkClick

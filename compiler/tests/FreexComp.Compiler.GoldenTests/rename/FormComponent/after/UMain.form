@@ -1,0 +1,7 @@
+object MainForm: TMainForm
+  Caption = 'Rename'
+  object OkButton: TButton
+    Left = 8
+    OnClick = ButtonClick
+  end
+end
