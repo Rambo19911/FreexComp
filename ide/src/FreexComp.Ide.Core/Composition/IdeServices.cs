@@ -115,6 +115,9 @@ public sealed record IdeServices
     /// <summary>The refactoring engine: workspace edits applied all or nothing (IDE-REFAC-001…012, F13-003).</summary>
     public required Refactoring.IRefactoringService Refactoring { get; init; }
 
+    /// <summary>The language-service side of Rename Symbol: facts of a target and plans of new names (IDE-REFAC-041, 043; I-379).</summary>
+    public required Refactoring.RenamePlanner RenamePlanner { get; init; }
+
     /// <summary>The P3 classification layer of the open Pascal documents (I-112).</summary>
     public required CodeModel.SemanticHighlightService SemanticHighlights { get; init; }
 

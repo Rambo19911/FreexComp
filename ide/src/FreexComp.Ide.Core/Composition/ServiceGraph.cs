@@ -233,6 +233,8 @@ public static class ServiceGraph
         // IDE-REFAC-033: the code actions of the language service are quick actions. IDE-REFAC-030: the refactorings — a
         // card that delivers one registers it here; a composition may add its own.
         refactoring.Register(new Refactoring.LanguageServiceQuickActions(codeModel, platform.FileSystem));
+        // I-379: the planner of Rename Symbol; the refactoring is registered with its dialog by I-380 (refactor.rename stays a stub).
+        var renamePlanner = new Refactoring.RenamePlanner(documents, codeModel, platform.FileSystem);
         foreach (var extra in refactorings ?? [])
             refactoring.Register(extra);
         var liveDiagnostics = new CodeModel.LiveDiagnosticsService(documents, codeModel, settings, platform.Clock, platform.Dispatcher); // I-111
@@ -508,6 +510,7 @@ public static class ServiceGraph
             ProjectManager = projectManager,
             CodeModel = codeModel,
             Refactoring = refactoring,
+            RenamePlanner = renamePlanner,
             SemanticHighlights = semanticHighlights,
             LiveDiagnostics = liveDiagnostics,
             Metadata = metadata,
