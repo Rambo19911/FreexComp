@@ -27,7 +27,7 @@ public enum RenameRoute
 /// Rename Symbol (IDE-REFAC-040…046; F13-001, I-379): the target at the caret is found by the language service, refused
 /// where it cannot be renamed, routed, named by <c>enterName</c> (the dialog of I-380; tests pass a function) and renamed
 /// by the engine as one operation with the plan's workspace edit; a unit name is renamed by the Project Manager after a
-/// preview in confirm mode (I-382).
+/// preview in confirm mode (I-382); a component that other form lines or forms refer to by the form designer (I-384).
 /// </summary>
 public sealed class RenameRefactoring : IRefactoring
 {
@@ -45,6 +45,7 @@ public sealed class RenameRefactoring : IRefactoring
     private readonly IToolchainLocator _toolchain;
     private readonly Func<RenameInfo, Document, int, Task<RenameDialogResult?>> _enterName;
     private readonly InlineRenameController? _inline;
+    private readonly Designer.ComponentRename? _components;
 
     /// <param name="enterName">
     /// The name entry: the facts of the target, the snapshot and the position; it plans the names it is given (with the
@@ -52,9 +53,13 @@ public sealed class RenameRefactoring : IRefactoring
     /// working text.
     /// </param>
     /// <param name="inline">The inline sessions (IDE-REFAC-050, I-381); null: a local target also takes the name entry.</param>
+    /// <param name="components">
+    /// The designer's component rename (IDE-REFAC-059, 060; I-384); null: a component is renamed by the engine like every
+    /// other target.
+    /// </param>
     public RenameRefactoring(IRefactoringService engine, RenamePlanner planner, CodeModelService codeModel, IProjectService projects,
         ILibrarySourceService library, IToolchainLocator toolchain, Func<RenameInfo, Document, int, Task<RenameDialogResult?>> enterName,
-        InlineRenameController? inline = null)
+        InlineRenameController? inline = null, Designer.ComponentRename? components = null)
     {
         ArgumentNullException.ThrowIfNull(engine);
         ArgumentNullException.ThrowIfNull(planner);
@@ -71,6 +76,7 @@ public sealed class RenameRefactoring : IRefactoring
         _toolchain = toolchain;
         _enterName = enterName;
         _inline = inline;
+        _components = components;
     }
 
     public string Id => RefactoringId;
@@ -185,7 +191,16 @@ public sealed class RenameRefactoring : IRefactoring
         var answer = await _engine.WithoutWorkingTextAsync(() => _enterName(info, source, position));
         if (answer is null)
             return null;
-        return answer.Plan.Edit ?? throw new RefactoringException(answer.Plan.Result.Error ?? "");
+        var edit = answer.Plan.Edit ?? throw new RefactoringException(answer.Plan.Result.Error ?? "");
+        if (_components is { } components && await components.DesignerFormAsync(info, answer.Plan, ct) is { } form)
+        {
+            // IDE-REFAC-060 (I-384): the form designer renames the component — forms, field and code as one designer undo
+            // unit, no preview; the engine records nothing.
+            await _engine.WithoutWorkingTextAsync(() => components.RenameFromCodeAsync(info.DeclarationPaths[0], form, info.CurrentName, answer.NewName));
+            return null;
+        }
+
+        return edit;
     }
 
     /// <summary>

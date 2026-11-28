@@ -6925,6 +6925,22 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
     <value>The file {0} is renamed to {1}. Open documents among the changed files are saved.</value>
     <comment>IDE-REFAC-058: file names</comment>
   </data>
+  <data name="Reason_Rename_FormNotLoaded" xml:space="preserve">
+    <value>The form {0} cannot be opened in the designer, so the component cannot be renamed: {1}</value>
+    <comment>IDE-REFAC-060: 0 = form file name, 1 = the reason the document gives</comment>
+  </data>
+  <data name="Reason_Rename_MetadataLoading" xml:space="preserve">
+    <value>The component descriptions are still loading.</value>
+    <comment>IDE-REFAC-060: the reason of Reason_Rename_FormNotLoaded while the component metadata loads</comment>
+  </data>
+  <data name="Msg_Rename_ThroughDesigner" xml:space="preserve">
+    <value>This component is renamed by the form designer of {0}, because other form files or properties refer to it. There is no preview.</value>
+    <comment>IDE-REFAC-059: 0 = form file name (Notes of the Rename Symbol dialog)</comment>
+  </data>
+  <data name="Msg_Rename_DesignerDone" xml:space="preserve">
+    <value>Renamed {0} to {1} in the form designer; Undo in the designer takes it back</value>
+    <comment>IDE-REFAC-060: status; 0 = old name, 1 = new name</comment>
+  </data>
   <data name="Dialog_RenameSymbol_Title" xml:space="preserve">
     <value>Rename Symbol</value>
     <comment>UI-DLG-380: title of the Rename Symbol dialog</comment>

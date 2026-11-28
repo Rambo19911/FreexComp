@@ -238,16 +238,22 @@ public static class ServiceGraph
         // A local target is renamed in place (IDE-REFAC-050, I-381).
         var renamePlanner = new Refactoring.RenamePlanner(documents, codeModel, platform.FileSystem);
         var inlineRename = new Refactoring.InlineRenameController(commands, refactoring, documents, renamePlanner, platform.Clock, status);
+        // DSG-CS-130 (I-383): a component renamed in the designer updates its references in code; IDE-REFAC-059, 060 (I-384):
+        // a component renamed from code whose forms refer to it is renamed by the designer (the dialog notes it).
+        var componentRename = new Designer.ComponentRename(documents, projects, codeModel, renamePlanner, refactoring, toolchain, platform.FileSystem);
+        documents.DesignComponentRename = componentRename;
         refactoring.Register(new Refactoring.RenameRefactoring(refactoring, renamePlanner, codeModel, projects, librarySource, toolchain,
             (info, source, position) => platform.Dialogs.ShowAsync(new RenameSymbolViewModel(info,
-                (name, overloads, ct) => renamePlanner.PlanAsync(new Refactoring.RenameRequest(source, position, info.CurrentName, name, overloads, Forms: true), ct),
+                async (name, overloads, ct) =>
+                {
+                    var plan = await renamePlanner.PlanAsync(new Refactoring.RenameRequest(source, position, info.CurrentName, name, overloads, Forms: true), ct);
+                    return plan.Edit is null ? plan : plan with { DesignerForm = await componentRename.DesignerFormAsync(info, plan, ct) };
+                },
                 platform.Clock, layout,
                 // IDE-REFAC-057 (I-382): a unit name is validated as the Project Manager validates the new file name.
                 info.Kind == FreexComp.LanguageService.CompletionItemKind.Unit && info.DeclarationPaths is [var unitFile, ..]
                     ? file => projects.ValidateRename(unitFile, file) is { Success: false } refused ? Projects.NewProjectValidation.MessageText(refused) : null
-                    : null)), inlineRename));
-        // DSG-CS-130 (I-383): a component renamed in the designer updates its references in code.
-        documents.DesignComponentRename = new Designer.ComponentRename(documents, projects, codeModel, renamePlanner, refactoring, toolchain, platform.FileSystem);
+                    : null)), inlineRename, componentRename));
         foreach (var extra in refactorings ?? [])
             refactoring.Register(extra);
         var liveDiagnostics = new CodeModel.LiveDiagnosticsService(documents, codeModel, settings, platform.Clock, platform.Dispatcher); // I-111

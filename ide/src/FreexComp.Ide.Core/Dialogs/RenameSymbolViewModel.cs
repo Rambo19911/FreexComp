@@ -184,7 +184,7 @@ public sealed class RenameSymbolViewModel : DialogViewModel<RenameDialogResult>
         private set => SetProperty(ref _summary, value);
     }
 
-    /// <summary>UI-DLG-384: the notes of a successful plan (unrenamed occurrences); null = hidden.</summary>
+    /// <summary>UI-DLG-384: the notes of a successful plan (the designer's rename of a component; unrenamed occurrences); null = hidden.</summary>
     public string? Notes
     {
         get => _notes;
@@ -308,7 +308,11 @@ public sealed class RenameSymbolViewModel : DialogViewModel<RenameDialogResult>
         {
             _planned = plan;
             Summary = SummaryText(plan);
-            Notes = null; // unrenamed occurrences arrive with the language service's report (C-452, I-385)
+            // IDE-REFAC-059 (I-384): a component the form designer renames; unrenamed occurrences arrive with the language
+            // service's report (C-452, I-385).
+            Notes = plan.DesignerForm is { } form
+                ? string.Format(CultureInfo.CurrentCulture, Strings.Msg_Rename_ThroughDesigner, Path.GetFileName(form))
+                : null;
             Rename.IsEnabled = !_committing;
             return;
         }

@@ -1309,26 +1309,9 @@ public sealed class PropertyGridViewModel : ObservableObject
         var obj = Selection[^1];
         var name = text.Trim();
         var old = obj.Name;
-        if (name.Length == 0 || name.Length > ObjectInspectorViewModel.MaxNameLength || !IsIdentifier(name))
+        if (ValidateName(designer, obj, name) is { } error)
         {
-            return Strings.Msg_Designer_NameInvalid;
-        }
-
-        if (SyntaxFacts.IsReservedWord(name))
-        {
-            return DesignerMessages.Format("Msg.Designer.NameReserved", name);
-        }
-
-        if ((designer.Model!.FindByName(name) is { } other && !ReferenceEquals(other, obj))
-            || designer.AncestorRename?.IsNameTaken(designer, obj, name) == true) // D-137: a descendant has the name
-        {
-            return DesignerMessages.Format("Msg.Designer.NameDuplicate", name);
-        }
-
-        var code = designer.CodeSync;
-        if (!Names.Equals(name, old) && code.LookupMember(name) != MemberLookup.None)
-        {
-            return DesignerMessages.Format("Msg.Designer.NameConflictsWithMember", designer.Unit.FormTypeName, name);
+            return error;
         }
 
         if (name == old)
@@ -1351,6 +1334,37 @@ public sealed class PropertyGridViewModel : ObservableObject
         }
 
         return RenameUnit(designer, obj, name, [], UndoTitles.Rename) ? null : designer.AncestorRename?.LastFailure ?? _target.FailureMessage ?? "";
+    }
+
+    /// <summary>
+    /// DSG-OI-070: why <paramref name="name"/> (trimmed) cannot be the name of <paramref name="obj"/> — not an identifier or
+    /// too long, a reserved word, the name of another component of the form or of a descendant (D-137), a member of the form
+    /// class — or null. Also the check of a component renamed from code (IDE-REFAC-060).
+    /// </summary>
+    internal static string? ValidateName(FormDesignerViewModel designer, FormObject obj, string name)
+    {
+        if (name.Length == 0 || name.Length > ObjectInspectorViewModel.MaxNameLength || !IsIdentifier(name))
+        {
+            return Strings.Msg_Designer_NameInvalid;
+        }
+
+        if (SyntaxFacts.IsReservedWord(name))
+        {
+            return DesignerMessages.Format("Msg.Designer.NameReserved", name);
+        }
+
+        if ((designer.Model!.FindByName(name) is { } other && !ReferenceEquals(other, obj))
+            || designer.AncestorRename?.IsNameTaken(designer, obj, name) == true) // D-137: a descendant has the name
+        {
+            return DesignerMessages.Format("Msg.Designer.NameDuplicate", name);
+        }
+
+        if (!Names.Equals(name, obj.Name) && designer.CodeSync.LookupMember(name) != MemberLookup.None)
+        {
+            return DesignerMessages.Format("Msg.Designer.NameConflictsWithMember", designer.Unit.FormTypeName, name);
+        }
+
+        return null;
     }
 
     /// <summary>

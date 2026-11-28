@@ -26,7 +26,7 @@ namespace FreexComp.Ide.Core.Designer;
 /// model cannot help (no unit, code sync not Ok, no project or library, the field does not bind) the rename is the
 /// declaration alone, as before (DSG-CS-045). UI thread.
 /// </summary>
-public sealed class ComponentRename
+public sealed partial class ComponentRename
 {
     private readonly IDocumentService _documents;
     private readonly IProjectService _projects;

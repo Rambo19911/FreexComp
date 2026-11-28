@@ -18,7 +18,14 @@ public sealed record RenameRequest(Document Source, int Position, string Current
 /// The plan of a <see cref="RenameRequest"/> (IDE-REFAC-043): the service's result, and on success its edits as a workspace
 /// edit titled <c>Rename 'A' to 'B'</c> (null otherwise) with the number of changes and files of the normalized edit.
 /// </summary>
-public sealed record RenamePlan(RenameResult Result, WorkspaceEdit? Edit, int EditCount, int FileCount);
+public sealed record RenamePlan(RenameResult Result, WorkspaceEdit? Edit, int EditCount, int FileCount)
+{
+    /// <summary>
+    /// IDE-REFAC-059 (I-384): the form file whose designer renames this component (the dialog's note), or null — set by the
+    /// dialog's check; the refactoring judges the chosen plan again.
+    /// </summary>
+    public string? DesignerForm { get; init; }
+}
 
 /// <summary>What the name entry of a rename answers (IDE-REFAC-042): the new name, the overload choice and its plan.</summary>
 public sealed record RenameDialogResult(string NewName, bool Overloads, RenamePlan Plan);

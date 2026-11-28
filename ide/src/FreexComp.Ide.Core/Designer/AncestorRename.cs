@@ -60,6 +60,15 @@ public sealed class AncestorRename
             return null;
         }
 
+        return (own.ClassName, FollowersOf(own));
+    }
+
+    /// <summary>
+    /// The class names of the project's documents that depend on <paramref name="own"/> (descendants, documents showing an
+    /// instance of it, any depth), each before the documents it depends on.
+    /// </summary>
+    private List<string> FollowersOf(AncestorDefinition own)
+    {
         // The rank of a document: 0 for the renamed one, else 1 + the highest rank of what it depends on (none: unaffected).
         var ranks = new Dictionary<string, int?>(Names);
         var visiting = new HashSet<string>(Names);
@@ -93,7 +102,20 @@ public sealed class AncestorRename
         }
 
         var followers = _catalog.Ancestors.All.Select(d => (d.ClassName, Rank: Rank(d))).Where(f => f.Rank > 0).ToList();
-        return (own.ClassName, [.. followers.OrderByDescending(f => f.Rank).Select(f => f.ClassName)]);
+        return [.. followers.OrderByDescending(f => f.Rank).Select(f => f.ClassName)];
+    }
+
+    /// <summary>
+    /// IDE-REFAC-059 (I-384): true when a project document follows a rename of the component <paramref name="componentName"/>
+    /// of the class <paramref name="className"/> — a descendant inherits it (D-137) or a frame instance shows it (D-139) —
+    /// so that the designer's rename changes more forms than the class's own. False when the project does not define the class.
+    /// </summary>
+    public bool HasFollowers(string className, string componentName)
+    {
+        ArgumentNullException.ThrowIfNull(className);
+        ArgumentNullException.ThrowIfNull(componentName);
+        return _catalog.Ancestors.Find(className) is { } own && FollowersOf(own).Any(follower => _catalog.Ancestors.Find(follower)?.Document is { } document
+            && Renames(document, own.ClassName, componentName, componentName).Count > 0);
     }
 
     /// <summary>True when <paramref name="definition"/> is the class <paramref name="own"/> or inherits from it.</summary>

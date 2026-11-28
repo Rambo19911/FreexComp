@@ -25,7 +25,7 @@ namespace FreexComp.Ide.Core.Tests.Refactoring;
 /// with a name entry that plans one name and answers it.
 /// </summary>
 [Trait("Phase", "8")]
-public sealed class RenameCommandTests : RefactoringTestBase
+public sealed partial class RenameCommandTests : RefactoringTestBase
 {
     private const string AForm = Dir + @"\A.form";
     private const string Lib = @"G:\ui\src\Lib.pas";
