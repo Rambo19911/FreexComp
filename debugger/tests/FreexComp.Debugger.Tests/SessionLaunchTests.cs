@@ -258,11 +258,11 @@ public sealed class SessionLaunchTests
             harness.SentArguments("launch"));
     }
 
-    /// <summary>The <c>stdio</c> value sent: stdin untouched, stdout and stderr to the session's own files (DBG-058).</summary>
+    /// <summary>The <c>stdio</c> value sent: stdin from the session's own pipe (DBG-059), stdout and stderr to its own files (DBG-058).</summary>
     private static string Stdio(SessionHarness harness)
     {
-        var (_, stdout, stderr) = SessionOutputRelayTests.StdioOf(harness);
-        return $"[null,\"{Escape(stdout)}\",\"{Escape(stderr)}\"]";
+        var (directory, stdout, stderr) = SessionOutputRelayTests.StdioOf(harness);
+        return $"[\"{Escape(SessionOutputRelayTests.StdinOf(directory))}\",\"{Escape(stdout)}\",\"{Escape(stderr)}\"]";
     }
 
     private static string Escape(string path) => path.Replace(@"\", @"\\");

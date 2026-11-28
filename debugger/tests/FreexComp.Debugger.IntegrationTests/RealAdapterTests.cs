@@ -35,8 +35,9 @@ public sealed class RealAdapterTests(IntegrationFixture fixture)
     {
         var launch = recorder.TraceSoFar.Single(e => e.Direction == DapDirection.ToAdapter && e.Json.Contains("\"command\":\"launch\"", StringComparison.Ordinal));
         var stdio = System.Text.Json.JsonDocument.Parse(launch.Json).RootElement.GetProperty("arguments").GetProperty("stdio");
-        Assert.Equal(System.Text.Json.JsonValueKind.Null, stdio[0].ValueKind);
         var directory = Path.GetDirectoryName(stdio[1].GetString())!;
+        // The program's standard input is the session's own too (DBG-059), never the adapter's.
+        Assert.Equal(@"\\.\pipe\FreexComp." + Path.GetFileName(directory) + ".in", stdio[0].GetString());
         Assert.Equal(Path.Combine(directory, "err.txt"), stdio[2].GetString());
         Assert.DoesNotContain(recorder.TraceSoFar, e => e.Direction == DapDirection.FromAdapter
             && e.Json.Contains("\"event\":\"output\"", StringComparison.Ordinal)

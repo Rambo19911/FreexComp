@@ -16,12 +16,14 @@ public sealed class SessionOutputRelayTests
     private static readonly TimeSpan Safety = SessionHarness.Safety;
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
-    /// <summary>The launch request's <c>stdio</c>: stdin untouched, stdout and stderr in a fresh directory of their own.</summary>
+    /// <summary>
+    /// The launch request's <c>stdio</c>: stdout and stderr in a fresh directory of their own, stdin the session's pipe
+    /// named after that directory - never left to the adapter, whose own standard input carries the protocol (DBG-059).
+    /// </summary>
     internal static (string Directory, string Stdout, string Stderr) StdioOf(SessionHarness harness)
     {
         var stdio = JsonDocument.Parse(harness.SentArguments("launch")).RootElement.GetProperty("stdio");
         Assert.Equal(3, stdio.GetArrayLength());
-        Assert.Equal(JsonValueKind.Null, stdio[0].ValueKind);
         var stdout = stdio[1].GetString()!;
         var stderr = stdio[2].GetString()!;
         var directory = Path.GetDirectoryName(stdout)!;
@@ -29,7 +31,39 @@ public sealed class SessionOutputRelayTests
         Assert.Equal(Path.Combine(directory, "err.txt"), stderr);
         Assert.Equal(Path.Combine(Path.GetTempPath(), "FreexComp"), Path.GetDirectoryName(directory));
         Assert.Matches(new Regex($"^dbg-{Environment.ProcessId}-[0-9]+$"), Path.GetFileName(directory));
+        Assert.Equal(StdinOf(directory), stdio[0].GetString());
         return (directory, stdout, stderr);
+    }
+
+    /// <summary>The path of the standard-input pipe that goes with an output directory.</summary>
+    internal static string StdinOf(string directory) => @"\\.\pipe\" + StdinPipeName(directory);
+
+    private static string StdinPipeName(string directory) => "FreexComp." + Path.GetFileName(directory) + ".in";
+
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "DBG-059")]
+    public async Task Stdin_IsAPipeOfTheSession_SilentUntilTheSessionEnds()
+    {
+        // G-103: what the program reads as its standard input is a pipe the session holds and never writes to. A
+        // reader - here the test, in the program's place - gets nothing while the session lasts, and the end of the
+        // input when the session ends.
+        await using var harness = SessionHarness.Create("{}");
+        await harness.LaunchAsync();
+        var name = StdinPipeName(StdioOf(harness).Directory);
+
+        using var reader = new System.IO.Pipes.NamedPipeClientStream(".", name, System.IO.Pipes.PipeDirection.In);
+        reader.Connect(Safety);
+        var received = new MemoryStream();
+        var read = DedicatedThread.Run("FreexComp.Tests.DebuggeeStdin", () => reader.CopyTo(received));
+
+        await harness.Session.TerminateAsync(Ct).WaitAsync(Safety, Ct);
+
+        await read.WaitAsync(Safety, Ct);
+        Assert.Equal(0, received.Length);
+        // The pipe is gone with the session.
+        using var late = new System.IO.Pipes.NamedPipeClientStream(".", name, System.IO.Pipes.PipeDirection.In);
+        Assert.Throws<TimeoutException>(() => late.Connect(0));
     }
 
     /// <summary>An <c>Output</c> event as the harness records it.</summary>

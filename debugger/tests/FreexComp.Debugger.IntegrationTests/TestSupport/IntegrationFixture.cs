@@ -113,7 +113,9 @@ public sealed class IntegrationFixture : IDisposable
 
         var directory = Path.Combine(_buildRoot, key);
         Directory.CreateDirectory(directory);
-        File.Copy(checkedIn, Path.Combine(directory, name + ".pas"));
+        // The program and the units beside it.
+        foreach (var source in Directory.GetFiles(Path.GetDirectoryName(checkedIn)!, "*.pas"))
+            File.Copy(source, Path.Combine(directory, Path.GetFileName(source)));
         return RunCompiler(directory, name, ".exe", debugInfo);
     }
 

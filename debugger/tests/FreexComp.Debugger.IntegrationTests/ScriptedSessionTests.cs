@@ -346,6 +346,10 @@ public sealed class ScriptedSessionTests(IntegrationFixture fixture)
             var stop = await recorder.WaitForStopAsync();
             Assert.Equal(StopReason.Pause, stop.Reason);
             Assert.Equal(DebugState.Stopped, session.State);
+            // The pause is presented on the thread that runs the loop, in the program's source - not on the thread
+            // the system injected to break in (DBG-091).
+            Assert.Equal("Paused", stop.Description);
+            Assert.Equal(program.SourcePath, stop.Location?.Path, ignoreCase: true);
 
             await session.RunToLineAsync(program.SourcePath, 9, Ct);
             stop = await recorder.WaitForStopAsync();
@@ -1436,6 +1440,94 @@ public sealed class ScriptedSessionTests(IntegrationFixture fixture)
             // All 62 bytes of the program's output, as it wrote them (the session's own relay, DBG-058).
             Assert.Equal("10 7 1048576 a\r\na\0bx\r\nyconstshort" + UText + "GrüßeTRUE\r\n", recorder.RawStdoutSoFar);
         });
+    }
+
+    /// <summary>
+    /// G-103: a pause while the program waits for a line of console input. The program's standard input is the
+    /// session's own (DBG-059) - never the adapter's, which carries the protocol - so the requests of the stop reach
+    /// the adapter: the stop is published on the thread that runs the program (DBG-091), at the program's line.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "DBG-059")]
+    [Trait("Req", "DBG-091")]
+    [Trait("Req", "DBG-235")]
+    public async Task Phase8_PauseWhileWaitingForConsoleInput_ShowsUserFrames()
+    {
+        const int ReadLine = 6;
+        var program = fixture.Build("PauseInRead");
+        var recorder = new SessionRecorder(nameof(Phase8_PauseWhileWaitingForConsoleInput_ShowsUserFrames));
+        int? debuggee = null;
+        await recorder.RunAsync(fixture, program, async session =>
+        {
+            await session.LaunchAsync(new LaunchRequest { Program = program.ExePath }, Ct);
+            debuggee = session.ProcessId;
+            // Everything the program writes; next it reads a line that never comes.
+            await recorder.WaitForStdoutAsync("started\nsum 6\n");
+
+            // The pause that finds the program inside the read: its top frames are the system's and the runtime
+            // library's, the one frame of the user's code is the program block at the read. (A pause that came
+            // between the last write and the read - the two are a few instructions apart - is simply repeated.)
+            StopInfo stop;
+            IReadOnlyList<StackFrameInfo> frames;
+            var pauses = 0;
+            while (true)
+            {
+                Assert.True(++pauses <= 20, "The program never got to its console read.");
+                await session.PauseAsync(Ct);
+                stop = await recorder.WaitForStopAsync();
+                Assert.Equal(StopReason.Pause, stop.Reason);
+                Assert.Equal("Paused", stop.Description);
+                Assert.Equal(DebugState.Stopped, session.State);
+                frames = (await session.GetStackTraceAsync(stop.ThreadId, ct: Ct)).Frames;
+                if (!frames[0].IsUserCode && frames.Count(f => f.IsUserCode) == 1 && frames.First(f => f.IsUserCode).Location!.Line == ReadLine)
+                    break;
+                await session.ContinueAsync(Ct);
+            }
+
+            for (var round = 1; ; round++)
+            {
+                // The stop is on the program's thread, not on the thread the system injected to break in.
+                AssertStop(session, stop, StopReason.Pause, program.SourcePath, ReadLine);
+                var threads = await session.GetThreadsAsync(Ct);
+                Assert.Equal(stop.ThreadId, Assert.Single(threads, t => t.IsCurrent).Id);
+                Assert.Equal(stop.ThreadId, threads[0].Id);
+                var user = Assert.Single(frames, f => f.IsUserCode);
+                Assert.Equal("PauseInRead", user.Name);
+                Assert.Equal(program.SourcePath, user.Location!.Path, ignoreCase: true);
+                Assert.Equal(ReadLine, user.Location.Line);
+                // Below the system's frames: the runtime library's read routines, with their source.
+                var library = frames.TakeWhile(f => f != user).Where(f => f.Location is not null).ToList();
+                Assert.NotEmpty(library);
+                Assert.All(library, f => Assert.EndsWith("System.pas", f.Location!.Path, StringComparison.OrdinalIgnoreCase));
+                // The program block's variables can be asked for: the frame is a frame of this stop.
+                await session.GetScopesAsync(user.Id, Ct);
+
+                await session.ContinueAsync(Ct);
+                Assert.Equal(DebugState.Running, session.State);
+                if (round == 2)
+                    break;
+
+                // A second pause works, and finds the program where it was.
+                await session.PauseAsync(Ct);
+                stop = await recorder.WaitForStopAsync();
+                Assert.Equal("Paused", stop.Description);
+                frames = (await session.GetStackTraceAsync(stop.ThreadId, ct: Ct)).Frames;
+            }
+
+            // The program still waits; nothing but Stop ends the session.
+            Assert.DoesNotContain(recorder.Events, e => e.StartsWith("Terminated(", StringComparison.Ordinal));
+            Assert.True(IsAlive(debuggee!.Value), "The debuggee ended although it was only paused and continued.");
+            Assert.Equal("started\nsum 6\n", recorder.StdoutSoFar);
+
+            await session.TerminateAsync(Ct);
+            var terminated = await recorder.WaitForTerminatedAsync();
+            Assert.Equal(TerminationCause.TerminatedByUser, terminated.Cause);
+            Assert.Equal(DebugState.Terminated, session.State);
+        });
+
+        Assert.NotNull(debuggee);
+        Assert.False(IsAlive(debuggee.Value), "The debuggee is still running.");
     }
 
     private static string Address(ulong address) => "$" + address.ToString("X16", CultureInfo.InvariantCulture);

@@ -104,16 +104,38 @@ internal sealed partial class DebugSession
         _threads = DapJson.Deserialize<ThreadsResponseBody>(await RequestAsync("threads", null, CancellationToken.None).ConfigureAwait(false)).Threads;
         _threadsAreOfThisStop = true;
 
-        // The pinned adapter reports a pause as an "exception" stop described "interrupt" on an injected break-in
-        // thread; the public thread is then the first real thread (DBG-091).
+        // The pinned adapter reports a pause as an "exception" stop on the thread the system injects to break in; the
+        // public thread is then the first real thread (DBG-091). With its separate debug server the stop is
+        // described "interrupt".
         var isInterrupt = body.Reason == "exception" && string.Equals(body.Description, "interrupt", StringComparison.OrdinalIgnoreCase);
         var threadId = isInterrupt
             ? _threads.FirstOrDefault(t => t.Id != body.ThreadId)?.Id ?? body.ThreadId ?? 0
             : body.ThreadId ?? _threads.FirstOrDefault()?.Id ?? 0;   // DBG-071
 
-        var response = DapJson.Deserialize<StackTraceResponseBody>(await RequestAsync(
-            "stackTrace", new StackTraceArguments(threadId, 0, StopFrameCount), CancellationToken.None).ConfigureAwait(false));
-        var frames = response.StackFrames.Select((frame, index) => MapFrame(frame, index, register: false)).ToList();
+        async Task<(StackTraceResponseBody Response, List<StackFrameInfo> Frames)> StackOfAsync(int thread)
+        {
+            var stack = DapJson.Deserialize<StackTraceResponseBody>(await RequestAsync(
+                "stackTrace", new StackTraceArguments(thread, 0, StopFrameCount), CancellationToken.None).ConfigureAwait(false));
+            return (stack, stack.StackFrames.Select((frame, index) => MapFrame(frame, index, register: false)).ToList());
+        }
+
+        var (response, frames) = await StackOfAsync(threadId).ConfigureAwait(false);
+
+        // Debugging the program itself (as the session starts the adapter), the adapter reports the break-in as what
+        // it is to the system: a breakpoint exception, on the injected thread - whose stack has no code of the user.
+        // While the user's pause is outstanding that stop is the pause, not a breakpoint instruction in the program
+        // (DBG-249): the public thread is the first real thread, and the stack is that thread's.
+        if (!isInterrupt && _pauseRequested && body.Reason == "exception" && !frames.Exists(frame => frame.IsUserCode)
+            && ExceptionMonitor.ParseCode(body.Description, body.Text) == ExceptionMonitor.BreakpointCode)
+        {
+            isInterrupt = true;
+            if (_threads.FirstOrDefault(t => t.Id != body.ThreadId) is { } real)
+            {
+                threadId = real.Id;
+                (response, frames) = await StackOfAsync(threadId).ConfigureAwait(false);
+            }
+        }
+
         _stopTopFrame = response.StackFrames.Count > 0
             ? await EntryOfAsync(threadId, response.StackFrames, 0, 0, StopFrameCount, CancellationToken.None).ConfigureAwait(false)
             : null;

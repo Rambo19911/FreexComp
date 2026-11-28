@@ -1,3 +1,4 @@
+using System.IO.Pipes;
 using System.Text;
 using Microsoft.Win32.SafeHandles;
 
@@ -6,7 +7,10 @@ namespace FreexComp.Debugger.Session;
 /// <summary>How the debuggee's standard output and standard error reach the session (DAP usage DBG-058, ADR 005).</summary>
 internal enum OutputRelayMode
 {
-    /// <summary>The adapter relays them as <c>output</c> events.</summary>
+    /// <summary>
+    /// The adapter relays them as <c>output</c> events. Nothing is redirected then, the standard input neither: the
+    /// debuggee reads the adapter's, which carries the protocol (DBG-059) - not a mode for a program that reads input.
+    /// </summary>
     Events,
 
     /// <summary>The session redirects them to two files of its own and reads them (<see cref="OutputRelay"/>).</summary>
@@ -33,6 +37,12 @@ internal enum RelayRead
 /// appended every <see cref="PollInterval"/>, to the end before it reports a stop, and once more, to the end, before it
 /// reports the end of the session; the bytes are UTF-8, a sequence cut by the end of a read is completed by the next
 /// one. Not thread-safe: the session loop is its only user.
+/// <para>
+/// The debuggee's standard input is the session's own as well (DBG-059): a pipe named after the directory, whose
+/// writing end the session holds and never writes to. A debuggee that is given no standard input gets the adapter's -
+/// the pipe the protocol's requests arrive on - and a program that reads a line then takes a request away from the
+/// adapter: the request is never answered, and the program goes on with it as its input (G-103).
+/// </para>
 /// </summary>
 internal sealed class OutputRelay : IDisposable
 {
@@ -50,6 +60,7 @@ internal sealed class OutputRelay : IDisposable
 
     private readonly Tail[] _tails;
     private readonly byte[] _buffer = new byte[ReadSize];
+    private NamedPipeServerStream? _stdin;
     private bool _disposed;
 
     private OutputRelay(string directory)
@@ -57,8 +68,14 @@ internal sealed class OutputRelay : IDisposable
         Directory = directory;
         StdoutPath = Path.Combine(directory, "out.txt");
         StderrPath = Path.Combine(directory, "err.txt");
+        StdinPath = StdinPipePrefix + StdinPipeName(directory);
         _tails = [new Tail(StdoutPath, OutputCategory.Stdout), new Tail(StderrPath, OutputCategory.Stderr)];
     }
+
+    private const string StdinPipePrefix = @"\\.\pipe\";
+
+    /// <summary>The name of the standard-input pipe that belongs to a directory: <c>FreexComp.dbg-&lt;pid&gt;-&lt;n&gt;.in</c>.</summary>
+    private static string StdinPipeName(string directory) => "FreexComp." + Path.GetFileName(directory) + ".in";
 
     /// <summary>The directory that holds both files; deleted by <see cref="Dispose"/>.</summary>
     public string Directory { get; }
@@ -67,14 +84,18 @@ internal sealed class OutputRelay : IDisposable
 
     public string StderrPath { get; }
 
-    /// <summary>The launch <c>stdio</c> value: stdin is left alone, stdout and stderr go to the two files.</summary>
-    public IReadOnlyList<string?> StdioArgument => [null, StdoutPath, StderrPath];
+    /// <summary>The path of the pipe the debuggee reads its standard input from; nothing is ever written to it.</summary>
+    public string StdinPath { get; }
+
+    /// <summary>The launch <c>stdio</c> value: stdin is the session's pipe, stdout and stderr go to the two files.</summary>
+    public IReadOnlyList<string?> StdioArgument => [StdinPath, StdoutPath, StderrPath];
 
     /// <summary>
-    /// Creates the directory and both (empty) files under <paramref name="root"/> (default <c>%TEMP%\FreexComp</c>).
-    /// A directory of that name left behind by an earlier process with the same id is skipped, never reused.
+    /// Creates the directory and both (empty) files under <paramref name="root"/> (default <c>%TEMP%\FreexComp</c>),
+    /// and the standard-input pipe. A directory of that name left behind by an earlier process with the same id is
+    /// skipped, never reused.
     /// </summary>
-    /// <exception cref="IOException">The directory or a file could not be created.</exception>
+    /// <exception cref="IOException">The directory, a file or the pipe could not be created.</exception>
     /// <exception cref="UnauthorizedAccessException">The same, for lack of rights.</exception>
     public static OutputRelay Create(string? root = null)
     {
@@ -90,6 +111,10 @@ internal sealed class OutputRelay : IDisposable
         {
             foreach (var tail in relay._tails)
                 tail.Open();
+            // One reader (whoever the adapter starts the debuggee through opens it once, for reading), the current
+            // user only. The session keeps the writing end open and silent: a read of the debuggee waits.
+            relay._stdin = new NamedPipeServerStream(
+                StdinPipeName(directory), PipeDirection.Out, 1, PipeTransmissionMode.Byte, PipeOptions.CurrentUserOnly);
         }
         catch
         {
@@ -115,7 +140,7 @@ internal sealed class OutputRelay : IDisposable
         }
     }
 
-    /// <summary>Closes both files and deletes the directory (once the debuggee has let go of the files).</summary>
+    /// <summary>Closes both files and the pipe and deletes the directory (once the debuggee has let go of the files).</summary>
     public void Dispose()
     {
         if (_disposed)
@@ -123,6 +148,8 @@ internal sealed class OutputRelay : IDisposable
         _disposed = true;
         foreach (var tail in _tails)
             tail.Dispose();
+        _stdin?.Dispose();
+        _stdin = null;
         if (TryDelete(Directory))
             return;
 

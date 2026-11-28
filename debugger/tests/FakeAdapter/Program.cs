@@ -9,7 +9,10 @@
 // ignores its input: simulates an adapter that does not react to disconnect or end of input) and "thenWaitForEvent":
 // "<name>" (after the response and events of the step the adapter blocks until the named operating-system event is
 // signalled: a test holds the adapter for as long as it wants, e.g. past a wait of the session) and "thenDelayMs": <n>
-// (after the response and events of the step the adapter does nothing for n ms: an adapter slow to end, on a real clock).
+// (after the response and events of the step the adapter does nothing for n ms: an adapter slow to end, on a real clock)
+// and "respondAfterEvent": "<name>" (the adapter holds the request - it answers nothing and reads nothing - until the
+// named operating-system event is signalled, then goes on with the step: an answer that comes when the test says so,
+// e.g. after the session has given up waiting for it).
 // Built-in answers (no step needed): initialize, launch, configurationDone, disconnect, setExceptionBreakpoints,
 // setFunctionBreakpoints (every breakpoint verified, ids from 1001), readMemory, writeMemory.
 // Scenario extension: "variables": { "Name": "0x1000" } answers an "evaluate" of "&Name" that no step claims the way the
@@ -185,6 +188,13 @@ internal static class Program
 
             if (step.Json.TryGetProperty("delayMs", out var delay))
                 Thread.Sleep(delay.GetInt32());
+            if (step.Json.TryGetProperty("respondAfterEvent", out var holdName))
+            {
+                Output.Flush();
+                using var hold = new EventWaitHandle(false, EventResetMode.ManualReset, holdName.GetString());
+                hold.WaitOne();
+            }
+
             response = step.Json.TryGetProperty("fail", out var fail) ? Failure(requestSeq, command, fail.GetString() ?? "")
                 : step.Json.TryGetProperty("respond", out var respond) ? Success(requestSeq, command, w => respond.WriteTo(w))
                 : null;   // neither: the request stays unanswered

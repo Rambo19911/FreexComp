@@ -24,6 +24,7 @@ internal sealed partial class DapClient
         Channel.CreateUnbounded<byte[]>(new UnboundedChannelOptions { SingleReader = true });
     private readonly CancellationTokenSource _readerCancel = new();
     private int _nextSeq = 1;
+    private long _responses;
     private bool _closed;
     private string _closedMessage = Messages.AdapterExited;
 
@@ -45,6 +46,12 @@ internal sealed partial class DapClient
         _trace = trace;
         _time = timeProvider ?? TimeProvider.System;
     }
+
+    /// <summary>
+    /// How many responses the adapter has sent so far, whether or not anybody still waited for them: a response that
+    /// comes after its request timed out is dropped, yet it shows that the adapter is at work.
+    /// </summary>
+    public long ResponseCount => Interlocked.Read(ref _responses);
 
     /// <summary>Completes when the reader and writer tasks have ended.</summary>
     public Task Completion { get; private set; } = Task.CompletedTask;
@@ -183,6 +190,7 @@ internal sealed partial class DapClient
 
     private void HandleResponse(JsonElement root)
     {
+        Interlocked.Increment(ref _responses);
         if (!root.TryGetProperty("request_seq", out var requestSeq) || !requestSeq.TryGetInt32(out var seq))
             return;   // nobody can be waiting for it
         var success = root.TryGetProperty("success", out var flag) && flag.ValueKind == JsonValueKind.True;

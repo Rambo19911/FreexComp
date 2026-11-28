@@ -65,6 +65,7 @@ internal sealed partial class DebugSession : IDebugSession, IDebugSessionDiagnos
     private PdiFile? _programInfo;                  // the program's own file: where its main block is (DBG-225)
     private IReadOnlyList<string> _hookSymbols = [];   // raise routine of every module with type information, each name once
     private int _consecutiveTimeouts;
+    private long _responsesAtLastTimeout;           // the client's response count when the last request timed out
 
     public DebugSession(DebugSessionOptions options)
         : this(options, DebugState.Idle, TimeProvider.System)
@@ -297,7 +298,9 @@ internal sealed partial class DebugSession : IDebugSession, IDebugSessionDiagnos
     /// </summary>
     /// <remarks>
     /// Three timeouts in a row, with no answer of any kind in between, end the session: the adapter is taken for dead
-    /// (architecture §9). The request that timed out faults as usual; the session ends in the next work item.
+    /// (architecture §9). The request that timed out faults as usual; the session ends in the next work item. An
+    /// answer that came too late for its request is an answer all the same: an adapter that is slow - the first stack
+    /// of a program with many symbols, a loaded machine - never ends the session, however many requests it is late for.
     /// </remarks>
     private async Task<JsonElement> RequestAsync(string command, object? arguments, CancellationToken ct, TimeSpan? timeout = null)
     {
@@ -315,6 +318,10 @@ internal sealed partial class DebugSession : IDebugSession, IDebugSessionDiagnos
         }
         catch (DebuggerException e) when (e.Code == DebugErrorCode.RequestTimeout)
         {
+            var responses = _client!.ResponseCount;
+            if (responses != _responsesAtLastTimeout)
+                _consecutiveTimeouts = 0;   // the adapter answered meanwhile, if only a request that had timed out
+            _responsesAtLastTimeout = responses;
             if (++_consecutiveTimeouts == MaxConsecutiveTimeouts)
                 Post(() => FailSessionAsync(TerminationCause.AdapterCrashed, Messages.AdapterNotResponding));
             throw;

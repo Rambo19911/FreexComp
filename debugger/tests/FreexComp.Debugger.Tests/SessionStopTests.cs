@@ -320,6 +320,69 @@ public sealed class SessionStopTests
         await EndAsync(harness);
     }
 
+    /// <summary>The stack of the thread the system injects to break in: system routines only, none with a source file.</summary>
+    private const string BreakInStack = """
+        { "on": "stackTrace", "expectArguments": { "threadId": 9999, "startFrame": 0, "levels": 20 },
+          "respond": { "totalFrames": 2, "stackFrames": [
+            { "id": 1048576, "name": "DbgBreakPoint", "line": 2, "column": 1, "instructionPointerReference": "0x7FFBEC8F6AE1",
+              "source": { "name": "DbgBreakPoint", "path": "C:\\Windows\\System32\\ntdll.dll`DbgBreakPoint", "presentationHint": "deemphasize", "sourceReference": 6 } },
+            { "id": 1048577, "name": "DbgUiRemoteBreakin", "line": 18, "column": 1, "instructionPointerReference": "0x7FFBEC90902E",
+              "source": { "name": "DbgUiRemoteBreakin", "path": "C:\\Windows\\System32\\ntdll.dll`DbgUiRemoteBreakin", "presentationHint": "deemphasize", "sourceReference": 7 } } ] } }
+        """;
+
+    private const string BreakpointException = """{ "reason": "exception", "description": "Exception 0x80000003 encountered at address 0x7ffbec8f6ae0", "threadId": 9999, "allThreadsStopped": true }""";
+
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "DBG-091")]
+    [Trait("Req", "DBG-235")]
+    public async Task Pause_BreakInReportedAsBreakpointException_IsPauseOnTheProgramThread()
+    {
+        // G-103: debugging the program itself (not through its debug server), the pinned adapter reports the break-in
+        // of a pause as a breakpoint exception on the injected thread. It is the pause, on the program's thread.
+        await using var harness = await StoppedAtBreakpointAsync($$"""
+            { "on": "continue", "respond": {} },
+            { "on": "pause", "respond": {}, "thenEvents": [ {{Stopped(BreakpointException)}} ] },
+            { "on": "threads", "respond": { "threads": [ { "id": 7412, "name": "Thread 1" }, { "id": 9999, "name": "Thread 2" } ] } },
+            {{BreakInStack}},
+            {{Stack(55)}}
+            """);
+        await harness.Session.ContinueAsync(Ct).WaitAsync(Safety, Ct);
+
+        await harness.Session.PauseAsync(Ct).WaitAsync(Safety, Ct);
+
+        Assert.Equal($"stopped Pause epoch=2 thread=7412 loc={Demo}:55:5 hits=[] desc=Paused", await harness.WaitForEventAsync("stopped Pause"));
+        Assert.Null(harness.Session.CurrentStop!.Exception);
+        // The threads view marks the program's thread, and a resume is not the end of the program (DBG-247).
+        var threads = await harness.Session.GetThreadsAsync(Ct).WaitAsync(Safety, Ct);
+        Assert.Equal(7412, Assert.Single(threads, t => t.IsCurrent).Id);
+        await EndAsync(harness);
+    }
+
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "DBG-249")]
+    public async Task Pause_Outstanding_BreakpointInstructionInUserCode_IsNotThePause()
+    {
+        // The user's pause is on its way when the program runs into a breakpoint instruction of its own: that stop
+        // is on a thread that runs the user's code - it is reported as what it is, on its thread.
+        var instruction = """{ "reason": "exception", "description": "Exception 0x80000003 encountered at address 0x7ff6a1b21234", "threadId": 8120 }""";
+        await using var harness = await StoppedAtBreakpointAsync($$"""
+            { "on": "continue", "respond": {} },
+            { "on": "pause", "respond": {}, "thenEvents": [ {{Stopped(instruction)}} ] },
+            {{Threads}},
+            {{Stack(55, 8120)}}
+            """);
+        await harness.Session.ContinueAsync(Ct).WaitAsync(Safety, Ct);
+
+        await harness.Session.PauseAsync(Ct).WaitAsync(Safety, Ct);
+
+        Assert.Equal(
+            $"stopped Pause epoch=2 thread=8120 loc={Demo}:55:5 hits=[] desc=Hard-coded breakpoint",
+            await harness.WaitForEventAsync("stopped Pause"));
+        await EndAsync(harness);
+    }
+
     [Fact]
     [Trait("Req", "DBG-091")]
     public async Task Pause_WhileRunning_NoThreadKnown_RequestsThreadsFirst()
