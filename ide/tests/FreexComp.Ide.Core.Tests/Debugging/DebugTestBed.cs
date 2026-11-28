@@ -38,6 +38,8 @@ internal sealed class DebugTestBed : IDisposable
         foreach (var tool in (string[])[@"tc\llvm\clang.exe", @"tc\llvm\lld-link.exe", @"tc\llvm\llvm-dlltool.exe", @"tc\rtl\System.pas"])
             File(_temp.Combine(tool), "");
         Services.Settings.Set(SettingsCatalog.ToolchainLlvmBinDir, LlvmDir);
+        // F14-047 / I-394: as HeadlessHarness — captured console programs; a test of the console window sets "external".
+        Services.Settings.Set(SettingsCatalog.RunConsoleMode, "output");
         Services.Settings.Set(SettingsCatalog.ToolchainRtlDir, _temp.Combine(@"tc\rtl"));
         Engine.DefaultOutputPath = Exe;
         Directory.CreateDirectory(Path.GetDirectoryName(Exe)!);

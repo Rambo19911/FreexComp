@@ -23,6 +23,12 @@ public sealed class FakeProcessLauncher : IProcessLauncher
     /// <summary>Raised at the beginning of every <see cref="Start"/> (to check what happened before a launch).</summary>
     public event Action<ProcessStartRequest>? Starting;
 
+    /// <summary>
+    /// Raised by <see cref="Start"/> with the new process before it returns, on the starting thread (a debug session's for the
+    /// debug console): a test can end it before anyone has seen it run.
+    /// </summary>
+    public event Action<FakeRunningProcess>? Launched;
+
     /// <summary>Every <see cref="TerminateByPathAsync"/> call, in order.</summary>
     public List<string> Terminated { get; } = [];
 
@@ -45,6 +51,7 @@ public sealed class FakeProcessLauncher : IProcessLauncher
 
         var process = new FakeRunningProcess(request, onOutput, _nextId++);
         _started.Add(process);
+        Launched?.Invoke(process);
         return process;
     }
 }

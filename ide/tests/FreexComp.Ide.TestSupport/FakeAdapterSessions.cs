@@ -67,6 +67,13 @@ public sealed class FakeAdapterSessions : IDebugSessionFactory, IDisposable
         UseScenario(text);
     }
 
+    /// <summary>
+    /// The disconnect wait of the sessions created from now on; null = the test's net. F14-047: after a refused reverse
+    /// request the scripted adapter answers nothing, <c>disconnect</c> neither, as the pinned adapter; such a test sets
+    /// <see cref="TimeSpan.Zero"/>, so the session closes the adapter's input at once and it exits.
+    /// </summary>
+    public TimeSpan? DisconnectWait { get; set; }
+
     /// <summary>The sessions created from now on get the options unchanged.</summary>
     public void UseNoAdapter() => ScenarioPath = null;
 
@@ -81,7 +88,7 @@ public sealed class FakeAdapterSessions : IDebugSessionFactory, IDisposable
         var net = TimeSpan.FromMilliseconds(TestDeadline.DebugTestTimeout);
         var actual = ScenarioPath is { } scenario
             ? options with { AdapterPath = AdapterExe, AdapterArguments = [scenario], Trace = Record, RequestTimeout = net, LaunchTimeout = net,
-                ShutdownWaits = new ShutdownWaits { Disconnect = net, AdapterExit = net, StderrEnd = net } }
+                ShutdownWaits = new ShutdownWaits { Disconnect = DisconnectWait ?? net, AdapterExit = net, StderrEnd = net, TerminalClose = net } }
             : options with { Trace = Record };
         Created.Add(actual);
         var session = _inner.Create(actual);
@@ -101,6 +108,16 @@ public sealed class FakeAdapterSessions : IDebugSessionFactory, IDisposable
     /// <summary>The <c>arguments</c> of every request of <paramref name="command"/> sent so far, as JSON text.</summary>
     public IReadOnlyList<string> SentArguments(string command) =>
         [.. SentRequests(command).Select(json => JsonDocument.Parse(json).RootElement.GetProperty("arguments").GetRawText())];
+
+    /// <summary>The JSON text of every response the session sent to a reverse request of <paramref name="command"/> (F14-047), in order.</summary>
+    public IReadOnlyList<string> SentResponses(string command)
+    {
+        lock (_gate)
+        {
+            return [.. _trace.Where(e => e.Direction == DapDirection.ToAdapter && e.Json.Contains("\"type\":\"response\"", StringComparison.Ordinal)
+                && e.Json.Contains($"\"command\":\"{command}\"", StringComparison.Ordinal)).Select(e => e.Json)];
+        }
+    }
 
     /// <summary>What the adapter wrote to its error stream so far, one entry per line.</summary>
     public IReadOnlyList<string> AdapterStderr()

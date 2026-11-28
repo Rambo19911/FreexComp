@@ -185,6 +185,7 @@ public sealed partial class DebugService : IDebugService
     private readonly IStatusService _status;
     private readonly ILog _log;
     private readonly Dictionary<TextDocumentViewModel, ExecutionGlyphs> _decorated = [];
+    private readonly DebugConsole _console;
     private readonly HashSet<Task> _work = [];
     private Active? _active;
     private StopInfo? _stop;
@@ -211,6 +212,7 @@ public sealed partial class DebugService : IDebugService
         _dialogs = dialogs;
         _status = status;
         _log = log;
+        _console = new DebugConsole(run.Launcher, run, log);
         foreach (var document in documents.Documents.OfType<TextDocumentViewModel>())
             Decorate(document);
         documents.DocumentOpened += (_, e) =>
@@ -725,6 +727,11 @@ public sealed partial class DebugService : IDebugService
         if (await _run.ResolveWorkingDirAsync(target, exe) is not { } workingDir)
             return false;
         var run = target.Run;
+        // IDE-P3-096: a console program debugged as itself follows run.consoleMode; a window program and a library
+        // through its host (IDE-TGT-013, whatever kind the host is) stay as they are. Read at each start.
+        var consoleProgram = target.AppType == "console" && libraries.Count == 0;
+        var external = consoleProgram && _settings.Get(SettingsCatalog.RunConsoleMode) == "external";
+        _run.CloseWaitingHost(); // IDE-P3-101: every debug start, in any mode, first closes a waiting console window
         // The effective search paths of the target's active configuration (CMP-1160), as the build uses them.
         var searchPaths = (target.Definition is { } definition ? ConfigurationEdits.Effective(definition, target.Configuration)?.SearchPaths : null)?.Select(p => Path.GetFullPath(Path.Combine(target.Directory, p.Replace('/', '\\')))) ?? [];
         var options = new DebugSessionOptions
@@ -774,6 +781,8 @@ public sealed partial class DebugService : IDebugService
                 Breakpoints = breakpoints,
                 Exceptions = ExceptionSettingsNow(),
                 Libraries = libraries,
+                Terminal = external ? _console : null, // IDE-P3-097: the debug console serves the adapter's runInTerminal
+                InputAtEnd = consoleProgram && !external, // output mode: a read reports the end of the input (IDE-P3-082)
             });
         }
         catch (Exception e) when (e is DebuggerException or OperationCanceledException or ObjectDisposedException)
@@ -791,7 +800,9 @@ public sealed partial class DebugService : IDebugService
         var started = string.Format(CultureInfo.CurrentCulture, Strings.Msg_Run_Started, exe, run.Arguments, session.ProcessId ?? 0);
         _output.Append(OutputChannels.Program, started, OutputKind.Ide);
         _log.Info(Category, started);
-        if (_settings.Get(SettingsCatalog.OutputAutoShowOnRun))
+        if (external)
+            _output.Append(OutputChannels.Program, Strings.Run_ExternalConsoleNote, OutputKind.Ide); // IDE-P3-100: not shown
+        else if (_settings.Get(SettingsCatalog.OutputAutoShowOnRun))
             SelectProgramOutput?.Invoke();
         return true;
     }

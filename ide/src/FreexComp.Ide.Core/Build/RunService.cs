@@ -72,6 +72,7 @@ public sealed class RunService : IRunService
     private bool _debugNoticeShown;
     private readonly ILog _log;
     private Session? _session;
+    private readonly Lock _hostGate = new(); // the waiting-host slot is shared with the debug console, which runs on session threads
     private IRunningProcess? _waitingHost; // IDE-P3-089: a console host whose program ended, still at its key prompt
     private bool _lastWithDebugger;
     private string? _lastMember; // IDE-PM-197: the listed member the last start was for; null = the loaded project
@@ -361,12 +362,41 @@ public sealed class RunService : IRunService
         return true;
     }
 
-    /// <summary>IDE-P3-089: closes the job of a console host still waiting at its key prompt (its window closes).</summary>
-    private void CloseWaitingHost()
+    /// <summary>
+    /// IDE-P3-089: closes the job of a console host still waiting at its key prompt (its window closes). Any thread; also
+    /// at every debug start (IDE-P3-101).
+    /// </summary>
+    internal void CloseWaitingHost()
     {
-        _waitingHost?.Dispose();
-        _waitingHost = null;
+        IRunningProcess? host;
+        lock (_hostGate)
+        {
+            host = _waitingHost;
+            _waitingHost = null;
+        }
+
+        host?.Dispose();
     }
+
+    /// <summary>
+    /// IDE-P3-088 / IDE-P3-097: <paramref name="host"/>, whose program ended, becomes the one waiting host (a previous one
+    /// is closed). Any thread: the debug console hands its window over from a session thread.
+    /// </summary>
+    internal void AdoptWaitingHost(IRunningProcess host)
+    {
+        IRunningProcess? previous;
+        lock (_hostGate)
+        {
+            previous = _waitingHost;
+            _waitingHost = host;
+        }
+
+        if (previous is not null && !ReferenceEquals(previous, host))
+            previous.Dispose();
+    }
+
+    /// <summary>The launcher of the program runs, for the debug console (IDE-P3-097).</summary>
+    internal IProcessLauncher Launcher => _launcher;
 
     /// <summary>
     /// The output file of the active configuration on the active platform (IDE-P3-081 fallback; IDE-PLAT-005:
@@ -541,7 +571,7 @@ public sealed class RunService : IRunService
         _status.ShowMessage(text, StatusDuration);
         _log.Info(Category, text);
         if (session.ConsoleHost)
-            _waitingHost = session.Process; // IDE-P3-088: the window stays open at its key prompt
+            AdoptWaitingHost(session.Process); // IDE-P3-088: the window stays open at its key prompt
         else
             session.Process?.Dispose(); // IDE-P3-084: closing the job ends any descendant still alive
         Leave();
