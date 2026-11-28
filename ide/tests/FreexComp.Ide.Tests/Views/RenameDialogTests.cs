@@ -7,6 +7,7 @@ using Avalonia.Input;
 using Avalonia.LogicalTree;
 using Avalonia.Threading;
 using AvaloniaEdit;
+using AvaloniaEdit.Editing;
 using AvaloniaEdit.Rendering;
 using FreexComp.Ide.Core.Dialogs;
 using FreexComp.Ide.Core.Refactoring;
@@ -400,7 +401,22 @@ public sealed partial class RenameDialogTests
             await ExpectAsync("Constant Unit1.Prefix — Unit1.pas");
             CaretOn(editor, doc, "TCustomer");
             await ExpectAsync("Class Unit1.TCustomer — Unit1.pas");
+            // A parameter is local: F2 renames it in place (IDE-REFAC-050, I-381) …
             CaretOn(editor, doc, "A: Integer", 2);
+            h.Press("F2");
+            await h.WaitForAsync(() => doc.RenameSession is not null, "the inline session started");
+            var session = doc.RenameSession!;
+            h.Press("Escape");
+            await InlineRenameViewTests.SettleAsync(h, doc, session);
+            Assert.Null(doc.RenameSession);
+
+            // … and a column block on it takes the dialog (IDE-REFAC-042).
+            var a = doc.Buffer.GetPosition(doc.Buffer.Text.IndexOf("A: Integer", doc.Buffer.Text.IndexOf("A: Integer", StringComparison.Ordinal) + 1, StringComparison.Ordinal));
+            var area = editor.TextArea;
+            area.Selection = new RectangleSelection(area, new TextViewPosition(a.Line, a.Column), new TextViewPosition(a.Line, a.Column + 1));
+            area.Caret.Position = new TextViewPosition(a.Line, a.Column + 1);
+            Dispatcher.UIThread.RunJobs();
+            Assert.True(doc.HasBlockSelection);
             await ExpectAsync("Parameter Log.A — Unit1.pas");
         });
     }

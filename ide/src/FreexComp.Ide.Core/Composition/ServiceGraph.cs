@@ -235,11 +235,13 @@ public static class ServiceGraph
         refactoring.Register(new Refactoring.LanguageServiceQuickActions(codeModel, platform.FileSystem));
         // IDE-REFAC-040 (I-380): Rename Symbol, registered before the refactorings of a composition; its name entry is the
         // dialog RenameSymbol (UI-DLG-380), whose live check plans every valid name on the target's snapshot.
+        // A local target is renamed in place (IDE-REFAC-050, I-381).
         var renamePlanner = new Refactoring.RenamePlanner(documents, codeModel, platform.FileSystem);
+        var inlineRename = new Refactoring.InlineRenameController(commands, refactoring, documents, renamePlanner, platform.Clock, status);
         refactoring.Register(new Refactoring.RenameRefactoring(refactoring, renamePlanner, codeModel, projects, librarySource, toolchain,
             (info, source, position) => platform.Dialogs.ShowAsync(new RenameSymbolViewModel(info,
                 (name, overloads, ct) => renamePlanner.PlanAsync(new Refactoring.RenameRequest(source, position, info.CurrentName, name, overloads, Forms: true), ct),
-                platform.Clock, layout))));
+                platform.Clock, layout)), inlineRename));
         foreach (var extra in refactorings ?? [])
             refactoring.Register(extra);
         var liveDiagnostics = new CodeModel.LiveDiagnosticsService(documents, codeModel, settings, platform.Clock, platform.Dispatcher); // I-111

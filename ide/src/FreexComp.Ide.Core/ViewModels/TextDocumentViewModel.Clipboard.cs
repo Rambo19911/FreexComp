@@ -86,7 +86,7 @@ public partial class TextDocumentViewModel
     /// <summary>A copied line (<paramref name="isLine"/>) goes in as a full line above the caret line (caret column kept).</summary>
     private void PasteFromClipboard(string text, bool isLine)
     {
-        if (!isLine || !Selection.IsEmpty || Block is not null)
+        if (!isLine || !Selection.IsEmpty || Block is not null || _renameSession is not null)
         {
             Paste(text);
             return;

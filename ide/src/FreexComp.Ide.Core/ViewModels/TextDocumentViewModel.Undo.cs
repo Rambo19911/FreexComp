@@ -55,6 +55,7 @@ public partial class TextDocumentViewModel
     {
         if (_actionDepth > 0)
             return action();
+        continues |= _renameSession is not null && ContinuesFieldEdits; // IDE-REFAC-051: a session is one undo step
         var before = CurrentSelection;
         var version = Buffer.Version;
         bool result;
@@ -73,7 +74,11 @@ public partial class TextDocumentViewModel
         }
 
         if (Buffer.Version != version)
+        {
             RecordStep(before, version, continues);
+            _renameSession?.OnEdited(); // IDE-REFAC-052
+        }
+
         return result;
     }
 

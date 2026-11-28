@@ -397,7 +397,8 @@ public sealed class ParameterInfoController
         commands.RegisterHandler(CommandId, new Handler(this));
     }
 
-    private bool CanShow => _documents.ActiveDocument?.VisibleText is { ParameterInfo: not null } && _projects.Project is not null; // I-302
+    // I-302; IDE-REFAC-051: no parameter info in an inline rename session.
+    private bool CanShow => _documents.ActiveDocument?.VisibleText is { ParameterInfo: not null, RenameSession: null } && _projects.Project is not null;
 
     private void Attach(DocumentViewModel document)
     {

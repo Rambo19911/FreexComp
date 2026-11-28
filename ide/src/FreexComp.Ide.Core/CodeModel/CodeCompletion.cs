@@ -667,7 +667,8 @@ public sealed class CompletionController
         commands.RegisterHandler(CommandId, new Handler(this));
     }
 
-    private bool CanComplete => _documents.ActiveDocument?.VisibleText is { Completion: not null } && _projects.Project is not null; // I-302
+    // I-302; IDE-REFAC-051: no completion in an inline rename session.
+    private bool CanComplete => _documents.ActiveDocument?.VisibleText is { Completion: not null, RenameSession: null } && _projects.Project is not null;
 
     private void Attach(DocumentViewModel document)
     {

@@ -6996,6 +6996,22 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
     <value>More conflicts are not listed.</value>
     <comment>UI-DLG-384: last row of a capped conflict list</comment>
   </data>
+  <data name="Msg_Rename_InlineHint" xml:space="preserve">
+    <value>Rename {0}: type the new name. Enter applies, Esc cancels</value>
+    <comment>IDE-REFAC-050: sticky status of an inline rename; 0 = old name</comment>
+  </data>
+  <data name="Msg_Rename_InlineDoneOne" xml:space="preserve">
+    <value>Renamed {0} to {1}: 1 occurrence</value>
+    <comment>IDE-REFAC-053: status, 5 s; 0 = old name, 1 = new name</comment>
+  </data>
+  <data name="Msg_Rename_InlineDone" xml:space="preserve">
+    <value>Renamed {0} to {1}: {2} occurrences</value>
+    <comment>IDE-REFAC-053: status, 5 s; 0 = old name, 1 = new name, 2 = count</comment>
+  </data>
+  <data name="Msg_Rename_InlineCanceled" xml:space="preserve">
+    <value>Rename canceled; {0} is unchanged</value>
+    <comment>IDE-REFAC-054: status, 5 s; 0 = old name</comment>
+  </data>
   <data name="Undo_Refactoring" xml:space="preserve">
     <value>Undo {0}</value>
     <comment>IDE-REFAC-021, 022: the menu label of refactor.undo and the title of the undo step an undone operation makes</comment>

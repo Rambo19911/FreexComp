@@ -160,6 +160,8 @@ public sealed class CommandService : ICommandService
         return !IsBlockedByState(commandId) && handler.CanExecute(argument);
     }
 
+    public event EventHandler<CommandExecutingEventArgs>? Executing;
+
     public async Task ExecuteAsync(string commandId, string? argument = null)
     {
         if (!CanExecute(commandId, argument))
@@ -167,6 +169,7 @@ public sealed class CommandService : ICommandService
             return; // UI-CMD-012: a no-op, never a message
         }
 
+        Executing?.Invoke(this, new CommandExecutingEventArgs(commandId, argument));
         var handler = _handlers[commandId];
         var started = _clock.Now;
         Exception? failure = null;

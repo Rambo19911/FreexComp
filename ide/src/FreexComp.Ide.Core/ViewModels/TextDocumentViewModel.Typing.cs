@@ -76,7 +76,11 @@ public partial class TextDocumentViewModel
         ArgumentNullException.ThrowIfNull(text);
         if (text.Length == 0)
             return false;
-        Completion?.BeforeTyped(text); // IDE-ED-084: a commit character commits first
+        var renaming = _renameSession is not null;
+        if (renaming && text.AsSpan().IndexOfAny('\r', '\n') >= 0)
+            return false; // IDE-REFAC-051: no line break in a name
+        if (!renaming)
+            Completion?.BeforeTyped(text); // IDE-ED-084: a commit character commits first
         var selection = Selection;
         var block = Block;
         // IDE-P1-091: consecutive typed characters at the caret join one undo step.
@@ -90,16 +94,16 @@ public partial class TextDocumentViewModel
                 return ReplaceBlock(b, text);
             }
 
-            if (text.Length == 1 && TypeAid(text[0], selection) is { } handled)
+            if (!renaming && text.Length == 1 && TypeAid(text[0], selection) is { } handled)
             {
                 kind = EditKind.None;
                 return handled;
             }
 
-            return InsertTyped(selection, text);
+            return InsertTyped(selection, text, reindent: !renaming);
         });
         EndEdit(done ? kind : EditKind.None, char.IsWhiteSpace(text[^1]));
-        if (done)
+        if (done && !renaming) // IDE-REFAC-051: no completion or parameter info in a session
         {
             Completion?.AfterTyped(text); // IDE-ED-080/082
             ParameterInfo?.AfterTyped(text); // IDE-ED-090
@@ -108,7 +112,7 @@ public partial class TextDocumentViewModel
     }
 
     /// <summary>Plain typed text: replaces the selection or, in overwrite mode, the character at the caret.</summary>
-    private bool InsertTyped(TextSelection selection, string text)
+    private bool InsertTyped(TextSelection selection, string text, bool reindent = true)
     {
         var replaced = selection.End - selection.Start;
         if (selection.IsEmpty && ViewState.Overwrite && text.AsSpan().IndexOfAny('\r', '\n') < 0)
@@ -117,7 +121,8 @@ public partial class TextDocumentViewModel
         if (!TryInsertText(selection.Start, replaced, text))
             return false;
         Selection = TextSelection.At(selection.Start + replaced + Buffer.Length - before);
-        Apply(EditorOperations.ReindentCloser(Buffer, Selection.Caret, IndentOptions, _language.IndentRules));
+        if (reindent)
+            Apply(EditorOperations.ReindentCloser(Buffer, Selection.Caret, IndentOptions, _language.IndentRules));
         return true;
     }
 
@@ -315,6 +320,8 @@ public partial class TextDocumentViewModel
     public bool Paste(string text)
     {
         ArgumentNullException.ThrowIfNull(text);
+        if (_renameSession is not null && text.AsSpan().IndexOfAny('\r', '\n') >= 0)
+            return false; // IDE-REFAC-051: no line break in a name
         return Command(() => PasteCore(text));
     }
 

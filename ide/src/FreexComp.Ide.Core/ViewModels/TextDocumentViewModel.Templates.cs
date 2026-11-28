@@ -35,14 +35,24 @@ public partial class TextDocumentViewModel
                 return;
             if (mode.OnChanged(e.Offset, e.RemovedLength, e.InsertedText.Length))
                 TemplateFieldsChanged?.Invoke(this, EventArgs.Empty);
+            else if (_renameSession is { } session)
+                session.End(); // IDE-REFAC-054: the text was changed from outside — nothing is restored
             else
                 EndFieldMode(); // IDE-ED-065: an edit outside all fields
         };
         ViewState.PropertyChanged += (_, e) =>
         {
-            if (e.PropertyName == nameof(EditorViewState.Caret) && _fieldMode is { IsActive: true } mode && !_movingInFields && _actionDepth == 0
-                && !mode.Contains(OffsetOf(ViewState.Caret)))
+            if (e.PropertyName != nameof(EditorViewState.Caret) || _fieldMode is not { IsActive: true } mode || _movingInFields || _actionDepth > 0)
+                return;
+            if (_renameSession is { } session)
+            {
+                if (LeftRenameFields(mode))
+                    session.Cancel(); // IDE-REFAC-054: the caret or the selection left every occurrence
+            }
+            else if (!mode.Contains(OffsetOf(ViewState.Caret)))
+            {
                 EndFieldMode(); // the caret left all fields
+            }
         };
     }
 
@@ -164,6 +174,12 @@ public partial class TextDocumentViewModel
 
     private void EndFieldMode()
     {
+        if (_renameSession is { } session)
+        {
+            session.End();
+            return;
+        }
+
         if (_fieldMode is null)
             return;
         _fieldMode.Deactivate();

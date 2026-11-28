@@ -486,6 +486,8 @@ public sealed class DocumentService : IDocumentService
     public async Task<bool> PromptSaveChangesAsync(IReadOnlyList<DocumentViewModel> documents, Action? saveFailed = null)
     {
         ArgumentNullException.ThrowIfNull(documents);
+        foreach (var text in documents.OfType<TextDocumentViewModel>())
+            text.RenameSession?.Cancel(); // IDE-REFAC-054: a closing document's session is taken back first
         // The caller's order: tab order, the project file first (UI-DLG-063).
         var modified = documents.Distinct().Where(d => d.IsModified && _documents.Contains(d)).ToList();
         IReadOnlyList<DocumentViewModel>? toSave;
@@ -685,6 +687,7 @@ public sealed class DocumentService : IDocumentService
     {
         ArgumentNullException.ThrowIfNull(document);
         ArgumentNullException.ThrowIfNull(path);
+        document.RenameSession?.Cancel(); // IDE-REFAC-054: the saved text has the old name
         var fullPath = Path.GetFullPath(path);
         if (FindByPath(fullPath) is { } other && other != document)
             return OperationResult.Fail("Msg.File.SaveFailed", other.FilePath!, Strings.Reason_OpenInAnotherTab);

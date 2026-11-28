@@ -361,6 +361,30 @@ public sealed class HoverView : Border
 }
 
 /// <summary>Code-template fields in field mode (IDE-ED-065): every occurrence on an <c>accent.subtle</c> background.</summary>
+/// <summary>
+/// UI-ED-160, 161: the primary occurrence of an inline rename session gets a 1 px outline over its field background —
+/// <c>border.focus</c>, or <c>status.error</c> while the typed name has a problem.
+/// </summary>
+public sealed class RenameOutlineRenderer(Control themeSource, Func<(int Start, int End)?> primary, Func<bool> problem) : IBackgroundRenderer
+{
+    // Above the selection (the primary occurrence starts selected), below the glyphs.
+    public KnownLayer Layer => KnownLayer.Text;
+
+    public void Draw(TextView textView, DrawingContext drawingContext)
+    {
+        if (primary() is not var (start, end) || !textView.VisualLinesValid
+            || ThemeBrushes.Find(themeSource, problem() ? "status.error" : "border.focus") is not { } brush)
+            return;
+        var length = Math.Max(1, end - start); // an empty name stays visible
+        if (start + length > textView.Document.TextLength)
+            return;
+        var pen = new Pen(brush, 1);
+        foreach (var rect in BackgroundGeometryBuilder.GetRectsForSegment(textView, new TextSegment { StartOffset = start, Length = length }))
+            drawingContext.DrawRectangle(null, pen, new Rect(Math.Round(rect.X) + 0.5, Math.Round(rect.Y) + 0.5,
+                Math.Max(1, Math.Round(end > start ? rect.Width : 2) - 1), Math.Max(1, Math.Round(rect.Height) - 1)));
+    }
+}
+
 public sealed class TemplateFieldRenderer(Control themeSource, Func<IReadOnlyList<(int Start, int End)>> fields) : IBackgroundRenderer
 {
     public KnownLayer Layer => KnownLayer.Selection;

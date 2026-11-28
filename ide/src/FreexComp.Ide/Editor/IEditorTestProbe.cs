@@ -50,6 +50,12 @@ public interface IEditorTestProbe
 
     /// <summary>UI-TOK-053: the text view shows the hand cursor (over a Ctrl+hover link).</summary>
     bool HandCursor { get; }
+
+    /// <summary>UI-ED-160: the occurrences of the inline rename session drawn as fields (offset, length), the primary first.</summary>
+    IReadOnlyList<(int Offset, int Length)> RenameFields { get; }
+
+    /// <summary>UI-ED-160, 161: how the primary occurrence is outlined (<c>None</c> without a session).</summary>
+    Core.Refactoring.RenameFieldState RenameFieldState { get; }
 }
 
 /// <summary>

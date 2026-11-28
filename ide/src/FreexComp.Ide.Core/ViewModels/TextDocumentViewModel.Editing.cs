@@ -217,6 +217,8 @@ public partial class TextDocumentViewModel
             return true; // the open completion popup takes its keys first (IDE-ED-084)
         if (ParameterInfo?.HandleKey(gesture) == true)
             return true; // then parameter info: Up/Down overloads, Escape (IDE-ED-090)
+        if (HandleRenameKey(gesture))
+            return true; // an inline rename session (IDE-REFAC-053, 054)
         if (HandleFieldKey(gesture))
             return true; // then template field mode (IDE-ED-065)
         var selection = Selection;

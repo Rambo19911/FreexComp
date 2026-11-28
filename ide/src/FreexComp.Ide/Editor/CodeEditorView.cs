@@ -127,6 +127,8 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
         textView.BackgroundRenderers.Add(new OccurrenceRenderer(this, () => _document?.WordHighlights.Highlights ?? []));
         textView.BackgroundRenderers.Add(new BracketMatchRenderer(this, CurrentBracketMatch));
         textView.BackgroundRenderers.Add(new TemplateFieldRenderer(this, () => _document?.TemplateFieldRanges ?? [])); // IDE-ED-065
+        textView.BackgroundRenderers.Add(new RenameOutlineRenderer(this, () => _document?.RenameFields is [var first, ..] ? first : null,
+            () => _document?.RenameSession?.State == Core.Refactoring.RenameFieldState.Problem)); // UI-ED-160, 161
         _markers = new TextMarkerRenderer(this); // editor.md §6 row 12
         textView.BackgroundRenderers.Add(_markers);
         textView.BackgroundRenderers.Add(new DeclarationLinkRenderer(this, () => _link?.Current)); // IDE-ED-149
@@ -330,6 +332,7 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
             old.RevealCaretAtThirdRequested -= OnRevealCaretAtThirdRequested;
             old.CaretMenuRequested -= OnCaretMenuRequested;
             old.TemplateFieldsChanged -= OnDecorationsChanged;
+            old.RenameSessionChanged -= OnDecorationsChanged;
         }
 
         _completion.Session?.Close();
@@ -377,6 +380,7 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
         document.RevealCaretAtThirdRequested += OnRevealCaretAtThirdRequested;
         document.CaretMenuRequested += OnCaretMenuRequested;
         document.TemplateFieldsChanged += OnDecorationsChanged;
+        document.RenameSessionChanged += OnDecorationsChanged;
         SetFind(document.Find);
         ApplyZoomAndWrap();
         SyncFoldings();
@@ -1030,6 +1034,10 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
     string IEditorTestProbe.DeclarationLinkToken => DeclarationLinkRenderer.Token;
 
     bool IEditorTestProbe.HandCursor => _handCursor;
+
+    IReadOnlyList<(int Offset, int Length)> IEditorTestProbe.RenameFields => [.. (_document?.RenameFields ?? []).Select(f => (f.Start, f.End - f.Start))];
+
+    Core.Refactoring.RenameFieldState IEditorTestProbe.RenameFieldState => _document?.RenameSession?.State ?? Core.Refactoring.RenameFieldState.None;
 
     double IEditorTestProbe.GutterWidth =>
         _editor.TextArea.LeftMargins.OfType<GutterMargin>().Where(m => m.IsVisible).Sum(m => m.MarginWidth);

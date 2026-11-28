@@ -43,14 +43,17 @@ public sealed class RenameRefactoring : IRefactoring
     private readonly ILibrarySourceService _library;
     private readonly IToolchainLocator _toolchain;
     private readonly Func<RenameInfo, Document, int, Task<RenameDialogResult?>> _enterName;
+    private readonly InlineRenameController? _inline;
 
     /// <param name="enterName">
     /// The name entry: the facts of the target, the snapshot and the position; it plans the names it is given (with the
     /// planner) and answers the chosen one with its plan, or null when the user cancels. Called without the engine's
     /// working text.
     /// </param>
+    /// <param name="inline">The inline sessions (IDE-REFAC-050, I-381); null: a local target also takes the name entry.</param>
     public RenameRefactoring(IRefactoringService engine, RenamePlanner planner, CodeModelService codeModel, IProjectService projects,
-        ILibrarySourceService library, IToolchainLocator toolchain, Func<RenameInfo, Document, int, Task<RenameDialogResult?>> enterName)
+        ILibrarySourceService library, IToolchainLocator toolchain, Func<RenameInfo, Document, int, Task<RenameDialogResult?>> enterName,
+        InlineRenameController? inline = null)
     {
         ArgumentNullException.ThrowIfNull(engine);
         ArgumentNullException.ThrowIfNull(planner);
@@ -66,6 +69,7 @@ public sealed class RenameRefactoring : IRefactoring
         _library = library;
         _toolchain = toolchain;
         _enterName = enterName;
+        _inline = inline;
     }
 
     public string Id => RefactoringId;
@@ -167,10 +171,16 @@ public sealed class RenameRefactoring : IRefactoring
         if (info.DeclarationPaths.FirstOrDefault(p => _library.IsLibrarySource(p) && !_projects.IsMember(p)) is { } library)
             throw new RefactoringException(string.Format(CultureInfo.CurrentCulture, Strings.Reason_Rename_Library, info.CurrentName, Path.GetFileName(library)));
 
-        // The view model has one selection: block selection and several carets are the view's, not known here (I-381).
-        if (Route(info, buffer.Text, blockOrMultiCaret: false) == RenameRoute.Unit)
+        var route = Route(info, buffer.Text, context.Document.HasBlockSelection);
+        if (route == RenameRoute.Unit)
             throw new RefactoringException(Strings.Reason_Rename_UnitInProjectManager); // until I-382
-        // RenameRoute.Inline takes the name entry until the inline session exists (I-381).
+        if (route == RenameRoute.Inline && _inline is { } inline)
+        {
+            // IDE-REFAC-050: the inline session; the engine is not busy during it.
+            inline.Start(context.Document, source, position, info);
+            return null;
+        }
+
         var answer = await _engine.WithoutWorkingTextAsync(() => _enterName(info, source, position));
         if (answer is null)
             return null;

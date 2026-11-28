@@ -267,7 +267,7 @@ public partial class TextDocumentViewModel : DocumentViewModel, ICommandTarget
 
     bool ICommandTarget.CanExecute(string commandId, string? argument) => commandId switch
     {
-        UndoCommandId => !Buffer.IsReadOnly && Buffer.CanUndo,
+        UndoCommandId => _renameSession is not null || (!Buffer.IsReadOnly && Buffer.CanUndo), // IDE-REFAC-054: undo cancels a session
         RedoCommandId => !Buffer.IsReadOnly && Buffer.CanRedo,
         FoldCommandId => Folding.CanFold,
         UnfoldCommandId => Folding.CanUnfold,
@@ -291,6 +291,16 @@ public partial class TextDocumentViewModel : DocumentViewModel, ICommandTarget
     {
         if (IsClipboardCommand(commandId))
             return ExecuteClipboardAsync(commandId);
+        if (_renameSession is { } session && commandId is UndoCommandId or IndentCommandId)
+        {
+            // IDE-REFAC-053, 054: Tab (edit.indent) commits a session, edit.undo cancels it.
+            if (commandId == UndoCommandId)
+                session.Cancel(restoreCaret: true);
+            else
+                RenameCommitting = session.CommitAsync();
+            return Task.FromResult(true);
+        }
+
         if (ViewCommandIds.Contains(commandId))
             return Task.FromResult(CanExecuteView(commandId) && ExecuteView(commandId));
         if (commandId == GoToMatchingBracketCommandId)
@@ -399,6 +409,8 @@ public partial class TextDocumentViewModel : DocumentViewModel, ICommandTarget
     {
         if (!readOnly)
             RemoveInfoBar(ReadOnlyInfoBarKind);
+        else
+            _renameSession?.Cancel(); // IDE-REFAC-054: the document becomes read only
         if (Buffer.IsReadOnly == readOnly)
             return;
         Buffer.IsReadOnly = readOnly;

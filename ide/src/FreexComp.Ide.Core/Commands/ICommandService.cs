@@ -34,6 +34,14 @@ public interface ICommandTarget
     bool IsChecked(string commandId) => false;
 }
 
+/// <summary>A command is about to run: its <c>CanExecute</c> holds and its handler starts next (IDE-REFAC-054).</summary>
+public sealed class CommandExecutingEventArgs(string commandId, string? argument) : EventArgs
+{
+    public string CommandId { get; } = commandId;
+
+    public string? Argument { get; } = argument;
+}
+
 public sealed class CommandExecutedEventArgs(string commandId, string? argument, TimeSpan duration, Exception? exception) : EventArgs
 {
     public string CommandId { get; } = commandId;
@@ -92,6 +100,9 @@ public interface ICommandService
 
     /// <summary>Coalesced re-query of every command's <c>CanExecute</c> (IDE-ARCH-044).</summary>
     void InvalidateCanExecute();
+
+    /// <summary>Raised before a command's handler runs (an inline rename session is cancelled first, IDE-REFAC-054).</summary>
+    event EventHandler<CommandExecutingEventArgs>? Executing;
 
     event EventHandler<CommandExecutedEventArgs>? Executed;
 }

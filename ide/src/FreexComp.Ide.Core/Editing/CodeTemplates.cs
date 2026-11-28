@@ -263,6 +263,13 @@ internal sealed class TemplateFieldMode
         _end = start + expansion.EndOffset;
     }
 
+    /// <summary>One linked field of <paramref name="occurrences"/>, the first is the primary (inline rename, IDE-REFAC-050).</summary>
+    public TemplateFieldMode(IReadOnlyList<(int Start, int End)> occurrences)
+    {
+        _fields = [[.. occurrences.Select(o => new[] { o.Start, o.End })]];
+        _end = occurrences[0].End;
+    }
+
     public int Current { get; set; }
 
     public int Count => _fields.Count;
