@@ -250,11 +250,11 @@ Phase 8 implements the full feature set for Windows, area by area. Progress coun
 | COM and ActiveX | 1 / 18 | `█░░░░░░░░░` | COM-compatible interfaces and calling conventions · ☐ COM servers and Automation |
 | AI features | 0 / 31 | `░░░░░░░░░░` | — |
 | Visual data binding | 0 / 16 | `░░░░░░░░░░` | — |
-| Build and deploy | 11 / 36 | `███░░░░░░░` | Build and run from the IDE, clickable errors · build configurations with inheritance · build events with a trust question · resource scripts and the resource compiler `prc` |
-| Language and runtime library | 18 / 118 | `██░░░░░░░░` | Inline variables and `for var` loops with type inference · dynamic-array constructors, constants, `+`, `Insert`, `Delete` and `Concat` · class constructors and destructors · hardware faults caught by `try` … `except` · compile-time type queries for generic code · generic methods with type-argument inference · generic constraints · anonymous methods and closures, with captured variables in the debugger · Base64, URL and HTML encodings · `deprecated` / `platform` / `experimental` warnings · runtime library source included |
+| Build and deploy | 12 / 36 | `███░░░░░░░` | Build and run from the IDE, clickable errors · build configurations with inheritance · build events with a trust question · resource scripts and the resource compiler `prc` · run or debug any project of a group from its context menu |
+| Language and runtime library | 19 / 118 | `██░░░░░░░░` | Inline variables and `for var` loops with type inference · dynamic-array constructors, constants, `+`, `Insert`, `Delete` and `Concat` · class constructors and destructors · hardware faults caught by `try` … `except` · compile-time type queries for generic code · generic methods with type-argument inference · generic constraints · anonymous methods and closures, with captured variables in the debugger · Base64, URL and HTML encodings · MD5, SHA-1, SHA-2, HMAC, CRC-32 and FNV-1a hashes · `deprecated` / `platform` / `experimental` warnings · runtime library source included |
 | IDE | 27 / 120 | `██░░░░░░░░` | Main window, code editor, project open and save · Object Pascal source formatter · project resources, icon and version information pages · code completion that ranks items of the expected type first · local file history with a History window, compare and revert · automatic recovery of unsaved files with a differences view · sharp rendering on high-DPI screens, also in the form designer · offline installer and portable zip · two-key keyboard shortcuts · Structure view with component icons and drag to re-parent · code templates with a shared templates folder and a Templates window · parameter hints for every kind of call · hover documentation with Go to Declaration · Go to Declaration into the runtime library and generated views · live diagnostics with a severity choice · recent files on the Welcome page · light and dark themes · code folding · bracket and directive pair matching · named bookmarks and the Bookmarks window · Tool Palette search · copy a library unit into a project · no-network guarantee checked by tests |
 | Source control | 1 / 18 | `█░░░░░░░░░` | Built-in diff viewer (side by side or inline) with Compare with Saved and Compare Files |
-| Refactoring and navigation | 2 / 30 | `█░░░░░░░░░` | Quick fixes at the caret (`Ctrl+.`) through a refactoring engine with preview and whole-operation undo · Find References (`Shift+F12`) with pinned result sets |
+| Refactoring and navigation | 3 / 30 | `█░░░░░░░░░` | Quick fixes at the caret (`Ctrl+.`) through a refactoring engine with preview and whole-operation undo · Find References (`Shift+F12`) with pinned result sets · incremental find with Navigate Back to where the search started |
 | Debugging | 8 / 41 | `██░░░░░░░░` | Breakpoints, stepping, step out and run to cursor · Locals and Call Stack windows · Step Into library code · value visualisers and a text viewer for strings |
 | Unit testing | 0 / 9 | `░░░░░░░░░░` | — |
 | Help | 0 / 8 | `░░░░░░░░░░` | Offline help pages in the IDE (first pages) |
@@ -263,7 +263,7 @@ Phase 8 implements the full feature set for Windows, area by area. Progress coun
 | Web front-end framework | 0 / 29 | `░░░░░░░░░░` | — |
 | Bundled components | 0 / 6 | `░░░░░░░░░░` | — |
 | Local web UI | 0 / 18 | `░░░░░░░░░░` | — |
-| **Total** | **93 / 886** | `█░░░░░░░░░` | **10 %** |
+| **Total** | **96 / 886** | `█░░░░░░░░░` | **11 %** |
 
 - [ ] First public release with installer
 
