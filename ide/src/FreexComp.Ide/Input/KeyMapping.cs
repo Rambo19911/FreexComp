@@ -21,6 +21,13 @@ public static class KeyMapping
     /// <summary>The gesture of a key event, or null for keys without a UI-KEY-001 name (modifier keys, …).</summary>
     public static CoreGesture? FromAvalonia(Key key, KeyModifiers modifiers)
     {
+        // With Ctrl held, the Pause key sends the Break scan code and Windows reports it as VK_CANCEL (Key.Cancel),
+        // not VK_PAUSE (I-411): it is the same key, named Break.
+        if (key == Key.Cancel && modifiers.HasFlag(KeyModifiers.Control))
+        {
+            key = Key.Pause;
+        }
+
         if (!ToName.TryGetValue(key, out var name))
         {
             return null;
