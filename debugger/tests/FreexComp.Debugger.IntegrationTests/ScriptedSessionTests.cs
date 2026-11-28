@@ -1559,6 +1559,287 @@ public sealed class ScriptedSessionTests(IntegrationFixture fixture)
         });
     }
 
+    // ---- terminal mode against the real adapter (F14-047, debuggee-console spec §8) ----
+
+    // ConsoleEcho's lines (binding, spec §8).
+    private const int EchoFirstRead = 13;
+    private const int EchoAfterFirstRead = 14;
+    private const int EchoSecondRead = 15;
+
+    private static LaunchRequest ConsoleEchoLaunch(BuiltProgram program, TestTerminal terminal, params int[] breakpointLines) => new()
+    {
+        Program = program.ExePath,
+        Terminal = terminal,
+        Breakpoints = breakpointLines.Length == 0
+            ? []
+            : [new SourceBreakpoints(program.SourcePath, [.. breakpointLines.Select((line, index) => new BreakpointSpec { Id = index + 1, Line = line })])],
+    };
+
+    /// <summary>What the adapter asked the terminal to run: its own executable in launcher mode, for the program (spec §3).</summary>
+    private static void AssertLauncherRequest(TestTerminal terminal, BuiltProgram program, string workingDirectory, params string[] arguments)
+    {
+        var request = Assert.Single(terminal.Requests);
+        Assert.EndsWith("lldb-dap.exe", request.Command[0], StringComparison.OrdinalIgnoreCase);
+        var target = request.Command.ToList().IndexOf("--launch-target");
+        Assert.True(target > 0, "No --launch-target in " + string.Join(" | ", request.Command));
+        Assert.Equal(program.ExePath, request.Command[target + 1], ignoreCase: true);
+        Assert.Equal(arguments, request.Command.Skip(target + 2));
+        Assert.Equal(Path.TrimEndingDirectorySeparator(workingDirectory), Path.TrimEndingDirectorySeparator(request.WorkingDirectory), ignoreCase: true);
+        Assert.Equal("ConsoleEcho.exe", request.Title);
+    }
+
+    /// <summary>The adapter's executable in launcher mode among the processes of the console (beside the program and the console's host).</summary>
+    private static int Launcher(IReadOnlyList<int> processes) =>
+        Assert.Single(processes, id =>
+        {
+            try
+            {
+                using var process = Process.GetProcessById(id);
+                return string.Equals(process.ProcessName, "lldb-dap", StringComparison.OrdinalIgnoreCase);
+            }
+            catch (Exception e) when (e is ArgumentException or InvalidOperationException)
+            {
+                return false;
+            }
+        });
+
+    /// <summary>Opens the processes now, so that their ids cannot be given away before the test has seen them end.</summary>
+    private static List<(string What, Process Process)> Watch(params (string What, int ProcessId)[] processes)
+    {
+        var watched = new List<(string, Process)>();
+        foreach (var (what, processId) in processes)
+            watched.Add((what, Process.GetProcessById(processId)));
+        return watched;
+    }
+
+    /// <summary>Each watched process ends within the test's deadline (the wait is on its exit).</summary>
+    private static async Task AssertAllEndAsync(List<(string What, Process Process)> watched)
+    {
+        foreach (var (what, process) in watched)
+        {
+            using (process)
+            {
+                try
+                {
+                    await process.WaitForExitAsync(Ct).WaitAsync(IntegrationFixture.Safety, Ct);
+                }
+                catch (TimeoutException)
+                {
+                    Assert.Fail($"The {what} (process id {process.Id}) is still running {IntegrationFixture.Safety.TotalSeconds} s after the end of the session.");
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Card acceptance 1 at library level: the program runs in the console of the test terminal; the line the test
+    /// types there reaches the program's <c>ReadLn</c> (non-ASCII text included), a breakpoint after the read stops with
+    /// the line in the program's variable, the console shows what the program wrote, and the session relays nothing.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "DBG-542")]
+    [Trait("Req", "DBG-544")]
+    [Trait("Req", "DBG-545")]
+    [Trait("Req", "DBG-431")]
+    public async Task Phase8_Console_ReadLnInput_BreakpointShowsTheLine()
+    {
+        const string Typed = "Grüße ✓ 1";
+        var program = fixture.Build("ConsoleEcho");
+        var recorder = new SessionRecorder(nameof(Phase8_Console_ReadLnInput_BreakpointShowsTheLine));
+        await using var terminal = new TestTerminal();
+        await recorder.RunAsync(fixture, program, async session =>
+        {
+            await session.LaunchAsync(ConsoleEchoLaunch(program, terminal, EchoAfterFirstRead, EchoSecondRead), Ct);
+            AssertLauncherRequest(terminal, program, program.Directory);
+            var run = terminal.TheRun;
+
+            // The console keeps the typed line until the program reads it.
+            ConsoleHelper.Type(run.ProcessId, Typed + "\n");
+            var stop = await recorder.WaitForStopAsync();
+            AssertStop(session, stop, StopReason.Breakpoint, program.SourcePath, EchoAfterFirstRead, [1]);
+            var frames = (await session.GetStackTraceAsync(stop.ThreadId, ct: Ct)).Frames;
+            Assert.Equal("ConsoleEcho", frames[0].Name);
+            // The program block's variables are the program's globals.
+            var scopes = await session.GetScopesAsync(frames[0].Id, Ct);
+            var globals = await session.GetChildrenAsync(Assert.Single(scopes, s => s.Kind == ScopeKind.Globals).Handle, ct: Ct);
+            Assert.Equal("'" + Typed + "'", Assert.Single(globals, g => g.Name == "Line").Value);
+            Assert.Equal("'" + Typed + "'", (await session.EvaluateAsync("Line", frames[0].Id, EvaluateContext.Watch, Ct)).Value.Value);
+
+            await session.ContinueAsync(Ct);
+            stop = await recorder.WaitForStopAsync();
+            AssertStop(session, stop, StopReason.Breakpoint, program.SourcePath, EchoSecondRead, [2]);
+            // The console shows the program's lines, the typed line (the console's echo) and the program's answer.
+            var screen = ConsoleHelper.Screen(run.ProcessId);
+            Assert.Equal(["ready", Typed, "got: " + Typed, ""], screen.Skip(screen.Count - 4));
+            Assert.Equal(["args 0", "env"], screen.Take(2));   // rows are right-trimmed
+            Assert.Equal("dir " + Path.TrimEndingDirectorySeparator(program.Directory), screen[2], ignoreCase: true);
+
+            ConsoleHelper.Type(run.ProcessId, "x\n");
+            await session.ContinueAsync(Ct);
+            var terminated = await recorder.WaitForTerminatedAsync();
+            Assert.Equal(TerminationCause.Exited, terminated.Cause);
+            Assert.Equal(0, terminated.ExitCode);
+            Assert.Equal(0, await run.Ended.WaitAsync(IntegrationFixture.Safety, Ct));
+            Assert.Equal([true], run.CloseCalls);
+            // Nothing of the program's output went through the session (DBG-542).
+            Assert.DoesNotContain(recorder.Events, e => e.StartsWith("Output(Stdout", StringComparison.Ordinal) || e.StartsWith("Output(Stderr", StringComparison.Ordinal));
+        });
+        // The pinned adapter's traffic in terminal mode, kept for comparison with the spec's evidence (§3).
+        recorder.Dump();
+    }
+
+    /// <summary>
+    /// The launch's arguments, working directory and environment reach the program in the console exactly; its exit
+    /// code is the session's and the command's (spec §3 p3, p4, p9).
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "DBG-544")]
+    [Trait("Req", "DBG-553")]
+    public async Task Phase8_Console_ArgumentsDirectoryEnvironmentAndExitCode()
+    {
+        string[] arguments = ["a b", "c\"d", "", "e\\\\"];
+        var program = fixture.Build("ConsoleEcho");
+        var directory = Path.Combine(Path.GetTempPath(), "fxc-cwd-" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(directory);
+        var environment = Environment.GetEnvironmentVariables().Cast<System.Collections.DictionaryEntry>()
+            .ToDictionary(e => (string)e.Key, e => (string?)e.Value ?? "", StringComparer.OrdinalIgnoreCase);
+        environment["FREEXCOMP_CONSOLE_TEST"] = "1";
+        var recorder = new SessionRecorder(nameof(Phase8_Console_ArgumentsDirectoryEnvironmentAndExitCode));
+        try
+        {
+            await using var terminal = new TestTerminal();
+            await recorder.RunAsync(fixture, program, async session =>
+            {
+                await session.LaunchAsync(ConsoleEchoLaunch(program, terminal, EchoFirstRead) with
+                {
+                    Arguments = arguments,
+                    WorkingDirectory = directory,
+                    Environment = environment,
+                }, Ct);
+                AssertLauncherRequest(terminal, program, directory, arguments);
+                Assert.Equal("1", terminal.Requests[0].Environment?["FREEXCOMP_CONSOLE_TEST"]);
+                var run = terminal.TheRun;
+                Assert.Equal(DebugState.Running, session.State);
+                Assert.NotEqual(run.ProcessId, session.ProcessId);
+
+                // At the first read everything before it is on the screen.
+                var stop = await recorder.WaitForStopAsync();
+                AssertStop(session, stop, StopReason.Breakpoint, program.SourcePath, EchoFirstRead, [1]);
+                var screen = ConsoleHelper.Screen(run.ProcessId);
+                Assert.Equal(["args 4", "[a b]", "[c\"d]", "[]", "[e\\\\]", "env 1"], screen.Take(6));
+                Assert.Equal("dir " + directory, screen[6], ignoreCase: true);
+                Assert.Equal("ready", screen[7]);
+
+                ConsoleHelper.Type(run.ProcessId, "first\nfail\n");
+                await session.ContinueAsync(Ct);
+                var terminated = await recorder.WaitForTerminatedAsync();
+                Assert.Equal(TerminationCause.Exited, terminated.Cause);
+                Assert.Equal(3, terminated.ExitCode);
+                Assert.Equal(3, session.ExitCode);
+                Assert.Equal(3, await run.Ended.WaitAsync(IntegrationFixture.Safety, Ct));
+            });
+            recorder.Dump();
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// Card acceptance 3 at library level: Stop while the program waits for console input ends the program, the
+    /// adapter's launcher, the console's owner and the adapter; the console is closed once, without keeping it.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "DBG-551")]
+    [Trait("Req", "DBG-552")]
+    [Trait("Req", "DBG-432")]
+    public async Task Phase8_Console_Terminate_LeavesNoProcess()
+    {
+        var program = fixture.Build("ConsoleEcho");
+        var recorder = new SessionRecorder(nameof(Phase8_Console_Terminate_LeavesNoProcess));
+        await using var terminal = new TestTerminal();
+        List<(string What, Process Process)> watched = [];
+        try
+        {
+            await recorder.RunAsync(fixture, program, async session =>
+            {
+                await session.LaunchAsync(ConsoleEchoLaunch(program, terminal, EchoFirstRead), Ct);
+                var run = terminal.TheRun;
+                var stop = await recorder.WaitForStopAsync();
+                AssertStop(session, stop, StopReason.Breakpoint, program.SourcePath, EchoFirstRead, [1]);
+
+                // Console owner → launcher (the adapter's executable) → program.
+                var descendants = run.Descendants();
+                Assert.Contains(session.ProcessId!.Value, descendants);
+                watched = Watch(("program", session.ProcessId.Value), ("launcher", Launcher(descendants)), ("console owner", run.ProcessId),
+                    ("adapter", ((FreexComp.Debugger.Session.IDebugSessionDiagnostics)session).AdapterProcessId!.Value));
+
+                // The program goes on into its read and waits there.
+                await session.ContinueAsync(Ct);
+                await session.TerminateAsync(Ct);
+                var terminated = await recorder.WaitForTerminatedAsync();
+                Assert.Equal(TerminationCause.TerminatedByUser, terminated.Cause);
+                Assert.Equal([false], run.CloseCalls);
+                await AssertAllEndAsync(watched);
+            });
+            recorder.Dump();
+        }
+        finally
+        {
+            foreach (var (_, process) in watched)
+                process.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// A program that ends by itself: the console is closed once with <c>keepWindow</c>, the program, the launcher and
+    /// the adapter are gone, and only the console's owner was left to end by itself (it did: its command ended).
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "DBG-551")]
+    [Trait("Req", "DBG-552")]
+    [Trait("Req", "DBG-432")]
+    public async Task Phase8_Console_ExitByItself_KeepsOnlyTheConsoleOwner()
+    {
+        var program = fixture.Build("ConsoleEcho");
+        var recorder = new SessionRecorder(nameof(Phase8_Console_ExitByItself_KeepsOnlyTheConsoleOwner));
+        await using var terminal = new TestTerminal();
+        List<(string What, Process Process)> watched = [];
+        try
+        {
+            await recorder.RunAsync(fixture, program, async session =>
+            {
+                await session.LaunchAsync(ConsoleEchoLaunch(program, terminal, EchoFirstRead), Ct);
+                var run = terminal.TheRun;
+                var stop = await recorder.WaitForStopAsync();
+                AssertStop(session, stop, StopReason.Breakpoint, program.SourcePath, EchoFirstRead, [1]);
+                watched = Watch(("program", session.ProcessId!.Value), ("launcher", Launcher(run.Descendants())),
+                    ("adapter", ((FreexComp.Debugger.Session.IDebugSessionDiagnostics)session).AdapterProcessId!.Value));
+
+                ConsoleHelper.Type(run.ProcessId, "one\ntwo\n");
+                await session.ContinueAsync(Ct);
+                var terminated = await recorder.WaitForTerminatedAsync();
+                Assert.Equal(TerminationCause.Exited, terminated.Cause);
+                Assert.Equal(0, terminated.ExitCode);
+                Assert.Equal([true], run.CloseCalls);
+                await AssertAllEndAsync(watched);
+                // The console was left to its owner, which ended by itself with the command's exit code.
+                Assert.Equal(0, await run.Ended.WaitAsync(IntegrationFixture.Safety, Ct));
+            });
+            recorder.Dump();
+        }
+        finally
+        {
+            foreach (var (_, process) in watched)
+                process.Dispose();
+        }
+    }
+
     private static string Address(ulong address) => "$" + address.ToString("X16", CultureInfo.InvariantCulture);
 
     private static bool PathIsUnder(string path, string root) =>

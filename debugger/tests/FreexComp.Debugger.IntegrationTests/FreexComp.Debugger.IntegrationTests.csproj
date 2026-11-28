@@ -6,6 +6,9 @@
     <ProjectReference Include="..\..\src\FreexComp.Debugger\FreexComp.Debugger.csproj" />
     <!-- Build order only: the tests run the Pascal compiler's built output as a tool (scripted test DBG-301). -->
     <ProjectReference Include="..\..\..\compiler\src\opc\opc.csproj" ReferenceOutputAssembly="false" />
+    <!-- The console helper modes of the terminal-mode tests (FakeAdapter.exe is copied next to the test assembly; it is
+         never the adapter here, DBG-331 / DBG-559 b). -->
+    <ProjectReference Include="..\FakeAdapter\FakeAdapter.csproj" />
     <!-- The process-leak check is the same in both debugger test projects (debugger testing DBG-334). -->
     <Compile Include="..\FreexComp.Debugger.Tests\TestSupport\ProcessLeakFixture.cs" Link="TestSupport\ProcessLeakFixture.cs" />
   </ItemGroup>

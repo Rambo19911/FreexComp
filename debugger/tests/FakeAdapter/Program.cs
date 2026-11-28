@@ -67,7 +67,11 @@ internal static class Program
     {
         // Test support for the adapter-process tests: "--wait" blocks forever; "--spawn-child" starts such a child,
         // reports its pid and then serves nothing until its input closes; "--print-env NAME" reports one environment
-        // variable and the working directory; "--stderr-lines N" writes N numbered lines to stderr.
+        // variable and the working directory; "--stderr-lines N" writes N numbered lines to stderr. The console modes
+        // ("--console-run", "--console-type", "--console-screen", "--console-ctrl-c") are described in ConsoleModes.cs.
+        if (ConsoleModes.TryRun(args) is { } consoleExit)
+            return consoleExit;
+
         if (args is ["--wait"])
         {
             Thread.Sleep(Timeout.Infinite);
