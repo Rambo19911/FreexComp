@@ -288,7 +288,7 @@ public sealed partial class RefactoringService : IRefactoringService
             : fileCount == 1 ? Format(Strings.Msg_Refactoring_AppliedOneFile, prepared.Title, editCount)
             : Format(Strings.Msg_Refactoring_AppliedMany, prepared.Title, editCount, fileCount),
             StatusDuration);
-        var result = new RefactoringResult(RefactoringOutcome.Applied, editCount, fileCount, [], null);
+        var result = new RefactoringResult(RefactoringOutcome.Applied, editCount, fileCount, [], null) { Applied = prepared.Files };
         try
         {
             prepared.OnApplied?.Invoke(result); // IDE-REFAC-047 b: after step (4), for this outcome only

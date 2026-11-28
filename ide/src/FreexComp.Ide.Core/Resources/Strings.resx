@@ -6941,6 +6941,26 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
     <value>Renamed {0} to {1} in the form designer; Undo in the designer takes it back</value>
     <comment>IDE-REFAC-060: status; 0 = old name, 1 = new name</comment>
   </data>
+  <data name="Msg_Rename_UnrenamedNote" xml:space="preserve">
+    <value>Occurrences that will not be changed (inactive or unresolved code): {0}</value>
+    <comment>IDE-REFAC-062: Notes of the Rename Symbol dialog; 0 = count</comment>
+  </data>
+  <data name="Msg_Rename_UnrenamedInactive" xml:space="preserve">
+    <value>{0} in inactive code was not renamed to {1}</value>
+    <comment>IDE-REFAC-061: Messages row (warning); 0 = old name, 1 = new name</comment>
+  </data>
+  <data name="Msg_Rename_UnrenamedUnresolved" xml:space="preserve">
+    <value>{0} could not be resolved here and was not renamed to {1}</value>
+    <comment>IDE-REFAC-061: Messages row (warning); 0 = old name, 1 = new name</comment>
+  </data>
+  <data name="Msg_Rename_UnrenamedMore" xml:space="preserve">
+    <value>More occurrences were not renamed; only the first {0} are listed</value>
+    <comment>IDE-REFAC-061: Messages row (warning) without a location; 0 = the limit</comment>
+  </data>
+  <data name="Msg_Rename_UnrenamedStatus" xml:space="preserve">
+    <value>{0}: occurrences that were not changed are listed in Messages ({1})</value>
+    <comment>IDE-REFAC-061: status; 0 = the operation's title, 1 = the number of occurrences listed</comment>
+  </data>
   <data name="Dialog_RenameSymbol_Title" xml:space="preserve">
     <value>Rename Symbol</value>
     <comment>UI-DLG-380: title of the Rename Symbol dialog</comment>

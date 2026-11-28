@@ -200,7 +200,10 @@ public sealed class RenameRefactoring : IRefactoring
             return null;
         }
 
-        return edit;
+        // IDE-REFAC-061 (I-385): once the engine applied it, the occurrences the plan did not rename are listed in Messages.
+        var result = answer.Plan.Result;
+        var newName = answer.NewName;
+        return edit with { OnApplied = applied => _planner.ReportUnrenamed(result, info.CurrentName, newName, edit.Title, applied.Applied) };
     }
 
     /// <summary>

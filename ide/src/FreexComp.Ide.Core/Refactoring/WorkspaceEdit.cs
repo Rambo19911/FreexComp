@@ -185,4 +185,12 @@ public sealed record BlockedFile(string Path, BlockReason Reason);
 /// <see cref="RefactoringOutcome.Applied"/>), the blocking files in path order, and the system's reason of a failed write.
 /// </summary>
 public sealed record RefactoringResult(RefactoringOutcome Outcome, int EditCount, int FileCount,
-    IReadOnlyList<BlockedFile> Blocked, string? Error);
+    IReadOnlyList<BlockedFile> Blocked, string? Error)
+{
+    /// <summary>
+    /// The file edits that were applied (an <see cref="RefactoringOutcome.Applied"/> edit, normalized and reduced to the
+    /// changes chosen in the Preview dialog; offsets into each <see cref="FileEdit.BaseText"/>); empty for another outcome.
+    /// A rename places its unrenamed occurrences in the renamed text with them (IDE-REFAC-061).
+    /// </summary>
+    public ImmutableArray<FileEdit> Applied { get; init; } = [];
+}

@@ -315,13 +315,16 @@ public sealed class RenameSymbolViewModel : DialogViewModel<RenameDialogResult>
         if (plan.Result.Success && plan.Edit is not null)
         {
             _planned = plan;
-            // IDE-REFAC-059 (I-384): a component the form designer renames — no plan counts (I-410); unrenamed occurrences
-            // arrive with the language service's report (C-452, I-385).
+            // IDE-REFAC-059 (I-384): a component the form designer renames — no plan counts (I-410). IDE-REFAC-062 (I-385):
+            // the number of occurrences that will not be changed; both notes: two lines.
             SetThroughDesigner(plan.DesignerForm is not null);
             Summary = plan.DesignerForm is null ? SummaryText(plan) : "";
-            Notes = plan.DesignerForm is { } form
-                ? string.Format(CultureInfo.CurrentCulture, Strings.Msg_Rename_ThroughDesigner, Path.GetFileName(form))
-                : null;
+            var notes = new List<string>(2);
+            if (!plan.Result.Unrenamed.IsEmpty)
+                notes.Add(string.Format(CultureInfo.CurrentCulture, Strings.Msg_Rename_UnrenamedNote, plan.Result.Unrenamed.Length));
+            if (plan.DesignerForm is { } form)
+                notes.Add(string.Format(CultureInfo.CurrentCulture, Strings.Msg_Rename_ThroughDesigner, Path.GetFileName(form)));
+            Notes = notes.Count == 0 ? null : string.Join("\n", notes);
             Rename.IsEnabled = !_committing;
             return;
         }

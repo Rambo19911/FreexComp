@@ -633,4 +633,44 @@ public sealed class InlineRenameTests : RefactoringTestBase
         await shown!.Checking;
         await SettleAsync(r);
     }
+
+    [Fact(Timeout = 120000)]
+    [Trait("Req", "IDE-REFAC-061")]
+    [Trait("Req", "IDE-REFAC-062")]
+    public Task UnrenamedInTheRoutineBecomeRows() => TestUiThread.RunAsync(() => UnrenamedInTheRoutineBecomeRowsOnUiThread());
+
+    private async Task UnrenamedInTheRoutineBecomeRowsOnUiThread()
+    {
+        // A Value in inactive code of Go (behind two renamed ones on its line) and one in another routine.
+        const string text = "unit R;\n\ninterface\n\nprocedure Go;\n\nimplementation\n\nprocedure Other;\nbegin\n"
+            + "  {$IFDEF NEVER_DEFINED} Value := 0; {$ENDIF}\nend;\n\nprocedure Go;\nvar\n  Value: Integer;\n  Count: Integer;\n"
+            + "begin\n  Value := 1;\n  Count := Value + 1;\n  Value := Value + Count; {$IFDEF NEVER_DEFINED} Value := 0; {$ENDIF}\nend;\n\nend.\n";
+        var r = await OpenRAsync(text);
+        var layout = Layout();
+        var session = await F2Async(r, occurrence: 3);
+        Assert.Equal(5, r.RenameFields.Count);
+        Type(r, "Sum");
+        await CheckAsync(session);
+        // The session does not name them (IDE-REFAC-062): the hint only, no row yet.
+        Assert.Equal(Format(Strings.Msg_Rename_InlineHint, "Value"), _services.Status.Message);
+        Assert.DoesNotContain(_services.Messages.Items, i => !i.IsSummary);
+
+        Assert.True(r.HandleKey("Enter"));
+        await r.RenameCommitting;
+
+        // Listed after the commit: only the one of Go (the scope of a local), at its place in the renamed text.
+        Assert.Null(r.RenameSession);
+        var renamed = r.Buffer.Text;
+        Assert.Contains("  Sum := Sum + Count; {$IFDEF NEVER_DEFINED} Value := 0; {$ENDIF}\n", renamed, StringComparison.Ordinal);
+        var (line, column) = RenameCommandTests.LineColumn(renamed, "Count; {$IFDEF NEVER_DEFINED} Value", "Count; {$IFDEF NEVER_DEFINED} ".Length);
+        var row = Assert.Single(_services.Messages.Items, i => !i.IsSummary);
+        Assert.Equal((Core.Build.MessageSeverity.Warning, "Value in inactive code was not renamed to Sum", line, column, column + 5),
+            (row.Severity, row.Text, row.Location!.Line, row.Location.Column, row.Location.EndColumn));
+        Assert.Equal(R, row.Location.FilePath, StringComparer.OrdinalIgnoreCase);
+        Assert.Equal("Rename 'Value' to 'Sum': occurrences that were not changed are listed in Messages (1)", _services.Status.Message);
+        Assert.Equal(layout, Layout()); // Messages is neither opened nor activated
+        await SettleAsync(r);
+    }
+
+    private string Layout() => string.Join(" | ", _services.Layout.Layout.Groups.Select(g => string.Join(",", g.Tools) + ">" + g.ActiveTool));
 }

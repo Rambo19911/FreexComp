@@ -75,7 +75,7 @@ public sealed partial class RenameCommandTests : RefactoringTestBase
         });
 
     /// <summary>The project of the rename tests: A (with the closed form A.form), B, C and the library unit <c>Lib</c>; nothing open.</summary>
-    private async Task OpenRenameProjectAsync()
+    private async Task OpenRenameProjectAsync(string unitC = UnitC)
     {
         WriteToolchain();
         File(Lib, LibUnit);
@@ -84,7 +84,7 @@ public sealed partial class RenameCommandTests : RefactoringTestBase
         File(Dir + @"\App.pas", Main);
         File(A, UnitA);
         File(B, UnitB);
-        File(C, UnitC);
+        File(C, unitC);
         File(Dir + @"\R.pas", UnitR);
         File(AForm, FormA);
         Assert.True(await _services.Projects.OpenAsync(ProjectPath));

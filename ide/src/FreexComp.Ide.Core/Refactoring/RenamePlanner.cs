@@ -1,7 +1,11 @@
 using System.Globalization;
+using FreexComp.Compiler.Text;
+using FreexComp.Ide.Core.Build;
 using FreexComp.Ide.Core.CodeModel;
 using FreexComp.Ide.Core.Documents;
 using FreexComp.Ide.Core.Resources;
+using FreexComp.Ide.Core.Services;
+using FreexComp.Ide.Core.Text;
 using FreexComp.Ide.Core.ViewModels;
 using FreexComp.LanguageService;
 using IFileSystem = FreexComp.Ide.Core.Platform.IFileSystem;
@@ -33,7 +37,7 @@ public sealed record RenameDialogResult(string NewName, bool Overloads, RenamePl
 /// <summary>
 /// The language-service side of Rename Symbol (IDE-REFAC-041, 043; I-379): the facts of the target and the plan of a new
 /// name, each on the code-model worker (request kind <see cref="RequestKind"/>, so a newer request replaces a queued one).
-/// UI thread.
+/// UI thread. After a rename it lists the occurrences the plan did not rename in Messages (IDE-REFAC-061, I-385).
 /// </summary>
 public sealed class RenamePlanner
 {
@@ -42,16 +46,25 @@ public sealed class RenamePlanner
 
     private readonly IDocumentService _documents;
     private readonly CodeModelService _codeModel;
-    private readonly IFileSystem _fileSystem;
+    /// <summary>How long the status text of IDE-REFAC-061 stays (UI-MSG-003 "Status").</summary>
+    private static readonly TimeSpan StatusDuration = TimeSpan.FromSeconds(5);
 
-    public RenamePlanner(IDocumentService documents, CodeModelService codeModel, IFileSystem fileSystem)
+    private readonly IFileSystem _fileSystem;
+    private readonly IMessagesService _messages;
+    private readonly IStatusService _status;
+
+    public RenamePlanner(IDocumentService documents, CodeModelService codeModel, IFileSystem fileSystem, IMessagesService messages, IStatusService status)
     {
         ArgumentNullException.ThrowIfNull(documents);
         ArgumentNullException.ThrowIfNull(codeModel);
         ArgumentNullException.ThrowIfNull(fileSystem);
+        ArgumentNullException.ThrowIfNull(messages);
+        ArgumentNullException.ThrowIfNull(status);
         _documents = documents;
         _codeModel = codeModel;
         _fileSystem = fileSystem;
+        _messages = messages;
+        _status = status;
     }
 
     /// <summary>IDE-REFAC-041: <c>RenameService.GetRenameInfo</c> at <paramref name="position"/> of the snapshot.</summary>
@@ -89,5 +102,55 @@ public sealed class RenamePlanner
         var edit = await WorkspaceEdit.FromLanguageService(title, result.Edits, request.Source.Compilation, _fileSystem, ct, formTexts);
         var normalized = edit.Normalize();
         return new RenamePlan(result, edit, normalized.Files.Sum(f => f.Edits.Length), normalized.Files.Length);
+    }
+
+    /// <summary>
+    /// IDE-REFAC-061: after a rename was applied — <paramref name="applied"/> are its file edits, offsets into their base
+    /// texts (the texts the service computed on) — one warning row per unrenamed occurrence of <paramref name="result"/> in
+    /// Messages, in the service's order, at its place in the renamed text; one more row without a location when the list is
+    /// capped; then the status text <c>Msg.Rename.UnrenamedStatus</c> with <paramref name="title"/>. Messages is neither opened
+    /// nor focused. Nothing when the plan has no unrenamed occurrence. UI thread.
+    /// </summary>
+    public void ReportUnrenamed(RenameResult result, string oldName, string newName, string title, IEnumerable<FileEdit> applied)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+        ArgumentNullException.ThrowIfNull(applied);
+        if (result.Unrenamed.IsEmpty)
+            return;
+        var edits = applied.GroupBy(f => f.Path, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.SelectMany(f => f.Edits).ToList(), StringComparer.OrdinalIgnoreCase);
+        foreach (var occurrence in result.Unrenamed)
+        {
+            var text = string.Format(CultureInfo.CurrentCulture,
+                occurrence.Kind == UnrenamedKind.InactiveCode ? Strings.Msg_Rename_UnrenamedInactive : Strings.Msg_Rename_UnrenamedUnresolved,
+                oldName, newName);
+            _messages.AddToolMessage(MessageItem.ToolRow(MessageSeverity.Warning, text,
+                Renamed(occurrence.Location, edits.GetValueOrDefault(occurrence.Location.Path))));
+        }
+
+        if (result.UnrenamedCapped)
+        {
+            _messages.AddToolMessage(MessageItem.ToolRow(MessageSeverity.Warning,
+                string.Format(CultureInfo.CurrentCulture, Strings.Msg_Rename_UnrenamedMore, RenameService.MaxUnrenamed), null));
+        }
+
+        _status.ShowMessage(string.Format(CultureInfo.CurrentCulture, Strings.Msg_Rename_UnrenamedStatus, title, result.Unrenamed.Length), StatusDuration);
+    }
+
+    /// <summary>
+    /// The 1-based place of an unrenamed name in the text after <paramref name="edits"/> (null: its file was not edited).
+    /// A rename replaces names by names, never a line break: the line stays, the column moves by the edits that lie before
+    /// it on its line.
+    /// </summary>
+    private static MessageLocation? Renamed(Location location, List<TextEdit>? edits)
+    {
+        if (!location.HasPosition)
+            return MessagesService.Map(location);
+        var start = location.Span.Start;
+        var lineStart = start - location.LineSpan.Start.Column;
+        var shift = edits?.Where(e => e.Offset >= lineStart && e.Offset + e.Length <= start).Sum(e => e.NewText.Length - e.Length) ?? 0;
+        var line = location.LineSpan.Start.Line + 1;
+        var column = location.LineSpan.Start.Column + 1 + shift;
+        return new MessageLocation(location.Path, line, column, line, column + location.Span.Length);
     }
 }

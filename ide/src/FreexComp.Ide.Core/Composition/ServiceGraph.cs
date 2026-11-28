@@ -236,7 +236,7 @@ public static class ServiceGraph
         // IDE-REFAC-040 (I-380): Rename Symbol, registered before the refactorings of a composition; its name entry is the
         // dialog RenameSymbol (UI-DLG-380), whose live check plans every valid name on the target's snapshot.
         // A local target is renamed in place (IDE-REFAC-050, I-381).
-        var renamePlanner = new Refactoring.RenamePlanner(documents, codeModel, platform.FileSystem);
+        var renamePlanner = new Refactoring.RenamePlanner(documents, codeModel, platform.FileSystem, messages, status); // I-385: unrenamed occurrences in Messages
         var inlineRename = new Refactoring.InlineRenameController(commands, refactoring, documents, renamePlanner, platform.Clock, status);
         // DSG-CS-130 (I-383): a component renamed in the designer updates its references in code; IDE-REFAC-059, 060 (I-384):
         // a component renamed from code whose forms refer to it is renamed by the designer (the dialog notes it).

@@ -338,6 +338,31 @@ public sealed class ComponentRenameTests
         Assert.Equal(4, document.Designer.Undo.UndoCount);
     });
 
+    [Fact(Timeout = 120000)]
+    [Trait("Req", "IDE-REFAC-061")]
+    [Trait("Req", "DSG-CS-134")]
+    public Task UnrenamedBecomeRows() => TestUiThread.RunAsync(async () =>
+    {
+        // B refers to OkButton in active code and, behind it on the same line, in inactive code.
+        var caller = Caller.Replace("  F.OkButton := nil;\n", "  F.OkButton := nil; {$IFDEF NEVER_DEFINED} F.OkButton := nil; {$ENDIF}\n", StringComparison.Ordinal);
+        var document = await _p.OpenAsync((CallerPath, caller));
+        var layout = string.Join(" | ", _p.Services.Layout.Layout.Groups.Select(g => string.Join(",", g.Tools) + ">" + g.ActiveTool));
+
+        Assert.True(await _p.RenameAsync(document, "OkButton", "YesButton"));
+
+        // The designer's commit wrote B (closed): one row at the inactive OkButton's place in the written text.
+        var written = _p.Disk(CallerPath);
+        Assert.Contains("  F.YesButton := nil; {$IFDEF NEVER_DEFINED} F.OkButton := nil; {$ENDIF}\n", written, StringComparison.Ordinal);
+        var (line, column) = Refactoring.RenameCommandTests.LineColumn(written, "{$IFDEF NEVER_DEFINED} F.OkButton", "{$IFDEF NEVER_DEFINED} F.".Length);
+        var row = Assert.Single(_p.Services.Messages.Items, i => !i.IsSummary);
+        Assert.Equal((Core.Build.MessageSeverity.Warning, "OkButton in inactive code was not renamed to YesButton", line, column, column + 8),
+            (row.Severity, row.Text, row.Location!.Line, row.Location.Column, row.Location.EndColumn));
+        Assert.Equal(CallerPath, row.Location.FilePath, StringComparer.OrdinalIgnoreCase);
+        Assert.Equal("Rename 'OkButton' to 'YesButton': occurrences that were not changed are listed in Messages (1)", _p.Status);
+        Assert.Equal(layout, string.Join(" | ", _p.Services.Layout.Layout.Groups.Select(g => string.Join(",", g.Tools) + ">" + g.ActiveTool)));
+        Assert.Empty(_p.Dialogs.Requests);
+    });
+
     /// <summary>The error dialog the designer showed (its pending editor) has ended (I-210).</summary>
     private static async Task TakeDialogAsync(FormDocumentViewModel document)
     {

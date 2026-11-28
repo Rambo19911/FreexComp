@@ -37,6 +37,8 @@ public sealed class InlineRenameSession
     public static readonly TimeSpan StatusDuration = TimeSpan.FromSeconds(5);
 
     private readonly Func<string, CancellationToken, Task<RenamePlan>> _plan;
+    private readonly Action<RenamePlan, string>? _committed;
+    private RenamePlan? _lastPlan;       // the plan of the last check that succeeded, for _resultVersion
     private readonly IClock _clock;
     private readonly IStatusService _status;
     private IDisposable? _sticky;
@@ -47,7 +49,7 @@ public sealed class InlineRenameSession
     private Task _checking = Task.CompletedTask;
 
     internal InlineRenameSession(TextDocumentViewModel document, Document source, int position, string oldName, int startCaret,
-        Func<string, CancellationToken, Task<RenamePlan>> plan, IClock clock, IStatusService status)
+        Func<string, CancellationToken, Task<RenamePlan>> plan, IClock clock, IStatusService status, Action<RenamePlan, string>? committed = null)
     {
         Document = document;
         Source = source;
@@ -57,6 +59,7 @@ public sealed class InlineRenameSession
         _plan = plan;
         _clock = clock;
         _status = status;
+        _committed = committed;
     }
 
     /// <summary>The document of the session.</summary>
@@ -154,9 +157,10 @@ public sealed class InlineRenameSession
         return _checking = CheckAsync(version, name, _request.Token);
     }
 
-    private Task Answer(long version, string? problem)
+    private Task Answer(long version, string? problem, RenamePlan? plan = null)
     {
         _resultVersion = version;
+        _lastPlan = plan;
         SetProblem(problem);
         return Task.CompletedTask;
     }
@@ -164,9 +168,10 @@ public sealed class InlineRenameSession
     private async Task CheckAsync(long version, string name, CancellationToken ct)
     {
         string? problem;
+        RenamePlan? plan = null;
         try
         {
-            var plan = await _plan(name, ct);
+            plan = await _plan(name, ct);
             problem = plan.Result.Success ? null : plan.Result.Conflicts.IsEmpty ? plan.Result.Error ?? "" : plan.Result.Conflicts[0].Message;
         }
         catch (OperationCanceledException)
@@ -180,7 +185,7 @@ public sealed class InlineRenameSession
 
         // IDE-ARCH-083: a result for an older buffer version is dropped.
         if (IsActive && version == Document.Buffer.Version)
-            _ = Answer(version, problem);
+            _ = Answer(version, problem, problem is null ? plan : null);
     }
 
     /// <summary>
@@ -204,9 +209,12 @@ public sealed class InlineRenameSession
             return; // changed meanwhile (Enter is pressed again), or a problem stays shown
         var count = Document.RenameFields.Count;
         var newName = TypedName;
+        var plan = _lastPlan;
         End();
         _status.ShowMessage(count == 1 ? Format(Strings.Msg_Rename_InlineDoneOne, OldName, newName)
             : Format(Strings.Msg_Rename_InlineDone, OldName, newName, count), StatusDuration);
+        if (plan is not null)
+            _committed?.Invoke(plan, newName); // IDE-REFAC-061: the unrenamed occurrences of the routine
     }
 
     /// <summary>
@@ -294,7 +302,8 @@ public sealed class InlineRenameController
         Active?.Cancel();
         var session = new InlineRenameSession(document, source, position, info.CurrentName, document.CaretOffset,
             (name, ct) => _planner.PlanAsync(new RenameRequest(source, position, info.CurrentName, name, Overloads: false, Forms: false), ct),
-            _clock, _status);
+            _clock, _status,
+            (plan, newName) => _planner.ReportUnrenamed(plan.Result, info.CurrentName, newName, plan.Edit?.Title ?? "", plan.Edit?.Files ?? []));
         session.Changed += (_, _) =>
         {
             if (!session.IsActive && ReferenceEquals(Active, session))

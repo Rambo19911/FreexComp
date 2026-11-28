@@ -203,6 +203,13 @@ public sealed partial class ComponentRename
             }
 
             ShowCount(designer, old, name, references); // DSG-CS-134
+            // IDE-REFAC-061 (I-385): the occurrences the plan did not rename, in Messages; their status text stays.
+            _planner.ReportUnrenamed(plan.Result, old, name, edit.Title, edit.Files);
+            if (!plan.Result.Unrenamed.IsEmpty && ReferenceEquals(designer, _renamingFromCode))
+            {
+                _countShown = true;
+            }
+
             return true;
         }
         finally
