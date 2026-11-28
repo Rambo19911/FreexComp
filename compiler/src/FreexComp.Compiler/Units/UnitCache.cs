@@ -50,7 +50,8 @@ internal sealed class UnitCache(IFileSystem fs, string compilerFingerprint, stri
         }
 
         var reason = Fingerprints(parsed) ?? SameSource(parsed, sourcePath) ?? Sources(parsed) ?? Dependencies(parsed, dependency, comparePaths: true)
-                     ?? (PcuReader.HelpersAreClassified(parsed) ? null : "CMP-1490 (e): a record helper without its mutating methods");
+                     ?? (PcuReader.HelpersAreClassified(parsed) ? null : "CMP-1490 (e): a record helper without its mutating methods")
+                     ?? (PcuReader.ClassHelpersHaveClassSelf(parsed) ? null : "CMP-1490 (e): a class helper without the Self of its class methods");
         pcu = reason is null ? parsed : null;
         return reason;
     }

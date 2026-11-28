@@ -55,6 +55,16 @@ internal static class PcuReader
                                                || t["classHelper"] is JsonValue @class && @class.TryGetValue<bool>(out var isClass) && isClass
                                                || t["classified"] is JsonValue classified && classified.TryGetValue<bool>(out var known) && known);
 
+    /// <summary>
+    /// CMP-1490 (e) (C-439): every class-helper entry of the interface carries <c>classSelf</c>. A <c>.pcu</c> where one does not was
+    /// written before class methods of class helpers took the class reference: with the unit's source at hand it is out of date.
+    /// </summary>
+    public static bool ClassHelpersHaveClassSelf(JsonObject pcu) =>
+        pcu["interface"]?["types"] is not JsonArray types
+        || types.OfType<JsonObject>().All(t => t["kind"] is not JsonValue kind || !kind.TryGetValue<string>(out var name) || name != "helper"
+                                               || t["classHelper"] is not JsonValue @class || !@class.TryGetValue<bool>(out var isClass) || !isClass
+                                               || t["classSelf"] is JsonValue classSelf && classSelf.TryGetValue<bool>(out var known) && known);
+
     public static bool HasFingerprints(JsonObject pcu, string compilerFingerprint, string? optionsFingerprint = null) =>
         Text(pcu, "compilerFingerprint") == compilerFingerprint
         && (optionsFingerprint is null || Text(pcu, "optionsFingerprint") == optionsFingerprint);
@@ -745,6 +755,8 @@ internal static class PcuReader
                     helper.ClassVariables = ClassVars(helper, entry);
                     // CMP-1490 (e) (C-443): an entry written before the classification existed has no key
                     helper.IsClassified = entry["classified"] is JsonValue classified && classified.TryGetValue<bool>(out var known) && known;
+                    // CMP-1490 (d), (e) (C-439): without `classSelf` the class methods of a class helper are static
+                    helper.HasClassSelf = entry["classSelf"] is JsonValue classSelf && classSelf.TryGetValue<bool>(out var hasSelf) && hasSelf;
                     helper.Methods = [.. Array(entry, "methods").Select(m => StaticMethod(helper, m!))];
                     helper.Properties = [.. (entry["properties"] as JsonArray ?? []).Select(p => Property(helper, p!))];
                     types.HasHelpers = true;
@@ -1007,9 +1019,11 @@ internal static class PcuReader
             var flags = Array(entry, "flags").Select(f => f!.GetValue<string>()).ToHashSet(StringComparer.Ordinal);
             var name = Text(entry, "name");
             var isConstructor = flags.Contains("constructor");
-            var isStatic = flags.Contains("class") || isConstructor;
-            var method = new MethodSymbol(name, owner, [], declaration: null!, isStatic ? MethodKind.ClassStatic : MethodKind.Ordinary,
-                VisibilityOf(Text(entry, "visibility")))
+            // CMP-1490 (d) (C-439): a class method of a class helper without `static` takes the class reference (LANG-991 (a))
+            var classSelf = flags.Contains("class") && !flags.Contains("static") && owner is HelperTypeSymbol { IsClassHelper: true, HasClassSelf: true };
+            var isStatic = (flags.Contains("class") || isConstructor) && !classSelf;
+            var method = new MethodSymbol(name, owner, [], declaration: null!,
+                classSelf ? MethodKind.ClassMethod : isStatic ? MethodKind.ClassStatic : MethodKind.Ordinary, VisibilityOf(Text(entry, "visibility")))
             {
                 IsRecordConstructor = isConstructor,
                 OperatorName = flags.Contains("operator")
@@ -1026,6 +1040,10 @@ internal static class PcuReader
             if (isConstructor)
             {
                 method.ResultVariable = new VariableSymbol("Result", owner, isGlobal: false, method, []);
+            }
+            else if (classSelf)
+            {
+                method.SelfParameter = new ParameterSymbol("Self", ((ClassTypeSymbol)((HelperTypeSymbol)owner).ExtendedType).Reference, ParameterMode.Value, -1, method, []);
             }
             else if (!isStatic)
             {

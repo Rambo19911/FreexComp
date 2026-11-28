@@ -871,6 +871,13 @@ internal sealed class PcuWriter(PcuContext context)
                         entry["classified"] = true;
                     }
 
+                    if (helper is { IsClassHelper: true, HasClassSelf: true })
+                    {
+                        // CMP-1490 (d) (C-439): class methods without `static` take the class reference; an entry read without
+                        // the key is written without it and without the `static` flags (CMP-1490 (e))
+                        entry["classSelf"] = true;
+                    }
+
                     entry["methods"] = StaticMethods(helper.Methods);
                     entry["properties"] = MemberProperties(helper.Properties);
                     if (!helper.ClassVariables.IsEmpty)
@@ -1058,6 +1065,7 @@ internal sealed class PcuWriter(PcuContext context)
                 ["params"] = Parameters(m),
                 ["result"] = m.ReturnType is { } result ? TypeId(result) : null,
                 ["flags"] = Strings([.. Flags(m), .. m.IsClassMethod ? ["class"] : Array.Empty<string>(),
+                    .. m is { MethodKind: MethodKind.ClassStatic, Owner: HelperTypeSymbol { IsClassHelper: true, HasClassSelf: true } } ? ["static"] : Array.Empty<string>(),
                     .. m.IsRecordConstructor ? ["constructor"] : Array.Empty<string>(), .. m.OperatorName is not null ? ["operator"] : Array.Empty<string>(),
                     .. m is { MutatesSelf: true, Owner: HelperTypeSymbol { IsClassHelper: false, IsClassified: true } } ? ["mutating"] : Array.Empty<string>()]),
                 ["visibility"] = VisibilityName(m.Visibility),

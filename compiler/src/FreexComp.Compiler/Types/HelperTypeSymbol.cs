@@ -30,6 +30,13 @@ public sealed class HelperTypeSymbol : TypeSymbol
     /// </summary>
     internal bool IsClassified { get; set; } = true;
 
+    /// <summary>
+    /// CMP-1490 (d), (e) (C-439): the class methods of this class helper without <c>static</c> take the class reference as <c>Self</c>
+    /// (LANG-991 (a)) — always for a helper bound from source; for one read from a <c>.pcu</c>, when its entry carries
+    /// <c>classSelf</c> (an entry without it: every class method is static, and the entry is written again as it was read).
+    /// </summary>
+    internal bool HasClassSelf { get; set; } = true;
+
     /// <summary><c>helper(TAncestorHelper)</c>: the helper whose members this one inherits (LANG-753); null otherwise.</summary>
     public HelperTypeSymbol? Parent { get; internal set; }
 

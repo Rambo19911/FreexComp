@@ -44,6 +44,11 @@ internal sealed partial class DeclarationBinder
             }
             extended = _types.Error;
         }
+        else if (extended is InterfaceTypeSymbol { IsMethodReference: false })
+        {
+            _diagnostics.Report(syntax.ExtendedType, "E2900", "helper for an interface type");     // LANG-990 (b) (C-439), dispatch interfaces too
+            extended = _types.Error;
+        }
 
         if (extended.TypeKind == TypeKind.Error)
         {
@@ -99,6 +104,9 @@ internal sealed partial class DeclarationBinder
                     break;
                 case MethodDeclarationSyntax:
                     break;
+                case PropertyDeclarationSyntax { DefaultKeyword: { } defaultKeyword }:
+                    Unsupported(defaultKeyword, "default property in a helper");                 // LANG-990 (c) (C-439)
+                    break;
                 case PropertyDeclarationSyntax property:
                     properties.Add((property, visibility));
                     break;
@@ -146,8 +154,9 @@ internal sealed partial class DeclarationBinder
 
     /// <summary>
     /// A helper method heading (LANG-750/751): instance methods take <c>Self</c> — the object for a class helper, a <c>var</c>
-    /// reference to the helped value for a record helper; class methods are static. Virtual methods are E2750; constructors,
-    /// destructors and operators in helpers are E2900.
+    /// reference to the helped value for a record helper; class methods of a class helper without <c>static</c> take the class
+    /// reference (LANG-991 (a), C-439), the others are static. Virtual methods are E2750; constructors, destructors and operators
+    /// in helpers are E2900.
     /// </summary>
     private MethodSymbol? BindHelperMethodDeclaration(HelperTypeSymbol helper, MethodDeclarationSyntax syntax, Visibility visibility)
     {
@@ -171,11 +180,17 @@ internal sealed partial class DeclarationBinder
         }
 
         var isClass = heading.ClassKeyword is not null;
+        var classSelf = isClass && helper.IsClassHelper && !syntax.Directives.Any(d => d.Keyword.ContextualKind == SyntaxKind.StaticKeyword);
         var method = new MethodSymbol(NameOf(identifier), helper, [DiagnosticBag.LocationOf(identifier)], syntax,
-            isClass ? MethodKind.ClassStatic : MethodKind.Ordinary, visibility);
+            classSelf ? MethodKind.ClassMethod : isClass ? MethodKind.ClassStatic : MethodKind.Ordinary, visibility);
         BindMethodDirectives(method, syntax.Directives, isClass);
         BindSignature(method, heading, identifier, report: true);
-        if (!isClass)
+        if (classSelf)
+        {
+            // LANG-991 (a) (C-439): the class the method is called on, typed class of the helped class (ABI-084 as for LANG-620)
+            method.SelfParameter = new ParameterSymbol("Self", ((ClassTypeSymbol)helper.ExtendedType).Reference, ParameterMode.Value, -1, method, []);
+        }
+        else if (!isClass)
         {
             // LANG-751: the helped object; a var reference to the helped value (ABI-084 record rule)
             method.SelfParameter = new ParameterSymbol("Self", helper.ExtendedType, helper.IsClassHelper ? ParameterMode.Value : ParameterMode.Var, -1, method, []);

@@ -82,9 +82,20 @@ internal sealed partial class ExpressionBinder
     /// </summary>
     private BoundExpression? InheritedProperty(InheritedExpressionSyntax inherited)
     {
-        if (inherited.Name is not { Identifier: var token } name
-            || CurrentMethod is not { Owner: ClassTypeSymbol { Parent: { } parent } owner } current
-            || parent.GetMembers(token.Value as string ?? token.Text).FirstOrDefault() is not PropertySymbol property)
+        if (inherited.Name is not { Identifier: var token } name || CurrentMethod is not { } current)
+        {
+            return null;
+        }
+
+        var text = token.Value as string ?? token.Text;
+        var (start, owner) = current.Owner switch
+        {
+            // LANG-991 (d) (C-439): in a helper, the rest of its chain, then the helped type, used as on Self (accessors dispatched)
+            HelperTypeSymbol helper => (helper.Parent is { } chain && chain.GetMembers(text).Any() ? chain : helper.ExtendedType, helper.ExtendedType),
+            ClassTypeSymbol { Parent: { } parent } type => ((TypeSymbol)parent, (TypeSymbol)type),
+            _ => (null, null),
+        };
+        if (start?.GetMembers(text).FirstOrDefault() is not PropertySymbol property)
         {
             return null;
         }
@@ -106,7 +117,7 @@ internal sealed partial class ExpressionBinder
             self = SelfOf(current, inherited);
         }
 
-        return PropertyAccess(inherited, property, self, inherited: true);
+        return PropertyAccess(inherited, property, self, inherited: current.Owner is not HelperTypeSymbol);
     }
 
     /// <summary>A property named inside a method (LANG-621): of <c>Self</c>, or of the class for a class property.</summary>

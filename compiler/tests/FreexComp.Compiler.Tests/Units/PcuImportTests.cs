@@ -498,6 +498,115 @@ public sealed class PcuImportTests
     }
 
     /// <summary>
+    /// CMP-1490 (d), (e) (C-439): a class method of a class helper without <c>static</c> takes the class reference as <c>Self</c>
+    /// (LANG-991 (a)) also when the helper is read from a <c>.pcu</c> — the program gets the IR it gets against the source; the entry
+    /// carries <c>classSelf</c>, a <c>static</c> class method the flag <c>static</c> after <c>class</c>; a record helper neither. An
+    /// entry written without <c>classSelf</c>: for a <c>.pcu</c>-only unit every class method of the helper is static (the IR of a
+    /// source that declares them <c>static</c>), and written again the entry keeps no key and no flag; with the unit's source
+    /// present the <c>.pcu</c> is out of date and the unit is compiled again.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1490")]
+    [Trait("Req", "LANG-991")]
+    public void HelperClassMethodSelfFromPcu()
+    {
+        const string Unit = """
+            unit U;
+            interface
+            type
+              TAcc = class
+                class function Base: Integer; virtual;
+              end;
+              TSav = class(TAcc)
+                class function Base: Integer; override;
+              end;
+              TAccH = class helper for TAcc
+                class function Count: Integer;
+                class function Fixed: Integer; static;
+              end;
+              TIntH = record helper for Integer
+                class function Zero: Integer;
+              end;
+            implementation
+            class function TAcc.Base: Integer; begin Result := 1 end;
+            class function TSav.Base: Integer; begin Result := 2 end;
+            class function TAccH.Count: Integer; begin Result := Self.Base * 10 end;
+            class function TAccH.Fixed: Integer; begin Result := 7 end;
+            class function TIntH.Zero: Integer; begin Result := 0 end;
+            end.
+            """;
+        const string Program = """
+            program P;
+            uses U;
+            var
+              A: TAcc;
+            begin
+              A := TSav.Create;
+              Writeln(TAcc.Count, ' ', TSav.Count, ' ', A.Count, ' ', TAcc.Fixed, ' ', Integer.Zero);
+              A.Free;
+            end.
+            """;
+        const string Empty = "program P;\nuses U;\nbegin\nend.\n";
+        static JsonObject Entry(JsonObject pcu, string helper) =>
+            (JsonObject)((JsonArray)pcu["interface"]!["types"]!).Single(t => (string?)t!["name"] == helper)!;
+        static string[] Flags(JsonObject entry, string method) =>
+            [.. ((JsonArray)((JsonArray)entry["methods"]!).Single(m => (string?)m!["name"] == method)!["flags"]!).Select(f => (string)f!)];
+
+        AssertSameIrAgainstPcu(Unit, Program);
+
+        // the entry: classSelf, the static flag
+        var pcu = (JsonObject)JsonNode.Parse(PcuTests.Pcus(PcuTests.Files(u: Unit, program: Empty))["U"])!;
+        Assert.True((bool)Entry(pcu, "TAccH")["classSelf"]!);
+        Assert.Equal(["class"], Flags(Entry(pcu, "TAccH"), "Count"));
+        Assert.Equal(["class", "static"], Flags(Entry(pcu, "TAccH"), "Fixed"));
+        Assert.False(Entry(pcu, "TIntH").ContainsKey("classSelf"));
+        Assert.Equal(["class"], Flags(Entry(pcu, "TIntH"), "Zero"));
+
+        // an entry written without classSelf (and so without the static flags), for a .pcu-only unit: static class methods
+        var old = (JsonObject)pcu.DeepClone();
+        Assert.True(Entry(old, "TAccH").Remove("classSelf"));
+        ((JsonArray)((JsonArray)Entry(old, "TAccH")["methods"]!).OfType<JsonObject>().Single(m => (string?)m["name"] == "Fixed")["flags"]!).RemoveAt(1);
+        var allStatic = Unit.Replace("class function Count: Integer;", "class function Count: Integer; static;", StringComparison.Ordinal)
+            .Replace("Result := Self.Base * 10", "Result := 10", StringComparison.Ordinal);
+        var reference = PcuTests.Files(u: allStatic, program: Program);
+        Assert.True(Emit(reference, PcuTests.Options(), EmitStage.Ll).Success);
+        var oldFs = new InMemoryFileSystem().Add(@"C:\p\P.pas", Program).AddSystem()
+            .Add(Path.Combine(Lib, "U.pcu"), old.ToJsonString() + "\n").Add(Path.Combine(Lib, "U.obj"), "");
+        var againstOld = Emit(oldFs, PcuTests.Options() with { SearchPaths = [Lib] }, EmitStage.Ll);
+        Assert.True(againstOld.Success, string.Join("\n", againstOld.Diagnostics.Select(d => d.ToText())));
+        Assert.Equal(reference.ReadAllText(@"C:\p\obj\P.ll"), oldFs.ReadAllText(@"C:\p\obj\P.ll"));
+
+        // … read and written again it is the same entry: no key, no flag
+        var rewrittenFs = new InMemoryFileSystem().Add(@"C:\p\P.pas", Empty).AddSystem()
+            .Add(Path.Combine(Lib, "U.pcu"), old.ToJsonString() + "\n").Add(Path.Combine(Lib, "U.obj"), "");
+        var rewritten = (JsonObject)JsonNode.Parse(PcuTests.Pcus(rewrittenFs, PcuTests.Options() with { SearchPaths = [Lib] })["U"])!;
+        Assert.False(Entry(rewritten, "TAccH").ContainsKey("classSelf"));
+        Assert.Equal(["class"], Flags(Entry(rewritten, "TAccH"), "Fixed"));
+
+        // … with the source present: the cached .pcu is out of date, the unit is compiled again (nothing else is)
+        var cached = PcuTests.Files(u: Unit, program: Empty);
+        foreach (var (unit, text) in PcuTests.Pcus(cached))
+        {
+            cached.Add(Path.Combine(@"C:\p\obj", unit + ".pcu"), text).Add(Path.Combine(@"C:\p\obj", unit + ".obj"), "");
+        }
+
+        foreach (var tool in new[] { "clang.exe", "lld-link.exe", "llvm-dlltool.exe" })
+        {
+            cached.Add(Path.Combine(@"C:\llvm", tool), "");
+        }
+
+        var options = PcuTests.Options() with { ToolchainDirectory = @"C:\llvm" };
+        Assert.Empty(Compilation.Create(options, [], cached).Emit(new EmitOptions { Stage = EmitStage.Obj }, TestContext.Current.CancellationToken).CompiledUnits);
+        var stale = (JsonObject)JsonNode.Parse(cached.ReadAllText(@"C:\p\obj\U.pcu"))!;
+        Assert.True(Entry(stale, "TAccH").Remove("classSelf"));
+        cached.Add(@"C:\p\obj\U.pcu", stale.ToJsonString() + "\n");
+        var again = Compilation.Create(options, [], cached).Emit(new EmitOptions { Stage = EmitStage.Obj }, TestContext.Current.CancellationToken);
+        Assert.Equal(["U"], again.CompiledUnits);
+        Assert.DoesNotContain(again.Diagnostics, d => d.Code == "E2202");               // out of date, never an error (CMP-160)
+    }
+
+    /// <summary>
     /// C-232 (LANG-472): the hint directives of every symbol kind survive the <c>.pcu</c> — a program against the <c>.pcu</c>-only unit
     /// gets the warnings it gets against the source.
     /// </summary>

@@ -53,16 +53,17 @@ internal sealed partial class ExpressionBinder
 
     /// <summary>
     /// <c>x.Name</c> found in <paramref name="helper"/> (LANG-752): a method (sets <paramref name="methodCall"/>), property, class var or
-    /// constant; <paramref name="instance"/> is the helped value, null when <c>x</c> names the helped type (static members only).
+    /// constant; <paramref name="instance"/> is the helped value, null when <c>x</c> names the helped type (static members only, and
+    /// class methods of a class helper, whose <c>Self</c> is the class <paramref name="className"/> named, LANG-991 (a)).
     /// </summary>
     private BoundExpression? HelperMember(MemberAccessExpressionSyntax syntax, SyntaxNode call, ArgumentListSyntax? argumentList,
-        HelperTypeSymbol helper, BoundExpression? instance, string name, out MethodCall? methodCall)
+        HelperTypeSymbol helper, BoundExpression? instance, string name, out MethodCall? methodCall, ClassTypeSymbol? className = null)
     {
         methodCall = null;
         var candidates = HelperCandidates(helper, name);
         if (!candidates.IsEmpty)
         {
-            methodCall = BindMethodCall(call, candidates, instance is null ? ReceiverKind.ClassName : ReceiverKind.Instance, instance, null, argumentList);
+            methodCall = BindMethodCall(call, candidates, instance is null ? ReceiverKind.ClassName : ReceiverKind.Instance, instance, className, argumentList);
             return null;
         }
 

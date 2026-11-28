@@ -72,7 +72,9 @@ internal sealed partial class ExpressionBinder
     /// LANG-610/612: whether <paramref name="member"/> of <paramref name="owner"/> may be used here through a receiver whose static
     /// type is <paramref name="receiver"/> (the current class for implicit <c>Self</c>); E2610 otherwise. <c>private</c> and
     /// <c>protected</c> are unit-wide; <c>strict private</c> needs a method of the class itself; (strict) protected also opens
-    /// to methods of a descendant D when the receiver is D or a descendant of D.
+    /// to methods of a descendant D when the receiver is D or a descendant of D. LANG-991 (c) (C-439): code of a helper for T counts
+    /// as code of a descendant of T declared in the helper's unit (for T's members and its ancestors', on a receiver of T or a
+    /// descendant); for a helper's own members the helpers that inherit from it are its descendants.
     /// </summary>
     private bool CheckAccess(SyntaxNode at, Symbol member, TypeSymbol owner, TypeSymbol? receiver)
     {
@@ -84,12 +86,18 @@ internal sealed partial class ExpressionBinder
 
         member.IsReferenced = true;                                                     // H2003 (C-096)
         var current = CurrentMethod?.Owner;
+        if (receiver is HelperTypeSymbol receiverHelper)
+        {
+            receiver = receiverHelper.ExtendedType;                                     // implicit Self in a helper method: the helped value
+        }
+
         var sameUnit = TypeMembers.Outermost(owner).ContainingSymbol is UnitSymbol unit && ReferenceEquals(unit, CurrentUnit);
         // LANG-774 (C-344): code of a nested type counts as code of every enclosing type
         var selves = current is null ? [] : new[] { current }.Concat(TypeMembers.EnclosingTypes(current)).ToList();
         var own = selves.Contains(owner);
-        var descendant = !own && selves.OfType<ClassTypeSymbol>().Any(currentClass => currentClass.SelfAndAncestors().Contains(owner)
-            && receiver is ClassTypeSymbol r && r.SelfAndAncestors().Contains(currentClass));
+        var descendant = !own && (selves.OfType<ClassTypeSymbol>().Any(currentClass => currentClass.SelfAndAncestors().Contains(owner)
+            && receiver is ClassTypeSymbol r && r.SelfAndAncestors().Contains(currentClass))
+            || current is HelperTypeSymbol helper && HelperDescendant(helper, owner, receiver));
         var allowed = visibility switch
         {
             Visibility.Private => sameUnit,
@@ -111,6 +119,15 @@ internal sealed partial class ExpressionBinder
 
         return allowed;
     }
+
+    /// <summary>
+    /// LANG-991 (c) (C-439): code of <paramref name="helper"/> is code of a descendant of <paramref name="owner"/> — a helper of its
+    /// chain, or the helped type or one of its ancestors when the receiver is the helped type or a descendant of it.
+    /// </summary>
+    private static bool HelperDescendant(HelperTypeSymbol helper, TypeSymbol owner, TypeSymbol? receiver) => owner is HelperTypeSymbol ownerHelper
+        ? helper.SelfAndAncestors().Contains(ownerHelper)
+        : TypeMembers.SelfAndAncestors(helper.ExtendedType).Contains(owner) && receiver is not null
+            && TypeMembers.SelfAndAncestors(receiver).Contains(helper.ExtendedType);
 
     /// <summary>
     /// C-260: (non-strict) protected members of <paramref name="owner"/> are open to code anywhere in a unit that declares a
@@ -377,6 +394,8 @@ internal sealed partial class ExpressionBinder
 
         BoundExpression self = current switch
         {
+            // LANG-991 (a) (C-439): in a static method of a class helper the current class is the helped class
+            { SelfParameter: null, Owner: HelperTypeSymbol { ExtendedType: ClassTypeSymbol helped } } => new BoundClassReferenceExpression(call, helped, helped.Reference),
             { SelfParameter: null } => new BoundClassReferenceExpression(call, current.ContainingType, current.ContainingType.Reference),
             { IsClassMethod: true } => SelfOf(current, call),
             _ => ClassOf(call, SelfOf(current, call)),
@@ -667,7 +686,7 @@ internal sealed partial class ExpressionBinder
 
         if (qualifierType is not null and not HelperTypeSymbol && HelperFor(qualifierType, name) is { } typeHelper)
         {
-            return HelperMember(syntax, call, argumentList, typeHelper, instance: null, name, out methodCall);   // C-124: Integer.Parse
+            return HelperMember(syntax, call, argumentList, typeHelper, instance: null, name, out methodCall, qualifierType as ClassTypeSymbol);   // C-124: Integer.Parse
         }
 
         if (qualifierType is DynamicArrayTypeSymbol dynamicArray && IdentifierComparer.Instance.Equals(name, "Create"))
@@ -1404,7 +1423,11 @@ internal sealed partial class ExpressionBinder
         }
 
         var name = inherited.Name is { Identifier: var token } ? token.Value as string ?? token.Text : current.Name;
-        var candidates = (current.Owner as ClassTypeSymbol)?.Parent is { } parent ? MemberCandidates(parent, name) : [];
+        // LANG-991 (d) (C-439): in a helper, the rest of its chain, then the helped type's own members, used as on Self (dispatched)
+        var helper = current.Owner as HelperTypeSymbol;
+        var candidates = helper is not null ? InheritedHelperCandidates(helper, name)
+            : (current.Owner as ClassTypeSymbol)?.Parent is { } parent ? MemberCandidates(parent, name) : [];
+        var kind = helper is null ? ReceiverKind.Inherited : ReceiverKind.Implicit;
         if (bare)
         {
             var match = candidates.OfType<MethodSymbol>().FirstOrDefault(m => m.MethodKind == current.MethodKind
@@ -1415,7 +1438,7 @@ internal sealed partial class ExpressionBinder
                 return new MethodCall(null, [], null, IsNothing: true);                 // nothing to call (LANG-624)
             }
 
-            var receiver = Receiver(call, match, ReceiverKind.Inherited, null, null);
+            var receiver = Receiver(call, match, kind, null, null);
             ImmutableArray<BoundExpression> arguments = [.. current.Parameters.Select(p =>
             {
                 NoteReference(p);
@@ -1430,7 +1453,27 @@ internal sealed partial class ExpressionBinder
             return new MethodCall(null, [], null);
         }
 
-        return BindMethodCall(call, candidates, ReceiverKind.Inherited, null, null, argumentList);
+        return BindMethodCall(call, candidates, kind, null, null, argumentList);
+    }
+
+    /// <summary>
+    /// LANG-991 (d) (C-439): the methods <c>inherited Name</c> finds in a method of <paramref name="helper"/> — those of the rest of its
+    /// chain, else those of the helped class (and its ancestors) or record. The active helpers of the ancestors of the helped class
+    /// are not consulted.
+    /// </summary>
+    private static ImmutableArray<RoutineSymbol> InheritedHelperCandidates(HelperTypeSymbol helper, string name)
+    {
+        if (helper.Parent is { } parent && HelperCandidates(parent, name) is { IsEmpty: false } chain)
+        {
+            return chain;
+        }
+
+        return helper.ExtendedType switch
+        {
+            ClassTypeSymbol type => MemberCandidates(type, name),
+            RecordTypeSymbol record => [.. record.Methods.Where(m => IdentifierComparer.Instance.Equals(m.Name, name))],
+            _ => [],
+        };
     }
 
     /// <summary>
