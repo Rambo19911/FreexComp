@@ -233,6 +233,7 @@ public static class DiagnosticCatalog
         new("E2733", null, DiagnosticSeverity.Error, "Operator '%s' must have %d parameter(s)"),
         new("E2750", null, DiagnosticSeverity.Error, "Helpers cannot declare instance fields or virtual methods"),
         new("E2751", null, DiagnosticSeverity.Error, "Helper type '%s' cannot be used here"),
+        new("E2753", null, DiagnosticSeverity.Error, "Helper '%s' cannot inherit from '%s'"),
         new("E2800", null, DiagnosticSeverity.Error, "Class instance required after 'raise'"),
         new("E2801", null, DiagnosticSeverity.Error, "Re-raising an exception is only allowed inside an exception handler"),
         new("E2802", null, DiagnosticSeverity.Error, "Class type required in exception handler"),

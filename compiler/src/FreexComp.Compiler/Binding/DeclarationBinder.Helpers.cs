@@ -11,7 +11,7 @@ internal sealed partial class DeclarationBinder
     /// <summary>
     /// <c>T = class helper for TFoo …</c> / <c>record helper for X …</c> at unit level: methods (instance methods take <c>Self</c>, a
     /// <c>var</c> reference for a record helper, LANG-751), static class methods, properties, constants and class vars; instance
-    /// fields and virtual methods are E2750. <c>helper(TOther)</c> inherits another helper's members (LANG-753).
+    /// fields and virtual methods are E2750. <c>helper(TOther)</c> inherits another helper's members (LANG-990 (e)).
     /// </summary>
     private void BindHelperDeclaration(SyntaxToken identifier, HelperTypeSyntax syntax, ImmutableArray<Symbol>.Builder declared)
     {
@@ -55,16 +55,9 @@ internal sealed partial class DeclarationBinder
         _scope.TryDeclare(name, helper, out _);
         declared.Add(helper);
         _types.HasHelpers = true;
-        if (syntax.Heritage is { Types: [NamedTypeSyntax { Name: IdentifierNameSyntax { Identifier: { IsMissing: false } parentToken } parentName }] })
+        if (syntax.Heritage is { Types: [NamedTypeSyntax { Name: { IsMissing: false } ancestor }] })
         {
-            if (_scope.For(parentName).Lookup(NameOf(parentToken)) is HelperTypeSymbol parent)
-            {
-                helper.Parent = parent;
-            }
-            else
-            {
-                _diagnostics.Report(parentName, "E2900", "helper ancestor that is no helper");
-            }
+            helper.Parent = BindHelperAncestor(helper, ancestor);
         }
         else if (syntax.Heritage is { } heritage)
         {
@@ -123,6 +116,32 @@ internal sealed partial class DeclarationBinder
         helper.NestedMembers = nested.ToImmutable();
         helper.NestedAliases = nestedAliases.ToImmutable();
         helper.Properties = inner.BindProperties(helper, properties, names);
+    }
+
+    /// <summary>
+    /// LANG-990 (e) (C-438): the helper <c>helper(A)</c> names as its ancestor — a class helper for the helped class of
+    /// <paramref name="helper"/> or for an ancestor class of it, so that an inherited method gets a <c>Self</c> of its own helped
+    /// class. Everything else that <c>A</c> names (a record helper, a helper for another class, the helper itself, a symbol that is
+    /// no helper), and every ancestor of a record helper, is E2753 at <c>A</c>; a name that is not declared reports itself (E2003).
+    /// Null after an error: the helper is declared without an ancestor.
+    /// </summary>
+    private HelperTypeSymbol? BindHelperAncestor(HelperTypeSymbol helper, NameSyntax ancestor)
+    {
+        var last = ancestor is QualifiedNameSyntax { Right: var right } qualified && UnitQualifiers.Qualifier(_scope, qualified.Left) is not null ? right : ancestor;
+        var named = last is IdentifierNameSyntax { Identifier: { IsMissing: false } identifier } name ? _scope.For(name).Lookup(NameOf(identifier)) : null;
+        if (named is HelperTypeSymbol { IsClassHelper: true } parent && helper.IsClassHelper && !ReferenceEquals(parent, helper)
+            && helper.ExtendedType.InheritsFrom(parent.ExtendedType))
+        {
+            return parent;
+        }
+
+        // a name that names nothing reports itself (E2003, E2703…); whatever else is written there cannot be the ancestor
+        if (named is not null || ResolveTypeName(ancestor).TypeKind != TypeKind.Error)
+        {
+            _diagnostics.Report(ancestor, "E2753", helper.Name, string.Concat(ancestor.DescendantTokens().Select(t => t.Text)));
+        }
+
+        return null;
     }
 
     /// <summary>

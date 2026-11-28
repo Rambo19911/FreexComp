@@ -424,6 +424,80 @@ public sealed class PcuImportTests
     }
 
     /// <summary>
+    /// CMP-1490 (a) (C-438): the ancestor of a helper travels in the <c>.pcu</c> (<c>parent</c>), also one of another unit — unit V
+    /// declares a class and its base helper, unit U a helper that inherits from it and one for a descendant class; the program uses
+    /// U only, calls members of both helpers and gets the same IR as against the sources.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1490")]
+    public void HelperInheritanceFromPcu()
+    {
+        const string Base = """
+            unit V;
+            interface
+            type
+              TThing = class
+                FSize: Integer;
+              end;
+              TThingBaseHelper = class helper for TThing
+                function Tag: string;
+                function Size: Integer;
+                procedure Grow(N: Integer); overload;
+              end;
+            implementation
+            function TThingBaseHelper.Tag: string; begin Result := 'base' end;
+            function TThingBaseHelper.Size: Integer; begin Result := FSize end;
+            procedure TThingBaseHelper.Grow(N: Integer); begin Inc(FSize, N) end;
+            end.
+            """;
+        const string Unit = """
+            unit U;
+            interface
+            uses V;
+            type
+              TItem = TThing;
+              TSmallItem = class(TThing)
+              end;
+              TThingHelper = class helper(TThingBaseHelper) for TThing
+                function Tag: string;
+                procedure Grow(const S: string); overload;
+              end;
+              TSmallHelper = class helper(TThingBaseHelper) for TSmallItem
+                function Half: Integer;
+              end;
+            function NewItem: TItem;
+            implementation
+            function TThingHelper.Tag: string; begin Result := 'derived' end;
+            procedure TThingHelper.Grow(const S: string); begin Grow(Length(S)) end;
+            function TSmallHelper.Half: Integer; begin Result := Size div 2 end;
+            function NewItem: TItem; begin Result := TThing.Create end;
+            end.
+            """;
+        const string Program = """
+            program P;
+            uses U;
+            var
+              T: TItem;
+              S: TSmallItem;
+            begin
+              T := NewItem;
+              T.Grow(3);
+              T.Grow('four');
+              Writeln(T.Tag, ' ', T.Size);
+              S := TSmallItem.Create;
+              S.Grow(8);
+              Writeln(S.Half, ' ', S.Tag, ' ', S.Size);
+              S.Free;
+              T.Free;
+            end.
+            """;
+
+        AssertSameIrAgainstPcu(Unit, Program, Base);
+        Assert.Contains("TThingBaseHelper", PcuTests.Pcus(PcuTests.Files(u: Unit, v: Base, program: Program))["U"], StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// C-232 (LANG-472): the hint directives of every symbol kind survive the <c>.pcu</c> — a program against the <c>.pcu</c>-only unit
     /// gets the warnings it gets against the source.
     /// </summary>
