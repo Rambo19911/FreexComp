@@ -780,7 +780,8 @@ public sealed class PropertyGridViewModel : ObservableObject
     /// DSG-OI-055: opens <c>Dialog.StringsEditor</c> on the current <c>TStrings</c> row (initial text from the primary);
     /// OK with a changed text sets the list on every object (an empty list removes the property, it is the default) as one
     /// unit; unchanged text or Cancel changes nothing. A tab control's <c>Tabs</c> brings its <c>TabIndex</c> change into the
-    /// same unit (DSG-RND-024, <see cref="TabControlRules.TabIndexAfterTabsEdit"/>).
+    /// same unit (DSG-RND-024, <see cref="TabControlRules.TabIndexAfterTabsEdit"/>). With <see cref="FilePrompts"/> the
+    /// dialog has <c>Load…</c> and <c>Save…</c> of a text file (DSG-OI-130 … 134).
     /// </summary>
     public async Task EditStringsAsync()
     {
@@ -794,7 +795,8 @@ public sealed class PropertyGridViewModel : ObservableObject
         var component = selection.Count == 1
             ? primary.Name
             : string.Format(CultureInfo.CurrentCulture, Strings.StringsEditor_Components, selection.Count);
-        var result = await _dialogs.ShowAsync(new Dialogs.StringsEditorViewModel(row.Name, component, Lines(primary, row.Path, info)));
+        var result = await _dialogs.ShowAsync(new Dialogs.StringsEditorViewModel(row.Name, component, Lines(primary, row.Path, info), FilePrompts, _dialogs,
+            Dialogs.StringsEditorViewModel.SuggestedFileName(row.Name, selection.Count == 1 ? primary.Name : null)));
         if (result is null || Selection.Count == 0 || !ReferenceEquals(Selection[^1], primary))
         {
             return;

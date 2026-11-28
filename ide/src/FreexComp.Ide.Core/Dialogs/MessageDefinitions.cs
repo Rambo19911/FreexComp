@@ -105,6 +105,10 @@ public static class MessageDefinitions
         new("Msg.Options.ResetKeysConfirm", Q, ["Reset", "Cancel"]),
         new("Msg.Options.ResetColorsConfirm", Q, ["Reset", "Cancel"]),
         new("Msg.ProjectOptions.ConfigDeleteConfirm", Q, ["Delete", "Cancel"]),
+        new("Msg.StringsEditor.LoadFailed", E, ["OK"]), // DSG-OI-131
+        new("Msg.StringsEditor.NotText", E, ["OK"]),
+        new("Msg.StringsEditor.FileTooLarge", E, ["OK"]),
+        new("Msg.StringsEditor.SaveFailed", E, ["OK"]), // DSG-OI-133
     ];
 
     /// <summary>

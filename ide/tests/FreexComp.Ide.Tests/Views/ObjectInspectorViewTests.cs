@@ -458,6 +458,157 @@ public sealed class ObjectInspectorViewTests
         Assert.Null(Stored(d, "Memo1", "Lines"));
         Assert.Equal(2, d.Designer.Undo.UndoCount);
     }
+
+    /// <summary>
+    /// D-159 (UI-DLG-344, 345): <c>Load…</c> and <c>Save…</c> left on the strings editor's button strip, then the line count,
+    /// <c>OK</c> and <c>Cancel</c> right; at the minimum size 480 × 240 the four buttons are whole. Alt+L loads a text file
+    /// through the picker, Alt+S saves the editor's text; after a picker or a message box the focus is back in the text.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Phase", "8")]
+    [Trait("Req", "UI-DLG-344")]
+    [Trait("Req", "UI-DLG-345")]
+    public async Task StringsEditorLoadAndSaveButtons()
+    {
+        await using var h = await HeadlessHarness.StartAsync(o =>
+        {
+            Phase5(o);
+            o.InitialFiles["MainForm.pas"] = DesignerViewTests.Unit.Replace("GreetButton: TButton;", "GreetButton: TButton;\n    Memo1: TMemo;", StringComparison.Ordinal)
+                .ReplaceLineEndings("\r\n");
+            var form = DesignerViewTests.FormText.ReplaceLineEndings("\n");
+            var at = form.TrimEnd().LastIndexOf("end", StringComparison.Ordinal);
+            o.InitialFiles["MainForm.form"] = (form[..at] + "  object Memo1: TMemo\n    Left = 16\n    Top = 60\n    Width = 185\n    Height = 89\n    TabOrder = 2\n  end\n" + form[at..])
+                .ReplaceLineEndings("\r\n");
+        });
+        var d = await OpenDesignAsync(h, "Memo1");
+        h.Press("F4");
+        GoTo(h, "Lines");
+        h.Press("Enter");
+        var dlg = await h.WaitForDialogAsync("StringsEditor");
+        try
+        {
+            var text = dlg.Find<TextBox>("Text");
+            var count = dlg.Find<TextBlock>("LineCount");
+            Button[] buttons = [dlg.Find<Button>("Load"), dlg.Find<Button>("Save"), dlg.Find<Button>("Ok"), dlg.Find<Button>("Cancel")];
+            Assert.Equal(["_Load…", "_Save…", "OK", "Cancel"], buttons.Select(b => b.Content));
+            Assert.Equal(["Load…", "Save…", "OK", "Cancel"], buttons.Select(Avalonia.Automation.AutomationProperties.GetName));
+
+            // The strip at the minimum size: Load…, Save…, the line count, OK, Cancel from left to right on one row, every
+            // button whole (inside the window, at least the minimum button width, its label not cut). The places are the
+            // layout's (a button that was pressed is still drawn through its press transition for a moment).
+            Rect In(Control c)
+            {
+                var origin = c.Bounds.Position;
+                for (var parent = c.GetVisualParent(); parent is not null && parent != dlg.Window; parent = parent.GetVisualParent())
+                {
+                    origin += parent.Bounds.Position;
+                }
+
+                return new Rect(origin, c.Bounds.Size);
+            }
+
+            void AssertStrip(double width)
+            {
+                Assert.Equal(width, dlg.Window.ClientSize.Width);
+                Rect[] r = [In(buttons[0]), In(buttons[1]), In(count), In(buttons[2]), In(buttons[3])];
+                for (var i = 0; i + 1 < r.Length; i++)
+                {
+                    Assert.True(r[i].Right <= r[i + 1].Left, $"element {i} ends at {r[i].Right}, element {i + 1} starts at {r[i + 1].Left} (width {width})");
+                }
+
+                Assert.Equal(8, r[0].Left); // space.4: the strip's padding
+                Assert.Equal(width - 8, r[4].Right);
+                Assert.Equal(8, r[1].Left - r[0].Right); // gap space.4
+                Assert.Equal(8, r[4].Left - r[3].Right);
+                Assert.Equal(8, r[2].Left - r[1].Right);
+                foreach (var button in buttons)
+                {
+                    var b = In(button);
+                    Assert.Equal(r[0].Top, b.Top);
+                    Assert.Equal(26, b.Height);
+                    Assert.True(b.Width >= 80 && b.Width >= button.DesiredSize.Width, $"{button.Content}: {b.Width} wide, wants {button.DesiredSize.Width}");
+                    Assert.True(b.Bottom <= dlg.Window.ClientSize.Height);
+                    var label = button.GetVisualDescendants().OfType<Control>().Last();
+                    Assert.True(label.Bounds.Width >= label.DesiredSize.Width, $"{button.Content}: label cut");
+                }
+
+                Assert.True(r[2].Top >= r[0].Top && r[2].Bottom <= r[0].Bottom, "the line count is on the buttons' row");
+            }
+
+            Assert.Equal((480.0, 240.0), (dlg.Window.Width, dlg.Window.Height));
+            Assert.Equal((480.0, 240.0), (dlg.Window.MinWidth, dlg.Window.MinHeight));
+            AssertStrip(480);
+            Assert.Equal(Avalonia.Media.TextTrimming.CharacterEllipsis, count.TextTrimming);
+            Assert.Equal("0 lines", count.Text);
+
+            // Tab order: Text, Load, Save, OK, Cancel.
+            Assert.Equal("Dialog.StringsEditor.Text", dlg.FocusedAutomationId);
+            foreach (var id in (string[])["Load", "Save", "Ok", "Cancel", "Text"])
+            {
+                dlg.Press("Tab");
+                Assert.Equal("Dialog.StringsEditor." + id, dlg.FocusedAutomationId);
+            }
+
+            // Alt+L: the picker's file replaces the whole text; the focus is in Text with the caret at the start.
+            var source = Path.Combine(h.TempDir, "notes.txt");
+            File.WriteAllBytes(source, [0xEF, 0xBB, 0xBF, .. System.Text.Encoding.UTF8.GetBytes("zeile ä\nzweite →\n")]);
+            dlg.Type("Text", "typed before");
+            h.FileDialogs.NextOpen(source);
+            dlg.Press("Alt+L");
+            await h.WaitForAsync(() => text.Text == "zeile ä\r\nzweite →", "the file is loaded");
+            Assert.Equal("stringsLoad", h.FileDialogs.Requests[^1].PromptId);
+            Assert.Equal("Dialog.StringsEditor.Text", dlg.FocusedAutomationId);
+            Assert.Equal((0, 0, 0), (text.CaretIndex, text.SelectionStart, text.SelectionEnd));
+            Assert.Equal("2 lines", count.Text);
+
+            // Alt+S from another element: the editor's text is written with the new-file settings; the focus returns to Text.
+            var target = Path.Combine(h.TempDir, "saved.txt");
+            h.FileDialogs.NextSave(target);
+            buttons[2].Focus();
+            dlg.Press("Alt+S");
+            await h.WaitForAsync(() => File.Exists(target) && dlg.FocusedAutomationId == "Dialog.StringsEditor.Text", "saved, the focus back in Text");
+            Assert.Equal(System.Text.Encoding.UTF8.GetBytes("zeile ä\r\nzweite →\r\n"), File.ReadAllBytes(target));
+            Assert.Equal(("stringsSave", "Memo1.Lines.txt"), (h.FileDialogs.Requests[^1].PromptId, h.FileDialogs.Requests[^1].SuggestedName));
+            Assert.Empty(Directory.GetFiles(h.TempDir, "*.~tmp*"));
+            Assert.False(dlg.Window.IsClosed());
+
+            // A canceled picker: nothing changes, the focus returns to Text.
+            h.FileDialogs.NextCancel();
+            dlg.Click("Save");
+            await h.WaitForAsync(() => dlg.FocusedAutomationId == "Dialog.StringsEditor.Text", "the focus back in Text after a canceled picker");
+
+            // A refused file: one message box; when it closes the text is as before and the focus is in Text.
+            var binary = Path.Combine(h.TempDir, "program.bin");
+            File.WriteAllBytes(binary, [0x4D, 0x5A, 0, 1, 2, 3]);
+            h.FileDialogs.NextOpen(binary);
+            dlg.Click("Load");
+            var box = await h.WaitForDialogAsync("Message");
+            Assert.Equal("The file is not a text file.", box.Find<TextBlock>("Text").Text);
+            box.Click("OK");
+            await h.WaitForAsync(() => box.Window.IsClosed() && dlg.FocusedAutomationId == "Dialog.StringsEditor.Text", "the focus back in Text after the message box");
+            Assert.Equal("zeile ä\r\nzweite →", text.Text);
+
+            // Enlarged: the buttons keep their places at both ends, the line count has the room between them.
+            dlg.Window.Width = 720;
+            Dispatcher.UIThread.RunJobs();
+            AssertStrip(720);
+
+            // Nothing reached the form; Cancel discards as before.
+            Assert.Null(Stored(d, "Memo1", "Lines"));
+            dlg.Click("Cancel");
+            Dispatcher.UIThread.RunJobs();
+            Assert.Null(Stored(d, "Memo1", "Lines"));
+            Assert.Equal(0, d.Designer.Undo.UndoCount);
+        }
+        catch
+        {
+            dlg.Window.Close(); // the failure itself is reported, not the dialog left open
+            foreach (var box in h.AllWindows.OfType<DialogWindow>().ToList())
+                box.Close();
+            throw;
+        }
+    }
+
     private static FakeClipboard Clipboard(HeadlessHarness h) => (FakeClipboard)((DocumentService)h.Services.Documents).Clipboard!;
 
     private static ObjectInspectorViewModel Inspector(HeadlessHarness h) => (ObjectInspectorViewModel)h.Find<Control>("Tool.ObjectInspector").DataContext!;

@@ -75,6 +75,31 @@ public sealed class FilePrompts
         return chosen;
     }
 
+    /// <summary>The strings editor's <c>Load…</c> (<c>stringsLoad</c>, DSG-OI-130): one file, text files first, no stated folder; null when canceled.</summary>
+    public async Task<string?> StringsLoadAsync() =>
+        (await OpenAsync("stringsLoad", Strings.FilePrompt_Title_stringsLoad, multiple: false, TextFileFilters, stated: null)).FirstOrDefault();
+
+    /// <summary>
+    /// The strings editor's <c>Save…</c> (<c>stringsSave</c>, DSG-OI-132): the save picker for <c>*.txt</c> with
+    /// <paramref name="suggestedName"/>; null when canceled.
+    /// </summary>
+    public async Task<string?> StringsSaveAsync(string suggestedName)
+    {
+        var request = new FilePickerRequest("stringsSave", Strings.FilePrompt_Title_stringsSave, TextFileFilters, InitialFolder("stringsSave", null),
+            SuggestedName: suggestedName, DefaultExtension: "txt");
+        var chosen = await _pickers.PickSaveFileAsync(request);
+        Remember("stringsSave", chosen is null ? null : Path.GetDirectoryName(chosen));
+        return chosen;
+    }
+
+    private static IReadOnlyList<FileFilter> TextFileFilters => [new FileFilter(Strings.FilePrompt_Filter_Text, ["*.txt"]), AllFiles];
+
+    /// <summary>The file system the prompts look into: where a dialog reads or writes the file it asked for.</summary>
+    internal IFileSystem FileSystem => _fileSystem;
+
+    /// <summary>The settings the prompts read: the new-file encoding and line ending of a file a dialog writes.</summary>
+    internal ISettingsService Settings => _settings;
+
     /// <summary><c>project.addExistingFile</c>: multi-select; stated folder = the project directory.</summary>
     public Task<IReadOnlyList<string>> AddExistingAsync() =>
         OpenAsync("addExisting", Strings.FilePrompt_Title_addExisting, multiple: true,

@@ -25,6 +25,7 @@ public class DialogWindow : Window
 
     private readonly Control _body;
     private readonly Grid _strip = new();
+    private readonly StackPanel _stripLeft = new() { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Left };
     private readonly StackPanel _stripRight = new() { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
 
     public static bool GetKeepsEnter(ListBox list) => list.GetValue(KeepsEnterProperty);
@@ -112,14 +113,18 @@ public class DialogWindow : Window
 
     /// <summary>
     /// A line of information on the button strip (UI-DLG-003), left of the right-aligned buttons: it gets the width they
-    /// leave and is cut there, so the strip keeps its height. For a dialog without auxiliary buttons on the left.
+    /// leave and is cut there, so the strip keeps its height. Auxiliary buttons on the left stay before it (UI-DLG-344),
+    /// with a gap of <c>space.4</c> on both of its sides.
     /// </summary>
     protected void SetStripInfo(Control info)
     {
         ArgumentNullException.ThrowIfNull(info);
-        _strip.ColumnDefinitions = new ColumnDefinitions("*,Auto");
-        Grid.SetColumn(_stripRight, 1);
+        _strip.ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto");
+        Grid.SetColumn(info, 1);
+        Grid.SetColumn(_stripRight, 2);
         info.HorizontalAlignment = HorizontalAlignment.Left;
+        if (_stripLeft.Children.Count > 0)
+            info.Bind(MarginProperty, info.GetResourceObservable("FxcSpace4Horizontal"));
         _strip.Children.Add(info);
     }
 
@@ -138,7 +143,7 @@ public class DialogWindow : Window
 
     private Control CreateButtonStrip()
     {
-        var left = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Left };
+        var left = _stripLeft;
         var right = _stripRight;
         left.Bind(StackPanel.SpacingProperty, left.GetResourceObservable("FxcSpace4"));
         right.Bind(StackPanel.SpacingProperty, right.GetResourceObservable("FxcSpace4"));
