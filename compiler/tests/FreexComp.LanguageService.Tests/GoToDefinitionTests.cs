@@ -447,4 +447,43 @@ public sealed class GoToDefinitionTests
         Assert.Equal(Implementation("TOut.Show<T>(const V: T); begin"), Go("TOut.Show<Integer>(N);"));
         Assert.Equal(Implementation("TOut.Show<K, V>(const A: K; const B: V); begin"), Go("TOut.Show(N, S);"));
     }
+
+    // ------------------------------------------------------------------ CMP-1473 (C-415): inside anonymous methods
+
+    /// <summary>
+    /// CMP-1473 (2): from a use inside an anonymous method, a captured variable goes to its declaration in the enclosing body (a
+    /// classic local, an inline variable, a method reference at a call through it); the anonymous method's own parameter and local
+    /// go to their declaration in the anonymous method — also a parameter spelt like a captured local.
+    /// <paramref name="target"/>: a piece of the fixture with <c>$$</c> at the declaring identifier.
+    /// </summary>
+    [Theory]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1473")]
+    [InlineData("Note := $$Count + Start + Before", "$$Count: Integer;")]
+    [InlineData("$$Count := Pick(Note)", "$$Count: Integer;")]
+    [InlineData("$$Count := Count + Delta", "$$Count: Integer;")]
+    [InlineData("Start + $$Before", "var $$Before := 1")]
+    [InlineData("Count + $$After", "var $$After := 2")]
+    [InlineData("$$Log();\n      {@function}", "$$Log: TProc;")]                         // a call through the captured method reference
+    [InlineData("Local := $$Count + Note", "function($$Count: Integer)")]                // the parameter that hides the captured local
+    [InlineData("Count + $$Delta", "function($$Delta: Integer): Integer\n    begin")]
+    [InlineData("Count + $$Note", "var $$Note: Integer")]                                // from the nested anonymous function
+    [InlineData("Result := $$Local + Start", "var $$Local: Integer")]
+    [InlineData("Count := $$Pick(Note)", "var $$Pick: TIntFunc")]
+    [InlineData("Keep := $$Mine", "var $$Mine: T")]                                      // open body of a generic's method
+    [InlineData("$$Keep := Mine", "$$Keep: T;")]
+    [InlineData("Result := $$Step + Outer", "function($$Step: Integer)")]                // in the main block
+    [InlineData("Step + $$Outer", "var $$Outer := 5")]
+    public void AnonymousBody_CapturedVariableAndOwnParameter(string marker, string target)
+    {
+        static int Caret(string piece)
+        {
+            var caret = piece.IndexOf("$$", StringComparison.Ordinal);
+            return AnonymousBodyFixture.Offset(piece.Remove(caret, 2)) + caret;
+        }
+
+        var found = NavigationService.GoToDefinition(AnonymousBodyFixture.Open(), Caret(marker), TestContext.Current.CancellationToken);
+
+        Assert.Equal((TestFiles.PathOf("P.pas"), Caret(target)), Single(found));
+    }
 }

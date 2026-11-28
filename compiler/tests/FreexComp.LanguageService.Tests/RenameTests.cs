@@ -805,4 +805,199 @@ public sealed class RenameTests
         Assert.False(Rename(hiding, "P.pas", "Outer: Integer", "Inner").Success);
         Assert.False(Rename(hiding, "P.pas", "Inner := 1", "Outer").Success);
     }
+
+    // ------------------------------------------------------------------------------------------------ CMP-1473 (C-415)
+
+    /// <summary>The fixture text with every <paramref name="edits"/> pair replaced (each old piece must occur).</summary>
+    private static string Edited(params (string Old, string New)[] edits)
+    {
+        var text = AnonymousBodyFixture.Text;
+        foreach (var (old, @new) in edits)
+        {
+            Assert.Contains(old, text, StringComparison.Ordinal);
+            text = text.Replace(old, @new, StringComparison.Ordinal);
+        }
+
+        return text;
+    }
+
+    /// <summary>Renames the name at <paramref name="piece"/> in the anonymous-method fixture and gives the edit count and the new text.</summary>
+    private static (int Edits, string Text) RenamedAnonymous(string piece, string newName)
+    {
+        var files = AnonymousBodyFixture.Files;
+        var result = Rename(files, "P.pas", piece, newName);
+        Assert.True(result.Success, result.Error);
+        var applied = Applied(files, result);
+        AssertCompiles(applied);
+        return (Assert.Single(result.Edits).Changes.Length, TextOf(applied, "P.pas"));
+    }
+
+    /// <summary>
+    /// CMP-1473 (2): a rename of a captured variable — started at its declaration or at a use inside an anonymous method — edits
+    /// the declaration and every use in the enclosing body and in the anonymous methods, and nothing else: the parameter of the
+    /// nested anonymous function that is spelt the same keeps its name. Also a captured parameter, a captured inline variable and
+    /// a captured method reference with the calls through it.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1473")]
+    public void CapturedLocal_RenamesUsesInAnonymousBodies()
+    {
+        var expected = Edited(
+            ("  Count: Integer;\n", "  Total: Integer;\n"), ("  Count := 0;", "  Total := 0;"), ("Note := Count + Start", "Note := Total + Start"),
+            ("Count := Pick(Note)", "Total := Pick(Note)"), ("Count := Count + Delta", "Total := Total + Delta"), ("Count + After", "Total + After"));
+        Assert.Contains("function(Count: Integer): Integer", expected, StringComparison.Ordinal);
+        Assert.Contains("Local := Count + Note;", expected, StringComparison.Ordinal);
+
+        Assert.Equal((7, expected), RenamedAnonymous("Count + After", "Total"));                    // from a use in the anonymous function
+        Assert.Equal((7, expected), RenamedAnonymous("Count + Start + Before", "Total"));            // from a use in the anonymous procedure
+        Assert.Equal((7, expected), RenamedAnonymous("Count: Integer;", "Total"));                   // from the declaration
+
+        // a captured parameter: the two headings of the method and the uses in the anonymous procedure and in the function nested in it
+        Assert.Equal((4, Edited(("Start", "First"))), RenamedAnonymous("Start;\n", "First"));
+        // a captured inline variable
+        Assert.Equal((2, Edited(("Before", "Early"))), RenamedAnonymous("Before;\n", "Early"));
+        Assert.Equal((2, Edited(("After", "Next"))), RenamedAnonymous("After := 2", "Next"));
+        // a captured method reference: the calls through it, in the method and in the anonymous function, are uses of the variable
+        Assert.Equal((4, Edited(("Log", "Trace"))), RenamedAnonymous("Log();\n      {@function}", "Trace"));
+        Assert.Equal((4, Edited(("Log", "Trace"))), RenamedAnonymous("Log: TProc;", "Trace"));
+        // in the method of a generic that is never instantiated, and in the main block
+        Assert.Equal((2, Edited(("Keep", "Held"))), RenamedAnonymous("Keep := Mine", "Held"));
+        Assert.Equal((2, Edited(("Outer", "Base"))), RenamedAnonymous("Outer;\n", "Base"));
+    }
+
+    /// <summary>
+    /// CMP-1473 (3): a rename of a parameter or local of an anonymous method edits that anonymous method (and the ones nested in
+    /// it) only — the captured local spelt like the parameter and the parameter of the method-reference type keep their names.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1473")]
+    public void AnonymousParameter_StaysInsideItsBody()
+    {
+        // the parameter of the nested anonymous function, spelt like the captured local of the method
+        var seen = Edited(("function(Count: Integer)", "function(Seen: Integer)"), ("Local := Count + Note", "Local := Seen + Note"));
+        Assert.Equal((2, seen), RenamedAnonymous("Count + Note", "Seen"));
+        Assert.Equal((2, seen), RenamedAnonymous("Count: Integer)", "Seen"));
+
+        // the parameter of the second anonymous function; TIntFunc's parameter Delta is another symbol
+        var amount = Edited(("function(Delta: Integer): Integer\n    begin", "function(Amount: Integer): Integer\n    begin"), ("Count + Delta", "Count + Amount"));
+        Assert.Contains("TIntFunc = reference to function(Delta: Integer): Integer;", amount, StringComparison.Ordinal);
+        Assert.Equal((2, amount), RenamedAnonymous("Delta;\n", "Amount"));
+
+        // a local of the anonymous procedure: its body and the anonymous function nested in it
+        Assert.Equal((4, Edited(("Note", "Memo"))), RenamedAnonymous("Note: Integer", "Memo"));
+        Assert.Equal((4, Edited(("Note", "Memo"))), RenamedAnonymous("Note;\n", "Memo"));            // from the use in the nested function
+        // a local of the nested function, and the inline variable of the procedure that holds it (declared and called)
+        Assert.Equal((3, Edited(("Local", "Sum"))), RenamedAnonymous("Local: Integer", "Sum"));
+        Assert.Equal((2, Edited(("Pick", "Choose"))), RenamedAnonymous("Pick(Note)", "Choose"));
+        // in the method of a generic that is never instantiated, and in the main block
+        Assert.Equal((3, Edited(("Mine", "Own"))), RenamedAnonymous("Mine := Seed", "Own"));
+        Assert.Equal((2, Edited(("Step", "Pace"))), RenamedAnonymous("Step + Outer", "Pace"));
+
+        // a name used elsewhere in the method but not in this body is no conflict: After is declared after the procedure
+        Assert.Equal((4, Edited(("Note", "After"))), RenamedAnonymous("Note: Integer", "After"));
+    }
+
+    /// <summary>
+    /// CMP-1473 (3) with CMP-751: a rename that makes a local or parameter of an anonymous method hide a captured name its body
+    /// uses is refused, and so is the other direction (the captured variable renamed to a name an anonymous method declares and
+    /// uses beside it); hiding a name the body does not use is accepted.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1473")]
+    public void AnonymousLocal_HidingACapturedName_IsRefused()
+    {
+        var files = AnonymousBodyFixture.Files;
+        void Refused(string piece, string oldName, string newName)
+        {
+            var result = Rename(files, "P.pas", piece, newName);
+            Assert.False(result.Success, $"{oldName} -> {newName}");
+            Assert.StartsWith($"Renaming '{oldName}' to '{newName}' changes the meaning of '{newName}' at P.pas(", result.Error, StringComparison.Ordinal);
+            Assert.Empty(result.Edits);
+        }
+
+        Refused("Note: Integer", "Note", "Count");                             // the procedure's local: a captured local,
+        Refused("Note: Integer", "Note", "Start");                             // a captured parameter,
+        Refused("Note: Integer", "Note", "Before");                            // a captured inline variable
+        Refused("Delta;\n", "Delta", "Count");                                 // the function's parameter
+        Refused("Delta;\n", "Delta", "After");
+        Refused("Delta;\n", "Delta", "Log");                                   // the captured method reference the body calls
+        Refused("Local: Integer", "Local", "Note");                            // the nested function's local: the local of the procedure around it
+        Refused("Local: Integer", "Local", "Start");
+        Refused("Step + Outer", "Step", "Outer");                              // in the main block (beside the function's own Result)
+
+        Refused("Count: Integer;", "Count", "Note");                           // the other direction
+        Refused("Count: Integer;", "Count", "Delta");
+        Refused("Before := 1", "Before", "Note");
+
+        // Before is not used in the second anonymous function: its parameter may hide it
+        var hidden = RenamedAnonymous("Delta;\n", "Before");
+        Assert.Equal((2, Edited(("function(Delta: Integer): Integer\n    begin", "function(Before: Integer): Integer\n    begin"), ("Count + Delta", "Count + Before"))), hidden);
+    }
+
+    /// <summary>
+    /// CMP-751 inside and around anonymous methods (CMP-1473): <c>Result</c> and <c>Self</c> have no declaration site, so the
+    /// conflict check knows them by the routine they belong to. Renaming that routine — a function, a method, the class of the
+    /// method, a procedure whose anonymous function assigns its own <c>Result</c> — leaves them the same symbols and succeeds.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1473")]
+    [Trait("Req", "CMP-751")]
+    public void RoutineUsingResult_AlsoInAnAnonymousFunction_IsRenamed()
+    {
+        const string Source = """
+            program P;
+            type
+              TIntFunc = reference to function(N: Integer): Integer;
+              TCounter = class
+                FBase: Integer;
+                function Make(Start: Integer): TIntFunc;
+              end;
+
+            function Twice(N: Integer): Integer;
+            begin
+              Result := N * 2;
+            end;
+
+            function TCounter.Make(Start: Integer): TIntFunc;
+            begin
+              Result := function(N: Integer): Integer
+                begin
+                  Result := N + Start + Self.FBase;
+                end;
+            end;
+
+            procedure Work;
+            var
+              F: TIntFunc;
+            begin
+              F := function(N: Integer): Integer
+                begin
+                  Result := Twice(N);
+                end;
+              WriteLn(F(1));
+            end;
+
+            begin
+              Work;
+            end.
+            """;
+        (string Name, string Text)[] files = [("P.pas", Source.ReplaceLineEndings("\n"))];
+        void Renamed(string piece, string newName, int edits)
+        {
+            var result = Rename(files, "P.pas", piece, newName);
+            Assert.True(result.Success, result.Error);
+            Assert.Equal([$"P.pas: {edits}"], Counts(result));
+            AssertCompiles(Applied(files, result));
+        }
+
+        Renamed("Twice(N: Integer)", "Double", 2);                             // a function that assigns Result
+        Renamed("Make(Start", "Build", 2);                                     // a method: its Result, the anonymous function's and Self
+        Renamed("TCounter = class", "TTally", 2);                              // the class of that method
+        Renamed("Work;\nvar", "Labour", 2);                                    // a procedure around an anonymous function with Result
+        Renamed("Start + Self", "First", 3);                                   // a captured parameter beside Result and Self
+    }
 }

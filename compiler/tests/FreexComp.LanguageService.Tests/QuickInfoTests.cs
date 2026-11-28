@@ -833,4 +833,127 @@ public sealed class QuickInfoTests
 
         Assert.Equal(signature, info?.Signature);
     }
+
+    // ------------------------------------------------------------------ CMP-1473 (C-415): inside anonymous methods
+
+    /// <summary>
+    /// CMP-1473 (2): a variable used inside an anonymous method shows the CMP-731 text of its declaration — a captured local,
+    /// parameter, inline variable and field of the enclosing method (also two anonymous methods deep, in a generic's method and in
+    /// the main block), the anonymous method's own parameter (also one that hides a captured local), local and <c>Result</c>, and a
+    /// method reference at a call through it (the variable, not the <c>Invoke</c> of its type).
+    /// </summary>
+    [Theory]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1473")]
+    [InlineData("$$Count := 0", "var Count: Integer", "P")]                               // in the method itself
+    [InlineData("Note := $$Count + Start + Before", "var Count: Integer", "P")]            // captured by the anonymous procedure
+    [InlineData("$$Count := Count + Delta", "var Count: Integer", "P")]                    // … and by the anonymous function
+    [InlineData("Count + $$Start + Before", "param Start: Integer", "P")]
+    [InlineData("Local + $$Start", "param Start: Integer", "P")]                           // two anonymous methods deep
+    [InlineData("Start + $$Before", "var Before: Integer", "P")]                           // an inline variable declared before the expression
+    [InlineData("Count + $$After", "var After: Integer", "P")]
+    [InlineData("Length($$FName)", "field TCounter.FName: string", "P.TCounter")]          // through the captured Self
+    [InlineData("function($$Count: Integer)", "param Count: Integer", "P")]                // the parameter that hides the captured local
+    [InlineData("Local := $$Count + Note", "param Count: Integer", "P")]
+    [InlineData("Count + $$Delta", "param Delta: Integer", "P")]
+    [InlineData("var $$Note: Integer", "var Note: Integer", "P")]
+    [InlineData("Count + $$Note", "var Note: Integer", "P")]                               // the local of the outer anonymous method
+    [InlineData("$$Result := Local + Start", "var Result: Integer", "P")]                  // the anonymous function's own Result
+    [InlineData("$$Result := function", "var Result: TIntFunc", "P")]
+    [InlineData("$$Log();\n      {@function}", "var Log: TProc", "P")]                     // a captured method reference, called
+    [InlineData("$$Log();\n  Result", "var Log: TProc", "P")]
+    [InlineData("Count := $$Pick(Note)", "var Pick: TIntFunc", "P")]                       // an inline variable of the anonymous procedure, called
+    [InlineData("Mine := $$Seed", "param Seed: T", "P")]                                   // open body of a generic's method
+    [InlineData("Keep := $$Mine", "var Mine: T", "P")]
+    [InlineData("Result := $$Step + Outer", "param Step: Integer", "P")]                   // in the main block
+    [InlineData("Step + $$Outer", "var Outer: Integer", null)]
+    public void AnonymousBody_CapturedVariable(string marker, string signature, string? declaredIn)
+    {
+        var caret = marker.IndexOf("$$", StringComparison.Ordinal);
+        var at = AnonymousBodyFixture.Offset(marker.Remove(caret, 2)) + caret;
+
+        var info = QuickInfoService.GetQuickInfo(AnonymousBodyFixture.Open(), at, TestContext.Current.CancellationToken);
+
+        Assert.NotNull(info);
+        Assert.Equal(signature, info.Signature);
+        Assert.Equal(at, info.Span.Start);
+        if (declaredIn is not null)
+        {
+            Assert.Equal(declaredIn, info.DeclaredIn);
+        }
+    }
+
+    /// <summary>
+    /// CMP-1473 with CMP-731: a routine declared inside an anonymous method is shown under the routine (or program) the anonymous
+    /// method is written in — the closure class and the method made for the anonymous method are no names of the source.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1473")]
+    public void AnonymousBody_NestedRoutine_IsNamedAfterTheEnclosingRoutine()
+    {
+        const string Source = """
+            program P;
+            type
+              TIntFunc = reference to function(N: Integer): Integer;
+              TProc = reference to procedure;
+            procedure Work(Limit: Integer);
+            var
+              Total: Integer;
+              Fact: TIntFunc;
+            begin
+              Total := 0;
+              Fact := function(N: Integer): Integer
+                function Bump(Step: Integer): Integer;
+                begin
+                  Total := Total + Step + N;
+                  Result := Total;
+                end;
+                var Later: TProc;
+                begin
+                  Later := procedure
+                    procedure Deep;
+                    begin
+                      Total := Bump(1);
+                    end;
+                    begin
+                      Deep;
+                    end;
+                  Later();
+                  Result := Bump(N) + Limit;
+                end;
+              WriteLn(Fact(2));
+            end;
+            var
+              G: TProc;
+            begin
+              G := procedure
+                procedure Top;
+                begin
+                  Work(1);
+                end;
+                begin
+                  Top;
+                end;
+              G();
+            end.
+            """;
+        var text = Source.ReplaceLineEndings("\n");
+        var doc = MarkupTestFile.Open("P.pas", ("P.pas", text));
+        string? Signature(string piece)
+        {
+            var at = text.IndexOf(piece, StringComparison.Ordinal);
+            Assert.True(at >= 0, piece);
+            return QuickInfoService.GetQuickInfo(doc, at, TestContext.Current.CancellationToken)?.Signature;
+        }
+
+        Assert.Equal("function P.Work.Bump(Step: Integer): Integer", Signature("Bump(N) + Limit"));
+        Assert.Equal("function P.Work.Bump(Step: Integer): Integer", Signature("Bump(Step: Integer)"));
+        Assert.Equal("function P.Work.Bump(Step: Integer): Integer", Signature("Bump(1)"));                  // from the anonymous procedure nested in it
+        Assert.Equal("procedure P.Work.Deep", Signature("Deep;\n        end;\n      Later"));
+        Assert.Equal("procedure P.Top", Signature("Top;\n    end;\n  G()"));                                 // in the main block
+        Assert.Equal("param Step: Integer", Signature("Step + N"));
+        Assert.Equal("param N: Integer", Signature("N;\n      Result := Total"));                       // the anonymous function's, from the routine nested in it
+        Assert.Equal("var Total: Integer", Signature("Total + Step + N"));
+    }
 }

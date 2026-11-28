@@ -287,4 +287,51 @@ public sealed class FindReferencesTests
                 Lines("procedure Show<K, V>(const A: K; const B: V); overload;"), Lines("TOut.Show(N, S);"),
             ]);
     }
+
+    // ------------------------------------------------------------------ CMP-1473 (C-415): inside anonymous methods
+
+    /// <summary>
+    /// CMP-1473 (2): a captured variable is one symbol — its references are the declaration and every use in the enclosing body
+    /// and in the anonymous methods (also nested ones), whichever of them the search starts from; a parameter of an anonymous
+    /// method spelt the same is another symbol. A call through a captured method reference is a use of that variable.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1473")]
+    public void CapturedLocal_IncludesUsesInAnonymousBodies()
+    {
+        var doc = AnonymousBodyFixture.Open();
+        var text = AnonymousBodyFixture.Text;
+        static (int Start, ReferenceKind Kind) Use(string piece, ReferenceKind kind, int delta = 0) => (AnonymousBodyFixture.Offset(piece) + delta, kind);
+        void AssertReferences(string name, params (int Start, ReferenceKind Kind)[] expected)
+        {
+            foreach (var (start, _) in expected)                                // from the declaration and from every use
+            {
+                var references = NavigationService.FindReferences(doc, start + 1, TestContext.Current.CancellationToken);
+                Assert.Equal(expected, references.Select(r => (r.Location.Span.Start, r.Kind)));
+                Assert.All(references, r => Assert.Equal(name, text.Substring(r.Location.Span.Start, r.Location.Span.Length)));
+                Assert.Equal(expected.Select(e => e.Start), NavigationService.GetDocumentHighlights(doc, start + 1, TestContext.Current.CancellationToken).Select(h => h.Span.Start));
+            }
+        }
+
+        AssertReferences("Count",
+            Use("Count: Integer;", ReferenceKind.Declaration), Use("Count := 0", ReferenceKind.Write),
+            Use("Count + Start + Before", ReferenceKind.Read),                                                      // the anonymous procedure
+            Use("Count := Pick(Note)", ReferenceKind.Write),
+            Use("Count := Count + Delta", ReferenceKind.Write), Use("Count + Delta", ReferenceKind.Read),          // the anonymous function
+            Use("Count + After", ReferenceKind.Read));
+        AssertReferences("Count",                                                                                   // the nested function's parameter
+            Use("function(Count: Integer)", ReferenceKind.Declaration, 9), Use("Count + Note", ReferenceKind.Read));
+        AssertReferences("Before", Use("Before := 1", ReferenceKind.Declaration), Use("Start + Before", ReferenceKind.Read, 8));
+        AssertReferences("After", Use("After := 2", ReferenceKind.Declaration), Use("Count + After", ReferenceKind.Read, 8));
+        AssertReferences("Note",
+            Use("Note: Integer", ReferenceKind.Declaration), Use("Note := Count", ReferenceKind.Write), Use("Count + Note", ReferenceKind.Read, 8),
+            Use("Pick(Note)", ReferenceKind.Read, 5));
+        AssertReferences("Log",
+            Use("Log: TProc;", ReferenceKind.Declaration), Use("Log := procedure", ReferenceKind.Write),
+            Use("Log();\n  Result", ReferenceKind.Read), Use("Log();\n      {@function}", ReferenceKind.Read));       // called in the method and in the function
+        AssertReferences("Pick", Use("Pick: TIntFunc", ReferenceKind.Declaration), Use("Pick(Note)", ReferenceKind.Read));
+        AssertReferences("Mine", Use("Mine: T", ReferenceKind.Declaration), Use("Mine := Seed", ReferenceKind.Write), Use("Keep := Mine", ReferenceKind.Read, 8));
+        AssertReferences("Outer", Use("Outer := 5", ReferenceKind.Declaration), Use("Step + Outer", ReferenceKind.Read, 7));
+    }
 }

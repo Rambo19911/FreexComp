@@ -542,7 +542,11 @@ public static class RenameService
 
             if (before.Locations.IsEmpty)
             {
-                return IdentifierComparer.Instance.Equals(before.QualifiedName, after.QualifiedName);
+                // Result and Self have no declaration site: the same name of the same routine (CMP-1473, C-415: a renamed
+                // routine, class or unit - or an anonymous method inside one - keeps them, whatever their qualified names say)
+                return before.ContainingSymbol is RoutineSymbol routine && after.ContainingSymbol is RoutineSymbol other
+                    ? IdentifierComparer.Instance.Equals(before.Name, after.Name) && Same(routine, other)
+                    : IdentifierComparer.Instance.Equals(before.QualifiedName, after.QualifiedName);
             }
 
             var path = PathUtil.Normalize(before.Locations[0].Path);

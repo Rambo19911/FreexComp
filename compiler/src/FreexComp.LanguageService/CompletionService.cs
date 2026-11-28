@@ -759,8 +759,7 @@ internal sealed class ExpectedType
             return active == 0 && call.Expression is SimpleNameSyntax simple
                    && string.Equals(simple.Identifier.Text, "Exit", StringComparison.OrdinalIgnoreCase)
                    && model.LookupSymbols(call.Span.Start, simple.Identifier.Text).FirstOrDefault() is IntrinsicSymbol
-                   && model.GetEnclosingSymbol(position) is RoutineSymbol { ReturnType: { } result } routine
-                   && routine is not MethodSymbol { MethodKind: MethodKind.Constructor }
+                   && model.GetEnclosingResultType(position) is { } result          // CMP-1473: of the anonymous function the caret is in
                 ? Of(result)
                 : null;
         }

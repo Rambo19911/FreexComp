@@ -364,4 +364,69 @@ public sealed class SemanticModelTests
         Assert.False(model.GetDirectiveState(0).RangeChecks);
         Assert.True(model.GetDirectiveState(Position(model, "var")).RangeChecks);
     }
+
+    /// <summary>
+    /// CMP-1473 (C-415) on CMP-230…232: inside an anonymous method the visible symbols are its own parameters, locals and
+    /// <c>Result</c> before those of the body it is written in (also when an inline variable of that body is in scope there);
+    /// the enclosing symbol stays the routine it is written in; and the callee name of a call through a value — a method
+    /// reference, a procedural variable — is that value, not the signature of its type.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1473")]
+    public void AnonymousMethod_ScopeEnclosingSymbolAndCallThroughAValue()
+    {
+        var model = Model("""
+            program P;
+            type
+              TIntFunc = reference to function(Delta: Integer): Integer;
+              TPlain = function(N: Integer): Integer;
+            function Twice(N: Integer): Integer;
+            begin
+              Result := N * 2;
+            end;
+            function Work(Limit: Integer): TIntFunc;
+            var
+              Count: Integer;
+              Plain: TPlain;
+            begin
+              Count := 0;
+              Plain := Twice;
+              var Before := Plain(1);
+              Result := function(Count: Integer): Integer
+                var Mine: Integer;
+                begin
+                  Mine := Count + Before + Limit;
+                  Result := Plain(Mine);
+                end;
+              var After := Result(2);
+              Count := After;
+            end;
+            begin
+            end.
+            """);
+        var inside = Position(model, "Mine := Count");
+
+        var visible = model.LookupSymbols(inside);
+        var count = Assert.Single(visible, s => s.Name == "Count");
+        Assert.IsType<ParameterSymbol>(count);                                     // the anonymous function's parameter hides the local
+        Assert.Equal("Integer", Assert.IsType<VariableSymbol>(Assert.Single(visible, s => s.Name == "Result")).Type.Name);
+        Assert.Contains(visible, s => s.Name == "Mine");
+        Assert.Contains(visible, s => s.Name == "Before");
+        Assert.Contains(visible, s => s.Name == "Limit");
+        Assert.DoesNotContain(visible, s => s.Name == "After");
+        Assert.True(visible.IndexOf(count) < visible.IndexOf(visible.Single(s => s.Name == "Limit")));      // innermost scope first
+
+        Assert.Equal("Work", model.GetEnclosingSymbol(inside)?.Name);
+        var outside = model.LookupSymbols(Position(model, "Count := After"));
+        Assert.IsType<VariableSymbol>(Assert.Single(outside, s => s.Name == "Count"));
+        Assert.Equal("TIntFunc", Assert.IsType<VariableSymbol>(Assert.Single(outside, s => s.Name == "Result")).Type.Name);
+        Assert.DoesNotContain(outside, s => s.Name == "Mine");
+
+        // a call through a value names the value
+        Assert.Equal("var Plain: TPlain", model.GetSymbolInfo(Node<InvocationExpressionSyntax>(model, "Plain(Mine)")).Symbol?.ToDisplayString());
+        Assert.Equal("var Plain: TPlain", model.GetSymbolInfo(Node<InvocationExpressionSyntax>(model, "Plain(1)")).Symbol?.ToDisplayString());
+        Assert.Equal("var Result: TIntFunc", model.GetSymbolInfo(Node<InvocationExpressionSyntax>(model, "Result(2)")).Symbol?.ToDisplayString());
+        Assert.Equal("Integer", model.GetTypeInfo(Node<InvocationExpressionSyntax>(model, "Plain(Mine)")).Type?.Name);   // the call's value
+    }
 }

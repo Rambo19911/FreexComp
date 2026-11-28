@@ -413,4 +413,50 @@ public sealed class SignatureHelpTests
         Assert.Equal(["class procedure TOut.Show<Integer>(const V: Integer)"], Labels(Help("TOut.Show<Integer>($$N);")));
         Assert.Equal(["class procedure TOut.Show<Byte, string>(const A: Byte; const B: string)"], Labels(Help("TOut.Show<Byte, string>(B, $$S);")));
     }
+
+    /// <summary>
+    /// CMP-1473 (C-415): the scope at a caret inside an anonymous method is that method's, so a routine declared in it is a
+    /// candidate of a call written there (it is named after the routine around the anonymous method), as an outer routine is.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1473")]
+    public void AnonymousBody_RoutineDeclaredInTheAnonymousMethod()
+    {
+        var markup = MarkupTestFile.Parse("""
+            program P;
+            type
+              TProc = reference to procedure;
+            function Twice(N: Integer): Integer;
+            begin
+              Result := N * 2;
+            end;
+            procedure Work(Limit: Integer);
+            var
+              Run: TProc;
+              Total: Integer;
+            begin
+              Run := procedure
+                function Bump(Step: Integer; Scale: Integer): Integer;
+                begin
+                  Result := Step * Scale;
+                end;
+                begin
+                  Total := Bump(Limit, $$Twice(2));
+                end;
+              Run();
+            end;
+            begin
+            end.
+            """);
+        var doc = MarkupTestFile.Open("P.pas", ("P.pas", markup.Text));
+
+        var help = SignatureHelpService.GetSignatureHelp(doc, markup.Caret, TestContext.Current.CancellationToken);
+        Assert.NotNull(help);
+        Assert.Equal("function P.Work.Bump(Step: Integer; Scale: Integer): Integer", Assert.Single(help.Signatures).Label);
+        Assert.Equal("Scale: Integer", Active(help));
+
+        var inner = SignatureHelpService.GetSignatureHelp(doc, markup.Text.IndexOf("Twice(2)", StringComparison.Ordinal) + "Twice(".Length, TestContext.Current.CancellationToken);
+        Assert.Equal("function P.Twice(N: Integer): Integer", Assert.Single(inner!.Signatures).Label);
+    }
 }

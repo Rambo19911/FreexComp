@@ -861,4 +861,117 @@ public sealed class CompletionTests
         Assert.True(renamed.Success, renamed.Error);
         Assert.Equal(uses, Assert.Single(renamed.Edits).Changes.Select(c => c.Span.Start));
     }
+
+    // ------------------------------------------------------------------ CMP-1473 (C-415): inside anonymous methods
+
+    /// <summary>
+    /// CMP-1473 (1): at a statement position inside an anonymous method — one written in a method, one nested in another, one in
+    /// the scope of an inline variable, one in a method of a generic that is never instantiated, one in the main block — the
+    /// enclosing body's names in scope at the expression (locals, inline variables declared before it, parameters, <c>Self</c> and
+    /// the members reached through it) and the anonymous method's own parameters, locals and <c>Result</c> are offered, each once:
+    /// a parameter of the anonymous method hides the outer local spelt the same, its <c>Result</c> the enclosing function's.
+    /// <paramref name="offered"/>: <c>Label=Kind:detail</c> separated by <c>|</c>.
+    /// </summary>
+    [Theory]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1473")]
+    [InlineData("procedure",
+        "Note=Variable:var Note: Integer|Count=Variable:var Count: Integer|Start=Parameter:param Start: Integer|Before=Variable:var Before: Integer"
+        + "|Log=Variable:var Log: TProc|Result=Variable:var Result: TIntFunc|Self=Parameter:param Self: TCounter"
+        + "|FName=Field:field TCounter.FName: string|Bump=Method:procedure TCounter.Bump",
+        "After, Pick, Local, Delta, Step, Outer, Mine")]
+    [InlineData("nested",
+        "Count=Parameter:param Count: Integer|Local=Variable:var Local: Integer|Result=Variable:var Result: Integer|Note=Variable:var Note: Integer"
+        + "|Start=Parameter:param Start: Integer|Before=Variable:var Before: Integer|Log=Variable:var Log: TProc|FName=Field:field TCounter.FName: string",
+        "After, Pick, Delta, Step")]
+    [InlineData("function",
+        "Delta=Parameter:param Delta: Integer|Result=Variable:var Result: Integer|Count=Variable:var Count: Integer|After=Variable:var After: Integer"
+        + "|Before=Variable:var Before: Integer|Start=Parameter:param Start: Integer|Log=Variable:var Log: TProc|FName=Field:field TCounter.FName: string",
+        "Note, Pick, Local, Step")]
+    [InlineData("generic",
+        "Mine=Variable:var Mine: T|Seed=Parameter:param Seed: T|Keep=Variable:var Keep: T|Later=Variable:var Later: TProc|Value=Field:field TBox<T>.Value: T",
+        "Count, Delta, Result, Outer")]
+    [InlineData("main",
+        "Step=Parameter:param Step: Integer|Result=Variable:var Result: Integer|Outer=Variable:var Outer: Integer|C=Variable:var C: TCounter|F=Variable:var F: TIntFunc",
+        "Delta, Count, Note, Mine")]
+    public void AnonymousBody_OffersEnclosingNamesAndItsOwn(string marker, string offered, string notOffered)
+    {
+        var items = Complete(AnonymousBodyFixture.Program.Replace("{@" + marker + "}", "$$", StringComparison.Ordinal)).List.Items;
+
+        foreach (var expected in offered.Split('|'))
+        {
+            var (label, rest) = (expected[..expected.IndexOf('=', StringComparison.Ordinal)], expected[(expected.IndexOf('=', StringComparison.Ordinal) + 1)..]);
+            var (kind, detail) = (rest[..rest.IndexOf(':', StringComparison.Ordinal)], rest[(rest.IndexOf(':', StringComparison.Ordinal) + 1)..]);
+            var item = Assert.Single(items, i => string.Equals(i.Label, label, StringComparison.OrdinalIgnoreCase));      // once: the hidden outer name is not offered
+            Assert.Equal((label, kind, detail), (item.Label, item.Kind.ToString(), item.Detail));
+            if (marker != "main" || label is "Step" or "Result")
+            {
+                // CMP-723: locals and parameters, then the members of the enclosing type
+                Assert.StartsWith(item.Kind is CompletionItemKind.Field or CompletionItemKind.Method ? "1" : "0", item.SortText, StringComparison.Ordinal);
+            }
+        }
+
+        foreach (var label in notOffered.Split(", "))
+        {
+            Assert.DoesNotContain(items, i => string.Equals(i.Label, label, StringComparison.OrdinalIgnoreCase));
+        }
+
+        Assert.Contains(items, i => i.Label == "begin" && i.Kind == CompletionItemKind.Keyword);                           // a statement position
+        Assert.Equal(items.Select(i => i.SortText).Order(StringComparer.Ordinal), items.Select(i => i.SortText));          // CMP-723: the order contract
+    }
+
+    /// <summary>
+    /// CMP-1473 (1) with CMP-1426: in an anonymous function <c>Exit(</c> expects that function's result type, not the result type
+    /// of the routine it is written in; after a dot the members are offered as anywhere else.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1473")]
+    public void AnonymousBody_ExpectedTypeAndMembers()
+    {
+        const string Source = """
+            program P;
+            type
+              TColor = (Red, Green);
+              TPick = reference to function(Flag: Boolean): TColor;
+              TCounter = class
+              private
+                FName: string;
+              public
+                function Run(Limit: Integer): Integer;
+              end;
+            function TCounter.Run(Limit: Integer): Integer;
+            var
+              Pick: TPick;
+            begin
+              Pick := function(Flag: Boolean): TColor
+                begin
+                  if Flag then
+                    Exit({@exit});
+                  Result := Red;
+                  Self.{@self}FName := '';
+                end;
+              Result := Limit;
+            end;
+            begin
+            end.
+            """;
+
+        CompletionItem[] At(string marker, char? typed = null) =>
+            [.. Complete(Source.Replace("{@" + (marker == "exit" ? "self" : "exit") + "}", "", StringComparison.Ordinal)
+                .Replace("{@" + marker + "}", "$$", StringComparison.Ordinal), typed).List.Items];
+        static bool Ranked(CompletionItem[] items, string label) => Assert.Single(items, i => i.Label == label).SortText.StartsWith('!');
+
+        var exit = At("exit");
+        Assert.True(Ranked(exit, "Red"));
+        Assert.True(Ranked(exit, "Green"));
+        Assert.True(Ranked(exit, "Result"));                               // the anonymous function's
+        Assert.False(Ranked(exit, "Limit"));                               // Integer: the method's result type is not expected here
+        Assert.False(Ranked(exit, "Flag"));
+
+        var self = At("self", '.');
+        Assert.Contains(self, i => i.Label == "FName" && i.Kind == CompletionItemKind.Field);                 // private: the method's class is the enclosing type
+        Assert.Contains(self, i => i.Label == "Run" && i.Kind == CompletionItemKind.Method);
+        Assert.DoesNotContain(self, i => i.Label is "Limit" or "Flag" or "Pick");
+    }
 }

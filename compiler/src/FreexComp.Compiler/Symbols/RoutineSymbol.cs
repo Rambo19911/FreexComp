@@ -209,7 +209,37 @@ public class RoutineSymbol : Symbol
     public override string ToDisplayString()
     {
         var parameters = Parameters.IsEmpty ? "" : "(" + string.Join("; ", Parameters.Select(ParameterSymbol.Declaration)) + ")";
-        return ReturnType is null ? $"procedure {QualifiedName}{parameters}" : $"function {QualifiedName}{parameters}: {ReturnType.Name}";
+        var name = DisplayQualifiedName();
+        return ReturnType is null ? $"procedure {name}{parameters}" : $"function {name}{parameters}: {ReturnType.Name}";
+    }
+
+    /// <summary>
+    /// The qualified name as the source shows it (CMP-731; CMP-1473, C-415): a routine declared inside an anonymous method is
+    /// named after the routine (or unit) the anonymous method is written in - without the closure class and the method made for
+    /// the anonymous method, which <see cref="Symbol.QualifiedName"/> keeps (symbol names in the object file and the debugger).
+    /// </summary>
+    private string DisplayQualifiedName()
+    {
+        if (QualifiedNameOverride is not null)
+        {
+            return QualifiedName;
+        }
+
+        switch (ContainingSymbol)
+        {
+            case MethodSymbol { IsAnonymous: true } anonymous:
+                var owner = anonymous.AnonymousParent;
+                while (owner is MethodSymbol { IsAnonymous: true } outer)
+                {
+                    owner = outer.AnonymousParent;
+                }
+
+                return (owner?.DisplayQualifiedName() ?? ContainingUnit?.Name ?? anonymous.QualifiedName) + "." + Name;
+            case RoutineSymbol routine:
+                return routine.DisplayQualifiedName() + "." + Name;                 // nested in a routine that may be nested in an anonymous method
+            default:
+                return QualifiedName;
+        }
     }
 }
 

@@ -30,6 +30,12 @@ public sealed class SemanticModel
     private readonly Dictionary<int, Symbol> _references = [];
     private readonly Dictionary<SyntaxNode, (BoundExpression Outer, BoundExpression Inner)> _expressions = new(ReferenceEqualityComparer.Instance);
     private readonly List<(TextSpan Span, BoundRoutineBody Body)> _bodies = [];
+
+    /// <summary>
+    /// CMP-1473 (C-415): the anonymous methods written in this file, by the span of their expression. They are scopes
+    /// (<see cref="ScopeAt"/>) but no enclosing symbols: <see cref="GetEnclosingSymbol"/> stays the routine they are written in.
+    /// </summary>
+    private readonly List<(TextSpan Span, BoundRoutineBody Body)> _anonymousBodies = [];
     private readonly List<(int Start, int End, Scope Scope)> _inlineScopes = [];
     private readonly List<TypeSymbol> _openInstances = [];
 
@@ -79,6 +85,7 @@ public sealed class SemanticModel
                 _bodies.Add((definition.Span, routine));
             }
 
+            AddAnonymousBody(routine);
             foreach (var symbol in routine.Scope.Symbols)
             {
                 Declare(symbol);
@@ -164,6 +171,7 @@ public sealed class SemanticModel
                         _bodies.Add((definition.Span, bound));
                     }
 
+                    AddAnonymousBody(bound);
                     foreach (var symbol in bound.Scope.Symbols)
                     {
                         Declare(symbol);
@@ -180,6 +188,20 @@ public sealed class SemanticModel
 
         _boundByInstances = null;
         _indexedBySite = null;
+    }
+
+    /// <summary>
+    /// CMP-1473 (C-415): notes the body of an anonymous method written in this file (its bound block is the statement part of the
+    /// expression; the synthesised bodies of a method reference made from a routine or method have no such block).
+    /// </summary>
+    private void AddAnonymousBody(BoundRoutineBody body)
+    {
+        if (body.Routine is MethodSymbol { IsAnonymous: true }
+            && body.Body.Syntax.Parent is BlockSyntax { Parent: AnonymousMethodExpressionSyntax anonymous } block && ReferenceEquals(block.Body, body.Body.Syntax)
+            && ReferenceEquals(anonymous.SyntaxTree, SyntaxTree))
+        {
+            _anonymousBodies.Add((anonymous.Span, body));
+        }
     }
 
     public Compilation Compilation { get; }
@@ -328,7 +350,10 @@ public sealed class SemanticModel
         return [.. symbols.Where(s => s is not MethodSymbol { DelegateProperty: not null } && (name is null || IdentifierComparer.Instance.Equals(s.Name, name))).Distinct()];
     }
 
-    /// <summary>The routine, type or unit containing <paramref name="position"/> (innermost).</summary>
+    /// <summary>
+    /// The routine, type or unit containing <paramref name="position"/> (innermost). Inside an anonymous method: the routine it is
+    /// written in (the members reached through <c>Self</c> there are that routine's), or the unit for one in a unit-level body.
+    /// </summary>
     public Symbol? GetEnclosingSymbol(int position)
     {
         if (InnermostBody(position) is { } body)
@@ -346,6 +371,17 @@ public sealed class SemanticModel
         }
 
         return Unit;
+    }
+
+    /// <summary>
+    /// CMP-1473 (C-415): the result type of the function whose body contains <paramref name="position"/> — of the innermost
+    /// anonymous method when the position is inside one (null in an anonymous procedure), else of the enclosing routine
+    /// (null for a procedure, a constructor and outside routines). What <c>Exit(</c> expects there (CMP-1426).
+    /// </summary>
+    internal TypeSymbol? GetEnclosingResultType(int position)
+    {
+        var routine = InnermostBodyOrAnonymous(position).Body?.Routine;
+        return routine is null or MethodSymbol { MethodKind: MethodKind.Constructor } ? null : routine.ReturnType;
     }
 
     /// <summary>This file's diagnostics as <c>opc --check</c> reports them (parse, binder, flow), optionally only those in <paramref name="span"/>.</summary>
@@ -774,12 +810,15 @@ public sealed class SemanticModel
             }
         }
 
-        if (inline is not null)
+        // CMP-1473 (C-415): the innermost body, an anonymous method included. An inline scope that began before that body is a
+        // scope around it (the anonymous method is written inside the inline name's scope; it is among the body's parents)
+        var (span, body) = InnermostBodyOrAnonymous(position);
+        if (inline is not null && (body is null || inlineStart >= span.Start))
         {
             return inline;
         }
 
-        if (InnermostBody(position) is { } body)
+        if (body is not null)
         {
             return body.Scope;
         }
@@ -794,6 +833,10 @@ public sealed class SemanticModel
 
     private BoundRoutineBody? InnermostBody(int position) =>
         _bodies.Where(b => b.Span.Contains(position)).OrderBy(b => b.Span.Length).Select(b => b.Body).FirstOrDefault();
+
+    /// <summary>CMP-1473 (C-415): the innermost body containing <paramref name="position"/>, an anonymous method included, with its span.</summary>
+    private (TextSpan Span, BoundRoutineBody? Body) InnermostBodyOrAnonymous(int position) =>
+        _bodies.Concat(_anonymousBodies).Where(b => b.Span.Contains(position)).OrderBy(b => b.Span.Length).Select(b => (b.Span, (BoundRoutineBody?)b.Body)).FirstOrDefault();
 
     private TypeSymbol? EnclosingType(int position)
     {
@@ -938,6 +981,19 @@ public sealed class SemanticModel
         }
     }
 
+    /// <summary>
+    /// Indexes the callee name of a call. A call through a value (<paramref name="target"/>: a procedural variable, a method
+    /// pointer, a method reference — LANG-484, LANG-724) names that value, not the signature of its type: the name is indexed when
+    /// the target is walked (CMP-1473 (2), C-415: a captured method reference is one symbol, also where it is called).
+    /// </summary>
+    private void ReferenceCallee(SyntaxNode syntax, RoutineSymbol routine, BoundExpression? target, TypeSymbol? receiver)
+    {
+        if (target is null)
+        {
+            Reference(syntax, routine, receiver);
+        }
+    }
+
     /// <summary>Indexes the label of a labelled statement or <c>goto</c> — an identifier or a number (LANG-380, C-321) — as a reference.</summary>
     private void ReferenceLabel(ExpressionSyntax label, LabelSymbol symbol)
     {
@@ -1064,13 +1120,13 @@ public sealed class SemanticModel
                 Walk(arithmetic.Offset);
                 break;
             case BoundCallExpression call:
-                Reference(call.Syntax, call.Routine, call.Receiver?.Self?.Type);
+                ReferenceCallee(call.Syntax, call.Routine, call.Target, call.Receiver?.Self?.Type);
                 Walk(call.Target);
                 Walk(call.Receiver?.Self);
                 WalkAll(call.Arguments);
                 break;
             case BoundCallStatement call:
-                Reference(call.Syntax, call.Routine, call.Receiver?.Self?.Type);
+                ReferenceCallee(call.Syntax, call.Routine, call.Target, call.Receiver?.Self?.Type);
                 Walk(call.Target);
                 Walk(call.Receiver?.Self);
                 WalkAll(call.Arguments);
