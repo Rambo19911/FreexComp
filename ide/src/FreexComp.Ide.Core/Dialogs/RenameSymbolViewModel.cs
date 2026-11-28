@@ -39,6 +39,7 @@ public sealed class RenameSymbolViewModel : DialogViewModel<RenameDialogResult>
     private IReadOnlyList<RenameConflictRow> _conflicts = [];
     private string _summary = "";
     private string? _notes;
+    private bool _throughDesigner;
     private string? _fileNote;
     private bool _isInputEnabled = true;
     private int _version;              // one per input (name, option): a check result for an older one is dropped
@@ -184,6 +185,12 @@ public sealed class RenameSymbolViewModel : DialogViewModel<RenameDialogResult>
         private set => SetProperty(ref _summary, value);
     }
 
+    /// <summary>
+    /// UI-DLG-384: whether the summary line is shown — not beside the conflict list, and not when the form designer renames
+    /// the component (I-410: the designer changes more than the plan's counts tell; its note takes the line's place).
+    /// </summary>
+    public bool IsSummaryVisible => !HasConflicts && !_throughDesigner;
+
     /// <summary>UI-DLG-384: the notes of a successful plan (the designer's rename of a component; unrenamed occurrences); null = hidden.</summary>
     public string? Notes
     {
@@ -251,6 +258,7 @@ public sealed class RenameSymbolViewModel : DialogViewModel<RenameDialogResult>
         _failed = false;
         Error = null;
         Conflicts = [];
+        SetThroughDesigner(false);
         Summary = "";
         Notes = null;
         FileNote = null;
@@ -307,9 +315,10 @@ public sealed class RenameSymbolViewModel : DialogViewModel<RenameDialogResult>
         if (plan.Result.Success && plan.Edit is not null)
         {
             _planned = plan;
-            Summary = SummaryText(plan);
-            // IDE-REFAC-059 (I-384): a component the form designer renames; unrenamed occurrences arrive with the language
-            // service's report (C-452, I-385).
+            // IDE-REFAC-059 (I-384): a component the form designer renames — no plan counts (I-410); unrenamed occurrences
+            // arrive with the language service's report (C-452, I-385).
+            SetThroughDesigner(plan.DesignerForm is not null);
+            Summary = plan.DesignerForm is null ? SummaryText(plan) : "";
             Notes = plan.DesignerForm is { } form
                 ? string.Format(CultureInfo.CurrentCulture, Strings.Msg_Rename_ThroughDesigner, Path.GetFileName(form))
                 : null;
@@ -336,9 +345,18 @@ public sealed class RenameSymbolViewModel : DialogViewModel<RenameDialogResult>
         _failed = true;
         Error = error;
         Conflicts = conflicts;
+        SetThroughDesigner(false);
         Summary = "";
         Notes = null;
         Rename.IsEnabled = false;
+    }
+
+    private void SetThroughDesigner(bool value)
+    {
+        if (_throughDesigner == value)
+            return;
+        _throughDesigner = value;
+        OnPropertyChanged(nameof(IsSummaryVisible));
     }
 
     private static string SummaryText(RenamePlan plan) => (plan.EditCount, plan.FileCount) switch

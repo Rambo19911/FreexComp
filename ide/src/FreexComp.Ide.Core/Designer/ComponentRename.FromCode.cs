@@ -113,7 +113,8 @@ public sealed partial class ComponentRename
     /// <paramref name="unitPath"/> (<paramref name="formPath"/>): the document opened when needed and activated, its Design
     /// view shown, the component selected; then the validation of DSG-OI-070 (a refusal is shown as
     /// <c>Msg.Designer.RenameRefused</c>) and the rename with its code references (DSG-CS-130…134, one designer undo unit);
-    /// on success the status <c>Msg.Rename.DesignerDone</c>. True when the rename was made.
+    /// on success the status of the designer's count of code references (<c>Msg.Designer.RenameCodeRefs*</c>, DSG-CS-134;
+    /// I-410), or <c>Msg.Rename.DesignerDone</c> when it changed no code reference. True when the rename was made.
     /// </summary>
     /// <exception cref="RefactoringException">
     /// <c>Reason_Rename_FormNotLoaded</c>: the document cannot be opened, has no usable Design view or is read only; nothing changed.
@@ -177,19 +178,32 @@ public sealed partial class ComponentRename
             return true;
         }
 
-        var started = Rename(designer, obj, newName, [], UndoTitles.Rename);
-        if (started == false)
+        (_renamingFromCode, _countShown) = (designer, false);
+        try
         {
-            designer.ShowErrorDialog("Msg.Designer.RenameRefused", [old, newName, designer.AncestorRename?.LastFailure ?? ""]);
-            return false;
-        }
+            var started = Rename(designer, obj, newName, [], UndoTitles.Rename);
+            if (started == false)
+            {
+                designer.ShowErrorDialog("Msg.Designer.RenameRefused", [old, newName, designer.AncestorRename?.LastFailure ?? ""]);
+                return false;
+            }
 
-        if (started is null && !await designer.RenameWork!)
+            if (started is null && !await designer.RenameWork!)
+            {
+                return false; // the prepare showed why
+            }
+
+            // I-410: the designer's own count of code references stays in the status line; without one, the designer note.
+            if (!_countShown)
+            {
+                designer.ShowStatus("Msg.Rename.DesignerDone", [old, newName]);
+            }
+
+            return true;
+        }
+        finally
         {
-            return false; // the prepare showed why
+            _renamingFromCode = null;
         }
-
-        designer.ShowStatus("Msg.Rename.DesignerDone", [old, newName]);
-        return true;
     }
 }

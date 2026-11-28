@@ -125,7 +125,7 @@ public sealed class RenameSymbolWindow : DialogWindow
             name.IsEnabled = model.IsInputEnabled;
             conflictsLabel.IsVisible = conflicts.IsVisible = model.HasConflicts;
             summary.Text = model.Summary;
-            summary.IsVisible = !model.HasConflicts; // the list replaces the summary (UI-DLG-384)
+            summary.IsVisible = model.IsSummaryVisible; // the list, or the designer note, replaces the summary (UI-DLG-384, I-410)
             notes.Text = model.Notes;
             notes.IsVisible = model.Notes is not null;
             file.Text = model.FileNote;

@@ -36,6 +36,8 @@ public sealed partial class ComponentRename
     private readonly IToolchainLocator _toolchain;
     private readonly IFileSystem _fileSystem;
     private readonly HashSet<FormDesignerViewModel> _preparing = [];
+    private FormDesignerViewModel? _renamingFromCode; // IDE-REFAC-060: the designer whose rename RenameFromCodeAsync runs
+    private bool _countShown; // that rename showed its count of code references (DSG-CS-134)
 
     public ComponentRename(IDocumentService documents, IProjectService projects, CodeModelService codeModel, RenamePlanner planner,
         IRefactoringService engine, IToolchainLocator toolchain, IFileSystem fileSystem)
@@ -246,9 +248,14 @@ public sealed partial class ComponentRename
             [.. unit.Edits.Where(e => e != declaration)], others);
     }
 
-    private static void ShowCount(FormDesignerViewModel designer, string old, string name, CodeReferences references)
+    private void ShowCount(FormDesignerViewModel designer, string old, string name, CodeReferences references)
     {
         var (count, files) = (references.Count, references.FileCount);
+        if (count > 0 && ReferenceEquals(designer, _renamingFromCode))
+        {
+            _countShown = true; // a rename from code keeps this status (I-410)
+        }
+
         if (count == 1)
         {
             designer.ShowStatus("Msg.Designer.RenameCodeRefsOne", [old, name]);

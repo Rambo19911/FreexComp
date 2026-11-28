@@ -104,7 +104,8 @@ public sealed partial class RenameCommandTests
         Assert.Contains("  YesButton := nil;", form.Buffer.Text, StringComparison.Ordinal);
         Assert.Equal(ComponentRenameProject.Renamed(ComponentRenameProject.Caller, "OkButton", "YesButton"), caller.Buffer.Text);
         Assert.Equal(1, designer.Undo.UndoCount);
-        Assert.Equal(Format(Strings.Msg_Rename_DesignerDone, "OkButton", "YesButton"), p.Status);
+        // I-410: the designer's own count of code references (DSG-CS-134), not the plan's.
+        Assert.Equal(Format(Strings.Msg_Designer_RenameCodeRefsMany, "OkButton", "YesButton", 2, 2), p.Status);
         Assert.Empty(p.Dialogs.Requests);
 
         // One designer undo takes back every part.
@@ -148,7 +149,7 @@ public sealed partial class RenameCommandTests
         Assert.NotNull(form.Designer.Model!.FindByName("YesButton"));
         Assert.Equal(ComponentRenameProject.Renamed(InheritedDesign.Form, "inherited OkButton:", "inherited YesButton:"), p.Disk(FormFile));
         Assert.Equal(ComponentRenameProject.Renamed(ComponentRenameProject.Caller, "OkButton", "YesButton"), caller.Buffer.Text);
-        Assert.Equal(Format(Strings.Msg_Rename_DesignerDone, "OkButton", "YesButton"), p.Status);
+        Assert.Equal(Format(Strings.Msg_Designer_RenameCodeRefsOne, "OkButton", "YesButton"), p.Status); // I-410: the designer's count
         Assert.Empty(p.Dialogs.Requests);
 
         Undo(form);
