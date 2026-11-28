@@ -2,7 +2,8 @@
 { Hash - message digests (docs: rtl/other-units.md section 13, RTL-1230): MD5 as RFC 1321 defines it, SHA-1 and the
   six SHA-2 functions as FIPS 180-4 defines them, and the keyed hash HMAC of RFC 2104 over each of them; the
   checksum CRC-32 and the hash-table functions FNV-1a (32 and 64 bits) and Bob Jenkins' lookup3. Every function is
-  computed here, in Object Pascal, from its standard: nothing in this unit calls the operating system.
+  computed here, in Object Pascal, from its standard: nothing in this unit calls the operating system. A file or a
+  stream of any size is hashed through one buffer of 64 KiB.
   A state record takes data in any number of Update calls; HashAsBytes and HashAsString give the digest of what was
   added so far and leave the record as it was, so more data may follow. A record holds its whole state in itself:
   assigning it to another variable gives a second, independent state, and no record needs to be released. One
@@ -71,6 +72,11 @@ type
     class function GetHashString(const AString: string): string; overload; static;
     class function GetHashString(const AData: TBytes): string; overload; static;
     class function GetHashString(const AStream: TStream): string; overload; static;
+    { The digest of the content of the file AFileName, as bytes or in lower-case hexadecimal digits. The file is
+      opened for reading - other programs may read it meanwhile, not write it - and read through one 64 KiB buffer,
+      whatever its size. A file that cannot be opened raises EFOpenError. }
+    class function GetHashBytesFromFile(const AFileName: TFileName): TBytes; static;
+    class function GetHashStringFromFile(const AFileName: TFileName): string; static;
     { The keyed hash HMAC (RFC 2104) of AData under AKey: the whole digest, as bytes or - GetHMAC - in lower-case
       hexadecimal digits. A string, data or key, stands for its UTF-8 form. Compare a received value with
       THash.DigestsEqual. }
@@ -105,6 +111,8 @@ type
     class function GetHashString(const AString: string): string; overload; static;
     class function GetHashString(const AData: TBytes): string; overload; static;
     class function GetHashString(const AStream: TStream): string; overload; static;
+    class function GetHashBytesFromFile(const AFileName: TFileName): TBytes; static;
+    class function GetHashStringFromFile(const AFileName: TFileName): string; static;
     class function GetHMAC(const AData, AKey: string): string; static;
     class function GetHMACAsBytes(const AData, AKey: string): TBytes; overload; static;
     class function GetHMACAsBytes(const AData: string; const AKey: TBytes): TBytes; overload; static;
@@ -147,6 +155,10 @@ type
       AHashVersion: TSHA2Version = TSHA2Version.SHA256): string; overload; static;
     class function GetHashString(const AStream: TStream;
       AHashVersion: TSHA2Version = TSHA2Version.SHA256): string; overload; static;
+    class function GetHashBytesFromFile(const AFileName: TFileName;
+      AHashVersion: TSHA2Version = TSHA2Version.SHA256): TBytes; static;
+    class function GetHashStringFromFile(const AFileName: TFileName;
+      AHashVersion: TSHA2Version = TSHA2Version.SHA256): string; static;
     class function GetHMAC(const AData, AKey: string;
       AHashVersion: TSHA2Version = TSHA2Version.SHA256): string; static;
     class function GetHMACAsBytes(const AData, AKey: string;
@@ -982,6 +994,24 @@ begin
   Result := THash.DigestAsString(GetHashBytes(AStream));
 end;
 
+{ RTL-1241: the stream is released also when reading fails }
+class function THashMD5.GetHashBytesFromFile(const AFileName: TFileName): TBytes;
+var
+  Stream: TFileStream;
+begin
+  Stream := TFileStream.Create(AFileName, fmOpenRead or fmShareDenyWrite);
+  try
+    Result := GetHashBytes(Stream);
+  finally
+    Stream.Free;
+  end;
+end;
+
+class function THashMD5.GetHashStringFromFile(const AFileName: TFileName): string;
+begin
+  Result := THash.DigestAsString(GetHashBytesFromFile(AFileName));
+end;
+
 class function THashMD5.GetHMAC(const AData, AKey: string): string;
 begin
   Result := THash.DigestAsString(GetHMACAsBytes(AData, AKey));
@@ -1142,6 +1172,24 @@ end;
 class function THashSHA1.GetHashString(const AStream: TStream): string;
 begin
   Result := THash.DigestAsString(GetHashBytes(AStream));
+end;
+
+{ RTL-1241: the stream is released also when reading fails }
+class function THashSHA1.GetHashBytesFromFile(const AFileName: TFileName): TBytes;
+var
+  Stream: TFileStream;
+begin
+  Stream := TFileStream.Create(AFileName, fmOpenRead or fmShareDenyWrite);
+  try
+    Result := GetHashBytes(Stream);
+  finally
+    Stream.Free;
+  end;
+end;
+
+class function THashSHA1.GetHashStringFromFile(const AFileName: TFileName): string;
+begin
+  Result := THash.DigestAsString(GetHashBytesFromFile(AFileName));
 end;
 
 class function THashSHA1.GetHMAC(const AData, AKey: string): string;
@@ -1328,6 +1376,24 @@ end;
 class function THashSHA2.GetHashString(const AStream: TStream; AHashVersion: TSHA2Version): string;
 begin
   Result := THash.DigestAsString(GetHashBytes(AStream, AHashVersion));
+end;
+
+{ RTL-1241: the stream is released also when reading fails }
+class function THashSHA2.GetHashBytesFromFile(const AFileName: TFileName; AHashVersion: TSHA2Version): TBytes;
+var
+  Stream: TFileStream;
+begin
+  Stream := TFileStream.Create(AFileName, fmOpenRead or fmShareDenyWrite);
+  try
+    Result := GetHashBytes(Stream, AHashVersion);
+  finally
+    Stream.Free;
+  end;
+end;
+
+class function THashSHA2.GetHashStringFromFile(const AFileName: TFileName; AHashVersion: TSHA2Version): string;
+begin
+  Result := THash.DigestAsString(GetHashBytesFromFile(AFileName, AHashVersion));
 end;
 
 class function THashSHA2.GetHMAC(const AData, AKey: string; AHashVersion: TSHA2Version): string;

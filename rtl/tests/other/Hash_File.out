@@ -1,0 +1,35 @@
+# a file of 100 MiB (RTL-1241)
+ok the file has 104 857 600 bytes
+ok THashSHA2.GetHashStringFromFile
+ok the call was watched: it asked for its 64 KiB buffer
+ok and for less than 1 MiB of memory in total
+ok THashMD5.GetHashStringFromFile
+ok equals THashSHA2.GetHashString of a TFileStream on the file
+ok which was read to its end
+ok the file can be deleted: every stream on it was closed
+ok and is gone
+# small files, the three types (RTL-1241)
+ok THashMD5.GetHashStringFromFile
+ok THashMD5.GetHashBytesFromFile
+ok THashSHA1.GetHashStringFromFile
+ok THashSHA1.GetHashBytesFromFile
+ok THashSHA2.GetHashStringFromFile: SHA256 without a version
+ok THashSHA2.GetHashBytesFromFile
+ok with a version
+ok GetHashBytesFromFile with a version
+ok a TFileName variable as the name
+ok while another stream reads the file
+ok while another stream may write: EFOpenError
+ok the file is closed after each call: it can be deleted
+ok an empty file: MD5 of no data
+ok an empty file: SHA256 of no data
+ok deleted
+ok a file name with characters outside ASCII
+ok deleted
+# a file that cannot be opened (RTL-1241)
+ok THashSHA2.GetHashStringFromFile of a missing file: EFOpenError, Cannot open file "..."
+ok THashMD5.GetHashBytesFromFile: EFOpenError
+ok THashSHA1.GetHashBytesFromFile, missing folder: EFOpenError
+ok THashSHA2.GetHashBytesFromFile of a folder: EFOpenError
+ok no block is left
+# passed 31 failed 0
