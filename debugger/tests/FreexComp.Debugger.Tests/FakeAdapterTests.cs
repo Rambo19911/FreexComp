@@ -75,6 +75,56 @@ public sealed class FakeAdapterTests
         Assert.Contains("SCENARIO-COMPLETE", await adapter.StderrAsync());
     }
 
+    // ---- G-105: reverse requests ----
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    [Trait("Phase", "8")]
+    [Trait("Req", "DBG-559")]
+    public async Task ReverseRequest_WaitsForItsResponse(bool success)
+    {
+        await using var adapter = FakeAdapterRunner.Start("""
+            { "steps": [
+              { "on": "launch", "respond": {}, "thenReverseRequest": {
+                  "command": "runInTerminal", "arguments": { "kind": "external", "args": [ "x.exe", "a b" ] } } },
+              { "on": "threads", "respond": { "threads": [] } } ] }
+            """);
+        await adapter.RequestAsync("initialize");
+
+        // The request comes before anything else the step does: before its response and before "initialized".
+        await adapter.SendAsync("launch", "{}");
+        Assert.Equal(
+            """{"seq":2,"type":"request","command":"runInTerminal","arguments":{"kind":"external","args":["x.exe","a b"]}}""",
+            (await adapter.ReadAsync()).GetRawText());
+
+        // What arrives before the answer is kept, in its order, for afterwards.
+        await adapter.SendAsync("threads");
+        await adapter.SendAsync("configurationDone");
+        await adapter.SendResponseAsync(2, "runInTerminal", success, success ? """{"shellProcessId":4242}""" : null);
+
+        if (success)
+        {
+            // The step goes on, then the kept requests are served.
+            Assert.Equal("event:initialized", await adapter.ReadKindAsync());
+            Assert.Equal("response:threads", await adapter.ReadKindAsync());
+            Assert.Equal("response:configurationDone", await adapter.ReadKindAsync());
+            Assert.Equal("response:launch", await adapter.ReadKindAsync());
+            adapter.CloseInput();
+            Assert.Equal(0, await adapter.WaitForExitAsync());
+            Assert.Contains("SCENARIO-COMPLETE", await adapter.StderrAsync());
+        }
+        else
+        {
+            // As the real adapter after a refusal: nothing more, whatever is sent, until its input closes.
+            await adapter.SendAsync("disconnect");
+            adapter.CloseInput();
+            Assert.Null(await adapter.ReadOrEndAsync());
+            Assert.Equal(0, await adapter.WaitForExitAsync());
+            Assert.DoesNotContain("UNEXPECTED", await adapter.StderrAsync());
+        }
+    }
+
     [Fact]
     public async Task Scenario_FromEnvironment_WhenNoArgument()
     {

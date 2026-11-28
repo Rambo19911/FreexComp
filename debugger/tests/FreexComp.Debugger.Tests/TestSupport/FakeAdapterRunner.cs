@@ -85,6 +85,24 @@ internal sealed class FakeAdapterRunner : IAsyncDisposable
         return seq;
     }
 
+    /// <summary>Answers a reverse request of the adapter.</summary>
+    public Task SendResponseAsync(int requestSeq, string command, bool success, string? bodyJson = null)
+    {
+        var seq = ++_seq;
+        var json = $$"""{"seq":{{seq}},"type":"response","request_seq":{{requestSeq}},"success":{{(success ? "true" : "false")}},"command":"{{command}}"{{(bodyJson is null ? "" : ",\"body\":" + bodyJson)}}}""";
+        return _transport.SendAsync(Encoding.UTF8.GetBytes(json), CancellationToken.None).WaitAsync(Safety);
+    }
+
+    /// <summary>The next message from the adapter, or null when it closed its output without one.</summary>
+    public async Task<JsonElement?> ReadOrEndAsync()
+    {
+        var body = await _transport.ReadAsync(CancellationToken.None).WaitAsync(Safety);
+        if (body is null)
+            return null;
+        using var document = JsonDocument.Parse(body);
+        return document.RootElement.Clone();
+    }
+
     /// <summary>The next message from the adapter; fails the test at end of stream.</summary>
     public async Task<JsonElement> ReadAsync()
     {

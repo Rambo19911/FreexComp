@@ -39,8 +39,11 @@ internal static class DapJson
         return stream.ToArray();
     }
 
-    /// <summary>The content part of a body-less response (used to reject reverse requests).</summary>
-    public static byte[] SerializeResponse(int seq, int requestSeq, string command, bool success, string? message)
+    /// <summary>
+    /// The content part of a response to a reverse request: a refusal with its <paramref name="message"/>, or the
+    /// answer to an accepted request with its <paramref name="body"/>.
+    /// </summary>
+    public static byte[] SerializeResponse(int seq, int requestSeq, string command, bool success, string? message, object? body = null)
     {
         using var stream = new MemoryStream();
         using (var writer = new Utf8JsonWriter(stream, WriterOptions))
@@ -53,6 +56,12 @@ internal static class DapJson
             writer.WriteString("command", command);
             if (message is not null)
                 writer.WriteString("message", message);
+            if (body is not null)
+            {
+                writer.WritePropertyName("body");
+                JsonSerializer.Serialize(writer, body, body.GetType(), Options);
+            }
+
             writer.WriteEndObject();
         }
 

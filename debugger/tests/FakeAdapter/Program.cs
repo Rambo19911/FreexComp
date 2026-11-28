@@ -12,7 +12,12 @@
 // (after the response and events of the step the adapter does nothing for n ms: an adapter slow to end, on a real clock)
 // and "respondAfterEvent": "<name>" (the adapter holds the request - it answers nothing and reads nothing - until the
 // named operating-system event is signalled, then goes on with the step: an answer that comes when the test says so,
-// e.g. after the session has given up waiting for it).
+// e.g. after the session has given up waiting for it) and "thenReverseRequest": { "command": "...", "arguments": {...} }
+// (the adapter sends that request - a reverse request, as the real adapter's "runInTerminal" - with its next seq before
+// anything else the step does, before "initialized" too when the step is "launch"; then it reads its input until the
+// response with that request_seq arrives and keeps every other message, in order, for afterwards. Answered with
+// success: the step goes on. Refused: the adapter does nothing more until its input closes, like the real one, and
+// exits with 0).
 // Built-in answers (no step needed): initialize, launch, configurationDone, disconnect, setExceptionBreakpoints,
 // setFunctionBreakpoints (every breakpoint verified, ids from 1001), readMemory, writeMemory.
 // Scenario extension: "variables": { "Name": "0x1000" } answers an "evaluate" of "&Name" that no step claims the way the
@@ -48,6 +53,8 @@ internal static class Program
     private static byte[]? _deferredLaunchResponse;
     private static string?[] _stdio = [];
     private static int _seq;
+    // Messages that arrived while the adapter waited for the answer to a reverse request: served afterwards, in order.
+    private static readonly Queue<JsonDocument> Held = new();
 
     private sealed class Step(JsonElement json)
     {
@@ -106,7 +113,7 @@ internal static class Program
             return ExitBadScenario;
         }
 
-        while (ReadMessage() is { } message)
+        while ((Held.TryDequeue(out var held) ? held : ReadMessage()) is { } message)
         {
             using (message)
                 Handle(message.RootElement);
@@ -184,6 +191,14 @@ internal static class Program
             {
                 Console.Error.WriteLine($"ARGUMENT-MISMATCH: {command} at {difference}");
                 Exit(ExitUnexpected);
+            }
+
+            if (step.Json.TryGetProperty("thenReverseRequest", out var reverse) && !ReverseRequest(reverse))
+            {
+                // Refused: nothing more is sent, and nothing that arrives is served.
+                while (ReadMessage() is { } ignored)
+                    ignored.Dispose();
+                Exit(0);
             }
 
             if (step.Json.TryGetProperty("delayMs", out var delay))
@@ -276,6 +291,44 @@ internal static class Program
             Exit(exitCode.GetInt32());
         if (step is null && command == "disconnect")
             Exit(0);
+    }
+
+    /// <summary>
+    /// Sends a request of the adapter's own and waits for the response to it; what else arrives meanwhile is kept for
+    /// the main loop. True when the response says success. The end of the input ends the adapter.
+    /// </summary>
+    private static bool ReverseRequest(JsonElement request)
+    {
+        Send(Message(w =>
+        {
+            w.WriteString("type", "request");
+            w.WriteString("command", request.GetProperty("command").GetString());
+            if (request.TryGetProperty("arguments", out var arguments))
+            {
+                w.WritePropertyName("arguments");
+                arguments.WriteTo(w);
+            }
+        }));
+        var requestSeq = _seq;
+        while (true)
+        {
+            var message = ReadMessage();
+            if (message is null)
+            {
+                Exit(0);
+                return false;
+            }
+
+            var root = message.RootElement;
+            if (root.GetProperty("type").GetString() == "response"
+                && root.TryGetProperty("request_seq", out var answered) && answered.GetInt32() == requestSeq)
+            {
+                using (message)
+                    return root.TryGetProperty("success", out var success) && success.ValueKind == JsonValueKind.True;
+            }
+
+            Held.Enqueue(message);
+        }
     }
 
     /// <summary>Appends to the debuggee's stdout or stderr file of the launch request (scenario error without one).</summary>

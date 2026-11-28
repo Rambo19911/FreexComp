@@ -212,6 +212,46 @@ public sealed class DapJsonTests
     }
 
     [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "DBG-545")]
+    public void Serialize_ReverseResponse_WithBody()
+    {
+        // The answer to the accepted runInTerminal request: the body follows the command; no message.
+        var json = Encoding.UTF8.GetString(DapJson.SerializeResponse(
+            3, 7, "runInTerminal", success: true, message: null, new RunInTerminalResponseBody(4242)));
+
+        Assert.Equal("""{"seq":3,"type":"response","request_seq":7,"success":true,"command":"runInTerminal","body":{"shellProcessId":4242}}""", json);
+    }
+
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "DBG-542")]
+    public void Serialize_Launch_WithConsole()
+    {
+        // Terminal mode: the console option is the last property, and there is no stdio.
+        var json = Encoding.UTF8.GetString(DapJson.SerializeRequest(2, "launch",
+            new LaunchArguments { Program = @"C:\p.exe", Args = [], Cwd = @"C:\", StopOnEntry = false, Console = "externalTerminal" }));
+
+        Assert.EndsWith("""
+            "sourceMap":[],"console":"externalTerminal"}}
+            """, json);
+        Assert.DoesNotContain("stdio", json);
+    }
+
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "DBG-541")]
+    public void Serialize_Initialize_ForTerminalMode_AnnouncesRunInTerminal()
+    {
+        var captured = Encoding.UTF8.GetString(DapJson.SerializeRequest(1, "initialize", new InitializeArguments()));
+        var terminal = Encoding.UTF8.GetString(DapJson.SerializeRequest(1, "initialize", new InitializeArguments { SupportsRunInTerminalRequest = true }));
+
+        // The one value differs; every other property and the order are the same.
+        Assert.Contains("\"supportsRunInTerminalRequest\":false", captured);
+        Assert.Equal(captured.Replace("\"supportsRunInTerminalRequest\":false", "\"supportsRunInTerminalRequest\":true"), terminal);
+    }
+
+    [Fact]
     public void Serialize_NonAscii_WrittenAsUtf8NotEscaped()
     {
         var json = Encoding.UTF8.GetString(DapJson.SerializeRequest(1, "evaluate", new EvaluateArguments("&Ēka", 1)));

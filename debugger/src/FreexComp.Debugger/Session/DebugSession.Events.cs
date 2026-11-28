@@ -48,6 +48,9 @@ internal sealed partial class DebugSession
                 OnModuleEvent(DapJson.Deserialize<ModuleEventBody>(body));
                 break;
             case "process":
+                if (await FailIfConsoleNotRequestedAsync().ConfigureAwait(false))
+                    break;
+                // The program's process - in terminal mode too, never the console's or its command's (DBG-553).
                 if (DapJson.Deserialize<ProcessEventBody>(body).SystemProcessId is { } processId)
                     _processId = processId;
                 break;

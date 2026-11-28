@@ -7,8 +7,9 @@ namespace FreexComp.Debugger.Dap;
 
 /// <summary>
 /// Protocol client over a <see cref="DapTransport"/> (architecture §4.2): owns the outgoing sequence counter,
-/// correlates responses with requests, forwards events in arrival order, rejects reverse requests and traces every
-/// message. One reader task and one writer task; requests go out strictly in call order (DBG-011).
+/// correlates responses with requests, forwards events in arrival order, rejects reverse requests - all but those its
+/// owner takes - and traces every message. One reader task and one writer task; requests go out strictly in call
+/// order (DBG-011).
 /// </summary>
 internal sealed partial class DapClient
 {
@@ -17,6 +18,7 @@ internal sealed partial class DapClient
     private readonly Action<DebuggerException?> _onClosed;
     private readonly Action<DapTraceEntry>? _trace;
     private readonly TimeProvider _time;
+    private readonly Func<int, string, JsonElement, bool>? _onReverseRequest;
 
     private readonly Lock _gate = new();
     private readonly Dictionary<int, PendingRequest> _pending = [];
@@ -33,18 +35,25 @@ internal sealed partial class DapClient
     /// Called once when the connection ends by itself: null for end of stream (adapter exited), or the protocol
     /// error. Not called after <see cref="Close"/>.
     /// </param>
+    /// <param name="onReverseRequest">
+    /// Called on the reader task for every request of the adapter (its seq, its command, its arguments - undefined
+    /// when it has none), in arrival order with the events. True: the owner takes the request and answers it with
+    /// <see cref="Respond"/>. False, or no callback: the client rejects it at once.
+    /// </param>
     public DapClient(
         DapTransport transport,
         Action<string, JsonElement> onEvent,
         Action<DebuggerException?> onClosed,
         Action<DapTraceEntry>? trace = null,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        Func<int, string, JsonElement, bool>? onReverseRequest = null)
     {
         _transport = transport;
         _onEvent = onEvent;
         _onClosed = onClosed;
         _trace = trace;
         _time = timeProvider ?? TimeProvider.System;
+        _onReverseRequest = onReverseRequest;
     }
 
     /// <summary>
@@ -180,7 +189,7 @@ internal sealed partial class DapClient
                         _onEvent(name, root.TryGetProperty("body", out var eventBody) ? eventBody.Clone() : default);
                     break;
                 case "request":
-                    RejectReverseRequest(root);
+                    HandleReverseRequest(root);
                     break;
                 default:
                     throw ProtocolError(Messages.UnknownMessageType + type.GetString());
@@ -223,16 +232,28 @@ internal sealed partial class DapClient
         return StringProperty(root, "message") is { Length: > 0 } message ? message : null;
     }
 
-    private void RejectReverseRequest(JsonElement root)
+    private void HandleReverseRequest(JsonElement root)
     {
         var requestSeq = root.TryGetProperty("seq", out var seqElement) && seqElement.TryGetInt32(out var value) ? value : 0;
         var command = StringProperty(root, "command") ?? "";
+        if (_onReverseRequest is { } handler
+            && handler(requestSeq, command, root.TryGetProperty("arguments", out var arguments) ? arguments.Clone() : default))
+            return;   // the owner answers
+        Respond(requestSeq, command, success: false, Messages.ReverseRequestNotSupported);
+    }
+
+    /// <summary>
+    /// Answers a request of the adapter: a refusal with its <paramref name="message"/>, or success with the
+    /// <paramref name="body"/>. The answer takes the next number of the outgoing sequence. Nothing is sent once the
+    /// connection has ended.
+    /// </summary>
+    public void Respond(int requestSeq, string command, bool success, string? message = null, object? body = null)
+    {
         lock (_gate)
         {
             if (_closed)
                 return;
-            _outgoing.Writer.TryWrite(DapJson.SerializeResponse(
-                _nextSeq++, requestSeq, command, success: false, Messages.ReverseRequestNotSupported));
+            _outgoing.Writer.TryWrite(DapJson.SerializeResponse(_nextSeq++, requestSeq, command, success, message, body));
         }
     }
 

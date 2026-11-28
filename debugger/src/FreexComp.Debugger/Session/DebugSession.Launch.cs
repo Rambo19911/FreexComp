@@ -60,6 +60,9 @@ internal sealed partial class DebugSession
     {
         _launchRequest = request;
         _launchCancellation = ct;
+        // The stream mode of the launch (DBG-540): with a terminal the program runs in a console of the caller's.
+        _terminal = request.Terminal;
+        _launchDirectory = request.WorkingDirectory ?? Path.GetDirectoryName(Path.GetFullPath(request.Program)) ?? "";
         _exceptionSettings = request.Exceptions;
         foreach (var source in request.Breakpoints)
             _breakpoints.Set(PathText.Normalize(source.Path), source.Breakpoints);
@@ -110,13 +113,17 @@ internal sealed partial class DebugSession
                 new DapTransport(_adapter.StandardOutput, _adapter.StandardInput),
                 onEvent: (name, body) => Post(() => OnAdapterEventAsync(name, body)),
                 onClosed: error => Post(() => OnAdapterClosedAsync(error)),
-                _options.Trace, _time);
+                _options.Trace, _time,
+                // Requests of the adapter are refused, as ever - but in terminal mode the one for the console (DBG-543).
+                onReverseRequest: _terminal is null ? null : OnReverseRequest);
             _client.Start();
 
             JsonElement capabilities;
             try
             {
-                capabilities = await RequestAsync("initialize", new InitializeArguments(), CancellationToken.None, InitializeTimeout).ConfigureAwait(false);
+                capabilities = await RequestAsync(
+                    "initialize", new InitializeArguments { SupportsRunInTerminalRequest = _terminal is not null },
+                    CancellationToken.None, InitializeTimeout).ConfigureAwait(false);
             }
             catch (DebuggerException e) when (e.Code is DebugErrorCode.RequestTimeout or DebugErrorCode.RequestFailed)
             {
@@ -133,12 +140,20 @@ internal sealed partial class DebugSession
             }
 
             // The adapter must announce that it accepts configuration within 10 s of the initialize response (DBG-056).
-            _initializedTimer = _time.CreateTimer(
-                _ => Post(() => FailLaunchAsync(new DebuggerException(DebugErrorCode.LaunchFailed, Messages.AdapterNotReady))),
-                null, InitializedTimeout, Timeout.InfiniteTimeSpan);
+            // Not in terminal mode (DBG-547): there it announces that only after the console has started and it has
+            // attached to the program, and that takes as long as the caller's console takes to open. The launch as a
+            // whole stays bounded.
+            if (_terminal is null)
+            {
+                _initializedTimer = _time.CreateTimer(
+                    _ => Post(() => FailLaunchAsync(new DebuggerException(DebugErrorCode.LaunchFailed, Messages.AdapterNotReady))),
+                    null, InitializedTimeout, Timeout.InfiniteTimeSpan);
+            }
 
-            // The debuggee's output goes to files of the session's own (DBG-058), read from now on.
-            StartOutputRelay();
+            // The debuggee's output goes to files of the session's own (DBG-058), read from now on. In terminal mode
+            // nothing is redirected: no files, no standard-input pipe, no output events of the program (DBG-542).
+            if (_terminal is null)
+                StartOutputRelay();
 
             // The response may arrive before or after the initialized event and before or after the configurationDone
             // response (DBG-053). It is handed to the loop from the reader task so that it keeps its place among the
@@ -147,10 +162,11 @@ internal sealed partial class DebugSession
             {
                 Program = request.Program,
                 Args = request.Arguments,
-                Cwd = request.WorkingDirectory ?? Path.GetDirectoryName(Path.GetFullPath(request.Program)) ?? "",
+                Cwd = _launchDirectory,
                 Env = request.Environment,
                 StopOnEntry = request.StopOnEntry || request.StopAtMainBody,
                 Stdio = _outputRelay?.StdioArgument,
+                Console = _terminal is null ? null : ExternalTerminal,
             };
             _ = _client.RequestAsync("launch", arguments, Timeout.InfiniteTimeSpan, _abort.Token,
                 response =>
@@ -184,6 +200,8 @@ internal sealed partial class DebugSession
             return;
         if (response.IsCompletedSuccessfully)
         {
+            if (await FailIfConsoleNotRequestedAsync().ConfigureAwait(false))
+                return;
             _launchResponded = true;
             CompleteLaunchIfRunning();
         }

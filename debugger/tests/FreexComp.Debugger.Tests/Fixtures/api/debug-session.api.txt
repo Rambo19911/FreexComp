@@ -47,6 +47,7 @@ LaunchRequest.Breakpoints : IReadOnlyList<SourceBreakpoints> { get; init; }
 LaunchRequest.Exceptions : ExceptionSettings { get; init; }
 LaunchRequest.TypeInfoPath : string? { get; init; }
 LaunchRequest.Libraries : IReadOnlyList<string> { get; init; }
+LaunchRequest.Terminal : IDebuggeeTerminal? { get; init; }
 LaunchRequest.InputAtEnd : bool { get; init; }
 
 type DebugState : enum = Idle, Starting, Running, Stopped, Terminating, Terminated
@@ -180,3 +181,14 @@ event IDebugSession.Terminated : EventHandler<TerminatedEventArgs>?
 type DebugSessionFactory : sealed class, IDebugSessionFactory
 DebugSessionFactory..ctor()
 DebugSessionFactory.Create(DebugSessionOptions options) : IDebugSession
+
+type IDebuggeeTerminal : interface
+IDebuggeeTerminal.StartAsync(DebuggeeTerminalRequest request, CancellationToken ct = default) : Task<IDebuggeeTerminalRun>
+
+type DebuggeeTerminalRequest : sealed record
+DebuggeeTerminalRequest..ctor(IReadOnlyList<string> Command, string WorkingDirectory, IReadOnlyDictionary<string, string?>? Environment, string Title)
+
+type IDebuggeeTerminalRun : interface
+IDebuggeeTerminalRun.ProcessId : int { get; }
+IDebuggeeTerminalRun.Ended : Task<int?> { get; }
+IDebuggeeTerminalRun.CloseAsync(bool keepWindow, CancellationToken ct = default) : Task

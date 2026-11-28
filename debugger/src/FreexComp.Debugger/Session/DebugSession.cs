@@ -16,6 +16,12 @@ internal interface IDebugSessionDiagnostics
     /// </summary>
     DateTime? AdapterStartTime { get; }
     int InternalStopCount { get; }
+
+    /// <summary>
+    /// The directory of the session's own output relay (DBG-058) while it exists; null without one: before the launch,
+    /// after the end, and in terminal mode, where nothing is redirected (DBG-542).
+    /// </summary>
+    string? OutputDirectory { get; }
 }
 
 /// <summary>
@@ -99,6 +105,7 @@ internal sealed partial class DebugSession : IDebugSession, IDebugSessionDiagnos
     int? IDebugSessionDiagnostics.AdapterProcessId => (int?)_adapterProcessId;
     DateTime? IDebugSessionDiagnostics.AdapterStartTime => (DateTime?)_adapterStartTime;
     int IDebugSessionDiagnostics.InternalStopCount => _internalStops;
+    string? IDebugSessionDiagnostics.OutputDirectory => Volatile.Read(ref _outputRelay)?.Directory;
 
     // ---- events ----
 

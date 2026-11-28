@@ -30,6 +30,17 @@ internal static class Messages
     public const string InternalErrorPrefix = "Internal debugger error: ";
     public const string OutputRelayFailed = "The files for the program's output could not be created: ";
 
+    // ---- the program's console (terminal mode, DBG-558) ----
+    public const string ConsoleStartFailed = "The program's console window could not be opened: ";
+    public const string ConsoleRequestInvalid = "The debug adapter sent an invalid request for the program's console.";
+    public const string ConsoleNotRequested = "The debug adapter did not open a console for the program.";
+    /// <summary>{0}: the exit code of the command, in decimal.</summary>
+    public const string ConsoleCommandEnded = "The program could not be started in its console window (exit code {0}).";
+    public const string ConsoleClosed = "The program's console window was closed before the program started.";
+    public const string ConsoleCloseFailed = "The program's console window could not be closed: ";
+    public const string ReverseRequestInvalidArguments = "invalid arguments";
+    public const string ReverseRequestFailed = "failed";
+
     public const string NotBoundYet = "Not bound yet";
     public const string DuplicateBreakpoint = "Duplicate breakpoint";
 

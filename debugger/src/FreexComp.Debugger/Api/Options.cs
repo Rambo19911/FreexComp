@@ -126,6 +126,9 @@ public sealed record LaunchRequest
     /// </summary>
     public IReadOnlyList<string> Libraries { get; init; } = [];
 
+    /// <summary>Terminal mode (DBG-431): the program runs in a console this object opens. Null: captured mode.</summary>
+    public IDebuggeeTerminal? Terminal { get; init; }
+
     /// <summary>Captured mode only (DBG-434): the program's standard input is at its end from the start.</summary>
     public bool InputAtEnd { get; init; } = false;
 }

@@ -19,7 +19,8 @@ internal sealed record InitializeArguments
     public string PathFormat { get; } = "path";
     public bool SupportsVariableType { get; } = true;
     public bool SupportsVariablePaging { get; } = false;
-    public bool SupportsRunInTerminalRequest { get; } = false;
+    /// <summary>True in terminal mode only (DBG-541).</summary>
+    public bool SupportsRunInTerminalRequest { get; init; } = false;
     public bool SupportsMemoryReferences { get; } = true;
     public bool SupportsProgressReporting { get; } = false;
     public bool SupportsInvalidatedEvent { get; } = false;
@@ -46,6 +47,8 @@ internal sealed record LaunchArguments
     public IReadOnlyList<IReadOnlyList<string>> SourceMap { get; } = [];
     /// <summary>The debuggee's stdin, stdout, stderr (null: not redirected); omitted when the adapter relays the output (DBG-058).</summary>
     public IReadOnlyList<string?>? Stdio { get; init; }
+    /// <summary><c>externalTerminal</c> in terminal mode (DBG-542: the adapter asks for the console with <c>runInTerminal</c>); else omitted.</summary>
+    public string? Console { get; init; }
 }
 
 internal sealed record DapSource
@@ -121,6 +124,14 @@ internal sealed record ThreadArguments(int ThreadId);
 
 /// <summary><c>terminateDebuggee</c> is omitted when null (DBG-095, missing capability).</summary>
 internal sealed record DisconnectArguments(bool? TerminateDebuggee);
+
+// ---- reverse requests ----
+
+/// <summary>
+/// Body of the answer to an accepted <c>runInTerminal</c> request (DBG-545): the process that owns the console.
+/// <c>processId</c> is never sent - the session does not know the command's process.
+/// </summary>
+internal sealed record RunInTerminalResponseBody(int ShellProcessId);
 
 // ---- response bodies ----
 

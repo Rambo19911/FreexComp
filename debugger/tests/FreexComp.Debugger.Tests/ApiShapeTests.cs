@@ -59,6 +59,7 @@ public sealed class ApiShapeTests
         Assert.False(launch.StopAtMainBody);
         Assert.Empty(launch.Breakpoints);
         Assert.Null(launch.TypeInfoPath);
+        Assert.Null(launch.Terminal);
         Assert.False(launch.InputAtEnd);
 
         var exceptions = launch.Exceptions;
