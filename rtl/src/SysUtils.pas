@@ -594,6 +594,54 @@ type
 {$SCOPEDENUMS OFF}
 
 type
+  { the string helper (RTL-1267...1269): positions count from 0; Chars is strict, every other member clips; no member
+    changes Self (RTL-1263) }
+  TStringHelper = record helper for string
+  private
+    function GetChars(Index: Integer): Char;
+    function GetLength: Integer; inline;
+  public
+    function IsEmpty: Boolean; inline;
+    function CompareTo(const StrB: string): Integer; inline;
+    function Equals(const Value: string): Boolean; overload; inline;
+    function ToUpper: string; inline;
+    function ToLower: string; inline;
+    function ToUpperInvariant: string; inline;
+    function ToLowerInvariant: string; inline;
+    function Trim: string; overload; inline;
+    function Trim(const TrimChars: array of Char): string; overload;
+    function TrimLeft: string; overload; inline;
+    function TrimLeft(const TrimChars: array of Char): string; overload;
+    function TrimRight: string; overload; inline;
+    function TrimRight(const TrimChars: array of Char): string; overload;
+    function PadLeft(TotalWidth: Integer): string; overload;
+    function PadLeft(TotalWidth: Integer; PaddingChar: Char): string; overload;
+    function PadRight(TotalWidth: Integer): string; overload;
+    function PadRight(TotalWidth: Integer; PaddingChar: Char): string; overload;
+    function Substring(StartIndex: Integer): string; overload; inline;
+    function Substring(StartIndex, ALength: Integer): string; overload; inline;
+    function Insert(StartIndex: Integer; const Value: string): string;
+    function Remove(StartIndex: Integer): string; overload;
+    function Remove(StartIndex, Count: Integer): string; overload;
+    function QuotedString: string; overload; inline;
+    function QuotedString(QuoteChar: Char): string; overload; inline;
+    function DeQuotedString: string; overload; inline;
+    function DeQuotedString(QuoteChar: Char): string; overload; inline;
+    function ToBoolean: Boolean; inline;
+    function ToInteger: Integer; inline;
+    function ToInt64: Int64; inline;
+    function ToSingle: Single; overload;
+    function ToSingle(const AFormatSettings: TFormatSettings): Single; overload;
+    function ToDouble: Double; overload; inline;
+    function ToDouble(const AFormatSettings: TFormatSettings): Double; overload; inline;
+    function ToExtended: Extended; overload; inline;
+    function ToExtended(const AFormatSettings: TFormatSettings): Extended; overload; inline;
+    property Chars[Index: Integer]: Char read GetChars;
+    property Length: Integer read GetLength;
+    { declared with R-271 because the member list compares the declarations of one name together; task R-273 }
+    class function Equals(const A, B: string): Boolean; overload; static; inline;
+  end;
+
   TShortIntHelper = record helper for ShortInt
   public
     const MaxValue = High(ShortInt);

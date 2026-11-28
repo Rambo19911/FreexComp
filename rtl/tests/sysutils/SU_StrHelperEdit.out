@@ -1,0 +1,92 @@
+# Substring
+ok X.Substring(2)
+ok X.Substring(2, 3)
+ok X.Substring(0)
+ok X.Substring(6)
+ok X.Substring(7)
+ok X.Substring(-2)
+ok X.Substring(-2, 3) keeps the count
+ok X.Substring(4, 10)
+ok X.Substring(2, 0)
+ok X.Substring(2, -1)
+ok P.Substring(2) cuts the pair
+ok U.Substring(2, 2)
+ok E.Substring(0)
+ok E.Substring(0, 1)
+ok X is unchanged
+# Insert
+ok X.Insert(0, -)
+ok X.Insert(3, --)
+ok X.Insert(6, !)
+ok X.Insert(99, !)
+ok X.Insert(-5, !)
+ok X.Insert(2, empty)
+ok E.Insert(0, x)
+ok U.Insert(3, .)
+ok P.Insert(2, |) splits the pair
+ok X is unchanged
+# Remove
+ok X.Remove(2)
+ok X.Remove(0)
+ok X.Remove(6)
+ok X.Remove(-1)
+ok X.Remove(1, 2)
+ok X.Remove(4, 10)
+ok X.Remove(2, 0)
+ok X.Remove(-1, 3) is not shifted
+ok X.Remove(6, 1)
+ok X.Remove(2, -1)
+ok P.Remove(1, 1) cuts the pair
+ok U.Remove(2)
+ok E.Remove(0)
+ok E.Remove(0, 1)
+ok X is unchanged
+# quoting
+ok it's.QuotedString
+ok it's.QuotedString(")
+ok "a""b".DeQuotedString(")
+ok 'it''s'.DeQuotedString
+ok X.DeQuotedString
+ok X.DeQuotedString(")
+ok E.QuotedString
+ok E.QuotedString(")
+ok E.DeQuotedString
+ok U.QuotedString
+ok U.DeQuotedString
+ok it's is unchanged
+# ToInteger
+ok 42.ToInteger
+ok  -7 .ToInteger
+ok $10.ToInteger
+ok x.ToInteger
+ok E.ToInteger
+ok 9000000000.ToInteger
+ok U.ToInteger
+# ToInt64
+ok 9000000000.ToInt64
+ok -42.ToInt64
+ok x.ToInt64
+ok E.ToInt64
+# ToBoolean
+ok true.ToBoolean
+ok 0.ToBoolean
+ok FALSE.ToBoolean
+ok maybe.ToBoolean
+ok E.ToBoolean
+# floats
+ok 1.5.ToDouble
+ok 1,5.ToDouble(FS)
+ok 1,5.ToDouble
+ok 1.5.ToDouble(FS)
+ok 0.5.ToSingle
+ok 0,25.ToSingle(FS)
+ok 0.1.ToSingle is the nearest Single
+ok 1e39.ToSingle
+ok 1e39.ToSingle(FS)
+ok 2.5.ToExtended
+ok 2,5.ToExtended(FS)
+ok E.ToDouble
+ok E.ToSingle
+ok x.ToExtended
+ok x.ToExtended(FS)
+# passed 83 failed 0

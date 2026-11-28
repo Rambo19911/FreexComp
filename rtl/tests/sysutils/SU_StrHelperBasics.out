@@ -1,0 +1,98 @@
+# Length
+ok A.Length
+ok U.Length
+ok P.Length (a pair counts two)
+ok E.Length
+# Chars
+ok A.Chars[0]
+ok A.Chars[11]
+ok P.Chars[1] is the high surrogate
+ok U.Chars[3]
+ok A.Chars[12]
+ok A.Chars[-1]
+ok E.Chars[0]
+ok A[1] stays one-based
+# IsEmpty
+ok E.IsEmpty
+ok A.IsEmpty
+ok P.IsEmpty
+# CompareTo
+ok abc.CompareTo(abd)
+ok abc.CompareTo(ab)
+ok abc.CompareTo(abc)
+ok abc.CompareTo(ABC) is ordinal
+ok E.CompareTo(a)
+ok E.CompareTo(E)
+ok U.CompareTo(Gr)
+# Equals
+ok abc.Equals(abc)
+ok abc.Equals(ABC) is ordinal
+ok E.Equals(E)
+ok P.Equals(P)
+ok TStringHelper.Equals(abc, abc)
+ok TStringHelper.Equals(abc, ABC)
+# case
+ok A.ToUpper
+ok A.ToLower
+ok U.ToUpper
+ok U.ToLower
+ok U.ToUpperInvariant
+ok U.ToLowerInvariant
+ok P.ToUpper (the pair has no mapping)
+ok P.ToLowerInvariant
+ok U+10428.ToUpper = U+10400
+ok U+10400.ToLower = U+10428
+ok E.ToUpper
+ok E.ToLower
+ok E.ToUpperInvariant
+ok E.ToLowerInvariant
+ok A is unchanged
+# Trim
+ok T.Trim
+ok T.TrimLeft
+ok T.TrimRight
+ok T is unchanged
+ok xyhiyx.Trim([x, y])
+ok xyhiyx.TrimLeft([x])
+ok xyhiyx.TrimRight([x])
+ok xyhiyx is unchanged
+ok  hi .Trim([x]) keeps the spaces
+ok  hi .TrimRight([space])
+ok T.Trim([]) = T.Trim
+ok T.TrimLeft([]) = T.TrimLeft
+ok T.TrimRight([]) = T.TrimRight
+ok NBSP a NBSP.Trim is unchanged
+ok NBSP a NBSP.Trim([NBSP])
+ok NBSP a NBSP.TrimLeft([NBSP])
+ok NBSP a NBSP.TrimRight([NBSP])
+ok aaa.Trim([a])
+ok aaa.TrimLeft([a])
+ok aaa.TrimRight([a])
+ok E.Trim
+ok E.TrimLeft
+ok E.TrimRight
+ok E.Trim([x])
+ok E.TrimLeft([x])
+ok E.TrimRight([x])
+ok U.Trim
+ok U.TrimRight([space, i, Zhe])
+ok P.TrimLeft([a])
+ok P.TrimRight([b, low surrogate]) cuts the pair
+# Pad
+ok abc.PadLeft(5)
+ok abc.PadLeft(5, *)
+ok abc.PadLeft(3)
+ok abc.PadLeft(2)
+ok abc.PadLeft(-1)
+ok abc.PadRight(5)
+ok abc.PadRight(5, .)
+ok abc.PadRight(3)
+ok abc.PadRight(-1, .)
+ok E.PadLeft(2, 0)
+ok E.PadLeft(0)
+ok E.PadRight(2)
+ok P.PadLeft(5, -)
+ok P.PadRight(5, middle dot)
+ok U.PadLeft(8)
+ok abc is unchanged
+# passed 89 failed 0

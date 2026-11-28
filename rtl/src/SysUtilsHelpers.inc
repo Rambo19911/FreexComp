@@ -1153,3 +1153,256 @@ function TGuidHelper.ToString: string;
 begin
   Result := GUIDToString(Self);
 end;
+
+{ --------------------------------------------------------------------- string helper (RTL-1267...RTL-1269) }
+
+{ True when C equals an element of Chars }
+function HelperInChars(C: Char; const Chars: array of Char): Boolean;
+var
+  I: Integer;
+begin
+  Result := False;
+  for I := 0 to High(Chars) do
+    if Chars[I] = C then
+    begin
+      Result := True;
+      Exit;
+    end;
+end;
+
+{ S without the code units that equal an element of TrimChars at its start (Left) and / or its end (Right); a
+  TrimChars without elements gives the classic Trim, TrimLeft or TrimRight (RTL-1268) }
+function HelperTrimChars(const S: string; const TrimChars: array of Char; Left, Right: Boolean): string;
+var
+  First, Last: Integer;
+begin
+  if High(TrimChars) < 0 then
+  begin
+    if Left and Right then
+      Result := Trim(S)
+    else if Left then
+      Result := TrimLeft(S)
+    else
+      Result := TrimRight(S);
+    Exit;
+  end;
+  First := 1;
+  Last := Length(S);
+  if Left then
+    while (First <= Last) and HelperInChars(S[First], TrimChars) do
+      Inc(First);
+  if Right then
+    while (Last >= First) and HelperInChars(S[Last], TrimChars) do
+      Dec(Last);
+  if (First = 1) and (Last = Length(S)) then
+    Result := S
+  else
+    Result := Copy(S, First, Last - First + 1);
+end;
+
+{ S, or S with TotalWidth - Length(S) copies of PaddingChar before it (Left) or after it when it is shorter (RTL-1268) }
+function HelperPad(const S: string; TotalWidth: Integer; PaddingChar: Char; Left: Boolean): string;
+begin
+  if Length(S) >= TotalWidth then
+    Result := S
+  else if Left then
+    Result := StringOfChar(PaddingChar, TotalWidth - Length(S)) + S
+  else
+    Result := S + StringOfChar(PaddingChar, TotalWidth - Length(S));
+end;
+
+function TStringHelper.GetChars(Index: Integer): Char;
+begin
+  if (Index < 0) or (Index >= System.Length(Self)) then
+    raise EArgumentOutOfRangeException.CreateFmt(SIndexOutOfRange, [Index]);
+  Result := Self[Index + 1];
+end;
+
+function TStringHelper.GetLength: Integer;
+begin
+  Result := System.Length(Self);
+end;
+
+function TStringHelper.IsEmpty: Boolean;
+begin
+  Result := System.Length(Self) = 0;
+end;
+
+function TStringHelper.CompareTo(const StrB: string): Integer;
+begin
+  Result := CompareStr(Self, StrB);
+end;
+
+function TStringHelper.Equals(const Value: string): Boolean;
+begin
+  Result := SameStr(Self, Value);
+end;
+
+class function TStringHelper.Equals(const A, B: string): Boolean;
+begin
+  Result := SameStr(A, B);
+end;
+
+function TStringHelper.ToUpper: string;
+begin
+  Result := AnsiUpperCase(Self);
+end;
+
+function TStringHelper.ToLower: string;
+begin
+  Result := AnsiLowerCase(Self);
+end;
+
+function TStringHelper.ToUpperInvariant: string;
+begin
+  Result := AnsiUpperCase(Self);
+end;
+
+function TStringHelper.ToLowerInvariant: string;
+begin
+  Result := AnsiLowerCase(Self);
+end;
+
+function TStringHelper.Trim: string;
+begin
+  Result := SysUtils.Trim(Self);
+end;
+
+function TStringHelper.Trim(const TrimChars: array of Char): string;
+begin
+  Result := HelperTrimChars(Self, TrimChars, True, True);
+end;
+
+function TStringHelper.TrimLeft: string;
+begin
+  Result := SysUtils.TrimLeft(Self);
+end;
+
+function TStringHelper.TrimLeft(const TrimChars: array of Char): string;
+begin
+  Result := HelperTrimChars(Self, TrimChars, True, False);
+end;
+
+function TStringHelper.TrimRight: string;
+begin
+  Result := SysUtils.TrimRight(Self);
+end;
+
+function TStringHelper.TrimRight(const TrimChars: array of Char): string;
+begin
+  Result := HelperTrimChars(Self, TrimChars, False, True);
+end;
+
+function TStringHelper.PadLeft(TotalWidth: Integer): string;
+begin
+  Result := HelperPad(Self, TotalWidth, ' ', True);
+end;
+
+function TStringHelper.PadLeft(TotalWidth: Integer; PaddingChar: Char): string;
+begin
+  Result := HelperPad(Self, TotalWidth, PaddingChar, True);
+end;
+
+function TStringHelper.PadRight(TotalWidth: Integer): string;
+begin
+  Result := HelperPad(Self, TotalWidth, ' ', False);
+end;
+
+function TStringHelper.PadRight(TotalWidth: Integer; PaddingChar: Char): string;
+begin
+  Result := HelperPad(Self, TotalWidth, PaddingChar, False);
+end;
+
+function TStringHelper.Substring(StartIndex: Integer): string;
+begin
+  Result := System.Copy(Self, StartIndex + 1, MaxInt);
+end;
+
+function TStringHelper.Substring(StartIndex, ALength: Integer): string;
+begin
+  Result := System.Copy(Self, StartIndex + 1, ALength);
+end;
+
+{ System.Insert on a copy: a position <= 0 puts Value first, a position >= Length appends it (RTL-1269) }
+function TStringHelper.Insert(StartIndex: Integer; const Value: string): string;
+begin
+  Result := Self;
+  System.Insert(Value, Result, StartIndex + 1);
+end;
+
+function TStringHelper.Remove(StartIndex: Integer): string;
+begin
+  Result := Remove(StartIndex, MaxInt);
+end;
+
+{ System.Delete on a copy: a window that starts outside the string removes nothing, the count is clipped (RTL-1269) }
+function TStringHelper.Remove(StartIndex, Count: Integer): string;
+begin
+  Result := Self;
+  System.Delete(Result, StartIndex + 1, Count);
+end;
+
+function TStringHelper.QuotedString: string;
+begin
+  Result := QuotedStr(Self);
+end;
+
+function TStringHelper.QuotedString(QuoteChar: Char): string;
+begin
+  Result := AnsiQuotedStr(Self, QuoteChar);
+end;
+
+function TStringHelper.DeQuotedString: string;
+begin
+  Result := AnsiDequotedStr(Self, '''');
+end;
+
+function TStringHelper.DeQuotedString(QuoteChar: Char): string;
+begin
+  Result := AnsiDequotedStr(Self, QuoteChar);
+end;
+
+function TStringHelper.ToBoolean: Boolean;
+begin
+  Result := StrToBool(Self);
+end;
+
+function TStringHelper.ToInteger: Integer;
+begin
+  Result := StrToInt(Self);
+end;
+
+function TStringHelper.ToInt64: Int64;
+begin
+  Result := StrToInt64(Self);
+end;
+
+function TStringHelper.ToSingle: Single;
+begin
+  Result := HelperParseSingle(Self, FormatSettings);
+end;
+
+function TStringHelper.ToSingle(const AFormatSettings: TFormatSettings): Single;
+begin
+  Result := HelperParseSingle(Self, AFormatSettings);
+end;
+
+function TStringHelper.ToDouble: Double;
+begin
+  Result := StrToFloat(Self);
+end;
+
+function TStringHelper.ToDouble(const AFormatSettings: TFormatSettings): Double;
+begin
+  Result := StrToFloat(Self, AFormatSettings);
+end;
+
+function TStringHelper.ToExtended: Extended;
+begin
+  Result := StrToFloat(Self);
+end;
+
+function TStringHelper.ToExtended(const AFormatSettings: TFormatSettings): Extended;
+begin
+  Result := StrToFloat(Self, AFormatSettings);
+end;
