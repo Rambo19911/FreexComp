@@ -617,4 +617,36 @@ public sealed partial class RenameCommandTests : RefactoringTestBase
         Assert.Equal(Replaced(Caller, "GreetButtonClick", "GreetClick"), Text(B)); // the closed caller is rewritten
         await SettleAsync();
     }
+
+    [Fact(Timeout = 120000)]
+    [Trait("Req", "IDE-REFAC-046")]
+    [Trait("Req", "IDE-REFAC-063")]
+    public Task FormClassRenameKeepsCodeSyncOk() => TestUiThread.RunAsync(async () =>
+    {
+        // The form class (I-386): the unit buffer, the form text of the open designer and the closed caller in one operation.
+        var document = await OpenDesignedFormAsync();
+        var designer = document.Designer;
+        Assert.Equal(CodeSyncState.Ok, designer.CodeSync.State);
+        var unitBefore = document.Buffer.Text;
+        var formBefore = designer.CurrentFormText();
+        Assert.True(document.ShowView(DocumentView.Code));
+        Caret(document, "TMainForm = class");
+        PreviewApplies();
+
+        var result = await Engine.RunAsync(Renamer("TMainWindow"));
+
+        Assert.Equal(RefactoringOutcome.Applied, result.Outcome);
+        var preview = Assert.Single(_previews);
+        Assert.Equal(new[] { FormUnitPath, B, FormPath }.Order(StringComparer.OrdinalIgnoreCase), preview.Files.Select(f => f.Path).Order(StringComparer.OrdinalIgnoreCase), StringComparer.OrdinalIgnoreCase);
+        // Code sync is Ok, the unit has exactly the rename (no repair edit), the form text exactly the new root class (no
+        // preserved block), the designer's model names the new class; the caller is rewritten; one operation.
+        Assert.Equal(CodeSyncState.Ok, designer.CodeSync.State);
+        Assert.Equal(Replaced(unitBefore, "TMainForm", "TMainWindow"), document.Buffer.Text);
+        Assert.Equal(Replaced(formBefore, "MainForm: TMainForm", "MainForm: TMainWindow"), designer.CurrentFormText());
+        Assert.Equal("TMainWindow", designer.Model!.Root.TypeName);
+        Assert.Empty(designer.CodeSync.RepairBeforeEdit());
+        Assert.Equal(Replaced(Caller, "TMainForm", "TMainWindow"), Text(B));
+        Assert.Equal(1, HistoryCount);
+        await SettleAsync();
+    });
 }
