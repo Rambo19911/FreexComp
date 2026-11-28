@@ -1000,4 +1000,503 @@ public sealed class RenameTests
         Renamed("Work;\nvar", "Labour", 2);                                    // a procedure around an anonymous function with Result
         Renamed("Start + Self", "First", 3);                                   // a captured parameter beside Result and Self
     }
+
+    // ------------------------------------------------------------------------------------------------ CMP-1500…1504 (C-448)
+
+    private const string FactsUnit = """
+        unit UFacts;
+        interface
+        uses Unit1;
+        type
+          TColor = (Red, Green);
+          TCustomer = class(TBase)
+          private
+            FName: string;
+          public
+            procedure Run; override;
+            procedure Load(const Source: string);
+          published
+            Owner: TBase;
+            procedure Changed;
+          end;
+        procedure Put(Value: Integer); overload;
+        implementation
+        procedure Put(const Note: string); overload; forward;
+        procedure TCustomer.Run; begin end;
+        procedure TCustomer.Changed; begin end;
+        procedure TCustomer.Load(const Source: string);
+        label Done;
+        var Line: string;
+          procedure Reset; begin Line := '' end;
+        begin
+          Line := Source;
+          FName := Line;
+          Reset;
+          goto Done;
+          Done:
+        end;
+        procedure Put(Value: Integer); begin Put('') end;
+        procedure Put(const Note: string); begin end;
+        end.
+        """;
+
+    /// <summary>The four-unit fixture with <c>UFacts</c> (a class derived from <c>Unit1.TBase</c>) used by the program.</summary>
+    private static (string Name, string Text)[] FactsFixture() =>
+        Fixture(("UFacts.pas", FactsUnit), ("P.pas", App.Replace("Unit3;", "Unit3, UFacts;", StringComparison.Ordinal)));
+
+    /// <summary>
+    /// CMP-1500: what the query says about the target — its kind, the name of its container, whether every occurrence is in the
+    /// document (scope), where the closure is declared, whether it is published and how many routines of its name its container declares.
+    /// </summary>
+    [Theory]
+    [Trait("Req", "CMP-1500")]
+    [InlineData("UFacts.pas", "Line: string", CompletionItemKind.Variable, "TCustomer.Load", RenameScope.Local, "UFacts.pas", false, 0)]      // local
+    [InlineData("UFacts.pas", "Source;", CompletionItemKind.Parameter, "TCustomer.Load", RenameScope.Local, "UFacts.pas", false, 0)]          // parameter
+    [InlineData("UFacts.pas", "FName: string", CompletionItemKind.Field, "TCustomer", RenameScope.Project, "UFacts.pas", false, 0)]           // field
+    [InlineData("Unit1.pas", "Run; virtual", CompletionItemKind.Method, "TBase", RenameScope.Project, "UFacts.pas,Unit1.pas", false, 1)]      // override in another unit
+    [InlineData("UFacts.pas", "Run; override", CompletionItemKind.Method, "TCustomer", RenameScope.Project, "UFacts.pas,Unit1.pas", false, 1)]
+    [InlineData("Unit1.pas", "Hello;", CompletionItemKind.Routine, "Unit1", RenameScope.Project, "Unit1.pas", false, 1)]                      // unit-level routine
+    [InlineData("Unit1.pas", "TBase = class", CompletionItemKind.Class, "Unit1", RenameScope.Project, "Unit1.pas", false, 0)]                 // class
+    [InlineData("Unit1.pas", "Unit1;", CompletionItemKind.Unit, "", RenameScope.Project, "Unit1.pas", false, 0)]                              // unit, at its heading
+    [InlineData("P.pas", "Unit1,", CompletionItemKind.Unit, "", RenameScope.Project, "Unit1.pas", false, 0)]                                  // unit, at a uses entry
+    [InlineData("Unit1.pas", "Shared: Integer", CompletionItemKind.Variable, "Unit1", RenameScope.Project, "Unit1.pas", false, 0)]            // unit-level variable
+    [InlineData("UFacts.pas", "Reset; begin", CompletionItemKind.Routine, "TCustomer.Load", RenameScope.Local, "UFacts.pas", false, 1)]       // nested routine
+    [InlineData("UFacts.pas", "Done;", CompletionItemKind.Label, "TCustomer.Load", RenameScope.Local, "UFacts.pas", false, 0)]                // label
+    [InlineData("UFacts.pas", "Red", CompletionItemKind.EnumMember, "TColor", RenameScope.Project, "UFacts.pas", false, 0)]                   // enumeration value
+    [InlineData("UFacts.pas", "Owner: TBase", CompletionItemKind.Field, "TCustomer", RenameScope.Project, "UFacts.pas", true, 0)]             // published field
+    [InlineData("UFacts.pas", "Changed;", CompletionItemKind.Method, "TCustomer", RenameScope.Project, "UFacts.pas", true, 1)]                // published method
+    [InlineData("UFacts.pas", "Put(Value", CompletionItemKind.Routine, "UFacts", RenameScope.Project, "UFacts.pas", false, 2)]                // overloads in both sections
+    [InlineData("UFacts.pas", "Put(const Note", CompletionItemKind.Routine, "UFacts", RenameScope.Project, "UFacts.pas", false, 2)]
+    public void GetRenameInfo_Facts_KindContainerScopeAndDeclarationPaths(string file, string piece, CompletionItemKind kind, string container,
+        RenameScope scope, string declaredIn, bool published, int overloads)
+    {
+        var files = FactsFixture();
+        AssertCompiles(files);
+
+        var info = Info(files, file, piece);
+
+        Assert.True(info.CanRename, info.Reason);
+        Assert.Equal(kind, info.Kind);
+        Assert.Equal(container, info.ContainerName);
+        Assert.Equal(scope, info.Scope);
+        Assert.Equal(declaredIn.Split(',').Select(TestFiles.PathOf), info.DeclarationPaths);
+        Assert.Equal(published, info.IsPublished);
+        Assert.Equal(overloads, info.OverloadCount);
+        Assert.Equal(scope == RenameScope.Local, !info.LocalSpans.IsEmpty);
+    }
+
+    /// <summary>CMP-1500: a name that cannot be renamed has the default facts.</summary>
+    [Fact]
+    [Trait("Req", "CMP-1500")]
+    public void GetRenameInfo_NotRenamable_FactsAreTheDefaults()
+    {
+        var files = FactsFixture();
+
+        Assert.All([Info(files, "UFacts.pas", "Integer"), Info(files, "UFacts.pas", "implementation"), Info(files, "UFacts.pas", "string")], info =>
+        {
+            Assert.False(info.CanRename);
+            Assert.Equal(default, info.Kind);
+            Assert.Equal("", info.ContainerName);
+            Assert.Equal(RenameScope.Project, info.Scope);
+            Assert.Empty(info.LocalSpans);
+            Assert.Empty(info.DeclarationPaths);
+            Assert.False(info.IsPublished);
+            Assert.Equal(0, info.OverloadCount);
+        });
+    }
+
+    /// <summary>
+    /// CMP-1500: for a target of scope <c>Local</c>, <c>LocalSpans</c> are the spans <c>Rename</c> edits — all of them in the document, in
+    /// text order, the span under the caret among them. A parameter has both headings; a field and a method have no local spans.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "CMP-1500")]
+    public void GetRenameInfo_LocalScope_SpansEqualTheEditsOfRename()
+    {
+        void Local((string Name, string Text)[] files, string file, string piece, int count)
+        {
+            var info = Info(files, file, piece);
+            var result = Rename(files, file, piece, "Renamed");
+
+            Assert.True(info.CanRename, info.Reason);
+            Assert.Equal(RenameScope.Local, info.Scope);
+            Assert.True(result.Success, result.Error);
+            var edit = Assert.Single(result.Edits);
+            Assert.Equal(TestFiles.PathOf(file), edit.Path);
+            Assert.Equal(edit.Changes.Select(c => c.Span), info.LocalSpans);
+            Assert.Equal(count, info.LocalSpans.Length);
+            Assert.Contains(info.Span, info.LocalSpans);
+            Assert.All(info.LocalSpans, s => Assert.Equal(info.CurrentName, TextOf(files, file).Substring(s.Start, s.Length), ignoreCase: true));
+        }
+
+        var facts = FactsFixture();
+        Local(facts, "UFacts.pas", "Line: string", 4);                         // declaration, the nested routine's use, two uses
+        Local(facts, "UFacts.pas", "Source;", 3);                              // both headings and the use
+        Local(facts, "UFacts.pas", "Source: string);\n  published", 3);        // the same from the heading in the class
+        Local(facts, "UFacts.pas", "Reset; begin", 2);
+        Local(facts, "UFacts.pas", "Done;", 3);
+        var anonymous = AnonymousBodyFixture.Files;
+        Local(anonymous, "P.pas", "Count: Integer;", 7);                       // a captured local
+        Local(anonymous, "P.pas", "Count: Integer): Integer", 2);              // the parameter of an anonymous function
+        Local(anonymous, "P.pas", "Note: Integer;", 4);                        // the local of an anonymous procedure
+        Local(anonymous, "P.pas", "Before := 1", 2);                           // an inline variable
+        Local(anonymous, "P.pas", "Seed: T);\n  end", 3);                      // a parameter of a generic class's method
+        Local(anonymous, "P.pas", "Step: Integer", 2);                         // the parameter of an anonymous function of the main block
+        // inside an anonymous method the container is the routine the anonymous method is written in, or the unit
+        Assert.Equal("TCounter.MakeAdder", Info(anonymous, "P.pas", "Note: Integer;").ContainerName);
+        Assert.Equal("TBox<T>.Run", Info(anonymous, "P.pas", "Mine: T").ContainerName);
+        Assert.Equal("P", Info(anonymous, "P.pas", "Step: Integer").ContainerName);
+
+        void Project((string Name, string Text)[] files, string file, string piece, string container)
+        {
+            var info = Info(files, file, piece);
+            Assert.True(info.CanRename, info.Reason);
+            Assert.Equal(RenameScope.Project, info.Scope);
+            Assert.Empty(info.LocalSpans);
+            Assert.Equal(container, info.ContainerName);
+        }
+
+        Project(facts, "UFacts.pas", "FName: string", "TCustomer");            // a field
+        Project(facts, "UFacts.pas", "Load(const", "TCustomer");               // a method
+        Project(anonymous, "P.pas", "Outer := 5", "P");                        // an inline variable of the main block: declared in no routine
+
+        // an occurrence, or a heading, in an include file is not in the document
+        (string Name, string Text)[] included =
+        [
+            ("P.pas", "program P;\nuses UInc;\nbegin\n  Work(1);\n  Other(2);\nend.\n"),
+            ("UInc.pas", "unit UInc;\ninterface\nprocedure Work(Count: Integer);\nprocedure Other(Value: Integer);\nimplementation\nprocedure Work(Count: Integer);\n"
+                         + "var Total, Rest: Integer;\nbegin\n  Total := Count;\n  Rest := 2;\n  {$I body.inc}\nend;\n{$I other.inc}\nend.\n"),
+            ("body.inc", "Total := Total + 1;\n"),
+            ("other.inc", "procedure Other(Value: Integer);\nbegin\nend;\n"),
+        ];
+        AssertCompiles(included);
+        Local(included, "UInc.pas", "Rest: Integer", 2);
+        Local(included, "UInc.pas", "Count: Integer", 3);
+        Project(included, "UInc.pas", "Total, Rest", "Work");                  // used in body.inc
+        Project(included, "UInc.pas", "Value: Integer", "Other");              // the implementation heading is in other.inc
+    }
+
+    private static void AssertSame(RenameResult expected, RenameResult actual)
+    {
+        Assert.Equal(expected.Success, actual.Success);
+        Assert.Equal(expected.Error, actual.Error);
+        Assert.Equal(expected.FileRename, actual.FileRename);
+        Assert.Equal(expected.Edits.Select(e => e.Path), actual.Edits.Select(e => e.Path));
+        Assert.All(expected.Edits.Zip(actual.Edits), pair => Assert.Equal(pair.First.Changes.AsEnumerable(), pair.Second.Changes));
+    }
+
+    private static RenameResult Rename((string Name, string Text)[] files, string file, string piece, string newName, RenameOptions options)
+    {
+        var doc = MarkupTestFile.Open(file, files);
+        return RenameService.Rename(doc, At(TextOf(files, file), piece), newName, options, TestContext.Current.CancellationToken);
+    }
+
+    /// <summary>CMP-1501: the default options are forms on, no form texts, one overload; with them the result is that of the four-parameter call.</summary>
+    [Fact]
+    [Trait("Req", "CMP-1501")]
+    public void Options_Default_SameResultAsTheFourParameterRename()
+    {
+        Assert.True(RenameOptions.Default.Forms);
+        Assert.Null(RenameOptions.Default.FormTexts);
+        Assert.False(RenameOptions.Default.Overloads);
+        Assert.Equal(new RenameOptions(), RenameOptions.Default);
+
+        void Same((string Name, string Text)[] files, string file, string piece, string newName, bool success, int editedFiles)
+        {
+            var four = Rename(files, file, piece, newName);
+            Assert.Equal(success, four.Success);
+            Assert.Equal(editedFiles, four.Edits.Length);
+            AssertSame(four, Rename(files, file, piece, newName, RenameOptions.Default));
+            AssertSame(four, Rename(files, file, piece, newName, new RenameOptions()));
+        }
+
+        Same(Fixture(), "Unit1.pas", "Total := Shared", "Sum", true, 1);              // a local
+        Same(Fixture(), "Unit1.pas", "Shared: Integer", "Common", true, 2);           // a global used in two files
+        Same(Fixture(), "Unit1.pas", "Shared: Integer", "Shared", true, 0);           // unchanged: no edits
+        Same(Fixture(), "Unit1.pas", "Run; virtual", "Execute", true, 2);             // an override chain
+        Same(Fixture(), "Unit1.pas", "Shared: Integer", "Hello", false, 0);           // a conflict
+        Same(Fixture(), "Unit1.pas", "Shared: Integer", "1abc", false, 0);            // an invalid name
+        Same(Fixture(), "Unit1.pas", "Integer", "Whole", false, 0);                   // not renamable
+        Same(Fixture(), "Unit1.pas", "Unit1;", "Core", true, 4);                      // a unit, with its file rename
+        Same(FormFixture(), "UMain.pas", "Button1: TButton", "OkButton", true, 2);    // a form's component
+        Same(FormFixture(), "UMain.pas", "Clicked(Sender: TObject);", "ButtonClick", true, 2);
+        var unreadable = FormFixture();
+        unreadable[2] = ("UMain.form", "object Form1: TForm1\n  Left = = 1\nend\n");
+        Same(unreadable, "UMain.pas", "Button1: TButton", "OkButton", false, 0);      // a form that cannot be scanned
+        Same(OverloadFixture(), "UOver.pas", "Draw(Scale: Integer); overload", "Zoom", true, 2);
+    }
+
+    private const string FormWithThreeHandlers =
+        "object Form1: TForm1\n  OnShow = Clicked\n  object Button1: TButton\n    OnClick = Clicked\n  end\n  object Button2: TButton\n    OnClick = Clicked\n  end\nend\n";
+
+    private static RenameOptions FormText(string path, string text) =>
+        new() { FormTexts = new Dictionary<string, string> { [path] = text } };
+
+    /// <summary>
+    /// CMP-1502: the form on disk has CRLF line ends and two handler references; the text given for it (the designer's, unsaved) has
+    /// LF line ends and a third one. The edits are computed against the given text — also when the key is spelled another way or
+    /// the file does not exist; without the option against the disk text.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "CMP-1502")]
+    public void Options_FormTexts_EditsAreAgainstTheGivenText()
+    {
+        const string Piece = "Clicked(Sender: TObject);";
+        var files = FormFixture();
+        var formPath = TestFiles.PathOf("UMain.form");
+
+        var disk = Rename(files, "UMain.pas", Piece, "ButtonClick");
+        var given = Rename(files, "UMain.pas", Piece, "ButtonClick", FormText(formPath, FormWithThreeHandlers));
+        var otherSpelling = Rename(files, "UMain.pas", Piece, "ButtonClick", FormText("c:/P/sub/../umain.FORM", FormWithThreeHandlers));
+        var otherKey = Rename(files, "UMain.pas", Piece, "ButtonClick", FormText(TestFiles.PathOf("Other.form"), "not a form"));
+        var relativeKey = Rename(files, "UMain.pas", Piece, "ButtonClick", FormText("UMain.form", "not a form"));
+        var field = Rename(files, "UMain.pas", "Button2: TButton", "Cancel", FormText(formPath, FormWithThreeHandlers));
+        (string Name, string Text)[] noFile = [files[0], files[1]];
+        var withoutFile = Rename(noFile, "UMain.pas", Piece, "ButtonClick", FormText(formPath, FormWithThreeHandlers));
+
+        Assert.Equal(["UMain.form: 2", "UMain.pas: 3"], Counts(disk));
+        Assert.Equal(Form.Replace("Clicked", "ButtonClick", StringComparison.Ordinal), Apply(Form, disk.Edits.Single(e => e.Path == formPath).Changes));
+        Assert.All([given, otherSpelling, withoutFile], result =>
+        {
+            Assert.True(result.Success, result.Error);
+            Assert.Equal(["UMain.form: 3", "UMain.pas: 3"], Counts(result));
+            var changes = result.Edits.Single(e => e.Path == formPath).Changes;
+            Assert.Equal(FormWithThreeHandlers.Replace("Clicked", "ButtonClick", StringComparison.Ordinal), Apply(FormWithThreeHandlers, changes));
+            Assert.All(changes, c => Assert.Equal("Clicked", FormWithThreeHandlers.Substring(c.Span.Start, c.Span.Length)));
+            Assert.Equal(disk.Edits.Single(e => e.Path != formPath).Changes.AsEnumerable(), result.Edits.Single(e => e.Path != formPath).Changes);
+        });
+        AssertSame(disk, otherKey);                                             // a key that names no embedded form is ignored
+        AssertSame(disk, relativeKey);
+        Assert.Equal(["UMain.form: 1", "UMain.pas: 1"], Counts(field));
+        Assert.Equal(FormWithThreeHandlers.Replace("Button2", "Cancel", StringComparison.Ordinal),
+            Apply(FormWithThreeHandlers, field.Edits.Single(e => e.Path == formPath).Changes));
+    }
+
+    /// <summary>CMP-1502: a given text the scanner rejects fails the rename like an unreadable file (CMP-753), although the file on disk is fine.</summary>
+    [Fact]
+    [Trait("Req", "CMP-1502")]
+    public void Options_FormTexts_TextThatCannotBeScannedFails()
+    {
+        var files = FormFixture();
+        var broken = FormText(TestFiles.PathOf("UMain.form"), "object Form1: TForm1\n  Left = = 1\nend\n");
+
+        var field = Rename(files, "UMain.pas", "Button1: TButton", "OkButton", broken);
+        var method = Rename(files, "UMain.pas", "Clicked(Sender: TObject);", "ButtonClick", broken);
+        var plain = Rename(files, "UMain.pas", "Plain: Integer", "Simple", broken);
+
+        Assert.All([field, method], result =>
+        {
+            Assert.False(result.Success);
+            Assert.Equal("The form file 'UMain.form' cannot be read, so its references cannot be updated.", result.Error);
+            Assert.Empty(result.Edits);
+        });
+        Assert.True(Rename(files, "UMain.pas", "Button1: TButton", "OkButton").Success);   // the file on disk is fine
+        Assert.True(plain.Success, plain.Error);                                // not a published member: no form is looked at
+    }
+
+    /// <summary>Counts the reads of <c>.form</c> files.</summary>
+    private sealed class FormReads(IFileSystem inner) : IFileSystem
+    {
+        private int _count;
+
+        public int Count => Volatile.Read(ref _count);
+
+        private void Note(string path)
+        {
+            if (path.EndsWith(".form", StringComparison.OrdinalIgnoreCase))
+            {
+                Interlocked.Increment(ref _count);
+            }
+        }
+
+        public bool FileExists(string path) => inner.FileExists(path);
+
+        public string ReadAllText(string path)
+        {
+            Note(path);
+            return inner.ReadAllText(path);
+        }
+
+        public byte[] ReadAllBytes(string path)
+        {
+            Note(path);
+            return inner.ReadAllBytes(path);
+        }
+
+        public IEnumerable<string> EnumerateFiles(string directory, string searchPattern) => inner.EnumerateFiles(directory, searchPattern);
+
+        public IEnumerable<string> EnumerateDirectories(string directory) => inner.EnumerateDirectories(directory);
+
+        public DateTime GetLastWriteTimeUtc(string path) => inner.GetLastWriteTimeUtc(path);
+
+        public long GetLength(string path) => inner.GetLength(path);
+
+        public void WriteAllBytes(string path, byte[] data) => inner.WriteAllBytes(path, data);
+
+        public void Delete(string path) => inner.Delete(path);
+
+        public void CreateDirectory(string path) => inner.CreateDirectory(path);
+    }
+
+    /// <summary>
+    /// CMP-1503: with <c>Forms = false</c> no form is read — one the scanner rejects does not fail the rename — and no edit of a form
+    /// is returned, also when a text is given for it; the code edits and the conflict check are those of a rename with forms.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "CMP-1503")]
+    public void Options_FormsOff_NoFormIsReadAndNoFormEdit()
+    {
+        const string Method = "Clicked(Sender: TObject);";
+        var off = new RenameOptions { Forms = false };
+        var files = FormFixture();
+        var unreadable = FormFixture();
+        unreadable[2] = ("UMain.form", "object Form1: TForm1\n  Left = = 1\nend\n");
+        int Reads(string piece, string newName, RenameOptions options, out RenameResult result)
+        {
+            var fs = new FormReads(TestFiles.Files(unreadable));
+            var workspace = new Workspace(fs);
+            workspace.SetProject(TestFiles.Options());
+            var doc = workspace.GetDocument(TestFiles.PathOf("UMain.pas"));
+            result = RenameService.Rename(doc, At(TextOf(unreadable, "UMain.pas"), piece), newName, options, TestContext.Current.CancellationToken);
+            return fs.Count;
+        }
+
+        // the binder reads an embedded form when it binds the unit (LANG-670), for the document and for the conflict check: a rename
+        // of a member that is not published reads it that often, and so does a rename of a component with Forms off
+        var readsOfTheBinder = Reads("Plain: Integer", "Simple", RenameOptions.Default, out var plain);
+        var readsOff = Reads("Button1: TButton", "OkButton", off, out var fieldOff);
+        var readsOn = Reads("Button1: TButton", "OkButton", RenameOptions.Default, out var fieldOn);
+        var methodOff = Rename(unreadable, "UMain.pas", Method, "ButtonClick", off);
+        var withText = Rename(files, "UMain.pas", Method, "ButtonClick",
+            new RenameOptions { Forms = false, FormTexts = new Dictionary<string, string> { [TestFiles.PathOf("UMain.form")] = FormWithThreeHandlers } });
+        var withForms = Rename(files, "UMain.pas", Method, "ButtonClick");
+        var conflictOff = Rename(files, "UMain.pas", "Button1: TButton", "Button2", off);
+        var conflictOn = Rename(files, "UMain.pas", "Button1: TButton", "Button2");
+
+        Assert.True(plain.Success, plain.Error);
+        Assert.Equal(readsOfTheBinder, readsOff);
+        Assert.Equal(readsOfTheBinder + 1, readsOn);
+        Assert.False(fieldOn.Success);
+        Assert.True(fieldOff.Success, fieldOff.Error);
+        Assert.Equal(["UMain.pas: 2"], Counts(fieldOff));
+        Assert.Equal(["UMain.pas: 3"], Counts(methodOff));
+        Assert.Equal(["UMain.pas: 3"], Counts(withText));
+        Assert.Equal(withForms.Edits.Single(e => e.Path.EndsWith(".pas", StringComparison.Ordinal)).Changes.AsEnumerable(), Assert.Single(methodOff.Edits).Changes);
+        Assert.False(conflictOn.Success);
+        AssertSame(conflictOn, conflictOff);
+    }
+
+    private const string OverloadUnit = """
+        unit UOver;
+        interface
+        type
+          TShape = class
+            procedure Draw; overload; virtual;
+            procedure Draw(Scale: Integer); overload;
+            procedure Draw(const Title: string); overload;
+          end;
+          TCircle = class(TShape)
+            procedure Draw; overload; override;
+            procedure Draw(Radius: Double); overload;
+          end;
+        implementation
+        procedure TShape.Draw; begin end;
+        procedure TShape.Draw(Scale: Integer); begin Draw end;
+        procedure TShape.Draw(const Title: string); begin Draw(1) end;
+        procedure TCircle.Draw; begin inherited Draw; Draw(2); Draw('x') end;
+        procedure TCircle.Draw(Radius: Double); begin Draw end;
+        end.
+        """;
+
+    private static (string Name, string Text)[] OverloadFixture() =>
+    [
+        ("P.pas", "program P;\nuses UOver;\nvar C: TCircle;\nbegin\n  C.Draw;\n  C.Draw(3);\n  C.Draw('t');\n  C.Draw(1.5);\nend.\n"),
+        ("UOver.pas", OverloadUnit.ReplaceLineEndings("\n")),
+    ];
+
+    /// <summary>
+    /// CMP-1504: three overloads of a class, one of them virtual and overridden in a descendant that adds an overload of its own.
+    /// With <c>Overloads</c> the three, the override and — through it — the descendant's own overload are renamed, from whichever of
+    /// them the rename starts: no <c>Draw</c> is left and the project compiles.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "CMP-1504")]
+    [Trait("Req", "CMP-1500")]
+    public void Options_Overloads_RenamesTheWholeGroup()
+    {
+        var group = new RenameOptions { Overloads = true };
+        var files = OverloadFixture();
+        AssertCompiles(files);
+        Assert.Equal(3, Info(files, "UOver.pas", "Draw(Scale: Integer); overload").OverloadCount);
+        Assert.Equal(3, Info(files, "UOver.pas", "Draw; overload; virtual").OverloadCount);
+        Assert.Equal(2, Info(files, "UOver.pas", "Draw; overload; override").OverloadCount);
+        Assert.Equal(3, Info(files, "P.pas", "Draw(3)").OverloadCount);
+
+        (string File, string Piece)[] starts =
+        [
+            ("UOver.pas", "Draw(Scale: Integer); overload"), ("UOver.pas", "Draw(const Title"), ("UOver.pas", "Draw; overload; virtual"),
+            ("UOver.pas", "Draw(Radius"), ("UOver.pas", "Draw(2)"), ("P.pas", "Draw('t')"),
+        ];
+        Assert.All(starts, start =>
+        {
+            var result = Rename(files, start.File, start.Piece, "Paint", group);
+
+            Assert.Equal(["P.pas: 4", "UOver.pas: 16"], Counts(result));
+            var after = Applied(files, result);
+            Assert.Equal(TextOf(files, "UOver.pas").Replace("Draw", "Paint", StringComparison.Ordinal), TextOf(after, "UOver.pas"));
+            Assert.Equal(TextOf(files, "P.pas").Replace("Draw", "Paint", StringComparison.Ordinal), TextOf(after, "P.pas"));
+            AssertCompiles(after);
+        });
+
+        // unit-level routines, declared in both sections of the unit: the declarations, both implementation headings and the call
+        var put = Rename(FactsFixture(), "UFacts.pas", "Put(Value", "Store", group);
+        Assert.Equal(["UFacts.pas: 5"], Counts(put));
+        AssertCompiles(Applied(FactsFixture(), put));
+        Assert.Equal(["UFacts.pas: 2"], Counts(Rename(FactsFixture(), "UFacts.pas", "Put(Value", "Store")));
+
+        // the overloads of an interface: with them their implementations, and with those the class's own overload
+        (string Name, string Text)[] shapes =
+        [
+            ("P.pas", "program P;\ntype\n  IShape = interface\n    procedure Draw; overload;\n    procedure Draw(Scale: Integer); overload;\n  end;\n"
+                      + "  TShape = class(TInterfacedObject, IShape)\n    procedure Draw; overload;\n    procedure Draw(Scale: Integer); overload;\n"
+                      + "    procedure Draw(const Title: string); overload;\n  end;\nprocedure TShape.Draw; begin end;\nprocedure TShape.Draw(Scale: Integer); begin end;\n"
+                      + "procedure TShape.Draw(const Title: string); begin end;\nvar S: IShape;\nbegin\n  S := TShape.Create;\n  S.Draw;\n  S.Draw(1);\nend.\n"),
+        ];
+        AssertCompiles(shapes);
+        Assert.Equal(2, Info(shapes, "P.pas", "Draw; overload").OverloadCount);
+        var all = Rename(shapes, "P.pas", "Draw; overload", "Paint", group);
+        Assert.Equal(["P.pas: 10"], Counts(all));
+        Assert.Equal(TextOf(shapes, "P.pas").Replace("Draw", "Paint", StringComparison.Ordinal), TextOf(Applied(shapes, all), "P.pas"));
+        Assert.Equal(["P.pas: 4"], Counts(Rename(shapes, "P.pas", "Draw; overload", "Paint")));       // one overload: both declarations, the heading, the call
+
+        // another kind, and a routine that has no overload: the option changes nothing
+        AssertSame(Rename(files, "UOver.pas", "TShape = class", "TFigure"), Rename(files, "UOver.pas", "TShape = class", "TFigure", group));
+        AssertSame(Rename(Fixture(), "Unit1.pas", "Hello;", "Greet"), Rename(Fixture(), "Unit1.pas", "Hello;", "Greet", group));
+    }
+
+    /// <summary>CMP-1504: without the option — and with the four-parameter call — only the overload at the position, with its override chain, is renamed.</summary>
+    [Fact]
+    [Trait("Req", "CMP-1504")]
+    public void Options_OverloadsOff_RenamesOnlyTheOverloadAtThePosition()
+    {
+        var files = OverloadFixture();
+
+        var one = Rename(files, "UOver.pas", "Draw(Scale: Integer); overload", "Zoom", new RenameOptions { Overloads = false });
+        var chain = Rename(files, "UOver.pas", "Draw; overload; virtual", "Paint", RenameOptions.Default);
+
+        Assert.Equal(["P.pas: 1", "UOver.pas: 4"], Counts(one));                   // declaration, implementation heading, Draw(1), Draw(2); C.Draw(3)
+        var afterOne = Applied(files, one);
+        Assert.Contains("procedure Zoom(Scale: Integer); overload;", TextOf(afterOne, "UOver.pas"), StringComparison.Ordinal);
+        Assert.Contains("procedure Draw; overload; virtual;", TextOf(afterOne, "UOver.pas"), StringComparison.Ordinal);
+        Assert.Contains("begin inherited Draw; Zoom(2); Draw('x') end;", TextOf(afterOne, "UOver.pas"), StringComparison.Ordinal);
+        Assert.Contains("C.Draw;\n  C.Zoom(3);\n  C.Draw('t');\n  C.Draw(1.5);", TextOf(afterOne, "P.pas"), StringComparison.Ordinal);
+        AssertCompiles(afterOne);
+        AssertSame(Rename(files, "UOver.pas", "Draw(Scale: Integer); overload", "Zoom"), one);
+
+        Assert.Equal(["P.pas: 1", "UOver.pas: 7"], Counts(chain));                 // two declarations, two headings, Draw in two bodies, inherited Draw; C.Draw
+        var afterChain = Applied(files, chain);
+        Assert.Contains("procedure Paint; overload; override;", TextOf(afterChain, "UOver.pas"), StringComparison.Ordinal);
+        Assert.Contains("procedure Draw(Radius: Double); overload;", TextOf(afterChain, "UOver.pas"), StringComparison.Ordinal);
+        AssertCompiles(afterChain);
+    }
 }

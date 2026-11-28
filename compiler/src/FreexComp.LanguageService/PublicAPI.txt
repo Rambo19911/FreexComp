@@ -379,9 +379,16 @@ readonly record struct FreexComp.LanguageService.ReferenceLocation : System.IEqu
   public static System.Boolean op_Inequality(FreexComp.LanguageService.ReferenceLocation left, FreexComp.LanguageService.ReferenceLocation right)
 sealed record FreexComp.LanguageService.RenameInfo : System.IEquatable<FreexComp.LanguageService.RenameInfo>
   public FreexComp.Compiler.Text.TextSpan Span { get; init; }
+  public FreexComp.LanguageService.CompletionItemKind Kind { get; init; }
   public FreexComp.LanguageService.RenameInfo <Clone>$()
+  public FreexComp.LanguageService.RenameScope Scope { get; init; }
   public System.Boolean CanRename { get; init; }
   public System.Boolean Equals(FreexComp.LanguageService.RenameInfo other)
+  public System.Boolean IsPublished { get; init; }
+  public System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Text.TextSpan> LocalSpans { get; init; }
+  public System.Collections.Immutable.ImmutableArray<System.String> DeclarationPaths { get; init; }
+  public System.Int32 OverloadCount { get; init; }
+  public System.String ContainerName { get; init; }
   public System.String CurrentName { get; init; }
   public System.String Reason { get; init; }
   public System.Void Deconstruct(out System.Boolean CanRename, out System.String Reason, out FreexComp.Compiler.Text.TextSpan Span, out System.String CurrentName)
@@ -391,6 +398,19 @@ sealed record FreexComp.LanguageService.RenameInfo : System.IEquatable<FreexComp
   public override System.String ToString()
   public static System.Boolean op_Equality(FreexComp.LanguageService.RenameInfo left, FreexComp.LanguageService.RenameInfo right)
   public static System.Boolean op_Inequality(FreexComp.LanguageService.RenameInfo left, FreexComp.LanguageService.RenameInfo right)
+sealed record FreexComp.LanguageService.RenameOptions : System.IEquatable<FreexComp.LanguageService.RenameOptions>
+  public FreexComp.LanguageService.RenameOptions <Clone>$()
+  public System.Boolean Equals(FreexComp.LanguageService.RenameOptions other)
+  public System.Boolean Forms { get; init; }
+  public System.Boolean Overloads { get; init; }
+  public System.Collections.Generic.IReadOnlyDictionary<System.String, System.String> FormTexts { get; init; }
+  public ctor()
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public static FreexComp.LanguageService.RenameOptions Default { get; }
+  public static System.Boolean op_Equality(FreexComp.LanguageService.RenameOptions left, FreexComp.LanguageService.RenameOptions right)
+  public static System.Boolean op_Inequality(FreexComp.LanguageService.RenameOptions left, FreexComp.LanguageService.RenameOptions right)
 sealed record FreexComp.LanguageService.RenameResult : System.IEquatable<FreexComp.LanguageService.RenameResult>
   public FreexComp.LanguageService.FileRename FileRename { get; init; }
   public FreexComp.LanguageService.RenameResult <Clone>$()
@@ -405,8 +425,12 @@ sealed record FreexComp.LanguageService.RenameResult : System.IEquatable<FreexCo
   public override System.String ToString()
   public static System.Boolean op_Equality(FreexComp.LanguageService.RenameResult left, FreexComp.LanguageService.RenameResult right)
   public static System.Boolean op_Inequality(FreexComp.LanguageService.RenameResult left, FreexComp.LanguageService.RenameResult right)
+enum FreexComp.LanguageService.RenameScope
+  Local = 1
+  Project = 0
 static class FreexComp.LanguageService.RenameService
   public static FreexComp.LanguageService.RenameInfo GetRenameInfo(FreexComp.LanguageService.Document doc, System.Int32 position, System.Threading.CancellationToken ct)
+  public static FreexComp.LanguageService.RenameResult Rename(FreexComp.LanguageService.Document doc, System.Int32 position, System.String newName, FreexComp.LanguageService.RenameOptions options, System.Threading.CancellationToken ct)
   public static FreexComp.LanguageService.RenameResult Rename(FreexComp.LanguageService.Document doc, System.Int32 position, System.String newName, System.Threading.CancellationToken ct)
 sealed record FreexComp.LanguageService.SignatureHelp : System.IEquatable<FreexComp.LanguageService.SignatureHelp>
   public FreexComp.Compiler.Text.TextSpan ApplicableSpan { get; init; }

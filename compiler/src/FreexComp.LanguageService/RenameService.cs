@@ -10,8 +10,65 @@ using FreexComp.Compiler.Units;
 
 namespace FreexComp.LanguageService;
 
-/// <summary>What is under the caret for a rename: <see cref="Span"/> is the whole name (a dotted unit name is one name).</summary>
-public sealed record RenameInfo(bool CanRename, string? Reason, TextSpan Span, string CurrentName);
+/// <summary>Where the occurrences of a rename target can lie (CMP-1500).</summary>
+public enum RenameScope
+{
+    /// <summary>Anywhere in the source units of the compilation.</summary>
+    Project,
+
+    /// <summary>Declared in a routine, and every occurrence is in the document's own text.</summary>
+    Local,
+}
+
+/// <summary>
+/// What is under the caret for a rename: <see cref="Span"/> is the whole name (a dotted unit name is one name). The facts of the
+/// target (CMP-1500) have their defaults when <see cref="CanRename"/> is false.
+/// </summary>
+public sealed record RenameInfo(bool CanRename, string? Reason, TextSpan Span, string CurrentName)
+{
+    /// <summary>The kind of the target; <see cref="CompletionItemKind.Unit"/> for a unit, program or library name.</summary>
+    public CompletionItemKind Kind { get; init; }
+
+    /// <summary>
+    /// A member: its type, qualified without the unit (<c>TCustomer</c>); a unit-level symbol: its unit; a symbol declared in a
+    /// routine: the routine, qualified without the unit (<c>TCustomer.Load</c>; inside an anonymous method: the routine the
+    /// anonymous method is written in); a unit: empty.
+    /// </summary>
+    public string ContainerName { get; init; } = "";
+
+    public RenameScope Scope { get; init; }
+
+    /// <summary>Scope <see cref="RenameScope.Local"/>: the spans <c>Rename</c> edits in the document, in text order; else empty.</summary>
+    public ImmutableArray<TextSpan> LocalSpans { get; init; } = [];
+
+    /// <summary>The normalized paths of every declaration site of everything renamed together (without the overload option), in path order.</summary>
+    public ImmutableArray<string> DeclarationPaths { get; init; } = [];
+
+    /// <summary>A field or method with visibility <c>published</c>.</summary>
+    public bool IsPublished { get; init; }
+
+    /// <summary>A routine or method: the routines of its name declared in its container, itself included; other kinds 0.</summary>
+    public int OverloadCount { get; init; }
+}
+
+/// <summary>The options of a rename (CMP-1501); they do not apply to a unit rename.</summary>
+public sealed record RenameOptions
+{
+    public static RenameOptions Default { get; } = new();
+
+    /// <summary>CMP-1503: false = no form is read and no edit of a form is returned.</summary>
+    public bool Forms { get; init; } = true;
+
+    /// <summary>
+    /// CMP-1502: full path → text of forms that are not read from disk (an open form with its present text); the edits of such a
+    /// form refer to the given text. Keys are compared as normalized paths; a key that names no embedded form (or is not a full
+    /// path) is ignored.
+    /// </summary>
+    public IReadOnlyDictionary<string, string>? FormTexts { get; init; }
+
+    /// <summary>CMP-1504: a routine or method is renamed with the other routines of its name declared in the same container.</summary>
+    public bool Overloads { get; init; }
+}
 
 /// <summary>
 /// The edits of a rename, per file in path order (changes in text order, against the snapshot's text), or the reason it was
@@ -33,16 +90,38 @@ public static class RenameService
     public static RenameInfo GetRenameInfo(Document doc, int position, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(doc);
-        var target = Find(doc, position, ct);
-        return new RenameInfo(target.Reason is null, target.Reason, target.Span, target.Name);
+        var target = Find(doc, position, overloads: false, ct);
+        var info = new RenameInfo(target.Reason is null, target.Reason, target.Span, target.Name);
+        if (target.Reason is not null || target.Symbol is not { } symbol)
+        {
+            return info;
+        }
+
+        // CMP-1500: the facts of the target
+        var local = LocalSpans(doc, symbol, target.Related, ct);
+        return info with
+        {
+            Kind = SymbolKinds.Of(symbol),
+            ContainerName = ContainerName(doc, symbol),
+            Scope = local.IsEmpty ? RenameScope.Project : RenameScope.Local,
+            LocalSpans = local,
+            DeclarationPaths = [.. target.Related.SelectMany(r => r.Locations).Select(l => PathUtil.Normalize(l.Path)).Distinct(PathUtil.Comparer).Order(PathUtil.Comparer)],
+            IsPublished = symbol is FieldSymbol or MethodSymbol && symbol.Visibility == Visibility.Published,
+            OverloadCount = Overloads(symbol).Count,
+        };
     }
 
     /// <summary>CMP-751…753: the edits that rename the symbol at <paramref name="position"/>, after the conflict check.</summary>
-    public static RenameResult Rename(Document doc, int position, string newName, CancellationToken ct)
+    public static RenameResult Rename(Document doc, int position, string newName, CancellationToken ct) =>
+        Rename(doc, position, newName, RenameOptions.Default, ct);
+
+    /// <summary>CMP-1501: <see cref="Rename(Document, int, string, CancellationToken)"/> with options (forms, form texts, overloads).</summary>
+    public static RenameResult Rename(Document doc, int position, string newName, RenameOptions options, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(doc);
         ArgumentNullException.ThrowIfNull(newName);
-        var target = Find(doc, position, ct);
+        ArgumentNullException.ThrowIfNull(options);
+        var target = Find(doc, position, options.Overloads, ct);
         if (target.Reason is not null)
         {
             return Fail(target.Reason);
@@ -66,7 +145,7 @@ public static class RenameService
             return new RenameResult(true, null, []);
         }
 
-        return unit is null ? RenameSymbol(doc, target, newName, ct) : RenameUnit(doc, target, unit, newName, ct);
+        return unit is null ? RenameSymbol(doc, target, newName, options, ct) : RenameUnit(doc, target, unit, newName, ct);
     }
 
     private static RenameResult Fail(string error) => new(false, error, []);
@@ -75,7 +154,8 @@ public static class RenameService
 
     private sealed record Target(TextSpan Span, string Name, Symbol? Symbol, ImmutableArray<Symbol> Related, string? Reason);
 
-    private static Target Find(Document doc, int position, CancellationToken ct)
+    /// <param name="overloads">CMP-1504: a routine is found with the routines of its name (<see cref="Closure"/>).</param>
+    private static Target Find(Document doc, int position, bool overloads, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
         var model = doc.SemanticModel;
@@ -135,7 +215,7 @@ public static class RenameService
             return new Target(token.Span, text, symbol, [], $"'{text}' is another name of '{symbol.Name}' and cannot be renamed.");
         }
 
-        var related = Closure(doc.Compilation, symbol);
+        var related = Closure(doc.Compilation, symbol, overloads);
         return new Target(token.Span, text, symbol, related, related.Select(r => NotRenamable(doc, r, text)).FirstOrDefault(r => r is not null));
     }
 
@@ -172,10 +252,13 @@ public static class RenameService
 
     /// <summary>
     /// What is renamed together: the symbol with its override chain and redeclarations (CMP-742), and across interfaces — a
-    /// method that implements an interface method goes with it, and so do the other implementations.
+    /// method that implements an interface method goes with it, and so do the other implementations. With
+    /// <paramref name="overloads"/> (CMP-1504), for a routine whose name has more than one routine in its container: also those
+    /// routines, each with what is renamed together with it, and the routines of that name in the container of everything added.
     /// </summary>
-    private static ImmutableArray<Symbol> Closure(Compilation compilation, Symbol symbol)
+    private static ImmutableArray<Symbol> Closure(Compilation compilation, Symbol symbol, bool overloads)
     {
+        overloads = overloads && Overloads(symbol).Count > 1;
         var all = new List<Symbol>();
         var pending = new Queue<Symbol>();
         void Add(Symbol s)
@@ -195,6 +278,11 @@ public static class RenameService
             foreach (var related in NavigationService.Related(compilation, next))
             {
                 Add(related);
+            }
+
+            if (overloads)
+            {
+                Overloads(next).ForEach(Add);
             }
 
             if (next is not MethodSymbol method)
@@ -223,9 +311,124 @@ public static class RenameService
         return [.. all];
     }
 
+    /// <summary>
+    /// CMP-1500, 1504: the routines of the routine's name declared in its container, itself included — a unit's two sections are
+    /// one container, a type counts its own declarations (generic methods too, LANG-980). Empty for another kind of symbol.
+    /// </summary>
+    private static List<Symbol> Overloads(Symbol symbol)
+    {
+        var group = new List<Symbol>();
+        if (symbol is not (RoutineSymbol or GenericMethodSymbol))
+        {
+            return group;
+        }
+
+        IEnumerable<Symbol> declared = symbol.ContainingSymbol switch
+        {
+            UnitSymbol unit => unit.InterfaceMembers.Concat(unit.ImplementationMembers),
+            ClassTypeSymbol type => type.Methods.Concat<Symbol>(type.GenericMethods),
+            RecordTypeSymbol type => type.Methods.Concat<Symbol>(type.GenericMethods),
+            TypeSymbol type => type.Members,
+            RoutineSymbol => symbol is RoutineSymbol { DefinitionScope: { } scope } ? scope.LookupRoutinesLocal(symbol.Name) : [],
+            _ => [],
+        };
+        foreach (var routine in declared.Where(d => d is RoutineSymbol or GenericMethodSymbol && IdentifierComparer.Instance.Equals(d.Name, symbol.Name)).Append(symbol))
+        {
+            if (!group.Any(g => SymbolKey.AreSame(g, routine)))
+            {
+                group.Add(routine);
+            }
+        }
+
+        return group;
+    }
+
+    // ---------------------------------------------------------------------------------------------------------- facts (CMP-1500)
+
+    private static string ContainerName(Document doc, Symbol symbol)
+    {
+        if (symbol is UnitSymbol)
+        {
+            return "";
+        }
+
+        if (symbol.ContainingSymbol is { } container)
+        {
+            return Qualified(container);
+        }
+
+        // without a container: a named pointer type (C-366), or an inline variable of a main block - the unit of its file
+        var path = symbol.Locations[0].Path;
+        var unit = symbol.ContainingUnit
+                   ?? doc.Compilation.UnitSymbols.Append(doc.SemanticModel.Unit).FirstOrDefault(u => u.Locations.Any(l => PathUtil.AreEqual(l.Path, path)));
+        return unit?.Name ?? "";
+    }
+
+    /// <summary>A unit: its name; a type or routine: its name qualified by its types and routines, without the unit.</summary>
+    private static string Qualified(Symbol container)
+    {
+        if (container is MethodSymbol { IsAnonymous: true } anonymous)
+        {
+            // named after the routine the anonymous method is written in (CMP-1473), or the unit for one of a unit-level body
+            var owner = anonymous.AnonymousParent;
+            while (owner is MethodSymbol { IsAnonymous: true } outer)
+            {
+                owner = outer.AnonymousParent;
+            }
+
+            return owner is null ? anonymous.ContainingUnit?.Name ?? "" : Qualified(owner);
+        }
+
+        return container.ContainingSymbol is null or UnitSymbol ? container.Name : Qualified(container.ContainingSymbol) + "." + container.Name;
+    }
+
+    /// <summary>
+    /// The occurrences of a target of scope <c>Local</c> in the document, in text order (what <see cref="RenameSymbol"/> edits there);
+    /// empty for scope <c>Project</c>. Local: the symbol is declared in a routine, every declaration site of the closure and of the
+    /// routines around it is in the document's file, and no token the document reads from an include file names the closure.
+    /// </summary>
+    private static ImmutableArray<TextSpan> LocalSpans(Document doc, Symbol symbol, ImmutableArray<Symbol> related, CancellationToken ct)
+    {
+        if (symbol.ContainingSymbol is not RoutineSymbol)
+        {
+            return [];
+        }
+
+        var sites = related.SelectMany(r => r.Locations).ToList();
+        for (var routine = symbol.ContainingSymbol as RoutineSymbol; routine is not null;
+             routine = routine is MethodSymbol { IsAnonymous: true } anonymous ? anonymous.AnonymousParent : routine.ContainingSymbol as RoutineSymbol)
+        {
+            sites.AddRange(routine.Locations);
+        }
+
+        if (!sites.All(l => PathUtil.AreEqual(l.Path, doc.Path)))
+        {
+            return [];
+        }
+
+        var model = doc.SemanticModel;
+        var file = model.SyntaxTree.Text;
+        var names = related.Select(r => r.Name).ToHashSet(IdentifierComparer.Instance);
+        foreach (var token in model.SyntaxTree.Root.DescendantTokens())
+        {
+            if (SyntaxNode.IsOwn(token, file) || !SyntaxFacts.IsNameToken(token) || token.IsMissing || !names.Contains(SyntaxFacts.NameOf(token)))
+            {
+                continue;
+            }
+
+            ct.ThrowIfCancellationRequested();
+            if (QuickInfoService.SymbolOf(model, token) is { } bound && related.Any(r => SymbolKey.AreSame(r, bound)))
+            {
+                return [];                                                  // an occurrence in an include file
+            }
+        }
+
+        return [.. NavigationService.Occurrences(model, [.. related], ct).Select(o => o.Token.Span)];
+    }
+
     // ---------------------------------------------------------------------------------------------------------- symbols
 
-    private static RenameResult RenameSymbol(Document doc, Target target, string newName, CancellationToken ct)
+    private static RenameResult RenameSymbol(Document doc, Target target, string newName, RenameOptions options, CancellationToken ct)
     {
         var compilation = doc.Compilation;
         var related = target.Related.ToList();
@@ -246,10 +449,29 @@ public static class RenameService
             return Fail(conflict);
         }
 
+        if (!options.Forms)
+        {
+            return new RenameResult(true, null, Edits(edits));              // CMP-1503: no form is read, none is edited
+        }
+
+        // CMP-1502: the texts given for forms, by normalized path
+        Dictionary<string, string>? formTexts = null;
+        if (options.FormTexts is { } given)
+        {
+            formTexts = new Dictionary<string, string>(PathUtil.Comparer);
+            foreach (var (path, text) in given)
+            {
+                if (Path.IsPathFullyQualified(path))                        // another key names no form
+                {
+                    formTexts[PathUtil.Normalize(path)] = text;
+                }
+            }
+        }
+
         // CMP-753: the companion .form of a form class's published field or method
         foreach (var member in related.Where(r => r is FieldSymbol or MethodSymbol && r.Visibility == Visibility.Published && r.ContainingSymbol is ClassTypeSymbol))
         {
-            if (FormChanges(compilation, member, newName, edits) is { } error)
+            if (FormChanges(compilation, member, newName, formTexts, edits) is { } error)
             {
                 return Fail(error);
             }
@@ -267,9 +489,10 @@ public static class RenameService
     /// <summary>
     /// CMP-753: for a published field the object of that name, for a published method every event handler value of that name, in
     /// each form the member's unit embeds (<c>{$FORM}</c>) whose root class is the member's class. Returns an error text when a
-    /// form cannot be scanned.
+    /// form cannot be scanned. CMP-1502: a form with a text in <paramref name="formTexts"/> is that text (the file is not looked at).
     /// </summary>
-    private static string? FormChanges(Compilation compilation, Symbol member, string newName, SortedDictionary<string, List<TextChange>> edits)
+    private static string? FormChanges(Compilation compilation, Symbol member, string newName, Dictionary<string, string>? formTexts,
+        SortedDictionary<string, List<TextChange>> edits)
     {
         var owner = (ClassTypeSymbol)member.ContainingSymbol!;
         var unitPath = PathUtil.Normalize(member.Locations[0].Path);
@@ -282,20 +505,23 @@ public static class RenameService
             }
 
             var path = PathUtil.Normalize(Path.IsPathFullyQualified(name) ? name : Path.Combine(Path.GetDirectoryName(unitPath)!, name));
-            if (!compilation.FileSystem.FileExists(path))
-            {
-                continue;                                                   // the build reports the missing file (E3100)
-            }
-
             var unreadable = $"The form file '{Path.GetFileName(path)}' cannot be read, so its references cannot be updated.";
-            string? text;
-            try
+            string? text = null;
+            if (formTexts is null || !formTexts.TryGetValue(path, out text))
             {
-                text = FormFileScanner.Decode(compilation.FileSystem.ReadAllBytes(path));
-            }
-            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-            {
-                return unreadable;
+                if (!compilation.FileSystem.FileExists(path))
+                {
+                    continue;                                               // the build reports the missing file (E3100)
+                }
+
+                try
+                {
+                    text = FormFileScanner.Decode(compilation.FileSystem.ReadAllBytes(path));
+                }
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+                {
+                    return unreadable;
+                }
             }
 
             if (text is null || FormFileScanner.Scan(path, text).Root is not { } root)
