@@ -1,0 +1,53 @@
+# Boolean
+ok T.ToString
+ok F.ToString
+ok T.ToString(TUseBoolStrs.True)
+ok F.ToString(TUseBoolStrs.True)
+ok T.ToString(TUseBoolStrs.False)
+ok Boolean.ToString(T, TUseBoolStrs.True)
+ok Boolean.ToString(F)
+ok T.ToString = BoolToStr(T)
+ok Parse('true')
+ok Parse('TRUE')
+ok Parse('1')
+ok Parse('-3')
+ok Parse('false')
+ok Parse('0')
+ok Parse('0.0')
+ok Boolean.Parse('yes')
+ok Boolean.Parse('')
+ok TryToParse('x')
+ok TryToParse('x') leaves False
+ok TryParse('x')
+ok TryParse('x') leaves False
+ok TryParse('true')
+ok TryToParse('TRUE')
+ok TryParse('0')
+ok T.ToInteger
+ok F.ToInteger
+ok Boolean.Size
+ok a parenthesised expression as receiver
+# ByteBool, WordBool, LongBool
+ok ByteBool.Size
+ok WordBool.Size
+ok LongBool.Size
+ok LongBool(5).ToString
+ok LongBool(5).ToInteger
+ok LongBool(5).ToString(TUseBoolStrs.True)
+ok LongBool.ToString(LB)
+ok WordBool.Parse('true').ToInteger
+ok WordBool.Parse('0').ToInteger
+ok ByteBool False: ToString(TUseBoolStrs.True)
+ok ByteBool False: ToString
+ok ByteBool False: ToInteger
+ok ByteBool(200).ToInteger
+ok ByteBool.ToString(BB, TUseBoolStrs.True)
+ok WordBool(256).ToString
+ok WordBool(256).ToInteger
+ok LongBool.TryParse('maybe')
+ok LongBool.TryParse leaves False
+ok ByteBool.TryToParse('false')
+ok WordBool.TryParse('7')
+ok LongBool.Parse('TRUE')
+ok ByteBool.Parse('-1')
+# passed 50 failed 0

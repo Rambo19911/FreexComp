@@ -581,6 +581,230 @@ const
   arIntelX64 = TOSVersion.arIntelX64;
   pfWindows = TOSVersion.pfWindows;
 
+{ ------------------------------------------------------------------- helpers for built-in types (12, RTL-1260) }
+{ The member list is rtl/helpers.md; members count positions from 0, the classic routines from 1. The bodies are in
+  SysUtilsHelpers.inc. RTL-004 allows these record helpers in SysUtils (RTL-1266). }
+{$SCOPEDENUMS ON}
+type
+  { the second parameter of the Boolean helpers' ToString: TUseBoolStrs.True gives 'True' / 'False' (RTL-1274) }
+  TUseBoolStrs = (False, True);
+{$SCOPEDENUMS OFF}
+
+type
+  TShortIntHelper = record helper for ShortInt
+  public
+    const MaxValue = High(ShortInt);
+    const MinValue = Low(ShortInt);
+    class function Size: Integer; static; inline;
+    class function ToString(Value: ShortInt): string; overload; static; inline;
+    class function Parse(const S: string): ShortInt; static;
+    class function TryParse(const S: string; out Value: ShortInt): Boolean; static;
+    function ToString: string; overload; inline;
+    function ToHexString: string; overload;
+    function ToHexString(MinDigits: Integer): string; overload;
+    function ToBoolean: Boolean; inline;
+    function ToSingle: Single; inline;
+    function ToDouble: Double; inline;
+    function ToExtended: Extended; inline;
+  end;
+
+  TSmallIntHelper = record helper for SmallInt
+  public
+    const MaxValue = High(SmallInt);
+    const MinValue = Low(SmallInt);
+    class function Size: Integer; static; inline;
+    class function ToString(Value: SmallInt): string; overload; static; inline;
+    class function Parse(const S: string): SmallInt; static;
+    class function TryParse(const S: string; out Value: SmallInt): Boolean; static;
+    function ToString: string; overload; inline;
+    function ToHexString: string; overload;
+    function ToHexString(MinDigits: Integer): string; overload;
+    function ToBoolean: Boolean; inline;
+    function ToSingle: Single; inline;
+    function ToDouble: Double; inline;
+    function ToExtended: Extended; inline;
+  end;
+
+  TIntegerHelper = record helper for Integer
+  public
+    const MaxValue = High(Integer);
+    const MinValue = Low(Integer);
+    class function Size: Integer; static; inline;
+    class function ToString(Value: Integer): string; overload; static; inline;
+    class function Parse(const S: string): Integer; static;
+    class function TryParse(const S: string; out Value: Integer): Boolean; static;
+    function ToString: string; overload; inline;
+    function ToHexString: string; overload;
+    function ToHexString(MinDigits: Integer): string; overload;
+    function ToBoolean: Boolean; inline;
+    function ToSingle: Single; inline;
+    function ToDouble: Double; inline;
+    function ToExtended: Extended; inline;
+  end;
+
+  TInt64Helper = record helper for Int64
+  public
+    const MaxValue = High(Int64);
+    const MinValue = Low(Int64);
+    class function Size: Integer; static; inline;
+    class function ToString(Value: Int64): string; overload; static; inline;
+    class function Parse(const S: string): Int64; static;
+    class function TryParse(const S: string; out Value: Int64): Boolean; static;
+    function ToString: string; overload; inline;
+    function ToHexString: string; overload;
+    function ToHexString(MinDigits: Integer): string; overload;
+    function ToBoolean: Boolean; inline;
+    function ToSingle: Single; inline;
+    function ToDouble: Double; inline;
+    function ToExtended: Extended; inline;
+  end;
+
+  TByteHelper = record helper for Byte
+  public
+    const MaxValue = High(Byte);
+    const MinValue = Low(Byte);
+    class function Size: Integer; static; inline;
+    class function ToString(Value: Byte): string; overload; static; inline;
+    class function Parse(const S: string): Byte; static;
+    class function TryParse(const S: string; out Value: Byte): Boolean; static;
+    function ToString: string; overload; inline;
+    function ToHexString: string; overload;
+    function ToHexString(MinDigits: Integer): string; overload;
+    function ToBoolean: Boolean; inline;
+    function ToSingle: Single; inline;
+    function ToDouble: Double; inline;
+    function ToExtended: Extended; inline;
+  end;
+
+  TWordHelper = record helper for Word
+  public
+    const MaxValue = High(Word);
+    const MinValue = Low(Word);
+    class function Size: Integer; static; inline;
+    class function ToString(Value: Word): string; overload; static; inline;
+    class function Parse(const S: string): Word; static;
+    class function TryParse(const S: string; out Value: Word): Boolean; static;
+    function ToString: string; overload; inline;
+    function ToHexString: string; overload;
+    function ToHexString(MinDigits: Integer): string; overload;
+    function ToBoolean: Boolean; inline;
+    function ToSingle: Single; inline;
+    function ToDouble: Double; inline;
+    function ToExtended: Extended; inline;
+  end;
+
+  TCardinalHelper = record helper for Cardinal
+  public
+    const MaxValue = High(Cardinal);
+    const MinValue = Low(Cardinal);
+    class function Size: Integer; static; inline;
+    class function ToString(Value: Cardinal): string; overload; static; inline;
+    class function Parse(const S: string): Cardinal; static;
+    class function TryParse(const S: string; out Value: Cardinal): Boolean; static;
+    function ToString: string; overload; inline;
+    function ToHexString: string; overload;
+    function ToHexString(MinDigits: Integer): string; overload;
+    function ToBoolean: Boolean; inline;
+    function ToSingle: Single; inline;
+    function ToDouble: Double; inline;
+    function ToExtended: Extended; inline;
+  end;
+
+  TUInt64Helper = record helper for UInt64
+  public
+    const MaxValue = High(UInt64);
+    const MinValue = Low(UInt64);
+    class function Size: Integer; static; inline;
+    class function ToString(Value: UInt64): string; overload; static; inline;
+    class function Parse(const S: string): UInt64; static;
+    class function TryParse(const S: string; out Value: UInt64): Boolean; static;
+    function ToString: string; overload; inline;
+    function ToHexString: string; overload;
+    function ToHexString(MinDigits: Integer): string; overload;
+    function ToBoolean: Boolean; inline;
+    function ToSingle: Single; inline;
+    function ToDouble: Double; inline;
+    function ToExtended: Extended; inline;
+  end;
+
+  TNativeIntHelper = record helper for NativeInt
+  public
+    const MaxValue = High(NativeInt);
+    const MinValue = Low(NativeInt);
+    class function Size: Integer; static; inline;
+    class function ToString(Value: NativeInt): string; overload; static; inline;
+    class function Parse(const S: string): NativeInt; static;
+    class function TryParse(const S: string; out Value: NativeInt): Boolean; static;
+    function ToString: string; overload; inline;
+    function ToHexString: string; overload;
+    function ToHexString(MinDigits: Integer): string; overload;
+    function ToBoolean: Boolean; inline;
+    function ToSingle: Single; inline;
+    function ToDouble: Double; inline;
+    function ToExtended: Extended; inline;
+  end;
+
+  TNativeUIntHelper = record helper for NativeUInt
+  public
+    const MaxValue = High(NativeUInt);
+    const MinValue = Low(NativeUInt);
+    class function Size: Integer; static; inline;
+    class function ToString(Value: NativeUInt): string; overload; static; inline;
+    class function Parse(const S: string): NativeUInt; static;
+    class function TryParse(const S: string; out Value: NativeUInt): Boolean; static;
+    function ToString: string; overload; inline;
+    function ToHexString: string; overload;
+    function ToHexString(MinDigits: Integer): string; overload;
+    function ToBoolean: Boolean; inline;
+    function ToSingle: Single; inline;
+    function ToDouble: Double; inline;
+    function ToExtended: Extended; inline;
+  end;
+
+  TBooleanHelper = record helper for Boolean
+  public
+    class function Size: Integer; static; inline;
+    class function ToString(Value: Boolean; UseBoolStrs: TUseBoolStrs = TUseBoolStrs.False): string; overload; static;
+    class function Parse(const S: string): Boolean; static;
+    class function TryToParse(const S: string; out Value: Boolean): Boolean; static;
+    class function TryParse(const S: string; out Value: Boolean): Boolean; static;
+    function ToInteger: Integer; inline;
+    function ToString(UseBoolStrs: TUseBoolStrs = TUseBoolStrs.False): string; overload;
+  end;
+
+  TByteBoolHelper = record helper for ByteBool
+  public
+    class function Size: Integer; static; inline;
+    class function ToString(Value: ByteBool; UseBoolStrs: TUseBoolStrs = TUseBoolStrs.False): string; overload; static;
+    class function Parse(const S: string): ByteBool; static;
+    class function TryToParse(const S: string; out Value: ByteBool): Boolean; static;
+    class function TryParse(const S: string; out Value: ByteBool): Boolean; static;
+    function ToInteger: Integer; inline;
+    function ToString(UseBoolStrs: TUseBoolStrs = TUseBoolStrs.False): string; overload;
+  end;
+
+  TWordBoolHelper = record helper for WordBool
+  public
+    class function Size: Integer; static; inline;
+    class function ToString(Value: WordBool; UseBoolStrs: TUseBoolStrs = TUseBoolStrs.False): string; overload; static;
+    class function Parse(const S: string): WordBool; static;
+    class function TryToParse(const S: string; out Value: WordBool): Boolean; static;
+    class function TryParse(const S: string; out Value: WordBool): Boolean; static;
+    function ToInteger: Integer; inline;
+    function ToString(UseBoolStrs: TUseBoolStrs = TUseBoolStrs.False): string; overload;
+  end;
+
+  TLongBoolHelper = record helper for LongBool
+  public
+    class function Size: Integer; static; inline;
+    class function ToString(Value: LongBool; UseBoolStrs: TUseBoolStrs = TUseBoolStrs.False): string; overload; static;
+    class function Parse(const S: string): LongBool; static;
+    class function TryToParse(const S: string; out Value: LongBool): Boolean; static;
+    class function TryParse(const S: string; out Value: LongBool): Boolean; static;
+    function ToInteger: Integer; inline;
+    function ToString(UseBoolStrs: TUseBoolStrs = TUseBoolStrs.False): string; overload;
+  end;
+
 implementation
 
 { ------------------------------------------------------------------------------------------- format settings (1) }
@@ -5296,6 +5520,10 @@ begin
   else
     ShowErrorProc(S);
 end;
+
+{ ------------------------------------------------------------- helpers for built-in types (12, RTL-1260) }
+
+{$I SysUtilsHelpers.inc}
 
 initialization
   FormatSettings := InvariantFormatSettings;

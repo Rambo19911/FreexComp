@@ -1,0 +1,102 @@
+# Integer
+ok I.ToString
+ok N.ToString
+ok Integer.ToString(I)
+ok (I + 1).ToString
+ok a function result as receiver
+ok Integer.Size
+ok I.ToHexString
+ok I.ToHexString(1)
+ok I.ToHexString(4)
+ok N.ToHexString(1)
+ok N.ToHexString
+ok Z.ToHexString(0)
+ok a negative MinDigits pads nothing
+ok Integer(255).ToHexString
+ok Integer(255).ToHexString(1)
+ok I.ToBoolean
+ok Z.ToBoolean
+ok N.ToBoolean
+ok I.ToDouble
+ok I.ToSingle
+ok I.ToExtended
+ok N.ToDouble
+ok Integer.MaxValue
+ok Integer.MinValue
+ok Integer.Parse('12')
+ok Parse trims
+ok Parse $10
+ok Parse 0x10
+ok Parse Low(Integer)
+ok Integer.Parse('$FFFFFFFF')
+ok Integer.Parse('2147483648')
+ok Integer.Parse('x')
+ok Integer.Parse('')
+ok Integer.Parse('1 2')
+ok TryParse('x')
+ok TryParse('x') leaves 0
+ok TryParse('7')
+ok TryParse('7') value
+# Int64
+ok I.ToString
+ok Int64.ToString
+ok Parse 9000000000
+ok Parse Low(Int64) = MinValue
+ok MinValue text
+ok MaxValue text
+ok Int64.Parse('9223372036854775808')
+ok Int64.Parse('abc')
+ok ToHexString of -1
+ok (V + 17).ToHexString
+ok Int64.Size
+ok TryParse out of range
+ok TryParse leaves 0
+ok TryParse('-5')
+ok I.ToDouble
+# Cardinal
+ok C.ToString
+ok Cardinal.ToString
+ok Parse 4294967295
+ok ToHexString
+ok Cardinal.Size
+ok Cardinal.MaxValue
+ok Cardinal.MinValue
+ok Cardinal.Parse('-1')
+ok Cardinal.Parse('4294967296')
+ok TryParse('-1')
+ok TryParse leaves 0
+ok C.ToDouble
+# UInt64
+ok U.ToString
+ok UInt64.ToString
+ok Parse max
+ok UInt64.MaxValue
+ok ToHexString of max
+ok UInt64.Parse('18446744073709551616')
+ok UInt64.Parse('-5')
+ok ToHexString(1) of 255
+ok UInt64.Size
+ok TryParse overflow
+ok TryParse leaves 0
+ok U.ToBoolean
+# NativeInt and NativeUInt
+ok NativeInt.Size
+ok NativeUInt.Size
+ok NativeInt.Parse('-5')
+ok N.ToString
+ok NativeInt.ToString
+ok NativeInt.MinValue
+ok NativeInt.MaxValue
+ok NativeInt ToHexString width
+ok NativeInt -1 is all bits
+ok NativeUInt.Parse('-1')
+ok NativeUInt.Parse and ToString
+ok NativeUInt.ToString
+ok NativeUInt ToHexString(1)
+ok NativeUInt.MaxValue
+ok NativeUInt.MinValue
+ok NativeUInt.TryParse('-1')
+ok NativeUInt.TryParse leaves 0
+ok NativeInt.TryParse('12')
+ok N.ToBoolean
+# passed 96 failed 0

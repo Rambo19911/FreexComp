@@ -1,4 +1,7 @@
 using System.Text.RegularExpressions;
+using FreexComp.Compiler;
+using FreexComp.Compiler.Syntax;
+using FreexComp.Compiler.Text;
 
 namespace FreexComp.Rtl.Tests.Harness;
 
@@ -91,6 +94,49 @@ public sealed partial class SpecConformanceTests
             "## 10. Next", "```pascal", "procedure _Late;", "```",
         ];
         Assert.Equal(["procedure _A(X: Integer);", "function  _B: Pointer;"], AbiDeclarations(doc, [9]));
+    }
+
+    /// <summary>
+    /// RTL-1265 (b), card F10-030 (the member list equals the declared members, parsed with the compiler): every
+    /// <c>pascal</c> block of <c>docs/spec/rtl/helpers.md</c> against the helpers of the RTL units — the helped type,
+    /// and the public members as normalised declarations. Members of a task listed on the <c>Landed tasks:</c> line must
+    /// be declared; members of a pending task may be absent, but a name that is declared must be declared as listed; a
+    /// public member that is not listed and a helper without a block are errors. Self-check: one changed parameter type,
+    /// one missing member and one extra member give exactly three differences.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "RTL-1265")]
+    [Trait("Phase", "8")]
+    [Trait("Category", "Integration")]
+    public void HelperMembersMatchSpec()
+    {
+        if (!File.Exists(HelperMembers.DocumentPath))
+        {
+            Assert.Skip(HelperMembers.DocumentPath + " is not present (plans are not part of the repository)");
+        }
+
+        var markdown = File.ReadAllText(HelperMembers.DocumentPath);
+        var document = HelperMembers.FromDocument(markdown);
+        Assert.True(document.Count == 19, $"the member list holds {document.Count} helper blocks, RTL-1265 (a) names nineteen");
+        Assert.All(document, h => Assert.All(h.Members, m => Assert.True(m.Task is not null, $"{h.Name}: '{m.Declaration}' has no '// task:' line")));
+        var declared = RtlUnitRulesTests.DeclaredHelpers(RtlUnitRulesTests.Units()).Select(d => d.Helper).ToList();
+        var problems = HelperMembers.Compare(document, HelperMembers.LandedTasks(markdown), declared);
+        Assert.True(problems.Count == 0, string.Join("\n", problems));
+
+        // self-check
+        const string Doc = "Landed tasks: R-1\n\n```pascal\nTIntegerHelper = record helper for Integer\npublic\n  // task: R-1\n"
+            + "  function Twice(X: Integer): Integer;\n  function Half: Integer; inline;     // = Classic\n  const MaxValue = High(Integer);\n"
+            + "  // task: R-2\n  function Later: Integer;\nend;\n```\n";
+        const string Unit = "unit P;\ninterface\ntype\n  TIntegerHelper = record helper for Integer\n  private\n    function Hidden: Integer;\n"
+            + "  public\n    const MaxValue = High(Integer);\n    function TWICE(X: Int64): Integer;\n    function Extra: Integer;\n  end;\n"
+            + "implementation\nend.\n";
+        var probeDoc = HelperMembers.FromDocument(Doc);
+        Assert.Equal("Classic", Assert.Single(probeDoc).Members.Single(m => m.Name == "Half").Wraps);
+        Assert.Equal("R-2", probeDoc[0].Members.Single(m => m.Name == "Later").Task);
+        var tree = SyntaxTree.Parse(SourceText.From(Path.Combine(RtlUnitRulesTests.SourceDirectory, "P.pas"), Unit), null, PhysicalFileSystem.Instance);
+        var probe = HelperMembers.Declarations(Assert.IsType<UnitSyntax>(tree.Root), "P").ToList();
+        var differences = HelperMembers.Compare(probeDoc, HelperMembers.LandedTasks(Doc), probe);
+        Assert.True(differences.Count == 3, string.Join("\n", differences));
     }
 
     [GeneratedRegex(@"\b(?:WM|EM|EN|BM|BN|BST|LB|LBN|CB|CBN|STM|SBM|TCM|LVM|TVM|TB|SB|PBM|TBM)_[A-Z0-9_]+\b(?!\*)")]

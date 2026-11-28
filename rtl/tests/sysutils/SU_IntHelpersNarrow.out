@@ -1,0 +1,68 @@
+# Byte
+ok B.ToString
+ok Byte.ToString(B)
+ok B.ToHexString
+ok B.ToHexString(4)
+ok Byte(10).ToHexString(4)
+ok Byte.Parse('255')
+ok Byte.Parse('$FF')
+ok Byte.Parse trims
+ok Byte.Parse('256')
+ok Byte.Parse('-1')
+ok Byte.Parse('$100')
+ok Byte.Parse('x')
+ok Byte.TryParse('300')
+ok Byte.TryParse leaves 0
+ok Byte.TryParse('12')
+ok Byte.Size
+ok Byte.MaxValue
+ok Byte.MinValue
+ok B.ToBoolean
+ok B.ToDouble
+# ShortInt
+ok S.ToString
+ok ShortInt.ToString(S)
+ok ShortInt(-1).ToHexString
+ok ShortInt(-1).ToHexString(1)
+ok ShortInt(-1).ToHexString(4)
+ok ShortInt.Parse('-128')
+ok ShortInt.Parse('127')
+ok ShortInt.Parse('128')
+ok ShortInt.Parse('$FF')
+ok ShortInt.Parse('-129')
+ok ShortInt.TryParse('$FF')
+ok ShortInt.TryParse leaves 0
+ok ShortInt.Size
+ok ShortInt.MinValue
+ok ShortInt.MaxValue
+ok S.ToSingle
+# SmallInt
+ok S.ToString
+ok SmallInt(-2).ToHexString
+ok SmallInt(-2).ToHexString(1)
+ok SmallInt.Parse('-32768')
+ok SmallInt.Parse('32768')
+ok SmallInt.Parse('$FFFF')
+ok SmallInt.TryParse('32768')
+ok SmallInt.TryParse leaves 0
+ok SmallInt.TryParse('-7')
+ok SmallInt.Size
+ok SmallInt.MinValue
+ok SmallInt.MaxValue
+ok SmallInt.ToString(S)
+# Word
+ok W.ToString
+ok W.ToHexString(1)
+ok W.ToHexString
+ok Word.Parse('65535')
+ok Word.Parse('0xFFFF')
+ok Word.Parse('65536')
+ok Word.Parse('-1')
+ok Word.TryParse('65536')
+ok Word.TryParse leaves 0
+ok Word.Size
+ok Word.MaxValue
+ok Word.ToString(W)
+ok W.ToExtended
+ok Word(0).ToBoolean
+# passed 63 failed 0

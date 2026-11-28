@@ -149,9 +149,58 @@ public sealed partial class RtlUnitRulesTests
             || d!.StartsWith("ucrt", StringComparison.OrdinalIgnoreCase) || d!.StartsWith("api-ms-win-crt", StringComparison.OrdinalIgnoreCase));
     }
 
+    /// <summary>RTL-1260: the record helpers that <c>SysUtils</c> declares (the exception of RTL-1266 to RTL-004).</summary>
+    public static readonly string[] SysUtilsHelpers =
+    [
+        "TStringHelper", "TShortIntHelper", "TSmallIntHelper", "TIntegerHelper", "TInt64Helper", "TByteHelper", "TWordHelper",
+        "TCardinalHelper", "TUInt64Helper", "TNativeIntHelper", "TNativeUIntHelper", "TSingleHelper", "TDoubleHelper",
+        "TBooleanHelper", "TByteBoolHelper", "TWordBoolHelper", "TLongBoolHelper", "TGuidHelper",
+    ];
+
+    /// <summary>
+    /// RTL-004 as amended by RTL-1266: the generics, anonymous methods, method references and helpers of one M2.5 unit.
+    /// Accepted are <c>TArray&lt;string&gt;</c> in <c>Classes</c> (R-196) and, in <c>SysUtils</c>, the record helpers of
+    /// RTL-1260 and the names <c>TArray&lt;string&gt;</c> and <c>TArray&lt;Char&gt;</c>.
+    /// </summary>
+    public static List<string> M26Features(string name, UnitSyntax unit)
+    {
+        string[] arrays = name.Equals("SysUtils", StringComparison.OrdinalIgnoreCase) ? ["TArray<string>", "TArray<Char>"]
+            : name.Equals("Classes", StringComparison.OrdinalIgnoreCase) ? ["TArray<string>"] : [];
+        var problems = new List<string>();
+        foreach (var node in unit.DescendantNodes())
+        {
+            // classes.md section 4 (TStrings table) declares ToStringArray: TArray<string> "when M2.6 exists" (R-196);
+            // the members of the SysUtils helpers name TArray<string> and TArray<Char> (RTL-1266)
+            if (node.AncestorsAndSelf().OfType<GenericNameSyntax>().Any(g => arrays.Contains(string.Concat(g.DescendantTokens().Select(t => t.Text)), StringComparer.OrdinalIgnoreCase)))
+            {
+                continue;
+            }
+
+            var feature = node switch
+            {
+                TypeParameterListSyntax => "a generic declaration",
+                TypeArgumentListSyntax or GenericNameSyntax => "a generic instantiation",
+                AnonymousMethodExpressionSyntax => "an anonymous method",
+                ProceduralTypeSyntax { ReferenceKeyword: not null } => "a method reference type",
+                HelperTypeSyntax when name.Equals("SysUtils", StringComparison.OrdinalIgnoreCase)
+                    && node.Parent is TypeDeclarationSyntax { Identifier.Text: var helper }
+                    && SysUtilsHelpers.Contains(helper, StringComparer.OrdinalIgnoreCase) => null,
+                HelperTypeSyntax => "a helper",
+                _ => null,
+            };
+            if (feature is not null)
+            {
+                problems.Add($"{name}: {feature}");
+            }
+        }
+
+        return problems;
+    }
+
     /// <summary>RTL-004: the M2.5 units use no generics, anonymous methods, method references or helpers, also not through a used unit.</summary>
     [Fact]
     [Trait("Req", "RTL-004")]
+    [Trait("Req", "RTL-1266")]
     public void M25Units_UseNoM26Features()
     {
         var units = Units();
@@ -159,29 +208,7 @@ public sealed partial class RtlUnitRulesTests
         foreach (var name in M25Units)
         {
             var (_, unit) = units[name];
-            foreach (var node in unit.DescendantNodes())
-            {
-                // classes.md section 4 (TStrings table) declares ToStringArray: TArray<string> "when M2.6 exists" (R-196):
-                // the one instantiation the spec itself places in an M2.5 unit
-                if (name == "Classes" && node.AncestorsAndSelf().OfType<GenericNameSyntax>().Any(g => g.ToString().Trim() == "TArray<string>"))
-                {
-                    continue;
-                }
-
-                var feature = node switch
-                {
-                    TypeParameterListSyntax => "a generic declaration",
-                    TypeArgumentListSyntax or GenericNameSyntax => "a generic instantiation",
-                    AnonymousMethodExpressionSyntax => "an anonymous method",
-                    ProceduralTypeSyntax { ReferenceKeyword: not null } => "a method reference type",
-                    HelperTypeSyntax => "a helper",
-                    _ => null,
-                };
-                if (feature is not null)
-                {
-                    problems.Add($"{name}: {feature}");
-                }
-            }
+            problems.AddRange(M26Features(name, unit));
 
             problems.AddRange(Closure(units, name).Where(u => !M25Units.Contains(u, StringComparer.OrdinalIgnoreCase)
                 && units[u].Unit.DescendantNodes().Any(n => n is TypeParameterListSyntax or HelperTypeSyntax or AnonymousMethodExpressionSyntax))
@@ -189,6 +216,110 @@ public sealed partial class RtlUnitRulesTests
         }
 
         Assert.True(problems.Count == 0, string.Join("\n", problems.Distinct()));
+    }
+
+    /// <summary>
+    /// RTL-1266: the exception for <c>SysUtils</c> is narrow — a helper of another name in <c>SysUtils</c>, a library
+    /// helper name in <c>Classes</c>, <c>TArray&lt;Integer&gt;</c> and a generic declaration in <c>SysUtils</c> are still
+    /// refused; a helper of RTL-1260 naming <c>TArray&lt;string&gt;</c> / <c>TArray&lt;Char&gt;</c> is accepted.
+    /// </summary>
+    [Theory]
+    [Trait("Req", "RTL-1266")]
+    [Trait("Phase", "8")]
+    [InlineData("SysUtils", "type\n  TMyIntHelper = record helper for Integer\n    function Twice: Integer;\n  end;", 1)]
+    [InlineData("Classes", "type\n  TIntegerHelper = record helper for Integer\n    function Twice: Integer;\n  end;", 1)]
+    [InlineData("SysUtils", "var\n  A: TArray<Integer>;", 1)]
+    [InlineData("SysUtils", "type\n  TBox<T> = record\n    Value: T;\n  end;", 1)]
+    [InlineData("Math", "var\n  A: TArray<string>;", 1)]
+    [InlineData("SysUtils", "type\n  TIntegerHelper = record helper for Integer\n    function Parts: TArray<string>;\n    function Units: TArray<Char>;\n  end;", 0)]
+    [InlineData("SysUtils", "type\n  TStringHelper = record helper for string\n    function Split: TArray<string>;\n  end;\n  TGuidHelper = record helper for TGUID\n    function Twice: TGUID;\n  end;", 0)]
+    public void M25Units_HelperExemptionIsNarrow(string unitName, string declarations, int expected)
+    {
+        var text = $"unit {unitName};\ninterface\n{declarations}\nimplementation\nend.\n";
+        var tree = SyntaxTree.Parse(SourceText.From(Path.Combine(SourceDirectory, unitName + ".pas"), text), null, PhysicalFileSystem.Instance);
+        var problems = M26Features(unitName, Assert.IsType<UnitSyntax>(tree.Root)).Distinct().ToList();
+        Assert.True(problems.Count == expected, $"expected {expected} refused feature(s), found: " + string.Join("; ", problems));
+    }
+
+    /// <summary>The helpers that the RTL units declare (rtl/src and rtl/winapi/src), with their units.</summary>
+    public static List<(HelperDeclaration Helper, UnitSyntax Unit)> DeclaredHelpers(Dictionary<string, (string Path, UnitSyntax Unit)> units) =>
+        [.. units.SelectMany(u => HelperMembers.Declarations(u.Value.Unit, u.Key).Select(h => (h, u.Value.Unit)))];
+
+    /// <summary>
+    /// RTL-1262 (a), RTL-1265 (c): every declared member that the member list marks <c>// = Name</c> is declared
+    /// <c>inline</c>, and its body is one statement that calls <c>Name</c>. Self-check: a two-statement body, a missing
+    /// <c>inline</c> and a body that calls another routine are each found; a qualified call is accepted.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "RTL-1262")]
+    [Trait("Req", "RTL-1265")]
+    [Trait("Phase", "8")]
+    public void HelperWrappers_AreThin()
+    {
+        if (!File.Exists(HelperMembers.DocumentPath))
+        {
+            Assert.Skip(HelperMembers.DocumentPath + " is not present (plans are not part of the repository)");
+        }
+
+        var document = HelperMembers.FromDocument(File.ReadAllText(HelperMembers.DocumentPath));
+        var problems = new List<string>();
+        var checkedWrappers = 0;
+        foreach (var (helper, unit) in DeclaredHelpers(Units()))
+        {
+            var spec = document.FirstOrDefault(d => d.Name.Equals(helper.Name, StringComparison.OrdinalIgnoreCase));
+            foreach (var member in helper.Members.Where(m => m.Node is MethodDeclarationSyntax))
+            {
+                if (spec?.Members.FirstOrDefault(s => s.Declaration == member.Declaration)?.Wraps is { } wraps)
+                {
+                    checkedWrappers++;
+                    problems.AddRange(HelperMembers.WrapperProblems(unit, helper.Name, (MethodDeclarationSyntax)member.Node, wraps));
+                }
+            }
+        }
+
+        Assert.True(problems.Count == 0, string.Join("\n", problems));
+        Assert.True(checkedWrappers >= 20, $"only {checkedWrappers} wrappers found in the RTL");
+
+        // self-check
+        static List<string> Probe(string directives, string body)
+        {
+            var text = "unit P;\ninterface\nfunction Classic(X: Integer): string;\ntype\n  TIntegerHelper = record helper for Integer\n"
+                + $"    function ToString: string; {directives}\n  end;\nimplementation\nfunction Classic(X: Integer): string;\nbegin\n"
+                + "  Result := '';\nend;\nfunction TIntegerHelper.ToString: string;\nbegin\n" + body + "\nend;\nend.\n";
+            var tree = SyntaxTree.Parse(SourceText.From(Path.Combine(SourceDirectory, "P.pas"), text), null, PhysicalFileSystem.Instance);
+            var unit = Assert.IsType<UnitSyntax>(tree.Root);
+            var helper = Assert.Single(HelperMembers.Declarations(unit, "P"));
+            return HelperMembers.WrapperProblems(unit, helper.Name, (MethodDeclarationSyntax)helper.Members[0].Node, "Classic");
+        }
+
+        Assert.Empty(Probe("inline;", "  Result := Classic(Self);"));
+        Assert.Empty(Probe("overload; inline;", "  Result := P.Classic(Self);"));
+        Assert.Single(Probe("inline;", "  Result := Classic(Self);\n  Result := Result + '';"));
+        Assert.Single(Probe("", "  Result := Classic(Self);"));
+        Assert.Single(Probe("inline;", "  Result := IntToStr(Self);"));
+    }
+
+    /// <summary>
+    /// RTL-1262 (d), RTL-1265 (d): no helper of the RTL declares a class var, a class constructor or a class destructor.
+    /// Self-check: a helper with each of the three is found three times.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "RTL-1262")]
+    [Trait("Req", "RTL-1265")]
+    [Trait("Phase", "8")]
+    public void LibraryHelpers_DeclareNoState()
+    {
+        var helpers = DeclaredHelpers(Units());
+        Assert.NotEmpty(helpers);
+        var problems = helpers.SelectMany(h => HelperMembers.StateDeclarations(h.Helper)).ToList();
+        Assert.True(problems.Count == 0, string.Join("\n", problems));
+
+        // self-check
+        var text = "unit P;\ninterface\ntype\n  TIntegerHelper = record helper for Integer\n    class var Calls: Integer;\n"
+            + "    class constructor Create;\n    class destructor Destroy;\n    function Twice: Integer;\n  end;\nimplementation\nend.\n";
+        var tree = SyntaxTree.Parse(SourceText.From(Path.Combine(SourceDirectory, "P.pas"), text), null, PhysicalFileSystem.Instance);
+        var probe = Assert.Single(HelperMembers.Declarations(Assert.IsType<UnitSyntax>(tree.Root), "P"));
+        Assert.Equal(3, HelperMembers.StateDeclarations(probe).Count());
     }
 
     /// <summary>
