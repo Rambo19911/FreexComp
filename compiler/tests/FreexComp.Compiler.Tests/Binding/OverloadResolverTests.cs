@@ -243,4 +243,31 @@ public sealed class OverloadResolverTests
         Assert.Equal(["T.TB.Make$Integer", "T.TA.Make$"],
             result.Bodies[0].Statements.Cast<BoundCallStatement>().Select(c => c.Routine.LinkName));
     }
+
+    private const string SplitJoinLike =
+        "type TVarRec = record VType: Byte; VInteger: Integer end; " +              // as System declares it (rtl-abi.md §9.10), reduced
+        "procedure P(const A: array of Char); overload; begin end; procedure P(const A: array of string); overload; begin end; " +
+        "procedure J(const S: string; const A: array of string); overload; begin end; procedure J(const S: string; const A: array of const); overload; begin end; " +
+        "type TCharSet = set of Char; procedure Q(S: TCharSet); overload; begin end; procedure Q(const A: array of string); overload; begin end;";
+
+    /// <summary>
+    /// C-458 (LANG-442, paragraph on array constructors): a bracket constructor against open arrays of different element types is
+    /// bound once per type; a tie at cost 3 is broken by the element costs (<c>','</c> → <c>Char</c> beats → <c>string</c>),
+    /// <c>array of const</c> loses against every typed array whose form binds, <c>[]</c> between two typed arrays stays ambiguous and a
+    /// set parameter next to one open-array type keeps the set meaning, as before (LANG-273 decision 3).
+    /// </summary>
+    [Theory]
+    [Trait("Req", "LANG-442")]
+    [InlineData("P([','])", "T.P$ca:Char")]
+    [InlineData("P([', '])", "T.P$ca:string")]
+    [InlineData("P([',', 'ab'])", "T.P$ca:string")]
+    [InlineData("P([vch])", "T.P$ca:Char")]
+    [InlineData("P([vs, vch])", "T.P$ca:string")]
+    [InlineData("J(vs, ['a', 'b'])", "T.J$c:string,ca:string")]
+    [InlineData("J(vs, [vs])", "T.J$c:string,ca:string")]
+    [InlineData("J(vs, [1, 'a'])", "T.J$c:string,ca:const")]
+    [InlineData("P([])", "E2122: Ambiguous overloaded call to 'P'")]
+    [InlineData("Q(['a'])", "T.Q$T.TCharSet")]
+    [InlineData("Q(['ab'])", "E2013: Ordinal type required")]          // one open-array type: the set meaning stays (LANG-273 decision 3)
+    public void BracketConstructor_OpenArraysOfDifferentElementTypes(string call, string expected) => Assert.Equal(expected, Chosen(SplitJoinLike, call));
 }

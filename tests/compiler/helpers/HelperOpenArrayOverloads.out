@@ -1,0 +1,20 @@
+[chars] 3: <a> <b;c> < d>
+[chars] 4: <a> <b> <c> < d>
+[chars] 2: <a,b> <c, d>
+[strings] 2: <a,b;c> <d>
+[strings] 3: <a,b> <c> <d>
+[strings] 2: <a,b;c> <d>
+[strings] a, b
+[strings] x, y
+[const] 7, a, ;
+[const] x, 7
+[chars] 3: <a> <b;c> < d>
+[chars] 4: <a> <b> <c> < d>
+[chars] 2: <a,b> <c, d>
+[strings] 2: <a,b;c> <d>
+[strings] 3: <a,b> <c> <d>
+[strings] 2: <a,b;c> <d>
+[strings] a, b
+[strings] x, y
+[const] 7, a, ;
+[const] x, 7

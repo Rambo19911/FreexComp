@@ -2485,14 +2485,16 @@ internal sealed partial class ExpressionBinder
 
     /// <summary>
     /// The <see cref="ConstructorForms"/> of argument <paramref name="index"/>, probed on scratch binders; null when the argument is no
-    /// constructor (or holds an anonymous method, which is bound once), no candidate has a dynamic-array parameter there, or no form
-    /// binds (the argument is then bound as usual and reports its errors).
+    /// constructor (or holds an anonymous method, which is bound once), no candidate has a dynamic-array parameter there and the
+    /// candidates' open-array parameters there are of one type (C-458), or no form binds (the argument is then bound as usual and
+    /// reports its errors).
     /// </summary>
     private ConstructorForms? ConstructorFormsAt(ImmutableArray<RoutineSymbol> candidates, int index, ExpressionSyntax syntax, TypeSymbol? expected)
     {
         if (candidates.Length < 2 || Unparenthesized(syntax) is not SetConstructorSyntax constructor || constructor.Elements.Any(e => e.UpperBound is not null)
             || constructor.DescendantNodes().OfType<AnonymousMethodExpressionSyntax>().Any()
-            || !candidates.Any(c => FormType(c, index) is DynamicArrayTypeSymbol))
+            || !(candidates.Any(c => FormType(c, index) is DynamicArrayTypeSymbol)
+                 || candidates.Select(c => FormType(c, index)).OfType<OpenArrayTypeSymbol>().Distinct().Count() > 1))   // C-458
         {
             return null;
         }

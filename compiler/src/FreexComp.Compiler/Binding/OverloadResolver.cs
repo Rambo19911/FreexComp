@@ -28,12 +28,12 @@ internal sealed class OverloadResolver(Conversions conversions)
     /// </summary>
     public Resolution Resolve(ImmutableArray<RoutineSymbol> candidates, Func<RoutineSymbol, ImmutableArray<BoundExpression>?> argumentsOf, Func<BoundExpression, bool> isVariable)
     {
-        var applicable = new List<(RoutineSymbol Routine, int[] Costs, int Defaults)>();
+        var applicable = new List<(RoutineSymbol Routine, int[] Costs, int[] Ties, int Defaults)>();
         foreach (var candidate in candidates)
         {
             if (argumentsOf(candidate) is { } arguments && Costs(candidate, arguments, isVariable) is { } costs)
             {
-                applicable.Add((candidate, costs, candidate.Parameters.Length - arguments.Length));
+                applicable.Add((candidate, costs, Ties(candidate, arguments), candidate.Parameters.Length - arguments.Length));
             }
         }
 
@@ -42,7 +42,7 @@ internal sealed class OverloadResolver(Conversions conversions)
             return new Resolution(applicable.Count == 1 ? applicable[0].Routine : null, []);
         }
 
-        var best = applicable.Where(a => applicable.All(b => ReferenceEquals(a.Routine, b.Routine) || Better(a.Routine, a.Costs, b.Routine, b.Costs))).ToList();
+        var best = applicable.Where(a => applicable.All(b => ReferenceEquals(a.Routine, b.Routine) || Better(a.Routine, a.Costs, a.Ties, b.Routine, b.Costs, b.Ties))).ToList();
         if (best.Count == 1)
         {
             return new Resolution(best[0].Routine, []);
@@ -105,10 +105,39 @@ internal sealed class OverloadResolver(Conversions conversions)
     }
 
     /// <summary>
-    /// Dominance: not worse at any position, better at one. At equal cost 1 between two integer parameters (both widen the
-    /// argument, C-201 lead decision) the narrower parameter type is better, at equal size the signed one.
+    /// LANG-442 (C-458): per argument, the tie-breaker of a bracket constructor taken as a dynamic or open array — the sum of its
+    /// element costs, <see cref="int.MaxValue"/> for <c>array of const</c> (worse than every typed array); -1 for any other argument.
     /// </summary>
-    private static bool Better(RoutineSymbol a, int[] aCosts, RoutineSymbol b, int[] bCosts)
+    private int[] Ties(RoutineSymbol candidate, ImmutableArray<BoundExpression> arguments)
+    {
+        var ties = new int[arguments.Length];
+        for (var i = 0; i < arguments.Length; i++)
+        {
+            ties[i] = (arguments[i], candidate.Parameters[i]) switch
+            {
+                (BoundArrayConstructor { Syntax: SetConstructorSyntax }, { IsByReference: false, Type: OpenArrayTypeSymbol { IsArrayOfConst: true } }) => int.MaxValue,
+                (BoundArrayConstructor { Syntax: SetConstructorSyntax } constructor, { IsByReference: false, Type: OpenArrayTypeSymbol or DynamicArrayTypeSymbol } parameter)
+                    => constructor.Elements.Sum(e => ElementCost(e, parameter.Type is OpenArrayTypeSymbol open ? open.ElementType : ((DynamicArrayTypeSymbol)parameter.Type).ElementType)),
+                _ => -1,
+            };
+        }
+
+        return ties;
+    }
+
+    /// <summary>The cost of one constructor element (before its implicit conversion to the element type) against that type.</summary>
+    private int ElementCost(BoundExpression element, TypeSymbol elementType)
+    {
+        var value = element is BoundConversionExpression { IsExplicit: false } conversion ? conversion.Operand : element;
+        return ValueCost(value, elementType) ?? 0;
+    }
+
+    /// <summary>
+    /// Dominance: not worse at any position, better at one. At equal cost 1 between two integer parameters (both widen the
+    /// argument, C-201 lead decision) the narrower parameter type is better, at equal size the signed one; at equal cost
+    /// between two candidates that take a bracket constructor as an array, the smaller element-cost sum (C-458).
+    /// </summary>
+    private static bool Better(RoutineSymbol a, int[] aCosts, int[] aTies, RoutineSymbol b, int[] bCosts, int[] bTies)
     {
         var better = false;
         for (var i = 0; i < aCosts.Length; i++)
@@ -117,6 +146,11 @@ internal sealed class OverloadResolver(Conversions conversions)
             if (order == 0 && aCosts[i] == 1)
             {
                 order = WideningOrder(a.Parameters[i].Type, b.Parameters[i].Type);
+            }
+
+            if (order == 0 && aTies[i] >= 0 && bTies[i] >= 0)
+            {
+                order = aTies[i].CompareTo(bTies[i]);
             }
 
             if (order > 0)
@@ -158,6 +192,13 @@ internal sealed class OverloadResolver(Conversions conversions)
             return isVariable(argument) && matches ? 0 : null;
         }
 
+        return ValueCost(argument, destination);
+    }
+
+    /// <summary>The cost of passing <paramref name="argument"/> as a value of type <paramref name="destination"/>; null = not applicable.</summary>
+    private int? ValueCost(BoundExpression argument, TypeSymbol destination)
+    {
+        var source = argument.Type;
         if (argument is BoundArrayConstructor && destination is OpenArrayTypeSymbol)
         {
             return conversions.Classify(source, destination).Exists ? 3 : null;    // LANG-442: array constructor → open array
