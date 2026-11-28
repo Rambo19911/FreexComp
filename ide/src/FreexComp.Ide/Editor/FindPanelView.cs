@@ -79,7 +79,15 @@ public sealed class FindPanelView : Border
         // the hidden rows take no space.
         _replaceText.Margin = new Thickness(0, 6, 0, 0);
         _replaceButtons.Margin = new Thickness(0, 6, 0, 0);
-        _replace.Height = _replaceAll.Height = 26;
+        // I-377: 26 high like a dialog's button (design-tokens.md §8) — no vertical padding, the label centred: the
+        // theme's vertical padding (5 + 6) would leave 13 of the 26 for the label's text line and cut it.
+        foreach (var button in (Button[])[_replace, _replaceAll])
+        {
+            button.Height = 26;
+            Bind(button, TemplatedControl.PaddingProperty, "FxcSpace5Horizontal");
+            button.VerticalContentAlignment = VerticalAlignment.Center;
+        }
+
         _error.Margin = new Thickness(0, 4, 0, 0);
         Place(grid, _searchText, 0, 1);
         Place(grid, _replaceText, 2, 1);
@@ -175,9 +183,15 @@ public sealed class FindPanelView : Border
         grid.Children.Add(control);
     }
 
+    /// <summary>
+    /// A text input of the panel: 200 wide, 26 high (dialogs.md §10, design-tokens.md §8). I-377: sized like a tool
+    /// window's filter box — the theme's vertical padding (6 + 5, that of its 32-high text box) would leave 13 of the
+    /// 26 for the text line and cut the glyphs.
+    /// </summary>
     private static TextBox Field(string name)
     {
-        var box = new TextBox { Width = 200, Height = 26, MinHeight = 26, AcceptsReturn = false, VerticalAlignment = VerticalAlignment.Center, VerticalContentAlignment = VerticalAlignment.Center };
+        var box = new TextBox { Width = 200, AcceptsReturn = false, VerticalAlignment = VerticalAlignment.Center };
+        Views.ToolWindowFrame.FitFilterBox(box);
         AutomationProperties.SetName(box, name);
         return box;
     }

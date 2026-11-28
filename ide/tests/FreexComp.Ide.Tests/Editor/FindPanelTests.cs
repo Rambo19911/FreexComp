@@ -426,6 +426,107 @@ public sealed class FindPanelTests
         Assert.Equal(66, InWindow(panel).Height, 1);
     }
 
+    /// <summary>
+    /// I-377 (real-window finding): the text of the search and of the replace field is whole. The field is 26 high
+    /// (UI-ED-100: 34 = 4 + 26 + 4), so a line of its font must fit between its borders: the text presenter lies inside
+    /// the field's viewport, the viewport inside the border, and the viewport is at least one text line high — with the
+    /// real fonts (the headless font's line is lower), at 100, 125, 150 and 200 % (UI-TOK-062), light and dark.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Phase", "8")]
+    [Trait("Req", "UI-ED-100")]
+    [Trait("Req", "UI-TOK-062")]
+    public async Task SearchFieldTextIsNotClipped()
+    {
+        if (!SkiaProcess.IsCurrent)
+        {
+            await SkiaProcess.RunThisTestAsync(typeof(FindPanelTests));
+            return;
+        }
+
+        const string Sample = "gypsy Ålqj"; // ascenders and descenders
+        var problems = new List<string>();
+        foreach (var theme in new[] { "light", "dark" })
+        {
+            var (h, _) = await OpenAsync(Code, ("appearance.theme", theme));
+            await using var __ = h;
+            await h.ExecuteAsync("search.replace");
+            foreach (var scale in new[] { 1.0, 1.25, 1.5, 2.0 })
+            {
+                h.Window.SetRenderScaling(scale);
+                Dispatcher.UIThread.RunJobs();
+                foreach (var id in new[] { Panel + ".SearchText", Panel + ".ReplaceText" })
+                {
+                    var box = h.Find<TextBox>(id);
+                    Assert.True(box.IsEffectivelyVisible, id);
+                    SetText(box, Sample);
+                    var presenter = box.GetVisualDescendants().OfType<Avalonia.Controls.Presenters.TextPresenter>().Single();
+                    var viewport = box.GetVisualDescendants().OfType<Avalonia.Controls.Presenters.ScrollContentPresenter>().First();
+                    var line = new Avalonia.Media.TextFormatting.TextLayout(Sample,
+                        new Avalonia.Media.Typeface(box.FontFamily, box.FontStyle, box.FontWeight, box.FontStretch), box.FontSize, null).Height;
+                    var text = new Rect(presenter.TranslatePoint(default, box)!.Value, presenter.Bounds.Size);
+                    var clip = new Rect(viewport.TranslatePoint(default, box)!.Value, viewport.Bounds.Size);
+                    var inner = new Rect(box.Bounds.Size).Deflate(box.BorderThickness);
+                    // design-tokens.md §8: a text input is 26 high (on whole device pixels: 26.4 at 125 %).
+                    Assert.InRange(box.Bounds.Height, 26 - 1 / scale, 26 + 1 / scale);
+                    if (text.Top < clip.Top - 0.5 || text.Bottom > clip.Bottom + 0.5 || clip.Top < inner.Top - 0.5 || clip.Bottom > inner.Bottom + 0.5
+                        || text.Height < line - 0.5 || clip.Height < line - 0.5)
+                    {
+                        problems.Add(string.Create(System.Globalization.CultureInfo.InvariantCulture,
+                            $"{theme} {scale * 100:0} % {id}: text {text.Top:0.##}…{text.Bottom:0.##} (line {line:0.##}) outside viewport {clip.Top:0.##}…{clip.Bottom:0.##} (field inner {inner.Top:0.##}…{inner.Bottom:0.##})"));
+                    }
+                }
+            }
+        }
+
+        Assert.True(problems.Count == 0, string.Join("\n", problems));
+    }
+
+    /// <summary>
+    /// I-377: the labels of Replace and Replace All are whole too — the buttons are 26 high (design-tokens.md §8), so
+    /// the label's text line must fit inside: with the real fonts, at 100, 125, 150 and 200 % (UI-TOK-062).
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Phase", "8")]
+    [Trait("Req", "UI-ED-100")]
+    [Trait("Req", "UI-TOK-062")]
+    public async Task ReplaceButtonTextIsNotClipped()
+    {
+        if (!SkiaProcess.IsCurrent)
+        {
+            await SkiaProcess.RunThisTestAsync(typeof(FindPanelTests));
+            return;
+        }
+
+        var (h, _) = await OpenAsync(Code);
+        await using var __ = h;
+        await h.ExecuteAsync("search.replace");
+        var problems = new List<string>();
+        foreach (var scale in new[] { 1.0, 1.25, 1.5, 2.0 })
+        {
+            h.Window.SetRenderScaling(scale);
+            Dispatcher.UIThread.RunJobs();
+            foreach (var id in new[] { Panel + ".Replace", Panel + ".ReplaceAll" })
+            {
+                var button = h.Find<Button>(id);
+                Assert.True(button.IsEffectivelyVisible, id);
+                Assert.InRange(button.Bounds.Height, 26 - 1 / scale, 26 + 1 / scale);
+                var label = button.GetVisualDescendants().OfType<TextBlock>().Single();
+                var line = new Avalonia.Media.TextFormatting.TextLayout(label.Text,
+                    new Avalonia.Media.Typeface(label.FontFamily, label.FontStyle, label.FontWeight, label.FontStretch), label.FontSize, null).Height;
+                var top = label.TranslatePoint(default, button)!.Value.Y;
+                var inner = new Rect(button.Bounds.Size).Deflate(button.BorderThickness);
+                if (label.Bounds.Height < line - 0.5 || top < inner.Top - 0.5 || top + line > inner.Bottom + 0.5)
+                {
+                    problems.Add(string.Create(System.Globalization.CultureInfo.InvariantCulture,
+                        $"{scale * 100:0} % {id}: label {top:0.##}…{top + label.Bounds.Height:0.##} (line {line:0.##}) in a button with inner {inner.Top:0.##}…{inner.Bottom:0.##}"));
+                }
+            }
+        }
+
+        Assert.True(problems.Count == 0, string.Join("\n", problems));
+    }
+
     /// <summary>UI-ED-101: a match the panel would cover (top 80 px, x-range under the panel) is scrolled to one third of the viewport.</summary>
     [AvaloniaFact(Timeout = 30000)]
     [Trait("Req", "UI-ED-101")]
