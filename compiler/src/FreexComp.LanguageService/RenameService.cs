@@ -82,7 +82,30 @@ public sealed record RenameResult(bool Success, string? Error, ImmutableArray<Do
     /// first one's message; a refusal of another kind has none.
     /// </summary>
     public ImmutableArray<RenameConflict> Conflicts { get; init; } = [];
+
+    /// <summary>
+    /// CMP-1510: the places that spell the old name and are not renamed — inactive conditional code, and names of active code that
+    /// bind to nothing — in path order, then position; at most <see cref="RenameService.MaxUnrenamed"/>. Filled on success of a
+    /// symbol rename; never edited, never a reason to fail.
+    /// </summary>
+    public ImmutableArray<UnrenamedOccurrence> Unrenamed { get; init; } = [];
+
+    /// <summary>CMP-1510: more than <see cref="RenameService.MaxUnrenamed"/> unrenamed occurrences were found.</summary>
+    public bool UnrenamedCapped { get; init; }
 }
+
+/// <summary>CMP-1510: why an occurrence of the old name is not renamed.</summary>
+public enum UnrenamedKind
+{
+    /// <summary>An identifier in an inactive conditional branch.</summary>
+    InactiveCode,
+
+    /// <summary>A name of active code that binds to no symbol (code with errors).</summary>
+    Unresolved,
+}
+
+/// <summary>CMP-1510: a place that spells the old name and is not renamed; <see cref="Location"/> is in the file that holds it (an include file too).</summary>
+public sealed record UnrenamedOccurrence(Location Location, UnrenamedKind Kind);
 
 /// <summary>
 /// CMP-1505: a name whose meaning the rename would change. <see cref="Location"/> is the name in the snapshot's text,
@@ -101,6 +124,9 @@ public static class RenameService
 {
     /// <summary>CMP-1505: the most conflicts a rename lists.</summary>
     public const int MaxConflicts = 100;
+
+    /// <summary>CMP-1510: the most unrenamed occurrences a rename lists.</summary>
+    public const int MaxUnrenamed = 200;
 
     private const string NotAnIdentifier = "Only identifiers can be renamed.";
 
@@ -464,16 +490,20 @@ public static class RenameService
             }
         }
 
+        // CMP-1509: the names read from include files
+        var split = IncludeOccurrences(doc, related, newName, edits, ct);
         var plan = new Plan(doc, edits, null, newName, target.Name);
-        var conflicts = plan.Check(related, null, ct);
+        var conflicts = plan.Check(related, null, ct, split);
         if (!conflicts.IsEmpty)
         {
             return Fail(conflicts);
         }
 
+        var (unrenamed, capped) = Unrenamed(doc, target, ct);
         if (!options.Forms)
         {
-            return new RenameResult(true, null, Edits(edits));              // CMP-1503: no form is read, none is edited
+            // CMP-1503: no form is read, none is edited
+            return new RenameResult(true, null, Edits(edits)) { Unrenamed = unrenamed, UnrenamedCapped = capped };
         }
 
         // CMP-1502: the texts given for forms, by normalized path
@@ -491,7 +521,188 @@ public static class RenameService
         }
 
         var forms = new Forms(doc, formTexts, newName, edits);
-        return forms.Rename(related, ct) is { } error ? Fail(error) : new RenameResult(true, null, Edits(edits));
+        return forms.Rename(related, ct) is { } error
+            ? Fail(error)
+            : new RenameResult(true, null, Edits(edits)) { Unrenamed = unrenamed, UnrenamedCapped = capped };
+    }
+
+    /// <summary>
+    /// CMP-1509: adds to <paramref name="edits"/> every name a source unit reads from an include file that binds into the closure (the
+    /// include file's path, spans in its text). Returns the spans that bind into the closure in one reading of their file and to
+    /// something else - or nothing - in another (a file read by several units, or twice by one): they cannot be edited for one
+    /// meaning only.
+    /// </summary>
+    private static List<(string Path, TextSpan Span)> IncludeOccurrences(Document doc, IReadOnlyList<Symbol> related, string newName,
+        SortedDictionary<string, List<TextChange>> edits, CancellationToken ct)
+    {
+        var names = related.Select(r => r.Name).ToHashSet(IdentifierComparer.Instance);
+        var meanings = new Dictionary<(string Path, int Start), (TextSpan Span, bool Renamed, bool Other)>();
+        foreach (var path in Paths(doc))
+        {
+            var model = ModelOf(doc, path);
+            foreach (var (token, file, reading) in NameTokens(model.SyntaxTree))
+            {
+                if (reading < 0 || !names.Contains(SyntaxFacts.NameOf(token)))
+                {
+                    continue;
+                }
+
+                ct.ThrowIfCancellationRequested();
+                var renamed = QuickInfoService.SymbolOf(model, token) is { } bound && related.Any(r => SymbolKey.AreSame(r, bound));
+                meanings[(file, token.Span.Start)] = meanings.TryGetValue((file, token.Span.Start), out var known)
+                    ? (known.Span, known.Renamed || renamed, known.Other || !renamed)
+                    : (token.Span, renamed, !renamed);
+            }
+        }
+
+        var split = new List<(string Path, TextSpan Span)>();
+        foreach (var ((file, _), (span, renamed, other)) in meanings.OrderBy(m => m.Key.Path, PathUtil.Comparer).ThenBy(m => m.Key.Start))
+        {
+            if (!renamed)
+            {
+                continue;
+            }
+
+            if (other)
+            {
+                split.Add((file, span));
+            }
+
+            if (!edits.TryGetValue(file, out var changes))
+            {
+                edits[file] = changes = [];
+            }
+
+            changes.Add(new TextChange(span, newName));
+        }
+
+        return split;
+    }
+
+    /// <summary>
+    /// The name tokens of a tree in text order: its own (<c>Reading</c> -1, <c>Path</c> the tree's file) and those read from include
+    /// files (LANG-876: positions in the include file; <c>Reading</c> numbers the readings of that file in the tree, from 0).
+    /// </summary>
+    private static IEnumerable<(SyntaxToken Token, string Path, int Reading)> NameTokens(SyntaxTree tree)
+    {
+        var own = tree.Text;
+        var ownPath = PathUtil.Normalize(own.Path);
+        var readings = new Dictionary<SourceText, (string Path, int Reading)>(ReferenceEqualityComparer.Instance);
+        var counts = new Dictionary<string, int>(PathUtil.Comparer);
+        foreach (var token in tree.Root.DescendantTokens())
+        {
+            if (!SyntaxFacts.IsNameToken(token) || token.IsMissing)
+            {
+                continue;
+            }
+
+            if (token.File is not { } file || ReferenceEquals(file, own))
+            {
+                yield return (token, ownPath, -1);
+                continue;
+            }
+
+            if (!readings.TryGetValue(file, out var reading))
+            {
+                var path = PathUtil.Normalize(file.Path);
+                var count = counts.GetValueOrDefault(path);
+                counts[path] = count + 1;
+                readings[file] = reading = (path, count);
+            }
+
+            yield return (token, reading.Path, reading.Reading);
+        }
+    }
+
+    // ---------------------------------------------------------------------------------------------------------- unrenamed (CMP-1510)
+
+    /// <summary>
+    /// CMP-1510: the places spelled like the old name that the rename does not change. Scope <c>Local</c>: the document from the
+    /// heading to the final <c>end</c> of the outermost routine implementation around the target; scope <c>Project</c>: every source
+    /// unit outside the RTL root (no RTL file can use a project symbol), the document, and the include files they read.
+    /// </summary>
+    private static (ImmutableArray<UnrenamedOccurrence> Found, bool Capped) Unrenamed(Document doc, Target target, CancellationToken ct)
+    {
+        var names = target.Related.Select(r => r.Name).ToHashSet(IdentifierComparer.Instance);
+        var found = new Dictionary<(string Path, int Start), UnrenamedOccurrence>();
+        void Add(SyntaxTree tree, TextSpan span, UnrenamedKind kind) =>
+            found.TryAdd((PathUtil.Normalize(tree.Text.Path), span.Start), new UnrenamedOccurrence(NavigationService.LocationOf(tree, span), kind));
+
+        void Inactive(SyntaxTree tree, TextSpan range)
+        {
+            foreach (var trivia in tree.DescendantTrivia())
+            {
+                if (trivia.Kind != SyntaxKind.DisabledTextTrivia || !range.Contains(trivia.Span.Start))
+                {
+                    continue;
+                }
+
+                // lexed on their own: comments and string literals there are not identifiers
+                foreach (var token in Lexer.Tokenize(SourceText.From(tree.Text.Path, trivia.Text)))
+                {
+                    if (token.Kind == SyntaxKind.IdentifierToken && names.Contains(SyntaxFacts.NameOf(token)))
+                    {
+                        Add(tree, new TextSpan(trivia.Span.Start + token.Span.Start, token.Span.Length), UnrenamedKind.InactiveCode);
+                    }
+                }
+            }
+        }
+
+        void Unresolved(SemanticModel model, TextSpan? range)
+        {
+            var tree = model.SyntaxTree;
+            foreach (var (token, _, reading) in NameTokens(tree))
+            {
+                if (!names.Contains(SyntaxFacts.NameOf(token)) || range is { } r && (reading >= 0 || !r.Contains(token.Span.Start)))
+                {
+                    continue;
+                }
+
+                ct.ThrowIfCancellationRequested();
+                if (QuickInfoService.SymbolOf(model, token) is null
+                    && (reading < 0 ? tree : tree.IncludedTrees.FirstOrDefault(t => ReferenceEquals(t.Text, token.File))) is { } at)
+                {
+                    Add(at, token.Span, UnrenamedKind.Unresolved);
+                }
+            }
+        }
+
+        var local = LocalSpans(doc, target.Symbol!, target.Related, ct);
+        if (!local.IsEmpty)
+        {
+            var tree = doc.SemanticModel.SyntaxTree;
+            RoutineDeclarationSyntax? outermost = null;
+            for (var node = tree.FindToken(local[^1].Start).Parent; node is not null; node = node.Parent)
+            {
+                if (node is RoutineDeclarationSyntax { Block: not null } routine)
+                {
+                    outermost = routine;
+                }
+            }
+
+            var range = outermost?.Span ?? new TextSpan(0, tree.Text.Text.Length);
+            Inactive(tree, range);
+            Unresolved(doc.SemanticModel, range);
+        }
+        else
+        {
+            var rtl = doc.Compilation.RtlRoot + @"\";
+            foreach (var path in Paths(doc).Where(p => !p.StartsWith(rtl, StringComparison.OrdinalIgnoreCase)))
+            {
+                ct.ThrowIfCancellationRequested();
+                var model = ModelOf(doc, path);
+                Inactive(model.SyntaxTree, new TextSpan(0, model.SyntaxTree.Text.Text.Length));
+                foreach (var included in model.SyntaxTree.IncludedTrees.Where(t => !PathUtil.Normalize(t.Text.Path).StartsWith(rtl, StringComparison.OrdinalIgnoreCase)))
+                {
+                    Inactive(included, new TextSpan(0, included.Text.Text.Length));
+                }
+
+                Unresolved(model, null);
+            }
+        }
+
+        var ordered = found.OrderBy(f => f.Key.Path, PathUtil.Comparer).ThenBy(f => f.Key.Start).Select(f => f.Value).ToList();
+        return ([.. ordered.Take(MaxUnrenamed)], ordered.Count > MaxUnrenamed);
     }
 
     private static SemanticModel ModelOf(Document doc, string path) =>
@@ -969,7 +1180,8 @@ public static class RenameService
         /// name spans of a unit rename. CMP-1506: besides the edited files, every source unit whose own text spells the new name is
         /// checked — only such a name can be captured or hidden by the renamed declaration in a file the rename does not edit.
         /// </summary>
-        public ImmutableArray<RenameConflict> Check(IReadOnlyList<Symbol> renamed, Dictionary<string, List<TextSpan>>? unitNames, CancellationToken ct)
+        public ImmutableArray<RenameConflict> Check(IReadOnlyList<Symbol> renamed, Dictionary<string, List<TextSpan>>? unitNames, CancellationToken ct,
+            IReadOnlyList<(string Path, TextSpan Span)>? split = null)
         {
             var compilation = doc.Compilation;
             var fork = compilation;
@@ -991,7 +1203,17 @@ public static class RenameService
 
             var last = newName[(newName.LastIndexOf('.') + 1)..];
             var conflicts = ImmutableArray.CreateBuilder<RenameConflict>();
-            foreach (var path in edits.Keys.Concat(Paths(doc)).Distinct(PathUtil.Comparer).Order(PathUtil.Comparer))
+
+            // CMP-1509: a span of an include file that would be renamed for some of its readings only
+            foreach (var (path, span) in split ?? [])
+            {
+                var tree = compilation.GetSyntaxTree(path);
+                var at = tree.Text.Lines.GetLinePosition(span.Start);
+                conflicts.Add(new RenameConflict(NavigationService.LocationOf(tree, span), newName,
+                    $"Renaming '{oldName}' to '{newName}' would change only some of the meanings of '{oldName}' in the include file {Path.GetFileName(tree.Text.Path)}({at.Line + 1},{at.Column + 1})."));
+            }
+
+            foreach (var path in Paths(doc))
             {
                 if (conflicts.Count >= MaxConflicts)
                 {
@@ -1000,17 +1222,46 @@ public static class RenameService
 
                 ct.ThrowIfCancellationRequested();
                 var before = ModelOf(doc, path);
-                if (edits.TryGetValue(path, out var changes))
+                var readsEdited = unitNames is null && before.SyntaxTree.IncludedTrees.Any(t => edits.ContainsKey(PathUtil.Normalize(t.Text.Path)));
+                if (edits.TryGetValue(path, out var changes) || readsEdited)
                 {
-                    CheckEdited(path, changes, before, fork, renamed, unitNames, last, conflicts, ct);
+                    CheckEdited(path, changes ?? [], before, fork, renamed, unitNames, last, conflicts, ct);
                 }
                 else
                 {
-                    CheckUnedited(path, before, fork, last, conflicts, ct);
+                    CheckUnedited(path, before, fork, unitNames is null, last, conflicts, ct);
                 }
             }
 
-            return conflicts.ToImmutable();
+            // files in path order, then position; a place found twice (an include file read by several units) once, its first conflict
+            var seen = new HashSet<(string, int)>();
+            return [.. conflicts.Where(c => seen.Add((PathUtil.Normalize(c.Location.Path), c.Location.Span.Start)))
+                .OrderBy(c => PathUtil.Normalize(c.Location.Path), PathUtil.Comparer).ThenBy(c => c.Location.Span.Start).Take(MaxConflicts)];
+        }
+
+        /// <summary>
+        /// The tokens a tree reads from include files, by include path, reading and position (<see cref="NameTokens"/>): the
+        /// fork's counterpart of a name of an include file.
+        /// </summary>
+        private static Dictionary<(string Path, int Reading, int Start), SyntaxToken> IncludeTokens(SyntaxTree tree) =>
+            NameTokens(tree).Where(t => t.Reading >= 0).ToDictionary(t => (t.Path, t.Reading, t.Token.Span.Start), t => t.Token);
+
+        /// <summary>
+        /// CMP-1509: a name read from an include file: it must still bind to the same declaration (an edited one: to the renamed
+        /// symbol, by the new name). False when it is not a conflict.
+        /// </summary>
+        private bool IncludeConflict(SyntaxToken token, string file, int reading, SemanticModel before, SemanticModel after,
+            ref Dictionary<(string Path, int Reading, int Start), SyntaxToken>? fork, string last, out bool edited)
+        {
+            edited = edits.TryGetValue(file, out var changes) && changes.Any(c => c.Span.Start == token.Span.Start);
+            if (QuickInfoService.SymbolOf(before, token) is not { } bound)
+            {
+                return false;
+            }
+
+            fork ??= IncludeTokens(after.SyntaxTree);
+            var now = fork.TryGetValue((file, reading, Map(file, token.Span.Start)), out var newToken) ? QuickInfoService.SymbolOf(after, newToken) : null;
+            return now is null || !Same(bound, now) || edited && !IdentifierComparer.Instance.Equals(now.Name, last);
         }
 
         /// <summary>CMP-751: every edited name binds to the renamed symbol, every other name of the file that was bound to the same declaration.</summary>
@@ -1021,15 +1272,23 @@ public static class RenameService
             var newTree = after.SyntaxTree;
             var names = unitNames is not null && unitNames.TryGetValue(path, out var spans) ? spans : [];
             var expected = unitNames is null ? null : UnitNames(after, after.Compilation.GetSemanticModel(NewPath(PathUtil.Normalize(renamed[0].Locations[0].Path))).Unit, ct);
-            foreach (var token in before.SyntaxTree.Root.OwnTokens())
+            Dictionary<(string Path, int Reading, int Start), SyntaxToken>? included = null;
+            foreach (var (token, file, reading) in NameTokens(before.SyntaxTree))
             {
                 if (conflicts.Count >= MaxConflicts)
                 {
                     return;
                 }
 
-                if (!SyntaxFacts.IsNameToken(token) || token.IsMissing)
+                if (reading >= 0)
                 {
+                    // CMP-1509: a name read from an include file (a unit rename edits none)
+                    ct.ThrowIfCancellationRequested();
+                    if (unitNames is null && IncludeConflict(token, file, reading, before, after, ref included, last, out var editedInclude))
+                    {
+                        conflicts.Add(Conflict(doc.Compilation.GetSyntaxTree(file), token.Span, editedInclude ? newName : token.Text));
+                    }
+
                     continue;
                 }
 
@@ -1071,22 +1330,36 @@ public static class RenameService
         /// CMP-1506: a file the rename does not edit. Its own name tokens spelled like the new name (a dotted unit name: its last
         /// part) that were bound must bind to the same declaration; a file that does not spell the name is not bound again.
         /// </summary>
-        private void CheckUnedited(string path, SemanticModel before, Compilation fork, string last, ImmutableArray<RenameConflict>.Builder conflicts, CancellationToken ct)
+        private void CheckUnedited(string path, SemanticModel before, Compilation fork, bool includes, string last, ImmutableArray<RenameConflict>.Builder conflicts,
+            CancellationToken ct)
         {
             SemanticModel? after = null;
-            foreach (var token in before.SyntaxTree.Root.OwnTokens())
+            Dictionary<(string Path, int Reading, int Start), SyntaxToken>? included = null;
+            foreach (var (token, file, reading) in NameTokens(before.SyntaxTree))
             {
                 if (conflicts.Count >= MaxConflicts)
                 {
                     return;
                 }
 
-                if (!SyntaxFacts.IsNameToken(token) || token.IsMissing || !IdentifierComparer.Instance.Equals(SyntaxFacts.NameOf(token), last))
+                if (!IdentifierComparer.Instance.Equals(SyntaxFacts.NameOf(token), last))
                 {
                     continue;
                 }
 
                 ct.ThrowIfCancellationRequested();
+                if (reading >= 0)
+                {
+                    // CMP-1509: a name spelled like the new one in an include file the unit reads
+                    after ??= fork.GetSemanticModel(path);
+                    if (includes && IncludeConflict(token, file, reading, before, after, ref included, last, out _))
+                    {
+                        conflicts.Add(Conflict(doc.Compilation.GetSyntaxTree(file), token.Span, token.Text));
+                    }
+
+                    continue;
+                }
+
                 if (QuickInfoService.SymbolOf(before, token) is not { } bound)
                 {
                     continue;

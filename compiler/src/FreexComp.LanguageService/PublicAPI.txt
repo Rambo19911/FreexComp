@@ -429,8 +429,10 @@ sealed record FreexComp.LanguageService.RenameResult : System.IEquatable<FreexCo
   public FreexComp.LanguageService.RenameResult <Clone>$()
   public System.Boolean Equals(FreexComp.LanguageService.RenameResult other)
   public System.Boolean Success { get; init; }
+  public System.Boolean UnrenamedCapped { get; init; }
   public System.Collections.Immutable.ImmutableArray<FreexComp.LanguageService.DocumentEdit> Edits { get; init; }
   public System.Collections.Immutable.ImmutableArray<FreexComp.LanguageService.RenameConflict> Conflicts { get; init; }
+  public System.Collections.Immutable.ImmutableArray<FreexComp.LanguageService.UnrenamedOccurrence> Unrenamed { get; init; }
   public System.String Error { get; init; }
   public System.Void Deconstruct(out System.Boolean Success, out System.String Error, out System.Collections.Immutable.ImmutableArray<FreexComp.LanguageService.DocumentEdit> Edits, out FreexComp.LanguageService.FileRename FileRename)
   public ctor(System.Boolean Success, System.String Error, System.Collections.Immutable.ImmutableArray<FreexComp.LanguageService.DocumentEdit> Edits, FreexComp.LanguageService.FileRename FileRename = null)
@@ -444,6 +446,7 @@ enum FreexComp.LanguageService.RenameScope
   Project = 0
 static class FreexComp.LanguageService.RenameService
   public const System.Int32 MaxConflicts = 100
+  public const System.Int32 MaxUnrenamed = 200
   public static FreexComp.LanguageService.RenameInfo GetRenameInfo(FreexComp.LanguageService.Document doc, System.Int32 position, System.Threading.CancellationToken ct)
   public static FreexComp.LanguageService.RenameResult Rename(FreexComp.LanguageService.Document doc, System.Int32 position, System.String newName, FreexComp.LanguageService.RenameOptions options, System.Threading.CancellationToken ct)
   public static FreexComp.LanguageService.RenameResult Rename(FreexComp.LanguageService.Document doc, System.Int32 position, System.String newName, System.Threading.CancellationToken ct)
@@ -476,6 +479,21 @@ sealed record FreexComp.LanguageService.SignatureInfo : System.IEquatable<FreexC
   public override System.String ToString()
   public static System.Boolean op_Equality(FreexComp.LanguageService.SignatureInfo left, FreexComp.LanguageService.SignatureInfo right)
   public static System.Boolean op_Inequality(FreexComp.LanguageService.SignatureInfo left, FreexComp.LanguageService.SignatureInfo right)
+enum FreexComp.LanguageService.UnrenamedKind
+  InactiveCode = 0
+  Unresolved = 1
+sealed record FreexComp.LanguageService.UnrenamedOccurrence : System.IEquatable<FreexComp.LanguageService.UnrenamedOccurrence>
+  public FreexComp.Compiler.Text.Location Location { get; init; }
+  public FreexComp.LanguageService.UnrenamedKind Kind { get; init; }
+  public FreexComp.LanguageService.UnrenamedOccurrence <Clone>$()
+  public System.Boolean Equals(FreexComp.LanguageService.UnrenamedOccurrence other)
+  public System.Void Deconstruct(out FreexComp.Compiler.Text.Location Location, out FreexComp.LanguageService.UnrenamedKind Kind)
+  public ctor(FreexComp.Compiler.Text.Location Location, FreexComp.LanguageService.UnrenamedKind Kind)
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public static System.Boolean op_Equality(FreexComp.LanguageService.UnrenamedOccurrence left, FreexComp.LanguageService.UnrenamedOccurrence right)
+  public static System.Boolean op_Inequality(FreexComp.LanguageService.UnrenamedOccurrence left, FreexComp.LanguageService.UnrenamedOccurrence right)
 sealed class FreexComp.LanguageService.Workspace
   public FreexComp.Compiler.Compilation CurrentCompilation { get; }
   public FreexComp.LanguageService.Document GetDocument(System.String path)

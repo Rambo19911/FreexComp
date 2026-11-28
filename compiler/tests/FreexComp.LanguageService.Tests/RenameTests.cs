@@ -1122,6 +1122,183 @@ public sealed class RenameTests
         AssertCompiles(Applied(files, hiding));
     }
 
+    // ------------------------------------------------------------------------------------------------ CMP-1509, 1510 (C-452)
+
+    private const string IncludeUnit = """
+        unit UInc;
+        interface
+        var Shared: Integer;
+        procedure Bump;
+        implementation
+        procedure Bump;
+        begin
+          {$I Bump.inc}
+        end;
+        end.
+        """;
+
+    private static (string Name, string Text)[] IncludeFixture(string unit, string include) =>
+    [
+        ("P.pas", "program P;\nuses UInc;\nbegin\n  Shared := 2;\n  Bump;\nend.\n"), ("UInc.pas", unit.ReplaceLineEndings("\n")), ("Bump.inc", include),
+    ];
+
+    /// <summary>CMP-1509: a name read from an include file that binds to the renamed symbol is edited, in the include file's text.</summary>
+    [Fact]
+    [Trait("Req", "CMP-1509")]
+    public void IncludeFile_ReferencesAreEdited()
+    {
+        var files = IncludeFixture(IncludeUnit, "Shared := Shared + 1;\n");
+
+        var result = Rename(files, "UInc.pas", "Shared: Integer", "Common");
+
+        Assert.Equal(["Bump.inc: 2", "P.pas: 1", "UInc.pas: 1"], Counts(result));
+        var after = Applied(files, result);
+        Assert.Equal("Common := Common + 1;\n", TextOf(after, "Bump.inc"));
+        AssertCompiles(after);
+    }
+
+    /// <summary>
+    /// CMP-1509: the conflict check binds the edited include text — a renamed name in the include file that a local of the routine
+    /// around the directive would capture is a conflict, located in the include file.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "CMP-1509")]
+    [Trait("Req", "CMP-1505")]
+    public void IncludeFile_ConflictInsideIsFound()
+    {
+        var unit = IncludeUnit.ReplaceLineEndings("\n").Replace("procedure Bump;\nbegin\n", "procedure Bump;\nvar Common: Integer;\nbegin\n  Common := 1;\n", StringComparison.Ordinal);
+        var files = IncludeFixture(unit, "Shared := Shared + 1;\n");
+
+        var result = Rename(files, "UInc.pas", "Shared: Integer", "Common");
+
+        Assert.False(result.Success);
+        Assert.Equal(["Bump.inc(1,1) Common [6]", "Bump.inc(1,11) Common [6]"], result.Conflicts.Select(Describe));
+        Assert.Equal("Renaming 'Shared' to 'Common' changes the meaning of 'Common' at Bump.inc(1,1).", result.Error);
+        Assert.Empty(result.Edits);
+    }
+
+    /// <summary>
+    /// CMP-1509: an include file read twice — once where its name is the renamed global, once where it is a local of the routine
+    /// around the directive — cannot be edited for one reading only: a conflict with its own sentence.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "CMP-1509")]
+    public void IncludeFile_ReadTwiceWithDifferentMeanings_IsAConflict()
+    {
+        var unit = IncludeUnit.ReplaceLineEndings("\n").Replace("procedure Bump;\nbegin\n  {$I Bump.inc}\nend;\n",
+            "procedure Bump;\nbegin\n  {$I Bump.inc}\nend;\nprocedure Twice;\nvar Shared: Integer;\nbegin\n  Shared := 0;\n  {$I Bump.inc}\nend;\n", StringComparison.Ordinal);
+        var files = IncludeFixture(unit, "Shared := Shared + 1;\n");
+
+        var result = Rename(files, "UInc.pas", "Shared: Integer", "Common");
+
+        Assert.False(result.Success);
+        Assert.Equal("Renaming 'Shared' to 'Common' would change only some of the meanings of 'Shared' in the include file Bump.inc(1,1).", result.Error);
+        Assert.Equal(["Bump.inc(1,1) Common [6]", "Bump.inc(1,11) Common [6]"], result.Conflicts.Select(Describe));
+    }
+
+    private static string Unrenamed(RenameResult result) =>
+        string.Join(" ", result.Unrenamed.Select(u => $"{Path.GetFileName(u.Location.Path)}({u.Location.LineSpan.Start.Line + 1},{u.Location.LineSpan.Start.Column + 1}){u.Kind}"));
+
+    /// <summary>
+    /// CMP-1510: identifiers spelled like the old name in inactive conditional code — of the unit and of an include file it reads —
+    /// are reported, not edited; the rename succeeds.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "CMP-1510")]
+    public void Unrenamed_InactiveBranch_IsReported()
+    {
+        var unit = IncludeUnit.ReplaceLineEndings("\n").Replace("  {$I Bump.inc}\n", "  {$I Bump.inc}\n  {$IFDEF NEVER}\n  Shared := 0; shared := 1;\n  {$ENDIF}\n", StringComparison.Ordinal);
+        var files = IncludeFixture(unit, "{$IFDEF NEVER} Shared := -1; {$ENDIF}\n");
+
+        var result = Rename(files, "UInc.pas", "Shared: Integer", "Common");
+
+        Assert.Equal(["P.pas: 1", "UInc.pas: 1"], Counts(result));
+        Assert.Equal("Bump.inc(1,16)InactiveCode UInc.pas(10,3)InactiveCode UInc.pas(10,16)InactiveCode", Unrenamed(result));
+        Assert.False(result.UnrenamedCapped);
+        Assert.Equal(TextOf(files, "Bump.inc"), TextOf(Applied(files, result), "Bump.inc"));
+    }
+
+    /// <summary>CMP-1510: in code with errors a name spelled like the old name that binds to nothing is reported as unresolved.</summary>
+    [Fact]
+    [Trait("Req", "CMP-1510")]
+    public void Unrenamed_UnboundNameInCodeWithErrors_IsReported()
+    {
+        var files = Fixture(("Unit3.pas", Unit3.ReplaceLineEndings("\n").Replace("procedure Call; begin Hello end;", "procedure Call; begin Hello; Missing.Shared := 1 end;", StringComparison.Ordinal)));
+
+        var result = Rename(files, "Unit1.pas", "Shared: Integer", "Common");
+
+        Assert.True(result.Success, result.Error);
+        Assert.Equal("Unit3.pas(6,38)Unresolved", Unrenamed(result));
+        Assert.Contains("Missing.Shared := 1", TextOf(Applied(files, result), "Unit3.pas"), StringComparison.Ordinal);
+    }
+
+    /// <summary>CMP-1510: for a local target only the routine around it is scanned — another routine's inactive code is not reported.</summary>
+    [Fact]
+    [Trait("Req", "CMP-1510")]
+    public void Unrenamed_LocalScope_OnlyItsRoutine()
+    {
+        const string Source = """
+            program P;
+            procedure One;
+            var Total: Integer;
+            begin
+              Total := 1;
+              {$IFDEF NEVER} Total := 2; {$ENDIF}
+            end;
+            procedure Two;
+            begin
+              {$IFDEF NEVER} Total := 3; {$ENDIF}
+            end;
+            {$IFDEF NEVER} var Total: Integer; {$ENDIF}
+            begin
+              One;
+              Two;
+            end.
+            """;
+        (string Name, string Text)[] files = [("P.pas", Source.ReplaceLineEndings("\n"))];
+
+        var result = Rename(files, "P.pas", "Total: Integer", "Sum");
+
+        Assert.Equal(RenameScope.Local, Info(files, "P.pas", "Total: Integer").Scope);
+        Assert.Equal(["P.pas: 2"], Counts(result));
+        Assert.Equal("P.pas(6,18)InactiveCode", Unrenamed(result));
+    }
+
+    /// <summary>CMP-1510: comments and string literals — active, or inside inactive code — are never reported.</summary>
+    [Fact]
+    [Trait("Req", "CMP-1510")]
+    public void Unrenamed_CommentsAndStrings_AreNotReported()
+    {
+        var unit = IncludeUnit.ReplaceLineEndings("\n").Replace("  {$I Bump.inc}\n",
+            "  {$I Bump.inc}\n  // Shared\n  WriteLn('Shared'); { Shared }\n  {$IFDEF NEVER}\n  // Shared\n  WriteLn('Shared'); (* Shared *) { Shared }\n  {$ENDIF}\n", StringComparison.Ordinal);
+        var files = IncludeFixture(unit, "Shared := 1; // Shared\n");
+
+        var result = Rename(files, "UInc.pas", "Shared: Integer", "Common");
+
+        Assert.True(result.Success, result.Error);
+        Assert.Empty(result.Unrenamed);
+        Assert.False(result.UnrenamedCapped);
+    }
+
+    /// <summary>CMP-1510: at most <see cref="RenameService.MaxUnrenamed"/> occurrences are listed, in text order; the rest is flagged.</summary>
+    [Fact]
+    [Trait("Req", "CMP-1510")]
+    public void Unrenamed_CappedAtTwoHundred()
+    {
+        var inactive = "  {$IFDEF NEVER}\n" + string.Concat(Enumerable.Repeat("  Shared := Shared;\n", 125)) + "  {$ENDIF}\n";
+        var unit = IncludeUnit.ReplaceLineEndings("\n").Replace("  {$I Bump.inc}\n", "  {$I Bump.inc}\n" + inactive, StringComparison.Ordinal);
+        var files = IncludeFixture(unit, "Shared := 1;\n");
+
+        var result = Rename(files, "UInc.pas", "Shared: Integer", "Common");
+
+        Assert.Equal(200, RenameService.MaxUnrenamed);
+        Assert.Equal(200, result.Unrenamed.Length);
+        Assert.True(result.UnrenamedCapped);
+        Assert.Equal(result.Unrenamed.OrderBy(u => u.Location.Span.Start), result.Unrenamed);
+        Assert.All(result.Unrenamed, u => Assert.Equal(UnrenamedKind.InactiveCode, u.Kind));
+        Assert.Equal(10, result.Unrenamed[0].Location.LineSpan.Start.Line + 1);
+    }
+
     // ------------------------------------------------------------------------------------------------ LANG-572 (C-307)
 
     private const string InlineScopes = """

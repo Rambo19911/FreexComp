@@ -1314,7 +1314,7 @@ public sealed class Compilation
             // {$IF} conditions are evaluated by the binder in the unit's uses chain (LANG-862, C-032/C-046/C-069)
             var parseOptions = DirectiveConditionEvaluator.WithBinder(
                 new ParseOptions(defines) { SearchPaths = [.. Options.SearchPaths.Select(PathUtil.Normalize)], Target = Options.Target, RtlDirectory = RtlDirectory() }, uses);
-            tree = SyntaxTree.Parse(text, parseOptions, FileSystem);
+            tree = SyntaxTree.Parse(text, parseOptions, _openFiles.IsEmpty ? FileSystem : new OpenFilesFileSystem(FileSystem, _openFiles));
             if (!tree.DependsOnConditionScope)
             {
                 _trees.TryAdd(path, new Lazy<SyntaxTree?>(tree));            // GetSyntaxTree gives the same tree (C-244)

@@ -84,6 +84,23 @@ public sealed class WorkspaceTests
         Assert.DoesNotContain(workspace.GetDocument(path).SemanticModel.GetDiagnostics(), d => d.Code == "E2003");
     }
 
+    /// <summary>CMP-200 (C-452): an open include file is what the units that include it read; closed again, the disk is.</summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1509")]
+    public void OpenIncludeText_IsWhatTheIncludingUnitReads()
+    {
+        var workspace = ProjectWorkspace(TestFiles.Files(("P.pas", "program P;\nvar X: Integer;\nbegin\n  {$I Body.inc}\nend."), ("Body.inc", "X := 1;\n")));
+        var include = TestFiles.PathOf("Body.inc");
+        Assert.DoesNotContain(workspace.CurrentCompilation.GetDiagnostics(), d => d.Code == "E2003");
+
+        workspace.OpenDocument(include, "Nope := 1;\n");
+
+        Assert.Contains(workspace.CurrentCompilation.GetDiagnostics(), d => d.Code == "E2003");
+        workspace.CloseDocument(include);
+        Assert.DoesNotContain(workspace.CurrentCompilation.GetDiagnostics(), d => d.Code == "E2003");
+    }
+
     [Fact]
     [Trait("Req", "CMP-700")]
     public void NotifyFileChangedOnDisk_ReadsTheNewContent()
