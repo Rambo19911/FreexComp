@@ -958,6 +958,7 @@ internal sealed partial class ExpressionBinder
             AddressTakenVariables.Add(variable);
         }
 
+        NoteSelfWrite(operand);                                                 // LANG-996 (b) rule 3 (C-443)
         return new BoundAddressOfExpression(syntax, operand, routine: null, _types.Pointer);
     }
 
@@ -2721,6 +2722,7 @@ internal sealed partial class ExpressionBinder
                 return false;
         }
 
+        NoteSelfWrite(argument);                                        // LANG-996 (b) rule 2 (C-443)
         return true;
     }
 

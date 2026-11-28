@@ -1077,6 +1077,12 @@ internal sealed record BoundReceiver(BoundExpression? Self, bool IsVirtual, int?
 {
     /// <summary>A <c>class … static</c> method (LANG-620): no <c>Self</c>, a direct call.</summary>
     public static readonly BoundReceiver Static = new(null, IsVirtual: false, Flag: null);
+
+    /// <summary>
+    /// LANG-996 (a) (C-443): the receiver of a record-helper method is a constant or a plain value (a function result, a property
+    /// read): the method gets the address of a temporary that holds it, also where the value is read from a field.
+    /// </summary>
+    public bool Temporary { get; init; }
 }
 
 /// <summary>A class name as a constructor's <c>Self</c>: the address of its VMT (ABI-071), type <c>Pointer</c>.</summary>

@@ -23,6 +23,13 @@ public sealed class HelperTypeSymbol : TypeSymbol
     /// <summary>The helped type.</summary>
     public TypeSymbol ExtendedType { get; }
 
+    /// <summary>
+    /// CMP-1490 (c), (e) (C-443): the mutating methods of this record helper are known — always for a helper bound from source;
+    /// for one read from a <c>.pcu</c>, when its entry carries <c>classified</c> (an entry without it: every instance method
+    /// counts as mutating, and the entry is written again as it was read).
+    /// </summary>
+    internal bool IsClassified { get; set; } = true;
+
     /// <summary><c>helper(TAncestorHelper)</c>: the helper whose members this one inherits (LANG-753); null otherwise.</summary>
     public HelperTypeSymbol? Parent { get; internal set; }
 

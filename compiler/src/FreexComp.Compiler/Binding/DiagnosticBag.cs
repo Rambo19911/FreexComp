@@ -14,6 +14,18 @@ internal sealed class DiagnosticBag
 
     public int Count => _diagnostics.Count;
 
+    /// <summary>
+    /// LANG-996 (b) (C-443): the write uses of <c>Self</c> found while binding with this bag (<see cref="HelperMutation"/>). They
+    /// are no diagnostics: a probe that binds with a scratch bag leaves none, like its diagnostics.
+    /// </summary>
+    public List<SelfUse> SelfUses { get; } = [];
+
+    /// <summary>
+    /// LANG-996 (c) (C-443): the calls of record-helper methods on read-only values bound with this bag, each with the E2752 it
+    /// gets when the method turns out to be mutating (known once every body of the compilation is bound).
+    /// </summary>
+    public List<ReadOnlyCall> ReadOnlyCalls { get; } = [];
+
     /// <summary>Adds an already made diagnostic (warning control was applied where it was reported).</summary>
     public void Add(Diagnostic diagnostic) => _diagnostics.Add(diagnostic);
 

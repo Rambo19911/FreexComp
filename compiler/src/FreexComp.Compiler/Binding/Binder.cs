@@ -33,6 +33,15 @@ internal sealed record BindingResult(
 
     public Scope Scope => Declarations.Scope;
 
+    /// <summary>LANG-996 (b) (C-443): the write uses of <c>Self</c> in the unit's record-helper methods (every body, instance bodies included).</summary>
+    public ImmutableArray<SelfUse> SelfUses { get; init; } = [];
+
+    /// <summary>
+    /// LANG-996 (c) (C-443): the unit's calls of record-helper methods on read-only values. Their E2752 are not among
+    /// <see cref="Diagnostics"/> until the compilation's methods are classified (<see cref="HelperMutation"/>).
+    /// </summary>
+    public ImmutableArray<ReadOnlyCall> ReadOnlyCalls { get; init; } = [];
+
     /// <summary>
     /// CMP-345: the variables, parameters and <c>Result</c> of <paramref name="routine"/> referenced by any routine nested in
     /// it (at any depth), in the order of <paramref name="routine"/>'s scope (<c>Result</c>, parameters, locals).
@@ -99,6 +108,12 @@ internal sealed record BoundRoutineBody(
 
     /// <summary>The bodies of the anonymous methods inside this one (inner ones included), bound with it (C-120).</summary>
     public ImmutableArray<BoundRoutineBody> AnonymousBodies { get; init; } = [];
+
+    /// <summary>LANG-996 (b) (C-443): the write uses of a record-helper method's <c>Self</c> in this body (its anonymous methods included).</summary>
+    public ImmutableArray<SelfUse> SelfUses { get; init; } = [];
+
+    /// <summary>LANG-996 (c) (C-443): this body's calls of record-helper methods on read-only values, each with its E2752.</summary>
+    public ImmutableArray<ReadOnlyCall> ReadOnlyCalls { get; init; } = [];
 }
 
 /// <summary>Binds a compilation unit: declarations (CMP-113), then the routine and unit-level bodies (CMP-114).</summary>
@@ -115,7 +130,10 @@ internal static class Binder
         var diagnostics = new DiagnosticBag();
         var outer = SystemScope(types, system);
         var interfacePart = DeclarationBinder.BindInterface(tree, types, diagnostics, outer);
-        return BindInstances(Complete(tree, interfacePart, types, diagnostics, outer, system?.Unit));
+        var result = BindInstances(Complete(tree, interfacePart, types, diagnostics, outer, system?.Unit));
+        // LANG-996 (C-443): the unit is the whole compilation here (the methods of System were classified when it was bound)
+        HelperMutation.Classify([result]);
+        return HelperMutation.WithErrors(result, HelperMutation.Errors(result));
     }
 
     /// <summary>
@@ -186,12 +204,18 @@ internal static class Binder
 
         // LANG-711 (C-118): errors in an instance body are E2710 naming the instance; C-222: with the instantiation site, and the
         // instance bodies' warnings and hints (binder and flow analysis) once each; all diagnostics stay in file and position order
-        var extended = result with { Routines = result.Routines.AddRange(routines) };
+        var extended = result with { Routines = result.Routines.AddRange(routines), SelfUses = result.SelfUses.AddRange(routines.SelectMany(r => r.SelfUses)) };
         var instanceDiagnostics = new List<Diagnostic>();
+        var instanceCalls = new List<ReadOnlyCall>();
         foreach (var body in routines)
         {
             var instance = GenericUses.InstanceOf(body.Routine);
             var site = instance is null ? null : GenericUses.SiteOf(instance, unit);
+            // LANG-996 (c) (C-443): an E2752 inside an instance body is an E2710 like its other errors, once it is known
+            instanceCalls.AddRange(body.ReadOnlyCalls.Select(c => c with
+            {
+                Diagnostic = DiagnosticBag.InInstance(c.Diagnostic, InstanceName(body.Routine), site, result.Types.ReportedInstanceWarnings)!,
+            }));
             foreach (var diagnostic in body.Diagnostics.Concat(FlowAnalyzer.Analyze(extended, body)))
             {
                 if (DiagnosticBag.InInstance(diagnostic, InstanceName(body.Routine), site, result.Types.ReportedInstanceWarnings) is { } kept)
@@ -205,6 +229,7 @@ internal static class Binder
         {
             Diagnostics = [.. result.Diagnostics.Concat(instanceDiagnostics)
                 .OrderBy(d => d.Location.Path, StringComparer.OrdinalIgnoreCase).ThenBy(d => d.Location.Span.Start)],
+            ReadOnlyCalls = result.ReadOnlyCalls.AddRange(instanceCalls),
         };
     }
 
@@ -325,7 +350,14 @@ internal static class Binder
         DocCommentText.Fill(tree, declarations.Unit);                       // C-243: Symbol.Documentation (LANG-142)
         var systemUnit = system
             ?? (declarations.Unit is { IsProgram: false } own && string.Equals(own.Name, "System", StringComparison.OrdinalIgnoreCase) ? own : null);
-        return new BindingResult(types, declarations, bodies.ToImmutable(), routines.ToImmutable(), [.. all]) { System = systemUnit, Tree = tree };
+        return new BindingResult(types, declarations, bodies.ToImmutable(), routines.ToImmutable(), [.. all])
+        {
+            System = systemUnit,
+            Tree = tree,
+            // LANG-996 (C-443): what the unit level and every body recorded (an anonymous method's is in the body it is bound with)
+            SelfUses = [.. diagnostics.SelfUses, .. routines.SelectMany(r => r.SelfUses)],
+            ReadOnlyCalls = [.. diagnostics.ReadOnlyCalls, .. routines.SelectMany(r => r.ReadOnlyCalls)],
+        };
     }
 
     /// <summary>Binds one routine body on its own (CMP-114), e.g. for the language service.</summary>
@@ -406,6 +438,8 @@ internal static class Binder
         {
             AddressTaken = [.. binder.AddressTakenVariables],
             AnonymousBodies = [.. binder.Expressions.AnonymousBodies],
+            SelfUses = [.. diagnostics.SelfUses],
+            ReadOnlyCalls = [.. diagnostics.ReadOnlyCalls],
         };
     }
 

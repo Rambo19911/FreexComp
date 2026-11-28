@@ -437,7 +437,7 @@ internal sealed partial class ExpressionBinder
                 _diagnostics.Report(call, "E2607");
                 return null;
             case ReceiverKind.Instance:
-                return Dispatched(method, instance!, inherited: false);
+                return HelperReceiver(call, method, Dispatched(method, instance!, inherited: false));
         }
 
         var current = CurrentMethod;
@@ -453,7 +453,7 @@ internal sealed partial class ExpressionBinder
             return null;
         }
 
-        return Dispatched(method, SelfOf(current, call), inherited: kind == ReceiverKind.Inherited);
+        return HelperReceiver(call, method, Dispatched(method, SelfOf(current, call), inherited: kind == ReceiverKind.Inherited));
     }
 
     /// <summary>

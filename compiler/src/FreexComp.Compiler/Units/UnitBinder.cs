@@ -47,6 +47,22 @@ internal sealed class LoadedUnit(string path)
     /// <summary>C-244: bound with only some bodies (<see cref="UnitBinder.PartialBodies"/>); never taken over by a later run.</summary>
     public bool IsPartial { get; set; }
 
+    /// <summary>The part of <see cref="Diagnostics"/> that holds the binder's diagnostics (file and position order).</summary>
+    public (int Start, int End) BinderDiagnostics { get; set; }
+
+    /// <summary>
+    /// LANG-996 (b) (C-443): <see cref="HelperMutation.Facts"/> of the unit — what the classification of record-helper methods
+    /// reads from its bodies; for a unit bound with only some bodies, the text of the earlier run's unit (null: none). A later run
+    /// takes units over only while this is unchanged (CMP-130).
+    /// </summary>
+    public string? HelperFacts { get; set; }
+
+    /// <summary>
+    /// LANG-996 (c) (C-443): bound by a run that binds only some bodies (C-244), with calls whose E2752 that run cannot decide
+    /// (a called method's body may be unbound): never taken over by a later run.
+    /// </summary>
+    public bool HelperCallsUndecided { get; set; }
+
     /// <summary>The unit's <c>.pcu</c> <c>linkInputs</c> (C-077); set by the compilation after binding.</summary>
     public UnitLinkInputs LinkInputs { get; set; } = UnitLinkInputs.Empty;
 
@@ -185,6 +201,53 @@ internal sealed class UnitBinder : IUsesScopes
             unit.Result = Binder.BindInstances(unit.Result, partial);
             unit.Diagnostics.AddRange(unit.Result.Diagnostics.Where(d => !before.Contains(d)));
         }
+
+        ClassifyHelperMethods(ready.Where(u => u.Result is not null));
+    }
+
+    /// <summary>
+    /// LANG-996 (b), (c) (C-443): every body of the compilation is bound now, so the mutating record-helper methods are known
+    /// (<see cref="HelperMutation.Classify"/>: over all units, those taken over included — their marks stay as they are) and each
+    /// unit bound by this run gets the E2752 of its calls on read-only values, in position order among its binder diagnostics.
+    /// A run that binds only some bodies (C-244) reports nothing: it marks the units whose calls it leaves undecided.
+    /// </summary>
+    private void ClassifyHelperMethods(IEnumerable<LoadedUnit> bound)
+    {
+        if (PartialBodies is null)
+        {
+            HelperMutation.Classify(_units.Where(u => u.Result is not null).Select(u => u.Result!));
+        }
+
+        foreach (var unit in bound)
+        {
+            var result = unit.Result!;
+            unit.HelperFacts = unit.IsPartial ? null : HelperMutation.Facts(result);
+            if (PartialBodies is not null)
+            {
+                unit.HelperCallsUndecided = !result.ReadOnlyCalls.IsEmpty || result.SelfUses.Any(u => u.Callee is not null);
+                continue;
+            }
+
+            var errors = HelperMutation.Errors(result);
+            unit.Result = HelperMutation.WithErrors(result, errors);
+            var (start, end) = unit.BinderDiagnostics;
+            foreach (var error in errors)
+            {
+                var at = start;
+                while (at < end && !ComesAfter(unit.Diagnostics[at], error))
+                {
+                    at++;
+                }
+
+                unit.Diagnostics.Insert(at, error);
+                end++;
+            }
+
+            unit.BinderDiagnostics = (start, end);
+        }
+
+        static bool ComesAfter(Diagnostic a, Diagnostic b) =>
+            StringComparer.OrdinalIgnoreCase.Compare(a.Location.Path, b.Location.Path) is var order && (order > 0 || order == 0 && a.Location.Span.Start > b.Location.Span.Start);
     }
 
     /// <summary>
@@ -397,6 +460,7 @@ internal sealed class UnitBinder : IUsesScopes
         var partial = PartialBodies is { } p && Text.PathUtil.AreEqual(p.Path, unit.Path) ? p.Filter : null;
         unit.IsPartial = partial is not null;
         unit.Result = Binder.Complete(unit.Tree!, unit.Interface!, Types, unit.Bag, unit.ImplementationUsesScope!, system, partial);
+        unit.BinderDiagnostics = (unit.Diagnostics.Count, unit.Diagnostics.Count + unit.Result.Diagnostics.Length);
         unit.Diagnostics.AddRange(unit.Result.Diagnostics);
         if (!unit.IsPartial)
         {

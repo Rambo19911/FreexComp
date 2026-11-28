@@ -124,6 +124,57 @@ public sealed class IncrementalTests
         Assert.Equal(["U1"], closed.BoundUnits);
     }
 
+    private const string HelperUnit = "unit UH;\ninterface\ntype\n  TIntH = record helper for Integer\n    procedure Touch;\n    procedure Twice;\n  end;\n"
+        + "implementation\nprocedure TIntH.Touch;\nbegin\n  if Self > 0 then\n    Writeln(Self);\nend;\nprocedure TIntH.Twice;\nbegin\n  Touch;\n  Touch;\nend;\nend.";
+
+    private const string HelperUser = "unit UUse;\ninterface\nprocedure Use(const N: Integer);\nimplementation\nuses UH;\n"
+        + "procedure Use(const N: Integer);\nbegin\n  N.Twice;\nend;\nend.";
+
+    /// <summary>
+    /// C-443 (LANG-996 (b), CMP-130): whether a record-helper method is mutating comes from its body, so a body edit that turns a
+    /// method mutating — here through a second method, rule 4 — reaches the units that call it on a read-only value: they are not
+    /// taken over and report E2752 as a fresh compilation does; an edit that keeps the classification rebinds the edited unit
+    /// only; a position model in between changes nothing.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "LANG-996")]
+    public void HelperBodyEdit_ThatChangesTheClassification_ReachesTheCallers()
+    {
+        var files = TestFiles.Files(("P.pas", "program P;\nuses UUse;\nbegin\n  Use(1);\nend."), ("UH.pas", HelperUnit), ("UUse.pas", HelperUser));
+        var path = TestFiles.PathOf("UH.pas");
+        var baseline = Compilation.Create(TestFiles.Options(), [], files);
+        Assert.DoesNotContain(baseline.GetDiagnostics(), d => d.Severity == DiagnosticSeverity.Error);
+
+        // the classification is unchanged: only the edited unit is bound again
+        var same = baseline.WithSourceText(SourceText.From(path, HelperUnit.Replace("if Self > 0 then", "if Self > 1 then", StringComparison.Ordinal)));
+        Assert.Equal(["UH"], same.BoundUnits);
+        Assert.DoesNotContain(same.GetDiagnostics(), d => d.Severity == DiagnosticSeverity.Error);
+
+        // Touch now changes Self, so Twice does too: E2752 in the unit that was not edited
+        var mutatingText = HelperUnit.Replace("if Self > 0 then", "Inc(Self);\n  if Self > 0 then", StringComparison.Ordinal);
+        var mutating = same.WithSourceText(SourceText.From(path, mutatingText));
+        var fresh = Compilation.Create(TestFiles.Options(), [SourceText.From(path, mutatingText)], files);
+        Assert.Equal(["UUse.pas(8,5): error E2752: Cannot call 'Twice' on a read-only value: the method changes Self"],
+            fresh.GetDiagnostics().Where(d => d.Severity == DiagnosticSeverity.Error).Select(d => Path.GetFileName(d.ToText())));
+        Assert.Equal(fresh.GetDiagnostics().Select(d => d.ToText()), mutating.GetDiagnostics().Select(d => d.ToText()));
+        Assert.Equal(fresh.GetDiagnostics(TestFiles.PathOf("UUse.pas")).Select(d => d.ToText()),
+            mutating.GetDiagnostics(TestFiles.PathOf("UUse.pas")).Select(d => d.ToText()));
+
+        // a position model of the helper unit (completion inside Touch), then the next edit: back to a reading method
+        var typing = mutating.WithSourceText(SourceText.From(path, mutatingText.Replace("Writeln(Self);", "Writeln(Self + 0);", StringComparison.Ordinal)));
+        _ = typing.GetSemanticModel(path, mutatingText.IndexOf("Writeln", StringComparison.Ordinal));
+        Assert.Contains(typing.GetDiagnostics(), d => d.Code == "E2752");
+        var back = typing.WithSourceText(SourceText.From(path, HelperUnit));
+        _ = back.GetSemanticModel(path, HelperUnit.IndexOf("Writeln", StringComparison.Ordinal));
+        Assert.DoesNotContain(back.GetDiagnostics(), d => d.Severity == DiagnosticSeverity.Error);
+
+        // … and mutating again, with a position model before the analysis
+        var again = back.WithSourceText(SourceText.From(path, mutatingText));
+        _ = again.GetSemanticModel(path, mutatingText.IndexOf("Writeln", StringComparison.Ordinal));
+        Assert.Equal(fresh.GetDiagnostics().Select(d => d.ToText()), again.GetDiagnostics().Select(d => d.ToText()));
+    }
+
     /// <summary>
     /// C-351 (CMP-1382): a unit whose implementation gains or loses a <c>{$FORM}</c> keeps its interface text, but the units using
     /// it are not taken over: the root keyword of a descendant's form is checked again (E3105, E3106) as in a fresh compilation.

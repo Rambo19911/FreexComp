@@ -864,6 +864,13 @@ internal sealed class PcuWriter(PcuContext context)
                     entry["classHelper"] = helper.IsClassHelper;
                     entry["extends"] = TypeId(helper.ExtendedType);
                     entry["parent"] = helper.Parent is { } parentHelper ? TypeId(parentHelper) : null;
+                    if (helper is { IsClassHelper: false, IsClassified: true })
+                    {
+                        // CMP-1490 (c) (C-443): its methods carry `mutating` where LANG-996 (b) says so. An entry read without the
+                        // key is written without it (CMP-1490 (e)): the interface hash its users recorded stays the same
+                        entry["classified"] = true;
+                    }
+
                     entry["methods"] = StaticMethods(helper.Methods);
                     entry["properties"] = MemberProperties(helper.Properties);
                     if (!helper.ClassVariables.IsEmpty)
@@ -1051,7 +1058,8 @@ internal sealed class PcuWriter(PcuContext context)
                 ["params"] = Parameters(m),
                 ["result"] = m.ReturnType is { } result ? TypeId(result) : null,
                 ["flags"] = Strings([.. Flags(m), .. m.IsClassMethod ? ["class"] : Array.Empty<string>(),
-                    .. m.IsRecordConstructor ? ["constructor"] : Array.Empty<string>(), .. m.OperatorName is not null ? ["operator"] : Array.Empty<string>()]),
+                    .. m.IsRecordConstructor ? ["constructor"] : Array.Empty<string>(), .. m.OperatorName is not null ? ["operator"] : Array.Empty<string>(),
+                    .. m is { MutatesSelf: true, Owner: HelperTypeSymbol { IsClassHelper: false, IsClassified: true } } ? ["mutating"] : Array.Empty<string>()]),
                 ["visibility"] = VisibilityName(m.Visibility),
             }, m.Hints))]);
 

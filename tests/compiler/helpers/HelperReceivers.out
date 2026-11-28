@@ -1,0 +1,15 @@
+variable: 11 22
+record field: 4 5
+static array element: 8
+dynamic array element: 9
+dereferenced pointer: 6 8
+var parameter: 12 23
+out parameter: 7
+value parameter inside: 112 123
+value parameter, the caller: 12 23
+function result: 20 22 42
+property read: 30 31 5 25
+const parameters: 3 35
+string field through with: abcd
+a method that calls another one on Self: 3
+character of a string: Abc abc TRUE FALSE

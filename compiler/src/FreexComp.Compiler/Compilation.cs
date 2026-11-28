@@ -110,7 +110,8 @@ public sealed class Compilation
     /// A unit-level reuse plan: the built-in types of the earlier run, its units that may be taken over and, per unit file of the
     /// earlier run, the classes that had a form there (C-351).
     /// </summary>
-    private sealed record Reuse(BuiltInTypes Types, Func<string, LoadedUnit?> Unit, Func<string, ImmutableArray<string>?> FormClasses);
+    private sealed record Reuse(BuiltInTypes Types, Func<string, LoadedUnit?> Unit, Func<string, ImmutableArray<string>?> FormClasses,
+        Func<string, string?> HelperFacts);
 
     /// <summary>The snapshot whose analysis this one may build on (its analysis exists), and the files changed since.</summary>
     private Compilation? _previous;
@@ -195,14 +196,16 @@ public sealed class Compilation
             }
 
             reusable[unit] = true;                                           // a cycle through implementation uses: decided by its other edges
-            var ok = unit.Phase == UnitPhase.Complete && unit.Result is not null && !unit.IsPrecompiled && !unit.IsPartial && !changed.Contains(unit.Path)
+            var ok = unit.Phase == UnitPhase.Complete && unit.Result is not null && !unit.IsPrecompiled && !unit.IsPartial && !unit.HelperCallsUndecided
+                     && !changed.Contains(unit.Path)
                      && unit.InterfaceUses.Concat(unit.ImplementationUses).All(u => !interfaceChanged.Contains(u.Path) && (changed.Contains(u.Path) || u.IsPartial || Reusable(u)));
             reusable[unit] = ok;
             return ok;
         }
 
         return new Reuse(front.Binder.Types, path => units.TryGetValue(path, out var unit) && Reusable(unit) ? unit : null,
-            path => units.TryGetValue(path, out var unit) ? unit.FormClasses : null);
+            path => units.TryGetValue(path, out var unit) ? unit.FormClasses : null,
+            path => units.TryGetValue(path, out var unit) ? unit.HelperFacts : null);
     }
 
     // ------------------------------------------------------------------------------------------------ position models (C-244)
@@ -1140,6 +1143,24 @@ public sealed class Compilation
         var types = reuse?.Types ?? new BuiltInTypes(Options.Target) { DefaultRttiScope = Options.Rtti == "published" ? RttiScope.Published : RttiScope.Broad };   // C-169
         var unitBinder = new UnitBinder(types, resolver, Parse, path => ReadPcu(path, optionsFingerprint), reuse?.Unit) { PartialBodies = partial };
         unitBinder.BindAll(systemPath, mainPath, MaxParallelism);
+        if (reuse is not null)
+        {
+            // LANG-996 (b) (C-443): whether a record-helper method is mutating comes from the bodies, and the units taken over
+            // were checked against the earlier ones: when a unit bound anew records other write uses of Self than before (an
+            // interface text may be unchanged), nothing is taken over. A unit bound with only some bodies keeps the earlier text.
+            foreach (var loaded in unitBinder.Units.Where(u => u.IsPartial))
+            {
+                loaded.HelperFacts = reuse.HelperFacts(loaded.Path);
+            }
+
+            if (unitBinder.Reused.Count > 0
+                && unitBinder.Units.Any(u => !u.IsPrecompiled && !u.IsPartial && u.Result is not null && !unitBinder.Reused.Contains(u)
+                                             && reuse.HelperFacts(u.Path) is { } before && before != u.HelperFacts))
+            {
+                return RunFrontEnd(diagnostics, reuse: null, partial);
+            }
+        }
+
         var initOrder = unitBinder.InitializationOrder();
         // C-114, C-343: every unit's {$FORM} files are scanned before any is checked, as the root keyword of a descendant's form
         // depends on which classes have a form (LANG-959: this run's scans, the forms of a unit taken over, a .pcu's key)

@@ -1306,15 +1306,24 @@ internal sealed partial class LoweringContext
 
         // ABI-084 (C-122): a record method takes the address of its receiver (a temporary for a non-variable, LANG-751)
         var self = receiver?.Self is { } selfValue
-            ? routine is MethodSymbol { SelfParameter: { IsByReference: true } selfParameter } ? SelfAddress(Lower(selfValue), selfParameter.Type) : Lower(selfValue)
+            ? routine is MethodSymbol { SelfParameter: { IsByReference: true } selfParameter } method
+                ? SelfAddress(Lower(selfValue), selfParameter.Type, receiver.Temporary, method.MutatesSelf)
+                : Lower(selfValue)
             : null;
         return new(routine, target is null ? null : Lower(target), self, receiver?.Flag, receiver?.IsVirtual ?? false);
     }
 
-    /// <summary>The address of a record method's or record helper's receiver: the variable itself, else a temporary copy (LANG-751).</summary>
-    private LExpression SelfAddress(LExpression value, TypeSymbol type)
+    /// <summary>
+    /// The address of a record method's or record helper's receiver: the variable itself, else a temporary copy (LANG-751).
+    /// LANG-996 (a) (C-443): <paramref name="copy"/> — the binder found a constant or a plain value (also one that is read
+    /// from a field: a property read), which always travels in a temporary. A character of a string variable is the variable's
+    /// own storage only for a method that changes <c>Self</c> (<paramref name="mutating"/>: the string is made unique first,
+    /// LANG-241); a reading method gets a copy of the character.
+    /// </summary>
+    private LExpression SelfAddress(LExpression value, TypeSymbol type, bool copy, bool mutating)
     {
-        if (value is LLocalRef or LGlobalRef or LParamRef or LOuterRef or LDeref or LField or LIndex or LArrayElement or LView or LSequence)
+        if (!copy && (value is LLocalRef or LGlobalRef or LParamRef or LOuterRef or LDeref or LField or LIndex or LArrayElement or LView or LSequence
+                           || value is LStringIndex && mutating))
         {
             return new LAddrOf(value, Types.Pointer);
         }

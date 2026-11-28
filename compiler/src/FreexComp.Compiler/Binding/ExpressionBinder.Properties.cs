@@ -58,7 +58,9 @@ internal sealed partial class ExpressionBinder
 
         if (property.WriteMethod is not { } setter)
         {
-            return new BoundAssignmentStatement(assignment, FieldPath(target.Syntax, property, property.WritePath, target.Self, marked: false), converted);
+            var field = FieldPath(target.Syntax, property, property.WritePath, target.Self, marked: false);
+            NoteSelfWrite(field);                                                       // LANG-996 (b) rule 1 (C-443)
+            return new BoundAssignmentStatement(assignment, field, converted);
         }
 
         if (target.IsInherited && setter.IsAbstract)
@@ -69,7 +71,7 @@ internal sealed partial class ExpressionBinder
 
         return new BoundCallStatement(assignment, setter, [.. AccessorArguments(target.Syntax, property, target.Indexes), converted])
         {
-            Receiver = AccessorReceiver(setter, target.Self, target.IsInherited),
+            Receiver = AccessorReceiver(target.Syntax, setter, target.Self, target.IsInherited),
         };
     }
 
@@ -234,7 +236,7 @@ internal sealed partial class ExpressionBinder
             return Error(syntax);
         }
 
-        return new BoundCallExpression(syntax, getter, AccessorArguments(syntax, property, indexes)) { Receiver = AccessorReceiver(getter, self, inherited) };
+        return new BoundCallExpression(syntax, getter, AccessorArguments(syntax, property, indexes)) { Receiver = AccessorReceiver(syntax, getter, self, inherited) };
     }
 
     /// <summary>The field accessor path on <paramref name="self"/>; a read is marked with the property (not a variable, LANG-645).</summary>
@@ -259,10 +261,10 @@ internal sealed partial class ExpressionBinder
 
     /// <summary>
     /// The receiver of an accessor method call on <paramref name="self"/>: virtual accessors dispatch (LANG-622) except through
-    /// <c>inherited Prop</c> (LANG-624).
+    /// <c>inherited Prop</c> (LANG-624). An accessor of a record helper is a call of that method at the property name (LANG-996 (c)).
     /// </summary>
-    private BoundReceiver? AccessorReceiver(MethodSymbol accessor, BoundExpression? self, bool inherited = false) =>
-        accessor.SelfParameter is null || self is null ? null : Dispatched(accessor, self, inherited);
+    private BoundReceiver? AccessorReceiver(SyntaxNode at, MethodSymbol accessor, BoundExpression? self, bool inherited = false) =>
+        accessor.SelfParameter is null || self is null ? null : HelperReceiver(at, accessor, Dispatched(accessor, self, inherited));
 
     /// <summary>LANG-645: a property read (field accessor) is no variable for <c>var</c> arguments, <c>@</c>, <c>Inc</c>.</summary>
     internal static bool IsPropertyRead(BoundExpression expression)

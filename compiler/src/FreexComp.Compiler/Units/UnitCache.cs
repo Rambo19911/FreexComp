@@ -13,7 +13,8 @@ internal sealed record UnitCacheDependency(string Path, string InterfaceHash);
 /// C-075: the up-to-date decision of CMP-150. A unit is up to date when its <c>.pcu</c> and <c>.obj</c> exist and the <c>.pcu</c>
 /// parses with the current format (rule 1), carries the current compiler (rule 2) and options (rule 3) fingerprints, every recorded
 /// source still has the recorded SHA-256 (rule 4; equal size and last-write time count as equal, open files are hashed) and every
-/// recorded dependency resolves to the same file with the same current interface hash (rule 5). Each check returns null when it
+/// recorded dependency resolves to the same file with the same current interface hash (rule 5). CMP-1490 (e) (C-443): a
+/// <c>.pcu</c> whose record helpers do not record their mutating methods is out of date as well. Each check returns null when it
 /// holds, else the reason (<c>CMP-150 rule N: …</c>).
 /// </summary>
 /// <param name="openFile">The text of a file open in the compilation (it wins over the disk), or null.</param>
@@ -48,7 +49,8 @@ internal sealed class UnitCache(IFileSystem fs, string compilerFingerprint, stri
             return "CMP-150 rule 1: the .pcu does not parse with the current format";
         }
 
-        var reason = Fingerprints(parsed) ?? SameSource(parsed, sourcePath) ?? Sources(parsed) ?? Dependencies(parsed, dependency, comparePaths: true);
+        var reason = Fingerprints(parsed) ?? SameSource(parsed, sourcePath) ?? Sources(parsed) ?? Dependencies(parsed, dependency, comparePaths: true)
+                     ?? (PcuReader.HelpersAreClassified(parsed) ? null : "CMP-1490 (e): a record helper without its mutating methods");
         pcu = reason is null ? parsed : null;
         return reason;
     }

@@ -81,6 +81,13 @@ public sealed class MethodSymbol : RoutineSymbol
     /// </summary>
     internal PropertySymbol? DelegateProperty { get; set; }
 
+    /// <summary>
+    /// LANG-996 (b) (C-443): an instance method of a record helper whose body holds a write use of <c>Self</c> — set once the
+    /// bodies of the compilation are bound (<see cref="Binding.HelperMutation"/>) or read from the flag <c>mutating</c> of a
+    /// <c>.pcu</c> (CMP-1490 (c)); false for every other method.
+    /// </summary>
+    internal bool MutatesSelf { get; set; }
+
     /// <summary>The generic method this method is an instance of (LANG-701, C-117); null otherwise.</summary>
     public GenericMethodSymbol? GenericMethodDefinition { get; internal set; }
 

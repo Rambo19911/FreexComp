@@ -83,6 +83,118 @@ internal sealed partial class ExpressionBinder
         }
     }
 
+    // ------------------------------------------------------------------ receivers of record-helper methods (LANG-996, C-443)
+
+    /// <summary>
+    /// LANG-996 (b): the record-helper instance method whose <c>Self</c> <paramref name="expression"/> is a part of — <c>Self</c>
+    /// itself or a path from it through record fields, elements of static arrays and of strings and variable typecasts, also
+    /// inside a routine nested in the method; null otherwise. A dereference, an object reference and an element of a dynamic
+    /// array end the path: what lies behind them is other storage.
+    /// </summary>
+    internal static MethodSymbol? SelfPartOf(BoundExpression expression)
+    {
+        while (true)
+        {
+            switch (expression)
+            {
+                case BoundParameterExpression { Parameter: { ContainingSymbol: MethodSymbol { IsClassMethod: false, ContainingSymbol: HelperTypeSymbol { IsClassHelper: false } } method } self }
+                    when ReferenceEquals(method.SelfParameter, self):
+                    return method;
+                case BoundFieldAccessExpression { Record.Type: not ClassTypeSymbol } field:
+                    expression = field.Record;
+                    break;
+                case BoundIndexExpression { Array.Type: not (DynamicArrayTypeSymbol or PointerTypeSymbol) } index:
+                    expression = index.Array;
+                    break;
+                case BoundVariableTypecastExpression typecast:
+                    expression = typecast.Operand;
+                    break;
+                default:
+                    return null;
+            }
+        }
+    }
+
+    /// <summary>
+    /// LANG-996 (b) rules 1, 2, 3 and 5: <paramref name="target"/> is written, passed by reference, has its address taken or is a
+    /// <c>with</c> designator — a write use of <c>Self</c> when it is a part of the <c>Self</c> of a record-helper method.
+    /// </summary>
+    public void NoteSelfWrite(BoundExpression target)
+    {
+        if (_types.HasHelpers && SelfPartOf(target) is { } method)
+        {
+            _diagnostics.SelfUses.Add(new SelfUse(method, Callee: null));
+        }
+    }
+
+    private enum HelperReceiverKind { Location, ReadOnlyLocation, Constant, Value }
+
+    /// <summary>
+    /// LANG-996 (a): the kind of a receiver, tested in the order read-only location (a <c>const</c> parameter, a typed constant,
+    /// the control variable of an enclosing loop, the target of a read-only <c>with</c>, a field or element of these), constant,
+    /// location (what LANG-421 accepts as a <c>var</c> argument), value (anything else; a property read is a value).
+    /// </summary>
+    private HelperReceiverKind KindOfReceiver(BoundExpression receiver)
+    {
+        if (IsPropertyRead(receiver))
+        {
+            return HelperReceiverKind.Value;
+        }
+
+        switch (BoundIndexExpression.RootOf(receiver))
+        {
+            case BoundVariableExpression { Variable: var v } when ForVariables.Contains(v):
+            case BoundParameterExpression { Parameter: var p } when ForVariables.Contains(p):
+            case BoundVariableExpression { Variable.IsReadOnly: true }:
+            case BoundDereferenceExpression { Pointer: BoundVariableExpression { Variable: var with } } when ReadOnlyWith.Contains(with):
+            case BoundParameterExpression { Parameter.Mode: ParameterMode.Const }:
+                return HelperReceiverKind.ReadOnlyLocation;
+        }
+
+        return receiver.ConstantValue is not null ? HelperReceiverKind.Constant
+            : IsVariableArgument(receiver) ? HelperReceiverKind.Location
+            : HelperReceiverKind.Value;
+    }
+
+    /// <summary>
+    /// LANG-996: the receiver of an instance method of a record helper, called at <paramref name="at"/> (a method call or a property
+    /// access). On a part of the calling helper method's own <c>Self</c> it is a write use of that <c>Self</c> when
+    /// <paramref name="method"/> is mutating (rule 4). On a read-only location or a constant the call is E2752 at the member
+    /// name when <paramref name="method"/> is mutating — recorded, as that is known only once every body is bound. A constant
+    /// and a plain value are passed in a temporary. Other receivers pass unchanged.
+    /// </summary>
+    private BoundReceiver? HelperReceiver(SyntaxNode at, MethodSymbol method, BoundReceiver? receiver)
+    {
+        if (receiver?.Self is not { HasErrors: false } self || method.IsClassMethod || method.ContainingSymbol is not HelperTypeSymbol { IsClassHelper: false })
+        {
+            return receiver;
+        }
+
+        if (SelfPartOf(self) is { } caller)
+        {
+            _diagnostics.SelfUses.Add(new SelfUse(caller, method));
+            return receiver;
+        }
+
+        var kind = KindOfReceiver(self);
+        if (kind is HelperReceiverKind.ReadOnlyLocation or HelperReceiverKind.Constant)
+        {
+            _diagnostics.ReadOnlyCalls.Add(new ReadOnlyCall(method, Diagnostic.Create("E2752", DiagnosticBag.LocationOf(MemberName(at)), method.Name)));
+        }
+
+        return kind is HelperReceiverKind.Constant or HelperReceiverKind.Value ? receiver with { Temporary = true } : receiver;
+    }
+
+    /// <summary>The member name of a call or property access: <c>M</c> of <c>X.M</c>, <c>X.M(…)</c>, <c>X.P[…]</c>; the node itself otherwise.</summary>
+    private static SyntaxNode MemberName(SyntaxNode at) => at switch
+    {
+        MemberAccessExpressionSyntax access => access.Name,
+        InvocationExpressionSyntax { Expression: var callee } => MemberName(callee),
+        ElementAccessExpressionSyntax { Expression: var indexed } => MemberName(indexed),
+        ParenthesizedExpressionSyntax { Expression: var inner } => MemberName(inner),
+        _ => at,
+    };
+
     // ------------------------------------------------------------------ for…in enumerator pattern (LANG-362, C-125)
 
     /// <summary>The parameterless public methods named <paramref name="name"/> of a class, record or interface type.</summary>

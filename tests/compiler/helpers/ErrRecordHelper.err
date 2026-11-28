@@ -1,0 +1,9 @@
+ErrRecordHelper.pas(21,5): error E2750: Helpers cannot declare instance fields or virtual methods
+ErrRecordHelper.pas(87,5): error E2752: Cannot call 'Offset' on a read-only value: the method changes Self
+ErrRecordHelper.pas(88,5): error E2752: Cannot call 'Append' on a read-only value: the method changes Self
+ErrRecordHelper.pas(89,5): error E2752: Cannot call 'BumpTwice' on a read-only value: the method changes Self
+ErrRecordHelper.pas(90,10): error E2752: Cannot call 'Zero' on a read-only value: the method changes Self
+ErrRecordHelper.pas(91,13): error E2752: Cannot call 'AddrOf' on a read-only value: the method changes Self
+ErrRecordHelper.pas(93,8): error E2752: Cannot call 'Bump' on a read-only value: the method changes Self
+ErrRecordHelper.pas(95,7): error E2752: Cannot call 'Bump' on a read-only value: the method changes Self
+ErrRecordHelper.pas(96,8): error E2752: Cannot call 'Bump' on a read-only value: the method changes Self

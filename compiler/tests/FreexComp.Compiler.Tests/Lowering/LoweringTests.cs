@@ -798,6 +798,69 @@ public sealed class LoweringTests
     }
 
     /// <summary>
+    /// LANG-996 (a) (C-443): the <c>Self</c> a record-helper method is called with. A location (a variable, a parameter, a field)
+    /// and a read-only location (a <c>const</c> parameter, a field of one, a typed constant) pass their own address — the body
+    /// gets no temporary; a constant and a plain value (a function result, a property read, also one that reads a field, the
+    /// result of an operator) pass the address of a temporary that holds the value.
+    /// </summary>
+    [Theory]
+    [InlineData("location: a local variable", "L.Bump", "(addr L)", "")]
+    [InlineData("location: a var parameter", "V.Bump", "(addr V)", "")]
+    [InlineData("location: a value parameter", "A.Bump", "(addr A)", "")]
+    [InlineData("location: a field of an object", "Box.F.Bump", "(addr (deref (+ptr Box 8:Int64)))", "")]
+    [InlineData("location: a global variable", "G.Bump", "(addr @G)", "")]
+    [InlineData("location: a field of a var record", "VP.Y.Bump", "(addr (. VP Y))", "")]
+    [InlineData("read-only location: a const parameter", "G := C.Squared", "(addr C)", "")]
+    [InlineData("read-only location: a field of a const record", "G := CP.Y.Squared", "(addr (. CP Y))", "")]
+    [InlineData("read-only location: a typed constant", "G := Typed.Squared", "(addr @Typed)", "")]
+    [InlineData("constant: a true constant", "G := Five.Squared", "(seq (:= $tmp1 5:Integer) (addr $tmp1))", "$tmp1:Integer")]
+    [InlineData("value: a function result", "Make.Bump", "(seq (:= $tmp1 (call Make:Integer)) (addr $tmp1))", "$tmp1:Integer")]
+    [InlineData("value: a property read through a field", "Box.Value.Bump", "(seq (:= $tmp1 (deref (+ptr Box 8:Int64))) (addr $tmp1))", "$tmp1:Integer")]
+    [InlineData("value: the result of an operator", "(L + 1).Bump", "(seq (:= $tmp1 (Add:Integer L 1:Integer)) (addr $tmp1))", "$tmp1:Integer")]
+    [Trait("Phase", "8")]
+    [Trait("Req", "LANG-996")]
+    public void HelperReceiver_Passing(string what, string statement, string expectedSelf, string temporaries)
+    {
+        const string Declarations = """
+            type
+              TPoint = record X, Y: Integer; end;
+              TBox = class F: Integer; property Value: Integer read F; end;
+              TIntH = record helper for Integer
+                function Squared: Integer;
+                procedure Bump;
+              end;
+            function TIntH.Squared: Integer; begin Result := Self * Self end;
+            procedure TIntH.Bump; begin Inc(Self) end;
+            const
+              Five = 5;
+              Typed: Integer = 7;
+            var
+              G: Integer;
+            function Make: Integer; begin Result := 1 end;
+            procedure F(const C: Integer; const CP: TPoint; var V: Integer; var VP: TPoint; A: Integer; Box: TBox);
+            var
+              L: Integer;
+            begin
+              L := A;
+              $S$;
+              G := L;
+            end;
+            """;
+
+        _ = what;
+        var body = Routine(Lower($"program T; {Declarations.Replace("$S$", statement, StringComparison.Ordinal)} begin end."), "F");
+        LCallee callee = body.Body.Statements[1] switch
+        {
+            LCallStatement call => call.Callee,
+            LAssign { Value: LCall call } => call.Callee,
+            var other => throw new Xunit.Sdk.XunitException("no call: " + LoweredDump.Of(other)),
+        };
+
+        Assert.Equal(expectedSelf, LoweredDump.Of(Assert.IsType<LRoutineCallee>(callee).Self!));
+        Assert.Equal(("L:Integer " + temporaries).TrimEnd(), Locals(body));
+    }
+
+    /// <summary>
     /// C-069: the default file of <c>Write</c> is always the bound <c>System.Output</c> (LANG-910) — a unit bound without a
     /// <c>System</c> no longer gets a synthetic <c>System.Output</c> reference.
     /// </summary>

@@ -45,6 +45,16 @@ internal static class PcuReader
         pcu?["kind"] is JsonValue kind && kind.TryGetValue<string>(out var text) && text == "library";
 
     /// <summary>CMP-150 rules 2 and 3: the compiler fingerprint and (when given) the options fingerprint equal the current ones.</summary>
+    /// <summary>
+    /// CMP-1490 (e) (C-443): every record-helper entry of the interface carries <c>classified</c>. A <c>.pcu</c> where one does
+    /// not was written before the mutating methods were recorded: with the unit's source at hand it is out of date.
+    /// </summary>
+    public static bool HelpersAreClassified(JsonObject pcu) =>
+        pcu["interface"]?["types"] is not JsonArray types
+        || types.OfType<JsonObject>().All(t => t["kind"] is not JsonValue kind || !kind.TryGetValue<string>(out var name) || name != "helper"
+                                               || t["classHelper"] is JsonValue @class && @class.TryGetValue<bool>(out var isClass) && isClass
+                                               || t["classified"] is JsonValue classified && classified.TryGetValue<bool>(out var known) && known);
+
     public static bool HasFingerprints(JsonObject pcu, string compilerFingerprint, string? optionsFingerprint = null) =>
         Text(pcu, "compilerFingerprint") == compilerFingerprint
         && (optionsFingerprint is null || Text(pcu, "optionsFingerprint") == optionsFingerprint);
@@ -733,6 +743,8 @@ internal static class PcuReader
                     helper.Parent = entry["parent"] is null ? null
                         : Type(entry, "parent") as HelperTypeSymbol ?? throw new PcuFormatException($"the ancestor of '{name}' is not a helper");
                     helper.ClassVariables = ClassVars(helper, entry);
+                    // CMP-1490 (e) (C-443): an entry written before the classification existed has no key
+                    helper.IsClassified = entry["classified"] is JsonValue classified && classified.TryGetValue<bool>(out var known) && known;
                     helper.Methods = [.. Array(entry, "methods").Select(m => StaticMethod(helper, m!))];
                     helper.Properties = [.. (entry["properties"] as JsonArray ?? []).Select(p => Property(helper, p!))];
                     types.HasHelpers = true;
@@ -1020,6 +1032,8 @@ internal static class PcuReader
                 var helper = owner as HelperTypeSymbol;
                 method.SelfParameter = new ParameterSymbol("Self", helper?.ExtendedType ?? owner,
                     helper is { IsClassHelper: true } ? ParameterMode.Value : ParameterMode.Var, -1, method, []);
+                // CMP-1490 (c), (e) (C-443): the flag of LANG-996 (b); without `classified` every method counts as mutating
+                method.MutatesSelf = helper is { IsClassHelper: false } && (flags.Contains("mutating") || !helper.IsClassified);
             }
 
             if (Text(entry, "linkName") != method.LinkName)

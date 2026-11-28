@@ -194,6 +194,8 @@ internal sealed partial class BodyBinder
             return new BoundAssignmentStatement(assignment, target, value);
         }
 
+        _expressions.NoteSelfWrite(target);                                             // LANG-996 (b) rule 1 (C-443)
+
         return new BoundAssignmentStatement(assignment, target, _expressions.ConvertForAssignment(value, target.Type, assignment.Value));
     }
 
@@ -777,6 +779,8 @@ internal sealed partial class BodyBinder
         {
             return new BoundErrorStatement(syntax);
         }
+
+        _expressions.NoteSelfWrite(designator);                                 // LANG-996 (b) rule 5 (C-443)
 
         var scope = new Scope(ScopeKind.With, _scope, _routine);
         var name = "$with" + ++_withCount;
