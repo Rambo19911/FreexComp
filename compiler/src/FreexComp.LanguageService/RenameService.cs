@@ -459,9 +459,9 @@ public static class RenameService
                 : new Target(used.Name.Span, name, null, [], $"The unit '{name}' was not found.");
         }
 
-        foreach (var (span, qualified) in Qualifiers(model))
+        foreach (var (span, qualified, first) in Qualifiers(model))
         {
-            if (span.Contains(token.Span.Start))
+            if (span.Contains(token.Span.Start) && (first.File is null || ReferenceEquals(first.File, tree.Text)))
             {
                 return Unit(doc, span, tree.Text.Text.Substring(span.Start, span.Length), qualified);
             }
@@ -822,32 +822,56 @@ public static class RenameService
     /// </summary>
     private static IEnumerable<(SyntaxToken Token, string Path, int Reading)> NameTokens(SyntaxTree tree)
     {
-        var own = tree.Text;
-        var ownPath = PathUtil.Normalize(own.Path);
-        var readings = new Dictionary<SourceText, (string Path, int Reading)>(ReferenceEqualityComparer.Instance);
-        var counts = new Dictionary<string, int>(PathUtil.Comparer);
+        var origin = new Origins(tree);
         foreach (var token in tree.Root.DescendantTokens())
         {
-            if (!SyntaxFacts.IsNameToken(token) || token.IsMissing)
+            if (SyntaxFacts.IsNameToken(token) && !token.IsMissing)
             {
-                continue;
+                var (path, reading) = origin.Of(token);
+                yield return (token, path, reading);
+            }
+        }
+    }
+
+    /// <summary>
+    /// The file a token of a tree was read from: the tree's own (<c>Reading</c> -1) or an include file (LANG-876: positions in
+    /// the include file; <c>Reading</c> numbers the readings of that file in the tree, from 0, in the order of
+    /// <see cref="SyntaxTree.IncludedTrees"/>). Paths are normalized.
+    /// </summary>
+    private sealed class Origins
+    {
+        private readonly SourceText _own;
+        private readonly string _ownPath;
+        private readonly Dictionary<SourceText, (string Path, int Reading)> _readings = new(ReferenceEqualityComparer.Instance);
+        private readonly Dictionary<string, int> _counts = new(PathUtil.Comparer);
+
+        public Origins(SyntaxTree tree)
+        {
+            _own = tree.Text;
+            _ownPath = PathUtil.Normalize(tree.Text.Path);
+            foreach (var included in tree.IncludedTrees)
+            {
+                Add(included.Text);
+            }
+        }
+
+        /// <summary>Every reading of an include file in the tree.</summary>
+        public IEnumerable<(string Path, int Reading)> Readings => _readings.Values;
+
+        public (string Path, int Reading) Of(SyntaxToken token) =>
+            token.File is not { } file || ReferenceEquals(file, _own) ? (_ownPath, -1) : _readings.TryGetValue(file, out var reading) ? reading : Add(file);
+
+        private (string Path, int Reading) Add(SourceText file)
+        {
+            if (_readings.TryGetValue(file, out var known))
+            {
+                return known;
             }
 
-            if (token.File is not { } file || ReferenceEquals(file, own))
-            {
-                yield return (token, ownPath, -1);
-                continue;
-            }
-
-            if (!readings.TryGetValue(file, out var reading))
-            {
-                var path = PathUtil.Normalize(file.Path);
-                var count = counts.GetValueOrDefault(path);
-                counts[path] = count + 1;
-                readings[file] = reading = (path, count);
-            }
-
-            yield return (token, reading.Path, reading.Reading);
+            var path = PathUtil.Normalize(file.Path);
+            var count = _counts.GetValueOrDefault(path);
+            _counts[path] = count + 1;
+            return _readings[file] = (path, count);
         }
     }
 
@@ -1217,28 +1241,70 @@ public static class RenameService
             : null;
         var edits = new SortedDictionary<string, List<TextChange>>(PathUtil.Comparer);
         var names = new Dictionary<string, List<TextSpan>>(PathUtil.Comparer);
+        var paths = new Dictionary<(string Path, int Start), TextChange>();
+
+        // C-462 (CMP-1509): the unit names read from include files, per reading of each include file
+        var readings = new Dictionary<string, List<HashSet<TextSpan>>>(PathUtil.Comparer);
         foreach (var path in Paths(doc))
         {
             ct.ThrowIfCancellationRequested();
             var model = ModelOf(doc, path);
-            var spans = UnitNames(model, unit, ct);
+            var found = UnitNames(model, unit, ct);
+            var own = found.Where(f => f.Reading < 0).Select(f => f.Span).ToList();
+            if (own.Count > 0)
+            {
+                names[path] = own;
+                edits[path] = [.. own.Select(s => new TextChange(s, newName))];
+            }
+
+            if (!model.SyntaxTree.IncludedTrees.IsEmpty)
+            {
+                foreach (var (file, reading) in new Origins(model.SyntaxTree).Readings)
+                {
+                    if (!readings.TryGetValue(file, out var sets))
+                    {
+                        readings[file] = sets = [];
+                    }
+
+                    sets.Add([.. found.Where(f => f.Reading == reading && PathUtil.AreEqual(f.Path, file)).Select(f => f.Span)]);
+                }
+            }
+
+            if (rename is not null && found.Count > 0)
+            {
+                foreach (var (file, change) in InPaths(model, unit, fileName, Path.GetFileName(rename.NewPath)))
+                {
+                    paths.TryAdd((file, change.Span.Start), change);
+                }
+            }
+        }
+
+        var split = new List<(string Path, TextSpan Span)>();
+        foreach (var (file, sets) in readings.OrderBy(r => r.Key, PathUtil.Comparer))
+        {
+            var spans = sets.SelectMany(s => s).Distinct().OrderBy(s => s.Start).ToList();
             if (spans.Count == 0)
             {
                 continue;
             }
 
-            names[path] = spans;
-            var changes = spans.Select(s => new TextChange(s, newName)).ToList();
-            if (rename is not null)
+            split.AddRange(spans.Where(s => !sets.All(r => r.Contains(s))).Select(s => (file, s)));
+            names[file] = spans;
+            edits[file] = [.. spans.Select(s => new TextChange(s, newName))];
+        }
+
+        foreach (var ((file, _), change) in paths)
+        {
+            if (!edits.TryGetValue(file, out var changes))
             {
-                changes.AddRange(InPaths(model, unit, fileName, Path.GetFileName(rename.NewPath)));
+                edits[file] = changes = [];
             }
 
-            edits[path] = changes;
+            changes.Add(change);
         }
 
         var plan = new Plan(doc, edits, rename, newName, target.Name);
-        var conflicts = plan.Check([unit], names, ct);
+        var conflicts = plan.Check([unit], names, ct, split);
         return conflicts.IsEmpty ? new RenameResult(true, null, Edits(edits), rename) : Fail(conflicts);
     }
 
@@ -1250,24 +1316,57 @@ public static class RenameService
         _ => null,
     };
 
-    /// <summary>The whole-name spans in the model's file that name <paramref name="unit"/>: heading, uses entries, qualifiers; in text order.</summary>
-    private static List<TextSpan> UnitNames(SemanticModel model, UnitSymbol unit, CancellationToken ct)
+    /// <summary>
+    /// The whole-name spans of the model's tree that name <paramref name="unit"/>: heading, uses entries, qualifiers — each with the
+    /// file it was read from (C-462: a name read from an include file has the include file's path and a span in its text); in
+    /// path, reading and text order.
+    /// </summary>
+    private static List<(string Path, int Reading, TextSpan Span)> UnitNames(SemanticModel model, UnitSymbol unit, CancellationToken ct)
     {
-        var spans = new List<TextSpan>();
-        if (SymbolKey.AreSame(model.Unit, unit) && HeadingName(model.SyntaxTree.Root) is { } heading)
+        var origin = new Origins(model.SyntaxTree);
+        var spans = new List<(string Path, int Reading, TextSpan Span)>();
+        void Add(SyntaxNode name)
         {
-            spans.Add(heading.Span);
+            var (path, reading) = origin.Of(name.FirstToken());
+            spans.Add((path, reading, TokenSpan(name)));
         }
 
-        spans.AddRange(model.SyntaxTree.Root.DescendantNodes().OfType<UsedUnitSyntax>()
-            .Where(u => !u.Name.IsMissing && SymbolKey.AreSame(model.GetSymbolInfo(u, ct).Symbol, unit)).Select(u => u.Name.Span));
-        spans.AddRange(Qualifiers(model).Where(q => SymbolKey.AreSame(q.Unit, unit)).Select(q => q.Span));
-        return [.. spans.Distinct().OrderBy(s => s.Start)];
+        if (SymbolKey.AreSame(model.Unit, unit) && HeadingName(model.SyntaxTree.Root) is { } heading)
+        {
+            Add(heading);
+        }
+
+        foreach (var used in model.SyntaxTree.Root.DescendantNodes().OfType<UsedUnitSyntax>())
+        {
+            if (!used.Name.IsMissing && SymbolKey.AreSame(model.GetSymbolInfo(used, ct).Symbol, unit))
+            {
+                Add(used.Name);
+            }
+        }
+
+        foreach (var (span, qualified, first) in Qualifiers(model))
+        {
+            if (SymbolKey.AreSame(qualified, unit))
+            {
+                var (path, reading) = origin.Of(first);
+                spans.Add((path, reading, span));
+            }
+        }
+
+        return [.. spans.Distinct().OrderBy(s => s.Path, PathUtil.Comparer).ThenBy(s => s.Reading).ThenBy(s => s.Span.Start)];
     }
 
-    /// <summary>The file name inside <c>in '…'</c> of the uses entries naming <paramref name="unit"/>.</summary>
-    private static IEnumerable<TextChange> InPaths(SemanticModel model, UnitSymbol unit, string oldFile, string newFile)
+    /// <summary>The span of a node's tokens in the text they were read from (the node's own span skips tokens read from include files).</summary>
+    private static TextSpan TokenSpan(SyntaxNode node)
     {
+        var tokens = node.DescendantTokens().Where(t => !t.IsMissing).ToList();
+        return tokens.Count == 0 ? node.Span : TextSpan.FromBounds(tokens[0].Span.Start, tokens[^1].Span.End);
+    }
+
+    /// <summary>The file name inside <c>in '…'</c> of the uses entries naming <paramref name="unit"/>, with the path of the file the entry was read from.</summary>
+    private static IEnumerable<(string Path, TextChange Change)> InPaths(SemanticModel model, UnitSymbol unit, string oldFile, string newFile)
+    {
+        var origin = new Origins(model.SyntaxTree);
         foreach (var used in model.SyntaxTree.Root.DescendantNodes().OfType<UsedUnitSyntax>())
         {
             if (used.Path is not { IsMissing: false } literal || !SymbolKey.AreSame(model.GetSymbolInfo(used).Symbol, unit)
@@ -1279,7 +1378,7 @@ public static class RenameService
             var at = literal.Text.LastIndexOf(oldFile, StringComparison.OrdinalIgnoreCase);
             if (at >= 0)
             {
-                yield return new TextChange(new TextSpan(literal.Span.Start + at, oldFile.Length), newFile);
+                yield return (origin.Of(literal).Path, new TextChange(new TextSpan(literal.Span.Start + at, oldFile.Length), newFile));
             }
         }
     }
@@ -1289,7 +1388,7 @@ public static class RenameService
     /// proper prefix that is the name of a used unit (as written in a uses clause, or its own name) or of the file's own unit,
     /// unless <c>a</c> binds to a nearer declaration.
     /// </summary>
-    private static List<(TextSpan Span, UnitSymbol Unit)> Qualifiers(SemanticModel model)
+    private static List<(TextSpan Span, UnitSymbol Unit, SyntaxToken First)> Qualifiers(SemanticModel model)
     {
         var root = model.SyntaxTree.Root;
         var units = new Dictionary<string, UnitSymbol>(IdentifierComparer.Instance);
@@ -1308,7 +1407,7 @@ public static class RenameService
         }
 
         var heading = HeadingName(root);
-        var found = new List<(TextSpan, UnitSymbol)>();
+        var found = new List<(TextSpan, UnitSymbol, SyntaxToken)>();
         var parts = new List<SyntaxToken>();
         foreach (var first in root.DescendantNodes().OfType<IdentifierNameSyntax>())
         {
@@ -1351,7 +1450,7 @@ public static class RenameService
                 {
                     if (QuickInfoService.SymbolOf(model, parts[0]) is null or UnitSymbol)
                     {
-                        found.Add((TextSpan.FromBounds(parts[0].Span.Start, parts[length - 1].Span.End), unit));
+                        found.Add((TextSpan.FromBounds(parts[0].Span.Start, parts[length - 1].Span.End), unit, parts[0]));
                     }
 
                     break;
@@ -1459,14 +1558,14 @@ public static class RenameService
 
                 ct.ThrowIfCancellationRequested();
                 var before = ModelOf(doc, path);
-                var readsEdited = unitNames is null && before.SyntaxTree.IncludedTrees.Any(t => edits.ContainsKey(PathUtil.Normalize(t.Text.Path)));
+                var readsEdited = before.SyntaxTree.IncludedTrees.Any(t => edits.ContainsKey(PathUtil.Normalize(t.Text.Path)));
                 if (edits.TryGetValue(path, out var changes) || readsEdited)
                 {
                     CheckEdited(path, changes ?? [], before, fork, renamed, unitNames, last, conflicts, ct);
                 }
                 else
                 {
-                    CheckUnedited(path, before, fork, unitNames is null, last, conflicts, ct);
+                    CheckUnedited(path, before, fork, last, conflicts, ct);
                 }
             }
 
@@ -1509,7 +1608,7 @@ public static class RenameService
             var newTree = after.SyntaxTree;
             var names = unitNames is not null && unitNames.TryGetValue(path, out var spans) ? spans : [];
             var expected = unitNames is null ? null : UnitNames(after, after.Compilation.GetSemanticModel(NewPath(PathUtil.Normalize(renamed[0].Locations[0].Path))).Unit, ct);
-            Dictionary<(string Path, int Reading, int Start), SyntaxToken>? included = null;
+            Dictionary<(string Path, int Reading, int Start), SyntaxToken>? includeTokens = null;
             foreach (var (token, file, reading) in NameTokens(before.SyntaxTree))
             {
                 if (conflicts.Count >= MaxConflicts)
@@ -1517,11 +1616,19 @@ public static class RenameService
                     return;
                 }
 
+                var start = token.Span.Start;
                 if (reading >= 0)
                 {
-                    // CMP-1509: a name read from an include file (a unit rename edits none)
+                    // CMP-1509: a name read from an include file; C-462: a unit name there must still name the renamed unit
                     ct.ThrowIfCancellationRequested();
-                    if (unitNames is null && IncludeConflict(token, file, reading, before, after, ref included, last, out var editedInclude))
+                    if (unitNames is not null && unitNames.TryGetValue(file, out var included) && included.FirstOrDefault(s => s.Contains(start)) is { Length: > 0 } includedName)
+                    {
+                        if (includedName.Start == start && !expected!.Contains((file, reading, new TextSpan(Map(file, start), newName.Length))))
+                        {
+                            conflicts.Add(Conflict(doc.Compilation.GetSyntaxTree(file), includedName, newName));
+                        }
+                    }
+                    else if (IncludeConflict(token, file, reading, before, after, ref includeTokens, last, out var editedInclude))
                     {
                         conflicts.Add(Conflict(doc.Compilation.GetSyntaxTree(file), token.Span, editedInclude ? newName : token.Text));
                     }
@@ -1529,11 +1636,10 @@ public static class RenameService
                     continue;
                 }
 
-                var start = token.Span.Start;
                 if (names.FirstOrDefault(s => s.Contains(start)) is { Length: > 0 } unitName)
                 {
                     // a unit name: after the edit the same place must still name the renamed unit
-                    if (unitName.Start == start && !expected!.Contains(new TextSpan(Map(path, start), newName.Length)))
+                    if (unitName.Start == start && !expected!.Contains((NewPath(path), -1, new TextSpan(Map(path, start), newName.Length))))
                     {
                         conflicts.Add(Conflict(before.SyntaxTree, unitName, newName));
                     }
@@ -1567,7 +1673,7 @@ public static class RenameService
         /// CMP-1506: a file the rename does not edit. Its own name tokens spelled like the new name (a dotted unit name: its last
         /// part) that were bound must bind to the same declaration; a file that does not spell the name is not bound again.
         /// </summary>
-        private void CheckUnedited(string path, SemanticModel before, Compilation fork, bool includes, string last, ImmutableArray<RenameConflict>.Builder conflicts,
+        private void CheckUnedited(string path, SemanticModel before, Compilation fork, string last, ImmutableArray<RenameConflict>.Builder conflicts,
             CancellationToken ct)
         {
             SemanticModel? after = null;
@@ -1589,7 +1695,7 @@ public static class RenameService
                 {
                     // CMP-1509: a name spelled like the new one in an include file the unit reads
                     after ??= fork.GetSemanticModel(path);
-                    if (includes && IncludeConflict(token, file, reading, before, after, ref included, last, out _))
+                    if (IncludeConflict(token, file, reading, before, after, ref included, last, out _))
                     {
                         conflicts.Add(Conflict(doc.Compilation.GetSyntaxTree(file), token.Span, token.Text));
                     }

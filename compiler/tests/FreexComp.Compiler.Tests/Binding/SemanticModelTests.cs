@@ -128,6 +128,24 @@ public sealed class SemanticModelTests
         Assert.Equal("Count", Assert.IsType<FieldSymbol>(model.GetSymbolInfo(Node<IdentifierNameSyntax>(model, "Count :=")).Symbol).Name);
     }
 
+    /// <summary>
+    /// C-462 (LANG-876): a name read from an include file whose offset in the include text equals the offset of a declaration in
+    /// the unit's own text is a reference to what it names — not that declaration (the indexes are by own-file offset).
+    /// </summary>
+    [Fact]
+    [Trait("Req", "CMP-230")]
+    [Trait("Req", "LANG-876")]
+    public void GetSymbolInfo_IncludeTokenAtTheOffsetOfAnOwnDeclaration_IsItsReference()
+    {
+        const string program = "program P;\nvar Alpha, Beta: Integer;\nbegin\n  {$I B.inc}\nend.\n";
+        var model = Model(program, ("B.inc", new string(' ', program.IndexOf("Alpha", StringComparison.Ordinal)) + "Beta := 1;\n"));
+
+        var token = model.SyntaxTree.Root.DescendantTokens().Single(t => t.Kind == SyntaxKind.IdentifierToken && t.Text == "Beta" && t.Span.Start == program.IndexOf("Alpha", StringComparison.Ordinal));
+
+        Assert.Null(model.GetDeclaredSymbol(token));
+        Assert.Equal("Beta", model.GetSymbolInfo(token.Parent!).Symbol?.Name);
+    }
+
     [Fact]
     [Trait("Req", "CMP-230")]
     public void GetSymbolInfo_Invocation_IsTheChosenOverload()

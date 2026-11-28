@@ -284,7 +284,8 @@ public sealed class SemanticModel
     public Symbol? GetDeclaredSymbol(SyntaxToken identifier, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
-        return SyntaxFacts.IsNameToken(identifier) && !identifier.IsMissing && _declared.TryGetValue(identifier.Span.Start, out var symbol)
+        // the indexes are by offset in the own text: a token read from an include file is never found there (C-462)
+        return SyntaxFacts.IsNameToken(identifier) && !identifier.IsMissing && IsOwn(identifier) && _declared.TryGetValue(identifier.Span.Start, out var symbol)
             ? symbol
             : null;
     }
@@ -563,12 +564,15 @@ public sealed class SemanticModel
 
     private Symbol? Resolve(SyntaxNode node, SyntaxToken token)
     {
-        if (_references.TryGetValue(token.Span.Start, out var referenced))
+        // the indexes are by offset in the own text: a token read from an include file is resolved below (C-462)
+        var own = IsOwn(token);
+        var at = own ? token.Span.Start : node.Span.Start;                   // an include file's token: the directive's place
+        if (own && _references.TryGetValue(token.Span.Start, out var referenced))
         {
             return referenced;
         }
 
-        if (_declared.TryGetValue(token.Span.Start, out var declared))
+        if (own && _declared.TryGetValue(token.Span.Start, out var declared))
         {
             return declared;
         }
@@ -597,7 +601,7 @@ public sealed class SemanticModel
             return ContainerOf(left) switch
             {
                 UnitSymbol unit => unit.InterfaceMembers.FirstOrDefault(m => IdentifierComparer.Instance.Equals(m.Name, name)),
-                TypeSymbol type => LookupSymbols(token.Span.Start, name, type).FirstOrDefault() ?? type.GetMembers(name).FirstOrDefault(),
+                TypeSymbol type => LookupSymbols(at, name, type).FirstOrDefault() ?? type.GetMembers(name).FirstOrDefault(),
                 _ => null,
             };
         }
@@ -633,7 +637,7 @@ public sealed class SemanticModel
                 return accessor;
             }
 
-            if ((LookupSymbols(token.Span.Start, name, ownerProperty.Owner).FirstOrDefault() ?? ownerProperty.Owner.GetMembers(name).FirstOrDefault()) is { } member)
+            if ((LookupSymbols(at, name, ownerProperty.Owner).FirstOrDefault() ?? ownerProperty.Owner.GetMembers(name).FirstOrDefault()) is { } member)
             {
                 return member;
             }
@@ -646,12 +650,12 @@ public sealed class SemanticModel
 
         // C-355: in a type's declaration (a field's type, a method heading) a nested type or constant of that type or of an enclosing
         // one (LANG-770); a generic stands for its representative instance
-        if (left is null && GetEnclosingSymbol(token.Span.Start) is TypeSymbol enclosing)
+        if (left is null && GetEnclosingSymbol(at) is TypeSymbol enclosing)
         {
             for (Symbol? type = enclosing; type is TypeSymbol outer; type = outer.ContainingSymbol)
             {
                 var members = Representative(outer) ?? outer;
-                if (LookupSymbols(token.Span.Start, name, members).FirstOrDefault(m => m is TypeSymbol or ConstantSymbol) is { } member)
+                if (LookupSymbols(at, name, members).FirstOrDefault(m => m is TypeSymbol or ConstantSymbol) is { } member)
                 {
                     return member;
                 }

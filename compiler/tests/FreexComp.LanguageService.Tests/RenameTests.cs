@@ -1196,6 +1196,56 @@ public sealed class RenameTests
         Assert.Equal(["Bump.inc(1,1) Common [6]", "Bump.inc(1,11) Common [6]"], result.Conflicts.Select(Describe));
     }
 
+    /// <summary>
+    /// C-462 (CMP-752, 1509): a unit-qualified name read from an include file is edited in the include file's text — the edit
+    /// carries the include file's path, never the path of the unit that reads it. The file is read by the unit itself and by the
+    /// program; both readings agree, so it is edited once.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "CMP-752")]
+    [Trait("Req", "CMP-1509")]
+    public void UnitRename_QualifierInAnIncludeFile_EditsTheIncludeFile()
+    {
+        var files = IncludeFixture(IncludeUnit, "UInc.Shared := UInc.Shared + 1;\n");
+        files[0] = ("P.pas", "program P;\nuses UInc;\nbegin\n  Shared := 2;\n  {$I Bump.inc}\n  Bump;\nend.\n");
+
+        var result = Rename(files, "P.pas", "UInc;", "Common");
+
+        Assert.True(result.Success, result.Error);
+        Assert.Equal(["Bump.inc: 2", "P.pas: 1", "UInc.pas: 1"], Counts(result));
+        foreach (var edit in result.Edits)
+        {
+            var text = TextOf(files, Path.GetFileName(edit.Path));
+            Assert.All(edit.Changes, c => Assert.Equal("UInc", text.Substring(c.Span.Start, c.Span.Length)));
+        }
+
+        var after = Applied(files, result);
+        Assert.Equal("Common.Shared := Common.Shared + 1;\n", TextOf(after, "Bump.inc"));
+        Assert.Equal("program P;\nuses Common;\nbegin\n  Shared := 2;\n  {$I Bump.inc}\n  Bump;\nend.\n", TextOf(after, "P.pas"));
+        AssertCompiles(after);
+    }
+
+    /// <summary>
+    /// C-462 (CMP-1509): an include file whose qualifier names the renamed unit in one reading and something else in another
+    /// cannot be edited for one reading only: a conflict with the include-file sentence.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "CMP-1509")]
+    public void UnitRename_QualifierInAnIncludeFileReadWithAnotherMeaning_IsAConflict()
+    {
+        var files = IncludeFixture(IncludeUnit, "UInc.Shared := UInc.Shared + 1;\n");
+        files[0] = ("P.pas", "program P;\nuses UInc;\ntype TR = record Shared: Integer; end;\nprocedure Local;\nvar UInc: TR;\nbegin\n  {$I Bump.inc}\nend;\nbegin\n  Local;\nend.\n");
+
+        var result = Rename(files, "UInc.pas", "UInc;", "Common");
+
+        Assert.False(result.Success);
+        Assert.Equal("Renaming 'UInc' to 'Common' would change only some of the meanings of 'UInc' in the include file Bump.inc(1,1).", result.Error);
+        // the qualifiers for one reading only; the field names after them would bind to the unit's variable in the other
+        Assert.Equal(["Bump.inc(1,1) Common [4]", "Bump.inc(1,6) Shared [6]", "Bump.inc(1,16) Common [4]", "Bump.inc(1,21) Shared [6]"],
+            result.Conflicts.Select(Describe));
+        Assert.Empty(result.Edits);
+    }
+
     private static string Unrenamed(RenameResult result) =>
         string.Join(" ", result.Unrenamed.Select(u => $"{Path.GetFileName(u.Location.Path)}({u.Location.LineSpan.Start.Line + 1},{u.Location.LineSpan.Start.Column + 1}){u.Kind}"));
 
