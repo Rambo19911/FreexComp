@@ -33,6 +33,20 @@ public sealed class ClassBindingTests
     }
 
     /// <summary>
+    /// intrinsics.md §1 (found by C-421): <c>Assigned(o)</c> of a class value tests the reference against <c>nil</c>, as for a
+    /// pointer or an interface; a value that is no reference stays E2010.
+    /// </summary>
+    [Theory]
+    [Trait("Req", "LANG-900")]
+    [InlineData("B := Assigned(O)", null)]
+    [InlineData("B := Assigned(O.Next) and not Assigned(O.Next.Next)", null)]
+    [InlineData("if Assigned(O) then O.Next := nil", null)]
+    [InlineData("B := Assigned(I)", "E2010(1,87): Incompatible types: 'Integer' and 'Pointer'")]
+    public void Assigned_OfAClassValue(string statement, string? expected) =>
+        Assert.Equal(expected is null ? [] : [expected],
+            BindDiagnostics($"type TA = class Next: TA; end; var O: TA; B: Boolean; I: Integer; begin {statement} end."));
+
+    /// <summary>
     /// C-212 (LANG-622 clarified): a second <c>message</c> handler for the same id in one class is E2004 at its id, with the first
     /// handler as related location; a descendant may handle the same id.
     /// </summary>

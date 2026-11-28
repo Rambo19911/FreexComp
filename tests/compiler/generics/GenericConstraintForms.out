@@ -1,0 +1,20 @@
+objects: 1 2 3
+references: 10 20 30
+map: base child TRUE
+map: child FALSE
+pair: FALSE
+pair: TRUE child 7
+pair: FALSE
+make: polite says good day
+make: polite kid says good day
+slot: TRUE FALSE FALSE
+slot: FALSE TRUE FALSE base
+slot: TRUE child
+slot: TRUE
+slot: TRUE child
+greeting: hey! HEY
+greeting: good day!
+namer: base child child
+method: child child, child child
+method: 8 b 2.5
+method: child

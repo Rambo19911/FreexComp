@@ -223,11 +223,14 @@ internal sealed partial class DeclarationBinder
     }
 
     /// <summary>
-    /// LANG-702 (C-118): the constraints of each type parameter, bound in this scope; <c>class</c> with <c>record</c>, or two class
-    /// types, are E2701 (at the later one).
+    /// LANG-702 (C-118), LANG-982 (C-421): the constraints of each type parameter, bound in this scope. <c>record</c> with
+    /// <c>class</c>, with <c>constructor</c>, with a class type or with an interface type, and two class types, are E2701 — one per
+    /// conflicting pair, at the later item. A constraint type that is no class or interface type, or that names a type parameter
+    /// (of this list or of an enclosing generic), is E2603. A keyword or type written twice has no further effect.
     /// </summary>
     private ImmutableArray<TypeParameterConstraints> BindConstraints(TypeParameterListSyntax typeParameters)
     {
+        var listed = typeParameters.Parameters.SelectMany(p => p.Identifiers).Where(i => !i.Identifier.IsMissing).Select(i => NameOf(i.Identifier)).ToList();
         var result = ImmutableArray.CreateBuilder<TypeParameterConstraints>();
         foreach (var parameter in typeParameters.Parameters)
         {
@@ -237,21 +240,29 @@ internal sealed partial class DeclarationBinder
             var name = parameter.Identifiers.Count > 0 ? NameOf(parameter.Identifiers[0].Identifier) : "";
             foreach (var constraint in parameter.Constraints)
             {
-                var conflict = false;
+                var conflicts = 0;                                              // the earlier items this one cannot be combined with
                 switch (constraint)
                 {
                     case KeywordConstraintSyntax { Keyword.Kind: SyntaxKind.ClassKeyword }:
-                        conflict = isRecord;
+                        conflicts = isRecord && !isClass ? 1 : 0;
                         isClass = true;
                         break;
                     case KeywordConstraintSyntax { Keyword.Kind: SyntaxKind.RecordKeyword }:
-                        conflict = isClass || types.Any(t => t is ClassTypeSymbol);
+                        conflicts = isRecord ? 0 : (isClass ? 1 : 0) + (isConstructor ? 1 : 0) + types.Count;
                         isRecord = true;
                         break;
                     case KeywordConstraintSyntax:
+                        conflicts = isRecord && !isConstructor ? 1 : 0;
                         isConstructor = true;
                         break;
                     case TypeSyntax typeSyntax:
+                        if (typeSyntax is NamedTypeSyntax { Name: IdentifierNameSyntax { Identifier: { IsMissing: false } token } }
+                            && (listed.Contains(NameOf(token), IdentifierComparer.Instance) || _scope.DeclaringScope(NameOf(token)) is { DeclaresTypeParameters: true }))
+                        {
+                            _diagnostics.Report(typeSyntax, "E2603");           // a type parameter, whatever its argument is
+                            continue;
+                        }
+
                         var type = BindType(typeSyntax);
                         if (type.TypeKind == TypeKind.Error)
                         {
@@ -264,13 +275,18 @@ internal sealed partial class DeclarationBinder
                             continue;
                         }
 
-                        conflict = type is ClassTypeSymbol && (isRecord || types.Any(t => t is ClassTypeSymbol));
+                        if (types.Contains(type, ReferenceEqualityComparer.Instance))
+                        {
+                            continue;                                           // written twice
+                        }
+
+                        conflicts = (isRecord ? 1 : 0) + (type is ClassTypeSymbol ? types.Count(t => t is ClassTypeSymbol) : 0);
                         types.Add(type);
                         texts.Add(type.Name);
                         break;
                 }
 
-                if (conflict)
+                for (; conflicts > 0; conflicts--)
                 {
                     _diagnostics.Report(constraint, "E2701", name);
                 }
@@ -287,8 +303,9 @@ internal sealed partial class DeclarationBinder
     }
 
     /// <summary>
-    /// LANG-702 (C-118): E2704 at the argument (or <paramref name="at"/>) for every type argument that misses a constraint of its type
-    /// parameter; false when one did.
+    /// LANG-702 (C-118), LANG-983, 984 (C-421): E2704 at the argument (or <paramref name="at"/>) for every constraint a type argument
+    /// misses — the arguments in order, for each <c>class</c>, <c>record</c>, <c>constructor</c>, then the constraint types as
+    /// written; false when one did.
     /// </summary>
     private bool CheckConstraints(ImmutableArray<string> names, ImmutableArray<TypeParameterConstraints> constraints, ImmutableArray<TypeSymbol> arguments,
         SeparatedSyntaxList<TypeSyntax>? argumentSyntax, SyntaxNode at)
@@ -320,9 +337,7 @@ internal sealed partial class DeclarationBinder
                 Fail("record");
             }
 
-            if (c.Constructor && !(argument is ClassTypeSymbol @class && @class.SelfAndAncestors().SelectMany(a => a.Methods)
-                    .Any(m => m is { MethodKind: MethodKind.Constructor, Parameters.IsEmpty: true, Visibility: Visibility.Public or Visibility.Published }
-                        && IdentifierComparer.Instance.Equals(m.Name, "Create"))))
+            if (c.Constructor && CreatedBy(argument) is null)
             {
                 Fail("constructor");
             }
@@ -344,6 +359,26 @@ internal sealed partial class DeclarationBinder
         }
 
         return ok;
+    }
+
+    /// <summary>
+    /// LANG-983 (C-421): what satisfies the <c>constructor</c> constraint for <paramref name="argument"/> — the constructor the call
+    /// <c>X.Create</c> without arguments resolves to (the methods of that name the class sees, LANG-441; the overload chosen for no
+    /// arguments, LANG-442) when it is <c>public</c> or <c>published</c>: the call as code outside the class hierarchy writes it,
+    /// which is what <c>T.Create</c> in the generic's body binds per instance. Null for a type that is no class, a <c>Create</c>
+    /// that needs arguments or is ambiguous, one hidden by a field or property, one that is no constructor, a private or protected one.
+    /// </summary>
+    private MethodSymbol? CreatedBy(TypeSymbol argument)
+    {
+        if (argument is not ClassTypeSymbol type)
+        {
+            return null;
+        }
+
+        var resolved = new OverloadResolver(_conversions).Resolve(ExpressionBinder.MemberCandidates(type, "Create"), ImmutableArray<BoundExpression>.Empty, _ => false);
+        return resolved.Routine is MethodSymbol { MethodKind: MethodKind.Constructor, Visibility: Visibility.Public or Visibility.Published } constructor
+            ? constructor
+            : null;
     }
 
     /// <summary>
@@ -983,8 +1018,10 @@ internal sealed partial class DeclarationBinder
     /// </summary>
     internal MethodCandidate? CandidateMethod(GenericMethodSymbol generic, ImmutableArray<TypeSymbol> arguments, SyntaxNode at)
     {
-        var written = at is MemberAccessExpressionSyntax { Name: GenericNameSyntax name } ? name.TypeArgumentList.Arguments : (SeparatedSyntaxList<TypeSyntax>?)null;
-        if (!CheckConstraints(generic.ParameterNames, generic.Constraints, arguments, written, at is MemberAccessExpressionSyntax access ? access.Name : at))
+        // LANG-984 (C-421): at the written type argument (TUtil.Keep<Integer>; Keep<Integer> inside the type), else at the method name
+        var methodName = at is MemberAccessExpressionSyntax access ? access.Name : at;
+        var written = methodName is GenericNameSyntax name ? name.TypeArgumentList.Arguments : (SeparatedSyntaxList<TypeSyntax>?)null;
+        if (!CheckConstraints(generic.ParameterNames, generic.Constraints, arguments, written, methodName))
         {
             return null;
         }

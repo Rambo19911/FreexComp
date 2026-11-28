@@ -131,6 +131,32 @@ internal sealed class TypeParameterTypeSymbol : TypeSymbol
             : Constraints.Types.Where(t => t is InterfaceTypeSymbol).Prepend(root);
 
     /// <summary>
+    /// C-421: <c>type T</c>, then its constraints in the order they are checked (LANG-984) — <c>type T: class, constructor, TBase,
+    /// IGreeter</c> — for hover.
+    /// </summary>
+    public override string ToDisplayString()
+    {
+        var items = new List<string>();
+        if (Constraints.Class)
+        {
+            items.Add("class");
+        }
+
+        if (Constraints.Record)
+        {
+            items.Add("record");
+        }
+
+        if (Constraints.Constructor)
+        {
+            items.Add("constructor");
+        }
+
+        items.AddRange(Constraints.TypeTexts);
+        return items.Count == 0 ? base.ToDisplayString() : base.ToDisplayString() + ": " + string.Join(", ", items);
+    }
+
+    /// <summary>
     /// C-416 (LANG-976): <paramref name="type"/> depends on a type parameter of an open instance — it is one, an instance with one
     /// among its type arguments, a type nested in such an instance, or an array, pointer, set or class reference made of one.
     /// </summary>

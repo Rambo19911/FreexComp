@@ -1650,8 +1650,9 @@ internal sealed partial class ExpressionBinder
 
         if (intrinsic.Intrinsic == IntrinsicKind.Assigned)
         {
-            if (operand.Type is DynamicArrayTypeSymbol or ProceduralTypeSymbol or MethodPointerTypeSymbol or InterfaceTypeSymbol)
+            if (operand.Type is DynamicArrayTypeSymbol or ProceduralTypeSymbol or MethodPointerTypeSymbol or InterfaceTypeSymbol or ClassTypeSymbol)
             {
+                // C-421 (intrinsics.md §1): a class value is assigned when the reference is not nil
                 // C-120: an interface (a method reference, LANG-724) is assigned when it is not nil
                 // a method pointer is assigned when its Code is not nil (LANG-481, C-103)
                 // intrinsics.md §1 (C-067): a dynamic array is assigned when its block reference is not nil (LANG-257)

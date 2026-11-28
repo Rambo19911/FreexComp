@@ -572,6 +572,11 @@ public sealed class SemanticModel
             }
         }
 
+        if (left is null && MethodTypeParameter(nameNode, name) is { } methodTypeParameter)
+        {
+            return methodTypeParameter;
+        }
+
         // C-355: in a type's declaration (a field's type, a method heading) a nested type or constant of that type or of an enclosing
         // one (LANG-770); a generic stands for its representative instance
         if (left is null && GetEnclosingSymbol(token.Span.Start) is TypeSymbol enclosing)
@@ -582,6 +587,13 @@ public sealed class SemanticModel
                 if (LookupSymbols(token.Span.Start, name, members).FirstOrDefault(m => m is TypeSymbol or ConstantSymbol) is { } member)
                 {
                     return member;
+                }
+
+                // C-421: a type parameter of the generic is its argument in that instance (in the open one: itself, with its constraints)
+                if (members is TypeSymbol { GenericDefinition: GenericTypeSymbol definition, TypeArguments: var typeArguments }
+                    && definition.ParameterNames.IndexOf(name, 0, IdentifierComparer.Instance) is >= 0 and var index && index < typeArguments.Length)
+                {
+                    return typeArguments[index];
                 }
             }
         }
@@ -606,6 +618,31 @@ public sealed class SemanticModel
             UnitSymbol u => u,
             _ => GetTypeInfo(left).Type,
         };
+    }
+
+    /// <summary>
+    /// C-421: a type parameter of a generic method named in that method's heading — in its list, a parameter type or the result
+    /// type, of the declaration in the type or of the implementation — is the type standing for it in the method's open instance,
+    /// which carries its constraints (hover). Null for any other name.
+    /// </summary>
+    private TypeSymbol? MethodTypeParameter(SyntaxNode? nameNode, string name)
+    {
+        if (nameNode?.FirstAncestorOrSelf<RoutineHeadingSyntax>() is not { TypeParameterList: { } list } heading
+            || !list.Parameters.SelectMany(p => p.Identifiers).Any(i => IdentifierComparer.Instance.Equals(NameOf(i.Identifier), name))
+            || (heading.Name is QualifiedNameSyntax qualified ? ContainerOf(qualified.Left) as TypeSymbol : EnclosingType(heading.Span.Start)) is not { } owner)
+        {
+            return null;
+        }
+
+        var method = DeclarationBinder.GenericMethodsOf(Representative(owner) ?? owner).FirstOrDefault(g =>
+            ReferenceEquals(g.Declaration.Heading, heading) || ReferenceEquals(g.Implementation?.Declaration.Heading, heading));
+        if (method is null || DeclarationBinder.OpenInstanceOf(_result.Types, method) is not { } open)
+        {
+            return null;
+        }
+
+        var index = method.ParameterNames.IndexOf(name, 0, IdentifierComparer.Instance);
+        return index >= 0 && index < open.GenericMethodArguments.Length ? open.GenericMethodArguments[index] : null;
     }
 
     /// <summary>

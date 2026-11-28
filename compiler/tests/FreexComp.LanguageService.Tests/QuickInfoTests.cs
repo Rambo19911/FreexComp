@@ -238,6 +238,101 @@ public sealed class QuickInfoTests
     }
 
     /// <summary>
+    /// C-421 (LANG-982): hover on a type parameter of a generic nothing instantiates shows its constraints — the keywords in the
+    /// order <c>class</c>, <c>record</c>, <c>constructor</c>, then the constraint types as written; a shared list for each of its
+    /// names; nothing after the name without constraints — in the type parameter list, in the declaration, in method headings and
+    /// in bodies; the same for a type parameter of a generic method in its headings. Completion after a value of it offers the
+    /// members its constraints give (<c>TObject</c>'s for <c>class</c>, none for <c>record</c>).
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "LANG-982")]
+    public void UninstantiatedGeneric_TypeParameterShowsConstraints()
+    {
+        var text = """
+            unit UO;
+            interface
+            type
+              TThing = class
+              public
+                Name: string;
+              end;
+              IShape = interface
+                function Area: Integer;
+              end;
+              TMulti<T: IShape, constructor, TThing, class; R: record; K, L: class; U> = class
+              public
+                A: T;
+                B: R;
+                C: K;
+                D: L;
+                E: U;
+                procedure Use(const V: T);
+                class function Pick<X: class>(const P: X): X;
+              end;
+              TUtil = class
+              public
+                class function Larger<N: record; M>(const A, B: N; const C: M): N;
+              end;
+            implementation
+            class function TUtil.Larger<N, M>(const A, B: N; const C: M): N;
+            begin
+              Result := A;
+            end;
+            class function TMulti<T, R, K, L, U>.Pick<X>(const P: X): X;
+            begin
+              Result := P;
+            end;
+            procedure TMulti<T, R, K, L, U>.Use(const V: T);
+            var
+              Held: T;
+            begin
+              A.Name := '';
+              C.Free;
+              B.Size;
+            end;
+            end.
+            """.ReplaceLineEndings("\n");
+        var doc = GenericNamesFixture.OpenUninstantiated(text);
+        string? At(string piece, string segment) =>
+            QuickInfoService.GetQuickInfo(doc, GenericNamesFixture.Offset(text, piece) + piece.LastIndexOf(segment, StringComparison.Ordinal) + 1,
+                                          TestContext.Current.CancellationToken)?.Signature;
+        string[] After(string piece)
+        {
+            var caret = GenericNamesFixture.Offset(text, piece) + piece.Length;
+            return [.. CompletionService.GetCompletions(doc, caret, new CompletionTrigger(CompletionTriggerKind.Character, '.'), TestContext.Current.CancellationToken)
+                .Items.Select(i => i.Label)];
+        }
+
+        Assert.Equal("type T: class, constructor, IShape, TThing", At("A: T", "T"));
+        Assert.Equal("type R: record", At("B: R", "R"));
+        Assert.Equal("type K: class", At("C: K", "K"));
+        Assert.Equal("type L: class", At("D: L", "L"));
+        Assert.Equal("type U", At("E: U", "U"));
+        // in a method heading of the declaration and of the implementation, and in the body
+        Assert.Equal("type T: class, constructor, IShape, TThing", At("procedure Use(const V: T)", "T"));
+        Assert.Equal("type T: class, constructor, IShape, TThing", At(".Use(const V: T)", "T"));
+        Assert.Equal("type T: class, constructor, IShape, TThing", At("Held: T", "T"));
+        Assert.Equal("type T: class, constructor, IShape, TThing", At("TMulti<T: IShape", "T"));              // in the list itself
+        Assert.Equal("type T: class, constructor, IShape, TThing", At("procedure TMulti<T, R", "T"));
+        // a type parameter of a generic method, in its headings
+        Assert.Equal("type X: class", At("Pick<X: class>(const P: X): X;", "X"));
+        Assert.Equal("type X: class", At("Pick<X: class>(const P: X)", "X"));
+        Assert.Equal("type X: class", At("Pick<X: class", "X"));
+        Assert.Equal("type X: class", At(".Pick<X>(const P: X): X;", "X"));
+        Assert.Equal("type X: class", At(".Pick<X", "X"));
+        Assert.Equal("type N: record", At("Larger<N: record; M>(const A, B: N", "N"));          // of a type that is no generic
+        Assert.Equal("type M", At("Larger<N: record; M>(const A, B: N; const C: M", "M"));
+        Assert.Equal("type N: record", At("TUtil.Larger<N, M>(const A, B: N; const C: M): N", "N"));
+
+        Assert.Contains("Name", After("  A."));
+        Assert.Contains("Area", After("  A."));
+        Assert.Contains("Free", After("  C."));
+        Assert.DoesNotContain("Name", After("  C."));
+        Assert.Empty(After("  B."));
+    }
+
+    /// <summary>
     /// CMP-1400 (C-377): hover on a class constructor's (destructor's) declaration or implementation heading shows
     /// <c>class constructor TA.Create</c>; hover on a call <c>TA.Create(1)</c> shows the ordinary constructor (LANG-787).
     /// </summary>
