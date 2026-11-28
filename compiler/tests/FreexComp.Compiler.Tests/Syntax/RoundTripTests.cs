@@ -84,6 +84,16 @@ public sealed class RoundTripTests
         finalization
         end.
         """,
+        """
+        program Literals;
+        const K = Integer.Ten * 2; Big = 3000000000;
+        begin
+          WriteLn(42.Squared, (1 + 2).Squared, -5.Squared, $10.Squared, 1.5.Half:0:2, 1.5e1.Half);
+          WriteLn('abc'.Len, 'abc'.Twice.Len, ''.Len, #55.IsDigit, 'x'.Len, True.ToText, 42.ToText.Chars[0]);
+          WriteLn(string.Repeated('ab', 2), string.Join(',', ['a', 'b']), Integer.Parse('12') + 1, 1.e5);
+          case K of 1..5: WriteLn(K); end;
+        end.
+        """,
     ];
 
     [Fact]
@@ -120,6 +130,7 @@ public sealed class RoundTripTests
     }
 
     [Fact]
+    [Trait("Req", "LANG-997")]
     public void ValidSources_ParseWithoutDiagnostics()
     {
         foreach (var text in ValidSources)

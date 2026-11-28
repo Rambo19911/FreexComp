@@ -50,6 +50,7 @@ public sealed partial class LexerTests
 
     [Theory]
     [Trait("Req", "LANG-131")]
+    [Trait("Req", "LANG-997")]
     [InlineData("'a' 'b'", new[] { "'a'", "'b'" })]
     [InlineData("'a'\r\n'b'", new[] { "'a'", "'b'" })]
     [InlineData("#13 #10", new[] { "#13", "#10" })]
@@ -63,6 +64,8 @@ public sealed partial class LexerTests
     [InlineData("#65x", new[] { "#65", "x" })]
     [InlineData("#$41G", new[] { "#$41", "G" })]
     [InlineData("x:='a';", new[] { "x", ":=", "'a'", ";" })]
+    [InlineData("'abc'.Len", new[] { "'abc'", ".", "Len" })]               // LANG-997 (e)
+    [InlineData("#65.IsDigit", new[] { "#65", ".", "IsDigit" })]
     public void Strings_TokenBoundaries(string text, string[] expected)
     {
         Assert.Equal(expected, Lex(text).Select(t => t.Text));

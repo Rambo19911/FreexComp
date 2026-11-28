@@ -609,6 +609,8 @@ public sealed partial class HelperBindingTests
         { "constant: an enumeration element, reading", "GS := Green.Name", null },
         { "constant: a folded expression, mutating", "(Five + 1).Bump{!E2752}", "Bump" },
         { "constant: a property with a mutating accessor", "G := Five.Next{!E2752}", "Take" },
+        { "constant: an integer literal, a property with a mutating accessor", "G := 5.Next{!E2752}", "Take" },   // C-444
+        { "constant: an integer literal, reading", "G := 5.Squared", null },
 
         // locations: the method works on the receiver itself
         { "location: a local variable", "L.Bump", null },

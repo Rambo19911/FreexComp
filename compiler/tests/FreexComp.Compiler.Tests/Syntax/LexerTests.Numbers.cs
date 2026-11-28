@@ -176,6 +176,7 @@ public sealed partial class LexerTests
     [Theory]
     [Trait("Req", "LANG-105")]
     [Trait("Req", "LANG-128")]
+    [Trait("Req", "LANG-997")]
     [InlineData("1..5", new[] { "1", "..", "5" })]          // lexical.md §9
     [InlineData("x.1", new[] { "x", ".", "1" })]            // lexical.md §9
     [InlineData("(.1.)", new[] { "(.", "1", ".)" })]        // lexical.md §9
@@ -195,6 +196,10 @@ public sealed partial class LexerTests
     [InlineData("$_1", new[] { "$", "_1" })]
     [InlineData("&8", new[] { "&", "8" })]
     [InlineData("&_1", new[] { "&_1" })]
+    [InlineData("42.ToString", new[] { "42", ".", "ToString" })]       // LANG-997 (e)
+    [InlineData("1.5.Frac", new[] { "1.5", ".", "Frac" })]
+    [InlineData("1.5e3.Half", new[] { "1.5e3", ".", "Half" })]
+    [InlineData("$FF.ToText", new[] { "$FF", ".", "ToText" })]
     public void Numbers_TokenBoundaries(string text, string[] expected)
     {
         var (tokens, _) = LexAll(text);

@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Numerics;
 using FreexComp.Compiler.Symbols;
 using FreexComp.Compiler.Syntax;
 using FreexComp.Compiler.Types;
@@ -656,7 +657,9 @@ internal sealed partial class ExpressionBinder
         }
 
         var name = syntax.Name.Identifier.Value as string ?? syntax.Name.Identifier.Text;
-        var qualifierType = TypeNamedBy(syntax.Expression);
+        var qualifierType = syntax.Expression is PredefinedTypeExpressionSyntax
+            ? _types.String                                                         // LANG-997 (b) (C-444): string.Join(…)
+            : TypeNamedBy(syntax.Expression);
         if (qualifierType is ErrorTypeSymbol || qualifierType is not null && IncompleteInstance(syntax.Expression, qualifierType))
         {
             return Error(syntax);                                                   // C-116: a generic name already reported
@@ -748,6 +751,14 @@ internal sealed partial class ExpressionBinder
         if (HelperFor(receiver.Type, name) is { } helper)
         {
             return HelperMember(syntax, call, argumentList, helper, receiver, name, out methodCall);         // LANG-752 (C-124)
+        }
+
+        if (ReferenceEquals(receiver.Type, _types.Char) && receiver.ConstantValue is { Value: BigInteger code }
+            && HelperFor(_types.String, name) is { } stringHelper)
+        {
+            // LANG-998 (b) (C-444): a character constant without the member for Char is the one-character string
+            var text = new BoundLiteral(receiver.Syntax, new ConstantValue(((char)(int)code).ToString(), _types.String));
+            return HelperMember(syntax, call, argumentList, stringHelper, text, name, out methodCall);
         }
 
         if (receiver.Type is ClassTypeSymbol type)

@@ -1,4 +1,5 @@
 using System.Numerics;
+using FreexComp.Compiler.Binding;
 using FreexComp.Compiler.Symbols;
 using FreexComp.Compiler.Types;
 using static FreexComp.Compiler.Tests.Binding.BinderTestHelper;
@@ -475,5 +476,103 @@ public sealed class ConstantFolderTests
             + "(:= B:Boolean (In:Boolean N:TTypeKind 65538:set of TTypeKind)) "                 // the constructor is the set constant {1, 16}
             + "(:= B:Boolean True:Boolean) (:= B:Boolean True:Boolean) (:= B:Boolean True:Boolean) (:= B:Boolean False:Boolean) (:= B:Boolean True:Boolean))",
             BoundDump.Of(routine.Body));
+    }
+
+    private const string HelperConstantsProgram = """
+        program P;
+        type
+          TColor = (Red, Green, Blue);
+          TIntH = record helper for Integer
+          const
+            MaxValue = 2147483647;
+            Ten = 10;
+          public
+            function Squared: Integer;
+          end;
+          TStrH = record helper for string
+          const
+            Empty = '';
+            Greeting = 'hi';
+          public
+            function Len: Integer;
+          end;
+          TColorH = record helper for TColor
+          const
+            Last = Blue;
+            Red = 5;
+          end;
+        $DECL$
+        function TIntH.Squared: Integer;
+        begin
+          Result := Self * Self;
+        end;
+        function TStrH.Len: Integer;
+        begin
+          Result := Length(Self);
+        end;
+        $BODY$
+        begin
+        end.
+        """;
+
+    private static BindingResult BindHelperConstants(string declarations, string body = "") =>
+        Bind(HelperConstantsProgram.ReplaceLineEndings("\n").Replace("$DECL$", declarations, StringComparison.Ordinal)
+            .Replace("$BODY$", body, StringComparison.Ordinal)).Result;
+
+    /// <summary>
+    /// LANG-998 (d) (C-444): a true constant of a helper is a constant expression when named through the helped type
+    /// (<c>Integer.MaxValue</c>), through <c>string.</c> or through the helper's own name — in a <c>const</c> declaration, an array
+    /// bound, a default parameter value and a <c>case</c> label; an element of an enumeration comes before a helper constant of the
+    /// same name. (c): a call of a helper method or a read of a helper member on any receiver is no constant expression (E2050).
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "LANG-998")]
+    public void HelperConstantsThroughTheTypeName()
+    {
+        var result = BindHelperConstants("""
+            const
+              A = Integer.MaxValue;
+              B = Integer.Ten * 2 + TIntH.Ten;
+              C = string.Greeting + 'x';
+              D = string.Empty;
+              E = TColor.Last;
+              F = Ord(TColor.Red);
+            type
+              TArr = array[1..Integer.Ten] of Byte;
+            procedure Q(N: Integer = Integer.Ten; const S: string = string.Greeting);
+            begin
+              case N of
+                Integer.Ten: WriteLn(S);
+                Integer.Ten + 1..Integer.MaxValue: WriteLn(N);
+              end;
+            end;
+            """);
+
+        Assert.Equal([], Format(result.Diagnostics));
+        string Of(string name)
+        {
+            var constant = Assert.IsType<ConstantSymbol>(result.Scope.LookupLocal(name));
+            return $"{constant.Type.Name} {constant.Value!.ToDisplayString()}";
+        }
+
+        Assert.Equal(
+            ["Integer 2147483647", "Integer 30", "string 'hix'", "string ''", "TColor 2", "Integer 0"],
+            new[] { "A", "B", "C", "D", "E", "F" }.Select(Of));
+        Assert.Equal(new BigInteger(10), Assert.IsType<ArrayTypeSymbol>(result.Scope.LookupLocal("TArr")).High);
+        var q = result.Routines.Single(r => r.Routine.Name == "Q").Routine;
+        Assert.Equal(["10", "'hi'"], q.Parameters.Select(p => p.DefaultValue!.ToDisplayString()));
+    }
+
+    [Theory]
+    [Trait("Phase", "8")]
+    [Trait("Req", "LANG-998")]
+    [InlineData("const K = 5.Squared;", "E2050(23,11): Constant expression expected")]
+    [InlineData("const K = Integer.Ten.Squared;", "E2050(23,11): Constant expression expected")]
+    [InlineData("const K = 'abc'.Len + 1;", "E2050(23,11): Constant expression expected")]
+    [InlineData("const K = string.Greeting.Len;", "E2050(23,11): Constant expression expected")]
+    public void HelperConstantsThroughTheTypeName_CallsAreNotConstant(string declaration, string expected)
+    {
+        Assert.Equal([expected], Format(BindHelperConstants(declaration).Diagnostics));
     }
 }

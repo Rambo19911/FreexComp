@@ -113,6 +113,10 @@ internal sealed class ConstantFolder
                 && NestedNames.AccessibleTypeNamedBy(_scope, memberAccess.Expression, Generic, _diagnostics, _types) is { } outer
                 && (outer is ErrorTypeSymbol || IncompleteInstance(memberAccess.Expression, outer)):
                 return null;                                                    // C-353: reported at the generic segment; C-360: E2610 at an inaccessible one
+            case MemberAccessExpressionSyntax memberAccess when HelperConstant(memberAccess) is { } helperConstant:
+                return NestedNames.ReportInaccessibleNestedValue(_scope, memberAccess.Name, helperConstant, _diagnostics) ? null
+                    : helperConstant is EnumMemberSymbol helperElement ? helperElement.Value
+                    : ValueOf((ConstantSymbol)helperConstant);                  // LANG-998 (d) (C-444): Integer.MaxValue, string.Empty
             case MemberAccessExpressionSyntax memberAccess when NestedNames.NestedMember(_scope, memberAccess, Generic) is { } nested:
                 if (NestedNames.ReportInaccessibleNestedValue(_scope, memberAccess.Name, nested, _diagnostics))
                 {
@@ -265,6 +269,30 @@ internal sealed class ConstantFolder
 
         _diagnostics.Report(access.Name, "E2005", type.Name, text);
         return null;
+    }
+
+    /// <summary>
+    /// LANG-998 (d) (C-444): <c>T.Name</c> — <c>T</c> a type name or the keyword <c>string</c> — names a true constant (or an element
+    /// of an enumeration nested) in the active helper of <c>T</c> or of an ancestor level (LANG-992); an element of an enumeration
+    /// <c>T</c> comes first. Null otherwise.
+    /// </summary>
+    private Symbol? HelperConstant(MemberAccessExpressionSyntax access)
+    {
+        if (!_types.HasHelpers || access.Name is not IdentifierNameSyntax { Identifier: { IsMissing: false } token })
+        {
+            return null;
+        }
+
+        var type = access.Expression is PredefinedTypeExpressionSyntax ? _types.String : NestedNames.TypeNamedBy(_scope, access.Expression, Generic);
+        var name = token.Value as string ?? token.Text;
+        if (type is null or HelperTypeSymbol || type is EnumTypeSymbol && type.GetMembers(name).FirstOrDefault() is EnumMemberSymbol
+            || ExpressionBinder.HelperFor(_scope, type, name) is not { } helper)
+        {
+            return null;
+        }
+
+        var member = helper.SelfAndAncestors().SelectMany(h => h.GetMembers(name, includeInherited: false)).FirstOrDefault();
+        return member is ConstantSymbol { IsTyped: false } or EnumMemberSymbol ? member : null;
     }
 
     /// <summary>

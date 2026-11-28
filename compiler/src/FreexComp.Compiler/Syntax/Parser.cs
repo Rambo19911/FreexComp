@@ -1717,8 +1717,8 @@ internal sealed class Parser
 
     /// <summary>
     /// <c>factor</c>: <c>@</c>/<c>not</c>/sign factor, literal, <c>nil</c>, set constructor, <c>( expression )</c>,
-    /// <c>inherited [ ident ]</c>, <c>string ( expression )</c>, a bare <c>string</c> or designator; all but the bare
-    /// <c>string</c> and the literals with designator suffixes.
+    /// <c>inherited [ ident ]</c>, <c>string ( expression )</c>, a bare <c>string</c> or designator; all with designator
+    /// suffixes — a literal and the bare <c>string</c> only after a member access (LANG-997).
     /// An anonymous method, too (LANG-720); anything else is E1103.
     /// </summary>
     private ExpressionSyntax ParseFactor()
@@ -1750,8 +1750,10 @@ internal sealed class Parser
             case SyntaxKind.NotKeyword or SyntaxKind.PlusToken or SyntaxKind.MinusToken:
                 var op = Take();
                 return new UnaryExpressionSyntax(op, ParseFactor());
-            case SyntaxKind.IntegerLiteralToken or SyntaxKind.RealLiteralToken or SyntaxKind.StringLiteralToken or SyntaxKind.NilKeyword:
+            case SyntaxKind.NilKeyword:
                 return new LiteralExpressionSyntax(Take());
+            case SyntaxKind.IntegerLiteralToken or SyntaxKind.RealLiteralToken or SyntaxKind.StringLiteralToken:
+                return MemberSuffixes(new LiteralExpressionSyntax(Take()));                 // LANG-997 (a): 42.ToText, 'abc'.Len
             case SyntaxKind.OpenBracketToken:
                 return ParseSetConstructor();
             case SyntaxKind.OpenParenToken:
@@ -1769,7 +1771,7 @@ internal sealed class Parser
                 return ParseDesignatorSuffixes(
                     new StringCastExpressionSyntax(stringKeyword, castOpen, operand, Expect(SyntaxKind.CloseParenToken)));
             case SyntaxKind.StringKeyword:
-                return new PredefinedTypeExpressionSyntax(Take());
+                return MemberSuffixes(new PredefinedTypeExpressionSyntax(Take()));          // LANG-997 (b): string.Join(…)
             case SyntaxKind.IdentifierToken:
                 return ParseDesignatorSuffixes(ParseSimpleNameInExpression());
             case SyntaxKind.ProcedureKeyword or SyntaxKind.FunctionKeyword:
@@ -1779,6 +1781,13 @@ internal sealed class Parser
                 return new IdentifierNameSyntax(Missing(SyntaxKind.IdentifierToken));
         }
     }
+
+    /// <summary>
+    /// LANG-997: a literal or the bare keyword <c>string</c> takes designator suffixes only after a member access
+    /// (<c>[ . ident { designatorSuffix } ]</c>); a <c>[</c>, <c>^</c> or <c>(</c> directly after it stays outside the factor.
+    /// </summary>
+    private ExpressionSyntax MemberSuffixes(ExpressionSyntax expression) =>
+        CurrentKind == SyntaxKind.DotToken ? ParseDesignatorSuffixes(expression) : expression;
 
     /// <summary>
     /// <c>{ designatorSuffix }</c>: <c>. ident</c>, <c>[ expression { , expression } ]</c>, <c>^</c>, <c>( [ argList ] )</c>,

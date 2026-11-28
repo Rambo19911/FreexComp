@@ -13,16 +13,14 @@ internal sealed partial class ExpressionBinder
     /// active helper of the type (LANG-753) when it declares the name, else (classes) the same for each ancestor until a type of
     /// the chain declares the name itself; null when the type's own members apply.
     /// </summary>
-    private HelperTypeSymbol? HelperFor(TypeSymbol type, string name)
-    {
-        if (!_types.HasHelpers)
-        {
-            return null;
-        }
+    private HelperTypeSymbol? HelperFor(TypeSymbol type, string name) => _types.HasHelpers ? HelperFor(_scope, type, name) : null;
 
+    /// <summary><see cref="HelperFor(TypeSymbol, string)"/> at <paramref name="scope"/>, also for the constant folder (LANG-998 (d)).</summary>
+    internal static HelperTypeSymbol? HelperFor(Scope scope, TypeSymbol type, string name)
+    {
         foreach (var level in TypeMembers.SelfAndAncestors(type))
         {
-            if (_scope.ActiveHelper(level) is { } helper && helper.SelfAndAncestors().Any(h => h.GetMembers(name, includeInherited: false).Any()))
+            if (scope.ActiveHelper(level) is { } helper && helper.SelfAndAncestors().Any(h => h.GetMembers(name, includeInherited: false).Any()))
             {
                 return helper;
             }
