@@ -94,6 +94,7 @@ public static class MessageDefinitions
         new("Msg.Run.KillFailed", E, ["OK"]),
         new("Msg.Debug.StartFailed", E, ["RunWithoutDebugging", "Cancel"]),
         new("Msg.Debug.NoDebugInfo", Q, ["RunAnyway", "ProjectOptions", "Cancel"]),
+        new("Msg.Debug.MemberNoDebugInfo", Q, ["RunAnyway", "Cancel"]), // IDE-PM-199
         new("Msg.Debug.Exception", W, ["Break", "Continue"]),
         new("Msg.Debug.DeleteAllBreakpoints", Q, ["Delete", "Cancel"]),
         new("Msg.Designer.FormFileMissing", E, ["OK"]),

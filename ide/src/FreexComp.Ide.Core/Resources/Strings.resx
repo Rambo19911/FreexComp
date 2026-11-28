@@ -533,6 +533,10 @@ Activate the project to change its run parameters.</value>
   <data name="Msg_Debug_NoDebugInfo" xml:space="preserve">
     <value>The active configuration ({0}) builds without debug information, so breakpoints will not stop. Run anyway?</value>
   </data>
+  <data name="Msg_Debug_MemberNoDebugInfo" xml:space="preserve">
+    <value>The active configuration of {0} ({1}) builds without debug information, so breakpoints will not stop. Run anyway?</value>
+    <comment>IDE-PM-199: {0} = name of a listed member of the project group, {1} = its active configuration</comment>
+  </data>
   <data name="Msg_Debug_BreakpointUnverified" xml:space="preserve">
     <value>The breakpoint is not on a line that produces code.</value>
   </data>

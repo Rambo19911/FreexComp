@@ -129,14 +129,13 @@ public sealed class GroupRunTests
         var groupText = bed.Text(GroupPath);
         var toolsText = bed.Text(Proj("Tools"));
 
-        // The menu: …, Clean, —, Run Without Debugging, —, …; the item carries the row's project file and is enabled.
+        // The menu: …, Clean, —, Run, Run Without Debugging, —, …; the item carries the row's project file and is enabled.
         var menu = RootMenu(bed, "Tools");
         var ids = menu.Select(i => i.CommandId ?? "-").ToList();
         var at = ids.IndexOf(Command);
-        Assert.True(at >= 4, "the listed root has no Run Without Debugging item");
-        Assert.Equal(["project.build", "project.rebuild", "project.clean", "-", Command, "-"], ids.Skip(at - 4).Take(6));
+        Assert.True(at >= 5, "the listed root has no Run Without Debugging item");
+        Assert.Equal(["project.build", "project.rebuild", "project.clean", "-", "run.start", Command, "-"], ids.Skip(at - 5).Take(7));
         Assert.Equal("project.setActive", ids[0]);
-        Assert.DoesNotContain("run.start", ids); // the debugger half of the card: task I-361
         var item = menu[at];
         Assert.Equal((Proj("Tools"), true, true), (item.Argument, item.ArgumentIsTarget, item.IsEnabled));
 

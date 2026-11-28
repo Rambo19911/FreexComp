@@ -64,9 +64,28 @@ public interface IDebugService
     /// </summary>
     Task<bool> StartAsync(bool stopOnEntry = false);
 
+    /// <summary>
+    /// IDE-PM-192: <paramref name="projectPath"/> is an available listed member of the project group that can be
+    /// started under the debugger (a console or gui program, or a library whose host application file exists), and the
+    /// IDE is Idle. Synchronous (the state of a context-menu item).
+    /// </summary>
+    bool CanStartMember(string? projectPath);
+
+    /// <summary>
+    /// IDE-PM-199: <c>run.start</c> for a listed member of the project group — the sequence of <see cref="StartAsync"/>
+    /// with the member's own values (its question about debug information, its build, a session for its output); the
+    /// active project does not change. The path of the loaded project is <see cref="StartAsync"/>. False when no session
+    /// was started.
+    /// </summary>
+    Task<bool> StartMemberAsync(string projectPath);
+
     /// <summary>Terminates the session; completes when the IDE is Idle again.</summary>
     Task StopAsync();
 
+    /// <summary>
+    /// IDE-P3-092, IDE-PM-197: ends the session, then starts again under the debugger for the run target the session
+    /// was started for (the loaded project or a listed member).
+    /// </summary>
     Task<bool> RestartAsync();
 
     /// <summary>Evaluates in the selected frame; the session must be paused.</summary>
@@ -353,32 +372,70 @@ public sealed partial class DebugService : IDebugService
     /// </summary>
     public Task<bool> StartAtMainBodyAsync() => StartAsync(stopOnEntry: false, null, stopAtMainBody: true);
 
-    private async Task<bool> StartAsync(bool stopOnEntry, (string Path, int Line)? runTo, bool stopAtMainBody)
+    private async Task<bool> StartAsync(bool stopOnEntry, (string Path, int Line)? runTo, bool stopAtMainBody) =>
+        _run.ActiveTarget() is { } target && await StartAsync(target, stopOnEntry, runTo, stopAtMainBody);
+
+    /// <summary>IDE-TGT-014: <paramref name="target"/> can be started under the debugger — a program, or a library whose host application is a file.</summary>
+    private bool IsDebuggable(RunTarget target) => target.AppType is "console" or "gui" || _run.ExistingHost(target) is not null;
+
+    public bool CanStartMember(string? projectPath) =>
+        _state.Current.State == IdeState.Idle && _active is null && _run.IsListedTarget(projectPath)
+        && _run.MemberTarget(projectPath) is { } target && IsDebuggable(target);
+
+    public async Task<bool> StartMemberAsync(string projectPath)
     {
-        if (_projects.Project is not { } project || _state.Current.State != IdeState.Idle || _active is not null)
+        ArgumentNullException.ThrowIfNull(projectPath);
+        if (!_run.IsListedTarget(projectPath))
+            return await StartAsync();
+        // IDE-PM-192: a path that is not an available member does nothing.
+        return _run.MemberTarget(projectPath) is { } target && await StartAsync(target, stopOnEntry: false, null, stopAtMainBody: false);
+    }
+
+    /// <summary>
+    /// IDE-P3-086, IDE-PM-199: the start under the debugger for <paramref name="target"/>, with the target's own values —
+    /// the loaded project or a listed member of the project group.
+    /// </summary>
+    private async Task<bool> StartAsync(RunTarget target, bool stopOnEntry, (string Path, int Line)? runTo, bool stopAtMainBody)
+    {
+        if (_state.Current.State != IdeState.Idle || _active is not null)
             return false;
         // IDE-TGT-014: a library runs inside its host application; that program is what the session starts.
-        var host = project.AppType is "console" or "gui" ? null : _run.ExistingHostApplication;
-        if (project.AppType is not ("console" or "gui") && host is null)
+        if (!IsDebuggable(target))
         {
             _status.ShowMessage(Strings.Msg_Run_NotRunnable, StatusDuration);
             return false;
         }
 
         // IDE-P3-086: without debug information breakpoints cannot stop.
-        if (_projects.Definition is { } definition && ConfigurationEdits.Effective(definition, project.ActiveConfiguration) is { DebugInfo: false })
+        if (target.Definition is { } definition && ConfigurationEdits.Effective(definition, target.Configuration) is { DebugInfo: false })
         {
-            var answer = await _dialogs.ShowMessageAsync(new MessageRequest("Msg.Debug.NoDebugInfo", [project.ActiveConfiguration]));
-            if (answer == "ProjectOptions")
+            // IDE-PM-199 (2): the question of a listed member has no Project Options button — that dialog is the active project's.
+            var answer = await _dialogs.ShowMessageAsync(target.IsListedMember
+                ? new MessageRequest("Msg.Debug.MemberNoDebugInfo", [target.Name, target.Configuration])
+                : new MessageRequest("Msg.Debug.NoDebugInfo", [target.Configuration]));
+            if (answer == "ProjectOptions" && !target.IsListedMember)
                 _ = OpenProjectOptions?.Invoke();
             if (answer != "RunAnyway")
                 return false;
         }
 
-        return await _run.BuildThenAsync(project, output => host is null
-            ? LaunchAsync(project, output, [], stopOnEntry, runTo, stopAtMainBody)
-            : LaunchAsync(project, host, [output], stopOnEntry, runTo, stopAtMainBody));
+        // IDE-PM-194: the target as it is after the build (the run parameters the build saved).
+        return await _run.BuildThenAsync(target, async (built, output) =>
+        {
+            if (built.AppType is "console" or "gui")
+                return await LaunchAsync(built, output, [], stopOnEntry, runTo, stopAtMainBody);
+            if (_run.ExistingHost(built) is { } host)
+                return await LaunchAsync(built, host, [output], stopOnEntry, runTo, stopAtMainBody);
+            _status.ShowMessage(Strings.Msg_Run_NotRunnable, StatusDuration); // the project file saved by the build names no host that exists
+            return false;
+        });
     }
+
+    /// <summary>
+    /// <c>Run Without Debugging</c> of <c>Msg.Debug.StartFailed</c>: the run target the session was for (IDE-PM-199 (5)) —
+    /// <paramref name="member"/> is the project file of a listed member, null the loaded project.
+    /// </summary>
+    private Task<bool> RunWithoutDebuggingAsync(string? member) => member is null ? _run.StartAsync() : _run.StartMemberAsync(member);
 
     public async Task StopAsync()
     {
@@ -401,9 +458,15 @@ public sealed partial class DebugService : IDebugService
 
     public async Task<bool> RestartAsync()
     {
-        var (stopOnEntry, stopAtMainBody) = (_active?.StopOnEntry ?? false, _active?.StopAtMainBody ?? false);
+        var (stopOnEntry, stopAtMainBody, member) = (_active?.StopOnEntry ?? false, _active?.StopAtMainBody ?? false, _active?.Member);
         await StopAsync();
-        return await StartAsync(stopOnEntry, null, stopAtMainBody);
+        // IDE-PM-197: the run target the session was started for, not the active project.
+        if (member is null || !_run.IsListedTarget(member))
+            return await StartAsync(stopOnEntry, null, stopAtMainBody);
+        if (_run.MemberTarget(member) is { } target)
+            return await StartAsync(target, stopOnEntry, null, stopAtMainBody);
+        _run.ShowMemberUnavailable(member);
+        return false;
     }
 
     /// <summary>IDE-P3-093: while a session exists, asks <c>Msg.Run.StopOnExit</c> / <c>StopOnClose</c> and ends it; false = canceled.</summary>
@@ -515,10 +578,15 @@ public sealed partial class DebugService : IDebugService
         bool Paused() => _state.Current.State == IdeState.Paused && _active is not null;
 
         // menus.md §7; the state part of each condition is what a shortcut reports (UI-CMD-012).
+        // IDE-PM-190, 192: without an argument the loaded project (menu, tool bar, shortcut; Continue while paused); the
+        // context menu of a listed root gives the member's path — that start needs the Idle state.
         commands.RegisterHandler("run.start", new Handler(() => _active is not null || Debuggable(), () => true, StartCommandAsync)
         {
             Title = () => Paused() ? Strings.Button_Continue : null,
             MenuLabel = () => Paused() ? Strings.Menu_run_continue : null,
+            IsMember = _run.IsListedTarget,
+            CanStartMember = CanStartMember,
+            StartMember = StartMemberAsync,
         });
         commands.RegisterHandler("run.stop", new Handler(() => _active is not null || _run.IsRunning, () => true,
             () => _active is not null ? StopAsync() : _run.StopAsync()));
@@ -650,22 +718,27 @@ public sealed partial class DebugService : IDebugService
     /// <paramref name="exe"/> is its host application (<c>LaunchRequest.Libraries</c>: its type information is loaded and
     /// breakpoints in its units bind when the host loads it); empty for a program project.
     /// </summary>
-    private async Task<bool> LaunchAsync(ProjectModel project, string exe, IReadOnlyList<string> libraries, bool stopOnEntry, (string Path, int Line)? runTo,
+    private async Task<bool> LaunchAsync(RunTarget target, string exe, IReadOnlyList<string> libraries, bool stopOnEntry, (string Path, int Line)? runTo,
         bool stopAtMainBody)
     {
-        if (await _run.ResolveWorkingDirAsync(project, exe) is not { } workingDir)
+        // IDE-PM-199 (4): every value is the run target's own — the loaded project's or the listed member's.
+        if (await _run.ResolveWorkingDirAsync(target, exe) is not { } workingDir)
             return false;
-        var run = _projects.Definition?.Run ?? new FreexComp.Build.RunSettings("", "");
-        // The effective search paths of the active configuration (CMP-1160), as the build uses them.
-        var searchPaths = (_projects.Definition is { } definition ? ConfigurationEdits.Effective(definition, project.ActiveConfiguration)?.SearchPaths : null)?.Select(p => Path.GetFullPath(Path.Combine(project.Directory, p.Replace('/', '\\')))) ?? [];
+        var run = target.Run;
+        // The effective search paths of the target's active configuration (CMP-1160), as the build uses them.
+        var searchPaths = (target.Definition is { } definition ? ConfigurationEdits.Effective(definition, target.Configuration)?.SearchPaths : null)?.Select(p => Path.GetFullPath(Path.Combine(target.Directory, p.Replace('/', '\\')))) ?? [];
         var options = new DebugSessionOptions
         {
             AdapterPath = Path.Combine(_toolchain.Resolve().LlvmBinDir ?? "", AdapterFileName),
-            // IDE-LIB-022: with the project's library-stepping choice the library roots count as user code too.
-            UserSourceRoots = [.. ((string[])[project.Directory, .. searchPaths, .. StepIntoLibrarySource && LibrarySource is { } library ? library.Roots : []])
+            // IDE-LIB-022: with the library-stepping choice the library roots count as user code too.
+            UserSourceRoots = [.. ((string[])[target.Directory, .. searchPaths, .. StepIntoLibrarySource && LibrarySource is { } library ? library.Roots : []])
                 .Distinct(StringComparer.OrdinalIgnoreCase)],
         };
-        var active = new Active(_factory.Create(options), exe, _clock.Now, stopOnEntry) { StopAtMainBody = stopAtMainBody };
+        var active = new Active(_factory.Create(options), exe, _clock.Now, stopOnEntry)
+        {
+            StopAtMainBody = stopAtMainBody,
+            Member = target.IsListedMember ? target.ProjectPath : null,
+        };
         var session = active.Session;
         _active = active;
 
@@ -711,7 +784,7 @@ public sealed partial class DebugService : IDebugService
             if (active.StoppedByUser)
                 return false; // run.stop while the program was starting: reported as terminated
             if (await _dialogs.ShowMessageAsync(new MessageRequest("Msg.Debug.StartFailed", [e.Message])) == "RunWithoutDebugging")
-                return await _run.StartAsync();
+                return await RunWithoutDebuggingAsync(active.Member);
             return false;
         }
 
@@ -902,7 +975,7 @@ public sealed partial class DebugService : IDebugService
 
         active.Ended.TrySetResult();
         if (crash is not null && await _dialogs.ShowMessageAsync(new MessageRequest("Msg.Debug.StartFailed", [crash])) == "RunWithoutDebugging")
-            await _run.StartAsync();
+            await RunWithoutDebuggingAsync(active.Member);
     }
 
     private void Report(string text)
@@ -941,6 +1014,12 @@ public sealed partial class DebugService : IDebugService
 
         /// <summary>The session was started by a step (DBG-225); a restart starts the same way.</summary>
         public bool StopAtMainBody { get; init; }
+
+        /// <summary>
+        /// IDE-PM-197: the project file of the listed member of the project group the session was started for; null = the
+        /// loaded project. A restart, and the run without the debugger after a failed start, are for the same target.
+        /// </summary>
+        public string? Member { get; init; }
 
         /// <summary><c>run.stop</c> asked for the end of the session.</summary>
         public bool StoppedByUser { get; set; }
@@ -1003,13 +1082,27 @@ public sealed partial class DebugService : IDebugService
         /// <summary>The check mark of a toggle command; null = never checked.</summary>
         public Func<bool>? Checked { get; init; }
 
+        /// <summary>
+        /// IDE-PM-190: the argument names a listed member of the project group as the command's target (<c>run.start</c>
+        /// from the context menu of its root); null = the command takes no target.
+        /// </summary>
+        public Func<string?, bool>? IsMember { get; init; }
+
+        /// <summary>IDE-PM-192: the command can run for that member now.</summary>
+        public Func<string?, bool>? CanStartMember { get; init; }
+
+        /// <summary>IDE-PM-199: runs the command for that member.</summary>
+        public Func<string, Task>? StartMember { get; init; }
+
+        private bool ForMember(string? argument) => IsMember?.Invoke(argument) ?? false;
+
         public bool IsChecked(string? argument) => Checked?.Invoke() ?? false;
 
-        public bool CanExecute(string? argument) => available() && stateAllows();
+        public bool CanExecute(string? argument) => ForMember(argument) ? CanStartMember!(argument) : available() && stateAllows();
 
-        public bool IsBlockedByIdeState(string? argument) => available() && !stateAllows();
+        public bool IsBlockedByIdeState(string? argument) => !ForMember(argument) && available() && !stateAllows();
 
-        public Task ExecuteAsync(string? argument) => execute();
+        public Task ExecuteAsync(string? argument) => ForMember(argument) ? StartMember!(argument!) : execute();
 
         public string? TitleOverride => Title?.Invoke();
 

@@ -79,7 +79,7 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel, ICommandTarge
     // UI-TW-129: rows of the other members of a project group. IDE-PM-190: the run group after the build group.
     private static readonly string?[] ListedRootMenu =
     [
-        "project.setActive", null, "project.build", "project.rebuild", "project.clean", null, "run.startWithoutDebugging", null,
+        "project.setActive", null, "project.build", "project.rebuild", "project.clean", null, "run.start", "run.startWithoutDebugging", null,
         "project.dependencies", null,
         "project.removeFromGroup", "project.moveProjectUp", "project.moveProjectDown", null,
         "file.showInExplorer", "file.openInTerminal", "file.copyPath",
@@ -871,9 +871,9 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel, ICommandTarge
                 continue;
             }
 
-            // IDE-PM-170, IDE-PM-190: Build, Rebuild, Clean and Run Without Debugging of a listed root act on that member,
-            // not on the loaded project.
-            items.Add(ids == ListedRootMenu && id is "project.build" or "project.rebuild" or "project.clean" or "run.startWithoutDebugging"
+            // IDE-PM-170, IDE-PM-190: Build, Rebuild, Clean, Run and Run Without Debugging of a listed root act on that
+            // member, not on the loaded project.
+            items.Add(ids == ListedRootMenu && id is "project.build" or "project.rebuild" or "project.clean" or "run.start" or "run.startWithoutDebugging"
                 ? MenuItemModel.ForCommandOn(MenuLabels.For(new CommandMenuNode(id)), command, _selection[0].FullPath!)
                 : MenuItemModel.ForCommand(MenuLabels.For(new CommandMenuNode(id)), command, null, MenuToggleKind.None));
         }

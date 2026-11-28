@@ -137,7 +137,7 @@ public sealed class RunService : IRunService
     /// IDE-PM-192: the command argument names a project other than the loaded one (a target that is the active project's
     /// own path behaves as no argument).
     /// </summary>
-    private bool IsListedTarget(string? projectPath) =>
+    internal bool IsListedTarget(string? projectPath) =>
         !string.IsNullOrEmpty(projectPath) && !Same(Path.GetFullPath(projectPath), _projects.Project?.FilePath);
 
     /// <summary>The loaded project as a run target; null without one.</summary>
@@ -167,7 +167,7 @@ public sealed class RunService : IRunService
         : _projects.Project is { } project && Same(project.FilePath, target.ProjectPath) ? TargetOf(project) : target;
 
     /// <summary><c>Msg.Run.MemberUnavailable</c> for the member <paramref name="projectPath"/> (the file name when it cannot be read).</summary>
-    private void ShowMemberUnavailable(string projectPath)
+    internal void ShowMemberUnavailable(string projectPath)
     {
         var name = Group?.Members.FirstOrDefault(m => Same(m.FilePath, projectPath))?.Name ?? Path.GetFileNameWithoutExtension(projectPath);
         _status.ShowMessage(string.Format(CultureInfo.CurrentCulture, Strings.Msg_Run_MemberUnavailable, name), StatusDuration);
@@ -183,7 +183,14 @@ public sealed class RunService : IRunService
     public string? HostApplication => ActiveTarget()?.HostApplication;
 
     /// <summary>IDE-TGT-014: <see cref="HostApplication"/> when that file exists (what a library is debugged through), else null.</summary>
-    public string? ExistingHostApplication => HostApplication is { } host && _fileSystem.FileExists(host) ? host : null;
+    public string? ExistingHostApplication => ActiveTarget() is { } target ? ExistingHost(target) : null;
+
+    /// <summary>IDE-TGT-014 for any run target: the host application of a library when that file exists, else null.</summary>
+    public string? ExistingHost(RunTarget target)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        return target.HostApplication is { } host && _fileSystem.FileExists(host) ? host : null;
+    }
 
     public async Task<bool> StartAsync(bool withDebugger = false) =>
         ActiveTarget() is { } target && await StartAsync(target, withDebugger);
@@ -235,20 +242,10 @@ public sealed class RunService : IRunService
     }
 
     /// <summary>
-    /// IDE-P3-080/081, the part shared with a start under the debugger: saves and builds, offers the previous executable
-    /// after a failed build, then calls <paramref name="launch"/> with the executable while the state is still Building
-    /// (IDE-P3-002); the state is Idle afterwards unless the launch moved on.
-    /// </summary>
-    public Task<bool> BuildThenAsync(ProjectModel project, Func<string, Task<bool>> launch)
-    {
-        ArgumentNullException.ThrowIfNull(project);
-        ArgumentNullException.ThrowIfNull(launch);
-        return BuildThenAsync(TargetOf(project), (_, exe) => launch(exe));
-    }
-
-    /// <summary>
-    /// As <see cref="BuildThenAsync(ProjectModel, Func{string, Task{bool}})"/> for any run target (IDE-PM-193): one build
-    /// request for the target's project. <paramref name="launch"/> gets the target as it is after the build returned
+    /// IDE-P3-080/081, the part shared with a start under the debugger, for any run target (IDE-PM-193): saves and
+    /// builds — one build request for the target's project —, offers the previous executable after a failed build, then
+    /// calls <paramref name="launch"/> while the state is still Building (IDE-P3-002); the state is Idle afterwards
+    /// unless the launch moved on. <paramref name="launch"/> gets the target as it is after the build returned
     /// (IDE-PM-194: the run parameters the build saved) and the executable. A listed member that is no longer available
     /// at that point: nothing starts, status <c>Msg.Run.MemberUnavailable</c>.
     /// </summary>
@@ -429,19 +426,10 @@ public sealed class RunService : IRunService
     }
 
     /// <summary>
-    /// The working directory of a start: <c>run.workingDir</c> against the project directory, else the executable's folder.
-    /// A missing one shows <c>Msg.Run.WorkingDirMissing</c> and gives null.
-    /// </summary>
-    public Task<string?> ResolveWorkingDirAsync(ProjectModel project, string exe)
-    {
-        ArgumentNullException.ThrowIfNull(project);
-        return ResolveWorkingDirAsync(TargetOf(project), exe);
-    }
-
-    /// <summary>
-    /// As <see cref="ResolveWorkingDirAsync(ProjectModel, string)"/> for any run target: its <c>run.workingDir</c> against
-    /// its own directory. IDE-PM-198: a missing one of a listed member shows <c>Msg.Run.MemberWorkingDirMissing</c> (the
-    /// Run Parameters dialog is the active project's).
+    /// The working directory of a start of <paramref name="target"/>: its <c>run.workingDir</c> against its own
+    /// directory, else the executable's folder. A missing one shows <c>Msg.Run.WorkingDirMissing</c> and gives null.
+    /// IDE-PM-198: a missing one of a listed member shows <c>Msg.Run.MemberWorkingDirMissing</c> (the Run Parameters
+    /// dialog is the active project's).
     /// </summary>
     public async Task<string?> ResolveWorkingDirAsync(RunTarget target, string exe)
     {

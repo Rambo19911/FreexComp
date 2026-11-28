@@ -4,6 +4,7 @@ using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Input;
+using Avalonia.LogicalTree;
 using Avalonia.Media;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
@@ -382,14 +383,14 @@ public sealed partial class ProjectManagerViewTests
             "file.closeProject", "-", "project.options"], Ids(pm.ContextMenu()));
 
         // A listed root: Build, Rebuild and Clean act on that member (IDE-PM-170: they carry its project file), then Run
-        // Without Debugging of that member in a group of its own (IDE-PM-190), then Dependencies.
+        // and Run Without Debugging of that member in a group of their own (IDE-PM-190), then Dependencies.
         pm.Select(pm.Find("$project:CoreLib")!);
-        Assert.Equal(["project.setActive", "-", "project.build", "project.rebuild", "project.clean", "-", "run.startWithoutDebugging", "-",
+        Assert.Equal(["project.setActive", "-", "project.build", "project.rebuild", "project.clean", "-", "run.start", "run.startWithoutDebugging", "-",
             "project.dependencies", "-",
             "project.removeFromGroup", "project.moveProjectUp", "project.moveProjectDown", "-",
             "file.showInExplorer", "file.openInTerminal", "file.copyPath"], Ids(pm.ContextMenu()));
         var coreLib = Path.Combine(h.TempDir, "CoreLib", "CoreLib.pproj");
-        Assert.Equal([null, coreLib, coreLib, coreLib, coreLib, null, null, null, null, null, null, null],
+        Assert.Equal([null, coreLib, coreLib, coreLib, coreLib, coreLib, null, null, null, null, null, null, null],
             pm.ContextMenu().Where(m => m.Command is not null).Select(m => m.Argument));
 
         // An unavailable root: it can only be removed (and its place shown).
@@ -414,15 +415,15 @@ public sealed partial class ProjectManagerViewTests
         Assert.NotNull(menu);
         var items = menu!.Items.OfType<MenuItem>().ToList();
         Assert.Equal(["Context.project.setActive", "Context.project.build", "Context.project.rebuild", "Context.project.clean",
-            "Context.run.startWithoutDebugging",
+            "Context.run.start", "Context.run.startWithoutDebugging",
             "Context.project.dependencies", "Context.project.removeFromGroup", "Context.project.moveProjectUp", "Context.project.moveProjectDown",
             "Context.file.showInExplorer", "Context.file.openInTerminal", "Context.file.copyPath"], items.Select(AutomationIds.Get));
         Assert.Equal("Set as _Active Project", items[0].Header);
-        Assert.Equal(["Run _Without Debugging", "De_pendencies…", "_Remove from Group", "Move Project _Up", "Move Project _Down"],
-            items.Skip(4).Take(5).Select(i => i.Header));
-        Assert.Equal(Enumerable.Repeat(true, 9), items.Take(9).Select(i => i.IsEffectivelyEnabled)); // CoreLib is in the middle
-        // The three build items and the run item keep the ids of their commands and carry the row's project file as the command parameter.
-        Assert.Equal([null, coreLib, coreLib, coreLib, coreLib, null], items.Take(6).Select(i => i.CommandParameter));
+        Assert.Equal(["_Run", "Run _Without Debugging", "De_pendencies…", "_Remove from Group", "Move Project _Up", "Move Project _Down"],
+            items.Skip(4).Take(6).Select(i => i.Header));
+        Assert.Equal(Enumerable.Repeat(true, 10), items.Take(10).Select(i => i.IsEffectivelyEnabled)); // CoreLib is in the middle
+        // The three build items and the two run items keep the ids of their commands and carry the row's project file as the command parameter.
+        Assert.Equal([null, coreLib, coreLib, coreLib, coreLib, coreLib, null], items.Take(7).Select(i => i.CommandParameter));
         menu.Close();
 
         // Enabled states follow the row: the unavailable last root cannot move down; the first root cannot move up.
@@ -487,6 +488,7 @@ public sealed partial class ProjectManagerViewTests
         var toolsProject = Path.Combine(h.TempDir, "Tools", "Tools.pproj");
         var toolsExe = Path.Combine(h.TempDir, "Tools", "Tools.exe");
         var title = h.Window.Title;
+        var groupFile = File.ReadAllText(Path.Combine(h.TempDir, "All.pgroup"));
 
         // The open context menu of the row: its command items by automation id.
         Dictionary<string, MenuItem> OpenMenu(string rowKey)
@@ -520,9 +522,8 @@ public sealed partial class ProjectManagerViewTests
         // The listed root: the run item after the build items; target items show no key (IDE-PM-191) and keep their icon.
         var listed = OpenMenu("$project:Tools");
         Assert.Equal(["$project:Tools"], pm.Selection.Select(n => n.Key));
-        string[] targetItems = ["Context.project.build", "Context.project.rebuild", "Context.project.clean", "Context.run.startWithoutDebugging"];
-        Assert.Equal(["Context.project.setActive", .. targetItems, "Context.project.dependencies"], listed.Keys.Take(6));
-        Assert.DoesNotContain("Context.run.start", listed.Keys); // the debugger half of the card: task I-361
+        string[] targetItems = ["Context.project.build", "Context.project.rebuild", "Context.project.clean", "Context.run.start", "Context.run.startWithoutDebugging"];
+        Assert.Equal(["Context.project.setActive", .. targetItems, "Context.project.dependencies"], listed.Keys.Take(7));
         Assert.All(targetItems, id =>
         {
             Assert.Equal("", ShownGesture(listed[id]));
@@ -542,6 +543,8 @@ public sealed partial class ProjectManagerViewTests
         Assert.Equal(new Core.Platform.ProcessStartRequest(toolsExe, "", Path.GetDirectoryName(toolsExe)!), h.Processes.Last.Request);
         Assert.Equal(toolsExe, h.Services.State.Current.ProgramPath);
         Assert.Equal(Path.Combine(h.TempDir, "App", "App.pproj"), h.Services.Projects.Project!.FilePath);
+        Assert.Equal(groupFile, File.ReadAllText(Path.Combine(h.TempDir, "All.pgroup"))); // the group file, with its activeProject, is as it was
+        Assert.Contains("\"activeProject\": \"App/App.pproj\"", groupFile, StringComparison.Ordinal);
         Assert.Contains("bodyStrong", h.Find<TextBlock>(Row + "$project.Name").Classes);
         Assert.Equal("App", h.Find<TextBlock>(Row + "$project.Name").Text);
         Assert.DoesNotContain("bodyStrong", h.Find<TextBlock>(Row + "$project:Tools.Name").Classes);
@@ -560,6 +563,119 @@ public sealed partial class ProjectManagerViewTests
         Assert.Equal(title, h.Window.Title);
         Assert.True(OpenMenu("$project:Tools")["Context.run.startWithoutDebugging"].IsEffectivelyEnabled);
         CloseMenu();
+    }
+
+    /// <summary>
+    /// group-member-run.md IDE-PM-190…192 for the item of the debugger half (task I-361). The listed root has Run before
+    /// Run Without Debugging: it carries the row's project file, shows no shortcut text and keeps its icon. Paused in a
+    /// session of the active project the item is disabled and still named Run — a listed member cannot be continued —
+    /// while the main menu's item of the command without that target reads Continue and the item of the active root,
+    /// which is that command, stays enabled. Back in Idle the item is enabled again.
+    /// </summary>
+    [AvaloniaFact(Timeout = FreexComp.Ide.TestSupport.TestDeadline.DebugTestTimeout)]
+    [Trait("Phase", "8")]
+    [Trait("Phase", "6")] // with Category Integration: a test that starts the scripted debug adapter (I-222)
+    [Trait("Category", "Integration")]
+    [Trait("Req", "IDE-PM-190")]
+    [Trait("Req", "IDE-PM-191")]
+    [Trait("Req", "IDE-PM-192")]
+    public async Task Group_ListedRootRunItem_DisabledWhilePaused_AndStillNamedRun()
+    {
+        await using var h = await BuildScenario.StartAsync(o =>
+        {
+            GroupProject(o, "Tools");
+            o.InitialFiles["All.pgroup"] =
+                """{ "formatVersion": 1, "projects": ["Hello/Hello.pproj", "Tools/Tools.pproj"], "activeProject": "Hello/Hello.pproj" }""";
+        }, implementedPhase: null);
+        var pm = await OpenGroupAsync(h);
+        Assert.Equal(["$project", "$project:Tools"], pm.Roots.Select(r => r.Key));
+        TreeView Tree() => h.Find<TreeView>("Tool.ProjectManager.Tree"); // the Debug layout shows another instance of the view
+        var toolsProject = Path.Combine(h.TempDir, "Tools", "Tools.pproj");
+        var mainItem = h.Window.GetLogicalDescendants().OfType<MenuItem>().Single(m => AutomationIds.Get(m) == AutomationIds.Menu("run.start"));
+
+        // The open context menu of the row: its command items by automation id.
+        Dictionary<string, MenuItem> OpenMenu(string rowKey)
+        {
+            h.RightClick(Row + rowKey + ".Name");
+            Dispatcher.UIThread.RunJobs();
+            var menu = h.Find<TreeViewItem>(Row + rowKey).ContextMenu ?? Tree().ContextMenu;
+            Assert.True(menu is { IsOpen: true });
+            return menu!.Items.OfType<MenuItem>().ToDictionary(i => AutomationIds.Get(i)!);
+        }
+
+        void CloseMenu()
+        {
+            (h.Find<TreeViewItem>(Row + "$project:Tools").ContextMenu ?? Tree().ContextMenu)!.Close();
+            Dispatcher.UIThread.RunJobs();
+        }
+
+        // The shortcut text the template of the item shows.
+        static string ShownGesture(MenuItem item) =>
+            item.GetVisualDescendants().OfType<TextBlock>().Single(t => t.Name == "PART_InputGestureText").Text ?? "";
+
+        h.Press("Alt+1");
+        Dispatcher.UIThread.RunJobs();
+
+        // Idle. The listed root: Run before Run Without Debugging, after the build items; the row's project file is its
+        // target, so it shows no key (IDE-PM-191) and keeps its icon.
+        var listed = OpenMenu("$project:Tools");
+        Assert.Equal(["Context.project.setActive", "Context.project.build", "Context.project.rebuild", "Context.project.clean",
+            "Context.run.start", "Context.run.startWithoutDebugging", "Context.project.dependencies"], listed.Keys.Take(7));
+        var run = listed["Context.run.start"];
+        Assert.Equal(("_Run", "", toolsProject, true), (run.Header, ShownGesture(run), run.CommandParameter, run.IsEffectivelyEnabled));
+        Assert.Equal("run-debug", Assert.IsType<IdeIcon>(run.Icon).IconName);
+        CloseMenu();
+
+        // The control: the item of the active root is the command itself — its key, no target.
+        var active = OpenMenu("$project");
+        Assert.Equal(("_Run", "F5", null, true),
+            (active["Context.run.start"].Header, ShownGesture(active["Context.run.start"]), active["Context.run.start"].CommandParameter, active["Context.run.start"].IsEffectivelyEnabled));
+        CloseMenu();
+        Assert.Equal("_Run", mainItem.Header);
+
+        // Paused in a session of the active project.
+        h.DebugSessions.UseScenario($$"""
+            { "steps": [ {{FreexComp.Ide.TestSupport.DebugScenarios.StopAtStart(BuildScenario.UnitPath(h), 6)}}, {{FreexComp.Ide.TestSupport.DebugScenarios.Continue()}} ] }
+            """);
+        await h.ExecuteAsync("run.start");
+        await DebugScenario.WaitForStateAsync(h, Core.Models.IdeState.Paused);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(BuildScenario.ProjectPath(h), Assert.Single(h.Build.Requests).ProjectPath);
+        Assert.Equal("_Continue", mainItem.Header); // the paused-state label belongs to the command without a target
+        if (h.TryFind<Control>(Row + "$project:Tools.Name") is not { IsEffectivelyVisible: true })
+        {
+            h.Press("Alt+1"); // the Debug layout has no Project Manager: the user shows it
+            await h.WaitForAsync(() => h.TryFind<Control>(Row + "$project:Tools.Name") is { IsEffectivelyVisible: true }, "the Project Manager in the Debug layout");
+            Dispatcher.UIThread.RunJobs();
+        }
+
+        // The listed root: both run items are there, disabled; Run is still named Run and shows no key.
+        var paused = OpenMenu("$project:Tools");
+        run = paused["Context.run.start"];
+        Assert.Equal(("_Run", "", toolsProject, false), (run.Header, ShownGesture(run), run.CommandParameter, run.IsEffectivelyEnabled));
+        Assert.False(paused["Context.run.startWithoutDebugging"].IsEffectivelyEnabled);
+        Assert.False(paused["Context.project.build"].IsEffectivelyEnabled);
+        run.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(MenuItem.ClickEvent)); // a disabled item does nothing
+        CloseMenu();
+        Assert.Equal(Core.Models.IdeState.Paused, h.Services.State.Current.State);
+        Assert.Single(h.Build.Requests);
+        Assert.Single(h.DebugSessions.Sessions);
+
+        // The active root's item is the command without a target: enabled while paused (it continues the program).
+        var activePaused = OpenMenu("$project");
+        Assert.True(activePaused["Context.run.start"].IsEffectivelyEnabled);
+        Assert.Null(activePaused["Context.run.start"].CommandParameter);
+        CloseMenu();
+
+        // Idle again: the item of the listed root is enabled, the main menu reads Run.
+        await h.ExecuteAsync("run.stop");
+        await DebugScenario.WaitForStateAsync(h, Core.Models.IdeState.Idle);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal("_Run", mainItem.Header);
+        var idle = OpenMenu("$project:Tools");
+        Assert.Equal(("_Run", true), (idle["Context.run.start"].Header, idle["Context.run.start"].IsEffectivelyEnabled));
+        CloseMenu();
+        Assert.Equal(BuildScenario.ProjectPath(h), h.Services.Projects.Project!.FilePath);
     }
 
     /// <summary>
