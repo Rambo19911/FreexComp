@@ -414,11 +414,15 @@ public sealed partial class DesignSurfaceController
         return created;
     }
 
-    /// <summary>DSG-TP-050: <c>&lt;prefix&gt;&lt;n&gt;</c> with the smallest n ≥ 1 that no component uses and the form class does not declare.</summary>
+    /// <summary>
+    /// DSG-TP-050: <c>&lt;prefix&gt;&lt;n&gt;</c> with the smallest n ≥ 1 that no component uses, the form class does not declare and
+    /// unit <c>System</c> does not export (D-163).
+    /// </summary>
     private string NewComponentName(string prefix)
     {
         var n = 1;
-        while (Document.FindByName(prefix + n) is not null || _host.CodeSync.LookupMember(prefix + n) != MemberLookup.None)
+        while (Document.FindByName(prefix + n) is not null || _host.CodeSync.LookupMember(prefix + n) != MemberLookup.None
+               || SystemIdentifiers.Contains(prefix + n)) // D-163: as the Menu Designer's caption names
         {
             n++;
         }

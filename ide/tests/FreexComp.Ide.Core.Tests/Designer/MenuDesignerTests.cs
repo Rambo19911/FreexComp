@@ -310,6 +310,30 @@ public sealed class MenuDesignerTests
 
     [Fact(Timeout = 30000)]
     [Trait("Req", "DSG-SUR-197")]
+    [Trait("Req", "UIF-727")]
+    public Task CaptionNamedAfterSystemRoutineGetsSuffix() => TestUiThread.RunAsync(CaptionNamedAfterSystemRoutineGetsSuffixOnUiThread);
+
+    /// <summary>D-163: a field named like a <c>System</c> routine would hide it in every method of the form (<c>Exit;</c> → E2060).</summary>
+    private static async Task CaptionNamedAfterSystemRoutineGetsSuffixOnUiThread()
+    {
+        var s = await OpenAsync();
+        await s.DesignAsync(md =>
+        {
+            foreach (var (caption, name) in new[] { ("E&xit", "Exit1"), ("&Break", "Break1"), ("&Write", "Write1"), ("&Halt", "Halt1") })
+            {
+                md.NewItem();
+                md.CaptionText = caption;
+                Assert.True(md.CommitCaption());
+                Assert.Equal(name, md.Selected!.Name);
+                Assert.Contains($"    {name}: TMenuItem;", s.Code, StringComparison.Ordinal);
+            }
+
+            return Task.CompletedTask;
+        });
+    }
+
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "DSG-SUR-197")]
     [Trait("Req", "DSG-CS-040")]
     public Task ItemsGetFieldsAndHandlersInFormClass() => TestUiThread.RunAsync(ItemsGetFieldsAndHandlersInFormClassOnUiThread);
 
@@ -638,7 +662,7 @@ public sealed class MenuDesignerTests
             md.Select(file);
             var help = Add(md, "&Help");
             var about = Add(md, "&About", sub: true);
-            Assert.Equal(["Open", "N1", "Exit"], s.Children(file.Name));
+            Assert.Equal(["Open", "N1", "Exit1"], s.Children(file.Name));
             var code = s.Code;
             var units = s.Designer.Undo.UndoCount;
 
@@ -662,29 +686,29 @@ public sealed class MenuDesignerTests
             // Before: Exit in front of Open; Undo restores the place, the selection stays; the document is modified.
             md.Select(open);
             Moved(exit, open, MenuDropPosition.Before);
-            Assert.Equal(["Exit", "Open", "N1"], s.Children(file.Name));
+            Assert.Equal(["Exit1", "Open", "N1"], s.Children(file.Name));
             Assert.True(s.Document.IsModified);
             s.Undo();
             units--;
-            Assert.Equal(["Open", "N1", "Exit"], s.Children(file.Name));
+            Assert.Equal(["Open", "N1", "Exit1"], s.Children(file.Name));
             Assert.Same(exit, md.Selected);
             Assert.Equal(["MainMenu1"], s.Designer.Surface!.Selection.Items.Select(o => o.Name)); // the surface selection is kept
 
             // After, upwards and downwards within the level (the index counts after the removal).
             Moved(open, exit, MenuDropPosition.After);
-            Assert.Equal(["N1", "Exit", "Open"], s.Children(file.Name));
+            Assert.Equal(["N1", "Exit1", "Open"], s.Children(file.Name));
             Moved(rule, exit, MenuDropPosition.After);
-            Assert.Equal(["Exit", "N1", "Open"], s.Children(file.Name));
+            Assert.Equal(["Exit1", "N1", "Open"], s.Children(file.Name));
             Moved(open, exit, MenuDropPosition.After);
-            Assert.Equal(["Exit", "Open", "N1"], s.Children(file.Name));
+            Assert.Equal(["Exit1", "Open", "N1"], s.Children(file.Name));
 
             // Into: the last sub-item of another item; before / after an item of another level.
             Moved(open, help, MenuDropPosition.Into);
-            Assert.Equal(["Exit", "N1"], s.Children(file.Name));
+            Assert.Equal(["Exit1", "N1"], s.Children(file.Name));
             Assert.Equal(["About", "Open"], s.Children(help.Name));
             Moved(exit, about, MenuDropPosition.Before);
             Assert.Equal(["N1"], s.Children(file.Name));
-            Assert.Equal(["Exit", "About", "Open"], s.Children(help.Name));
+            Assert.Equal(["Exit1", "About", "Open"], s.Children(help.Name));
 
             // The menu component as target: the end of the top level; then before the first top-level item.
             Moved(about, md.Menu, MenuDropPosition.Into);
@@ -696,7 +720,7 @@ public sealed class MenuDesignerTests
             Moved(help, file, MenuDropPosition.Into);
             Assert.Equal(["About", file.Name], s.Children("MainMenu1"));
             Assert.Equal(["N1", "Help"], s.Children(file.Name));
-            Assert.Equal(["Exit", "Open"], s.Children(help.Name));
+            Assert.Equal(["Exit1", "Open"], s.Children(help.Name));
 
             // An item that gets its first sub-item this way keeps its stored ShortCut (as with New Sub-Item).
             Moved(about, open, MenuDropPosition.Into);
@@ -723,14 +747,14 @@ public sealed class MenuDesignerTests
 
             // Captions, names, fields and the unit's code are unchanged by all of it.
             Assert.Equal(code, s.Code);
-            Assert.Equal(["File1", "N1", "Help", "Exit", "Open", "About"], md.Items.Select(i => i.Name));
+            Assert.Equal(["File1", "N1", "Help", "Exit1", "Open", "About"], md.Items.Select(i => i.Name));
             return Task.CompletedTask;
         });
 
         // In the saved form every object's text stands at its new place (creation order = display order, DSG-SUR-197).
         Assert.True(await s.Fixture.Services.Documents.SaveAsync(s.Document));
         var saved = s.Fixture.Disk(DesignerFixture.FormPath);
-        Assert.Equal(["File1", "N1", "Help", "Exit", "Open", "About"], WrittenOrder(saved, "About", "Exit", "File1", "Help", "N1", "Open"));
+        Assert.Equal(["File1", "N1", "Help", "Exit1", "Open", "About"], WrittenOrder(saved, "About", "Exit1", "File1", "Help", "N1", "Open"));
         var parsed = FormParser.Parse(saved, "MainForm.form", CodeSyncTests.Catalog);
         Assert.Empty(parsed.Diagnostics);
         Assert.Equal(["About"], parsed.Document!.FindByName("Open")!.Children.Select(c => c.Name));
@@ -845,7 +869,7 @@ public sealed class MenuDesignerTests
             Assert.False(md.CanMoveIn); // the sibling before it is a separator
             Nothing(md.MoveIn);
             OneOrderUnit(md.MoveOut);
-            Assert.Equal([file.Name, "Exit", "Help"], s.Children("MainMenu1"));
+            Assert.Equal([file.Name, "Exit1", "Help"], s.Children("MainMenu1"));
             Assert.Equal(["Open", "N1"], s.Children(file.Name));
             Assert.False(md.CanMoveOut);
             Nothing(md.MoveOut);
@@ -854,7 +878,7 @@ public sealed class MenuDesignerTests
             Assert.True(md.CanMoveIn);
             OneOrderUnit(md.MoveIn);
             Assert.Equal([file.Name, "Help"], s.Children("MainMenu1"));
-            Assert.Equal(["Open", "N1", "Exit"], s.Children(file.Name));
+            Assert.Equal(["Open", "N1", "Exit1"], s.Children(file.Name));
             md.Select(open);
             Assert.False(md.CanMoveIn);
             Nothing(md.MoveIn);
@@ -869,17 +893,17 @@ public sealed class MenuDesignerTests
             OneOrderUnit(md.MoveIn);
             OneOrderUnit(md.MoveIn);
             Assert.Equal([file.Name], s.Children("MainMenu1"));
-            Assert.Equal(["Open", "N1", "Exit"], s.Children(file.Name));
-            Assert.Equal(["Help"], s.Children("Exit"));
+            Assert.Equal(["Open", "N1", "Exit1"], s.Children(file.Name));
+            Assert.Equal(["Help"], s.Children("Exit1"));
             Assert.Equal(["About"], s.Children("Help"));
             OneOrderUnit(md.MoveOut);
-            Assert.Equal(["Open", "N1", "Exit", "Help"], s.Children(file.Name));
+            Assert.Equal(["Open", "N1", "Exit1", "Help"], s.Children(file.Name));
             OneOrderUnit(md.MoveOut);
             Assert.Equal([file.Name, "Help"], s.Children("MainMenu1"));
 
             // Undo steps back one move at a time.
             s.Undo();
-            Assert.Equal(["Open", "N1", "Exit", "Help"], s.Children(file.Name));
+            Assert.Equal(["Open", "N1", "Exit1", "Help"], s.Children(file.Name));
             Assert.Same(help, md.Selected);
             Assert.True(md.CanMoveOut);
             return Task.CompletedTask;

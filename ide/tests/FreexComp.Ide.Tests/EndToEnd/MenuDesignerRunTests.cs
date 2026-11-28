@@ -79,6 +79,7 @@ public sealed class MenuDesignerRunTests
           finally
             Lines.Free;
           end;
+          Exit; // D-163: the field of the item E&xit must not hide the standard procedure
 
         """;
 
@@ -144,6 +145,7 @@ public sealed class MenuDesignerRunTests
 
     [AvaloniaFact(Timeout = 120000)]
     [Trait("Task", "D-158")]
+    [Trait("Task", "D-163")]
     [Trait("Req", "DSG-SUR-260")]
     public async Task CompiledAppShowsDesignedMenu()
     {
@@ -197,6 +199,7 @@ public sealed class MenuDesignerRunTests
         var menu = s.Object("MainMenu1");
         Assert.Equal([file], menu.Children.Select(c => c.Name));
         Assert.Equal([open, separator, exit], s.Object(file).Children.Select(c => c.Name));
+        Assert.Equal("Exit1", exit); // D-163: a caption named like a System routine gets the number suffix
         Assert.Equal(16463, ((IntegerValue)s.Object(open).FindProperty("ShortCut")!.Value).Value); // Ctrl+O (UIF-930)
         var expected = DocumentOutline(menu);
         Assert.Equal(["0|popup|&File", "0.0|item|&Open…\\tCtrl+O", "0.1|separator|", "0.2|item|E&xit"], expected);

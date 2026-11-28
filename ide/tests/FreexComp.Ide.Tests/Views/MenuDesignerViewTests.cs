@@ -150,42 +150,42 @@ public sealed class MenuDesignerViewTests
         Assert.Equal("Dialog.MenuDesigner.Caption", dlg.FocusedAutomationId);
         dlg.Type("Caption", "&Copy");
         dlg.Press("Enter");
-        Assert.Equal(["Copy"], Nodes(dlg, dlg.Find<TreeViewItem>("Node.Edit")));
+        Assert.Equal(["Copy1"], Nodes(dlg, dlg.Find<TreeViewItem>("Node.Edit")));
         dlg.Type("ShortCut", "Ctrl+C");
         dlg.Press("Enter");
-        Assert.Equal(16451, ((IntegerValue)Item(d, "Copy").FindProperty("ShortCut")!.Value).Value);
-        Assert.Equal("Ctrl+C", ((TextBlock)((DockPanel)dlg.Find<TreeViewItem>("Node.Copy").Header!).Children[0]).Text);
+        Assert.Equal(16451, ((IntegerValue)Item(d, "Copy1").FindProperty("ShortCut")!.Value).Value);
+        Assert.Equal("Ctrl+C", ((TextBlock)((DockPanel)dlg.Find<TreeViewItem>("Node.Copy1").Header!).Children[0]).Text);
 
         // New Separator (button): the separator is drawn as a rule; Ctrl+Up moves it up.
-        ClickNode(dlg, "Copy");
+        ClickNode(dlg, "Copy1");
         dlg.Click("NewSeparator");
-        Assert.Equal(["Copy", "N1"], Nodes(dlg, dlg.Find<TreeViewItem>("Node.Edit")));
+        Assert.Equal(["Copy1", "N1"], Nodes(dlg, dlg.Find<TreeViewItem>("Node.Edit")));
         Assert.IsType<Border>(dlg.Find<TreeViewItem>("Node.N1").Header);
         ClickNode(dlg, "N1");
         dlg.Press("Ctrl+Up");
-        Assert.Equal(["N1", "Copy"], Nodes(dlg, dlg.Find<TreeViewItem>("Node.Edit")));
+        Assert.Equal(["N1", "Copy1"], Nodes(dlg, dlg.Find<TreeViewItem>("Node.Edit")));
         Assert.Equal("Dialog.MenuDesigner.Node.N1", dlg.FocusedAutomationId);
 
         // Delete on an item without sub-items deletes at once; the next sibling is selected.
         dlg.Press("Delete");
-        Assert.Equal(["Copy"], Nodes(dlg, dlg.Find<TreeViewItem>("Node.Edit")));
+        Assert.Equal(["Copy1"], Nodes(dlg, dlg.Find<TreeViewItem>("Node.Edit")));
         Assert.Null(d.Designer.Model!.FindByName("N1"));
 
         // F2 focuses Caption with its text selected; Enter in the tree creates and assigns the OnClick handler.
-        ClickNode(dlg, "Copy");
+        ClickNode(dlg, "Copy1");
         dlg.Press("F2");
         var caption = dlg.Find<TextBox>("Caption");
         Assert.Equal("Dialog.MenuDesigner.Caption", dlg.FocusedAutomationId);
         Assert.Equal((0, "&Copy".Length), (caption.SelectionStart, caption.SelectionEnd));
-        ClickNode(dlg, "Copy");
+        ClickNode(dlg, "Copy1");
         dlg.Press("Enter");
         Assert.False(dlg.Window.IsClosed());
-        Assert.Equal("CopyClick", ((IdentValue)Item(d, "Copy").FindProperty("OnClick")!.Value).Name);
-        Assert.Contains("procedure TMainForm.CopyClick(Sender: TObject);", d.Buffer.Text, StringComparison.Ordinal);
+        Assert.Equal("Copy1Click", ((IdentValue)Item(d, "Copy1").FindProperty("OnClick")!.Value).Name);
+        Assert.Contains("procedure TMainForm.Copy1Click(Sender: TObject);", d.Buffer.Text, StringComparison.Ordinal);
 
         // The Events page tab shows the handler in the embedded grid.
         dlg.Click("Grid.Page.Events");
-        Assert.Equal("CopyClick", dlg.Find<TextBlock>("Grid.Row.OnClick.Value").Text);
+        Assert.Equal("Copy1Click", dlg.Find<TextBlock>("Grid.Row.OnClick.Value").Text);
 
         // Delete on an item with sub-items asks first (UI-DLG-251); Cancel keeps it.
         ClickNode(dlg, "Edit");
@@ -359,7 +359,7 @@ public sealed class MenuDesignerViewTests
         Assert.Equal(Expected, ToolTip.GetTip(warning)); // the full text, also when the line is trimmed
         var icon = warning.GetVisualDescendants().OfType<IdeIcon>().Single();
         Assert.Equal(("warning", 16.0, 16.0), (icon.IconName, icon.Bounds.Width, icon.Bounds.Height));
-        foreach (var node in (string[])["Open", "Copy"])
+        foreach (var node in (string[])["Open", "Copy1"])
         {
             Assert.EndsWith(", duplicate access key", NameOf(dlg, node), StringComparison.Ordinal);
             var mark = MarkOf(dlg, node)!;
@@ -376,7 +376,7 @@ public sealed class MenuDesignerViewTests
 
         // A long text is one line trimmed before Close: the strip does not grow, the tooltip has the whole text.
         var words = string.Join(" ", Enumerable.Repeat("option", 60));
-        InsertItem(dlg, "Copy", "&O " + words);
+        InsertItem(dlg, "Copy1", "&O " + words);
         var third = Item(d, "MainMenu1").Children[2].Name;
         Assert.EndsWith(", duplicate access key", NameOf(dlg, third), StringComparison.Ordinal);
         Assert.Equal((TextTrimming.CharacterEllipsis, TextWrapping.NoWrap), (text.TextTrimming, text.TextWrapping));
@@ -403,9 +403,9 @@ public sealed class MenuDesignerViewTests
         Retype(dlg, third, "&Paste");
         Assert.Equal(Expected, text.Text);
         Assert.Null(MarkOf(dlg, third)); // a name derived from a caption is kept (UIF-727): only generated names follow
-        Retype(dlg, "Copy", "&Copy");
+        Retype(dlg, "Copy1", "&Copy");
         Assert.False(warning.IsVisible);
-        Assert.Equal(["Open", "Copy", third], Nodes(dlg));
+        Assert.Equal(["Open", "Copy1", third], Nodes(dlg));
         Assert.Equal(["Open", "Copy", "Paste"], Nodes(dlg).Select(node => NameOf(dlg, node)));
         Assert.All(Nodes(dlg), node =>
         {
@@ -900,8 +900,8 @@ public sealed class MenuDesignerViewTests
 
         dlg.Press("Insert");
         TypeCaption(dlg, "E&xit");
-        Assert.Equal(["Open", "N1", "Exit"], Nodes(dlg));
-        Assert.Equal("Dialog.MenuDesigner.Node.Exit", dlg.FocusedAutomationId);
+        Assert.Equal(["Open", "N1", "Exit1"], Nodes(dlg));
+        Assert.Equal("Dialog.MenuDesigner.Node.Exit1", dlg.FocusedAutomationId);
 
         // The arrows and Enter act on the node at once: up to the separator and back, Enter makes the OnClick handler.
         dlg.Press("Up");
@@ -909,12 +909,12 @@ public sealed class MenuDesignerViewTests
         dlg.Press("Down");
         dlg.Press("Enter");
         Assert.False(dlg.Window.IsClosed());
-        Assert.Equal("ExitClick", Stored("Exit", "OnClick"));
+        Assert.Equal("Exit1Click", Stored("Exit1", "OnClick"));
 
         // Ctrl+Right after Enter: a sub-item at once.
         dlg.Press("Ctrl+Right");
         TypeCaption(dlg, "&Now");
-        Assert.Equal(["Now"], Nodes(dlg, dlg.Find<TreeViewItem>("Node.Exit")));
+        Assert.Equal(["Now"], Nodes(dlg, dlg.Find<TreeViewItem>("Node.Exit1")));
         Assert.Equal("Dialog.MenuDesigner.Node.Now", dlg.FocusedAutomationId);
 
         // Another text on a separator makes it an ordinary item again (F2 is the key from a node to Caption).
@@ -923,7 +923,7 @@ public sealed class MenuDesignerViewTests
         Assert.Equal("Dialog.MenuDesigner.Node.N1", dlg.FocusedAutomationId);
         dlg.Press("F2");
         TypeCaption(dlg, "&Save");
-        Assert.Equal(["Open", "Save", "Exit"], Nodes(dlg));
+        Assert.Equal(["Open", "Save", "Exit1"], Nodes(dlg));
         Assert.IsType<DockPanel>(dlg.Find<TreeViewItem>("Node.Save").Header);
         Assert.True(shortCut.IsEnabled);
         Assert.Equal("Dialog.MenuDesigner.Node.Save", dlg.FocusedAutomationId);

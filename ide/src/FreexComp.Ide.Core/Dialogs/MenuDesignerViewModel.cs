@@ -672,7 +672,7 @@ public sealed class MenuDesignerViewModel : DialogViewModel<bool>
     /// <summary>
     /// UIF-727: the name a caption gives — its identifier characters (a leading digit is dropped until a letter or
     /// underscore starts it), with the smallest numeric suffix 1, 2, … while the name is taken (a component, a member of
-    /// the form class, a reserved word); <c>N&lt;k&gt;</c> for a separator; null (no rename) when nothing remains.
+    /// the form class, a reserved word, an identifier of unit <c>System</c> such as <c>Exit</c>); <c>N&lt;k&gt;</c> for a separator; null (no rename) when nothing remains.
     /// </summary>
     private string? DerivedName(FormObject item, string caption)
     {
@@ -693,7 +693,8 @@ public sealed class MenuDesignerViewModel : DialogViewModel<bool>
 
         stem = stem[..Math.Min(stem.Length, ObjectInspectorViewModel.MaxNameLength - 4)];
         bool Taken(string name) => !Names.Equals(name, item.Name)
-            && (_designer.Model!.FindByName(name) is not null || _designer.CodeSync.LookupMember(name) != MemberLookup.None || SyntaxFacts.IsReservedWord(name));
+            && (_designer.Model!.FindByName(name) is not null || _designer.CodeSync.LookupMember(name) != MemberLookup.None || SyntaxFacts.IsReservedWord(name)
+                || SystemIdentifiers.Contains(name)); // D-163: a field would hide the System identifier in the form's methods
         var candidate = stem;
         for (var n = 1; Taken(candidate); n++)
         {
