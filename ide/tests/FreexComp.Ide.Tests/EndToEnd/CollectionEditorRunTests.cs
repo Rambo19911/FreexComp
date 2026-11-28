@@ -172,7 +172,7 @@ public sealed class CollectionEditorRunTests
         return [.. lines[(start + 1)..end].Select(l => l.Trim())];
     }
 
-    [AvaloniaFact(Timeout = 300000)]
+    [AvaloniaFact(Timeout = 120000)]
     [Trait("Task", "D-160")]
     [Trait("Req", "DSG-OI-135")]
     public async Task StatusPanelsReachRuntimeInOrder()

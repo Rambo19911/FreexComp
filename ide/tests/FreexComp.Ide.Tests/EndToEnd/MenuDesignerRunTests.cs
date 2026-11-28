@@ -142,7 +142,7 @@ public sealed class MenuDesignerRunTests
         return focused["Dialog.MenuDesigner.Node.".Length..];
     }
 
-    [AvaloniaFact(Timeout = 240000)]
+    [AvaloniaFact(Timeout = 120000)]
     [Trait("Task", "D-158")]
     [Trait("Req", "DSG-SUR-260")]
     public async Task CompiledAppShowsDesignedMenu()
