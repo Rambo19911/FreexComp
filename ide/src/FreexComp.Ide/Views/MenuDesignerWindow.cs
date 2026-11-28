@@ -5,6 +5,8 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Media.Imaging;
+using Avalonia.Platform;
 using Avalonia.Styling;
 using Avalonia.Threading;
 using FreexComp.Designer.Inspector;
@@ -28,6 +30,9 @@ namespace FreexComp.Ide.Views;
 /// Items move by a drag in the tree — before, after or into the row under the pointer, shown by the insertion line
 /// (<c>Dialog.MenuDesigner.InsertionLine</c>) or the row highlight, Escape cancels the drag only — and by
 /// Ctrl+Shift+Left (move out) / Ctrl+Shift+Right (move in) (DSG-SUR-253…257, UI-DLG-341; D-156).
+/// The Image field (<c>Dialog.MenuDesigner.Image</c>, entries <c>.Image.Item.&lt;index&gt;</c> / <c>.Item.None</c>) lists
+/// the pictures of the menu's image list; Enter in Caption commits and returns the focus to the item's node, so a menu is
+/// typed as Insert, text, Enter (DSG-SUR-258, 259, UI-DLG-342, 343; D-157).
 /// </summary>
 public sealed class MenuDesignerWindow : DialogWindow
 {
@@ -59,6 +64,9 @@ public sealed class MenuDesignerWindow : DialogWindow
     /// <summary>DSG-SUR-253: the pointer distance (DIP) that turns a press on a node into a drag.</summary>
     private const double DragThreshold = 4;
 
+    /// <summary>space.6, the width of the tree's scroll bar: every row ends with an empty strip this wide, so that the bar hides no shortcut text.</summary>
+    private const double ScrollBarRoom = 16;
+
     /// <summary>Style class of the node that is the "into" target of a drag (UI-DLG-341).</summary>
     private const string DropTargetClass = "dropTarget";
 
@@ -70,6 +78,9 @@ public sealed class MenuDesignerWindow : DialogWindow
         public TextBox Caption { get; } = new();
 
         public ComboBox ShortCut { get; } = new() { IsEditable = true, HorizontalAlignment = HorizontalAlignment.Stretch };
+
+        /// <summary>DSG-SUR-258: the drop-down list of the item's <c>ImageIndex</c> (not editable).</summary>
+        public ComboBox Image { get; } = new() { HorizontalAlignment = HorizontalAlignment.Stretch };
 
         public PropertyGridView Grid { get; } = new(Id("Grid"), Id("Grid.Row.")) { IsInDialog = true, BorderThickness = new Thickness(1) };
 
@@ -89,6 +100,9 @@ public sealed class MenuDesignerWindow : DialogWindow
         public Dictionary<FormObject, TreeViewItem> Nodes { get; } = new(ReferenceEqualityComparer.Instance);
 
         public bool Syncing { get; set; }
+
+        /// <summary>The nodes the tree was last built from.</summary>
+        public IReadOnlyList<MenuDesignerNode>? Built { get; set; }
 
         /// <summary>UI-DLG-341: the layer over the tree that shows the drop position; it takes no input.</summary>
         public Canvas DropLayer { get; } = new() { IsHitTestVisible = false, ClipToBounds = true };
@@ -120,6 +134,7 @@ public sealed class MenuDesignerWindow : DialogWindow
     private static Grid Body(MenuDesignerViewModel model, Parts p)
     {
         var itemsLabel = new Label { Content = MnemonicLabel.ToAccessText(Strings.MenuDesigner_Items), Target = p.Tree, Padding = new Thickness(0, 0, 0, 4) };
+        ScrollViewer.SetHorizontalScrollBarVisibility(p.Tree, Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled); // rows as wide as the tree: a long caption is cut
         AutomationProperties.SetAutomationId(p.Tree, Id("Tree"));
         AutomationProperties.SetName(p.Tree, MnemonicLabel.ToPlainText(Strings.MenuDesigner_Items));
         var placeholder = new TextBlock { Text = model.EmptyText, Margin = new Thickness(8), TextWrapping = TextWrapping.Wrap, IsHitTestVisible = false };
@@ -159,11 +174,26 @@ public sealed class MenuDesignerWindow : DialogWindow
         AutomationProperties.SetAutomationId(p.ShortCut, Id("ShortCut"));
         AutomationProperties.SetName(p.ShortCut, MnemonicLabel.ToPlainText(Strings.MenuDesigner_ShortCut));
         p.ShortCut.ItemsSource = model.ShortCutChoices;
-        var fields = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,8,*"), RowDefinitions = new RowDefinitions("Auto,6,Auto") };
+        AutomationProperties.SetAutomationId(p.Image, Id("Image"));
+        AutomationProperties.SetName(p.Image, MnemonicLabel.ToPlainText(Strings.MenuDesigner_Image));
+        ToolTip.SetShowOnDisabled(p.Image, true); // the reason it is disabled (DSG-SUR-258)
+        p.Image.ItemTemplate = new Avalonia.Controls.Templates.FuncDataTemplate<MenuImageChoice>((choice, _) => choice is null ? null : ImageEntry(choice));
+        p.Image.ContainerPrepared += (_, e) =>
+        {
+            if (e.Index >= 0 && e.Index < p.Image.Items.Count && p.Image.Items[e.Index] is MenuImageChoice choice)
+            {
+                AutomationProperties.SetAutomationId(e.Container, Id("Image.Item." + (choice.Index == MenuImageChoice.None ? "None"
+                    : choice.Index.ToString(System.Globalization.CultureInfo.InvariantCulture))));
+                AutomationProperties.SetName(e.Container, choice.AutomationName);
+            }
+        };
+        var fields = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,8,*"), RowDefinitions = new RowDefinitions("Auto,6,Auto,6,Auto") };
         Place(fields, new Label { Content = MnemonicLabel.ToAccessText(Strings.MenuDesigner_Caption), Target = p.Caption, VerticalAlignment = VerticalAlignment.Center, Padding = new Thickness(0) }, 0, 0);
         Place(fields, p.Caption, 0, 2);
         Place(fields, new Label { Content = MnemonicLabel.ToAccessText(Strings.MenuDesigner_ShortCut), Target = p.ShortCut, VerticalAlignment = VerticalAlignment.Center, Padding = new Thickness(0) }, 2, 0);
         Place(fields, p.ShortCut, 2, 2);
+        Place(fields, new Label { Content = MnemonicLabel.ToAccessText(Strings.MenuDesigner_Image), Target = p.Image, VerticalAlignment = VerticalAlignment.Center, Padding = new Thickness(0) }, 4, 0);
+        Place(fields, p.Image, 4, 2);
 
         // The grid's page tabs (Dialog.MenuDesigner.Grid.Page.Properties / .Events).
         p.Grid.Grid = model.Grid;
@@ -215,16 +245,25 @@ public sealed class MenuDesignerWindow : DialogWindow
         {
             p.Syncing = true;
             var hadFocus = p.Tree.IsKeyboardFocusWithin;
-            if (p.Dragging)
+            // The nodes are made again only when the menu changed: a mere change of the selection keeps them, so that the
+            // arrow keys of the tree move on from a node that still exists, and collapsed nodes stay collapsed.
+            var nodes = model.Nodes;
+            if (p.Built is null || !SameNodes(p.Built, nodes))
             {
-                CancelDrag(p); // the nodes are rebuilt: a drag over the old ones ends (a change behind the dialog)
-            }
+                if (p.Dragging)
+                {
+                    CancelDrag(p); // a drag over the old nodes ends (a change behind the dialog)
+                }
 
-            p.Tree.Items.Clear();
-            p.Nodes.Clear();
-            foreach (var node in model.Nodes)
-            {
-                p.Tree.Items.Add(Node(node, p));
+                var collapsed = new HashSet<FormObject>(p.Nodes.Where(n => !n.Value.IsExpanded).Select(n => n.Key), ReferenceEqualityComparer.Instance);
+                p.Tree.Items.Clear();
+                p.Nodes.Clear();
+                foreach (var node in nodes)
+                {
+                    p.Tree.Items.Add(Node(node, p, collapsed));
+                }
+
+                p.Built = nodes;
             }
 
             if (model.Selected is { } selected && p.Nodes.TryGetValue(selected, out var item))
@@ -256,19 +295,19 @@ public sealed class MenuDesignerWindow : DialogWindow
             down.IsEnabled = model.CanMoveDown;
             p.Caption.IsEnabled = model.IsCaptionEnabled;
             p.ShortCut.IsEnabled = model.IsShortCutEnabled;
+            if (!ReferenceEquals(p.Image.ItemsSource, model.ImageChoices))
+            {
+                p.Image.ItemsSource = model.ImageChoices; // unchanged entries keep their pictures
+            }
+
+            p.Image.SelectedItem = model.SelectedImage;
+            p.Image.IsEnabled = model.IsImageEnabled;
+            ToolTip.SetTip(p.Image, model.ImageTip);
             SyncFields(model, p);
             p.Syncing = false;
             if (hadFocus && !p.Tree.IsKeyboardFocusWithin)
             {
-                // Rebuilt nodes lost the focus: the tree keeps it, on the selected node (once its container is laid out).
-                FocusSelected(p);
-                Dispatcher.UIThread.Post(() =>
-                {
-                    if (p.Tree.IsKeyboardFocusWithin)
-                    {
-                        FocusSelected(p); // unless the focus moved on meanwhile (Caption, UI-DLG-250)
-                    }
-                }, DispatcherPriority.Loaded);
+                FocusNode(p); // rebuilt nodes lost the focus: the tree keeps it, on the selected node
             }
         }
 
@@ -382,11 +421,15 @@ public sealed class MenuDesignerWindow : DialogWindow
             if (e.Key == Key.Enter && e.KeyModifiers == KeyModifiers.None)
             {
                 e.Handled = true; // not the dialog's Close
-                model.CommitCaption();
+                if (model.CommitCaption())
+                {
+                    FocusNode(p); // DSG-SUR-259 (a): back on the item's node — Insert, Ctrl+Right, the arrows and Enter act at once
+                }
             }
         }, RoutingStrategies.Tunnel);
         p.Caption.LostFocus += (_, _) =>
         {
+            p.Caption.ClearSelection(); // selected text would look like the focus still being here
             if (!p.Syncing)
             {
                 model.CommitCaption();
@@ -417,6 +460,15 @@ public sealed class MenuDesignerWindow : DialogWindow
             {
                 model.ShortCutText = p.ShortCut.Text ?? "";
                 model.CommitShortCut();
+            }
+        };
+
+        // Image: a choice of the list commits (one "Property" unit, DSG-SUR-258).
+        p.Image.SelectionChanged += (_, _) =>
+        {
+            if (!p.Syncing && p.Image.SelectedItem is MenuImageChoice choice)
+            {
+                model.CommitImage(choice.Index);
             }
         };
 
@@ -524,18 +576,18 @@ public sealed class MenuDesignerWindow : DialogWindow
     /// duplicate-access-key warning has the mark after its caption, the warning as tooltip and ", duplicate access key" at
     /// the end of its automation name (UI-DLG-340).
     /// </summary>
-    private static TreeViewItem Node(MenuDesignerNode node, Parts p)
+    private static TreeViewItem Node(MenuDesignerNode node, Parts p, HashSet<FormObject> collapsed)
     {
         Control header;
         if (node.IsSeparator)
         {
-            var rule = new Border { Height = 1, MinWidth = 120, Margin = new Thickness(0, 6), VerticalAlignment = VerticalAlignment.Center };
+            var rule = new Border { Height = 1, MinWidth = 120, Margin = new Thickness(0, 6, ScrollBarRoom, 6), VerticalAlignment = VerticalAlignment.Center };
             rule.Bind(Border.BackgroundProperty, rule.GetResourceObservable("FxcBorderStrongBrush"));
             header = rule;
         }
         else
         {
-            var caption = new TextBlock { Text = node.Text, VerticalAlignment = VerticalAlignment.Center };
+            var caption = new TextBlock { Text = node.Text, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
             if (node.IsCaptionEmpty)
             {
                 caption.Bind(TextBlock.ForegroundProperty, caption.GetResourceObservable("FxcTextTertiaryBrush"));
@@ -543,18 +595,23 @@ public sealed class MenuDesignerWindow : DialogWindow
 
             var shortcut = new TextBlock { Text = node.ShortCut, Margin = new Thickness(16, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
             shortcut.Bind(TextBlock.ForegroundProperty, shortcut.GetResourceObservable("FxcTextSecondaryBrush"));
-            var cells = new DockPanel { LastChildFill = true };
+            var cells = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 0, ScrollBarRoom, 0) };
             DockPanel.SetDock(shortcut, Dock.Right);
             cells.Children.Add(shortcut);
-            cells.Children.Add(caption);
-            if (node.Warning is not null)
+            if (node.Warning is null)
             {
-                DockPanel.SetDock(caption, Dock.Left);
-                cells.Children.Add(new IdeIcon
+                cells.Children.Add(caption);
+            }
+            else
+            {
+                // The mark directly after the caption text; it keeps its place when a long caption is cut.
+                var mark = new IdeIcon
                 {
                     IconName = "warning-corner", Width = 10, Height = 10, Margin = new Thickness(4, 0, 0, 0) /* space.2 */,
-                    HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center,
-                });
+                    VerticalAlignment = VerticalAlignment.Center,
+                };
+                DockPanel.SetDock(mark, Dock.Right);
+                cells.Children.Add(new DockPanel { LastChildFill = true, HorizontalAlignment = HorizontalAlignment.Left, Children = { mark, caption } });
                 cells.Background = Brushes.Transparent; // the tooltip on the whole row
                 ToolTip.SetTip(cells, node.Warning);
             }
@@ -562,18 +619,24 @@ public sealed class MenuDesignerWindow : DialogWindow
             header = cells;
         }
 
-        var item = new TreeViewItem { Header = header, Tag = node.Item, IsExpanded = true };
+        var item = new TreeViewItem { Header = header, Tag = node.Item, IsExpanded = !collapsed.Contains(node.Item) };
         AutomationProperties.SetAutomationId(item, Id("Node." + node.Name));
         AutomationProperties.SetName(item, (node.IsSeparator ? node.Name : MenuDesignerViewModel.PlainCaption(node.Text))
             + (node.Warning is null ? "" : Strings.MenuDesigner_DuplicateAccessKeySuffix));
         p.Nodes[node.Item] = item;
         foreach (var child in node.Children)
         {
-            item.Items.Add(Node(child, p));
+            item.Items.Add(Node(child, p, collapsed));
         }
 
         return item;
     }
+
+    /// <summary>The two node lists show the same tree: the same items with the same texts, marks and sub-items.</summary>
+    private static bool SameNodes(IReadOnlyList<MenuDesignerNode> a, IReadOnlyList<MenuDesignerNode> b) =>
+        a.Count == b.Count && a.Zip(b).All(n => ReferenceEquals(n.First.Item, n.Second.Item) && n.First.Name == n.Second.Name
+            && n.First.Caption == n.Second.Caption && n.First.ShortCut == n.Second.ShortCut && n.First.Warning == n.Second.Warning
+            && SameNodes(n.First.Children, n.Second.Children));
 
     /// <summary>The row of a node — its own line of the tree, without its sub-items — when it is shown.</summary>
     private static Border? RowOf(TreeViewItem node) =>
@@ -669,6 +732,66 @@ public sealed class MenuDesignerWindow : DialogWindow
         p.Pointer = null;
         ShowDropTarget(p, null);
         pointer?.Capture(null);
+    }
+
+    /// <summary>
+    /// UI-DLG-342: an entry of the Image field — the cell's picture in a 16 × 16 box (reduced to fit with its aspect kept
+    /// when larger, centred and not enlarged when smaller), space.3, the number; <c>(None)</c> and a stored index outside
+    /// the list are the text alone. The closed field shows the selected entry the same way. The picture is made when the
+    /// entry is first shown.
+    /// </summary>
+    private static Control ImageEntry(MenuImageChoice choice)
+    {
+        var text = new TextBlock { Text = choice.Text, VerticalAlignment = VerticalAlignment.Center };
+        if (choice.Cell is not { } cell)
+        {
+            return text;
+        }
+
+        var picture = new Image
+        {
+            Source = Picture(cell), Stretch = Stretch.Uniform, StretchDirection = StretchDirection.DownOnly,
+            HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
+        };
+        text.Margin = new Thickness(6, 0, 0, 0); // space.3
+        return new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Children = { new Panel { Width = 16, Height = 16, VerticalAlignment = VerticalAlignment.Center, Children = { picture } }, text },
+        };
+    }
+
+    /// <summary>The picture of an image-list cell: its premultiplied BGRA pixels, top row first.</summary>
+    private static WriteableBitmap Picture(ImageListCell cell)
+    {
+        var height = cell.Pixels.Length / cell.Width;
+        var bitmap = new WriteableBitmap(new PixelSize(cell.Width, height), new Vector(96, 96), PixelFormat.Bgra8888, AlphaFormat.Premul);
+        using var buffer = bitmap.Lock();
+        var row = new int[cell.Width];
+        for (var y = 0; y < height; y++)
+        {
+            for (var x = 0; x < row.Length; x++)
+            {
+                row[x] = unchecked((int)cell.Pixel(x, y));
+            }
+
+            System.Runtime.InteropServices.Marshal.Copy(row, 0, buffer.Address + (y * buffer.RowBytes), row.Length);
+        }
+
+        return bitmap;
+    }
+
+    /// <summary>The focus on the selected node — now, and again once its (new) container is laid out, unless the focus moved on meanwhile.</summary>
+    private static void FocusNode(Parts p)
+    {
+        FocusSelected(p);
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (p.Tree.IsKeyboardFocusWithin)
+            {
+                FocusSelected(p);
+            }
+        }, DispatcherPriority.Loaded);
     }
 
     private static void FocusSelected(Parts p)

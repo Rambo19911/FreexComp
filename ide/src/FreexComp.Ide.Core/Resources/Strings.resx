@@ -1096,6 +1096,14 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
     <value> (+{0} more)</value>
     <comment>DSG-SUR-252; suffix of the warning line (one leading space); 0 = number of further warnings</comment>
   </data>
+  <data name="Msg_MenuDesigner_ImagesNotAssigned" xml:space="preserve">
+    <value>Assign an image list to the Images property of {0} to choose images here.</value>
+    <comment>DSG-SUR-258; tooltip of the disabled Image field; 0 = menu component name</comment>
+  </data>
+  <data name="Msg_MenuDesigner_ImagesUnavailable" xml:space="preserve">
+    <value>The images of {0} cannot be shown here. Set ImageIndex in the property grid.</value>
+    <comment>DSG-SUR-258; tooltip of the disabled Image field; 0 = the stored Images value</comment>
+  </data>
   <data name="Msg_Designer_AlignedCannotMove" xml:space="preserve">
     <value>{0} is docked by its Align property and cannot be moved</value>
   </data>
@@ -5518,6 +5526,18 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   <data name="MenuDesigner_ShortCut" xml:space="preserve">
     <value>&amp;ShortCut:</value>
     <comment>dialogs.md §26 Dialog.MenuDesigner.ShortCut</comment>
+  </data>
+  <data name="MenuDesigner_Image" xml:space="preserve">
+    <value>I&amp;mage:</value>
+    <comment>dialogs.md §26 Dialog.MenuDesigner.Image</comment>
+  </data>
+  <data name="MenuDesigner_ImageNone" xml:space="preserve">
+    <value>(None)</value>
+    <comment>DSG-SUR-258: the entry of ImageIndex -1</comment>
+  </data>
+  <data name="MenuDesigner_ImageEntryName" xml:space="preserve">
+    <value>Image {0}</value>
+    <comment>UI-DLG-342: automation name of an entry of the Image field; 0 = index</comment>
   </data>
   <data name="MenuDesigner_Empty" xml:space="preserve">
     <value>No items. Choose New Item to create one.</value>

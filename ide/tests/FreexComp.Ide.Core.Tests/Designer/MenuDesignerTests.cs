@@ -962,4 +962,276 @@ public sealed class MenuDesignerTests
         Assert.Empty(parsed.Diagnostics);
         Assert.Equal(expected, MenuDesignerViewModel.DropPositionAt(parsed.Document!.FindByName("Item1")!, fraction));
     }
+
+    /// <summary>The component metadata of the UI framework (menus with <c>Images</c>, items with <c>ImageIndex</c> and <c>Action</c>, image lists, actions).</summary>
+    private static readonly Lazy<FreexComp.Designer.Catalog.ComponentCatalog> Framework = new(() =>
+    {
+        var result = FreexComp.Designer.Catalog.CatalogLoader.Load([Path.Combine(DataDesignTests.FrameworkDesignDir, "index.json")]);
+        Assert.Empty(result.Problems);
+        return result.Catalog;
+    });
+
+    private static async Task<Session> OpenWithFrameworkAsync(string unit, string form)
+    {
+        var dialogs = new FakeDialogService();
+        var f = new DesignerFixture(o => o.Dialogs = dialogs);
+        ((FreexComp.Ide.Core.Documents.DocumentService)f.Services.Documents).DesignCatalog = Framework.Value;
+        return new Session(f, dialogs, await f.OpenAsync(unit, form.ReplaceLineEndings("\n")));
+    }
+
+    /// <summary>A binary value in the form syntax: hex digits, 32 bytes a line.</summary>
+    internal static string HexLines(byte[] bytes, string indent) =>
+        string.Concat(bytes.Chunk(32).Select(line => indent + Convert.ToHexString(line) + "\n"));
+
+    /// <summary>The image-list fixture of four 16 × 16 cells (<c>TestData/imagelists/alpha4.bin</c>).</summary>
+    internal static byte[] FourCells => File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "TestData", "imagelists", "alpha4.bin"));
+
+    /// <summary>A menu with two items and a separator; three image lists: four cells, no <c>Bitmap</c> value, an undecodable one.</summary>
+    private static string ImageForm => """
+        object MainForm: TMainForm
+          Left = 200
+          Top = 120
+          Caption = 'Hello Form'
+          ClientWidth = 400
+          ClientHeight = 300
+          Menu = MainMenu1
+          PixelsPerInch = 96
+          object MainMenu1: TMainMenu
+            DesignLeft = 320
+            DesignTop = 120
+            object FileOpen: TMenuItem
+              Caption = '&Open'
+            end
+            object FileSave: TMenuItem
+              Caption = '&Save'
+              ImageIndex = 9
+            end
+            object N1: TMenuItem
+              Caption = '-'
+            end
+          end
+          object ImageList1: TImageList
+            DesignLeft = 360
+            DesignTop = 120
+            Bitmap = {
+              $HEX$
+            }
+          end
+          object EmptyList: TImageList
+            DesignLeft = 400
+            DesignTop = 120
+          end
+          object BrokenList: TImageList
+            DesignLeft = 440
+            DesignTop = 120
+            Bitmap = {
+              0001
+            }
+          end
+        end
+
+        """.ReplaceLineEndings("\n").Replace("      $HEX$\n", HexLines(FourCells, "      "), StringComparison.Ordinal);
+
+    private static readonly string ImageUnit = Unit.Replace("Classes, Controls, Forms, Menus;", "Classes, Controls, Forms, Menus, ImgList;", StringComparison.Ordinal)
+        .Replace("    MainMenu1: TMainMenu;", "    MainMenu1: TMainMenu;\r\n    FileOpen: TMenuItem;\r\n    FileSave: TMenuItem;\r\n    N1: TMenuItem;\r\n"
+            + "    ImageList1: TImageList;\r\n    EmptyList: TImageList;\r\n    BrokenList: TImageList;", StringComparison.Ordinal);
+
+    /// <summary>
+    /// D-157 (DSG-SUR-258): the <c>Image</c> field follows the menu's <c>Images</c> — the cells of a readable image list,
+    /// <c>(None)</c>, the stored number when it is not among them; disabled with its reason otherwise; a choice is one
+    /// "Property" unit.
+    /// </summary>
+    [Fact(Timeout = 30000)]
+    [Trait("Phase", "8")]
+    [Trait("Req", "DSG-SUR-258")]
+    public Task ImageChoicesFollowTheMenuImages() => TestUiThread.RunAsync(ImageChoicesFollowTheMenuImagesOnUiThread);
+
+    private static async Task ImageChoicesFollowTheMenuImagesOnUiThread()
+    {
+        var s = await OpenWithFrameworkAsync(ImageUnit, ImageForm);
+        var cells = ImageListData.Decode(FourCells).Data!.Cells;
+        Assert.Equal(4, cells.Length);
+        await s.DesignAsync(md =>
+        {
+            var surface = s.Designer.Surface!;
+            void Images(FormValue? value) => Assert.True(surface.Commit(UndoTitles.Property,
+                [value is null ? new RemoveProperty("MainMenu1", "Images") : new SetProperty("MainMenu1", "Images", value)]));
+            string? Stored(string item) => DesignerFixture.Stored(s.Designer, item, "ImageIndex");
+            IEnumerable<int> Indices() => md.ImageChoices.Select(c => c.Index);
+
+            // No Images value: disabled, the tooltip says what to do; the stored number is still shown.
+            md.Select("FileOpen");
+            Assert.False(md.IsImageEnabled);
+            Assert.Equal("Assign an image list to the Images property of MainMenu1 to choose images here.", md.ImageTip);
+            Assert.Equal([-1], Indices());
+            Assert.Equal((-1, "(None)", "(None)"), (md.SelectedImage.Index, md.SelectedImage.Text, md.SelectedImage.AutomationName));
+            var units = s.Designer.Undo.UndoCount;
+            Assert.False(md.CommitImage(2));
+            Assert.Equal(units, s.Designer.Undo.UndoCount);
+            md.Select("FileSave");
+            Assert.Equal([-1, 9], Indices());
+            Assert.Equal((9, "9", "Image 9"), (md.SelectedImage.Index, md.SelectedImage.Text, md.SelectedImage.AutomationName));
+            Assert.Null(md.SelectedImage.Cell);
+
+            // A readable source: (None), one entry per cell with its picture; index 9 of four cells is one more entry, selected.
+            Images(new IdentValue("ImageList1"));
+            Assert.True(md.IsImageEnabled);
+            Assert.Null(md.ImageTip);
+            Assert.Equal([-1, 0, 1, 2, 3, 9], Indices());
+            Assert.Equal(["(None)", "0", "1", "2", "3", "9"], md.ImageChoices.Select(c => c.Text));
+            Assert.Null(md.ImageChoices[0].Cell);
+            Assert.Equal(cells.ToArray(), md.ImageChoices.Skip(1).Take(4).Select(c => c.Cell!).ToArray());
+            Assert.Null(md.ImageChoices[5].Cell);
+            Assert.Equal(9, md.SelectedImage.Index);
+            md.Select("FileOpen");
+            Assert.Equal([-1, 0, 1, 2, 3], Indices());
+            Assert.Equal(-1, md.SelectedImage.Index);
+            var choices = md.ImageChoices;
+            md.Select("N1");
+            md.Select("FileOpen");
+            Assert.Same(choices, md.ImageChoices); // unchanged entries are not made again
+
+            // Choosing an entry is one "Property" unit; the same value records nothing; (None) removes the property.
+            units = s.Designer.Undo.UndoCount;
+            Assert.True(md.CommitImage(2));
+            Assert.Equal("2", Stored("FileOpen"));
+            Assert.Equal((units + 1, UndoTitles.Property), (s.Designer.Undo.UndoCount, s.Designer.Undo.UndoTitleKey));
+            Assert.Equal(2, md.SelectedImage.Index);
+            Assert.True(md.CommitImage(2));
+            Assert.Equal(units + 1, s.Designer.Undo.UndoCount);
+            Assert.True(md.CommitImage(-1));
+            Assert.Null(Stored("FileOpen"));
+            Assert.Equal((units + 2, UndoTitles.Property), (s.Designer.Undo.UndoCount, s.Designer.Undo.UndoTitleKey));
+            Assert.True(md.CommitImage(-1));
+            Assert.Equal(units + 2, s.Designer.Undo.UndoCount);
+            s.Undo();
+            Assert.Equal("2", Stored("FileOpen"));
+            Assert.Equal(2, md.SelectedImage.Index); // the field follows a change behind the dialog
+            Assert.False(md.CommitImage(7)); // no such entry
+            md.Select("FileSave");
+            Assert.True(md.CommitImage(1));
+            Assert.Equal([-1, 0, 1, 2, 3], Indices()); // the stored number is among the entries now
+            s.Undo();
+            Assert.Equal([-1, 0, 1, 2, 3, 9], Indices());
+
+            // A separator has no image and no shortcut.
+            md.Select("N1");
+            Assert.False(md.IsImageEnabled || md.IsShortCutEnabled);
+            Assert.Null(md.ImageTip);
+
+            // An image list without a Bitmap value is a readable source with no cells.
+            md.Select("FileOpen");
+            Images(new IdentValue("EmptyList"));
+            Assert.True(md.IsImageEnabled);
+            Assert.Null(md.ImageTip);
+            Assert.Equal([-1, 2], Indices());
+
+            // Not a readable source — an undecodable Bitmap, a name not in the document, a list of another form, a component
+            // that is no image list: disabled, the tooltip names the stored value; the stored number is still shown.
+            foreach (var (value, text) in ((FormValue, string)[])
+                [
+                    (new IdentValue("BrokenList"), "BrokenList"), (new IdentValue("Missing1"), "Missing1"),
+                    (new QualifiedIdentValue(["DataModule1", "ImageList1"]), "DataModule1.ImageList1"), (new IdentValue("MainMenu1"), "MainMenu1"),
+                ])
+            {
+                Images(value);
+                Assert.False(md.IsImageEnabled, text);
+                Assert.Equal($"The images of {text} cannot be shown here. Set ImageIndex in the property grid.", md.ImageTip);
+                Assert.Equal([-1, 2], Indices());
+                Assert.Equal(2, md.SelectedImage.Index);
+                Assert.False(md.CommitImage(-1));
+            }
+
+            // The entries follow the image list itself: deleted — no pictures; Undo — the four cells again.
+            Images(new IdentValue("ImageList1"));
+            Assert.Equal([-1, 0, 1, 2, 3], Indices());
+            Assert.True(surface.DeleteObjects([s.Item("ImageList1")], s.Item("MainMenu1")));
+            Assert.False(md.IsImageEnabled);
+            Assert.NotNull(md.ImageTip);
+            Assert.DoesNotContain(md.ImageChoices, c => c.Cell is not null);
+            s.Undo();
+            Assert.True(md.IsImageEnabled);
+            Assert.Equal(cells.ToArray(), md.ImageChoices.Skip(1).Select(c => c.Cell!).ToArray());
+            s.Undo(); // the Images assignment
+            Assert.False(md.IsImageEnabled);
+            return Task.CompletedTask;
+        });
+    }
+
+    private const string ActionForm = """
+        object MainForm: TMainForm
+          Left = 200
+          Top = 120
+          Caption = 'Hello Form'
+          ClientWidth = 400
+          ClientHeight = 300
+          Menu = MainMenu1
+          PixelsPerInch = 96
+          object MainMenu1: TMainMenu
+            DesignLeft = 320
+            DesignTop = 120
+            object FileOpen: TMenuItem
+              Caption = '&Open'
+            end
+          end
+          object ActionList1: TActionList
+            DesignLeft = 360
+            DesignTop = 120
+            object OpenAction: TAction
+              Caption = '&Open…'
+            end
+            object ExitAction: TAction
+              Caption = 'E&xit'
+            end
+          end
+        end
+
+        """;
+
+    /// <summary>
+    /// D-157, card F05-086 scope "link to action": the <c>Action</c> row of the embedded grid lists the actions of the form's
+    /// action list; choosing one stores <c>Action = &lt;name&gt;</c> as one unit.
+    /// </summary>
+    [Fact(Timeout = 30000)]
+    [Trait("Phase", "8")]
+    [Trait("Req", "DSG-SUR-197")]
+    public Task ActionRowLinksAnAction() => TestUiThread.RunAsync(ActionRowLinksAnActionOnUiThread);
+
+    private static async Task ActionRowLinksAnActionOnUiThread()
+    {
+        var unit = Unit.Replace("Classes, Controls, Forms, Menus;", "Classes, Controls, Forms, Menus, ActnList;", StringComparison.Ordinal)
+            .Replace("    MainMenu1: TMainMenu;", "    MainMenu1: TMainMenu;\r\n    FileOpen: TMenuItem;\r\n    ActionList1: TActionList;\r\n"
+                + "    OpenAction: TAction;\r\n    ExitAction: TAction;", StringComparison.Ordinal);
+        var s = await OpenWithFrameworkAsync(unit, ActionForm);
+        await s.DesignAsync(md =>
+        {
+            Assert.Equal("FileOpen", md.Selected!.Name);
+            md.Grid.Page = InspectorPage.Properties;
+            Assert.Contains(md.Grid.Rows, r => r.Kind == FreexComp.Designer.Inspector.PropertyRowKind.Property && r.Path == "Action");
+            Assert.Equal(["(none)", "ExitAction", "OpenAction"], md.Grid.ValueList("Action")); // the actions, not the list or the menu
+            var units = s.Designer.Undo.UndoCount;
+
+            void Choose(string entry)
+            {
+                md.Grid.SetCurrent("Action");
+                Assert.True(md.Grid.BeginEdit());
+                md.Grid.EditText = entry;
+                Assert.True(md.Grid.Commit(), md.Grid.EditError);
+            }
+
+            Choose("OpenAction");
+            Assert.Equal("OpenAction", ((IdentValue)s.Item("FileOpen").FindProperty("Action")!.Value).Name);
+            Assert.Equal((units + 1, UndoTitles.Property), (s.Designer.Undo.UndoCount, s.Designer.Undo.UndoTitleKey));
+            Assert.Contains("      Action = OpenAction\n", s.FormText.ReplaceLineEndings("\n"), StringComparison.Ordinal);
+            Assert.Equal("OpenAction", md.Grid.Rows.Single(r => r.Kind == FreexComp.Designer.Inspector.PropertyRowKind.Property && r.Path == "Action").Display);
+
+            // (none) removes the link; Undo restores it.
+            Choose("(none)");
+            Assert.Null(s.Item("FileOpen").FindProperty("Action"));
+            Assert.Equal(units + 2, s.Designer.Undo.UndoCount);
+            s.Undo();
+            Assert.Equal("OpenAction", ((IdentValue)s.Item("FileOpen").FindProperty("Action")!.Value).Name);
+            return Task.CompletedTask;
+        });
+    }
 }

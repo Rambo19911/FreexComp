@@ -8,6 +8,7 @@ using Avalonia.Media;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using FreexComp.Designer.Model;
+using FreexComp.Ide.Core.Dialogs;
 using FreexComp.Ide.Core.Documents;
 using FreexComp.Ide.Core.Models;
 using FreexComp.Ide.Core.ViewModels;
@@ -121,7 +122,7 @@ public sealed class MenuDesignerViewTests
         Assert.Equal("Menu Designer – MainMenu1", dlg.Window.Title);
         Assert.Equal((720, 460), (dlg.Window.Width, dlg.Window.Height));
         Assert.True(dlg.Window.CanResize);
-        foreach (var field in (string[])["Tree", "Tree.Empty", "Caption", "ShortCut", "Grid", "Grid.Page.Properties", "Grid.Page.Events",
+        foreach (var field in (string[])["Tree", "Tree.Empty", "Caption", "ShortCut", "Image", "Grid", "Grid.Page.Properties", "Grid.Page.Events",
             "NewItem", "InsertBefore", "NewSubItem", "NewSeparator", "Delete", "MoveUp", "MoveDown", "Warning", "Close"])
         {
             Assert.True(dlg.TryFind<Control>(field) is not null, field);
@@ -248,17 +249,23 @@ public sealed class MenuDesignerViewTests
 
     /// <summary>
     /// Opens the form of these tests (or <paramref name="form"/> / <paramref name="unit"/>) in the Design view and the Menu
-    /// Designer on <c>MainMenu1</c>, runs <paramref name="drive"/> in it and closes it with Escape.
+    /// Designer on <c>MainMenu1</c>, runs <paramref name="drive"/> in it and closes it with Escape. <paramref name="configure"/>
+    /// changes the harness options (the metadata to load).
     /// </summary>
-    private static async Task DesignAsync(Func<HeadlessHarness, FormDocumentViewModel, DialogDriver, Task> drive, string? form = null, string? unit = null)
+    private static async Task DesignAsync(Func<HeadlessHarness, FormDocumentViewModel, DialogDriver, Task> drive, string? form = null, string? unit = null,
+        Action<HarnessOptions>? configure = null)
     {
         await using var h = await HeadlessHarness.StartAsync(o =>
         {
             o.ToolWindows.Add(SampleToolViewModel.Definition("ToolPalette", ToolGroupId.RightLower, 5, "Cmd_view_toolPalette"));
             o.InitialFiles["MainForm.pas"] = (unit ?? Unit).ReplaceLineEndings("\r\n");
             o.InitialFiles["MainForm.form"] = (form ?? Form).ReplaceLineEndings("\r\n");
+            configure?.Invoke(o);
         });
-        var d = await DesignerViewTests.OpenFormAsync(h);
+        // With options of its own the test keeps the metadata the harness loaded; else the test metadata, as the other tests.
+        var d = configure is null ? await DesignerViewTests.OpenFormAsync(h)
+            : Assert.IsType<FormDocumentViewModel>((await h.Services.Documents.OpenAsync(Path.Combine(h.TempDir, "MainForm.pas"))).Value);
+        Dispatcher.UIThread.RunJobs();
         h.Click(AutomationIds.DocumentViewTab("MainForm.pas", "Design"));
         d.Designer.Surface!.Selection.Select(Item(d, "MainMenu1"));
         Dispatcher.UIThread.RunJobs();
@@ -280,9 +287,13 @@ public sealed class MenuDesignerViewTests
         await command;
     }
 
-    /// <summary>The caption text block of a node (a separator has none).</summary>
+    /// <summary>The caption text block of a node (a separator has none): beside the shortcut, with the warning mark in a panel of their own.</summary>
     private static TextBlock CaptionOf(DialogDriver dlg, string name) =>
-        (TextBlock)((DockPanel)dlg.Find<TreeViewItem>("Node." + name).Header!).Children[1];
+        ((DockPanel)dlg.Find<TreeViewItem>("Node." + name).Header!).Children[1] switch
+        {
+            TextBlock caption => caption,
+            var marked => ((Panel)marked).Children.OfType<TextBlock>().Single(),
+        };
 
     /// <summary>The warning mark of a node (UI-DLG-340), or null.</summary>
     private static IdeIcon? MarkOf(DialogDriver dlg, string name) =>
@@ -371,6 +382,18 @@ public sealed class MenuDesignerViewTests
         Assert.Equal((TextTrimming.CharacterEllipsis, TextWrapping.NoWrap), (text.TextTrimming, text.TextWrapping));
         Assert.Contains(words, (string)ToolTip.GetTip(warning)!, StringComparison.Ordinal);
         Assert.Equal(stripHeight, strip.Bounds.Height);
+
+        // A caption longer than the tree is cut with an ellipsis: the tree does not scroll sideways, the mark stays in view.
+        var tree = dlg.Find<TreeView>("Tree");
+        var treeRight = tree.TranslatePoint(new Point(tree.Bounds.Width, 0), dlg.Window)!.Value.X;
+        var longMark = MarkOf(dlg, third)!;
+        Assert.Equal(TextTrimming.CharacterEllipsis, CaptionOf(dlg, third).TextTrimming);
+        Assert.Equal(Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled, ScrollViewer.GetHorizontalScrollBarVisibility(tree));
+        Assert.Equal(0, tree.GetVisualDescendants().OfType<ScrollViewer>().First().Offset.X);
+        Assert.True(longMark.IsEffectivelyVisible);
+        Assert.Equal(10, longMark.Bounds.Width);
+        Assert.True(longMark.TranslatePoint(new Point(longMark.Bounds.Width, 0), dlg.Window)!.Value.X <= treeRight - 16, "the mark is inside the tree, clear of its scroll bar");
+
         var right = warning.TranslatePoint(new Avalonia.Point(warning.Bounds.Width, 0), dlg.Window)!.Value.X;
         var closeLeft = close.TranslatePoint(new Avalonia.Point(0, 0), dlg.Window)!.Value.X;
         Assert.True(right <= closeLeft - 8, $"the line ends at {right}, Close starts at {closeLeft}");
@@ -505,18 +528,28 @@ public sealed class MenuDesignerViewTests
         Assert.False(line.IsVisible);
         Assert.Equal(["FileOpen", "N1", "FileExit"], Nodes(dlg, file));
 
-        // A press selects (as before); a move of less than 4 DIP with the button held is no drag.
-        var start = RowPoint(dlg, "FileExit", 0.5);
+        // As opened: the focus is on the node, so Caption shows no selected text; the shortcut text ends before the room of
+        // the tree's scroll bar (space.6).
+        Assert.Equal("Dialog.MenuDesigner.Node.FileMenu", dlg.FocusedAutomationId);
+        Assert.Equal("", dlg.Find<TextBox>("Caption").SelectedText);
+        var shortcut = (TextBlock)((DockPanel)dlg.Find<TreeViewItem>("Node.FileOpen").Header!).Children[0];
+        Assert.Equal("Ctrl+O", shortcut.Text);
+        Assert.True(shortcut.TranslatePoint(new Point(shortcut.Bounds.Width, 0), dlg.Window)!.Value.X
+            <= tree.TranslatePoint(new Point(tree.Bounds.Width, 0), dlg.Window)!.Value.X - 16, "the shortcut text is clear of the scroll bar");
+
+        // A press selects (as before); a move of less than 4 DIP with the button held is no drag. (On another node than
+        // the one dragged next: two presses at one place are a double-click, which makes the OnClick handler.)
+        var start = RowPoint(dlg, "FileOpen", 0.5);
         PointerDown(dlg, start);
-        Assert.Same(dlg.Find<TreeViewItem>("Node.FileExit"), tree.SelectedItem);
+        Assert.Same(dlg.Find<TreeViewItem>("Node.FileOpen"), tree.SelectedItem);
         PointerTo(dlg, start + new Point(3, 3));
-        PointerTo(dlg, RowPoint(dlg, "FileExit", 0.5) + new Point(-3, 3));
+        PointerTo(dlg, start + new Point(-3, 3));
         Assert.False(line.IsVisible);
         Assert.Null(tree.Cursor);
         PointerUp(dlg, start + new Point(3, 3));
         Assert.Equal(undo, d.Designer.Undo.UndoCount);
         Assert.Equal(["FileOpen", "N1", "FileExit"], Nodes(dlg, file));
-        Assert.Equal("Dialog.MenuDesigner.Node.FileExit", dlg.FocusedAutomationId);
+        Assert.Equal("Dialog.MenuDesigner.Node.FileOpen", dlg.FocusedAutomationId);
 
         // Press on Exit, move into the upper quarter of Open…: the insertion line at the upper edge of that row, named.
         BeginDrag(dlg, "FileExit");
@@ -790,4 +823,185 @@ public sealed class MenuDesignerViewTests
         Assert.Equal(["HelpAbout"], Nodes(dlg, dlg.Find<TreeViewItem>("Node.HelpMenu")));
         return Task.CompletedTask;
     }, MenuForm, MenuUnit);
+
+    /// <summary>An empty main menu and an image list of four 16 × 16 cells (<c>TestData/imagelists/alpha4.bin</c>), not assigned yet.</summary>
+    private static string ImageListForm()
+    {
+        var bytes = File.ReadAllBytes(Path.Combine(FreexComp.Ide.Tests.EndToEnd.LayoutRoundTrip.RepoRoot, "ide", "tests", "TestData", "imagelists", "alpha4.bin"));
+        var hex = string.Concat(bytes.Chunk(32).Select(line => "      " + Convert.ToHexString(line) + "\n"));
+        return Form.ReplaceLineEndings("\n").Replace("    DesignTop = 120\n  end\n",
+            "    DesignTop = 120\n  end\n  object ImageList1: TImageList\n    DesignLeft = 360\n    DesignTop = 120\n    Bitmap = {\n" + hex + "    }\n  end\n",
+            StringComparison.Ordinal);
+    }
+
+    private static readonly string ImageListUnit = Unit.Replace("Classes, Controls, Forms, Menus;", "Classes, Controls, Forms, Menus, ImgList;", StringComparison.Ordinal)
+        .Replace("    MainMenu1: TMainMenu;", "    MainMenu1: TMainMenu;\n    ImageList1: TImageList;", StringComparison.Ordinal);
+
+    /// <summary>The component metadata of the UI framework instead of the test metadata (image lists, <c>Images</c>, <c>ImageIndex</c>).</summary>
+    private static void FrameworkMetadata(HarnessOptions o)
+    {
+        o.ComponentMetadata = false;
+        o.Settings["toolchain.frameworkDesignDir"] = FreexComp.Ide.Tests.EndToEnd.LayoutRoundTrip.FrameworkDesignDir;
+    }
+
+    /// <summary>Types over the selected text of the focused Caption field and commits with Enter.</summary>
+    private static void TypeCaption(DialogDriver dlg, string caption)
+    {
+        Assert.Equal("Dialog.MenuDesigner.Caption", dlg.FocusedAutomationId);
+        dlg.Window.KeyTextInput(caption);
+        Dispatcher.UIThread.RunJobs();
+        dlg.Press("Enter");
+    }
+
+    /// <summary>
+    /// D-157 (DSG-SUR-258, 259; UI-DLG-342, 343): a menu is typed as Insert, text, Enter — Enter in Caption returns the focus
+    /// to the node; "-" makes a separator; the Image field lists the pictures of the menu's image list and stores ImageIndex.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Phase", "8")]
+    [Trait("Req", "DSG-SUR-258")]
+    [Trait("Req", "DSG-SUR-259")]
+    [Trait("Req", "UI-DLG-342")]
+    [Trait("Req", "UI-DLG-343")]
+    public Task CardKeysAndImageIndex() => DesignAsync((_, d, dlg) =>
+    {
+        var image = dlg.Find<ComboBox>("Image");
+        var shortCut = dlg.Find<ComboBox>("ShortCut");
+        var surface = d.Designer.Surface!;
+        IReadOnlyList<MenuImageChoice> Entries() => [.. image.Items.Cast<MenuImageChoice>()];
+        string? Stored(string item, string property) => Item(d, item).FindProperty(property)?.Value switch
+        {
+            IntegerValue i => i.Value.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            StringValue s => s.Value,
+            IdentValue id => id.Name,
+            _ => null,
+        };
+
+        // The empty menu: Image is disabled; without an Images value its tooltip says so, also while disabled.
+        Assert.False(image.IsEnabled);
+        Assert.Equal("Assign an image list to the Images property of MainMenu1 to choose images here.", ToolTip.GetTip(image));
+        Assert.True(ToolTip.GetShowOnDisabled(image));
+
+        // Insert, text, Enter: Enter commits and the focus is on the node of the item, so the next key acts at once.
+        dlg.Press("Insert");
+        TypeCaption(dlg, "&Open…");
+        Assert.Equal("Dialog.MenuDesigner.Node.Open", dlg.FocusedAutomationId);
+        Assert.Equal("&Open…", CaptionOf(dlg, "Open").Text); // the & is stored as typed and shown in the node
+        Assert.Equal("&Open…", Stored("Open", "Caption"));
+
+        // "-" makes a separator: the node is a rule, the name N1, ShortCut and Image are disabled.
+        dlg.Press("Insert");
+        TypeCaption(dlg, "-");
+        Assert.Equal(["Open", "N1"], Nodes(dlg));
+        Assert.Equal("Dialog.MenuDesigner.Node.N1", dlg.FocusedAutomationId);
+        Assert.IsType<Border>(dlg.Find<TreeViewItem>("Node.N1").Header);
+        Assert.False(shortCut.IsEnabled || image.IsEnabled);
+        Assert.Null(ToolTip.GetTip(image)); // a separator has no image: no hint to assign a list
+
+        dlg.Press("Insert");
+        TypeCaption(dlg, "E&xit");
+        Assert.Equal(["Open", "N1", "Exit"], Nodes(dlg));
+        Assert.Equal("Dialog.MenuDesigner.Node.Exit", dlg.FocusedAutomationId);
+
+        // The arrows and Enter act on the node at once: up to the separator and back, Enter makes the OnClick handler.
+        dlg.Press("Up");
+        Assert.Equal("Dialog.MenuDesigner.Node.N1", dlg.FocusedAutomationId);
+        dlg.Press("Down");
+        dlg.Press("Enter");
+        Assert.False(dlg.Window.IsClosed());
+        Assert.Equal("ExitClick", Stored("Exit", "OnClick"));
+
+        // Ctrl+Right after Enter: a sub-item at once.
+        dlg.Press("Ctrl+Right");
+        TypeCaption(dlg, "&Now");
+        Assert.Equal(["Now"], Nodes(dlg, dlg.Find<TreeViewItem>("Node.Exit")));
+        Assert.Equal("Dialog.MenuDesigner.Node.Now", dlg.FocusedAutomationId);
+
+        // Another text on a separator makes it an ordinary item again (F2 is the key from a node to Caption).
+        dlg.Press("Up");
+        dlg.Press("Up");
+        Assert.Equal("Dialog.MenuDesigner.Node.N1", dlg.FocusedAutomationId);
+        dlg.Press("F2");
+        TypeCaption(dlg, "&Save");
+        Assert.Equal(["Open", "Save", "Exit"], Nodes(dlg));
+        Assert.IsType<DockPanel>(dlg.Find<TreeViewItem>("Node.Save").Header);
+        Assert.True(shortCut.IsEnabled);
+        Assert.Equal("Dialog.MenuDesigner.Node.Save", dlg.FocusedAutomationId);
+
+        // Focus loss keeps committing without moving the focus to the node: Tab goes on to ShortCut.
+        dlg.Press("F2");
+        dlg.Window.KeyTextInput("Save &As…");
+        Dispatcher.UIThread.RunJobs();
+        dlg.Press("Tab");
+        Assert.Equal("Save &As…", Stored("Save", "Caption"));
+        Assert.Equal("Dialog.MenuDesigner.ShortCut", dlg.FocusedAutomationId);
+
+        // The image list assigned to MainMenu1.Images: Image is enabled; Tab from ShortCut reaches it.
+        Assert.True(surface.Commit(FreexComp.Designer.Surface.UndoTitles.Property,
+            [new FreexComp.Designer.Editing.SetProperty("MainMenu1", "Images", new IdentValue("ImageList1"))]));
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(image.IsEnabled);
+        Assert.Null(ToolTip.GetTip(image));
+        Assert.Equal("Dialog.MenuDesigner.ShortCut", dlg.FocusedAutomationId);
+        dlg.Press("Tab");
+        Assert.Equal("Dialog.MenuDesigner.Image", dlg.FocusedAutomationId);
+
+        // The entries: (None), then 0 … 3 with the cell's picture in a 16 × 16 box, space.3, the number.
+        Assert.Equal([-1, 0, 1, 2, 3], Entries().Select(e => e.Index));
+        image.IsDropDownOpen = true;
+        Dispatcher.UIThread.RunJobs();
+        var containers = Entries().Select(e => Assert.IsType<ComboBoxItem>(image.ContainerFromItem(e))).ToList();
+        Assert.Equal(["Image.Item.None", "Image.Item.0", "Image.Item.1", "Image.Item.2", "Image.Item.3"],
+            containers.Select(c => AutomationIds.Get(c)!["Dialog.MenuDesigner.".Length..]));
+        Assert.Equal(["(None)", "Image 0", "Image 1", "Image 2", "Image 3"], containers.Select(AutomationProperties.GetName));
+        Assert.Empty(containers[0].GetVisualDescendants().OfType<Image>()); // (None) has no picture
+        Assert.Equal("(None)", containers[0].GetVisualDescendants().OfType<TextBlock>().Single().Text);
+        for (var i = 1; i < containers.Count; i++)
+        {
+            var picture = containers[i].GetVisualDescendants().OfType<Image>().Single();
+            var box = (Control)picture.Parent!;
+            var number = containers[i].GetVisualDescendants().OfType<TextBlock>().Single();
+            Assert.Equal((16.0, 16.0), (box.Bounds.Width, box.Bounds.Height));
+            Assert.Equal(new Size(16, 16), picture.Bounds.Size);
+            Assert.Equal(new PixelSize(16, 16), Assert.IsAssignableFrom<Avalonia.Media.Imaging.Bitmap>(picture.Source).PixelSize);
+            Assert.Equal((i - 1).ToString(System.Globalization.CultureInfo.InvariantCulture), number.Text);
+            Assert.Equal(box.Bounds.Right + 6, number.Bounds.Left); // space.3
+        }
+
+        // Choosing 2 stores ImageIndex = 2 as one "Property" unit; the closed field shows the entry the same way.
+        var undo = d.Designer.Undo.UndoCount;
+        image.SelectedItem = Entries()[3];
+        image.IsDropDownOpen = false;
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal("2", Stored("Save", "ImageIndex"));
+        Assert.Equal((undo + 1, FreexComp.Designer.Surface.UndoTitles.Property), (d.Designer.Undo.UndoCount, d.Designer.Undo.UndoTitleKey));
+        Assert.Equal(2, ((MenuImageChoice)image.SelectedItem!).Index);
+        Assert.Single(image.GetVisualDescendants().OfType<Image>());
+        Assert.Equal("2", image.GetVisualDescendants().OfType<TextBlock>().Single(t => t.IsEffectivelyVisible).Text);
+
+        // (None) removes the property.
+        image.SelectedItem = Entries()[0];
+        Dispatcher.UIThread.RunJobs();
+        Assert.Null(Stored("Save", "ImageIndex"));
+        Assert.Equal(undo + 2, d.Designer.Undo.UndoCount);
+        Assert.Empty(image.GetVisualDescendants().OfType<Image>());
+
+        // A stored index outside the list is one more entry with the number alone, selected.
+        Assert.True(surface.Commit(FreexComp.Designer.Surface.UndoTitles.Property,
+            [new FreexComp.Designer.Editing.SetProperty("Save", "ImageIndex", new IntegerValue(9, false))]));
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal([-1, 0, 1, 2, 3, 9], Entries().Select(e => e.Index));
+        Assert.Equal(9, ((MenuImageChoice)image.SelectedItem!).Index);
+        Assert.Empty(image.GetVisualDescendants().OfType<Image>());
+        Assert.Equal("9", image.GetVisualDescendants().OfType<TextBlock>().Single(t => t.IsEffectivelyVisible).Text);
+
+        // Images that cannot be read here: disabled with the reason; the stored number is still shown.
+        Assert.True(surface.Commit(FreexComp.Designer.Surface.UndoTitles.Property,
+            [new FreexComp.Designer.Editing.SetProperty("MainMenu1", "Images", new IdentValue("Missing1"))]));
+        Dispatcher.UIThread.RunJobs();
+        Assert.False(image.IsEnabled);
+        Assert.Equal("The images of Missing1 cannot be shown here. Set ImageIndex in the property grid.", ToolTip.GetTip(image));
+        Assert.Equal(9, ((MenuImageChoice)image.SelectedItem!).Index);
+        return Task.CompletedTask;
+    }, ImageListForm(), ImageListUnit, FrameworkMetadata);
 }

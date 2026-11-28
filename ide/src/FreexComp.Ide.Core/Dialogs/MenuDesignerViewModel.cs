@@ -33,6 +33,23 @@ public sealed record MenuDesignerNode(FormObject Item, string Name, string Capti
 /// </summary>
 public sealed record MenuDesignerWarning(FormObject Parent, char Key, IReadOnlyList<FormObject> Items, string Text);
 
+/// <summary>
+/// One entry of the Menu Designer's <c>Image</c> field (DSG-SUR-258): <c>(None)</c> for −1, a cell of the menu's image list
+/// with its picture, or — <paramref name="Cell"/> null — a stored index that the list does not hold, shown as its number alone.
+/// </summary>
+public sealed record MenuImageChoice(int Index, ImageListCell? Cell)
+{
+    /// <summary>The index of <c>(None)</c>: the default of <c>ImageIndex</c>.</summary>
+    public const int None = -1;
+
+    /// <summary>The text of the entry: <c>(None)</c>, else the number.</summary>
+    public string Text => Index == None ? Strings.MenuDesigner_ImageNone : Index.ToString(CultureInfo.CurrentCulture);
+
+    /// <summary>UI-DLG-342: the automation name — "(None)" / "Image {n}".</summary>
+    public string AutomationName => Index == None ? Strings.MenuDesigner_ImageNone
+        : string.Format(CultureInfo.CurrentCulture, Strings.MenuDesigner_ImageEntryName, Index);
+}
+
 /// <summary>Where a moved item of the Menu Designer goes, relative to the target item (DSG-SUR-254).</summary>
 public enum MenuDropPosition
 {
@@ -53,7 +70,9 @@ public enum MenuDropPosition
 /// Events). Every operation is applied to the form at once as its own ordinary undo unit including its code-sync edits;
 /// there is no Cancel, Close only closes (UI-DLG-252). The surface selection is kept while the dialog works. Items move
 /// to another place or level by <see cref="MoveTo"/> (a drag in the view), <see cref="MoveOut"/> and <see cref="MoveIn"/>,
-/// each one "Order" unit (DSG-SUR-253…257; D-156); fixed (inherited, preserved) items do not move.
+/// each one "Order" unit (DSG-SUR-253…257; D-156); fixed (inherited, preserved) items do not move. The <c>Image</c> field
+/// (<see cref="ImageChoices"/>, <see cref="CommitImage"/>) edits the item's <c>ImageIndex</c> with the pictures of the
+/// menu's image list (DSG-SUR-258; D-157).
 /// </summary>
 public sealed class MenuDesignerViewModel : DialogViewModel<bool>
 {
@@ -74,6 +93,10 @@ public sealed class MenuDesignerViewModel : DialogViewModel<bool>
     private string _captionText = "";
     private string _shortCutText = "";
     private IReadOnlyList<MenuDesignerWarning> _warnings = [];
+    private IReadOnlyList<MenuImageChoice> _imageChoices = [new MenuImageChoice(MenuImageChoice.None, null)];
+    private (FormValue? Bitmap, FormValue? Width, FormValue? Height, ImageListData? Data) _imageList; // the last decoded Bitmap value
+    private string? _imageTip;
+    private bool _imagesReadable;
     private Dictionary<FormObject, MenuDesignerWarning> _warningOf = new(ReferenceEqualityComparer.Instance);
 
     public MenuDesignerViewModel(FormDesignerViewModel designer, FormObject menu, IDialogService? dialogs = null, Layout.ILayoutService? layout = null)
@@ -219,8 +242,31 @@ public sealed class MenuDesignerViewModel : DialogViewModel<bool>
     /// <summary>Caption is disabled without a selection.</summary>
     public bool IsCaptionEnabled => CanChange && _selected is not null;
 
-    /// <summary>ShortCut is disabled without a selection and for items with sub-items.</summary>
-    public bool IsShortCutEnabled => CanChange && _selected is { Children.Count: 0 };
+    /// <summary>ShortCut is disabled without a selection, for items with sub-items and for a separator (DSG-SUR-259 b).</summary>
+    public bool IsShortCutEnabled => CanChange && _selected is { Children.Count: 0 } item && !IsSeparator(item);
+
+    /// <summary>
+    /// DSG-SUR-258: the entries of the <c>Image</c> field for the selected item — <c>(None)</c>, one entry per cell of the
+    /// menu's image source, and one more with the number alone when the item's stored <c>ImageIndex</c> is not among them.
+    /// Computed when the selection changes and after every model change; the same list while nothing of it changed.
+    /// </summary>
+    public IReadOnlyList<MenuImageChoice> ImageChoices => _imageChoices;
+
+    /// <summary>The entry of the selected item's stored <c>ImageIndex</c> (<c>(None)</c> for −1 and without a selection).</summary>
+    public MenuImageChoice SelectedImage => _imageChoices.FirstOrDefault(c => c.Index == StoredImageIndex) ?? _imageChoices[0];
+
+    /// <summary>
+    /// Image is enabled when the form can be changed, an item is selected, it is not a separator and the menu's
+    /// <c>Images</c> names a readable image source (DSG-SUR-258).
+    /// </summary>
+    public bool IsImageEnabled => CanChange && _selected is { } item && !IsSeparator(item) && _imagesReadable;
+
+    /// <summary>
+    /// Why Image shows no pictures: <c>Msg.MenuDesigner.ImagesNotAssigned</c> without an <c>Images</c> value,
+    /// <c>Msg.MenuDesigner.ImagesUnavailable</c> for a value that is no readable source; else null — also for a separator,
+    /// which has no image whatever the source is.
+    /// </summary>
+    public string? ImageTip => _selected is { } item && IsSeparator(item) ? null : _imageTip;
 
     /// <summary>The Caption field's text (committed by <see cref="CommitCaption"/>: Enter, focus loss).</summary>
     public string CaptionText
@@ -562,6 +608,28 @@ public sealed class MenuDesignerViewModel : DialogViewModel<bool>
     }
 
     /// <summary>
+    /// Image (a choice of the list): the selected item's <c>ImageIndex</c> as one "Property" unit — removed for
+    /// <c>(None)</c> (−1 is the default); the stored value again records nothing. False when the field is disabled or
+    /// <paramref name="index"/> is no entry.
+    /// </summary>
+    public bool CommitImage(int index)
+    {
+        if (!IsImageEnabled || _selected is not { } item || !_imageChoices.Any(c => c.Index == index))
+        {
+            return false;
+        }
+
+        if (index != StoredImageIndex)
+        {
+            FormChange change = index == MenuImageChoice.None ? new RemoveProperty(item.Name, "ImageIndex")
+                : new SetProperty(item.Name, "ImageIndex", new IntegerValue(index, false));
+            return _designer.Surface!.Commit(UndoTitles.Property, [change]); // the model change brings the field up to date
+        }
+
+        return true;
+    }
+
+    /// <summary>
     /// Enter or double-click on an item: its default event handler (<c>OnClick</c>) is created and assigned — or the
     /// existing one kept — without leaving the dialog (DSG-SUR-197); the Events page shows the method name.
     /// </summary>
@@ -648,6 +716,66 @@ public sealed class MenuDesignerViewModel : DialogViewModel<bool>
     /// <summary>The plain caption of an item; for an empty caption — and for the menu component — the component name.</summary>
     private static string PlainCaption(FormObject item) => Caption(item) is { Length: > 0 } caption ? PlainCaption(caption) : item.Name;
 
+    private int StoredImageIndex => _selected?.FindProperty("ImageIndex")?.Value is IntegerValue { Value: var index } ? (int)index : MenuImageChoice.None;
+
+    /// <summary>
+    /// DSG-SUR-258: the image source of the menu — its <c>Images</c> value names an image-list component of this form
+    /// document whose <c>Bitmap</c> value decodes without error (no <c>Bitmap</c> value: a readable source with no cells) —
+    /// and from it the entries of the field and the reason it shows no pictures.
+    /// </summary>
+    private void ComputeImages()
+    {
+        var images = Menu.FindProperty("Images")?.Value;
+        ImageListData? data = null;
+        _imagesReadable = false;
+        if (images is IdentValue { Name: var name } && _designer.Model?.FindByName(name) is { Info: { } info } list
+            && _designer.Catalog.IsAssignable(info.ClassName, Menu.Info?.FindProperty("Images")?.Type ?? "TCustomImageList"))
+        {
+            switch (list.FindProperty("Bitmap")?.Value)
+            {
+                case null:
+                    _imagesReadable = true;
+                    break;
+                case BinaryValue bitmap:
+                    var (width, height) = (list.FindProperty("Width")?.Value, list.FindProperty("Height")?.Value);
+                    if (!ReferenceEquals(_imageList.Bitmap, bitmap) || !Equals(_imageList.Width, width) || !Equals(_imageList.Height, height))
+                    {
+                        _imageList = (bitmap, width, height, ImageListData.Decode(list, bitmap).Data); // decoded once per value
+                    }
+
+                    data = _imageList.Data;
+                    _imagesReadable = data is not null;
+                    break;
+            }
+        }
+
+        _imageTip = _imagesReadable ? null
+            : images is null ? string.Format(CultureInfo.CurrentCulture, Strings.Msg_MenuDesigner_ImagesNotAssigned, Menu.Name)
+            : string.Format(CultureInfo.CurrentCulture, Strings.Msg_MenuDesigner_ImagesUnavailable, images switch
+            {
+                IdentValue ident => ident.Name,
+                QualifiedIdentValue qualified => string.Join(".", qualified.Parts),
+                _ => images.ToString(),
+            });
+
+        // The same list while its entries are the same: the view keeps what it made of them (pictures).
+        var cells = data?.Cells ?? [];
+        var stored = StoredImageIndex;
+        var extra = stored != MenuImageChoice.None && (stored < 0 || stored >= cells.Length);
+        var current = _imageChoices;
+        if (current.Count != 1 + cells.Length + (extra ? 1 : 0) || (extra && current[^1].Index != stored)
+            || cells.Where((cell, i) => !ReferenceEquals(current[i + 1].Cell, cell)).Any())
+        {
+            List<MenuImageChoice> choices = [new(MenuImageChoice.None, null), .. cells.Select((cell, i) => new MenuImageChoice(i, cell))];
+            if (extra)
+            {
+                choices.Add(new MenuImageChoice(stored, null));
+            }
+
+            _imageChoices = choices;
+        }
+    }
+
     /// <summary>DSG-SUR-251: every level's groups of two or more items with the same access key, the levels in tree pre-order.</summary>
     private void ComputeWarnings()
     {
@@ -711,6 +839,11 @@ public sealed class MenuDesignerViewModel : DialogViewModel<bool>
     private void Changed()
     {
         ComputeWarnings();
+        ComputeImages();
+        OnPropertyChanged(nameof(ImageChoices));
+        OnPropertyChanged(nameof(SelectedImage));
+        OnPropertyChanged(nameof(IsImageEnabled));
+        OnPropertyChanged(nameof(ImageTip));
         OnPropertyChanged(nameof(Warnings));
         OnPropertyChanged(nameof(CurrentWarning));
         OnPropertyChanged(nameof(WarningText));
