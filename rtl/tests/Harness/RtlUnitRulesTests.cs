@@ -631,4 +631,62 @@ public sealed partial class RtlUnitRulesTests
         Assert.Equal(2, DigestsEqualProblems(Unit(lengths + loop + loop + "    " + step + result)).Count);
         Assert.Contains("no implementation", Assert.Single(DigestsEqualProblems(Unit(lengths + loop + "    " + step + result, "THash.DigestAsString"))));
     }
+
+    /// <summary>The operating-system case-mapping functions that <c>SysUtils</c> must not call (RTL-1276 (b)).</summary>
+    private static readonly string[] OsCaseMappingFunctions = ["LCMapStringEx", "CharUpperBuffW", "CharLowerBuffW"];
+
+    /// <summary>
+    /// Every identifier token of <paramref name="source"/> (parsed as the file <paramref name="path"/>, include files
+    /// expanded by the preprocessor) that names one of <see cref="OsCaseMappingFunctions"/>; comments do not count.
+    /// </summary>
+    public static List<string> CaseMappingOsCalls(string path, string source)
+    {
+        var tree = SyntaxTree.Parse(SourceText.From(path, source), null, PhysicalFileSystem.Instance);
+        return
+        [
+            .. tree.Root.DescendantTokens()
+                .Where(t => t.Kind == SyntaxKind.IdentifierToken
+                    && OsCaseMappingFunctions.Contains(t.Text, StringComparer.OrdinalIgnoreCase))
+                .Select(t => $"'{t.Text}' is named in {Path.GetFileName(path)} or one of its include files"),
+        ];
+    }
+
+    /// <summary>
+    /// RTL-1276 (b), RTL-841 (task R-266): <c>AnsiUpperCase</c> / <c>AnsiLowerCase</c> map case from the product's own
+    /// table, so neither <c>SysUtils.pas</c> nor an include file of it names <c>LCMapStringEx</c>,
+    /// <c>CharUpperBuffW</c> or <c>CharLowerBuffW</c>. The check itself is proved on texts that call one of them
+    /// directly, qualified and from an include file, and on a text that names one only in a comment.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "RTL-1276")]
+    [Trait("Phase", "8")]
+    public void SysUtils_CaseMappingCallsNoOperatingSystem()
+    {
+        var path = Path.Combine(SourceDirectory, "SysUtils.pas");
+        var problems = CaseMappingOsCalls(path, File.ReadAllText(path));
+        Assert.True(problems.Count == 0, string.Join("\n", problems));
+
+        // self-check
+        static string Unit(string uses, string body) =>
+            $"unit SysUtils;\ninterface\n{uses}function F(const S: string): string;\nimplementation\n"
+            + $"function F(const S: string): string;\nbegin\n  Result := S;\n{body}\nend;\nend.\n";
+        var probe = Path.Combine(SourceDirectory, "SysUtils.pas");
+        Assert.Empty(CaseMappingOsCalls(probe, Unit("", "  { no LCMapStringEx, CharUpperBuffW or CharLowerBuffW }\n  // LCMapStringEx")));
+        Assert.Single(CaseMappingOsCalls(probe, Unit("uses Windows;\n", "  LCMapStringEx(nil, 0, PChar(S), 1, nil, 0, nil, nil, 0);")));
+        Assert.Single(CaseMappingOsCalls(probe, Unit("uses Windows;\n", "  Windows.CharUpperBuffW(PChar(Result), Length(Result));")));
+        Assert.Single(CaseMappingOsCalls(probe, Unit("uses Windows;\n", "  charlowerbuffw(PChar(Result), Length(Result));")));
+
+        var dir = Path.Combine(Path.GetTempPath(), "FreexComp.Tests", "CaseMapping-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            File.WriteAllText(Path.Combine(dir, "Calls.inc"), "procedure G(P: PChar);\nbegin\n  CharUpperBuffW(P, 1);\nend;\n");
+            var withInclude = "unit SysUtils;\ninterface\nuses Windows;\nimplementation\n{$I Calls.inc}\nend.\n";
+            Assert.Single(CaseMappingOsCalls(Path.Combine(dir, "SysUtils.pas"), withInclude));
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
 }

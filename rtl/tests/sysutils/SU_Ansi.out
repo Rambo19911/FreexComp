@@ -9,6 +9,89 @@ ok UpperCase stays ASCII-only
 ok argument kept
 ok argument not changed
 ok long string
+# simple case mapping
+ok SimpleUpperCase U+0061
+ok AnsiUpperCase U+0061
+ok SimpleLowerCase U+0041
+ok AnsiLowerCase U+0041
+ok SimpleUpperCase U+00E9
+ok AnsiUpperCase U+00E9
+ok SimpleLowerCase U+00C9
+ok AnsiLowerCase U+00C9
+ok SimpleUpperCase U+00FF
+ok AnsiUpperCase U+00FF
+ok SimpleLowerCase U+0178
+ok AnsiLowerCase U+0178
+ok SimpleUpperCase U+00DF
+ok AnsiUpperCase U+00DF
+ok SimpleLowerCase U+00DF
+ok AnsiLowerCase U+00DF
+ok SimpleUpperCase U+0131
+ok AnsiUpperCase U+0131
+ok SimpleLowerCase U+0131
+ok AnsiLowerCase U+0131
+ok SimpleLowerCase U+0130
+ok AnsiLowerCase U+0130
+ok SimpleUpperCase U+0130
+ok AnsiUpperCase U+0130
+ok SimpleUpperCase U+017F
+ok AnsiUpperCase U+017F
+ok SimpleLowerCase U+017F
+ok AnsiLowerCase U+017F
+ok SimpleUpperCase U+03C3
+ok AnsiUpperCase U+03C3
+ok SimpleUpperCase U+03C2
+ok AnsiUpperCase U+03C2
+ok SimpleLowerCase U+03A3
+ok AnsiLowerCase U+03A3
+ok SimpleUpperCase U+0436
+ok AnsiUpperCase U+0436
+ok SimpleLowerCase U+0416
+ok AnsiLowerCase U+0416
+ok SimpleUpperCase U+01C6
+ok AnsiUpperCase U+01C6
+ok SimpleUpperCase U+01C5
+ok AnsiUpperCase U+01C5
+ok SimpleLowerCase U+01C4
+ok AnsiLowerCase U+01C4
+ok SimpleLowerCase U+01C5
+ok AnsiLowerCase U+01C5
+ok SimpleUpperCase U+10D0
+ok AnsiUpperCase U+10D0
+ok SimpleLowerCase U+1C90
+ok AnsiLowerCase U+1C90
+ok SimpleUpperCase U+AB70
+ok AnsiUpperCase U+AB70
+ok SimpleLowerCase U+13A0
+ok AnsiLowerCase U+13A0
+ok SimpleUpperCase U+0031
+ok AnsiUpperCase U+0031
+ok SimpleLowerCase U+0031
+ok AnsiLowerCase U+0031
+# strings and code units
+ok SimpleUpperCase high surrogate
+ok SimpleLowerCase low surrogate
+ok SimpleUpperCase beyond U+10FFFF
+ok SimpleLowerCase beyond U+10FFFF
+ok SimpleUpperCase $FFFFFFFF
+ok SimpleLowerCase $FFFFFFFF
+ok SimpleUpperCase U+FFFF
+ok SimpleLowerCase U+0000
+ok AnsiUpperCase U
+ok AnsiLowerCase U
+ok length kept
+ok AnsiUpperCase P
+ok AnsiLowerCase P
+ok lone surrogates upper
+ok lone surrogates lower
+ok high surrogate at the end
+ok low surrogate at the start
+ok AnsiUpperCase unchanged: same reference
+ok AnsiLowerCase unchanged: same reference
+ok lone surrogates: same reference
+ok changed text: a new string
+ok changed text: argument not changed
+ok unchanged literal
 # AnsiCompareStr / AnsiCompareText / AnsiSame*
 ok CompareStr less
 ok CompareStr greater
@@ -33,4 +116,4 @@ ok found
 ok not found
 ok empty substring
 ok first occurrence
-# passed 32 failed 0
+# passed 113 failed 0

@@ -1,4 +1,4 @@
-// covers: RTL-640
+// covers: RTL-640, RTL-1276
 program Char_Classify;
 { other-units.md section 5 (task R-058): one code unit of each of the 30 general categories, the Is* classes
   (surrogate code units are never letters etc.), surrogate tests, simple case mapping (Char and string forms),
@@ -168,6 +168,20 @@ begin
   CheckEqS('ix', ToLower(#$0130 + 'X'), 'ToLower string with I with dot above');
 end;
 
+{ task R-266 (RTL-1276 (d), card F10-047): the card's sample as one string, both directions; the sharp s has no
+  simple upper-case mapping and stays }
+procedure TestSample;
+var
+  S: string;
+begin
+  Section('sample');
+  S := #$00DF + ' stra' + #$00DF + 'e ' + #$0100 + #$0112 + #$012A + ' ' + #$0436;
+  CheckEqS(#$00DF + ' STRA' + #$00DF + 'E ' + #$0100 + #$0112 + #$012A + ' ' + #$0416, ToUpper(S), 'ToUpper sample');
+  CheckEqS(#$00DF + ' stra' + #$00DF + 'e ' + #$0101 + #$0113 + #$012B + ' ' + #$0436, ToLower(S), 'ToLower sample');
+  CheckEqS(ToUpper(S), AnsiUpperCase(S), 'ToUpper sample = AnsiUpperCase');
+  CheckEqS(ToLower(S), AnsiLowerCase(S), 'ToLower sample = AnsiLowerCase');
+end;
+
 procedure TestUtf32;
 var
   S: string;
@@ -230,6 +244,7 @@ begin
   TestClasses;
   TestSurrogates;
   TestCase;
+  TestSample;
   TestUtf32;
   TestChecksums;
   Done;

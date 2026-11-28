@@ -126,6 +126,11 @@ ok ToLower capital sharp s
 ok ToLower Kelvin sign
 ok ToUpper string with dotless i
 ok ToLower string with I with dot above
+# sample
+ok ToUpper sample
+ok ToLower sample
+ok ToUpper sample = AnsiUpperCase
+ok ToLower sample = AnsiLowerCase
 # UTF-32
 ok ConvertFromUtf32 ASCII
 ok ConvertFromUtf32 BMP
@@ -144,4 +149,4 @@ ok ConvertToUtf32 index 0
 ok GetUnicodeCategory checksum
 ok ToUpper checksum
 ok ToLower checksum
-# passed 139 failed 0
+# passed 143 failed 0

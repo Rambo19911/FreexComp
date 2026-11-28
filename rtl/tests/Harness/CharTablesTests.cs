@@ -5,13 +5,15 @@ using System.Text.RegularExpressions;
 namespace FreexComp.Rtl.Tests.Harness;
 
 /// <summary>
-/// RTL-640 (task R-194): the committed character tables <c>rtl/src/CharTables.inc</c> are the pinned
-/// <c>third_party/unicode/UnicodeData.txt</c>. The test reads both files itself (it does not run the generator), so a
-/// data file that moved without a regenerated table, or a table edited by hand, fails here.
+/// RTL-640 (task R-194), RTL-1277 (task R-266): the committed character tables - <c>rtl/src/CharTables.inc</c>
+/// (general categories, unit <c>Character</c>) and <c>rtl/src/CaseTables.inc</c> (simple case mappings, unit
+/// <c>SysUtils</c>) - are the pinned <c>third_party/unicode/UnicodeData.txt</c>. The test reads the files itself (it does
+/// not run the generator), so a data file that moved without regenerated tables, or a table edited by hand, fails here.
 /// </summary>
 [Trait("Phase", "2")]
 [Trait("Category", "Integration")]
 [Trait("Req", "RTL-640")]
+[Trait("Req", "RTL-1277")]
 public sealed class CharTablesTests
 {
     private static readonly string[] CategoryCodes =
@@ -22,6 +24,8 @@ public sealed class CharTablesTests
 
     private static string TablePath => Path.Combine(RtlSetup.RepositoryRoot, "rtl", "src", "CharTables.inc");
 
+    private static string CaseTablePath => Path.Combine(RtlSetup.RepositoryRoot, "rtl", "src", "CaseTables.inc");
+
     private static string DataPath => Path.Combine(RtlSetup.RepositoryRoot, "third_party", "unicode", "UnicodeData.txt");
 
     /// <summary>Every BMP code unit: category, simple uppercase and simple lowercase of the table equal the data file.</summary>
@@ -29,10 +33,11 @@ public sealed class CharTablesTests
     public void Tables_EqualThePinnedUnicodeData()
     {
         var table = File.ReadAllText(TablePath);
-        var shift = int.Parse(Regex.Match(table, @"CharBlockShift = (\d+);").Groups[1].Value, CultureInfo.InvariantCulture);
-        var category = Lookup(table, "Cat", null, shift);
-        var upper = Lookup(table, "Upper", "UpperDeltas", shift);
-        var lower = Lookup(table, "Lower", "LowerDeltas", shift);
+        var caseTable = File.ReadAllText(CaseTablePath);
+        var category = Lookup(table, "Cat", null, Shift(table, "CharBlockShift"));
+        var caseShift = Shift(caseTable, "CaseBlockShift");
+        var upper = Lookup(caseTable, "Upper", "UpperDeltas", caseShift);
+        var lower = Lookup(caseTable, "Lower", "LowerDeltas", caseShift);
 
         var expectedCategory = Enumerable.Repeat(CategoryCodes.Length - 1, 65536).ToArray(); // no line: unassigned
         var expectedUpper = new int[65536];
@@ -78,21 +83,34 @@ public sealed class CharTablesTests
     }
 
     /// <summary>
-    /// The table names the database version and the SHA-256 of the data file it was generated from, and, right after the
-    /// licence line of the file, the origin and the licence of its numbers.
+    /// Each table file names the database version and the SHA-256 of the data file it was generated from, and, right
+    /// after the licence line of the file, the origin and the licence of its numbers.
     /// </summary>
     [Fact]
     public void Table_RecordsVersionAndHashOfTheData()
     {
-        var header = File.ReadAllText(TablePath);
-        header = header[..header.IndexOf("const", StringComparison.Ordinal)];
         var hash = Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(DataPath)));
+        foreach (var path in new[] { TablePath, CaseTablePath })
+        {
+            Assert.True(File.Exists(path), path + " does not exist");
+            var header = File.ReadAllText(path);
+            header = header[..header.IndexOf("const", StringComparison.Ordinal)];
+            var lines = header.Split('\n');
 
-        Assert.Contains("UnicodeData.txt of the Unicode Character Database 18.0.0,", header, StringComparison.Ordinal);
-        Assert.Contains("SHA-256 " + hash + ".", header, StringComparison.Ordinal);
-        Assert.Equal(
-            "// The table values are derived from the Unicode Character Database 18.0.0 (UnicodeData.txt), Copyright (c) Unicode, Inc., used under the Unicode License V3 (Unicode-3.0); see THIRD-PARTY-NOTICES.txt.",
-            header.Split('\n')[1].TrimEnd('\r'));
+            Assert.Equal("// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception", lines[0].TrimEnd('\r'));
+            Assert.Equal(
+                "// The table values are derived from the Unicode Character Database 18.0.0 (UnicodeData.txt), Copyright (c) Unicode, Inc., used under the Unicode License V3 (Unicode-3.0); see THIRD-PARTY-NOTICES.txt.",
+                lines[1].TrimEnd('\r'));
+            Assert.Contains("UnicodeData.txt of the Unicode Character Database 18.0.0,", header, StringComparison.Ordinal);
+            Assert.Contains("SHA-256 " + hash + ".", header, StringComparison.Ordinal);
+        }
+    }
+
+    private static int Shift(string table, string name)
+    {
+        var match = Regex.Match(table, @"\b" + name + @" = (\d+);");
+        Assert.True(match.Success, name + " not found");
+        return int.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture);
     }
 
     /// <summary>
@@ -117,7 +135,7 @@ public sealed class CharTablesTests
     private static int[] Numbers(string table, string name)
     {
         var match = Regex.Match(table, @"\b" + name + @": array\[0\.\.(\d+)\] of \w+ = \(([^)]*)\);");
-        Assert.True(match.Success, name + " not found in CharTables.inc");
+        Assert.True(match.Success, name + " not found in the table file");
         var numbers = match.Groups[2].Value.Split(',').Select(n => int.Parse(n.Trim(), CultureInfo.InvariantCulture)).ToArray();
         Assert.Equal(int.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture) + 1, numbers.Length);
         return numbers;
