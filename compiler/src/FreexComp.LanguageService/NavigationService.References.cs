@@ -203,7 +203,7 @@ public static partial class NavigationService
         };
     }
 
-    private static Location LocationOf(SyntaxTree tree, TextSpan span)
+    internal static Location LocationOf(SyntaxTree tree, TextSpan span)
     {
         var lines = tree.Text.Lines;
         return new Location(tree.Text.Path, span, new LinePositionSpan(lines.GetLinePosition(span.Start), lines.GetLinePosition(span.End)));

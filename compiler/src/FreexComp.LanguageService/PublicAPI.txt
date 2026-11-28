@@ -377,6 +377,19 @@ readonly record struct FreexComp.LanguageService.ReferenceLocation : System.IEqu
   public override System.String ToString()
   public static System.Boolean op_Equality(FreexComp.LanguageService.ReferenceLocation left, FreexComp.LanguageService.ReferenceLocation right)
   public static System.Boolean op_Inequality(FreexComp.LanguageService.ReferenceLocation left, FreexComp.LanguageService.ReferenceLocation right)
+sealed record FreexComp.LanguageService.RenameConflict : System.IEquatable<FreexComp.LanguageService.RenameConflict>
+  public FreexComp.Compiler.Text.Location Location { get; init; }
+  public FreexComp.LanguageService.RenameConflict <Clone>$()
+  public System.Boolean Equals(FreexComp.LanguageService.RenameConflict other)
+  public System.String Message { get; init; }
+  public System.String Name { get; init; }
+  public System.Void Deconstruct(out FreexComp.Compiler.Text.Location Location, out System.String Name, out System.String Message)
+  public ctor(FreexComp.Compiler.Text.Location Location, System.String Name, System.String Message)
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public static System.Boolean op_Equality(FreexComp.LanguageService.RenameConflict left, FreexComp.LanguageService.RenameConflict right)
+  public static System.Boolean op_Inequality(FreexComp.LanguageService.RenameConflict left, FreexComp.LanguageService.RenameConflict right)
 sealed record FreexComp.LanguageService.RenameInfo : System.IEquatable<FreexComp.LanguageService.RenameInfo>
   public FreexComp.Compiler.Text.TextSpan Span { get; init; }
   public FreexComp.LanguageService.CompletionItemKind Kind { get; init; }
@@ -417,6 +430,7 @@ sealed record FreexComp.LanguageService.RenameResult : System.IEquatable<FreexCo
   public System.Boolean Equals(FreexComp.LanguageService.RenameResult other)
   public System.Boolean Success { get; init; }
   public System.Collections.Immutable.ImmutableArray<FreexComp.LanguageService.DocumentEdit> Edits { get; init; }
+  public System.Collections.Immutable.ImmutableArray<FreexComp.LanguageService.RenameConflict> Conflicts { get; init; }
   public System.String Error { get; init; }
   public System.Void Deconstruct(out System.Boolean Success, out System.String Error, out System.Collections.Immutable.ImmutableArray<FreexComp.LanguageService.DocumentEdit> Edits, out FreexComp.LanguageService.FileRename FileRename)
   public ctor(System.Boolean Success, System.String Error, System.Collections.Immutable.ImmutableArray<FreexComp.LanguageService.DocumentEdit> Edits, FreexComp.LanguageService.FileRename FileRename = null)
@@ -429,6 +443,7 @@ enum FreexComp.LanguageService.RenameScope
   Local = 1
   Project = 0
 static class FreexComp.LanguageService.RenameService
+  public const System.Int32 MaxConflicts = 100
   public static FreexComp.LanguageService.RenameInfo GetRenameInfo(FreexComp.LanguageService.Document doc, System.Int32 position, System.Threading.CancellationToken ct)
   public static FreexComp.LanguageService.RenameResult Rename(FreexComp.LanguageService.Document doc, System.Int32 position, System.String newName, FreexComp.LanguageService.RenameOptions options, System.Threading.CancellationToken ct)
   public static FreexComp.LanguageService.RenameResult Rename(FreexComp.LanguageService.Document doc, System.Int32 position, System.String newName, System.Threading.CancellationToken ct)

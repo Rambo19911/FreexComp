@@ -345,6 +345,195 @@ public sealed class RenameTests
         Assert.StartsWith("Renaming 'First' to 'Second' changes the meaning of 'Second' at Unit3.pas(", result.Error, StringComparison.Ordinal);
     }
 
+    // ------------------------------------------------------------------------------------------------ CMP-1505, CMP-1506 (C-449)
+
+    private const string LateUser = """
+        unit U3;
+        interface
+        procedure Run;
+        implementation
+        uses U2, U1;
+        procedure Run;
+        begin
+          Bar;
+        end;
+        end.
+        """;
+
+    /// <summary><c>U1.Foo</c>, <c>U2.Bar</c>, and <c>U3</c> that uses <c>U2, U1</c> and names only <c>Bar</c>; the program does not use <c>U2</c>.</summary>
+    private static (string Name, string Text)[] CaptureFixture() =>
+    [
+        ("P.pas", "program P;\nuses U1, U3;\nbegin\n  Foo;\n  Run;\nend.\n"),
+        ("U1.pas", "unit U1;\ninterface\nprocedure Foo;\nimplementation\nprocedure Foo; begin end;\nend.\n"),
+        ("U2.pas", "unit U2;\ninterface\nprocedure Bar;\nimplementation\nprocedure Bar; begin end;\nend.\n"),
+        ("U3.pas", LateUser.ReplaceLineEndings("\n")),
+    ];
+
+    private static string Describe(RenameConflict conflict) =>
+        $"{Path.GetFileName(conflict.Location.Path)}({conflict.Location.LineSpan.Start.Line + 1},{conflict.Location.LineSpan.Start.Column + 1}) {conflict.Name} [{conflict.Location.Span.Length}]";
+
+    /// <summary>
+    /// CMP-1506: <c>U3</c> is not edited by renaming <c>U1.Foo</c> to <c>Bar</c> — it never names <c>Foo</c> — but its <c>Bar</c>,
+    /// which is <c>U2.Bar</c>, would become <c>U1.Bar</c> (the unit used last wins). The check binds every unit that spells the new name.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "CMP-1506")]
+    public void Conflict_UneditedUnitWouldBindToTheRenamedSymbol_Fails()
+    {
+        var files = CaptureFixture();
+        AssertCompiles(files);
+
+        var result = Rename(files, "U1.pas", "Foo;\nimplementation", "Bar");
+
+        Assert.False(result.Success);
+        Assert.Equal("Renaming 'Foo' to 'Bar' changes the meaning of 'Bar' at U3.pas(8,3).", result.Error);
+        Assert.Empty(result.Edits);
+        Assert.Equal(["U3.pas(8,3) Bar [3]"], result.Conflicts.Select(Describe));
+        Assert.Equal(TestFiles.PathOf("U3.pas"), result.Conflicts[0].Location.Path);
+        Assert.Equal(At(TextOf(files, "U3.pas"), "Bar;"), result.Conflicts[0].Location.Span.Start);
+        Assert.Equal(result.Error, result.Conflicts[0].Message);
+
+        // the same from a use in the program; a name nobody else spells is free
+        Assert.Equal(["U3.pas(8,3) Bar [3]"], Rename(files, "P.pas", "Foo;", "bar").Conflicts.Select(Describe));
+        var free = Rename(files, "U1.pas", "Foo;\nimplementation", "Baz");
+        Assert.True(free.Success, free.Error);
+        Assert.Empty(free.Conflicts);
+        Assert.Equal(["P.pas: 1", "U1.pas: 2"], Counts(free));
+
+        // U3 that names U2.Bar through its unit keeps its meaning: no conflict
+        var qualified = CaptureFixture();
+        qualified[3] = ("U3.pas", TextOf(files, "U3.pas").Replace("  Bar;", "  U2.Bar;", StringComparison.Ordinal));
+        var kept = Rename(qualified, "U1.pas", "Foo;\nimplementation", "Bar");
+        Assert.True(kept.Success, kept.Error);
+        AssertCompiles(Applied(qualified, kept));
+    }
+
+    /// <summary>
+    /// CMP-1506: a field renamed to the name of a unit-level variable that a method of a descendant class — in a unit the rename
+    /// does not edit — reads and writes: there the name would become the inherited field.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "CMP-1506")]
+    public void Conflict_InheritedMemberWouldHideAGlobalInAnUneditedDescendant_Fails()
+    {
+        (string Name, string Text)[] files =
+        [
+            ("P.pas", "program P;\nuses UBase, UDesc;\nvar D: TDesc;\nbegin\n  D := TDesc.Create;\n  D.Size := 1;\n  D.Grow;\nend.\n"),
+            ("UBase.pas", "unit UBase;\ninterface\ntype\n  TBase = class\n  public\n    Size: Integer;\n  end;\nimplementation\nend.\n"),
+            ("UDesc.pas", "unit UDesc;\ninterface\nuses UBase;\ntype\n  TDesc = class(TBase)\n    procedure Grow;\n  end;\nvar Total: Integer;\nimplementation\n"
+                          + "procedure TDesc.Grow;\nbegin\n  Total := Total + 1;\nend;\nend.\n"),
+        ];
+        AssertCompiles(files);
+
+        var result = Rename(files, "UBase.pas", "Size: Integer", "Total");
+
+        Assert.False(result.Success);
+        Assert.Equal("Renaming 'Size' to 'Total' changes the meaning of 'Total' at UDesc.pas(12,3).", result.Error);
+        Assert.Empty(result.Edits);
+        Assert.Equal(["UDesc.pas(12,3) Total [5]", "UDesc.pas(12,12) Total [5]"], result.Conflicts.Select(Describe));   // the declaration of the variable keeps its meaning
+
+        var other = Rename(files, "UBase.pas", "Size: Integer", "Extent");
+        Assert.True(other.Success, other.Error);
+        Assert.Equal(["P.pas: 1", "UBase.pas: 1"], Counts(other));
+    }
+
+    /// <summary>
+    /// The fixture's <c>Shared</c> renamed to <c>Total</c>: two edited names in <c>Unit1</c> would become the local of <c>Hello</c>, and
+    /// in <c>Unit3</c> — not edited — the <c>Total</c> of <c>Unit4</c> would become <c>Unit1</c>'s (and <paramref name="uses"/> more of them).
+    /// </summary>
+    private static (string Name, string Text)[] ManyConflictsFixture(int uses = 1) => Fixture(
+        ("Unit4.pas", "unit Unit4;\ninterface\nvar Total: Integer;\nimplementation\nend.\n"),
+        ("Unit3.pas", "unit Unit3;\ninterface\nprocedure Call;\nimplementation\nuses Unit4, Unit1;\nprocedure Call;\nbegin\n  Hello;\n"
+                      + string.Concat(Enumerable.Repeat("  Total := 1;\n", uses)) + "end;\nend.\n"));
+
+    /// <summary>CMP-1505: every conflict is listed — files in path order, then position; an edited name is given as the new name.</summary>
+    [Fact]
+    [Trait("Req", "CMP-1505")]
+    [Trait("Req", "CMP-1506")]
+    public void Conflict_AllConflictsAreListedInOrder()
+    {
+        var files = ManyConflictsFixture();
+        AssertCompiles(files);
+
+        var result = Rename(files, "Unit1.pas", "Shared: Integer", "Total");
+
+        Assert.False(result.Success);
+        Assert.Empty(result.Edits);
+        Assert.Equal(["Unit1.pas(20,12) Total [6]", "Unit1.pas(21,3) Total [6]", "Unit3.pas(9,3) Total [5]"], result.Conflicts.Select(Describe));
+        Assert.Equal(
+            [
+                "Renaming 'Shared' to 'Total' changes the meaning of 'Total' at Unit1.pas(20,12).",
+                "Renaming 'Shared' to 'Total' changes the meaning of 'Total' at Unit1.pas(21,3).",
+                "Renaming 'Shared' to 'Total' changes the meaning of 'Total' at Unit3.pas(9,3).",
+            ],
+            result.Conflicts.Select(c => c.Message));
+        Assert.All(result.Conflicts, c => Assert.Equal(TestFiles.PathOf(Path.GetFileName(c.Location.Path)), c.Location.Path));
+
+        // the same list from a use of the symbol in another file
+        Assert.Equal(result.Conflicts.Select(Describe), Rename(files, "P.pas", "Shared := 2", "Total").Conflicts.Select(Describe));
+    }
+
+    /// <summary>
+    /// CMP-1505: with conflicts <c>Error</c> is the first conflict's sentence — the text it has always been — and nothing is edited;
+    /// a rename that succeeds and a refusal of another kind have no conflicts.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "CMP-1505")]
+    public void Conflict_ErrorIsTheFirstConflictsMessage()
+    {
+        var result = Rename(ManyConflictsFixture(), "Unit1.pas", "Shared: Integer", "Total");
+
+        Assert.False(result.Success);
+        Assert.Equal(3, result.Conflicts.Length);
+        Assert.Equal("Renaming 'Shared' to 'Total' changes the meaning of 'Total' at Unit1.pas(20,12).", result.Error);
+        Assert.Equal(result.Error, result.Conflicts[0].Message);
+        Assert.Empty(result.Edits);
+        Assert.Null(result.FileRename);
+
+        // the fixture without the unit that is not edited: the conflicts of the edited file alone, the same first sentence
+        var edited = Rename(Fixture(), "Unit1.pas", "Shared: Integer", "Total");
+        Assert.Equal(result.Error, edited.Error);
+        Assert.Equal(["Unit1.pas(20,12) Total [6]", "Unit1.pas(21,3) Total [6]"], edited.Conflicts.Select(Describe));
+
+        Assert.Empty(Rename(Fixture(), "Unit1.pas", "Shared: Integer", "Common").Conflicts);                 // success
+        Assert.Empty(Rename(Fixture(), "Unit1.pas", "Shared: Integer", "Shared").Conflicts);                 // unchanged name
+        Assert.Empty(Rename(Fixture(), "Unit1.pas", "Shared: Integer", "not valid").Conflicts);              // invalid name
+        Assert.Empty(Rename(Fixture(), "Unit1.pas", "Integer;\n    procedure Run", "Whole").Conflicts);       // not renamable
+        var exists = Rename(Fixture(), "Unit1.pas", "Unit1;", "Unit2");
+        Assert.Equal("A unit named 'Unit2' already exists.", exists.Error);
+        Assert.Empty(exists.Conflicts);
+
+        // a unit rename lists its conflicts too (LANG-311: the variable hides the unit, so the qualifier would stop naming it)
+        var hidden = Rename(Fixture(("P.pas", "program App;\nuses Unit1;\nvar Customers: Integer;\nbegin\n  Unit1.Hello;\n  Customers := 1;\nend.\n")), "Unit1.pas", "Unit1;", "Customers");
+        Assert.False(hidden.Success);
+        Assert.Equal("Renaming 'Unit1' to 'Customers' changes the meaning of 'Customers' at P.pas(5,3).", hidden.Error);
+        Assert.Equal(["P.pas(5,3) Customers [5]", "P.pas(5,9) Hello [5]"], hidden.Conflicts.Select(Describe));      // the member of the hidden unit binds to nothing
+        Assert.Equal(hidden.Error, hidden.Conflicts[0].Message);
+        Assert.Null(hidden.FileRename);
+    }
+
+    /// <summary>CMP-1505: at most <see cref="RenameService.MaxConflicts"/> conflicts are collected — the first ones in order.</summary>
+    [Fact]
+    [Trait("Req", "CMP-1505")]
+    public void Conflict_ListIsCappedAtOneHundred()
+    {
+        Assert.Equal(100, RenameService.MaxConflicts);
+        var files = ManyConflictsFixture(uses: 118);                                // 2 in Unit1 + 118 in Unit3 = 120
+        AssertCompiles(files);
+
+        var result = Rename(files, "Unit1.pas", "Shared: Integer", "Total");
+
+        Assert.False(result.Success);
+        Assert.Equal(100, result.Conflicts.Length);
+        Assert.Equal("Unit1.pas(20,12) Total [6]", Describe(result.Conflicts[0]));
+        Assert.Equal("Unit1.pas(21,3) Total [6]", Describe(result.Conflicts[1]));
+        Assert.Equal(Enumerable.Range(9, 98).Select(line => $"Unit3.pas({line},3) Total [5]"), result.Conflicts.Skip(2).Select(Describe));
+        Assert.Equal(result.Conflicts[0].Message, result.Error);
+
+        var below = Rename(ManyConflictsFixture(uses: 97), "Unit1.pas", "Shared: Integer", "Total");
+        Assert.Equal(99, below.Conflicts.Length);
+    }
+
     // ------------------------------------------------------------------------------------------------ CMP-752
 
     /// <summary>The IDE's fixture (IDE-PM-138): heading, the uses entries of three files, the qualified names.</summary>

@@ -74,7 +74,22 @@ public sealed record RenameOptions
 /// The edits of a rename, per file in path order (changes in text order, against the snapshot's text), or the reason it was
 /// refused. <see cref="FileRename"/> is the file operation a unit rename needs; edits name the file by its present path.
 /// </summary>
-public sealed record RenameResult(bool Success, string? Error, ImmutableArray<DocumentEdit> Edits, FileRename? FileRename = null);
+public sealed record RenameResult(bool Success, string? Error, ImmutableArray<DocumentEdit> Edits, FileRename? FileRename = null)
+{
+    /// <summary>
+    /// CMP-1505: every name the rename would give another meaning — files in path order, then position; at most
+    /// <see cref="RenameService.MaxConflicts"/>. With conflicts the rename is refused and <see cref="RenameResult.Error"/> is the
+    /// first one's message; a refusal of another kind has none.
+    /// </summary>
+    public ImmutableArray<RenameConflict> Conflicts { get; init; } = [];
+}
+
+/// <summary>
+/// CMP-1505: a name whose meaning the rename would change. <see cref="Location"/> is the name in the snapshot's text,
+/// <see cref="Name"/> the name as written there — for a name the rename edits, the new name — and <see cref="Message"/> the
+/// sentence <c>Renaming 'A' to 'B' changes the meaning of 'N' at File(line,col).</c>
+/// </summary>
+public sealed record RenameConflict(Location Location, string Name, string Message);
 
 public sealed record FileRename(string OldPath, string NewPath);
 
@@ -84,6 +99,9 @@ public sealed record FileRename(string OldPath, string NewPath);
 /// </summary>
 public static class RenameService
 {
+    /// <summary>CMP-1505: the most conflicts a rename lists.</summary>
+    public const int MaxConflicts = 100;
+
     private const string NotAnIdentifier = "Only identifiers can be renamed.";
 
     /// <summary>CMP-750: whether the name at <paramref name="position"/> can be renamed, its span and present spelling.</summary>
@@ -149,6 +167,9 @@ public static class RenameService
     }
 
     private static RenameResult Fail(string error) => new(false, error, []);
+
+    /// <summary>CMP-1505: refused for its conflicts; the error is the first conflict's sentence.</summary>
+    private static RenameResult Fail(ImmutableArray<RenameConflict> conflicts) => new(false, conflicts[0].Message, []) { Conflicts = conflicts };
 
     // ---------------------------------------------------------------------------------------------------------- the target
 
@@ -444,9 +465,10 @@ public static class RenameService
         }
 
         var plan = new Plan(doc, edits, null, newName, target.Name);
-        if (plan.Check(related, null, ct) is { } conflict)
+        var conflicts = plan.Check(related, null, ct);
+        if (!conflicts.IsEmpty)
         {
-            return Fail(conflict);
+            return Fail(conflicts);
         }
 
         if (!options.Forms)
@@ -615,7 +637,8 @@ public static class RenameService
         }
 
         var plan = new Plan(doc, edits, rename, newName, target.Name);
-        return plan.Check([unit], names, ct) is { } conflict ? Fail(conflict) : new RenameResult(true, null, Edits(edits), rename);
+        var conflicts = plan.Check([unit], names, ct);
+        return conflicts.IsEmpty ? new RenameResult(true, null, Edits(edits), rename) : Fail(conflicts);
     }
 
     private static NameSyntax? HeadingName(SyntaxNode root) => root switch
@@ -742,7 +765,8 @@ public static class RenameService
 
     /// <summary>
     /// CMP-751: the edits applied to a forked compilation. Every edited name must bind to the renamed symbol, and every other
-    /// identifier of the edited files that was bound must still bind to the same declaration.
+    /// identifier of the edited files that was bound must still bind to the same declaration. CMP-1506: so must, in every other
+    /// source unit, each name spelled like the new name. CMP-1505: every conflict is listed.
     /// </summary>
     private sealed class Plan(Document doc, SortedDictionary<string, List<TextChange>> edits, FileRename? rename, string newName, string oldName)
     {
@@ -779,14 +803,20 @@ public static class RenameService
             return PathUtil.AreEqual(NewPath(path), after.Locations[0].Path) && Map(path, before.Locations[0].Span.Start) == after.Locations[0].Span.Start;
         }
 
-        private string Conflict(SyntaxTree tree, int position, string text)
+        /// <summary>CMP-1505: the conflict of the name at <paramref name="span"/> of the snapshot's text; <paramref name="text"/> is the name as written after the rename.</summary>
+        private RenameConflict Conflict(SyntaxTree tree, TextSpan span, string text)
         {
-            var at = tree.Text.Lines.GetLinePosition(position);
-            return $"Renaming '{oldName}' to '{newName}' changes the meaning of '{text}' at {Path.GetFileName(tree.Text.Path)}({at.Line + 1},{at.Column + 1}).";
+            var at = tree.Text.Lines.GetLinePosition(span.Start);
+            return new RenameConflict(NavigationService.LocationOf(tree, span), text,
+                $"Renaming '{oldName}' to '{newName}' changes the meaning of '{text}' at {Path.GetFileName(tree.Text.Path)}({at.Line + 1},{at.Column + 1}).");
         }
 
-        /// <summary>The first conflict (files in path order, then text order), or null. <paramref name="unitNames"/>: the name spans of a unit rename.</summary>
-        public string? Check(IReadOnlyList<Symbol> renamed, Dictionary<string, List<TextSpan>>? unitNames, CancellationToken ct)
+        /// <summary>
+        /// The conflicts (files in path order, then text order; at most <see cref="MaxConflicts"/>). <paramref name="unitNames"/>: the
+        /// name spans of a unit rename. CMP-1506: besides the edited files, every source unit whose own text spells the new name is
+        /// checked — only such a name can be captured or hidden by the renamed declaration in a file the rename does not edit.
+        /// </summary>
+        public ImmutableArray<RenameConflict> Check(IReadOnlyList<Symbol> renamed, Dictionary<string, List<TextSpan>>? unitNames, CancellationToken ct)
         {
             var compilation = doc.Compilation;
             var fork = compilation;
@@ -807,56 +837,116 @@ public static class RenameService
             }
 
             var last = newName[(newName.LastIndexOf('.') + 1)..];
-            foreach (var (path, changes) in edits)
+            var conflicts = ImmutableArray.CreateBuilder<RenameConflict>();
+            foreach (var path in edits.Keys.Concat(Paths(doc)).Distinct(PathUtil.Comparer).Order(PathUtil.Comparer))
             {
-                ct.ThrowIfCancellationRequested();
-                var before = PathUtil.AreEqual(path, doc.Path) ? doc.SemanticModel : compilation.GetSemanticModel(path);
-                var after = fork.GetSemanticModel(NewPath(path));
-                var newTree = after.SyntaxTree;
-                var names = unitNames is not null && unitNames.TryGetValue(path, out var spans) ? spans : [];
-                var expected = unitNames is null ? null : UnitNames(after, after.Compilation.GetSemanticModel(NewPath(PathUtil.Normalize(renamed[0].Locations[0].Path))).Unit, ct);
-                foreach (var token in before.SyntaxTree.Root.OwnTokens())
+                if (conflicts.Count >= MaxConflicts)
                 {
-                    if (!SyntaxFacts.IsNameToken(token) || token.IsMissing)
-                    {
-                        continue;
-                    }
+                    break;
+                }
 
-                    var start = token.Span.Start;
-                    if (names.FirstOrDefault(s => s.Contains(start)) is { Length: > 0 } unitName)
-                    {
-                        // a unit name: after the edit the same place must still name the renamed unit
-                        if (unitName.Start == start && !expected!.Contains(new TextSpan(Map(path, start), newName.Length)))
-                        {
-                            return Conflict(before.SyntaxTree, start, newName);
-                        }
-
-                        continue;
-                    }
-
-                    var edit = changes.FirstOrDefault(c => c.Span.Contains(start));
-                    if (edit.Span.Length > 0 && edit.Span.Start != start)
-                    {
-                        continue;                                           // inside an edited span that is not a name (none today)
-                    }
-
-                    ct.ThrowIfCancellationRequested();
-                    if (QuickInfoService.SymbolOf(before, token) is not { } bound)
-                    {
-                        continue;
-                    }
-
-                    var edited = edit.Span.Length > 0;
-                    var newToken = newTree.FindToken(Map(path, start));
-                    var now = SyntaxFacts.IsNameToken(newToken) && newToken.Span.Start == Map(path, start) ? QuickInfoService.SymbolOf(after, newToken) : null;
-                    if (now is null || !Same(bound, now) || edited && !IdentifierComparer.Instance.Equals(now.Name, last))
-                    {
-                        return Conflict(before.SyntaxTree, start, edited ? newName : token.Text);
-                    }
+                ct.ThrowIfCancellationRequested();
+                var before = ModelOf(doc, path);
+                if (edits.TryGetValue(path, out var changes))
+                {
+                    CheckEdited(path, changes, before, fork, renamed, unitNames, last, conflicts, ct);
+                }
+                else
+                {
+                    CheckUnedited(path, before, fork, last, conflicts, ct);
                 }
             }
 
-            return null;
+            return conflicts.ToImmutable();
+        }
+
+        /// <summary>CMP-751: every edited name binds to the renamed symbol, every other name of the file that was bound to the same declaration.</summary>
+        private void CheckEdited(string path, List<TextChange> changes, SemanticModel before, Compilation fork, IReadOnlyList<Symbol> renamed,
+            Dictionary<string, List<TextSpan>>? unitNames, string last, ImmutableArray<RenameConflict>.Builder conflicts, CancellationToken ct)
+        {
+            var after = fork.GetSemanticModel(NewPath(path));
+            var newTree = after.SyntaxTree;
+            var names = unitNames is not null && unitNames.TryGetValue(path, out var spans) ? spans : [];
+            var expected = unitNames is null ? null : UnitNames(after, after.Compilation.GetSemanticModel(NewPath(PathUtil.Normalize(renamed[0].Locations[0].Path))).Unit, ct);
+            foreach (var token in before.SyntaxTree.Root.OwnTokens())
+            {
+                if (conflicts.Count >= MaxConflicts)
+                {
+                    return;
+                }
+
+                if (!SyntaxFacts.IsNameToken(token) || token.IsMissing)
+                {
+                    continue;
+                }
+
+                var start = token.Span.Start;
+                if (names.FirstOrDefault(s => s.Contains(start)) is { Length: > 0 } unitName)
+                {
+                    // a unit name: after the edit the same place must still name the renamed unit
+                    if (unitName.Start == start && !expected!.Contains(new TextSpan(Map(path, start), newName.Length)))
+                    {
+                        conflicts.Add(Conflict(before.SyntaxTree, unitName, newName));
+                    }
+
+                    continue;
+                }
+
+                var edit = changes.FirstOrDefault(c => c.Span.Contains(start));
+                if (edit.Span.Length > 0 && edit.Span.Start != start)
+                {
+                    continue;                                               // inside an edited span that is not a name (none today)
+                }
+
+                ct.ThrowIfCancellationRequested();
+                if (QuickInfoService.SymbolOf(before, token) is not { } bound)
+                {
+                    continue;
+                }
+
+                var edited = edit.Span.Length > 0;
+                var newToken = newTree.FindToken(Map(path, start));
+                var now = SyntaxFacts.IsNameToken(newToken) && newToken.Span.Start == Map(path, start) ? QuickInfoService.SymbolOf(after, newToken) : null;
+                if (now is null || !Same(bound, now) || edited && !IdentifierComparer.Instance.Equals(now.Name, last))
+                {
+                    conflicts.Add(Conflict(before.SyntaxTree, token.Span, edited ? newName : token.Text));
+                }
+            }
+        }
+
+        /// <summary>
+        /// CMP-1506: a file the rename does not edit. Its own name tokens spelled like the new name (a dotted unit name: its last
+        /// part) that were bound must bind to the same declaration; a file that does not spell the name is not bound again.
+        /// </summary>
+        private void CheckUnedited(string path, SemanticModel before, Compilation fork, string last, ImmutableArray<RenameConflict>.Builder conflicts, CancellationToken ct)
+        {
+            SemanticModel? after = null;
+            foreach (var token in before.SyntaxTree.Root.OwnTokens())
+            {
+                if (conflicts.Count >= MaxConflicts)
+                {
+                    return;
+                }
+
+                if (!SyntaxFacts.IsNameToken(token) || token.IsMissing || !IdentifierComparer.Instance.Equals(SyntaxFacts.NameOf(token), last))
+                {
+                    continue;
+                }
+
+                ct.ThrowIfCancellationRequested();
+                if (QuickInfoService.SymbolOf(before, token) is not { } bound)
+                {
+                    continue;
+                }
+
+                after ??= fork.GetSemanticModel(path);
+                var newToken = after.SyntaxTree.FindToken(token.Span.Start);
+                var now = SyntaxFacts.IsNameToken(newToken) && newToken.Span == token.Span ? QuickInfoService.SymbolOf(after, newToken) : null;
+                if (now is null || !Same(bound, now))
+                {
+                    conflicts.Add(Conflict(before.SyntaxTree, token.Span, token.Text));
+                }
+            }
         }
     }
 }
