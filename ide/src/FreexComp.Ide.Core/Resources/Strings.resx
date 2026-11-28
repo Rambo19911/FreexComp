@@ -6835,4 +6835,76 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
     <value>partly checked</value>
     <comment>UI-DLG-367 check state of a file row whose edits differ</comment>
   </data>
+  <data name="Msg_References_Searching" xml:space="preserve">
+    <value>Finding references to {0}…</value>
+    <comment>IDE-FREF-002 status (sticky): 0 = identifier</comment>
+  </data>
+  <data name="Msg_References_None" xml:space="preserve">
+    <value>No references found for {0}</value>
+    <comment>IDE-FREF-002: 0 = identifier</comment>
+  </data>
+  <data name="Msg_References_Canceled" xml:space="preserve">
+    <value>Search canceled</value>
+    <comment>IDE-FREF-002</comment>
+  </data>
+  <data name="Msg_References_DoneOne" xml:space="preserve">
+    <value>1 reference in 1 file</value>
+    <comment>IDE-FREF-003, UI-TW-611</comment>
+  </data>
+  <data name="Msg_References_DoneOneFile" xml:space="preserve">
+    <value>{0} references in 1 file</value>
+    <comment>IDE-FREF-003, UI-TW-611: 0 = count</comment>
+  </data>
+  <data name="Msg_References_DoneMany" xml:space="preserve">
+    <value>{0} references in {1} files</value>
+    <comment>IDE-FREF-003, UI-TW-611: counts</comment>
+  </data>
+  <data name="Msg_References_Capped" xml:space="preserve">
+    <value>Only the first {0} references are shown.</value>
+    <comment>IDE-FREF-006 info bar: 0 = cap</comment>
+  </data>
+  <data name="Msg_References_SymbolGone" xml:space="preserve">
+    <value>The symbol is no longer where the search started</value>
+    <comment>IDE-FREF-008</comment>
+  </data>
+  <data name="Msg_References_UnitLevel" xml:space="preserve">
+    <value>(unit level)</value>
+    <comment>IDE-FREF-004 container of a reference outside routines and types</comment>
+  </data>
+  <data name="Msg_References_Library" xml:space="preserve">
+    <value>library</value>
+    <comment>UI-TW-609 suffix of a library file row</comment>
+  </data>
+  <data name="Msg_References_KindDeclaration" xml:space="preserve">
+    <value>Declaration</value>
+    <comment>UI-TW-610 badge D</comment>
+  </data>
+  <data name="Msg_References_KindRead" xml:space="preserve">
+    <value>Read</value>
+    <comment>UI-TW-610 badge R</comment>
+  </data>
+  <data name="Msg_References_KindWrite" xml:space="preserve">
+    <value>Write</value>
+    <comment>UI-TW-610 badge W</comment>
+  </data>
+  <data name="Msg_References_KindCall" xml:space="preserve">
+    <value>Call</value>
+    <comment>UI-TW-610 badge C</comment>
+  </data>
+  <data name="Msg_References_KindTypeReference" xml:space="preserve">
+    <value>Type reference</value>
+    <comment>UI-TW-610 badge T</comment>
+  </data>
+  <data name="Msg_References_KindImplementation" xml:space="preserve">
+    <value>Implementation</value>
+    <comment>UI-TW-610 badge I</comment>
+  </data>
+  <data name="SearchResults_Header_References" xml:space="preserve">
+    <value>References to {0} — {1}</value>
+    <comment>UI-TW-611: 0 = identifier, 1 = counts</comment>
+  </data>
+  <data name="SearchResults_Header_Library" xml:space="preserve">
+    <value>({0} in library sources)</value>
+    <comment>UI-TW-611: appended to the header after a space; 0 = references in library sources</comment>
+  </data>
 </root>

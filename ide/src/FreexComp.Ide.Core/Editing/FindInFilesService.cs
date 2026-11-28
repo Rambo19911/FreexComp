@@ -25,8 +25,11 @@ public sealed record FindInFilesRequest(FindQuery Query, FindInFilesScope Scope,
     public const string DefaultMasks = "*.pas;*.inc;*.form";
 }
 
-/// <summary>A match: absolute path, 1-based line and column, length, and the text of its line (without the line break).</summary>
-public sealed record FileMatch(string Path, int Line, int Column, int Length, string LineText);
+/// <summary>
+/// A match: absolute path, 1-based line and column, length, and the text of its line (without the line break). A row of a
+/// References result set is a <c>ReferenceMatch</c>.
+/// </summary>
+public record FileMatch(string Path, int Line, int Column, int Length, string LineText);
 
 /// <summary>
 /// The outcome of a run. <see cref="FileCount"/> = files with at least one match. When canceled, <see cref="Matches"/> holds

@@ -1,4 +1,5 @@
 using System.Globalization;
+using FreexComp.Ide.Core.CodeModel;
 using FreexComp.Ide.Core.Commands;
 using FreexComp.Ide.Core.Dialogs;
 using FreexComp.Ide.Core.Documents;
@@ -11,12 +12,15 @@ using FreexComp.Ide.Core.Text;
 using FreexComp.Ide.Core.ToolWindows;
 using FreexComp.Ide.Core.Layout;
 using FreexComp.Ide.Core.Models;
+using ReferenceKind = FreexComp.LanguageService.ReferenceKind;
 
 namespace FreexComp.Ide.Core.ViewModels;
 
 /// <summary>
-/// A visible row of Search Results (UI-TW-601/608): a file row (<see cref="Match"/> null) or a match row. The key is the
-/// path relative to the search root with <c>/</c> (absolute outside it), match rows <c>&lt;fileKey&gt;:&lt;line&gt;:&lt;col&gt;</c>.
+/// A visible row of Search Results (UI-TW-601/608): a file row, a match row (<see cref="Match"/> set) or, in a
+/// References result set (UI-TW-609/614), a container row (<see cref="Container"/> set) between them. The key is the
+/// path relative to the search root with <c>/</c> (absolute outside it), match rows <c>&lt;fileKey&gt;:&lt;line&gt;:&lt;col&gt;</c>,
+/// container rows <c>&lt;fileKey&gt;#&lt;container&gt;</c> (<c>@2</c> … for a further container of that name in the file).
 /// <see cref="Text"/> is the displayed line (leading whitespace removed, cut to 240 characters around the match) and
 /// <see cref="HighlightStart"/>/<see cref="HighlightLength"/> the match span in it.
 /// </summary>
@@ -28,7 +32,21 @@ public sealed class SearchResultRow
 
     public FileMatch? Match { get; init; }
 
-    public bool IsFile => Match is null;
+    /// <summary>The container's name on a container row (UI-TW-609); null on file and match rows.</summary>
+    public string? Container { get; init; }
+
+    public bool IsFile => Match is null && Container is null;
+
+    public bool IsContainer => Match is null && Container is not null;
+
+    /// <summary>The kind of a reference row (UI-TW-610); null on every other row.</summary>
+    public ReferenceKind? ReferenceKind => (Match as ReferenceMatch)?.Kind;
+
+    /// <summary>UI-TW-609: the file row of a library source (the suffix <c>Msg.References.Library</c>).</summary>
+    public bool IsLibrary { get; init; }
+
+    /// <summary>What the expansion state of a file or container row is kept under.</summary>
+    internal string GroupId { get; init; } = "";
 
     public string FileName => System.IO.Path.GetFileName(Path);
 
@@ -48,8 +66,49 @@ public sealed class SearchResultRow
 }
 
 /// <summary>
+/// One result set of the Search Results window with the state that belongs to it (UI-TW-618): the query — a Find in
+/// Files request or the origin of a reference query —, the matches in display order, their anchors, the collapsed
+/// rows, the current row and the running search. The window shows one set; keeping several is I-354.
+/// </summary>
+internal sealed class SearchResultSet
+{
+    /// <summary>Kind Find in Files: the request.</summary>
+    public FindInFilesRequest? Request { get; init; }
+
+    /// <summary>Kind References: where the query was started (IDE-FREF-008).</summary>
+    public ReferenceOrigin? Origin { get; init; }
+
+    /// <summary>Kind References: the identifier as written where the query started (UI-TW-611).</summary>
+    public string Identifier { get; init; } = "";
+
+    /// <summary>UI-TW-608: row keys are relative to this folder.</summary>
+    public string Root { get; init; } = "";
+
+    public List<FileMatch> Matches { get; } = [];
+
+    public Dictionary<FileMatch, ITextAnchor> Anchors { get; } = [];
+
+    /// <summary>The <see cref="SearchResultRow.GroupId"/> of the collapsed file and container rows.</summary>
+    public HashSet<string> Collapsed { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>The match navigated to last (F8 continues from it).</summary>
+    public FileMatch? Current { get; set; }
+
+    /// <summary>The running Find in Files search of this set; null when it has ended.</summary>
+    public CancellationTokenSource? Cancel { get; set; }
+
+    public bool IsCapped { get; set; }
+
+    /// <summary>Kind References: the tracked start of the origin identifier while <see cref="OriginDocument"/> is open.</summary>
+    public ITextAnchor? OriginAnchor { get; set; }
+
+    public TextDocumentViewModel? OriginDocument { get; set; }
+}
+
+/// <summary>
 /// The Search Results tool window (tool-windows.md §8, editor-features.md §12): runs Find in Files
-/// (<c>search.findInFiles</c>, the dialog of dialogs.md §11) and shows the last result as a two-level tree; owns the
+/// (<c>search.findInFiles</c>, the dialog of dialogs.md §11) and shows one result set — of kind Find in Files (a
+/// two-level tree) or References (<see cref="ShowReferences"/>: file, container, reference; UI-TW-609…614); owns the
 /// <c>searchResults.*</c> commands. Positions of documents open at search time (or opened later unmodified) are anchored
 /// (UI-TW-604). UI thread only.
 /// </summary>
@@ -59,6 +118,9 @@ public sealed class SearchResultsViewModel : ToolWindowViewModel, ICommandTarget
 
     /// <summary>UI-TW-601: longer lines are cut to a window of this many characters around the first match.</summary>
     public const int MaxLineLength = 240;
+
+    /// <summary>UI-TW-602 / UI-TW-612: with more files than this the rows start collapsed.</summary>
+    public const int ExpandedFileLimit = 50;
 
     private static readonly TimeSpan StatusDuration = TimeSpan.FromSeconds(5);
 
@@ -73,20 +135,12 @@ public sealed class SearchResultsViewModel : ToolWindowViewModel, ICommandTarget
     private readonly IStatusService _status;
     private readonly IClipboardService _clipboard;
     private readonly IUiDispatcher _dispatcher;
-    private readonly List<FileMatch> _matches = [];
-    private readonly Dictionary<FileMatch, ITextAnchor> _anchors = [];
-    private readonly HashSet<string> _collapsed = new(StringComparer.OrdinalIgnoreCase);
     private IToolWindowService? _toolWindows;
     private ICommandService? _commands;
-    private FindInFilesRequest? _request;
-    private FindInFilesResult? _result;
-    private CancellationTokenSource? _cancel;
+    private SearchResultSet? _set; // the shown result set; null = the empty state
     private IDisposable? _sticky;
-    private string _root = "";
-    private int _generation;
     private bool _focusPending;
     private IReadOnlyList<SearchResultRow> _rows = [];
-    private FileMatch? _current;
 
     public SearchResultsViewModel(FindInFilesService service, IDocumentService documents, IProjectService projects, NavigationService navigation,
         IDialogService dialogs, IFileDialogService pickers, IFileSystem fileSystem, ILayoutService layout, IStatusService status,
@@ -124,6 +178,15 @@ public sealed class SearchResultsViewModel : ToolWindowViewModel, ICommandTarget
         "searchResults.repeat", "search.findInFiles", null, "searchResults.clear",
     ];
 
+    /// <summary>The reference queries (<c>search.findReferences</c>); set by <see cref="FindReferencesService"/>.</summary>
+    internal FindReferencesService? References { get; set; }
+
+    /// <summary>
+    /// A result set was shown without moving the keyboard focus (IDE-FREF-003): Search Results is then the window
+    /// <c>search.nextMessage</c> / <c>search.previousMessage</c> step through (UI-TW-603).
+    /// </summary>
+    public event EventHandler? ResultsShown;
+
     public IReadOnlyList<SearchResultRow> Rows
     {
         get => _rows;
@@ -132,38 +195,57 @@ public sealed class SearchResultsViewModel : ToolWindowViewModel, ICommandTarget
 
     public IReadOnlyList<SearchResultRow> SelectedRows { get; set; } = [];
 
-    public bool IsSearching => _cancel is not null;
+    /// <summary>The shown set's search runs: Find in Files, or the repeat of a References set (IDE-FREF-008).</summary>
+    public bool IsSearching => _set is { } set && (set.Cancel is not null || ReferenceEquals(References?.RepeatTarget, set));
 
     /// <summary>Never searched or cleared: <c>Msg.SearchResults.Empty</c>.</summary>
-    public bool IsEmpty => _request is null;
+    public bool IsEmpty => _set is null;
+
+    /// <summary>The shown set is of kind References (UI-TW-609).</summary>
+    public bool IsReferences => _set?.Origin is not null;
 
     /// <summary>The search finished without a match: <c>Msg.FindInFiles.None</c> under the header.</summary>
-    public bool IsNoMatch => _request is not null && !IsSearching && _matches.Count == 0;
+    public bool IsNoMatch => _set is { Request: not null } set && !IsSearching && set.Matches.Count == 0;
 
-    public string NoMatchText => _request is null ? "" : Format(Strings.Msg_FindInFiles_None, _request.Query.Text);
+    public string NoMatchText => _set?.Request is { } request ? Format(Strings.Msg_FindInFiles_None, request.Query.Text) : "";
 
-    /// <summary>UI-TW-606: the info bar <c>Msg.FindInFiles.Capped</c>.</summary>
-    public bool IsCapped => _result?.IsCapped == true;
+    /// <summary>UI-TW-606 / IDE-FREF-006: the info bar <c>Msg.FindInFiles.Capped</c> or <c>Msg.References.Capped</c>.</summary>
+    public bool IsCapped => _set?.IsCapped == true;
 
-    public string CappedText => Format(Strings.Msg_FindInFiles_Capped, FindInFilesService.MatchCap.ToString("N0", CultureInfo.CurrentCulture));
+    public string CappedText => Format(IsReferences ? Strings.Msg_References_Capped : Strings.Msg_FindInFiles_Capped,
+        FindInFilesService.MatchCap.ToString("N0", CultureInfo.CurrentCulture));
 
-    /// <summary>UI-TW-600: <c>Find "&lt;text&gt;" in &lt;scope&gt; — &lt;counts&gt; (&lt;options&gt;)</c>.</summary>
+    /// <summary>
+    /// UI-TW-600: <c>Find "&lt;text&gt;" in &lt;scope&gt; — &lt;counts&gt; (&lt;options&gt;)</c>; UI-TW-611:
+    /// <c>References to &lt;name&gt; — &lt;counts&gt;</c> with the library part.
+    /// </summary>
     public string Header
     {
         get
         {
-            if (_request is not { } request)
+            if (_set is not { } set)
                 return "";
+            var matches = set.Matches;
+            var files = matches.Select(m => m.Path).Distinct(StringComparer.OrdinalIgnoreCase).Count();
+            if (set.Origin is not null)
+            {
+                if (IsSearching)
+                    return Format(Strings.SearchResults_Header_References, set.Identifier, Strings.SearchResults_Searching);
+                var references = Format(Strings.SearchResults_Header_References, set.Identifier, FindReferencesService.CountText(matches.Count, files));
+                var library = matches.Count(m => m is ReferenceMatch { IsLibrary: true });
+                return library == 0 ? references : references + " " + Format(Strings.SearchResults_Header_Library, library);
+            }
+
+            var request = set.Request!;
             var scope = request.Scope switch
             {
                 FindInFilesScope.Project => Strings.SearchResults_ScopeProject,
                 FindInFilesScope.OpenFiles => Strings.SearchResults_ScopeOpenFiles,
                 _ => request.Folder ?? "",
             };
-            var files = _matches.Select(m => m.Path).Distinct(StringComparer.OrdinalIgnoreCase).Count();
             var counts = IsSearching ? Strings.SearchResults_Searching
-                : _matches.Count == 1 ? Strings.Msg_FindInFiles_DoneOne
-                : Format(Strings.Msg_FindInFiles_DoneMany, _matches.Count, files);
+                : matches.Count == 1 ? Strings.Msg_FindInFiles_DoneOne
+                : Format(Strings.Msg_FindInFiles_DoneMany, matches.Count, files);
             var text = Format(Strings.SearchResults_Header, request.Query.Text, scope, counts);
             List<string> options = [];
             if (request.Query.MatchCase)
@@ -177,9 +259,9 @@ public sealed class SearchResultsViewModel : ToolWindowViewModel, ICommandTarget
     }
 
     /// <summary>The match row navigated to last (F8 continues from it).</summary>
-    public SearchResultRow? CurrentRow => _current is null ? null : Rows.FirstOrDefault(r => r.Match == _current);
+    public SearchResultRow? CurrentRow => _set?.Current is { } current ? Rows.FirstOrDefault(r => r.Match == current) : null;
 
-    public bool HasMatches => _matches.Count > 0;
+    public bool HasMatches => _set is { Matches.Count: > 0 };
 
     public void RegisterCommands(ICommandService commands, IToolWindowService toolWindows)
     {
@@ -187,19 +269,20 @@ public sealed class SearchResultsViewModel : ToolWindowViewModel, ICommandTarget
         _commands = commands;
         _toolWindows = toolWindows;
         commands.RegisterHandler("search.findInFiles", new Handler(() => toolWindows.IsRegistered(ToolName), OpenDialogAsync));
-        commands.RegisterHandler("searchResults.repeat", new Handler(() => _request is not null, () => Start(_request!)));
-        commands.RegisterHandler("searchResults.cancel", new Handler(() => IsSearching, () =>
+        commands.RegisterHandler("searchResults.repeat", new Handler(() => _set is not null, Repeat));
+        commands.RegisterHandler("searchResults.cancel", new Handler(() => IsSearching || References?.IsSearching == true, () =>
         {
-            _cancel?.Cancel();
+            _set?.Cancel?.Cancel();
+            References?.Cancel(); // IDE-FREF-002
             return Task.CompletedTask;
         }));
-        commands.RegisterHandler("searchResults.clear", new Handler(() => _request is not null, () =>
+        commands.RegisterHandler("searchResults.clear", new Handler(() => _set is not null, () =>
         {
             Clear();
             return Task.CompletedTask;
         }));
-        commands.RegisterHandler("searchResults.expandAll", new Handler(() => _matches.Count > 0, () => SetAllExpanded(true)));
-        commands.RegisterHandler("searchResults.collapseAll", new Handler(() => _matches.Count > 0, () => SetAllExpanded(false)));
+        commands.RegisterHandler("searchResults.expandAll", new Handler(() => HasMatches, () => SetAllExpanded(true)));
+        commands.RegisterHandler("searchResults.collapseAll", new Handler(() => HasMatches, () => SetAllExpanded(false)));
         commands.RegisterHandler("searchResults.goToSource", new Handler(() => SelectedRows.Count > 0, () => GoToAsync(SelectedRows[0])));
     }
 
@@ -218,11 +301,47 @@ public sealed class SearchResultsViewModel : ToolWindowViewModel, ICommandTarget
     {
         if (!CanExecute(commandId, argument))
             return false;
-        await _clipboard.SetTextAsync(string.Join("\r\n", SelectedRows.Select(r => r.Match is { } m
-            ? $"{m.Path}({m.Line},{m.Column}): {m.LineText.TrimStart()}"
-            : r.Path)));
+        await _clipboard.SetTextAsync(string.Join("\r\n", SelectedRows.Select(CopyText)));
         return true;
     }
+
+    /// <summary>UI-TW-607; UI-TW-613: a reference row names its kind, a container row its file and its name.</summary>
+    private static string CopyText(SearchResultRow row) => row.Match switch
+    {
+        ReferenceMatch m => $"{m.Path}({m.Line},{m.Column}): {KindName(m.Kind)}: {m.LineText.TrimStart()}",
+        { } m => $"{m.Path}({m.Line},{m.Column}): {m.LineText.TrimStart()}",
+        null => row.Container is { } container ? $"{row.Path}: {container}" : row.Path,
+    };
+
+    /// <summary>UI-TW-610: the name of a reference kind (<c>Msg.References.Kind…</c>): tooltip and automation name of its badge.</summary>
+    public static string KindName(ReferenceKind kind) => kind switch
+    {
+        ReferenceKind.Declaration => Strings.Msg_References_KindDeclaration,
+        ReferenceKind.Write => Strings.Msg_References_KindWrite,
+        ReferenceKind.Call => Strings.Msg_References_KindCall,
+        ReferenceKind.TypeReference => Strings.Msg_References_KindTypeReference,
+        ReferenceKind.Implementation => Strings.Msg_References_KindImplementation,
+        _ => Strings.Msg_References_KindRead,
+    };
+
+    /// <summary>UI-TW-610: the colour token of a kind's badge letter.</summary>
+    public static string KindToken(ReferenceKind kind) => kind switch
+    {
+        ReferenceKind.Declaration or ReferenceKind.Implementation => "accent.default",
+        ReferenceKind.Write => "status.warning",
+        _ => "text.secondary",
+    };
+
+    /// <summary>UI-TW-610: the badge letter of a reference kind — D, R, W, C, T, I.</summary>
+    public static string KindLetter(ReferenceKind kind) => kind switch
+    {
+        ReferenceKind.Declaration => "D",
+        ReferenceKind.Write => "W",
+        ReferenceKind.Call => "C",
+        ReferenceKind.TypeReference => "T",
+        ReferenceKind.Implementation => "I",
+        _ => "R",
+    };
 
     /// <summary><c>search.findInFiles</c>: the dialog, then the search (UI-DLG-110).</summary>
     public async Task OpenDialogAsync()
@@ -239,6 +358,27 @@ public sealed class SearchResultsViewModel : ToolWindowViewModel, ICommandTarget
         return Task.CompletedTask;
     }
 
+    /// <summary><c>searchResults.repeat</c>: the shown set's query again (IDE-FREF-008 for a References set).</summary>
+    private Task Repeat()
+    {
+        if (_set is not { } set)
+            return Task.CompletedTask;
+        if (set.Request is { } request)
+            return Start(request);
+        if (References is not { } references)
+            return Task.CompletedTask;
+        int? offset = null;
+        var gone = false;
+        if (set.OriginAnchor is { } anchor && set.OriginDocument is { } document && _documents.Documents.Contains(document))
+        {
+            gone = anchor.IsDeleted;
+            offset = gone ? null : anchor.Offset;
+        }
+
+        _ = references.RepeatAsync(set.Origin!, offset, gone, set);
+        return Task.CompletedTask;
+    }
+
     /// <summary>The search started last (tests await it).</summary>
     public Task Running { get; private set; } = Task.CompletedTask;
 
@@ -246,31 +386,30 @@ public sealed class SearchResultsViewModel : ToolWindowViewModel, ICommandTarget
     public async Task RunAsync(FindInFilesRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
-        _cancel?.Cancel();
-        var generation = ++_generation;
+        _set?.Cancel?.Cancel();
+        References?.Abandon(); // a reference query would replace this search when its result arrives
         using var cancel = new CancellationTokenSource();
-        _cancel = cancel;
-        _request = request;
-        _result = null;
-        _current = null;
-        _matches.Clear();
-        _anchors.Clear();
-        _collapsed.Clear();
-        _root = request.Scope switch
+        var set = new SearchResultSet
         {
-            FindInFilesScope.Project => _projects.Project?.Directory ?? "",
-            FindInFilesScope.Folder => request.Folder ?? "",
-            _ => "",
+            Request = request,
+            Cancel = cancel,
+            Root = request.Scope switch
+            {
+                FindInFilesScope.Project => _projects.Project?.Directory ?? "",
+                FindInFilesScope.Folder => request.Folder ?? "",
+                _ => "",
+            },
         };
+        _set = set;
         _focusPending = true;
         _toolWindows?.Show(ToolName, focus: false);
         UpdateSticky();
         Rebuild();
         var progress = new BatchProgress(batch => _dispatcher.Post(() =>
         {
-            if (generation != _generation || _cancel is null)
+            if (!ReferenceEquals(_set, set) || set.Cancel is null)
                 return;
-            Add(batch);
+            Add(set, batch);
             UpdateSticky();
             Rebuild();
             FocusOnce();
@@ -282,16 +421,15 @@ public sealed class SearchResultsViewModel : ToolWindowViewModel, ICommandTarget
         }
         finally
         {
-            if (generation == _generation)
-                _cancel = null;
+            set.Cancel = null;
         }
 
-        if (generation != _generation)
+        if (!ReferenceEquals(_set, set))
             return; // replaced by a newer search
-        _result = result;
-        _matches.Clear();
-        _anchors.Clear();
-        Add(result.Matches);
+        set.IsCapped = result.IsCapped;
+        set.Matches.Clear();
+        set.Anchors.Clear();
+        Add(set, result.Matches);
         _sticky?.Dispose();
         _sticky = null;
         var files = result.FileCount;
@@ -299,10 +437,10 @@ public sealed class SearchResultsViewModel : ToolWindowViewModel, ICommandTarget
             : result.Matches.Count == 0 ? Format(Strings.Msg_FindInFiles_None, request.Query.Text)
             : result.Matches.Count == 1 ? Strings.Msg_FindInFiles_DoneOne
             : Format(Strings.Msg_FindInFiles_DoneMany, result.Matches.Count, files), StatusDuration);
-        if (_matches.Select(m => m.Path).Distinct(StringComparer.OrdinalIgnoreCase).Count() > 50)
+        if (set.Matches.Select(m => m.Path).Distinct(StringComparer.OrdinalIgnoreCase).Count() > ExpandedFileLimit)
         {
-            foreach (var path in _matches.Select(m => m.Path))
-                _collapsed.Add(path); // UI-TW-602
+            foreach (var path in set.Matches.Select(m => m.Path))
+                set.Collapsed.Add(path); // UI-TW-602
         }
 
         Rebuild();
@@ -310,36 +448,93 @@ public sealed class SearchResultsViewModel : ToolWindowViewModel, ICommandTarget
         _commands?.InvalidateCanExecute();
     }
 
+    /// <summary>
+    /// IDE-FREF-003: <paramref name="result"/> becomes the shown result set (kind References) — the window is shown with
+    /// its tab selected and the keyboard focus stays where it is; the reference at <paramref name="originOffset"/> of the
+    /// origin's file is the current row (else the first reference). <paramref name="repeatOf"/>: the set whose query
+    /// was run again (IDE-FREF-008) — it is replaced only while it is still the shown one (false: nothing was shown).
+    /// </summary>
+    internal bool ShowReferences(ReferencesResult result, ReferenceOrigin origin, int originOffset, object? repeatOf)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+        ArgumentNullException.ThrowIfNull(origin);
+        if (repeatOf is not null && !ReferenceEquals(repeatOf, _set))
+            return false; // the repeated set was cleared or replaced meanwhile
+        _set?.Cancel?.Cancel();
+        _sticky?.Dispose();
+        _sticky = null;
+        _focusPending = false;
+        var set = new SearchResultSet
+        {
+            Origin = origin,
+            Identifier = result.Identifier,
+            Root = _projects.Project?.Directory ?? "",
+            IsCapped = result.IsCapped,
+        };
+        _set = set;
+        Add(set, result.Matches);
+        if (OpenDocuments().TryGetValue(origin.Path, out var document) && originOffset <= document.Buffer.Length)
+        {
+            set.OriginDocument = document;
+            set.OriginAnchor = document.Buffer.CreateAnchor(originOffset, movesWithInsertionBefore: true);
+        }
+
+        // UI-TW-612: everything expanded up to 50 files, else all collapsed; library file rows always start collapsed.
+        var many = result.Matches.Select(m => m.Path).Distinct(StringComparer.OrdinalIgnoreCase).Count() > ExpandedFileLimit;
+        foreach (var match in result.Matches)
+        {
+            if (many || match.IsLibrary)
+                set.Collapsed.Add(match.Path);
+            if (many)
+                set.Collapsed.Add(ContainerId(match));
+        }
+
+        set.Current = result.Matches.FirstOrDefault(m => m.Line == origin.Line && m.Column == origin.Column
+            && string.Equals(m.Path, origin.Path, StringComparison.OrdinalIgnoreCase)) ?? result.Matches.FirstOrDefault();
+        _toolWindows?.Show(ToolName, focus: false);
+        ResultsShown?.Invoke(this, EventArgs.Empty);
+        Rebuild();
+        OnPropertyChanged(nameof(CurrentRow));
+        return true;
+    }
+
+    /// <summary>A reference query started or ended: the header of a repeated set and <c>searchResults.cancel</c> follow it.</summary>
+    internal void OnReferenceSearchChanged()
+    {
+        OnPropertyChanged(nameof(Header));
+        OnPropertyChanged(nameof(IsSearching));
+        _commands?.InvalidateCanExecute();
+    }
+
     /// <summary>Clears the results (<c>searchResults.clear</c>): the empty state.</summary>
     public void Clear()
     {
-        _cancel?.Cancel();
-        _generation++;
-        _cancel = null;
+        _set?.Cancel?.Cancel();
+        if (_set is not null && ReferenceEquals(References?.RepeatTarget, _set))
+            References!.Abandon();
         _sticky?.Dispose();
         _sticky = null;
-        _request = null;
-        _result = null;
-        _current = null;
-        _matches.Clear();
-        _anchors.Clear();
+        _set = null;
         Rebuild();
     }
 
-    /// <summary>Expands or collapses a file row.</summary>
+    /// <summary>Expands or collapses a file row or a container row.</summary>
     public void SetExpanded(SearchResultRow row, bool expanded)
     {
         ArgumentNullException.ThrowIfNull(row);
-        if (!row.IsFile)
+        if (row.Match is not null || _set is not { } set)
             return;
         if (expanded)
-            _collapsed.Remove(row.Path);
+            set.Collapsed.Remove(row.GroupId);
         else
-            _collapsed.Add(row.Path);
+            set.Collapsed.Add(row.GroupId);
         Rebuild();
     }
 
-    /// <summary>UI-TW-603: the default action — a match opens its file with the span selected; a file row toggles.</summary>
+    /// <summary>
+    /// UI-TW-603 / IDE-FREF-007: the default action — a match opens its file with the span selected; a file row or a
+    /// container row toggles.
+    /// </summary>
     public async Task GoToAsync(SearchResultRow row)
     {
         ArgumentNullException.ThrowIfNull(row);
@@ -349,8 +544,13 @@ public sealed class SearchResultsViewModel : ToolWindowViewModel, ICommandTarget
             return;
         }
 
-        _current = match;
-        OnPropertyChanged(nameof(CurrentRow));
+        var set = _set;
+        if (set is not null)
+        {
+            set.Current = match;
+            OnPropertyChanged(nameof(CurrentRow));
+        }
+
         var opened = await _documents.OpenAsync(match.Path);
         if (opened.Value is not TextDocumentViewModel document)
         {
@@ -361,7 +561,7 @@ public sealed class SearchResultsViewModel : ToolWindowViewModel, ICommandTarget
 
         var buffer = document.Buffer;
         int start;
-        if (_anchors.TryGetValue(match, out var anchor) && !anchor.IsDeleted)
+        if (set is not null && set.Anchors.TryGetValue(match, out var anchor) && !anchor.IsDeleted)
         {
             start = Math.Min(anchor.Offset, buffer.Length);
         }
@@ -384,12 +584,13 @@ public sealed class SearchResultsViewModel : ToolWindowViewModel, ICommandTarget
     /// <summary>F8 / Shift+F8 over the match rows (UI-TW-603), wrapping.</summary>
     public Task NavigateNextAsync(bool forward)
     {
-        if (_matches.Count == 0)
+        if (_set is not { Matches.Count: > 0 } set)
             return Task.CompletedTask;
-        var index = _current is null ? -1 : _matches.IndexOf(_current);
-        var next = index < 0 ? (forward ? 0 : _matches.Count - 1) : (index + (forward ? 1 : -1) + _matches.Count) % _matches.Count;
-        _current = _matches[next];
-        var row = Rows.FirstOrDefault(r => r.Match == _current) ?? MatchRow(_current, KeyOf(_current.Path));
+        var matches = set.Matches;
+        var index = set.Current is null ? -1 : matches.IndexOf(set.Current);
+        var next = index < 0 ? (forward ? 0 : matches.Count - 1) : (index + (forward ? 1 : -1) + matches.Count) % matches.Count;
+        set.Current = matches[next];
+        var row = Rows.FirstOrDefault(r => r.Match == set.Current) ?? MatchRow(set.Current, KeyOf(set, set.Current.Path));
         return GoToAsync(row);
     }
 
@@ -397,11 +598,17 @@ public sealed class SearchResultsViewModel : ToolWindowViewModel, ICommandTarget
 
     private Task SetAllExpanded(bool expanded)
     {
-        _collapsed.Clear();
+        if (_set is not { } set)
+            return Task.CompletedTask;
+        set.Collapsed.Clear();
         if (!expanded)
         {
-            foreach (var match in _matches)
-                _collapsed.Add(match.Path);
+            foreach (var match in set.Matches)
+            {
+                set.Collapsed.Add(match.Path);
+                if (match is ReferenceMatch reference)
+                    set.Collapsed.Add(ContainerId(reference));
+            }
         }
 
         Rebuild();
@@ -410,7 +617,7 @@ public sealed class SearchResultsViewModel : ToolWindowViewModel, ICommandTarget
 
     private void FocusOnce()
     {
-        if (!_focusPending || (_matches.Count == 0 && IsSearching))
+        if (!_focusPending || (!HasMatches && IsSearching))
             return;
         _focusPending = false;
         _toolWindows?.Show(ToolName, focus: true);
@@ -419,44 +626,57 @@ public sealed class SearchResultsViewModel : ToolWindowViewModel, ICommandTarget
     private void UpdateSticky()
     {
         _sticky?.Dispose();
-        var files = _matches.Select(m => m.Path).Distinct(StringComparer.OrdinalIgnoreCase).Count();
-        _sticky = _status.ShowStickyMessage(Format(Strings.Msg_FindInFiles_Searching, files, _matches.Count));
+        var matches = _set?.Matches ?? [];
+        var files = matches.Select(m => m.Path).Distinct(StringComparer.OrdinalIgnoreCase).Count();
+        _sticky = _status.ShowStickyMessage(Format(Strings.Msg_FindInFiles_Searching, files, matches.Count));
     }
 
-    private void Add(IEnumerable<FileMatch> matches)
-    {
-        var open = _documents.Documents.OfType<TextDocumentViewModel>().Where(d => d.FilePath is not null)
+    private Dictionary<string, TextDocumentViewModel> OpenDocuments() =>
+        _documents.Documents.OfType<TextDocumentViewModel>().Where(d => d.FilePath is not null)
             .GroupBy(d => d.FilePath!, StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+
+    private void Add(SearchResultSet set, IEnumerable<FileMatch> matches)
+    {
+        var open = OpenDocuments();
         foreach (var match in matches)
         {
-            _matches.Add(match);
+            set.Matches.Add(match);
             if (open.TryGetValue(match.Path, out var document))
-                Anchor(match, document);
+                Anchor(set, match, document);
         }
     }
 
     private void OnDocumentOpened(DocumentViewModel opened)
     {
-        if (opened is not TextDocumentViewModel { FilePath: { } path, IsModified: false } document)
+        if (_set is not { } set || opened is not TextDocumentViewModel { FilePath: { } path, IsModified: false } document)
             return;
-        foreach (var match in _matches.Where(m => !_anchors.ContainsKey(m) && string.Equals(m.Path, path, StringComparison.OrdinalIgnoreCase)))
-            Anchor(match, document);
+        foreach (var match in set.Matches.Where(m => !set.Anchors.ContainsKey(m) && string.Equals(m.Path, path, StringComparison.OrdinalIgnoreCase)))
+            Anchor(set, match, document);
+
+        // IDE-FREF-008: the origin of a References set is tracked again in its reopened document.
+        if (set.Origin is { } origin && string.Equals(origin.Path, path, StringComparison.OrdinalIgnoreCase)
+            && (set.OriginDocument is null || !_documents.Documents.Contains(set.OriginDocument)) && origin.Line <= document.Buffer.LineCount)
+        {
+            var (lineStart, lineLength, _) = document.Buffer.GetLine(origin.Line);
+            set.OriginDocument = document;
+            set.OriginAnchor = document.Buffer.CreateAnchor(lineStart + Math.Clamp(origin.Column, 1, lineLength + 1) - 1, movesWithInsertionBefore: true);
+        }
     }
 
-    private void Anchor(FileMatch match, TextDocumentViewModel document)
+    private static void Anchor(SearchResultSet set, FileMatch match, TextDocumentViewModel document)
     {
         var buffer = document.Buffer;
         if (match.Line > buffer.LineCount)
             return;
         var (lineStart, lineLength, _) = buffer.GetLine(match.Line);
-        _anchors[match] = buffer.CreateAnchor(lineStart + Math.Clamp(match.Column, 1, lineLength + 1) - 1, movesWithInsertionBefore: true);
+        set.Anchors[match] = buffer.CreateAnchor(lineStart + Math.Clamp(match.Column, 1, lineLength + 1) - 1, movesWithInsertionBefore: true);
     }
 
-    private string KeyOf(string path)
+    private static string KeyOf(SearchResultSet set, string path)
     {
-        if (_root.Length > 0)
+        if (set.Root.Length > 0)
         {
-            var relative = System.IO.Path.GetRelativePath(_root, path);
+            var relative = System.IO.Path.GetRelativePath(set.Root, path);
             if (!relative.StartsWith("..", StringComparison.Ordinal) && !System.IO.Path.IsPathFullyQualified(relative))
                 return relative.Replace('\\', '/');
         }
@@ -464,21 +684,24 @@ public sealed class SearchResultsViewModel : ToolWindowViewModel, ICommandTarget
         return path;
     }
 
+    /// <summary>The <see cref="SearchResultRow.GroupId"/> of the container row of <paramref name="match"/> (a file row: its path).</summary>
+    private static string ContainerId(ReferenceMatch match) => match.Path + "\0" + match.ContainerIndex.ToString(CultureInfo.InvariantCulture);
+
     private void Rebuild()
     {
         var filter = FilterText.Trim();
         List<SearchResultRow> rows = [];
-        foreach (var group in _matches.GroupBy(m => m.Path, StringComparer.OrdinalIgnoreCase))
+        if (_set is { } set)
         {
-            var key = KeyOf(group.Key);
-            var fileMatches = filter.Length == 0 || System.IO.Path.GetFileName(group.Key).Contains(filter, StringComparison.OrdinalIgnoreCase);
-            var matches = group.Where(m => fileMatches || m.LineText.Contains(filter, StringComparison.OrdinalIgnoreCase)).ToList();
-            if (matches.Count == 0)
-                continue;
-            var expanded = filter.Length > 0 || !_collapsed.Contains(group.Key);
-            rows.Add(new SearchResultRow { Key = key, Path = group.Key, Count = group.Count(), IsExpanded = expanded });
-            if (expanded)
-                rows.AddRange(matches.Select(m => MatchRow(m, key)));
+            foreach (var group in set.Matches.GroupBy(m => m.Path, StringComparer.OrdinalIgnoreCase))
+            {
+                var key = KeyOf(set, group.Key);
+                var fileMatches = filter.Length == 0 || System.IO.Path.GetFileName(group.Key).Contains(filter, StringComparison.OrdinalIgnoreCase);
+                if (set.Origin is not null)
+                    AddReferenceRows(rows, set, group, key, filter, fileMatches);
+                else
+                    AddMatchRows(rows, set, group, key, filter, fileMatches);
+            }
         }
 
         var selected = SelectedRows.Select(r => r.Key).ToHashSet(StringComparer.Ordinal);
@@ -491,6 +714,67 @@ public sealed class SearchResultsViewModel : ToolWindowViewModel, ICommandTarget
         OnPropertyChanged(nameof(IsCapped));
         OnPropertyChanged(nameof(IsSearching));
         _commands?.InvalidateCanExecute();
+    }
+
+    /// <summary>UI-TW-601 / UI-TW-605: the file row and, expanded, its match rows.</summary>
+    private static void AddMatchRows(List<SearchResultRow> rows, SearchResultSet set, IGrouping<string, FileMatch> group, string key, string filter,
+        bool fileMatches)
+    {
+        var matches = group.Where(m => fileMatches || m.LineText.Contains(filter, StringComparison.OrdinalIgnoreCase)).ToList();
+        if (matches.Count == 0)
+            return;
+        var expanded = filter.Length > 0 || !set.Collapsed.Contains(group.Key);
+        rows.Add(new SearchResultRow { Key = key, Path = group.Key, GroupId = group.Key, Count = group.Count(), IsExpanded = expanded });
+        if (expanded)
+            rows.AddRange(matches.Select(m => MatchRow(m, key)));
+    }
+
+    /// <summary>
+    /// UI-TW-609 / UI-TW-613: the file row, its container rows and their reference rows; the filter keeps a container
+    /// whose name matches (with all its references) or that has a reference whose line matches.
+    /// </summary>
+    private static void AddReferenceRows(List<SearchResultRow> rows, SearchResultSet set, IGrouping<string, FileMatch> group, string key, string filter,
+        bool fileMatches)
+    {
+        var fileExpanded = filter.Length > 0 || !set.Collapsed.Contains(group.Key);
+        List<SearchResultRow> below = [];
+        var names = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var container in group.Cast<ReferenceMatch>().GroupBy(m => m.ContainerIndex))
+        {
+            var first = container.First();
+            var ordinal = names[first.Container] = names.GetValueOrDefault(first.Container) + 1; // UI-TW-614: a second container of the name is @2
+            var containerMatches = fileMatches || first.Container.Contains(filter, StringComparison.OrdinalIgnoreCase);
+            var references = container.Where(m => containerMatches || m.LineText.Contains(filter, StringComparison.OrdinalIgnoreCase)).ToList();
+            if (references.Count == 0)
+                continue;
+            var id = ContainerId(first);
+            var expanded = filter.Length > 0 || !set.Collapsed.Contains(id);
+            below.Add(new SearchResultRow
+            {
+                Key = $"{key}#{first.Container}" + (ordinal > 1 ? "@" + ordinal.ToString(CultureInfo.InvariantCulture) : ""),
+                Path = group.Key,
+                Container = first.Container,
+                GroupId = id,
+                Count = container.Count(),
+                IsExpanded = expanded,
+            });
+            if (expanded)
+                below.AddRange(references.Select(m => MatchRow(m, key)));
+        }
+
+        if (below.Count == 0)
+            return;
+        rows.Add(new SearchResultRow
+        {
+            Key = key,
+            Path = group.Key,
+            GroupId = group.Key,
+            Count = group.Count(),
+            IsExpanded = fileExpanded,
+            IsLibrary = group.First() is ReferenceMatch { IsLibrary: true },
+        });
+        if (fileExpanded)
+            rows.AddRange(below);
     }
 
     /// <summary>UI-TW-601: leading whitespace removed; a long line cut to 240 characters around the match with <c>…</c>.</summary>

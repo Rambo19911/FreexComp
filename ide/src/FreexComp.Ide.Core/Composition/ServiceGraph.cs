@@ -253,6 +253,10 @@ public static class ServiceGraph
         var searchResults = new ViewModels.SearchResultsViewModel(findInFiles, documents, projects, navigation, platform.Dialogs, platform.FileDialogs,
             platform.FileSystem, layout, status, platform.Clipboard, platform.Dispatcher); // I-123
         searchResults.RegisterCommands(commands, toolWindowService);
+        // I-353 (F13-016a): Find References lists its result in Search Results as a result set of kind References.
+        var findReferences = new CodeModel.FindReferencesService(documents, projects, codeModel, librarySource, status, platform.Clock, searchResults);
+        if (Phase8Features.IsAvailable(CodeModel.FindReferencesService.CommandId, 8, toolWindowPhase ?? ImplementedPhase))
+            findReferences.RegisterCommands(commands);
         // UI-TW-603: F8 steps through Search Results while it is the more recently activated of the two windows.
         var stepSearchResults = false;
         build.ShowMessages = () =>
@@ -267,6 +271,7 @@ public static class ServiceGraph
             else if (focus.Current.ToolWindowName == ViewModels.MessagesViewModel.ToolName)
                 stepSearchResults = false;
         };
+        searchResults.ResultsShown += (_, _) => stepSearchResults = true; // IDE-FREF-003: shown without the focus
         build.ShowBuildOutput = () => outputView.SelectChannel(OutputChannels.Build); // UI-TW-501
         // UI-TW-405: F8 / Shift+F8 from anywhere; the Messages tab is selected without taking focus.
         foreach (var (id, forward) in (ReadOnlySpan<(string, bool)>)[("search.nextMessage", true), ("search.previousMessage", false)])
@@ -495,6 +500,7 @@ public static class ServiceGraph
             Run = run,
             QuickPick = quickPick,
             SearchResults = searchResults,
+            FindReferences = findReferences,
             ProjectManager = projectManager,
             CodeModel = codeModel,
             Refactoring = refactoring,

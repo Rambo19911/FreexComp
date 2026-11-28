@@ -124,6 +124,9 @@ public sealed record IdeServices
     /// <summary>The Search Results tool window and Find in Files runner (I-123).</summary>
     public required ViewModels.SearchResultsViewModel SearchResults { get; init; }
 
+    /// <summary>Find References on the symbol at the caret, listed in Search Results (IDE-FREF-001…008, F13-016a).</summary>
+    public required CodeModel.FindReferencesService FindReferences { get; init; }
+
     /// <summary>The Project Manager tool window (project-manager.md §6); its missing-file checks run in the background (I-210).</summary>
     public required ViewModels.ProjectManagerViewModel ProjectManager { get; init; }
 

@@ -42,7 +42,15 @@ public sealed class LibrarySourceService(IToolchainLocator toolchain, IFileSyste
     public bool IsLibrarySource(string path)
     {
         ArgumentNullException.ThrowIfNull(path);
+        return IsUnder(Roots, path);
+    }
+
+    /// <summary><see cref="IsLibrarySource"/> for <paramref name="roots"/> read earlier (a caller off the UI thread, IDE-FREF-005).</summary>
+    public static bool IsUnder(IReadOnlyList<string> roots, string path)
+    {
+        ArgumentNullException.ThrowIfNull(roots);
+        ArgumentNullException.ThrowIfNull(path);
         var normalized = PathUtil.Normalize(path);
-        return Roots.Any(root => normalized.StartsWith(root + "\\", StringComparison.OrdinalIgnoreCase));
+        return roots.Any(root => normalized.StartsWith(root + "\\", StringComparison.OrdinalIgnoreCase));
     }
 }
