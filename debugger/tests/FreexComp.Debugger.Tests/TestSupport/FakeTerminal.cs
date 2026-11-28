@@ -43,7 +43,8 @@ internal sealed class FakeTerminalRun : IDebuggeeTerminalRun
 {
     private readonly Lock _gate = new();
     private readonly List<string> _closes = [];
-    private readonly TaskCompletionSource<int?> _ended = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    // Continuations run inside End: when it returns, the session has taken note (its work item is queued).
+    private readonly TaskCompletionSource<int?> _ended = new();
     private readonly TaskCompletionSource _closeCalled = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     public int ProcessId { get; init; } = 4242;

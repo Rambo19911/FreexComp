@@ -149,6 +149,28 @@ internal sealed partial class DebugSession
             return new StopInfo(_epoch + 1, reason, threadId, exception is null ? location : at, hit, exception, description);
         }
 
+        // DBG-554: attached to a program that was started in a console of its own (terminal mode), the adapter reports
+        // the entry stop on the thread the system injects, whose stack has no code of the user. The public stop is the
+        // program's: the first thread that is not the stopping one - the choice of the pause (DBG-091) - with that
+        // thread's stack. A program the adapter started itself (captured mode) stops at its entry on its own thread,
+        // which has no code of the user on its stack either: there the stop stays where it was reported.
+        async Task<StopInfo> EntryStopAsync()
+        {
+            if (_terminal is not null && !frames.Exists(frame => frame.IsUserCode)
+                && _threads.FirstOrDefault(t => t.Id != threadId) is { } program)
+            {
+                threadId = program.Id;
+                (response, frames) = await StackOfAsync(threadId).ConfigureAwait(false);
+                _stopTopFrame = response.StackFrames.Count > 0
+                    ? await EntryOfAsync(threadId, response.StackFrames, 0, 0, StopFrameCount, CancellationToken.None).ConfigureAwait(false)
+                    : null;
+                location = (frames.FirstOrDefault(f => f.IsUserCode) ?? frames.FirstOrDefault(f => f.Location is not null))?.Location;
+                depth = response.TotalFrames ?? frames.Count;
+            }
+
+            return Public(StopReason.Entry, [], Messages.StoppedAtEntry);
+        }
+
         // Resumes after a stop the session resolves itself - unless the user asked to pause meanwhile: then the
         // debuggee stays stopped and this stop is published as the pause (DBG-029).
         async Task<StopInfo?> ResumeOrPauseAsync(string command, int resumeThread)
@@ -235,10 +257,10 @@ internal sealed partial class DebugSession
                 _entryStopSeen = true;
                 if (await RunToMainBodyAsync(threadId).ConfigureAwait(false))
                     return null;
-                return Public(StopReason.Entry, [], Messages.StoppedAtEntry);
+                return await EntryStopAsync().ConfigureAwait(false);
 
             case "entry" when _launchRequest is { StopOnEntry: true } or { StopAtMainBody: true }:
-                return Public(StopReason.Entry, [], Messages.StoppedAtEntry);
+                return await EntryStopAsync().ConfigureAwait(false);
 
             case "breakpoint" or "function breakpoint":
             {

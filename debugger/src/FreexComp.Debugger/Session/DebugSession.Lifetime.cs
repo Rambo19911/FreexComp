@@ -59,7 +59,7 @@ internal sealed partial class DebugSession
         _abort.Cancel();
         if (State == DebugState.Idle)
         {
-            Terminate(cause, null);
+            await EndSessionAsync(cause, null).ConfigureAwait(false);
             return;
         }
 
@@ -67,7 +67,7 @@ internal sealed partial class DebugSession
         SetState(DebugState.Terminating);
         // After a natural end the adapter is only asked to end itself (DBG-095); otherwise the debuggee is killed (DBG-094).
         await StopAdapterAsync(disconnect: true, terminateDebuggee: terminateDebuggee ?? cause != TerminationCause.Exited).ConfigureAwait(false);
-        Terminate(cause, null);
+        await EndSessionAsync(cause, null).ConfigureAwait(false);
         await FaultLaunchAsync(new DebuggerException(DebugErrorCode.LaunchFailed, Messages.SessionTerminated)).ConfigureAwait(false);
     }
 
@@ -83,7 +83,7 @@ internal sealed partial class DebugSession
         _abort.Cancel();
         LeaveStop();
         await StopAdapterAsync(disconnect: false, terminateDebuggee: false).ConfigureAwait(false);
-        Terminate(LaunchPending ? TerminationCause.LaunchFailed : cause, message);
+        await EndSessionAsync(LaunchPending ? TerminationCause.LaunchFailed : cause, message).ConfigureAwait(false);
         await FaultLaunchAsync(launchError ?? new DebuggerException(DebugErrorCode.LaunchFailed, message)).ConfigureAwait(false);
     }
 
@@ -163,9 +163,14 @@ internal sealed partial class DebugSession
         }
     }
 
-    /// <summary>Session loop only: final transition, then <c>StateChanged</c> immediately before <c>Terminated</c> (DBG-421).</summary>
-    private void Terminate(TerminationCause cause, string? message)
+    /// <summary>
+    /// Session loop only: final transition, then <c>StateChanged</c> immediately before <c>Terminated</c> (DBG-421).
+    /// In terminal mode the program's console is closed first (step 5a of the shutdown, DBG-551): the window stays
+    /// only when the program ended by itself.
+    /// </summary>
+    private async Task EndSessionAsync(TerminationCause cause, string? message)
     {
+        await CloseTerminalAsync(keepWindow: cause == TerminationCause.Exited).ConfigureAwait(false);
         // Everything the debuggee wrote is reported before the end (DBG-058); the adapter and the debuggee are gone.
         EndOutputRelay();
         LeaveStop();

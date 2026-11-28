@@ -38,6 +38,7 @@ internal static class Messages
     public const string ConsoleCommandEnded = "The program could not be started in its console window (exit code {0}).";
     public const string ConsoleClosed = "The program's console window was closed before the program started.";
     public const string ConsoleCloseFailed = "The program's console window could not be closed: ";
+    public const string ConsoleCloseTimedOut = "timed out";
     public const string ReverseRequestInvalidArguments = "invalid arguments";
     public const string ReverseRequestFailed = "failed";
 

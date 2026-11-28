@@ -51,6 +51,12 @@ public sealed record ShutdownWaits
 
     /// <summary>Wait for the end of the adapter's error stream once its process tree has ended (its last lines are read).</summary>
     public TimeSpan StderrEnd { get; init; } = TimeSpan.FromSeconds(2);
+
+    /// <summary>
+    /// Terminal mode: wait for <see cref="IDebuggeeTerminalRun.CloseAsync"/> at the end of the session (DBG-432); then
+    /// the end is reported without it.
+    /// </summary>
+    public TimeSpan TerminalClose { get; init; } = TimeSpan.FromSeconds(3);
 }
 
 /// <summary>One traced protocol message or adapter stderr line.</summary>

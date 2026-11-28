@@ -25,6 +25,7 @@ ShutdownWaits..ctor()
 ShutdownWaits.Disconnect : TimeSpan { get; init; }
 ShutdownWaits.AdapterExit : TimeSpan { get; init; }
 ShutdownWaits.StderrEnd : TimeSpan { get; init; }
+ShutdownWaits.TerminalClose : TimeSpan { get; init; }
 
 type ValueFormatOptions : sealed record
 ValueFormatOptions..ctor()
