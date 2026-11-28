@@ -569,7 +569,16 @@ public sealed class MenuDesignerViewModel : DialogViewModel<bool>
         bool ok;
         if (IsGeneratedName(item) && DerivedName(item, text) is { } name && !Names.Equals(name, item.Name))
         {
-            ok = PropertyGridViewModel.RenameUnit(_designer, item, name, [change], UndoTitles.Property);
+            if (_designer.ComponentRename is { } rename)
+            {
+                // DSG-CS-130: the caption and the name with its code references; while they are prepared the caption
+                // is accepted and shown when the commit changes the model.
+                ok = rename.Rename(_designer, item, name, [change], UndoTitles.Property) != false;
+            }
+            else
+            {
+                ok = PropertyGridViewModel.RenameUnit(_designer, item, name, [change], UndoTitles.Property);
+            }
         }
         else
         {

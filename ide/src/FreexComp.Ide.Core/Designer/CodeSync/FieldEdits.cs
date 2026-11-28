@@ -102,6 +102,23 @@ public static class FieldEdits
         return records;
     }
 
+    /// <summary>
+    /// DSG-CS-131: the offset and length of the declared name of field <paramref name="name"/> in the unit's text — the
+    /// identifier <see cref="RenameField"/> replaces — or null when the form class or the field is not found.
+    /// </summary>
+    public static (int Start, int Length)? FieldNameSpan(FormUnit unit, string name)
+    {
+        ArgumentNullException.ThrowIfNull(unit);
+        ArgumentNullException.ThrowIfNull(name);
+        if (unit.Locate().FormClass is not { } info)
+        {
+            return null;
+        }
+
+        var change = SyntaxEdits.RenameField(info.Declaration, name, name);
+        return change.Span.Length > 0 ? (change.Span.Start, change.Span.Length) : null;
+    }
+
     /// <summary>DSG-CS-045: only the identifier of the field declaration; references in code are not changed.</summary>
     public static FieldRenameResult RenameField(FormUnit unit, string oldName, string newName)
     {

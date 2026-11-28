@@ -494,7 +494,7 @@ public sealed partial class RefactoringService : IRefactoringService
     }
 
     /// <summary>IDE-REFAC-006: one line <c>&lt;full path&gt; — &lt;reason&gt;</c> per file, at most ten, then the number of the others.</summary>
-    private static string BlockedLines(IReadOnlyList<BlockedFile> blocked)
+    internal static string BlockedLines(IReadOnlyList<BlockedFile> blocked)
     {
         var lines = blocked.Take(MaxBlockedLines).Select(b => $"{b.Path} — {ReasonText(b.Reason)}").ToList();
         if (blocked.Count > MaxBlockedLines)

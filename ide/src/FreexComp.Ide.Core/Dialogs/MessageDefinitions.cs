@@ -102,6 +102,7 @@ public static class MessageDefinitions
         new("Msg.Designer.MetadataMissing", E, ["OpenOptions", "Cancel"]),
         new("Msg.Designer.CodeSyncConflict", E, ["OK"]),
         new("Msg.Designer.DescendantNotUpdated", E, ["OK"]),
+        new("Msg.Designer.RenameRefused", W, ["OK"]), // DSG-CS-131
         new("Msg.Options.ResetKeysConfirm", Q, ["Reset", "Cancel"]),
         new("Msg.Options.ResetColorsConfirm", Q, ["Reset", "Cancel"]),
         new("Msg.ProjectOptions.ConfigDeleteConfirm", Q, ["Delete", "Cancel"]),

@@ -19,7 +19,7 @@ namespace FreexComp.Ide.Core.Tests.Designer;
 /// three views, the switching rules, dirty tracking over both buffers and the save pipeline.
 /// </summary>
 [Trait("Phase", "5")]
-public sealed class FormDesignerViewModelTests
+public sealed partial class FormDesignerViewModelTests
 {
     private const string Dir = @"C:\p";
     private const string UnitPath = Dir + @"\MainForm.pas";

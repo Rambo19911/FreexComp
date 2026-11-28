@@ -92,6 +92,9 @@ public sealed class DocumentService : IDocumentService
     /// <summary>D-137: renames an ancestor's component in the project's descendants; given to every form document's designer.</summary>
     public AncestorRename? DesignAncestorRename { get; set; }
 
+    /// <summary>DSG-CS-130: renames a component with its references in code; given to every form document's designer.</summary>
+    public ComponentRename? DesignComponentRename { get; set; }
+
     /// <summary>
     /// The companion form of a unit named by the open project's <c>form</c> entry (designer README §3; absolute path),
     /// or null; the sibling <c>.form</c> of the same base name is used otherwise (set by the service graph).
@@ -961,6 +964,7 @@ public sealed class DocumentService : IDocumentService
                 lineEnding, formText, DesignCatalog, frames: DesignFrames, ancestors: DesignAncestors) { DiskStamp = stamp };
             formDocument.Designer.Status = _status;
             formDocument.Designer.AncestorRename = DesignAncestorRename;
+            formDocument.Designer.ComponentRename = DesignComponentRename;
             BindDesignerClipboard(formDocument);
             formDocument.Designer.InheritedHandlerRequested += OnInheritedHandlerRequested;
             formDocument.ActiveViewChanged += (_, _) => _commands?.InvalidateCanExecute();
@@ -1036,6 +1040,7 @@ public sealed class DocumentService : IDocumentService
             formText, DesignCatalog, hasUnit: false, frames: DesignFrames, ancestors: DesignAncestors) { DiskStamp = stamp };
         document.Designer.Status = _status;
         document.Designer.AncestorRename = DesignAncestorRename;
+        document.Designer.ComponentRename = DesignComponentRename;
         BindDesignerClipboard(document);
         document.Designer.InheritedHandlerRequested += OnInheritedHandlerRequested;
         document.ActiveViewChanged += (_, _) => _commands?.InvalidateCanExecute();

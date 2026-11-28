@@ -1113,6 +1113,27 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   <data name="Msg_Designer_PlacementArmed" xml:space="preserve">
     <value>Click on the form to place {0}. Press Escape to cancel</value>
   </data>
+  <data name="Msg_Designer_RenameRefused" xml:space="preserve">
+    <value>{0} cannot be renamed to {1}. Nothing was changed.
+{2}</value>
+    <comment>DSG-CS-131</comment>
+  </data>
+  <data name="Msg_Designer_RenameDropped" xml:space="preserve">
+    <value>{0} was not renamed because the form or its unit changed in the meantime</value>
+    <comment>DSG-CS-131</comment>
+  </data>
+  <data name="Msg_Designer_RenameCodeRefsOne" xml:space="preserve">
+    <value>Renamed {0} to {1}; 1 reference in the code was updated</value>
+    <comment>DSG-CS-134</comment>
+  </data>
+  <data name="Msg_Designer_RenameCodeRefsOneFile" xml:space="preserve">
+    <value>Renamed {0} to {1}; {2} references in 1 file were updated</value>
+    <comment>DSG-CS-134</comment>
+  </data>
+  <data name="Msg_Designer_RenameCodeRefsMany" xml:space="preserve">
+    <value>Renamed {0} to {1}; {2} references in {3} files were updated</value>
+    <comment>DSG-CS-134</comment>
+  </data>
   <data name="Msg_Designer_RenameCodeNote" xml:space="preserve">
     <value>The field was renamed; other uses of {0} in the code were not changed</value>
   </data>

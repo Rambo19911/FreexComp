@@ -1336,6 +1336,20 @@ public sealed class PropertyGridViewModel : ObservableObject
             return null;
         }
 
+        if (designer.ComponentRename is { } rename)
+        {
+            // DSG-CS-130, 131: the caller gets "accepted" while the code references are prepared; the row shows the
+            // present name until the commit changes the model (a rename that completed at once answers as before).
+            if (rename.IsPreparing(designer))
+            {
+                return null; // DSG-CS-131: a further rename is not started; the row shows the present name
+            }
+
+            return rename.Rename(designer, obj, name, [], UndoTitles.Rename) != false
+                ? null
+                : designer.AncestorRename?.LastFailure ?? _target.FailureMessage ?? "";
+        }
+
         return RenameUnit(designer, obj, name, [], UndoTitles.Rename) ? null : designer.AncestorRename?.LastFailure ?? _target.FailureMessage ?? "";
     }
 
@@ -1346,15 +1360,25 @@ public sealed class PropertyGridViewModel : ObservableObject
     /// caption whose text gives the name). D-137: the project's descendants of the form follow in the same unit; refused
     /// (false) when one of them has a component of that name or a descendant file cannot be written.
     /// </summary>
-    internal static bool RenameUnit(FormDesignerViewModel designer, FormObject obj, string name, IReadOnlyList<FormChange> before, string titleKey)
+    internal static bool RenameUnit(FormDesignerViewModel designer, FormObject obj, string name, IReadOnlyList<FormChange> before, string titleKey) =>
+        RenameUnit(designer, obj, name, before, titleKey, null, out _);
+
+    /// <summary>
+    /// <see cref="RenameUnit(FormDesignerViewModel, FormObject, string, IReadOnlyList{FormChange}, string)"/> with
+    /// <paramref name="codeReferences"/> (DSG-CS-132) joining the unit after the descendants of D-137; when the commit
+    /// fails because one of the two could not be applied, <paramref name="failure"/> says why.
+    /// </summary>
+    internal static bool RenameUnit(FormDesignerViewModel designer, FormObject obj, string name, IReadOnlyList<FormChange> before, string titleKey,
+        ILinkedEdits? codeReferences, out (string MessageId, object[] Args)? failure)
     {
+        failure = null;
         var old = obj.Name;
         if (designer.AncestorRename?.IsNameTaken(designer, obj, name) == true)
         {
             return false;
         }
 
-        var descendants = designer.AncestorRename?.Prepare(designer, obj, name);
+        var linked = LinkedPair.Of(designer.AncestorRename?.Prepare(designer, obj, name), codeReferences);
         var code = designer.CodeSync;
         var withCode = designer.HasUnit && code.State == CodeSyncState.Ok;
         string? newClass = null;
@@ -1397,7 +1421,13 @@ public sealed class PropertyGridViewModel : ObservableObject
 
             return list;
         });
-        return designer.Surface!.Commit(titleKey, changes, edits, ops, linked: descendants);
+        if (designer.Surface!.Commit(titleKey, changes, edits, ops, linked: linked))
+        {
+            return true;
+        }
+
+        failure = linked?.Failure;
+        return false;
     }
 
     private FormValue Effective(FormObject obj, string path, PropertyInfo info) =>

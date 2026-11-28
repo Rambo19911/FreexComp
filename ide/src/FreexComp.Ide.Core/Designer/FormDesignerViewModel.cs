@@ -196,6 +196,12 @@ public sealed class FormDesignerViewModel
     /// <summary>D-137: renames a component of this document in the project's descendants; null: no project catalog.</summary>
     public AncestorRename? AncestorRename { get; set; }
 
+    /// <summary>DSG-CS-130 (I-383): renames a component with its references in code; null: the declaration alone (DSG-CS-045).</summary>
+    public ComponentRename? ComponentRename { get; set; }
+
+    /// <summary>The last rename <see cref="ComponentRename"/> prepared asynchronously (DSG-CS-131); tests await it.</summary>
+    public Task<bool>? RenameWork { get; internal set; }
+
     /// <summary>The designer undo stack; cleared when the model is replaced (DSG-FD-093).</summary>
     public DesignerUndoStack Undo { get; } = new();
 

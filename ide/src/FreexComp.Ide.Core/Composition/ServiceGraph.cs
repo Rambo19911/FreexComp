@@ -246,6 +246,8 @@ public static class ServiceGraph
                 info.Kind == FreexComp.LanguageService.CompletionItemKind.Unit && info.DeclarationPaths is [var unitFile, ..]
                     ? file => projects.ValidateRename(unitFile, file) is { Success: false } refused ? Projects.NewProjectValidation.MessageText(refused) : null
                     : null)), inlineRename));
+        // DSG-CS-130 (I-383): a component renamed in the designer updates its references in code.
+        documents.DesignComponentRename = new Designer.ComponentRename(documents, projects, codeModel, renamePlanner, refactoring, toolchain, platform.FileSystem);
         foreach (var extra in refactorings ?? [])
             refactoring.Register(extra);
         var liveDiagnostics = new CodeModel.LiveDiagnosticsService(documents, codeModel, settings, platform.Clock, platform.Dispatcher); // I-111
