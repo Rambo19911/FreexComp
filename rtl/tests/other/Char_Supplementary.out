@@ -1,0 +1,110 @@
+# code points
+ok category U+1D400
+ok classes U+1D400
+ok category U+10428
+ok classes U+10428
+ok category U+10400
+ok classes U+10400
+ok category U+1D7CE
+ok classes U+1D7CE
+ok category U+10140
+ok classes U+10140
+ok category U+1F100
+ok classes U+1F100
+ok category U+1F600
+ok classes U+1F600
+ok category U+10000
+ok classes U+10000
+ok category U+20000
+ok classes U+20000
+ok category U+2A6DF
+ok classes U+2A6DF
+ok category U+30000
+ok classes U+30000
+ok category U+16FE0
+ok classes U+16FE0
+ok category U+E0001
+ok classes U+E0001
+ok category U+E0100
+ok classes U+E0100
+ok category U+F0000
+ok classes U+F0000
+ok category U+10FFFD
+ok classes U+10FFFD
+ok category U+2A6E0
+ok classes U+2A6E0
+ok category U+1FFFE
+ok classes U+1FFFE
+ok category U+10FFFE
+ok classes U+10FFFE
+ok category U+10FFFF
+ok classes U+10FFFF
+ok category U+0041
+ok classes U+0041
+ok category U+0009
+ok classes U+0009
+ok category U+3000
+ok classes U+3000
+# case of supplementary code points
+ok ToUpper U+10428
+ok ToLower U+10400
+ok ToUpper U+1E922
+ok ToLower U+1E900
+ok ToUpper mixed string
+ok ToLower U+1D400: no mapping
+# a, U+1F600, b
+ok IsLetter(S, 1)
+ok IsSymbol(S, 2)
+ok GetUnicodeCategory(S, 2)
+ok GetUnicodeCategory(S, 3): low surrogate
+ok IsSymbol(S, 3)
+ok classes at the low surrogate
+ok IsLetter(S, 4)
+ok IsSurrogatePair(S, 2)
+ok IsSurrogatePair(S, 1)
+ok IsSurrogatePair(S, 3)
+ok IsSurrogatePair(S, 4): last index
+ok IsHighSurrogate(S, 2)
+ok IsHighSurrogate(S, 3)
+ok IsLowSurrogate(S, 3)
+ok IsLowSurrogate(S, 2)
+ok IsSurrogate(S, 1)
+ok IsSurrogate(S, 2)
+ok IsSurrogate(S, 3)
+ok IsLetter(#$D83D)
+ok IsSymbol(#$D83D)
+ok GetUnicodeCategory(#$D83D)
+ok lone high surrogate at the end
+ok IsSurrogatePair at a lone high surrogate
+ok high surrogate before a letter
+ok the letter after it
+# errors
+ok GetUnicodeCategory(S, 0)
+ok GetUnicodeCategory(S, 5)
+ok IsLetter(S, 0)
+ok IsWhiteSpace(S, 5)
+ok IsHighSurrogate(S, 0)
+ok IsSurrogate(S, 5)
+ok IsSurrogatePair(S, 0)
+ok IsSurrogatePair(S, 5)
+ok IsDigit('', 1)
+ok ConvertToUtf32 at a lone high surrogate
+ok ConvertToUtf32 with CharLength at a low surrogate
+ok ConvertToUtf32 with CharLength, index 0
+ok ConvertToUtf32('a', 'b')
+ok ConvertToUtf32 of a reversed pair
+# ConvertToUtf32 and CharLength
+ok ConvertToUtf32(S, 2, N)
+ok N at the pair
+ok ConvertToUtf32(S, 1, N)
+ok N at a BMP code unit
+ok ConvertToUtf32(S, 4, N)
+ok N at the last code unit
+ok ConvertToUtf32(#$D83D, #$DE00)
+ok ConvertToUtf32 first pair
+ok ConvertToUtf32 last pair
+ok loop by CharLength: code points
+ok loop by CharLength: sum
+# supplementary planes
+ok GetUnicodeCategory checksum U+10000 .. U+10FFFF
+# passed 103 failed 0

@@ -1,7 +1,7 @@
 // covers: RTL-255, RTL-841, RTL-1276
 program SU_Ansi;
 { sysutils.md section 7.3: the Ansi* family. AnsiUpperCase/AnsiLowerCase map case with the simple case mapping of the
-  product's own table (RTL-1276, task R-266: SimpleUpperCase / SimpleLowerCase, CaseTables.inc; no OS call, so RTL-841:
+  product's own table (RTL-1276, R-266, R-267: SimpleUpperCase / SimpleLowerCase, CaseTables.inc; no OS call, so RTL-841:
   no user32 import), the same on every machine and in every locale. AnsiCompareStr/Text and AnsiSameStr/Text use
   CompareStringEx with the user locale, AnsiPos is Pos; for them only locale-independent facts are asserted: the sign
   of comparisons of ASCII text, reflexivity, empty strings. }
@@ -137,6 +137,36 @@ begin
   CheckEqS('ABC 123', AnsiUpperCase('ABC 123'), 'unchanged literal');
 end;
 
+{ RTL-1276 (b) for pairs (task R-267): a pair is mapped as its code point and stays a pair }
+procedure TestPairsOfSurrogates;
+var
+  S, T: string;
+begin
+  Section('surrogate pairs');
+  CheckEqI($10400, SimpleUpperCase($10428), 'SimpleUpperCase U+10428');
+  CheckEqI($10428, SimpleLowerCase($10400), 'SimpleLowerCase U+10400');
+  CheckEqI($10400, SimpleUpperCase($10400), 'SimpleUpperCase U+10400 stays');
+  CheckEqI($1E900, SimpleUpperCase($1E922), 'SimpleUpperCase U+1E922');
+  CheckEqI($1E922, SimpleLowerCase($1E900), 'SimpleLowerCase U+1E900');
+  CheckEqI($1F600, SimpleUpperCase($1F600), 'SimpleUpperCase U+1F600: no mapping');
+  CheckEqI($10FFFF, SimpleLowerCase($10FFFF), 'SimpleLowerCase U+10FFFF');
+  CheckEqS(#$D801 + #$DC00, AnsiUpperCase(#$D801 + #$DC28), 'AnsiUpperCase U+10428');
+  CheckEqS(#$D801 + #$DC28, AnsiLowerCase(#$D801 + #$DC00), 'AnsiLowerCase U+10400');
+  CheckEqS(#$D83A + #$DD00, AnsiUpperCase(#$D83A + #$DD22), 'AnsiUpperCase U+1E922');
+  CheckEqS(#$D83A + #$DD22, AnsiLowerCase(#$D83A + #$DD00), 'AnsiLowerCase U+1E900');
+  { a pair without mapping (U+1F600) between mapped letters and pairs }
+  S := 'a' + #$D801 + #$DC28 + #$D83D + #$DE00 + #$D83A + #$DD22 + 'z';
+  CheckEqS('A' + #$D801 + #$DC00 + #$D83D + #$DE00 + #$D83A + #$DD00 + 'Z', AnsiUpperCase(S), 'AnsiUpperCase mixed');
+  CheckEqS(S, AnsiLowerCase(AnsiUpperCase(S)), 'AnsiLowerCase mixed');
+  CheckEqI(Length(S), Length(AnsiUpperCase(S)), 'mixed: length kept');
+  { the halves of a pair on their own are lone surrogates and stay }
+  CheckEqS(#$DC28 + #$D801, AnsiUpperCase(#$DC28 + #$D801), 'reversed halves stay');
+  CheckEqS(#$D801 + 'X', AnsiUpperCase(#$D801 + 'x'), 'high half before a letter');
+  S := 'A' + #$D801 + #$DC00 + IntToStr(1);
+  T := AnsiUpperCase(S);
+  CheckEqB(True, Pointer(T) = Pointer(S), 'unchanged pairs: same reference');
+end;
+
 procedure TestCompare;
 begin
   Section('AnsiCompareStr / AnsiCompareText / AnsiSame*');
@@ -173,6 +203,7 @@ begin
   TestCase;
   TestPairs;
   TestStrings;
+  TestPairsOfSurrogates;
   TestCompare;
   TestPos;
   Done;

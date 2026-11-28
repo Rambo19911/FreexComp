@@ -1086,6 +1086,30 @@ end;
 const
   CaseBlockMask = (1 shl CaseBlockShift) - 1;
 
+{ the delta of the supplementary run First[I] .. Last[I] that holds CodePoint, 0 when no run does (binary search; the
+  runs are sorted and do not overlap) }
+function RunDelta(CodePoint: Cardinal; const First, Last: array of Cardinal; const Delta: array of Integer): Integer;
+var
+  L, H, M: Integer;
+begin
+  Result := 0;
+  L := 0;
+  H := High(First);
+  while L <= H do
+  begin
+    M := (L + H) shr 1;
+    if CodePoint < First[M] then
+      H := M - 1
+    else if CodePoint > Last[M] then
+      L := M + 1
+    else
+    begin
+      Result := Delta[M];
+      Exit;
+    end;
+  end;
+end;
+
 function SimpleUpperCase(CodePoint: Cardinal): Cardinal;
 var
   U: Integer;
@@ -1096,7 +1120,9 @@ begin
     U := Integer(CodePoint);
     Result := Cardinal(U + UpperDeltas[UpperBlocks[UpperBlockIndex[U shr CaseBlockShift] shl CaseBlockShift +
       U and CaseBlockMask]]);
-  end;
+  end
+  else if CodePoint <= $10FFFF then
+    Result := Cardinal(Integer(CodePoint) + RunDelta(CodePoint, UpperRunFirst, UpperRunLast, UpperRunDelta));
 end;
 
 function SimpleLowerCase(CodePoint: Cardinal): Cardinal;
@@ -1109,7 +1135,9 @@ begin
     U := Integer(CodePoint);
     Result := Cardinal(U + LowerDeltas[LowerBlocks[LowerBlockIndex[U shr CaseBlockShift] shl CaseBlockShift +
       U and CaseBlockMask]]);
-  end;
+  end
+  else if CodePoint <= $10FFFF then
+    Result := Cardinal(Integer(CodePoint) + RunDelta(CodePoint, LowerRunFirst, LowerRunLast, LowerRunDelta));
 end;
 
 { AnsiUpperCase / AnsiLowerCase: a pair is mapped as its code point, every other code unit (a lone surrogate included)

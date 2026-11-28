@@ -92,6 +92,24 @@ ok lone surrogates: same reference
 ok changed text: a new string
 ok changed text: argument not changed
 ok unchanged literal
+# surrogate pairs
+ok SimpleUpperCase U+10428
+ok SimpleLowerCase U+10400
+ok SimpleUpperCase U+10400 stays
+ok SimpleUpperCase U+1E922
+ok SimpleLowerCase U+1E900
+ok SimpleUpperCase U+1F600: no mapping
+ok SimpleLowerCase U+10FFFF
+ok AnsiUpperCase U+10428
+ok AnsiLowerCase U+10400
+ok AnsiUpperCase U+1E922
+ok AnsiLowerCase U+1E900
+ok AnsiUpperCase mixed
+ok AnsiLowerCase mixed
+ok mixed: length kept
+ok reversed halves stay
+ok high half before a letter
+ok unchanged pairs: same reference
 # AnsiCompareStr / AnsiCompareText / AnsiSame*
 ok CompareStr less
 ok CompareStr greater
@@ -116,4 +134,4 @@ ok found
 ok not found
 ok empty substring
 ok first occurrence
-# passed 113 failed 0
+# passed 130 failed 0
