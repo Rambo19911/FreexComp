@@ -811,7 +811,7 @@ internal sealed partial class BodyBinder
                         break;
                 }
 
-                foreach (var member in record.Members)                          // C-122: methods, properties, nested names too
+                foreach (var member in WithMembers(record))                     // C-122: methods, properties, nested names too
                 {
                     scope.TryDeclare(member, out _);
                 }
@@ -822,7 +822,7 @@ internal sealed partial class BodyBinder
             case RecordTypeSymbol record:
                 variable = new VariableSymbol(name, record, isGlobal: false, _routine, []);
                 value = designator;
-                foreach (var member in record.Members)                          // C-122: methods, properties, nested names too
+                foreach (var member in WithMembers(record))                     // C-122: methods, properties, nested names too
                 {
                     scope.TryDeclare(member, out _);
                 }
@@ -831,7 +831,7 @@ internal sealed partial class BodyBinder
             case ClassTypeSymbol type:
                 variable = new VariableSymbol(name, type, isGlobal: false, _routine, []);
                 value = designator;
-                foreach (var member in type.SelfAndAncestors().SelectMany(t => t.Members))
+                foreach (var member in WithMembers(type))
                 {
                     scope.TryDeclare(member, out _);                            // the nearest declaration of a name wins
                 }
@@ -854,6 +854,13 @@ internal sealed partial class BodyBinder
             _scope = outer;
         }
     }
+
+    /// <summary>
+    /// The members a <c>with</c> on a value of <paramref name="type"/> declares, nearest place first: the class and its ancestors, or the
+    /// record; LANG-992 (d) (C-440): each level after the chain of its active helper (LANG-992 steps 1…2).
+    /// </summary>
+    private IEnumerable<Symbol> WithMembers(TypeSymbol type) =>
+        (_types.HasHelpers ? ExpressionBinder.LookupPlaces(_scope, type) : TypeMembers.SelfAndAncestors(type)).SelectMany(t => t.Members);
 
     private T InScope<T>(Scope scope, Func<T> bind)
     {

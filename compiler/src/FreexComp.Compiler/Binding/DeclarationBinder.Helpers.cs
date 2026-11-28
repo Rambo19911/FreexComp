@@ -124,6 +124,67 @@ internal sealed partial class DeclarationBinder
         helper.NestedMembers = nested.ToImmutable();
         helper.NestedAliases = nestedAliases.ToImmutable();
         helper.Properties = inner.BindProperties(helper, properties, names);
+        ReportHiddenMembers(syntax, helper);
+    }
+
+    /// <summary>
+    /// LANG-994 (C-440): H2012 at the name of each member of <paramref name="helper"/> that hides a member of the helped type — the first
+    /// member of its name that LANG-992 steps 1…2 find on the helped type here without the helper's chain, among those the helper's
+    /// code may use — unless the member is a method with <c>overload</c> whose parameter types differ from those of every method of
+    /// the name at that place (it only adds an overload). An element of a helped enumeration is not hidden (it is found first).
+    /// </summary>
+    private void ReportHiddenMembers(HelperTypeSyntax syntax, HelperTypeSymbol helper)
+    {
+        var tokens = syntax.DescendantTokens().ToList();
+        foreach (var member in helper.Members)
+        {
+            var index = member.Locations is [var at, ..] ? tokens.FindIndex(t => t.Span.Start == at.Span.Start) : -1;
+            if (index < 0 || HiddenMember(helper, member) is not { ContainingSymbol: TypeSymbol owner } hidden)
+            {
+                continue;
+            }
+
+            _diagnostics.Report(tokens[index], "H2012", member.Name, TypeMembers.DisplayName(owner) + "." + hidden.Name);
+        }
+    }
+
+    /// <summary>The member <paramref name="member"/> of <paramref name="helper"/> hides (LANG-994); null when it hides none.</summary>
+    private Symbol? HiddenMember(HelperTypeSymbol helper, Symbol member)
+    {
+        foreach (var place in ExpressionBinder.LookupPlaces(_scope, helper.ExtendedType, helper))
+        {
+            // an element of a helped enumeration is not hidden: it comes before the helper's members (LANG-992 (b))
+            var found = place.Members.Where(m => m is not EnumMemberSymbol && IdentifierComparer.Instance.Equals(m.Name, member.Name)
+                && UsableByHelper(helper, m, place)).ToList();
+            if (found.Count == 0)
+            {
+                continue;
+            }
+
+            return member is MethodSymbol { IsOverload: true } method && found[0] is MethodSymbol
+                ? found.OfType<MethodSymbol>().FirstOrDefault(m => SameParameterTypes(m, method))
+                : found[0];
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// LANG-991 (c): the code of <paramref name="helper"/> may use <paramref name="member"/> of <paramref name="owner"/> (the helped type,
+    /// an ancestor of it, or a helper outside the helper's chain) — <c>private</c> in the same unit; (strict) <c>protected</c> of the
+    /// helped type and its ancestors, of which the helper counts as a descendant; <c>protected</c> of another helper in the same unit.
+    /// </summary>
+    private static bool UsableByHelper(HelperTypeSymbol helper, Symbol member, TypeSymbol owner)
+    {
+        var sameUnit = ReferenceEquals(TypeMembers.Outermost(owner).ContainingSymbol, TypeMembers.Outermost(helper).ContainingSymbol);
+        return member.Visibility switch
+        {
+            Visibility.Public or Visibility.Published => true,
+            Visibility.Private => sameUnit,
+            Visibility.StrictPrivate => false,
+            Visibility.Protected => sameUnit || owner is not HelperTypeSymbol,
+            _ => owner is not HelperTypeSymbol,
+        };
     }
 
     /// <summary>

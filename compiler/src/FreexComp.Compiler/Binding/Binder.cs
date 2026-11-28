@@ -379,11 +379,14 @@ internal static class Binder
             var members = outer;
             int? visible = routine.DefinitionScopeVisibleCount;
             // C-124 (LANG-751): a helper method sees the helped type's members, then the helper's (innermost); LANG-991 (b) (C-439):
-            // each ancestor level of the helped type is followed by the chain of its active helper
+            // each ancestor level of the helped type is followed by the chain of its active helper; LANG-992 (d) (C-440): so is each
+            // level of a class or record in its own methods
+            var definitionScope = new Scope(ScopeKind.Routine, outer, routine, routine.DefinitionScopeVisibleCount);
             var chain = method.Owner is HelperTypeSymbol helper
-                ? HelperScopeChain(helper, new Scope(ScopeKind.Routine, outer, routine, routine.DefinitionScopeVisibleCount))
+                ? HelperScopeChain(helper, definitionScope)
                 : TypeMembers.EnclosingTypes(method.Owner).Reverse().SelectMany(e => TypeMembers.SelfAndAncestors(e).Reverse())   // LANG-772
-                    .Concat(TypeMembers.SelfAndAncestors(method.Owner).Reverse());
+                    .Concat(types.HasHelpers ? ExpressionBinder.LookupPlaces(definitionScope, method.Owner).Reverse()
+                        : TypeMembers.SelfAndAncestors(method.Owner).Reverse());
             foreach (var type in chain)
             {
                 members = MemberScope(type, members, visible);
@@ -444,34 +447,16 @@ internal static class Binder
         };
     }
 
-    /// <summary>A fresh scope with the own members of <paramref name="type"/> (overloaded methods as one overload set).</summary>
     /// <summary>
     /// LANG-991 (b) (C-439): the member scopes of a method of <paramref name="helper"/>, outermost first — for each ancestor level of the
     /// helped type (the root first) its own members, then the chain of its active helper at <paramref name="at"/> (ancestor helpers
     /// first); then the helped type's own members; then the helper's chain. A name is so found as LANG-992 finds it on <c>Self</c>
     /// with the helper as the active helper of the helped type.
     /// </summary>
-    private static IEnumerable<TypeSymbol> HelperScopeChain(HelperTypeSymbol helper, Scope at)
-    {
-        var own = helper.SelfAndAncestors().ToList();
-        foreach (var level in TypeMembers.SelfAndAncestors(helper.ExtendedType).Reverse())
-        {
-            yield return level;
-            if (!ReferenceEquals(level, helper.ExtendedType) && at.ActiveHelper(level) is { } active)
-            {
-                foreach (var levelHelper in active.SelfAndAncestors().Reverse().Where(h => !own.Contains(h)))
-                {
-                    yield return levelHelper;
-                }
-            }
-        }
+    private static IEnumerable<TypeSymbol> HelperScopeChain(HelperTypeSymbol helper, Scope at) =>
+        ExpressionBinder.LookupPlaces(at, helper.ExtendedType, helper).Reverse().Concat(helper.SelfAndAncestors().Reverse());
 
-        foreach (var ownHelper in Enumerable.Reverse(own))
-        {
-            yield return ownHelper;
-        }
-    }
-
+    /// <summary>A fresh scope with the own members of <paramref name="type"/> (overloaded methods as one overload set).</summary>
     private static Scope MemberScope(TypeSymbol type, Scope parent, int? parentVisibleCount)
     {
         var scope = new Scope(ScopeKind.TypeMember, parent, type, parentVisibleCount);

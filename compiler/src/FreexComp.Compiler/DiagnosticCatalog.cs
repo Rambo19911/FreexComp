@@ -334,6 +334,7 @@ public static class DiagnosticCatalog
         new("H2005", "UNUSED_PARAMETER", DiagnosticSeverity.Hint, "Parameter '%s' is never used"),
         new("H2010", "ATTRIBUTE_IGNORED", DiagnosticSeverity.Hint, "Attribute '%s' has no effect yet"),
         new("H2011", "INLINE_HIDES_OUTER", DiagnosticSeverity.Hint, "Inline declaration '%s' hides '%s'"),
+        new("H2012", "HELPER_HIDES_MEMBER", DiagnosticSeverity.Hint, "Helper member '%s' hides '%s'"),
     ];
 
     private static readonly FrozenDictionary<string, DiagnosticDescriptor> ByCode =

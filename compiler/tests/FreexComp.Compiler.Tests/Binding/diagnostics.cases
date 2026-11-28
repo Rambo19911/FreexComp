@@ -420,6 +420,8 @@ type H = record helper for Integer end; var V: H; begin end.
 type H = record helper for Integer procedure B; end; procedure H.B; begin Inc(Self) end; procedure U(const N: Integer); begin N.B end; begin end.
 === E2753 1,73
 type H = record helper for Integer end; C = class end; G = class helper(H) for C end; begin end.
+=== H2012 1,74
+type C = class function N: Integer; end; H = class helper for C function N: Integer; end; function C.N: Integer; begin Result := 1; end; function H.N: Integer; begin Result := 2; end; begin end.
 === E2075 1,11
 begin var X := nil; end.
 === E2700 1,11

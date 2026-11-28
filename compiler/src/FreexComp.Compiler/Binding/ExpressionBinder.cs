@@ -204,11 +204,19 @@ internal sealed partial class ExpressionBinder
             case MemberAccessExpressionSyntax { Name: SimpleNameSyntax { Identifier.IsMissing: false } memberName } member:
             {
                 var memberText = memberName.Identifier.Value as string ?? memberName.Identifier.Text;
+                ImmutableArray<RoutineSymbol>? helperMethods = null;
                 if (_scope.Unqualified(member.Expression) is IdentifierNameSyntax { Identifier: { IsMissing: false } q } qualifier
                     && _scope.For(qualifier).Lookup(q.Value as string ?? q.Text) is ClassTypeSymbol @class)
                 {
                     owner = @class;
                     self = new BoundClassReferenceExpression(qualifier, @class, @class.Reference);
+                }
+                else if (_scope.Unqualified(member.Expression) is IdentifierNameSyntax { Identifier: { IsMissing: false } h } helperName
+                    && _scope.For(helperName).Lookup(h.Value as string ?? h.Text) is HelperTypeSymbol { ExtendedType: ClassTypeSymbol helped } namedHelper)
+                {
+                    // LANG-992 (e), (f) (C-440): THelper.ClassMethod — the helped class is the data
+                    (owner, helperMethods) = (helped, HelperCandidates(namedHelper, memberText));
+                    self = new BoundClassReferenceExpression(helperName, helped, helped.Reference);
                 }
                 else if (_scope.Unqualified(member.Expression) is not IdentifierNameSyntax { Identifier: var u } unit
                     || _scope.For(unit).Lookup(u.Value as string ?? u.Text) is not (UnitSymbol or TypeSymbol))
@@ -230,6 +238,10 @@ internal sealed partial class ExpressionBinder
                         ClassRefTypeSymbol r => (r.Class, receiver),
                         _ => (null, null),
                     };
+                    if (owner is null && RecordHelperMethodValue(syntax, addressOf, receiver, memberText, type))
+                    {
+                        return Error(syntax, receiver);
+                    }
                 }
 
                 if (owner is not null && memberName is GenericNameSyntax)
@@ -248,7 +260,7 @@ internal sealed partial class ExpressionBinder
                 }
                 else if (owner is not null)
                 {
-                    candidates = MemberCandidates(owner, memberText);
+                    candidates = helperMethods ?? LookupMethods(owner, memberText);         // LANG-992 (f) (C-440): with the helpers
                     name = memberName;
                 }
 
@@ -287,7 +299,7 @@ internal sealed partial class ExpressionBinder
             return Error(syntax, self);
         }
 
-        if (!CheckAccess(name!, method, method.ContainingType, owner))
+        if (!CheckAccess(name!, method, method.Owner, owner))
         {
             return Error(syntax, self);
         }
@@ -373,13 +385,13 @@ internal sealed partial class ExpressionBinder
                 Name: IdentifierNameSyntax { Identifier: { IsMissing: false } memberToken } memberName,
             } member
             && _scope.Unqualified(member.Expression) is IdentifierNameSyntax { Identifier: { IsMissing: false } classToken } className
-            && _scope.For(className).Lookup(classToken.Value as string ?? classToken.Text) is ClassTypeSymbol @class
-            && MemberCandidates(@class, memberToken.Value as string ?? memberToken.Text) is { IsEmpty: false } methods
+            && _scope.For(className).Lookup(classToken.Value as string ?? classToken.Text) is TypeSymbol qualifierType
+            && StaticMethodsNamed(qualifierType, memberToken.Value as string ?? memberToken.Text) is { IsEmpty: false } methods
             && !(addressOf is null && methods is [{ ReturnType: { } methodResult, Parameters.IsEmpty: true } only]
                 && !Signatures.Compatible(only, type.Signature) && _conversions.Classify(methodResult, type).Exists))
         {
             // other methods are reported by RoutineValue (E2010: no plain procedural value)
-            return RoutineValue(syntax, memberName, methods, type, @class);
+            return RoutineValue(syntax, memberName, methods, type, qualifierType);
         }
 
         // Obj.Method of an instance: a method pointer, not a plain procedural value (E2010, C-103); Obj.Method<X> too (LANG-981, C-420:
@@ -393,7 +405,7 @@ internal sealed partial class ExpressionBinder
             && BindExpression(access.Expression) is { HasErrors: false, Type: ClassTypeSymbol instanceClass } instance
             && (instanceName is GenericNameSyntax
                 ? ProbeBinder(new DiagnosticBag()).GenericMethodCandidates(instanceClass, access, argumentList: null)?.Routines ?? []
-                : MemberCandidates(instanceClass, instanceMember.Value as string ?? instanceMember.Text)) is [MethodSymbol { MethodKind: not MethodKind.ClassStatic } first, ..] instanceMethods
+                : LookupMethods(instanceClass, instanceMember.Value as string ?? instanceMember.Text)) is [MethodSymbol { MethodKind: not MethodKind.ClassStatic } first, ..] instanceMethods
             && !(addressOf is null && instanceMethods.Length == 1 && first is { ReturnType: { } instanceResult, Parameters.IsEmpty: true }
                 && _conversions.Classify(instanceResult, type).Exists))
         {
@@ -899,10 +911,10 @@ internal sealed partial class ExpressionBinder
         }
         else if (Unparenthesized(operandSyntax) is MemberAccessExpressionSyntax { Name: IdentifierNameSyntax { Identifier: { IsMissing: false } staticToken } staticName } staticAccess
             && _scope.Unqualified(staticAccess.Expression) is IdentifierNameSyntax { Identifier: { IsMissing: false } ownerToken } ownerName
-            && _scope.For(ownerName).Lookup(ownerToken.Value as string ?? ownerToken.Text) is ClassTypeSymbol staticOwner
-            && MemberCandidates(staticOwner, staticToken.Value as string ?? staticToken.Text) is [MethodSymbol { MethodKind: MethodKind.ClassStatic } staticMethod, ..])
+            && _scope.For(ownerName).Lookup(ownerToken.Value as string ?? ownerToken.Text) is TypeSymbol staticOwner
+            && StaticMethodsNamed(staticOwner, staticToken.Value as string ?? staticToken.Text) is [MethodSymbol { MethodKind: MethodKind.ClassStatic } staticMethod, ..])
         {
-            if (!CheckAccess(staticName, staticMethod, staticMethod.ContainingType, staticOwner))
+            if (!CheckAccess(staticName, staticMethod, staticMethod.Owner, staticOwner))
             {
                 return Error(syntax);
             }
@@ -1203,6 +1215,14 @@ internal sealed partial class ExpressionBinder
         if (record.Type is PointerTypeSymbol { PointedType: RecordTypeSymbol pointed })
         {
             record = new BoundDereferenceExpression(syntax.Expression, record, pointed);       // p.F = p^.F (extended syntax)
+        }
+
+        if (record.Type is not RecordTypeSymbol && syntax.Name is IdentifierNameSyntax { Identifier: var missing } && _types.HasHelpers
+            && _scope.ActiveHelper(record.Type) is not null)
+        {
+            // LANG-992 step 4 (C-440): no place declares the name, but the type has an active helper
+            _diagnostics.Report(syntax.Name, "E2005", record.Type.Name, missing.Value as string ?? missing.Text);
+            return Error(syntax, record);
         }
 
         if (record.Type is not RecordTypeSymbol recordType || syntax.Name is not IdentifierNameSyntax)

@@ -360,7 +360,7 @@ public sealed partial class HelperBindingTests
             end.
             """);
 
-        Assert.Equal([], Format(result.Diagnostics));
+        Assert.Equal([], Format(result.Diagnostics.Where(d => d.Code != "H2012")));                // these helpers hide on purpose (LANG-994, C-440)
         Assert.Equal(["TBase.Name virtual"], BodyOf(result, "TBaseH", "Name").Select(CallOf));
         Assert.Equal(["TBaseH.Name static"], BodyOf(result, "TBaseH2", "Name").Select(CallOf));             // the chain first
         Assert.Equal(["TBase.Show virtual"], BodyOf(result, "TBaseH2", "Show").Select(CallOf));
@@ -525,7 +525,7 @@ public sealed partial class HelperBindingTests
             end.
             """);
 
-        Assert.Equal([], Format(result.Diagnostics));
+        Assert.Equal([], Format(result.Diagnostics.Where(d => d.Code != "H2012")));                // these helpers hide on purpose (LANG-994, C-440)
         Assert.Equal(["TMidH.Name static", "TBaseH.FromBaseHelper static", "TBaseH.Who static", "TBase.Plain static"],
             BodyOf(result, "TMidH", "Run").Select(CallOf));
     }

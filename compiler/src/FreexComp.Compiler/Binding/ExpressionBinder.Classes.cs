@@ -552,13 +552,14 @@ internal sealed partial class ExpressionBinder
         var text = name.Identifier.Value as string ?? name.Identifier.Text;
         if (_scope.For(name).Lookup(text) is { } symbol && WithOf(text, symbol) is { Type: ClassTypeSymbol type } with)
         {
-            return BindMethodCall(call, MemberCandidates(type, text), ReceiverKind.Instance, WithReceiver(name, with), null, argumentList);
+            return BindMethodCall(call, LookupMethods(type, text), ReceiverKind.Instance, WithReceiver(name, with), null, argumentList);
         }
 
-        if (_scope.For(name).Lookup(text) is MethodSymbol { ContainingRecord: not null } recordMethod && WithOf(text, recordMethod) is { Type: RecordTypeSymbol record } recordWith)
+        if (_scope.For(name).Lookup(text) is MethodSymbol withMethod && WithOf(text, withMethod) is { Type: RecordTypeSymbol record } recordWith)
         {
-            // C-122: a record method named inside 'with r do' is r.M (LANG-375, 730)
-            ImmutableArray<RoutineSymbol> methods = [.. record.Methods.Where(m => IdentifierComparer.Instance.Equals(m.Name, text))];
+            // C-122: a record method named inside 'with r do' is r.M (LANG-375, 730); LANG-992 (d) (C-440): a method of its helper too
+            ImmutableArray<RoutineSymbol> methods = _types.HasHelpers ? PlaceMethods(LookupPlaces(_scope, record), text)
+                : [.. record.Methods.Where(m => IdentifierComparer.Instance.Equals(m.Name, text))];
             return BindMethodCall(call, methods, ReceiverKind.Instance, WithReceiver(name, recordWith), null, argumentList);
         }
 
@@ -567,7 +568,8 @@ internal sealed partial class ExpressionBinder
 
     /// <summary>
     /// C-210 (LANG-441): as in <see cref="MemberCandidates"/>, an ancestor's method that a nearer candidate overrides or hides with
-    /// the same parameters is not a second candidate (the scope lists the nearest class's methods first).
+    /// the same parameters is not a second candidate (the scope lists the nearest class's methods first); LANG-992 step 3 (C-440):
+    /// the same between a helper's method and a method of another member place (the helped type, another helper).
     /// </summary>
     private static ImmutableArray<RoutineSymbol> WithoutReplaced(ImmutableArray<RoutineSymbol> candidates)
     {
@@ -578,6 +580,15 @@ internal sealed partial class ExpressionBinder
                 && kept.Any(k => k is MethodSymbol { ContainingSymbol: ClassTypeSymbol } nearer && !ReferenceEquals(nearer.ContainingType, method.ContainingType)
                     && nearer.ContainingType.SelfAndAncestors().Contains(method.ContainingType)
                     && SameParameters(nearer, method)))
+            {
+                continue;
+            }
+
+            if (candidate is MethodSymbol { ContainingSymbol: ClassTypeSymbol or RecordTypeSymbol or HelperTypeSymbol } placed
+                && kept.Any(k => k is MethodSymbol { ContainingSymbol: ClassTypeSymbol or RecordTypeSymbol or HelperTypeSymbol } nearer
+                    && !ReferenceEquals(nearer.ContainingSymbol, placed.ContainingSymbol)
+                    && (nearer.ContainingSymbol is HelperTypeSymbol || placed.ContainingSymbol is HelperTypeSymbol)
+                    && SameParameters(nearer, placed)))
             {
                 continue;
             }
@@ -700,6 +711,12 @@ internal sealed partial class ExpressionBinder
             return helperValue;                                                     // C-363: THelper.Limit (LANG-770, 774)
         }
 
+        if (qualifierType is HelperTypeSymbol qualifying && qualifying.GetMembers(name).Any())
+        {
+            // LANG-992 (e) (C-440): THelper.Kind, THelper.Count — the static members of the helper and its chain
+            return HelperMember(syntax, call, argumentList, qualifying, instance: null, name, out methodCall, qualifying.ExtendedType as ClassTypeSymbol, chainOnly: true);
+        }
+
         if (qualifierType is RecordTypeSymbol recordName)
         {
             return StaticRecordMember(syntax, call, argumentList, recordName, name, out methodCall);     // C-122 (LANG-730)
@@ -714,7 +731,7 @@ internal sealed partial class ExpressionBinder
                 return genericMethod.IsEmpty ? Error(syntax, genericMethod.Bound) : null;   // C-117 (LANG-701, 979, 980)
             }
 
-            var candidates = MemberCandidates(className, name);
+            var candidates = LookupMethods(className, name);                    // LANG-992 step 3 (C-440)
             switch (className.GetMembers(name).FirstOrDefault())
             {
                 case PropertySymbol { IsClassProperty: true } property:                 // LANG-647
@@ -789,7 +806,7 @@ internal sealed partial class ExpressionBinder
                 return genericMethod.IsEmpty ? Error(syntax, [receiver, .. genericMethod.Bound]) : null;      // C-117
             }
 
-            var candidates = MemberCandidates(type, name);
+            var candidates = LookupMethods(type, name);                         // LANG-992 step 3 (C-440)
             if (!candidates.IsEmpty)
             {
                 methodCall = BindMethodCall(call, candidates, ReceiverKind.Instance, receiver, null, argumentList);
@@ -844,6 +861,11 @@ internal sealed partial class ExpressionBinder
         {
             // LANG-652: constructors, class methods, class vars and class properties through a class-reference value
             var target = reference.Class;
+            if (HelperFor(target, name) is { } classHelper)
+            {
+                return HelperMember(syntax, call, argumentList, classHelper, receiver, name, out methodCall);   // LANG-992 (c) (C-440)
+            }
+
             switch (target.GetMembers(name).FirstOrDefault())
             {
                 case PropertySymbol { IsClassProperty: true } property:
@@ -860,7 +882,7 @@ internal sealed partial class ExpressionBinder
                 return genericMethod.IsEmpty ? Error(syntax, [receiver, .. genericMethod.Bound]) : null;
             }
 
-            var candidates = MemberCandidates(target, name);
+            var candidates = LookupMethods(target, name);                       // LANG-992 step 3 (C-440)
             if (candidates.IsEmpty)
             {
                 if (target.GetMembers(name).Any())
@@ -881,6 +903,11 @@ internal sealed partial class ExpressionBinder
 
         var record = receiver.Type is PointerTypeSymbol { PointedType: RecordTypeSymbol pointed }
             ? new BoundDereferenceExpression(syntax.Expression, receiver, pointed) : receiver;        // p.M = p^.M (extended syntax)
+        if (!ReferenceEquals(record, receiver) && HelperFor(record.Type, name) is { } pointedHelper)
+        {
+            return HelperMember(syntax, call, argumentList, pointedHelper, record, name, out methodCall);   // LANG-992 (a) (C-440): p.M = p^.M
+        }
+
         if (record.Type is RecordTypeSymbol { Methods.IsEmpty: false } or RecordTypeSymbol { Properties.IsEmpty: false }
             or RecordTypeSymbol { ClassVariables.IsEmpty: false } or RecordTypeSymbol { NestedMembers.IsEmpty: false }
             or RecordTypeSymbol { GenericMethods.IsEmpty: false })
@@ -1457,24 +1484,12 @@ internal sealed partial class ExpressionBinder
     }
 
     /// <summary>
-    /// LANG-991 (d) (C-439): the methods <c>inherited Name</c> finds in a method of <paramref name="helper"/> — those of the rest of its
-    /// chain, else those of the helped class (and its ancestors) or record. The active helpers of the ancestors of the helped class
-    /// are not consulted.
+    /// LANG-991 (d) (C-439, C-440): the methods <c>inherited Name</c> finds in a method of <paramref name="helper"/> — LANG-992 steps 1…3
+    /// starting after the helper: the rest of its chain, the helped type's own members, then the ancestor levels of the helped class,
+    /// each with the chain of its active helper first.
     /// </summary>
-    private static ImmutableArray<RoutineSymbol> InheritedHelperCandidates(HelperTypeSymbol helper, string name)
-    {
-        if (helper.Parent is { } parent && HelperCandidates(parent, name) is { IsEmpty: false } chain)
-        {
-            return chain;
-        }
-
-        return helper.ExtendedType switch
-        {
-            ClassTypeSymbol type => MemberCandidates(type, name),
-            RecordTypeSymbol record => [.. record.Methods.Where(m => IdentifierComparer.Instance.Equals(m.Name, name))],
-            _ => [],
-        };
-    }
+    private ImmutableArray<RoutineSymbol> InheritedHelperCandidates(HelperTypeSymbol helper, string name) =>
+        PlaceMethods(Enumerable.Concat<TypeSymbol>(helper.Parent?.SelfAndAncestors() ?? [], LookupPlaces(_scope, helper.ExtendedType, helper)), name);
 
     /// <summary>
     /// LANG-622 / CMP-370 (C-113): bare <c>inherited</c> in a <c>message</c> handler calls the nearest ancestor handler for the same id

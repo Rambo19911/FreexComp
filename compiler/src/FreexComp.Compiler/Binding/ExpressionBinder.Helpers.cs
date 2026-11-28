@@ -35,14 +35,63 @@ internal sealed partial class ExpressionBinder
     }
 
     /// <summary>The methods named <paramref name="name"/> of a helper and the helpers it inherits (nearest first, LANG-441).</summary>
-    private static ImmutableArray<RoutineSymbol> HelperCandidates(HelperTypeSymbol helper, string name)
+    private static ImmutableArray<RoutineSymbol> HelperCandidates(HelperTypeSymbol helper, string name) => PlaceMethods(helper.SelfAndAncestors(), name);
+
+    /// <summary>
+    /// LANG-992 steps 1…2 (C-440): the places a member of a value of <paramref name="type"/> is looked for at <paramref name="scope"/>,
+    /// nearest first — for each level of the type (the class and its ancestors; any other type is one level) the chain of the level's
+    /// active helper, nearest helper first, then the level's own members. In the code of <paramref name="skip"/> (LANG-991 (b), (d))
+    /// and for its hint (LANG-994) the level it helps has no active helper and the ancestor levels leave out the helpers of its chain.
+    /// </summary>
+    internal static IEnumerable<TypeSymbol> LookupPlaces(Scope scope, TypeSymbol type, HelperTypeSymbol? skip = null)
+    {
+        var own = skip?.SelfAndAncestors().ToList();
+        foreach (var level in TypeMembers.SelfAndAncestors(type))
+        {
+            if (!ReferenceEquals(level, skip?.ExtendedType) && scope.ActiveHelper(level) is { } helper)
+            {
+                foreach (var place in helper.SelfAndAncestors().Where(h => own is null || !own.Contains(h)))
+                {
+                    yield return place;
+                }
+            }
+
+            yield return level;
+        }
+    }
+
+    /// <summary>
+    /// LANG-992 step 3 (LANG-441 with the helper places): the methods named <paramref name="name"/> of the first of
+    /// <paramref name="places"/> that declares the name and — while every method of it carries <c>overload</c> — of the following
+    /// places, until a place declares the name without <c>overload</c> (its methods are included) or as something that is no method
+    /// (the search stops before it). A method with the parameter types of a candidate of a nearer place is not added; the generic
+    /// methods of a place count for the <c>overload</c> rule (<see cref="MethodsNamed"/>).
+    /// </summary>
+    internal static ImmutableArray<RoutineSymbol> PlaceMethods(IEnumerable<TypeSymbol> places, string name)
     {
         var candidates = ImmutableArray.CreateBuilder<RoutineSymbol>();
-        foreach (var owner in helper.SelfAndAncestors())
+        foreach (var place in places)
         {
-            var methods = owner.Methods.Where(m => IdentifierComparer.Instance.Equals(m.Name, name)).ToList();
+            var members = place.Members.Where(m => IdentifierComparer.Instance.Equals(m.Name, name)).ToList();
+            var generics = place switch
+            {
+                ClassTypeSymbol c => c.GenericMethods.Where(g => IdentifierComparer.Instance.Equals(g.Name, name)).ToList(),
+                RecordTypeSymbol r => r.GenericMethods.Where(g => IdentifierComparer.Instance.Equals(g.Name, name)).ToList(),
+                _ => [],
+            };
+            if (members.Count == 0 && generics.Count == 0)
+            {
+                continue;
+            }
+
+            if (members.Any(m => m is not MethodSymbol))
+            {
+                break;                                                          // a field, class var, property or constant hides the methods
+            }
+
+            var methods = members.Cast<MethodSymbol>().ToList();
             candidates.AddRange(methods.Where(m => !candidates.Any(c => SameParameters(c, m))));
-            if (methods.Count > 0 && methods.Any(m => !m.IsOverload))
+            if (methods.Any(m => !m.IsOverload) || generics.Any(g => !g.IsOverload))
             {
                 break;
             }
@@ -52,24 +101,67 @@ internal sealed partial class ExpressionBinder
     }
 
     /// <summary>
+    /// LANG-992 steps 1…3 (C-440): the methods a call of <paramref name="name"/> on a value of the class <paramref name="type"/> can
+    /// mean — with the places of the helpers of its levels; <see cref="MemberCandidates"/> when no helper is declared at all.
+    /// </summary>
+    private ImmutableArray<RoutineSymbol> LookupMethods(ClassTypeSymbol type, string name) =>
+        _types.HasHelpers ? PlaceMethods(LookupPlaces(_scope, type), name) : MemberCandidates(type, name);
+
+    /// <summary>
+    /// LANG-480, LANG-992 (e), (f) (C-440): the methods <c>Q.Name</c> names where <c>Q</c> is a type — those of a class with the helpers
+    /// of its levels, of a helper and its chain, or of the active helper of another type (then with the type's own methods after it);
+    /// empty for any other type.
+    /// </summary>
+    private ImmutableArray<RoutineSymbol> StaticMethodsNamed(TypeSymbol qualifier, string name) => qualifier switch
+    {
+        ClassTypeSymbol c => LookupMethods(c, name),
+        HelperTypeSymbol h => HelperCandidates(h, name),
+        _ when HelperFor(qualifier, name) is not null => PlaceMethods(LookupPlaces(_scope, qualifier), name),
+        _ => [],
+    };
+
+    /// <summary>
+    /// LANG-992 (f) (C-440): <c>X.M</c> or <c>@X.M</c> where a method pointer of <paramref name="type"/> is expected and <c>M</c> is an
+    /// instance method of the record helper active for the type of <paramref name="receiver"/> — no value (E2900 reported; the data
+    /// would be the address of a value that may be a temporary). False when the member is no such method, or is a parameterless
+    /// function whose result fits the type (it is called, LANG-482).
+    /// </summary>
+    private bool RecordHelperMethodValue(ExpressionSyntax syntax, AddressOfExpressionSyntax? addressOf, BoundExpression receiver, string name, TypeSymbol type)
+    {
+        if (!_types.HasHelpers || receiver.HasErrors || HelperFor(receiver.Type, name) is not { IsClassHelper: false } helper
+            || PlaceMethods(LookupPlaces(_scope, helper.ExtendedType), name) is not [MethodSymbol { IsClassMethod: false } first, ..] methods
+            || addressOf is null && methods.Length == 1 && first is { ReturnType: { } result, Parameters.IsEmpty: true } && _conversions.Classify(result, type).Exists)
+        {
+            return false;
+        }
+
+        _diagnostics.Report(syntax, "E2900", "method value of a record-helper method");
+        return true;
+    }
+
+    /// <summary>
     /// <c>x.Name</c> found in <paramref name="helper"/> (LANG-752): a method (sets <paramref name="methodCall"/>), property, class var or
-    /// constant; <paramref name="instance"/> is the helped value, null when <c>x</c> names the helped type (static members only, and
-    /// class methods of a class helper, whose <c>Self</c> is the class <paramref name="className"/> named, LANG-991 (a)).
+    /// constant; <paramref name="instance"/> is the helped value, null when <c>x</c> names the helped type or the helper (static members
+    /// only, and class methods of a class helper, whose <c>Self</c> is the class <paramref name="className"/> named, LANG-991 (a)). The
+    /// methods continue with the places after the helper (LANG-992 step 3); through the helper's own name (<paramref name="chainOnly"/>,
+    /// LANG-992 (e)) with its chain only. On a class-reference value of a class helper's class only static members apply (LANG-992 (c)).
     /// </summary>
     private BoundExpression? HelperMember(MemberAccessExpressionSyntax syntax, SyntaxNode call, ArgumentListSyntax? argumentList,
-        HelperTypeSymbol helper, BoundExpression? instance, string name, out MethodCall? methodCall, ClassTypeSymbol? className = null)
+        HelperTypeSymbol helper, BoundExpression? instance, string name, out MethodCall? methodCall, ClassTypeSymbol? className = null,
+        bool chainOnly = false)
     {
         methodCall = null;
-        var candidates = HelperCandidates(helper, name);
+        var candidates = chainOnly ? HelperCandidates(helper, name) : PlaceMethods(LookupPlaces(_scope, helper.ExtendedType), name);
         if (!candidates.IsEmpty)
         {
             methodCall = BindMethodCall(call, candidates, instance is null ? ReceiverKind.ClassName : ReceiverKind.Instance, instance, className, argumentList);
             return null;
         }
 
+        var onClassReference = instance is { Type: ClassRefTypeSymbol } && helper.ExtendedType is not ClassRefTypeSymbol;
         switch (helper.GetMembers(name).FirstOrDefault())
         {
-            case PropertySymbol property when instance is not null || property.IsClassProperty:
+            case PropertySymbol property when property.IsClassProperty || instance is not null && !onClassReference:
                 return CheckAccess(syntax.Name, property, property.Owner, helper.ExtendedType)
                     ? PropertyAccess(syntax, property, property.IsClassProperty ? null : instance) : Error(syntax);
             case VariableSymbol classVar:

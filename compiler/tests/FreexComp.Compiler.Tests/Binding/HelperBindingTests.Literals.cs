@@ -109,7 +109,7 @@ public sealed partial class HelperBindingTests
         { "char fallback: a character constant", "N := Letter.Len{=THStr}", true },
         { "char fallback: no helper for Char at all", "S := 'x'.Who{=THStr}", false },
         { "char fallback: the Char member comes first", "S := Letter.Who{=THChar}", true },
-        { "char fallback: not for a Char variable (E2006 at the receiver)", "N := Ch{!E2006}.Len", true },
+        { "char fallback: not for a Char variable (E2005 for Char, LANG-992 step 4)", "N := Ch.Len{!E2005}", true },
 
         // LANG-998 (a): constant receivers take no mutating method (E2752), the method runs on a temporary otherwise
         { "a mutating method on an integer literal", "N := 5.Next{!E2752}", true },
@@ -140,14 +140,15 @@ public sealed partial class HelperBindingTests
     }
 
     /// <summary>
-    /// LANG-998 (a): <c>nil</c>, a set constructor and a parenthesised <c>Char</c> variable choose no helper — E2006 at the receiver
-    /// (a <c>nil</c> or a set constructor takes a member access only in parentheses, LANG-997 (a)).
+    /// LANG-998 (a): <c>nil</c> and a set constructor choose no helper — E2006 at the receiver (a <c>nil</c> or a set constructor takes
+    /// a member access only in parentheses, LANG-997 (a)); a parenthesised <c>Char</c> variable is no constant and has the helper for
+    /// <c>Char</c> only — without the member E2005 for <c>Char</c> (LANG-992 step 4, C-440).
     /// </summary>
     [Theory]
     [Trait("Req", "LANG-998")]
     [InlineData("S := (nil).Who", "P.pas(55,8): E2006 '(nil)' is not a unit, record, class or interface; cannot qualify with '.'")]
     [InlineData("S := ([Red]).Who", "P.pas(55,8): E2006 '([Red])' is not a unit, record, class or interface; cannot qualify with '.'")]
-    [InlineData("N := (Ch).Len", "P.pas(55,8): E2006 '(Ch)' is not a unit, record, class or interface; cannot qualify with '.'")]
+    [InlineData("N := (Ch).Len", "P.pas(55,13): E2005 'Char' does not contain a member named 'Len'")]
     public void LiteralReceivers_NoHelper(string statement, string expected)
     {
         var source = LiteralProgram.ReplaceLineEndings("\n").Replace("$NOCHAR$", "", StringComparison.Ordinal)
