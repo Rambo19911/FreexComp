@@ -158,6 +158,11 @@ internal sealed partial class DebugSession
                     _ = response.Exception;   // observed here: the loop may no longer care about a late failure
                     Post(() => OnLaunchResponseAsync(response));
                 });
+
+            // Input at its end from the start (DBG-557): now that the launch request is out, the session's end of the
+            // standard-input pipe is closed as soon as the program's side has opened it.
+            if (request.InputAtEnd && _outputRelay is { } relay)
+                _ = CloseStdinOnceOpenedAsync(relay);
         }
         catch (DebuggerException e) when (e.Code == DebugErrorCode.AdapterCrashed)
         {

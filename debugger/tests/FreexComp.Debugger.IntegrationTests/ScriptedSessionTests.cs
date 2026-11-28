@@ -1530,6 +1530,35 @@ public sealed class ScriptedSessionTests(IntegrationFixture fixture)
         Assert.False(IsAlive(debuggee.Value), "The debuggee is still running.");
     }
 
+    /// <summary>
+    /// G-109 (card acceptance "stdin at end of file", at library level): captured mode with
+    /// <see cref="LaunchRequest.InputAtEnd"/>. The session closes its end of the standard-input pipe as soon as the
+    /// program's side has opened it (DBG-557), so both reads of the program return at once with an empty line and the
+    /// program runs to its end without any input; its output is relayed as in captured mode.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "DBG-557")]
+    [Trait("Req", "DBG-434")]
+    public async Task Phase8_InputAtEnd_ReadLnReturnsAtOnce()
+    {
+        var program = fixture.Build("ConsoleEcho");
+        var recorder = new SessionRecorder(nameof(Phase8_InputAtEnd_ReadLnReturnsAtOnce));
+        await recorder.RunAsync(fixture, program, async session =>
+        {
+            await session.LaunchAsync(new LaunchRequest { Program = program.ExePath, InputAtEnd = true }, Ct);
+
+            // Nobody writes anything: the program ends by itself.
+            var terminated = await recorder.WaitForTerminatedAsync();
+            Assert.Equal(TerminationCause.Exited, terminated.Cause);
+            Assert.Equal(0, terminated.ExitCode);
+            Assert.Equal(DebugState.Terminated, session.State);
+            Assert.StartsWith("args 0\nenv \ndir ", recorder.StdoutSoFar, StringComparison.Ordinal);
+            Assert.EndsWith("\nready\ngot: \nbye\n", recorder.StdoutSoFar, StringComparison.Ordinal);
+            Assert.DoesNotContain(recorder.Events, e => e.StartsWith("Stopped(", StringComparison.Ordinal));
+        });
+    }
+
     private static string Address(ulong address) => "$" + address.ToString("X16", CultureInfo.InvariantCulture);
 
     private static bool PathIsUnder(string path, string root) =>

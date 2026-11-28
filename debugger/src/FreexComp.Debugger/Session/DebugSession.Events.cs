@@ -130,6 +130,29 @@ internal sealed partial class DebugSession
         }
     }
 
+    /// <summary>
+    /// DBG-557: waits (off the session loop) until the program's side has opened the standard-input pipe, then has the
+    /// loop close the session's end. A relay that ends first - the session ended, nobody ever opened the pipe - gives
+    /// the wait up: the pipe stays as it is until then.
+    /// </summary>
+    private async Task CloseStdinOnceOpenedAsync(OutputRelay relay)
+    {
+        try
+        {
+            await relay.StdinClientConnected().ConfigureAwait(false);
+        }
+        catch (Exception e) when (e is OperationCanceledException or IOException or ObjectDisposedException)
+        {
+            return;
+        }
+
+        Post(() =>
+        {
+            relay.CloseStdin();
+            return Task.CompletedTask;
+        });
+    }
+
     private void ArmOutputRelay() =>
         _outputRelayTimer = _time.CreateTimer(_ => Post(PollOutputRelay), null, OutputRelay.PollInterval, Timeout.InfiniteTimeSpan);
 

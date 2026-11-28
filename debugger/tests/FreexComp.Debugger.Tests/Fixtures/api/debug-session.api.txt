@@ -47,6 +47,7 @@ LaunchRequest.Breakpoints : IReadOnlyList<SourceBreakpoints> { get; init; }
 LaunchRequest.Exceptions : ExceptionSettings { get; init; }
 LaunchRequest.TypeInfoPath : string? { get; init; }
 LaunchRequest.Libraries : IReadOnlyList<string> { get; init; }
+LaunchRequest.InputAtEnd : bool { get; init; }
 
 type DebugState : enum = Idle, Starting, Running, Stopped, Terminating, Terminated
 type StopReason : enum = Entry, Breakpoint, Step, Pause, Exception, RunToLine

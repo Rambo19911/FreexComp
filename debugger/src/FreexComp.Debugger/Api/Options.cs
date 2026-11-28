@@ -125,4 +125,7 @@ public sealed record LaunchRequest
     /// when it is unloaded. Empty: as before.
     /// </summary>
     public IReadOnlyList<string> Libraries { get; init; } = [];
+
+    /// <summary>Captured mode only (DBG-434): the program's standard input is at its end from the start.</summary>
+    public bool InputAtEnd { get; init; } = false;
 }

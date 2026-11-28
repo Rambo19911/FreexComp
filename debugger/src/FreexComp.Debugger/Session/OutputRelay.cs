@@ -43,6 +43,11 @@ internal enum RelayRead
 /// the pipe the protocol's requests arrive on - and a program that reads a line then takes a request away from the
 /// adapter: the request is never answered, and the program goes on with it as its input (G-103).
 /// </para>
+/// <para>
+/// A launch whose input is at its end from the start (DBG-557) closes the writing end as soon as the program's side
+/// has opened the pipe (<see cref="StdinClientConnected"/>, <see cref="CloseStdin"/>) - never before: a path that
+/// cannot be opened makes the adapter give the program its own standard input again.
+/// </para>
 /// </summary>
 internal sealed class OutputRelay : IDisposable
 {
@@ -61,6 +66,7 @@ internal sealed class OutputRelay : IDisposable
     private readonly Tail[] _tails;
     private readonly byte[] _buffer = new byte[ReadSize];
     private NamedPipeServerStream? _stdin;
+    private CancellationTokenSource? _stdinWatch;
     private bool _disposed;
 
     private OutputRelay(string directory)
@@ -112,9 +118,11 @@ internal sealed class OutputRelay : IDisposable
             foreach (var tail in relay._tails)
                 tail.Open();
             // One reader (whoever the adapter starts the debuggee through opens it once, for reading), the current
-            // user only. The session keeps the writing end open and silent: a read of the debuggee waits.
+            // user only. The session keeps the writing end open and silent: a read of the debuggee waits. (The
+            // session's handle is an asynchronous one only so that the wait for the reader can be given up.)
             relay._stdin = new NamedPipeServerStream(
-                StdinPipeName(directory), PipeDirection.Out, 1, PipeTransmissionMode.Byte, PipeOptions.CurrentUserOnly);
+                StdinPipeName(directory), PipeDirection.Out, 1, PipeTransmissionMode.Byte,
+                PipeOptions.CurrentUserOnly | PipeOptions.Asynchronous);
         }
         catch
         {
@@ -140,6 +148,31 @@ internal sealed class OutputRelay : IDisposable
         }
     }
 
+    /// <summary>
+    /// Completes when the program's side has opened the standard-input pipe (at once when it already has); cancelled
+    /// or faulted when the relay is disposed, or the pipe closed, before that. Asked for once at most.
+    /// </summary>
+    public Task StdinClientConnected()
+    {
+        if (_stdin is not { } stdin)
+            return Task.FromCanceled(new CancellationToken(canceled: true));
+        _stdinWatch = new CancellationTokenSource();
+        return stdin.WaitForConnectionAsync(_stdinWatch.Token);
+    }
+
+    /// <summary>
+    /// Closes the session's end of the standard-input pipe: a read of the program reports the end of its input
+    /// (DBG-557). Only for a pipe that has its reader - without one the path could no longer be opened.
+    /// </summary>
+    public void CloseStdin()
+    {
+        _stdinWatch?.Cancel();
+        _stdinWatch?.Dispose();
+        _stdinWatch = null;
+        _stdin?.Dispose();
+        _stdin = null;
+    }
+
     /// <summary>Closes both files and the pipe and deletes the directory (once the debuggee has let go of the files).</summary>
     public void Dispose()
     {
@@ -148,8 +181,7 @@ internal sealed class OutputRelay : IDisposable
         _disposed = true;
         foreach (var tail in _tails)
             tail.Dispose();
-        _stdin?.Dispose();
-        _stdin = null;
+        CloseStdin();
         if (TryDelete(Directory))
             return;
 

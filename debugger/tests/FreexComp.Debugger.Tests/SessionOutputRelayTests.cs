@@ -66,6 +66,91 @@ public sealed class SessionOutputRelayTests
         Assert.Throws<TimeoutException>(() => late.Connect(0));
     }
 
+    /// <summary>The default request of the harness with <see cref="LaunchRequest.InputAtEnd"/>.</summary>
+    private static LaunchRequest InputAtEndRequest => new()
+    {
+        Program = SessionHarness.Program,
+        TypeInfoPath = PdiFixture.DbgDemoPath,
+        Exceptions = SessionHarness.NoLanguageExceptions,
+        InputAtEnd = true,
+    };
+
+    /// <summary>Whether a pipe of that name exists; asking does not connect to it.</summary>
+    private static bool PipeExists(string name) => Directory.GetFiles(@"\\.\pipe\", name).Length == 1;
+
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "DBG-557")]
+    [Trait("Req", "DBG-434")]
+    public async Task InputAtEnd_ClosesThePipeOnceItHasAClient()
+    {
+        // G-109: with InputAtEnd the session closes its end of the pipe as soon as the program's side - here the test,
+        // in the program's place - has opened it and the launch request is out: a read reports the end of the input
+        // while the session runs on.
+        await using var harness = SessionHarness.Create("""
+            { "steps": [
+              { "on": "threads", "respond": { "threads": [ { "id": 1, "name": "main" } ] } },
+              { "on": "pause", "respond": {}, "thenEvents": [
+                { "write": "stdout", "text": "after the end of the input\n" },
+                { "event": "terminated" } ] } ] }
+            """);
+        await harness.LaunchAsync(InputAtEndRequest);
+        // The path stays in stdio[0]: nothing else of captured mode changes.
+        var name = StdinPipeName(StdioOf(harness).Directory);
+
+        using var reader = new System.IO.Pipes.NamedPipeClientStream(".", name, System.IO.Pipes.PipeDirection.In);
+        reader.Connect(Safety);
+        var received = new MemoryStream();
+        await DedicatedThread.Run("FreexComp.Tests.DebuggeeStdin", () => reader.CopyTo(received)).WaitAsync(Safety, Ct);
+
+        Assert.Equal(0, received.Length);
+        Assert.Equal(DebugState.Running, harness.Session.State);
+        Assert.DoesNotContain(harness.Events.Snapshot(), e => e.StartsWith("state Running->", StringComparison.Ordinal));
+        Assert.False(PipeExists(name), "The session still holds its end of the standard-input pipe.");
+
+        // The output files still relay.
+        await harness.Session.PauseAsync(Ct).WaitAsync(Safety, Ct);
+        await harness.WaitForEventAsync("terminated");
+        Assert.Equal([Out("Stdout", "after the end of the input\n")], DebuggeeOutput(harness));
+        harness.AssertScenarioComplete();
+    }
+
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "DBG-557")]
+    public async Task InputAtEnd_WithoutAClient_PipeStaysUntilTheEnd()
+    {
+        // The end is never closed before a client is connected: the adapter could then not open the path and would
+        // give the program its own input (DBG-059). The scripted adapter never opens it: the pipe is there after the
+        // launch, at a stop, and goes with the session.
+        await using var harness = SessionHarness.Create("""
+            { "steps": [
+              { "on": "configurationDone", "respond": {}, "thenEvents": [
+                { "event": "stopped", "body": { "reason": "breakpoint", "threadId": 1 } } ] },
+              { "on": "threads", "respond": { "threads": [ { "id": 1, "name": "main" } ] } },
+              { "on": "stackTrace", "respond": { "stackFrames": [ { "id": 100, "name": "Run", "line": 69, "column": 3,
+                  "source": { "path": "C:\\t\\DbgDemo.pas" } } ], "totalFrames": 1 } } ] }
+            """);
+        await harness.LaunchAsync(InputAtEndRequest);
+        var name = StdinPipeName(StdioOf(harness).Directory);
+        Assert.True(PipeExists(name), "The standard-input pipe was closed although nothing had opened it.");
+
+        await harness.WaitForEventAsync("stopped");
+        Assert.True(PipeExists(name), "The standard-input pipe was closed although nothing had opened it.");
+
+        // A late client is still the program's side: it gets the end of the input, not a pipe that is gone.
+        using var reader = new System.IO.Pipes.NamedPipeClientStream(".", name, System.IO.Pipes.PipeDirection.In);
+        reader.Connect(Safety);
+        var received = new MemoryStream();
+        await DedicatedThread.Run("FreexComp.Tests.DebuggeeStdin", () => reader.CopyTo(received)).WaitAsync(Safety, Ct);
+        Assert.Equal(0, received.Length);
+        Assert.Equal(DebugState.Stopped, harness.Session.State);
+
+        await harness.Session.TerminateAsync(Ct).WaitAsync(Safety, Ct);
+        Assert.False(PipeExists(name));
+        harness.AssertScenarioComplete();
+    }
+
     /// <summary>An <c>Output</c> event as the harness records it.</summary>
     private static string Out(string category, string text) => $"output {category} {JsonSerializer.Serialize(text)}";
 
