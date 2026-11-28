@@ -429,4 +429,127 @@ public sealed class SemanticModelTests
         Assert.Equal("var Result: TIntFunc", model.GetSymbolInfo(Node<InvocationExpressionSyntax>(model, "Result(2)")).Symbol?.ToDisplayString());
         Assert.Equal("Integer", model.GetTypeInfo(Node<InvocationExpressionSyntax>(model, "Plain(Mine)")).Type?.Name);   // the call's value
     }
+    private const string GenericMethodsUnit = """
+        unit UGen;
+        interface
+        type
+          PNode = ^TNode;
+          TNode = record
+            Next: PNode;
+            function Same<T>(Item: T): T; overload;
+            function Same(Item: Integer; Extra: Integer): Integer; overload;
+            class function Make<T>(const Seed: T): T; static;
+          end;
+          TUtil = class
+            class function Max<T>(A, B: T): T; overload; static;
+            class function Max(A: Integer): Integer; overload; static;
+            class function Pick<T>(Left, Right: T): T;
+            function Keep<T>(var Value: T): T;
+          end;
+        implementation
+        function TNode.Same<T>(Item: T): T; begin Result := Item end;
+        function TNode.Same(Item: Integer; Extra: Integer): Integer; begin Result := Item + Extra end;
+        class function TNode.Make<T>(const Seed: T): T; begin Result := Seed end;
+        class function TUtil.Max<T>(A, B: T): T; begin Result := A end;
+        class function TUtil.Max(A: Integer): Integer; begin Result := A end;
+        class function TUtil.Pick<T>(Left, Right: T): T; begin Result := Right end;
+        function TUtil.Keep<T>(var Value: T): T; begin Result := Value end;
+        end.
+        """;
+
+    private const string GenericMethodsProgram = """
+        program P;
+        uses UGen;
+        var I: Integer; N: TNode; U: TUtil;
+        begin
+          I := TUtil.Max<Integer>(1, 2);
+          I := TUtil.Max(1);
+          I := TUtil.Max(1, 2);
+          I := TUtil.Pick(3, 4);
+          I := N.Same(5);
+          I := N.Same(5, 6);
+          I := TNode.Make(7);
+          U := TUtil.Create;
+          I := U.Keep(I);
+        end.
+        """;
+
+    /// <summary>
+    /// C-455: a parameter in the declaration of a generic method (in a class or a record; instance, class and static methods) is
+    /// declared by that method's open instance, whose body the unit's model binds. The open instance may be made while the
+    /// program is bound (LANG-979: a call that infers the type arguments) before the declaring unit's implementation part is —
+    /// with one thread always (load order), with several when the program's thread is first — and must get its definition all the
+    /// same: every model of the same text, in every binding order and in a fork, gives the same symbol at such a parameter.
+    /// </summary>
+    [Theory]
+    [InlineData(1)]
+    [InlineData(0)]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-230")]
+    public void GenericMethodDeclarationParameters_BindTheSameInAFork(int jobs)
+    {
+        var unitPath = Path.Combine(Dir, "UGen.pas");
+        Compilation Create()
+        {
+            var fs = new InMemoryFileSystem().Add(MainPath, GenericMethodsProgram).Add(unitPath, GenericMethodsUnit).AddSystem();
+            return Compilation.Create(new CompilationOptions { MainFile = MainPath, RtlDirectory = @"C:\rtl", ObjectDirectory = @"C:\p\obj", MaxParallelism = jobs }, [], fs);
+        }
+
+        // what every parameter name of the generic methods' declarations (the headings in the types) declares
+        List<string> Parameters(Compilation compilation, bool programFirst)
+        {
+            if (programFirst)
+            {
+                Assert.DoesNotContain(compilation.GetSemanticModel(MainPath).GetDiagnostics(), d => d.Severity == DiagnosticSeverity.Error);
+            }
+
+            var model = compilation.GetSemanticModel(unitPath);
+            var lines = new List<string>();
+            foreach (var method in model.SyntaxTree.Root.DescendantNodes().OfType<MethodDeclarationSyntax>().Where(m => m.Heading.TypeParameterList is not null))
+            {
+                foreach (var token in method.Heading.ParameterList!.Parameters.SelectMany(p => p.Identifiers).Select(i => i.Identifier))
+                {
+                    var parameter = Assert.IsType<ParameterSymbol>(model.GetDeclaredSymbol(token));
+                    var owner = Assert.IsType<MethodSymbol>(parameter.ContainingSymbol);
+                    Assert.Equal(token.Text, parameter.Name);
+                    Assert.NotNull(owner.Definition);                           // the open instance, with its implementation
+                    Assert.NotNull(owner.GenericMethodDefinition);
+                    lines.Add($"{token.Span.Start} {parameter.ToDisplayString()} of {owner.ToDisplayString()} at {string.Join(",", parameter.Locations.Select(l => l.Span))}");
+                }
+            }
+
+            Assert.Equal(7, lines.Count);
+            return lines;
+        }
+
+        var expected = Parameters(Create(), programFirst: false);
+        Assert.Equal(expected, Parameters(Create(), programFirst: true));
+
+        // a fork of the same length (the interface part changed: both files are bound again), from a bound and from an unbound snapshot
+        var changed = SourceText.From(unitPath, GenericMethodsUnit.Replace("PNode", "PLink"));
+        foreach (var bound in new[] { true, false })
+        {
+            foreach (var programFirst in new[] { false, true })
+            {
+                var snapshot = Create();
+                if (bound)
+                {
+                    _ = snapshot.GetSemanticModel(unitPath);
+                }
+
+                Assert.Equal(expected, Parameters(snapshot.WithSourceText(changed), programFirst));
+            }
+        }
+
+        // a fork that changes both files (a method renamed: Max -> Mix), bound in both orders
+        var renamedUnit = SourceText.From(unitPath, GenericMethodsUnit.Replace("Max", "Mix"));
+        var renamedProgram = SourceText.From(MainPath, GenericMethodsProgram.Replace("Max", "Mix"));
+        var renamed = expected.Select(l => l.Replace("Max", "Mix")).ToList();
+        foreach (var programFirst in new[] { false, true })
+        {
+            var snapshot = Create();
+            _ = snapshot.GetSemanticModel(unitPath);
+            Assert.Equal(renamed, Parameters(snapshot.WithSourceText(renamedUnit).WithSourceText(renamedProgram), programFirst));
+        }
+    }
 }

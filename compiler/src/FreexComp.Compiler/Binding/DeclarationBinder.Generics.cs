@@ -920,7 +920,10 @@ internal sealed partial class DeclarationBinder
             }
 
             generic.Implementation = new GenericMethodImplementation(declaration, identifier, names, _scope, _scope.Count, _container);
-            foreach (var pair in generic.Instances)
+            // C-455: also the open instances made so far — a call that infers its type arguments (LANG-979) makes the generic
+            // method's open instance while its unit is bound, which may be before this implementation part is (CMP-156: load
+            // order with one thread, any order with several); without its definition no model would bind the method's open body
+            foreach (var pair in generic.Instances.Concat(generic.OpenInstances))
             {
                 DefineGenericMethodInstance(pair.Value, generic.Implementation, pair.Key);
             }

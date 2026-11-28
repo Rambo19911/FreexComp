@@ -334,4 +334,51 @@ public sealed class FindReferencesTests
         AssertReferences("Mine", Use("Mine: T", ReferenceKind.Declaration), Use("Mine := Seed", ReferenceKind.Write), Use("Keep := Mine", ReferenceKind.Read, 8));
         AssertReferences("Outer", Use("Outer := 5", ReferenceKind.Declaration), Use("Step + Outer", ReferenceKind.Read, 7));
     }
+    /// <summary>
+    /// C-455: the parameter of a generic method — of a class and of a record — is one symbol from its declaration in the type, from
+    /// the implementation heading and from the body: the same references and the same definition whichever model is made first and
+    /// however many threads bind the units (with one, the program's call that infers the type arguments is bound before the
+    /// unit's implementation part).
+    /// </summary>
+    [Theory]
+    [InlineData(1, false)]
+    [InlineData(1, true)]
+    [InlineData(0, false)]
+    [InlineData(0, true)]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-742")]
+    public void GenericMethodParameter_SameReferencesAndDefinitionInEveryBindingOrder(int jobs, bool programFirst)
+    {
+        const string Unit = "unit UGen;\ninterface\ntype\n  TRec = record\n    function Same<T>(Item: T): T; overload;\n    function Same(Item: Integer; Extra: Integer): Integer; overload;\n  end;\n"
+            + "  TUtil = class\n    class function Max<T>(A, B: T): T; overload; static;\n    class function Max(A: Integer): Integer; overload; static;\n  end;\n"
+            + "implementation\nfunction TRec.Same<T>(Item: T): T; begin Result := Item end;\nfunction TRec.Same(Item: Integer; Extra: Integer): Integer; begin Result := Item + Extra end;\n"
+            + "class function TUtil.Max<T>(A, B: T): T; begin Result := A end;\nclass function TUtil.Max(A: Integer): Integer; begin Result := A end;\nend.\n";
+        const string Main = "program P;\nuses UGen;\nvar I: Integer; R: TRec;\nbegin\n  I := TUtil.Max(1, 2);\n  I := TUtil.Max(3);\n  I := R.Same(4);\nend.\n";
+        var workspace = new Workspace(TestFiles.Files(("P.pas", Main), ("UGen.pas", Unit)));
+        workspace.SetProject(TestFiles.Options() with { MaxParallelism = jobs });
+        var ct = TestContext.Current.CancellationToken;
+        if (programFirst)
+        {
+            Assert.DoesNotContain(workspace.GetDocument(TestFiles.PathOf("P.pas")).SemanticModel.GetDiagnostics(null, ct), d => d.Severity == DiagnosticSeverity.Error);
+        }
+
+        var doc = workspace.GetDocument(TestFiles.PathOf("UGen.pas"));
+        void AssertParameter(string declared, string heading, string use)
+        {
+            int[] sites = [Unit.IndexOf(declared, StringComparison.Ordinal), Unit.IndexOf(heading, StringComparison.Ordinal), Unit.IndexOf(use, StringComparison.Ordinal)];
+            Assert.All(sites, site => Assert.True(site >= 0));
+            sites[2] += "Result := ".Length;
+            foreach (var site in sites)
+            {
+                var references = NavigationService.FindReferences(doc, site, ct);
+                Assert.Equal(sites, references.Select(r => r.Location.Span.Start));
+                Assert.Equal([ReferenceKind.Declaration, ReferenceKind.Read, ReferenceKind.Read], references.Select(r => r.Kind));    // the heading repeats the name
+                Assert.Equal([sites[0]], NavigationService.GoToDefinition(doc, site, ct).Select(l => l.Span.Start));
+            }
+        }
+
+        AssertParameter("A, B: T): T; overload", "A, B: T): T; begin", "Result := A end;\nclass function TUtil.Max(A");
+        AssertParameter("Item: T): T; overload", "Item: T): T; begin", "Result := Item end");
+        AssertParameter("A: Integer): Integer; overload", "A: Integer): Integer; begin", "Result := A end;\nend.");     // as for a method that is not generic
+    }
 }

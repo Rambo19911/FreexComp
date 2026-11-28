@@ -1499,4 +1499,104 @@ public sealed class RenameTests
         Assert.Contains("procedure Draw(Radius: Double); overload;", TextOf(afterChain, "UOver.pas"), StringComparison.Ordinal);
         AssertCompiles(afterChain);
     }
+    private const string GenericOverloadUnit = """
+        unit UGen;
+        interface
+        type
+          PNode = ^TNode;
+          TNode = record
+            Next: PNode;
+            procedure Init;
+            function Same<T>(Item: T): T; overload;
+            function Same(Item: Integer; Extra: Integer): Integer; overload;
+          end;
+          TUtil = class
+            class function Max<T>(A, B: T): T; overload; static;
+            class function Max(A: Integer): Integer; overload; static;
+            function Keep<T>(Value: T): T;
+          end;
+        implementation
+        procedure TNode.Init; begin Next := nil end;
+        function TNode.Same<T>(Item: T): T; begin Result := Item end;
+        function TNode.Same(Item: Integer; Extra: Integer): Integer; begin Result := Item + Extra end;
+        class function TUtil.Max<T>(A, B: T): T; begin Result := A end;
+        class function TUtil.Max(A: Integer): Integer; begin Result := A end;
+        function TUtil.Keep<T>(Value: T): T; begin Result := Value end;
+        end.
+        """;
+
+    private static (string Name, string Text)[] GenericOverloadFixture() =>
+    [
+        ("P.pas", "program P;\nuses UGen;\nvar I: Integer; N: TNode; U: TUtil;\nbegin\n  I := TUtil.Max<Integer>(1, 2);\n  I := TUtil.Max(1);\n  I := TUtil.Max(3, 4);\n"
+                  + "  I := N.Same(5);\n  I := N.Same(5, 6);\n  U := TUtil.Create;\n  I := U.Keep(I);\nend.\n"),
+        ("UGen.pas", GenericOverloadUnit.ReplaceLineEndings("\n")),
+    ];
+
+    /// <summary>A document of the fixture in a project bound on <paramref name="jobs"/> threads (0: the default, one per processor).</summary>
+    private static Document OpenWithJobs((string Name, string Text)[] files, string file, int jobs)
+    {
+        var workspace = new Workspace(TestFiles.Files(files));
+        workspace.SetProject(TestFiles.Options() with { MaxParallelism = jobs });
+        return workspace.GetDocument(TestFiles.PathOf(file));
+    }
+
+    /// <summary>
+    /// CMP-1504 on C-455: an overload group with a generic method — <c>Max&lt;T&gt;</c> and <c>Max</c> of a class, <c>Same&lt;T&gt;</c> and
+    /// <c>Same</c> of a record — is renamed as a group from either member, and so is another symbol of that unit. The conflict check
+    /// binds a fork in which both files changed; a parameter in the declaration of the generic method was a
+    /// <c>ParameterSymbol</c> before and nothing in the fork whenever the program's bodies were bound before the unit's
+    /// implementation part (with one thread always), so the rename was refused: "changes the meaning of 'A'".
+    /// </summary>
+    [Theory]
+    [InlineData(1)]
+    [InlineData(0)]
+    [Trait("Req", "CMP-1504")]
+    [Trait("Req", "CMP-751")]
+    public void Options_Overloads_GroupWithAGenericMethod_Renames(int jobs)
+    {
+        var group = new RenameOptions { Overloads = true };
+        var files = GenericOverloadFixture();
+        AssertCompiles(files);
+        RenameResult Run(string file, string piece, string newName, RenameOptions options) =>
+            RenameService.Rename(OpenWithJobs(files, file, jobs), At(TextOf(files, file), piece), newName, options, TestContext.Current.CancellationToken);
+
+        (string File, string Piece)[] starts =
+        [
+            ("UGen.pas", "Max<T>(A, B: T): T; overload"), ("UGen.pas", "Max(A: Integer): Integer; overload"), ("P.pas", "Max<Integer>"), ("P.pas", "Max(1)"),
+        ];
+        Assert.All(starts, start =>
+        {
+            Assert.Equal(2, RenameService.GetRenameInfo(OpenWithJobs(files, start.File, jobs), At(TextOf(files, start.File), start.Piece), TestContext.Current.CancellationToken).OverloadCount);
+            var result = Run(start.File, start.Piece, "Largest", group);
+
+            Assert.Equal(["P.pas: 3", "UGen.pas: 4"], Counts(result));
+            var after = Applied(files, result);
+            Assert.Equal(TextOf(files, "UGen.pas").Replace("Max", "Largest", StringComparison.Ordinal), TextOf(after, "UGen.pas"));
+            Assert.Equal(TextOf(files, "P.pas").Replace("Max", "Largest", StringComparison.Ordinal), TextOf(after, "P.pas"));
+            AssertCompiles(after);
+        });
+
+        // the group of a record, from the generic member and from the plain one
+        foreach (var piece in new[] { "Same<T>(Item: T): T; overload", "Same(Item: Integer; Extra" })
+        {
+            var same = Run("UGen.pas", piece, "Alike", group);
+            Assert.Equal(["P.pas: 2", "UGen.pas: 4"], Counts(same));
+            AssertCompiles(Applied(files, same));
+        }
+
+        // each overload alone, and other symbols of the unit: the generic methods' declarations do not stand in the way
+        Assert.Equal(["P.pas: 2", "UGen.pas: 2"], Counts(Run("UGen.pas", "Max<T>(A, B: T): T; overload", "Largest", RenameOptions.Default)));
+        Assert.Equal(["P.pas: 1", "UGen.pas: 2"], Counts(Run("UGen.pas", "Max(A: Integer): Integer; overload", "Largest", RenameOptions.Default)));
+        Assert.Equal(["UGen.pas: 2"], Counts(Run("UGen.pas", "PNode = ^TNode", "PLink", RenameOptions.Default)));
+        Assert.Equal(["UGen.pas: 2"], Counts(Run("UGen.pas", "Next: PNode", "Following", RenameOptions.Default)));
+        Assert.Equal(["P.pas: 1", "UGen.pas: 2"], Counts(Run("UGen.pas", "Keep<T>(Value: T): T;", "Hold", group)));
+
+        // a parameter of a generic method, from its declaration and from its implementation: both headings and the body
+        foreach (var piece in new[] { "A, B: T): T; overload", "A, B: T): T; begin" })
+        {
+            var parameter = Run("UGen.pas", piece, "First", RenameOptions.Default);
+            Assert.Equal(["UGen.pas: 3"], Counts(parameter));
+            Assert.Contains("class function TUtil.Max<T>(First, B: T): T; begin Result := First end;", TextOf(Applied(files, parameter), "UGen.pas"), StringComparison.Ordinal);
+        }
+    }
 }
