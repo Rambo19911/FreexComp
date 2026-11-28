@@ -14,11 +14,19 @@ grep -E "Warning\(s\)|Error\(s\)" "$log"
 if [ "$build" -ne 0 ]; then echo "VERIFY FAILED: build exit $build"; echo "VERIFY LOG: $log"; exit 1; fi
 
 # A single test that runs longer than 5 minutes is a hang: its test host is stopped (no dump) and the run reports it.
-dotnet test FreexComp.sln -m:4 --no-build --blame-hang-timeout 5m --blame-hang-dump-type none > "$log" 2>&1
+# Two parts: everything but the performance tests with four test hosts at once, then the performance tests of all
+# projects one host at a time, so their budgets are measured on a quiet machine (a project without performance tests
+# prints no summary line in the second part).
+echo "== tests (parallel, Category!=Performance) ==" > "$log"
+dotnet test FreexComp.sln -m:4 --no-build --filter "Category!=Performance" --blame-hang-timeout 5m --blame-hang-dump-type none >> "$log" 2>&1
 tests=$?
+echo "== performance tests (serial, Category=Performance) ==" >> "$log"
+dotnet test FreexComp.sln -m:1 --no-build --filter "Category=Performance" --blame-hang-timeout 5m --blame-hang-dump-type none >> "$log" 2>&1
+perf=$?
+[ "$tests" -eq 0 ] && tests=$perf
 # GUI programs a stopped test host left behind (the full verify runs only when no agent runs tests).
 taskkill //IM AccessibilityProbe.exe //F >/dev/null 2>&1
-grep -E "Passed!|Failed!|aborted|crash|Catastrophic failure|Unhandled exception|Cleanup Failure|^  Failed " "$log"
+grep -E "^== |Passed!|Failed!|aborted|crash|Catastrophic failure|Unhandled exception|Cleanup Failure|^  Failed " "$log"
 
 status=0
 [ "$tests" -ne 0 ] && { echo "VERIFY FAILED: dotnet test exit $tests"; status=1; }
