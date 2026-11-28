@@ -62,6 +62,8 @@ var w: Word; begin w := 70000 end.
 const K = 1; begin K := 2 end.
 === E2053 1,7
 begin True := False end.
+=== E2053 1,101
+type R = record F: Integer; property P: Integer read F write F; end; procedure Q(const X: R); begin X.P := 1 end; begin end.
 === E2060 1,23
 var i: Integer; begin i end.
 === E2009 1,28

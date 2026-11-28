@@ -159,7 +159,13 @@ internal sealed partial class BodyBinder
         var target = FunctionResult(assignment.Target) ?? _expressions.BindAssignmentTarget(assignment.Target);
         if (target is BoundPropertyAccessExpression property)
         {
-            return _expressions.BindPropertyAssignment(assignment, property);           // LANG-641
+            var written = _expressions.BindPropertyAssignment(assignment, property);    // LANG-641
+            if (written is BoundAssignmentStatement { Target: { HasErrors: false } field } && !IsAssignable(field))
+            {
+                _diagnostics.Report(assignment.Target, "E2053");                        // a field write accessor: checked like the field (C-454)
+            }
+
+            return written;
         }
 
         var value = _expressions.BindExpression(assignment.Value, target.Type);           // a set constructor takes the target's type
@@ -168,24 +174,10 @@ internal sealed partial class BodyBinder
             return new BoundAssignmentStatement(assignment, target, value);
         }
 
-        switch (BoundIndexExpression.RootOf(target))                                    // an array element is assignable like its array
+        if (!IsAssignable(target))
         {
-            case BoundVariableExpression { Variable: var v } when ForVariables.Contains(v):
-            case BoundParameterExpression { Parameter: var p } when ForVariables.Contains(p):
-                _diagnostics.Report(assignment.Target, "E2053");                        // LANG-361 rule 6
-                return new BoundAssignmentStatement(assignment, target, value);
-            case BoundVariableExpression { Variable.IsReadOnly: true }:
-            case BoundDereferenceExpression { Pointer: BoundVariableExpression { Variable: var with } } when _expressions.ReadOnlyWith.Contains(with):
-                _diagnostics.Report(assignment.Target, "E2053");                        // a typed constant (LANG-344), a const record via with (C-198)
-                return new BoundAssignmentStatement(assignment, target, value);
-            case BoundVariableExpression:
-            case BoundDereferenceExpression:
-            case BoundFieldAccessExpression:
-            case BoundParameterExpression { Parameter.Mode: not ParameterMode.Const }:
-                break;
-            default:
-                _diagnostics.Report(assignment.Target, "E2053");
-                return new BoundAssignmentStatement(assignment, target, value);
+            _diagnostics.Report(assignment.Target, "E2053");
+            return new BoundAssignmentStatement(assignment, target, value);
         }
 
         if (target.Type is OpenArrayTypeSymbol && !value.HasErrors)
@@ -198,6 +190,22 @@ internal sealed partial class BodyBinder
 
         return new BoundAssignmentStatement(assignment, target, _expressions.ConvertForAssignment(value, target.Type, assignment.Value));
     }
+
+    /// <summary>
+    /// LANG-350: the target is a variable reference that may be written — not a <c>for</c> control variable (LANG-361 rule 6),
+    /// a typed constant (LANG-344), a <c>const</c> record reached through <c>with</c> (C-198), a <c>const</c> parameter or a
+    /// value; an array element or a record field is assignable like its array or record.
+    /// </summary>
+    private bool IsAssignable(BoundExpression target) => BoundIndexExpression.RootOf(target) switch
+    {
+        BoundVariableExpression { Variable: var v } when ForVariables.Contains(v) => false,
+        BoundParameterExpression { Parameter: var p } when ForVariables.Contains(p) => false,
+        BoundVariableExpression { Variable.IsReadOnly: true } => false,
+        BoundDereferenceExpression { Pointer: BoundVariableExpression { Variable: var with } } when _expressions.ReadOnlyWith.Contains(with) => false,
+        BoundVariableExpression or BoundDereferenceExpression or BoundFieldAccessExpression => true,
+        BoundParameterExpression { Parameter.Mode: not ParameterMode.Const } => true,
+        _ => false,
+    };
 
     /// <summary>
     /// LANG-308: the name of the current function, or of an enclosing one (LANG-450), on the left of <c>:=</c> is that
